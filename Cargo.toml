@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "share_type_public",
+    "common/rust",
+    "landlord/rust",
+]
+resolver = "2"
