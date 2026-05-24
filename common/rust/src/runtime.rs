@@ -64,6 +64,27 @@ where
     let game_handler = Arc::new(Mutex::new(handler));
     let next_session = Arc::new(AtomicU64::new(1));
 
+    // Start test pulse task
+    {
+        let senders = Arc::clone(&senders);
+        tokio::spawn(async move {
+            let mut counter = 0u64;
+            let mut interval = tokio::time::interval(Duration::from_secs(2));
+            loop {
+                interval.tick().await;
+                counter += 1;
+                let senders = senders.lock().await;
+                let payload = serde_json::json!({ "count": counter });
+                let msg = to_text_message(&payload);
+                if let Ok(frame) = msg {
+                    for tx in senders.values() {
+                        let _ = tx.send(frame.clone());
+                    }
+                }
+            }
+        });
+    }
+
     loop {
         let (stream, peer) = listener.accept().await?;
         let session_id = next_session.fetch_add(1, Ordering::Relaxed);

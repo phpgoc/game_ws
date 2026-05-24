@@ -50,6 +50,8 @@ pub enum WsCode {
 
     SHOW_HIDDEN_CARDS = 30,
 
+    TEST_PULSE = 999,
+
     CALL_LANDLORD = 1001,
 
 }

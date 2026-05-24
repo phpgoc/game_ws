@@ -38,7 +38,24 @@
     <button data-route="4" id="send-message">MESSAGE</button>
     <button data-route="5" id="pause">PAUSE</button>
     <button data-route="6" id="resume">RESUME</button>
+    <button data-route="10" id="start">START</button>
     <button id="clear-log">清空日志</button>
+  </div>
+
+  <div class="row">
+    <label>round_time: <input id="round_time" type="number" min="20" max="40" value="30" style="width: 60px;" />
+      <span id="round_time_label" style="font-size: 12px; color: #666;">20~40</span>
+    </label>
+    <label>away_time: <input id="away_time" type="number" min="2" max="5" value="5" style="width: 60px;" />
+      <span id="away_time_label" style="font-size: 12px; color: #666;">2~5</span>
+    </label>
+    <label>play_time: <input id="play_time" type="number" min="100" max="500" value="300" style="width: 60px;" />
+      <span id="play_time_label" style="font-size: 12px; color: #666;">100~500</span>
+    </label>
+    <label>deal_time: <input id="deal_time" type="number" min="500" max="4000" value="3000" style="width: 60px;" />
+      <span id="deal_time_label" style="font-size: 12px; color: #666;">500~4000</span>
+    </label>
+    <button id="apply-settings">应用设置</button>
   </div>
 
   <div id="log"></div>
@@ -53,6 +70,8 @@
       PAUSE: 5,
       RESUME: 6,
       DISBAND: 7,
+      SETTING: 8,
+      START: 10,
     };
 
     let ws = null;
@@ -118,6 +137,19 @@
     $("resume").onclick = () => send(ROUTES.RESUME, {});
     $("send-message").onclick = () => {
       send(ROUTES.MESSAGE, { message: $("message").value });
+    };
+    $("start").onclick = () => {
+      send(ROUTES.START, {});
+    };
+
+    $("apply-settings").onclick = () => {
+      const settings = {
+        round_time: { default: parseInt($("round_time").value), min: 20, max: 40 },
+        away_time: { default: parseInt($("away_time").value), min: 2, max: 5 },
+        play_time: { default: parseInt($("play_time").value), min: 100, max: 500 },
+        deal_time: { default: parseInt($("deal_time").value), min: 500, max: 4000 },
+      };
+      send(ROUTES.SETTING, { settings });
     };
 
     $("clear-log").onclick = () => {
