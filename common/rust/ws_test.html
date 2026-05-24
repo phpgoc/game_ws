@@ -116,9 +116,35 @@
         let data = event.data;
         try {
           data = JSON.parse(event.data);
+          
+          // Handle CREATE/JOIN response to update settings display
+          if (data.status === 'JOINED' && data.data) {
+            // JOIN response with JOINED status
+            const settings = data.data;
+            updateSettingsDisplay(settings);
+          } else if (data.code === 0 && data.data && typeof data.data === 'object' && (data.data.round_time || data.data.away_time || data.data.play_time || data.data.deal_time)) {
+            // CREATE response (code 0 with settings data)
+            const settings = data.data;
+            updateSettingsDisplay(settings);
+          }
         } catch (_) {}
         log("<= 收到消息", data);
       };
+
+      function updateSettingsDisplay(settings) {
+        if (settings.round_time && settings.round_time.default !== undefined) {
+          $("round_time").value = settings.round_time.default;
+        }
+        if (settings.away_time && settings.away_time.default !== undefined) {
+          $("away_time").value = settings.away_time.default;
+        }
+        if (settings.play_time && settings.play_time.default !== undefined) {
+          $("play_time").value = settings.play_time.default;
+        }
+        if (settings.deal_time && settings.deal_time.default !== undefined) {
+          $("deal_time").value = settings.deal_time.default;
+        }
+      }
     };
 
     $("disconnect").onclick = () => {

@@ -2,6 +2,7 @@ pub mod common;
 pub mod r#const;
 pub mod ws;
 pub mod games;
+pub mod settings;
 
 pub use common::CommonEvent;
 pub use common::CommonWithoutDataEvent;
@@ -19,3 +20,4 @@ pub use ws::WsRequest;
 pub use ws::WsResponse;
 pub use ws::WsWithoutDataResponse;
 pub use ws::WsWithoutDataRequest;
+pub use settings::{GameSettings, GameParam};

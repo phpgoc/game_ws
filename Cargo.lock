@@ -379,6 +379,7 @@ dependencies = [
  "serde_json",
  "share_type_public",
  "tokio",
+ "tokio-tungstenite",
  "ws_common",
 ]
 
@@ -626,6 +627,7 @@ name = "share_type_public"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "serde_json",
  "serde_repr",
  "typeshare",
 ]

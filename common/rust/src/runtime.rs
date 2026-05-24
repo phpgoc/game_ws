@@ -10,7 +10,6 @@ use std::{
 
 use anyhow::Context;
 use futures_util::{SinkExt, StreamExt};
-use serde_json::Value;
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::{Mutex, mpsc},
@@ -23,11 +22,18 @@ use crate::{
     resolve_port,
     to_text_message,
 };
+use share_type_public::GameSettings;
+
+type SessionSender = mpsc::UnboundedSender<Message>;
+pub type SessionSenders = Arc<Mutex<HashMap<SessionId, SessionSender>>>;
 
 pub trait GameHandler: Send + 'static {
-    fn build_room_settings(&self, room_key: &str) -> Value;
+    fn build_room_settings(&self, room_key: &str) -> Box<dyn GameSettings>;
     fn get_player_limits(&self) -> (usize, usize) {
         (1, usize::MAX)
+    }
+    fn set_context(&mut self, _senders: SessionSenders, _room_service: Arc<Mutex<RoomService>>) {
+        // Optional: override in games that need access to senders/room_service for event loops
     }
     fn handle_game_request(
         &mut self,
@@ -45,9 +51,6 @@ pub struct RuntimeConfig {
     pub heartbeat_interval: Duration,
 }
 
-type SessionSender = mpsc::UnboundedSender<Message>;
-type SessionSenders = Arc<Mutex<HashMap<SessionId, SessionSender>>>;
-
 pub async fn run_room_runtime<H>(config: RuntimeConfig, handler: H) -> anyhow::Result<()>
 where
     H: GameHandler,
@@ -62,28 +65,14 @@ where
     let senders: SessionSenders = Arc::new(Mutex::new(HashMap::new()));
     let room_service = Arc::new(Mutex::new(RoomService::default()));
     let game_handler = Arc::new(Mutex::new(handler));
-    let next_session = Arc::new(AtomicU64::new(1));
-
-    // Start test pulse task
+    
+    // Set context for game-specific initialization
     {
-        let senders = Arc::clone(&senders);
-        tokio::spawn(async move {
-            let mut counter = 0u64;
-            let mut interval = tokio::time::interval(Duration::from_secs(2));
-            loop {
-                interval.tick().await;
-                counter += 1;
-                let senders = senders.lock().await;
-                let payload = serde_json::json!({ "count": counter });
-                let msg = to_text_message(&payload);
-                if let Ok(frame) = msg {
-                    for tx in senders.values() {
-                        let _ = tx.send(frame.clone());
-                    }
-                }
-            }
-        });
+        let mut h = game_handler.lock().await;
+        h.set_context(Arc::clone(&senders), Arc::clone(&room_service));
     }
+    
+    let next_session = Arc::new(AtomicU64::new(1));
 
     loop {
         let (stream, peer) = listener.accept().await?;

@@ -4,7 +4,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use share_type_public::{
     CommonEvent, Routes, WsCode, WsCreateRequest, WsJoinRequest, WsMessageRequest, WsRequest,
-    WsResponseCode, WsWithoutDataResponse,
+    WsResponseCode, WsWithoutDataResponse, GameSettings,
     ws::WsResponse,
     ws::{WsDisbandEvent, WsMessageEvent, WsPauseEvent, WsQuitEvent, WsResumeEvent},
 };
@@ -50,10 +50,10 @@ struct SessionState {
     position: Option<usize>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct RoomState {
     slots: HashMap<usize, SessionId>,
-    settings: Value,
+    settings: Box<dyn GameSettings>,
     min_players: usize,
     max_players: usize,
     paused: bool,
@@ -81,7 +81,7 @@ impl RoomService {
         get_player_limits: impl Fn() -> (usize, usize),
     ) -> Option<Dispatch>
     where
-        F: Fn(&str) -> Value,
+        F: Fn(&str) -> Box<dyn GameSettings>,
     {
         self.sessions.entry(session_id).or_default();
         match request.route {
@@ -104,6 +104,10 @@ impl RoomService {
         self.error_response(session_id, route, WsResponseCode::ERROR_FORMAT)
     }
 
+    pub fn permission_denied_response(&self, session_id: SessionId, route: Routes) -> Dispatch {
+        self.error_response(session_id, route, WsResponseCode::NO_PERMISSION)
+    }
+
     pub fn ensure_in_room(&self, session_id: SessionId, route: Routes, dispatch: &mut Dispatch) -> bool {
         self.require_login(session_id, route, dispatch)
     }
@@ -124,6 +128,27 @@ impl RoomService {
         room.slots.len() >= room.min_players
     }
 
+    pub fn is_room_paused(&self, room_key: &str) -> bool {
+        self.rooms.get(room_key).map(|r| r.paused).unwrap_or(true)
+    }
+
+    pub fn get_room_members(&self, room_key: &str) -> Vec<(SessionId, String, usize)> {
+        self.rooms
+            .get(room_key)
+            .map(|room| {
+                room.slots
+                    .iter()
+                    .filter_map(|(pos, session_id)| {
+                        self.sessions
+                            .get(session_id)
+                            .and_then(|s| s.name.as_ref())
+                            .map(|name| (*session_id, name.clone(), *pos))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     pub fn room_key_of(&self, session_id: SessionId) -> Option<String> {
         self.sessions
             .get(&session_id)
@@ -140,7 +165,9 @@ impl RoomService {
     }
 
     pub fn session_position(&self, session_id: SessionId) -> Option<usize> {
-        self.sessions.get(&session_id).and_then(|item| item.position)
+        self.sessions
+            .get(&session_id)
+            .and_then(|item| item.position)
     }
 
     pub fn send_all<T: serde::Serialize>(
@@ -222,7 +249,7 @@ impl RoomService {
         get_player_limits: impl Fn() -> (usize, usize),
     ) -> Dispatch
     where
-        F: Fn(&str) -> Value,
+        F: Fn(&str) -> Box<dyn GameSettings>,
     {
         if self.room_key_of(session_id).is_some() {
             return self.error_response(session_id, Routes::CREATE, WsResponseCode::NO_PERMISSION);
@@ -252,7 +279,7 @@ impl RoomService {
         get_player_limits: impl Fn() -> (usize, usize),
     ) -> Dispatch
     where
-        F: Fn(&str) -> Value,
+        F: Fn(&str) -> Box<dyn GameSettings>,
     {
         if self.room_key_of(session_id).is_some() {
             return self.error_response(session_id, Routes::JOIN, WsResponseCode::NO_PERMISSION);
@@ -280,7 +307,7 @@ impl RoomService {
         route: Routes,
         name: String,
         room_key: String,
-        settings: Value,
+        settings: Box<dyn GameSettings>,
         get_player_limits: impl Fn() -> (usize, usize),
     ) -> Dispatch {
         if room_key.is_empty() || name.is_empty() {
@@ -333,12 +360,19 @@ impl RoomService {
             json!({"name": name, "position": position as i32}),
             &mut dispatch,
         );
-        if route as i32 == Routes::JOIN as i32 {
+        if route as i32 == Routes::CREATE as i32 {
+            dispatch.messages.push(Self::direct_response_with_data(
+                session_id,
+                route,
+                WsResponseCode::OK,
+                room_settings.to_full_json(),
+            ));
+        } else if route as i32 == Routes::JOIN as i32 {
             dispatch.messages.push(Self::direct_response_with_data(
                 session_id,
                 route,
                 WsResponseCode::JOINED,
-                room_settings,
+                room_settings.to_full_json(),
             ));
         } else {
             self.push_ok_response(&mut dispatch, session_id, route);
