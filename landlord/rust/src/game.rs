@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use serde_json::Value;
 use share_type_public::{
     Routes, WsCode,
-    games::{GameParam, RoomPlayerLimit, landlord::LandlordRoomSettings},
+    games::{GameParam, landlord::LandlordRoomSettings},
     ws::WsStartEvent,
 };
 use ws_common::{ClientRequest, Dispatch, GameHandler, RoomService, SessionId};
@@ -13,12 +13,12 @@ pub struct LandlordGameHandler {
     started_rooms: HashSet<String>,
 }
 
+// Game constants
+const MIN_PLAYERS: i32 = 3;
+const MAX_PLAYERS: i32 = 3;
+
 pub fn build_room_settings(_room_key: &str) -> Value {
-    serde_json::to_value(LandlordRoomSettings {
-        limits: RoomPlayerLimit {
-            min_players: 3,
-            max_players: 3,
-        },
+    let settings = LandlordRoomSettings {
         round_time: GameParam {
             default: 30,
             min: 20,
@@ -39,8 +39,14 @@ pub fn build_room_settings(_room_key: &str) -> Value {
             min: 500,
             max: 4000,
         },
-    })
-    .unwrap_or(Value::Null)
+    };
+    
+    let mut value = serde_json::to_value(&settings).unwrap_or(Value::Null);
+    if let Value::Object(ref mut obj) = value {
+        obj.insert("min_players".to_string(), Value::Number(MIN_PLAYERS.into()));
+        obj.insert("max_players".to_string(), Value::Number(MAX_PLAYERS.into()));
+    }
+    value
 }
 
 impl GameHandler for LandlordGameHandler {

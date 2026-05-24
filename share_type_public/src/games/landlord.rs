@@ -1,12 +1,11 @@
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
-use crate::games::{GameParam, RoomPlayerLimit, SettingTrait};
+use crate::games::{GameParam, SettingTrait};
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LandlordRoomSettings {
-    pub limits: RoomPlayerLimit,
     pub round_time: GameParam,
     pub away_time: GameParam,
     pub play_time: GameParam,
