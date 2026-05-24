@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
+share_type_public = { path = "../../share_type_public" }

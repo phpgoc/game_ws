@@ -10,8 +10,8 @@ API 侧也依赖这里的公共类型。
 
 其中 `src/common.rs` 里有：
 
-- `CommonResponse<T> { code, message }`
-- `CodeResponse { code }`（用于仅返回错误码/状态码，由前端自行做多语言文案）
+- `CommonRequest<T> { code: Routes, data }`
+- `CommonResponse<T> { code: WsCode, data }`
 
 ## 修改后重生成
 
@@ -21,7 +21,7 @@ API 侧也依赖这里的公共类型。
 mkdir -p generated
 
 tmp_public="$(mktemp -d)"
-cp src/common.rs src/ws.rs "$tmp_public"/
+cp src/common.rs src/ws.rs src/const.rs "$tmp_public"/
 
 # 结构体类型（Kotlin）
 typeshare "$tmp_public" --lang kotlin --output-file ./generated/ws.kt

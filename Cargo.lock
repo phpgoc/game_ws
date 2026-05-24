@@ -376,6 +376,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "serde",
+ "share_type_public",
 ]
 
 [[package]]

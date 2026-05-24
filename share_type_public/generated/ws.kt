@@ -1,41 +1,107 @@
 @Serializable
-data class CodeResponse (
-	val code: Int
-)
+enum class WsCode(val string: String) {
+	@SerialName("JOIN")
+	JOIN("JOIN"),
+	@SerialName("QUIT")
+	QUIT("QUIT"),
+	@SerialName("MESSAGE")
+	MESSAGE("MESSAGE"),
+	@SerialName("PAUSE")
+	PAUSE("PAUSE"),
+	@SerialName("RESUME")
+	RESUME("RESUME"),
+	@SerialName("DISBAND")
+	DISBAND("DISBAND"),
+	@SerialName("SETTING")
+	SETTING("SETTING"),
+	@SerialName("DEAL")
+	DEAL("DEAL"),
+	@SerialName("PLAY")
+	PLAY("PLAY"),
+	@SerialName("AWAY")
+	AWAY("AWAY"),
+}
 
 @Serializable
 data class CommonResponse<T> (
-	val code: T,
-	val message: String
+	val code: WsCode,
+	val data: T
 )
 
 @Serializable
-data class CreateRequestData (
-	val name: String,
-	val password: String
+data class CommonWithoutDataResponse (
+	val code: WsCode
 )
 
 @Serializable
-data class JoinRequestData (
-	val name: String,
-	val password: String
-)
-
-@Serializable
-data class SwapPositionCommonData (
+data class SwapPositionPayload (
 	val a: String,
 	val b: String
 )
 
 @Serializable
-data class WsMessage (
-	val common: CommonResponse<Int>,
-	val topic: String
+data class WsCreateRequest (
+	val name: String,
+	val password: String
 )
 
 @Serializable
+data class WsJoinRequest (
+	val name: String,
+	val password: String
+)
+
+@Serializable
+data class WsJoinResponse<T> (
+	val name: String,
+	val settings: T
+)
+
+@Serializable
+data class WsMessageRequest (
+	val message: String
+)
+
+@Serializable
+data class WsMessageResponse (
+	val name: String,
+	val message: String
+)
+
+@Serializable
+enum class Routes(val string: String) {
+	@SerialName("CREATE")
+	CREATE("CREATE"),
+	@SerialName("JOIN")
+	JOIN("JOIN"),
+	@SerialName("QUIT")
+	QUIT("QUIT"),
+	@SerialName("MESSAGE")
+	MESSAGE("MESSAGE"),
+	@SerialName("PAUSE")
+	PAUSE("PAUSE"),
+	@SerialName("RESUME")
+	RESUME("RESUME"),
+	@SerialName("DISBAND")
+	DISBAND("DISBAND"),
+	@SerialName("SETTING")
+	SETTING("SETTING"),
+	@SerialName("DEAL")
+	DEAL("DEAL"),
+	@SerialName("PLAY")
+	PLAY("PLAY"),
+	@SerialName("AWAY")
+	AWAY("AWAY"),
+}
+
+@Serializable
 data class WsRequest<T> (
-	val route_code: Int,
+	val code: Routes,
 	val data: T
+)
+
+@Serializable
+data class WsWithoutDataRequest (
+	val code: Routes
 )
 
