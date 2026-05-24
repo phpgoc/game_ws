@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use serde_json::Value;
 use share_type_public::{
     Routes, WsCode,
-    games::{RoomPlayerLimit, landlord::LandlordRoomSettings},
+    games::{GameParam, RoomPlayerLimit, landlord::LandlordRoomSettings},
     ws::WsStartEvent,
 };
 use ws_common::{ClientRequest, Dispatch, GameHandler, RoomService, SessionId};
@@ -18,6 +18,26 @@ pub fn build_room_settings(_room_key: &str) -> Value {
         limits: RoomPlayerLimit {
             min_players: 3,
             max_players: 3,
+        },
+        round_time: GameParam {
+            default: 30,
+            min: 20,
+            max: 40,
+        },
+        away_time: GameParam {
+            default: 5,
+            min: 2,
+            max: 5,
+        },
+        play_time: GameParam {
+            default: 300,
+            min: 100,
+            max: 500,
+        },
+        deal_time: GameParam {
+            default: 3000,
+            min: 500,
+            max: 4000,
         },
     })
     .unwrap_or(Value::Null)
