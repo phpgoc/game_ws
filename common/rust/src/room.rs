@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use share_type_public::{
     CommonEvent, Routes, WsCode, WsCreateRequest, WsJoinRequest, WsMessageRequest, WsRequest,
@@ -78,14 +78,15 @@ impl RoomService {
         session_id: SessionId,
         request: &ClientRequest,
         room_settings_builder: F,
+        get_player_limits: impl Fn() -> (usize, usize),
     ) -> Option<Dispatch>
     where
         F: Fn(&str) -> Value,
     {
         self.sessions.entry(session_id).or_default();
         match request.route {
-            Routes::CREATE => Some(self.handle_create_request(session_id, request.data.clone(), room_settings_builder)),
-            Routes::JOIN => Some(self.handle_join_request(session_id, request.data.clone(), room_settings_builder)),
+            Routes::CREATE => Some(self.handle_create_request(session_id, request.data.clone(), room_settings_builder, get_player_limits)),
+            Routes::JOIN => Some(self.handle_join_request(session_id, request.data.clone(), room_settings_builder, get_player_limits)),
             Routes::QUIT => Some(self.handle_quit_request(session_id)),
             Routes::DISBAND => Some(self.handle_disband_request(session_id)),
             Routes::MESSAGE => Some(self.handle_message_request(session_id, request.data.clone())),
@@ -218,6 +219,7 @@ impl RoomService {
         session_id: SessionId,
         data: Value,
         room_settings_builder: F,
+        get_player_limits: impl Fn() -> (usize, usize),
     ) -> Dispatch
     where
         F: Fn(&str) -> Value,
@@ -238,10 +240,17 @@ impl RoomService {
             payload.name,
             payload.password,
             settings,
+            get_player_limits,
         )
     }
 
-    fn handle_join_request<F>(&mut self, session_id: SessionId, data: Value, room_settings_builder: F) -> Dispatch
+    fn handle_join_request<F>(
+        &mut self,
+        session_id: SessionId,
+        data: Value,
+        room_settings_builder: F,
+        get_player_limits: impl Fn() -> (usize, usize),
+    ) -> Dispatch
     where
         F: Fn(&str) -> Value,
     {
@@ -261,6 +270,7 @@ impl RoomService {
             payload.name,
             payload.password,
             settings,
+            get_player_limits,
         )
     }
 
@@ -271,6 +281,7 @@ impl RoomService {
         name: String,
         room_key: String,
         settings: Value,
+        get_player_limits: impl Fn() -> (usize, usize),
     ) -> Dispatch {
         if room_key.is_empty() || name.is_empty() {
             return self.error_response(session_id, route, WsResponseCode::ERROR_FORMAT);
@@ -284,29 +295,27 @@ impl RoomService {
             self.sessions.insert(session_id, tmp);
         }
 
-        let (room_settings, position) = if let Some(room) = self.rooms.get(&room_key) {
+        let (room_settings, position, min_players, max_players) = if let Some(room) = self.rooms.get(&room_key) {
             if self.name_taken_in_room(&room_key, &name, Some(session_id)) {
                 return self.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
             }
             let Some(position) = self.select_position(room, session_id) else {
                 return self.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
             };
-            (room.settings.clone(), position)
+            (room.settings.clone(), position, room.min_players, room.max_players)
         } else {
-            let Some((min_players, max_players)) = Self::extract_player_limits(&settings) else {
-                return self.error_response(session_id, route, WsResponseCode::ERROR_FORMAT);
-            };
+            let (min_players, max_players) = get_player_limits();
             if max_players == 0 || min_players == 0 || min_players > max_players {
                 return self.error_response(session_id, route, WsResponseCode::ERROR_FORMAT);
             }
-            (settings.clone(), 0)
+            (settings.clone(), 0, min_players, max_players)
         };
 
         let room = self.rooms.entry(room_key.clone()).or_insert_with(|| RoomState {
             slots: HashMap::new(),
             settings: room_settings.clone(),
-            min_players: Self::extract_player_limits(&room_settings).map(|v| v.0).unwrap_or(1),
-            max_players: Self::extract_player_limits(&room_settings).map(|v| v.1).unwrap_or(1),
+            min_players,
+            max_players,
             paused: false,
         });
         room.slots.insert(position, session_id);
@@ -438,24 +447,6 @@ impl RoomService {
 
     fn parse<T: DeserializeOwned>(value: Value) -> Result<T, serde_json::Error> {
         serde_json::from_value(value)
-    }
-
-    fn extract_player_limits(settings: &Value) -> Option<(usize, usize)> {
-        #[derive(Deserialize)]
-        struct Limits {
-            min_players: usize,
-            max_players: usize,
-        }
-        #[derive(Deserialize)]
-        struct WithNestedLimits {
-            limits: Limits,
-        }
-
-        if let Ok(parsed) = serde_json::from_value::<Limits>(settings.clone()) {
-            return Some((parsed.min_players, parsed.max_players));
-        }
-        let nested: WithNestedLimits = serde_json::from_value(settings.clone()).ok()?;
-        Some((nested.limits.min_players, nested.limits.max_players))
     }
 
     fn require_login(&self, session_id: SessionId, route: Routes, dispatch: &mut Dispatch) -> bool {

@@ -14,8 +14,8 @@ pub struct LandlordGameHandler {
 }
 
 // Game constants
-const MIN_PLAYERS: i32 = 3;
-const MAX_PLAYERS: i32 = 3;
+const MIN_PLAYERS: usize = 3;
+const MAX_PLAYERS: usize = 3;
 
 pub fn build_room_settings(_room_key: &str) -> Value {
     let settings = LandlordRoomSettings {
@@ -41,17 +41,16 @@ pub fn build_room_settings(_room_key: &str) -> Value {
         },
     };
     
-    let mut value = serde_json::to_value(&settings).unwrap_or(Value::Null);
-    if let Value::Object(ref mut obj) = value {
-        obj.insert("min_players".to_string(), Value::Number(MIN_PLAYERS.into()));
-        obj.insert("max_players".to_string(), Value::Number(MAX_PLAYERS.into()));
-    }
-    value
+    serde_json::to_value(&settings).unwrap_or(Value::Null)
 }
 
 impl GameHandler for LandlordGameHandler {
     fn build_room_settings(&self, room_key: &str) -> Value {
         build_room_settings(room_key)
+    }
+
+    fn get_player_limits(&self) -> (usize, usize) {
+        (MIN_PLAYERS, MAX_PLAYERS)
     }
 
     fn handle_game_request(

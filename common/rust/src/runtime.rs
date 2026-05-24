@@ -26,6 +26,9 @@ use crate::{
 
 pub trait GameHandler: Send + 'static {
     fn build_room_settings(&self, room_key: &str) -> Value;
+    fn get_player_limits(&self) -> (usize, usize) {
+        (1, usize::MAX)
+    }
     fn handle_game_request(
         &mut self,
         room_service: &mut RoomService,
@@ -188,9 +191,12 @@ where
         let dispatch = {
             let mut room = room_service.lock().await;
             let mut handler = game_handler.lock().await;
-            if let Some(dispatch) =
-                room.handle_common_request(session_id, &request, |room_key| handler.build_room_settings(room_key))
-            {
+            if let Some(dispatch) = room.handle_common_request(
+                session_id,
+                &request,
+                |room_key| handler.build_room_settings(room_key),
+                || handler.get_player_limits(),
+            ) {
                 dispatch
             } else {
                 handler.handle_game_request(&mut room, session_id, request)
