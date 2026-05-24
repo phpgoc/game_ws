@@ -170,6 +170,21 @@ impl RoomService {
             .and_then(|item| item.position)
     }
 
+    pub fn get_room_settings_current(&self, session_id: SessionId) -> Option<Value> {
+        let room_key = self.room_key_of(session_id)?;
+        let room = self.rooms.get(&room_key)?;
+        Some(room.settings.to_current_json())
+    }
+
+    pub fn update_room_settings(&mut self, session_id: SessionId, data: &Value) -> Result<(), String> {
+        let room_key = self.room_key_of(session_id)
+            .ok_or_else(|| "Not in any room".to_string())?;
+        let room = self.rooms.get_mut(&room_key)
+            .ok_or_else(|| "Room not found".to_string())?;
+        room.settings.update_from_json(data)?;
+        Ok(())
+    }
+
     pub fn send_all<T: serde::Serialize>(
         &self,
         actor_session_id: SessionId,
@@ -361,6 +376,7 @@ impl RoomService {
             &mut dispatch,
         );
         if route as i32 == Routes::CREATE as i32 {
+            // CREATE response includes full settings (with min/max/current)
             dispatch.messages.push(Self::direct_response_with_data(
                 session_id,
                 route,
@@ -368,11 +384,12 @@ impl RoomService {
                 room_settings.to_full_json(),
             ));
         } else if route as i32 == Routes::JOIN as i32 {
+            // JOIN response only includes current values
             dispatch.messages.push(Self::direct_response_with_data(
                 session_id,
                 route,
                 WsResponseCode::JOINED,
-                room_settings.to_full_json(),
+                room_settings.to_current_json(),
             ));
         } else {
             self.push_ok_response(&mut dispatch, session_id, route);
@@ -651,7 +668,7 @@ impl RoomService {
         true
     }
 
-    fn error_response(&self, session_id: SessionId, route: Routes, code: WsResponseCode) -> Dispatch {
+    pub fn error_response(&self, session_id: SessionId, route: Routes, code: WsResponseCode) -> Dispatch {
         Dispatch {
             messages: vec![Self::direct_response(session_id, route, code)],
         }
@@ -666,7 +683,7 @@ impl RoomService {
         }
     }
 
-    fn direct_response_with_data(
+    pub fn direct_response_with_data(
         recipient: SessionId,
         _route: Routes,
         code: WsResponseCode,

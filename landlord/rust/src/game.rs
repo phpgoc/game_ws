@@ -182,7 +182,25 @@ impl GameHandler for LandlordGameHandler {
                 } else {
                     return room_service.unsupported_response(session_id, Routes::SETTING);
                 }
-                room_service.unsupported_response(session_id, Routes::SETTING)
+                
+                // Update settings and return current values
+                match room_service.update_room_settings(session_id, &request.data) {
+                    Ok(()) => {
+                        let mut dispatch = Dispatch::default();
+                        if let Some(current_settings) = room_service.get_room_settings_current(session_id) {
+                            dispatch.messages.push(RoomService::direct_response_with_data(
+                                session_id,
+                                Routes::SETTING,
+                                share_type_public::WsResponseCode::OK,
+                                current_settings,
+                            ));
+                        } else {
+                            return room_service.unsupported_response(session_id, Routes::SETTING);
+                        }
+                        dispatch
+                    }
+                    Err(_) => room_service.error_response(session_id, Routes::SETTING, share_type_public::WsResponseCode::ERROR_FORMAT),
+                }
             }
             Routes::DISBAND => {
                 // Only position 0 can disband the room
