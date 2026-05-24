@@ -117,32 +117,77 @@
         try {
           data = JSON.parse(event.data);
           
-          // Handle CREATE/JOIN response to update settings display
+          // Handle CREATE response (code 0 with full settings: {current, min, max})
+          if (data.code === 0 && data.data && typeof data.data === 'object') {
+            if (data.data.round_time && data.data.round_time.current !== undefined) {
+              // Full settings format (from CREATE)
+              updateSettingsDisplay(data.data, true);
+              updateSettingsRange(data.data);
+            }
+          }
+          
+          // Handle JOIN response (status JOINED with current values only)
           if (data.status === 'JOINED' && data.data) {
-            // JOIN response with JOINED status
-            const settings = data.data;
-            updateSettingsDisplay(settings);
-          } else if (data.code === 0 && data.data && typeof data.data === 'object' && (data.data.round_time || data.data.away_time || data.data.play_time || data.data.deal_time)) {
-            // CREATE response (code 0 with settings data)
-            const settings = data.data;
-            updateSettingsDisplay(settings);
+            // Current values format (from JOIN)
+            updateSettingsDisplay(data.data, false);
           }
         } catch (_) {}
         log("<= 收到消息", data);
       };
 
-      function updateSettingsDisplay(settings) {
-        if (settings.round_time && settings.round_time.default !== undefined) {
-          $("round_time").value = settings.round_time.default;
+      function updateSettingsDisplay(settings, isFullFormat) {
+        if (isFullFormat) {
+          // Full format: {current, min, max}
+          if (settings.round_time && settings.round_time.current !== undefined) {
+            $("round_time").value = settings.round_time.current;
+          }
+          if (settings.away_time && settings.away_time.current !== undefined) {
+            $("away_time").value = settings.away_time.current;
+          }
+          if (settings.play_time && settings.play_time.current !== undefined) {
+            $("play_time").value = settings.play_time.current;
+          }
+          if (settings.deal_time && settings.deal_time.current !== undefined) {
+            $("deal_time").value = settings.deal_time.current;
+          }
+        } else {
+          // Current values only format: {round_time: 30, away_time: 5, ...}
+          if (settings.round_time !== undefined) {
+            $("round_time").value = settings.round_time;
+          }
+          if (settings.away_time !== undefined) {
+            $("away_time").value = settings.away_time;
+          }
+          if (settings.play_time !== undefined) {
+            $("play_time").value = settings.play_time;
+          }
+          if (settings.deal_time !== undefined) {
+            $("deal_time").value = settings.deal_time;
+          }
         }
-        if (settings.away_time && settings.away_time.default !== undefined) {
-          $("away_time").value = settings.away_time.default;
+      }
+
+      function updateSettingsRange(settings) {
+        // Update min/max labels based on full settings from CREATE
+        if (settings.round_time) {
+          $("round_time_label").textContent = `${settings.round_time.min}~${settings.round_time.max}`;
+          $("round_time").min = settings.round_time.min;
+          $("round_time").max = settings.round_time.max;
         }
-        if (settings.play_time && settings.play_time.default !== undefined) {
-          $("play_time").value = settings.play_time.default;
+        if (settings.away_time) {
+          $("away_time_label").textContent = `${settings.away_time.min}~${settings.away_time.max}`;
+          $("away_time").min = settings.away_time.min;
+          $("away_time").max = settings.away_time.max;
         }
-        if (settings.deal_time && settings.deal_time.default !== undefined) {
-          $("deal_time").value = settings.deal_time.default;
+        if (settings.play_time) {
+          $("play_time_label").textContent = `${settings.play_time.min}~${settings.play_time.max}`;
+          $("play_time").min = settings.play_time.min;
+          $("play_time").max = settings.play_time.max;
+        }
+        if (settings.deal_time) {
+          $("deal_time_label").textContent = `${settings.deal_time.min}~${settings.deal_time.max}`;
+          $("deal_time").min = settings.deal_time.min;
+          $("deal_time").max = settings.deal_time.max;
         }
       }
     };
@@ -169,13 +214,14 @@
     };
 
     $("apply-settings").onclick = () => {
+      // SETTING request only sends current values
       const settings = {
-        round_time: { default: parseInt($("round_time").value), min: 20, max: 40 },
-        away_time: { default: parseInt($("away_time").value), min: 2, max: 5 },
-        play_time: { default: parseInt($("play_time").value), min: 100, max: 500 },
-        deal_time: { default: parseInt($("deal_time").value), min: 500, max: 4000 },
+        round_time: parseInt($("round_time").value),
+        away_time: parseInt($("away_time").value),
+        play_time: parseInt($("play_time").value),
+        deal_time: parseInt($("deal_time").value),
       };
-      send(ROUTES.SETTING, { settings });
+      send(ROUTES.SETTING, settings);
     };
 
     $("clear-log").onclick = () => {
