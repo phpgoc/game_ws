@@ -19,7 +19,7 @@ WS 子模块目录：
 在 `ws` 目录运行：
 
 ```bash
-cargo run -p ws_common -- --host 192.168.1.10 --port 9001
+cargo run -p landlord_ws_server -- --host 192.168.1.10 --port 9001
 ```
 
 参数规则：

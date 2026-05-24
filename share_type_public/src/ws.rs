@@ -7,14 +7,14 @@ use crate::games::SettingTrait;
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsRequest<T> {
-    pub code: Routes,
+    pub route: Routes,
     pub data: T,
 }
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsWithoutDataRequest {
-    pub code: Routes,
+    pub route: Routes,
 }
 
 
@@ -50,6 +50,12 @@ pub struct WsQuitEvent {
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsPauseEvent {
+    pub name: String,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsDisbandEvent {
     pub name: String,
 }
 

@@ -5,4 +5,5 @@ edition = "2024"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
+serde_repr = "0.1"
 typeshare = "1.0.5"

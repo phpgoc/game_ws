@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WS 房间测试页</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 16px; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+    input, button { padding: 6px 8px; font-size: 14px; }
+    input { min-width: 180px; }
+    button { cursor: pointer; }
+    #log { border: 1px solid #ddd; padding: 10px; min-height: 320px; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: #fafafa; }
+    .hint { color: #666; font-size: 13px; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+  <h3>WS 房间测试（create/join/quit/disband/message/pause）</h3>
+  <div class="hint">开多个标签页测试：相同 password 在同房间，广播只会发到同房间。</div>
+
+  <div class="row">
+    <input id="url" value="ws://127.0.0.1:9001" />
+    <button id="connect">连接</button>
+    <button id="disconnect">断开</button>
+  </div>
+
+  <div class="row">
+    <input id="name" placeholder="name" value="u1" />
+    <input id="password" placeholder="password(room key)" value="p1" />
+    <input id="message" placeholder="message" value="hello" />
+  </div>
+
+  <div class="row">
+    <button data-route="1" id="create">CREATE</button>
+    <button data-route="2" id="join">JOIN</button>
+    <button data-route="3" id="quit">QUIT</button>
+    <button data-route="7" id="disband">DISBAND</button>
+    <button data-route="4" id="send-message">MESSAGE</button>
+    <button data-route="5" id="pause">PAUSE</button>
+    <button id="clear-log">清空日志</button>
+  </div>
+
+  <div id="log"></div>
+
+  <script>
+    /** Routes */
+    const ROUTES = {
+      CREATE: 1,
+      JOIN: 2,
+      QUIT: 3,
+      MESSAGE: 4,
+      PAUSE: 5,
+      DISBAND: 7,
+    };
+
+    let ws = null;
+
+    const $ = (id) => document.getElementById(id);
+    const logEl = $("log");
+
+    function now() {
+      return new Date().toLocaleTimeString();
+    }
+
+    function log(line, obj) {
+      let text = `[${now()}] ${line}`;
+      if (obj !== undefined) {
+        text += `\n${JSON.stringify(obj, null, 2)}`;
+      }
+      logEl.textContent += `${text}\n\n`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function send(route, data) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        log("连接未建立，无法发送");
+        return;
+      }
+      const payload = { route, data };
+      ws.send(JSON.stringify(payload));
+      log("=> 发出请求", payload);
+    }
+
+    $("connect").onclick = () => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        log("已连接");
+        return;
+      }
+      const url = $("url").value.trim();
+      ws = new WebSocket(url);
+      ws.onopen = () => log(`已连接 ${url}`);
+      ws.onclose = () => log("连接已关闭");
+      ws.onerror = (e) => log("连接错误", { type: e.type });
+      ws.onmessage = (event) => {
+        let data = event.data;
+        try {
+          data = JSON.parse(event.data);
+        } catch (_) {}
+        log("<= 收到消息", data);
+      };
+    };
+
+    $("disconnect").onclick = () => {
+      if (ws) ws.close();
+    };
+
+    $("create").onclick = () => {
+      send(ROUTES.CREATE, { name: $("name").value.trim(), password: $("password").value.trim() });
+    };
+    $("join").onclick = () => {
+      send(ROUTES.JOIN, { name: $("name").value.trim(), password: $("password").value.trim() });
+    };
+    $("quit").onclick = () => send(ROUTES.QUIT, {});
+    $("disband").onclick = () => send(ROUTES.DISBAND, {});
+    $("pause").onclick = () => send(ROUTES.PAUSE, {});
+    $("send-message").onclick = () => {
+      send(ROUTES.MESSAGE, { message: $("message").value });
+    };
+
+    $("clear-log").onclick = () => {
+      logEl.textContent = "";
+    };
+  </script>
+</body>
+</html>

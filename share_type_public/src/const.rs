@@ -1,9 +1,9 @@
-use serde::{Deserialize, Serialize};
+use serde_repr::{Deserialize_repr, Serialize_repr};
 use typeshare::typeshare;
 
 #[typeshare]
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize_repr, Deserialize_repr)]
 #[allow(non_camel_case_types)]
 pub enum Routes {
     CREATE = 1,
@@ -14,6 +14,7 @@ pub enum Routes {
     RESUME = 6,
     DISBAND = 7,
     SETTING = 8,
+    START = 10,
 
     DEAL = 20,
     PLAY = 21,
@@ -28,7 +29,7 @@ pub enum Routes {
 
 #[typeshare]
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize_repr, Deserialize_repr)]
 #[allow(non_camel_case_types)]
 pub enum WsCode {
     JOIN = 2,
@@ -38,6 +39,7 @@ pub enum WsCode {
     RESUME = 6,
     DISBAND = 7,
     SETTING = 8,
+    START = 10,
 
     DEAL = 20,
     PLAY = 21,
@@ -54,12 +56,12 @@ pub enum WsCode {
 
 #[typeshare]
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize_repr, Deserialize_repr)]
 #[allow(non_camel_case_types)]
 pub enum WsResponse{
     OK = 0,
+    ERROR_FORMAT = 400,
     NOT_LOGIN = 401,
     NO_PERMISSION = 403,
     NOT_IN_RANGE = 410,
-    ILLEGAL_PLAY = 444,
 }

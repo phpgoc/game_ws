@@ -376,7 +376,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "serde",
+ "serde_json",
  "share_type_public",
+ "tokio",
+ "ws_common",
 ]
 
 [[package]]
@@ -588,6 +591,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_repr"
+version = "0.1.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "175ee3e80ae9982737ca543e96133087cbd9a485eecc3bc4de9c1a37b47ea59c"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "sha1"
 version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -612,6 +626,7 @@ name = "share_type_public"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "serde_repr",
  "typeshare",
 ]
 
@@ -1078,9 +1093,9 @@ dependencies = [
  "clap",
  "futures-util",
  "if-addrs",
- "landlord_ws_server",
  "serde",
  "serde_json",
+ "share_type_public",
  "thiserror",
  "tokio",
  "tokio-tungstenite",

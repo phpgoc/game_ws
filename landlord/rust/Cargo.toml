@@ -6,4 +6,7 @@ edition = "2024"
 [dependencies]
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 share_type_public = { path = "../../share_type_public" }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+ws_common = { path = "../../common/rust" }

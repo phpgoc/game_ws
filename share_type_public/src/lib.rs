@@ -7,6 +7,7 @@ pub use common::CommonEvent;
 pub use common::CommonWithoutDataEvent;
 pub use r#const::Routes;
 pub use r#const::WsCode;
+pub use r#const::WsResponse;
 pub use ws::SwapPositionPayload;
 pub use ws::WsCreateRequest;
 pub use ws::WsJoinRequest;
