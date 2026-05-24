@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
-use crate::r#const::Routes;
+use crate::r#const::{Routes, WsResponseCode};
 use crate::games::SettingTrait;
 
 #[typeshare]
@@ -15,6 +15,19 @@ pub struct WsRequest<T> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsWithoutDataRequest {
     pub route: Routes,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsResponse<T> {
+    pub code: WsResponseCode,
+    pub data: T,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsWithoutDataResponse {
+    pub code: WsResponseCode,
 }
 
 
@@ -35,9 +48,16 @@ pub struct WsJoinRequest {
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsJoinEvent<T: SettingTrait> {
-    pub name: String,
+pub struct WsJoinResponse<T: SettingTrait> {
     pub settings: T,
+}
+
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsJoinEvent {
+    pub name: String,
+    pub position: i32,
 }
 
 #[typeshare]
@@ -65,6 +85,12 @@ pub struct WsDisbandEvent {
 pub struct WsResumeEvent {
     pub name: String,
 
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsStartEvent {
+    pub name: String,
 }
 
 

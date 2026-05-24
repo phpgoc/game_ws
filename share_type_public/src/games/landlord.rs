@@ -6,7 +6,6 @@ use crate::games::{RoomPlayerLimit, SettingTrait};
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LandlordRoomSettings {
-    pub name: String,
     pub limits: RoomPlayerLimit,
 }
 

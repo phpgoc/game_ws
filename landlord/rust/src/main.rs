@@ -14,8 +14,8 @@ async fn main() {
 async fn run() -> anyhow::Result<()> {
     run_game_server_with_cli(
         "landlord",
-        Duration::from_secs(45),
-        LandlordGameHandler,
+        Duration::from_secs(120),
+        LandlordGameHandler::default(),
     )
     .await
 }

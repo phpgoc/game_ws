@@ -39,6 +39,7 @@ pub struct RuntimeConfig {
     pub service_name: &'static str,
     pub listen_addr: String,
     pub idle_timeout: Duration,
+    pub heartbeat_interval: Duration,
 }
 
 type SessionSender = mpsc::UnboundedSender<Message>;
@@ -67,6 +68,7 @@ where
         let room_service = Arc::clone(&room_service);
         let game_handler = Arc::clone(&game_handler);
         let idle_timeout = config.idle_timeout;
+        let heartbeat_interval = config.heartbeat_interval;
 
         tokio::spawn(async move {
             if let Err(err) = handle_connection(
@@ -74,6 +76,7 @@ where
                 peer,
                 session_id,
                 idle_timeout,
+                heartbeat_interval,
                 senders,
                 room_service,
                 game_handler,
@@ -106,6 +109,7 @@ where
             service_name,
             listen_addr: format!("{host}:{port}"),
             idle_timeout,
+            heartbeat_interval: Duration::from_secs(20),
         },
         handler,
     )
@@ -129,6 +133,7 @@ async fn handle_connection<H>(
     peer: SocketAddr,
     session_id: SessionId,
     idle_timeout: Duration,
+    heartbeat_interval: Duration,
     senders: SessionSenders,
     room_service: Arc<Mutex<RoomService>>,
     game_handler: Arc<Mutex<H>>,
@@ -139,6 +144,7 @@ where
     let ws = accept_async(stream).await?;
     let (mut sink, mut source) = ws.split();
     let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
+    let heartbeat_tx = tx.clone();
 
     senders.lock().await.insert(session_id, tx);
     room_service.lock().await.connect(session_id);
@@ -146,6 +152,15 @@ where
     let writer = tokio::spawn(async move {
         while let Some(frame) = rx.recv().await {
             if sink.send(frame).await.is_err() {
+                break;
+            }
+        }
+    });
+    let heartbeat = tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(heartbeat_interval);
+        loop {
+            ticker.tick().await;
+            if heartbeat_tx.send(Message::Ping(Vec::new().into())).is_err() {
                 break;
             }
         }
@@ -188,6 +203,7 @@ where
     let disconnect_dispatch = room_service.lock().await.disconnect(session_id);
     senders.lock().await.remove(&session_id);
     deliver(disconnect_dispatch, &senders).await?;
+    heartbeat.abort();
     writer.abort();
     Ok(())
 }

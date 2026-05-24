@@ -17,6 +17,8 @@ pub struct CommonWithoutDataEvent {
     pub code: WsCode,
 }
 
+
+
 #[cfg(test)]
 mod tests {
     #[test]

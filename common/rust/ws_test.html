@@ -15,7 +15,7 @@
   </style>
 </head>
 <body>
-  <h3>WS 房间测试（create/join/quit/disband/message/pause）</h3>
+  <h3>WS 房间测试（create/join/quit/disband/message/pause/resume）</h3>
   <div class="hint">开多个标签页测试：相同 password 在同房间，广播只会发到同房间。</div>
 
   <div class="row">
@@ -37,6 +37,7 @@
     <button data-route="7" id="disband">DISBAND</button>
     <button data-route="4" id="send-message">MESSAGE</button>
     <button data-route="5" id="pause">PAUSE</button>
+    <button data-route="6" id="resume">RESUME</button>
     <button id="clear-log">清空日志</button>
   </div>
 
@@ -50,6 +51,7 @@
       QUIT: 3,
       MESSAGE: 4,
       PAUSE: 5,
+      RESUME: 6,
       DISBAND: 7,
     };
 
@@ -113,6 +115,7 @@
     $("quit").onclick = () => send(ROUTES.QUIT, {});
     $("disband").onclick = () => send(ROUTES.DISBAND, {});
     $("pause").onclick = () => send(ROUTES.PAUSE, {});
+    $("resume").onclick = () => send(ROUTES.RESUME, {});
     $("send-message").onclick = () => {
       send(ROUTES.MESSAGE, { message: $("message").value });
     };
