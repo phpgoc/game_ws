@@ -183,18 +183,13 @@ impl GameHandler for LandlordGameHandler {
                     return room_service.unsupported_response(session_id, Routes::SETTING);
                 }
                 
-                // Update settings and return current values
+                // Update settings
                 match room_service.update_room_settings(session_id, &request.data) {
                     Ok(()) => {
                         let mut dispatch = Dispatch::default();
                         if let Some(current_settings) = room_service.get_room_settings_current(session_id) {
-                            // Send response to requester
-                            dispatch.messages.push(RoomService::direct_response_with_data(
-                                session_id,
-                                Routes::SETTING,
-                                share_type_public::WsResponseCode::OK,
-                                current_settings.clone(),
-                            ));
+                            // Send withoutData response to requester (just code OK)
+                            room_service.push_ok_response(&mut dispatch, session_id, Routes::SETTING);
                             
                             // Broadcast new settings to other room members
                             let player_name = room_service.session_name(session_id);
