@@ -188,12 +188,22 @@ impl GameHandler for LandlordGameHandler {
                     Ok(()) => {
                         let mut dispatch = Dispatch::default();
                         if let Some(current_settings) = room_service.get_room_settings_current(session_id) {
+                            // Send response to requester
                             dispatch.messages.push(RoomService::direct_response_with_data(
                                 session_id,
                                 Routes::SETTING,
                                 share_type_public::WsResponseCode::OK,
-                                current_settings,
+                                current_settings.clone(),
                             ));
+                            
+                            // Broadcast new settings to other room members
+                            let player_name = room_service.session_name(session_id);
+                            let _ = room_service.send_other(
+                                session_id,
+                                WsCode::SETTING,
+                                serde_json::json!({"name": player_name, "settings": current_settings}),
+                                &mut dispatch,
+                            );
                         } else {
                             return room_service.unsupported_response(session_id, Routes::SETTING);
                         }
