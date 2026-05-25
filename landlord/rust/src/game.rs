@@ -6,6 +6,7 @@ use share_type_public::{
     ws::WsStartEvent,
 };
 use tokio::sync::Mutex;
+use tokio_tungstenite::tungstenite::Message;
 use ws_common::{ClientRequest, Dispatch, GameHandler, RoomService, SessionId, SessionSenders};
 
 pub struct LandlordGameHandler {
@@ -49,8 +50,61 @@ pub fn build_room_settings(_room_key: &str) -> Box<dyn ws_common::GameSettings> 
             max: 4000,
         },
     };
-    
+
     Box::new(settings)
+}
+
+/// Called every tick when the room is active. Returns false to stop the loop.
+async fn on_game_tick(
+    counter: u64,
+    members: &[(SessionId, String, usize)],
+    senders: &SessionSenders,
+) {
+    let payload = serde_json::json!({ "code": 999, "data": { "count": counter } });
+    if let Ok(msg_str) = serde_json::to_string(&payload) {
+        let frame = Message::text(msg_str);
+        let senders = senders.lock().await;
+        for (session_id, _, _) in members {
+            if let Some(tx) = senders.get(session_id) {
+                let _ = tx.send(frame.clone());
+            }
+        }
+    }
+}
+
+/// Spawns the per-room game event loop. Stops when any player leaves.
+fn start_game_loop(
+    room_key: String,
+    initial_member_count: usize,
+    room_service: Arc<Mutex<RoomService>>,
+    senders: SessionSenders,
+) {
+    tokio::spawn(async move {
+        let mut counter = 0u64;
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(2));
+        loop {
+            interval.tick().await;
+
+            let (members, is_paused) = {
+                let room_svc = room_service.lock().await;
+                let members = room_svc.get_room_members(&room_key);
+                let is_paused = room_svc.is_room_paused(&room_key);
+                (members, is_paused)
+            };
+
+            // Stop if room is empty or any player has left
+            if members.is_empty() || members.len() < initial_member_count {
+                break;
+            }
+
+            if is_paused {
+                continue;
+            }
+
+            counter += 1;
+            on_game_tick(counter, &members, &senders).await;
+        }
+    });
 }
 
 impl GameHandler for LandlordGameHandler {
@@ -75,7 +129,6 @@ impl GameHandler for LandlordGameHandler {
     ) -> Dispatch {
         match request.route {
             Routes::START => {
-                // Only position 0 can start the game
                 if let Some(position) = room_service.session_position(session_id) {
                     if position != 0 {
                         return room_service.permission_denied_response(session_id, Routes::START);
@@ -93,51 +146,16 @@ impl GameHandler for LandlordGameHandler {
                 }
 
                 if let Some(room_key) = room_service.room_key_of(session_id) {
-                    // Start game event loop for this room
-                    if let (Some(room_service_arc), Some(senders_arc)) = (self.room_service.as_ref(), self.senders.as_ref()) {
-                        let room_key_clone = room_key.clone();
-                        let room_service_clone = Arc::clone(room_service_arc);
-                        let senders_clone = Arc::clone(senders_arc);
-                        
-                        tokio::spawn(async move {
-                            let mut counter = 0u64;
-                            let mut interval = tokio::time::interval(std::time::Duration::from_secs(2));
-                            loop {
-                                interval.tick().await;
-                                
-                                // Get current room members
-                                let (members, is_paused) = {
-                                    let room_svc = room_service_clone.lock().await;
-                                    let members = room_svc.get_room_members(&room_key_clone);
-                                    let is_paused = room_svc.is_room_paused(&room_key_clone);
-                                    (members, is_paused)
-                                };
-                                
-                                // Stop if no members left in the room
-                                if members.is_empty() {
-                                    break;
-                                }
-                                
-                                // Skip sending if room is paused
-                                if is_paused {
-                                    continue;
-                                }
-                                
-                                // Send test pulse to all room members
-                                counter += 1;
-                                let payload = serde_json::json!({ "code": 999, "data": { "count": counter } });
-                                if let Ok(msg_str) = serde_json::to_string(&payload) {
-                                    use tokio_tungstenite::tungstenite::Message;
-                                    let frame = Message::text(msg_str);
-                                    let senders = senders_clone.lock().await;
-                                    for (session_id, _, _) in &members {
-                                        if let Some(tx) = senders.get(session_id) {
-                                            let _ = tx.send(frame.clone());
-                                        }
-                                    }
-                                }
-                            }
-                        });
+                    let initial_member_count = room_service.get_room_members(&room_key).len();
+                    if let (Some(room_service_arc), Some(senders_arc)) =
+                        (self.room_service.as_ref(), self.senders.as_ref())
+                    {
+                        start_game_loop(
+                            room_key,
+                            initial_member_count,
+                            Arc::clone(room_service_arc),
+                            Arc::clone(senders_arc),
+                        );
                     }
                 }
 
@@ -148,33 +166,10 @@ impl GameHandler for LandlordGameHandler {
                     WsStartEvent { name: actor.clone() },
                     &mut dispatch,
                 );
-
-                let _ = room_service.send_other(
-                    session_id,
-                    WsCode::CHANGE_ROUND,
-                    serde_json::json!({ "started_by": actor }),
-                    &mut dispatch,
-                );
-                let _ = room_service.send_one_by_position(
-                    session_id,
-                    0,
-                    WsCode::CHANGE_ROUND,
-                    serde_json::json!({ "turn_position": 0 }),
-                    &mut dispatch,
-                );
-                let _ = room_service.send_one_by_name(
-                    session_id,
-                    &room_service.session_name(session_id),
-                    WsCode::CHANGE_ROUND,
-                    serde_json::json!({ "self_confirm": true }),
-                    &mut dispatch,
-                );
-
                 room_service.push_ok_response(&mut dispatch, session_id, Routes::START);
                 dispatch
             }
             Routes::SETTING => {
-                // Only position 0 can change settings
                 if let Some(position) = room_service.session_position(session_id) {
                     if position != 0 {
                         return room_service.permission_denied_response(session_id, Routes::SETTING);
@@ -182,16 +177,12 @@ impl GameHandler for LandlordGameHandler {
                 } else {
                     return room_service.unsupported_response(session_id, Routes::SETTING);
                 }
-                
-                // Update settings
+
                 match room_service.update_room_settings(session_id, &request.data) {
                     Ok(()) => {
                         let mut dispatch = Dispatch::default();
                         if let Some(current_settings) = room_service.get_room_settings_current(session_id) {
-                            // Send withoutData response to requester (just code OK)
                             room_service.push_ok_response(&mut dispatch, session_id, Routes::SETTING);
-                            
-                            // Broadcast new settings to other room members
                             let player_name = room_service.session_name(session_id);
                             let _ = room_service.send_other(
                                 session_id,
@@ -204,11 +195,14 @@ impl GameHandler for LandlordGameHandler {
                         }
                         dispatch
                     }
-                    Err(_) => room_service.error_response(session_id, Routes::SETTING, share_type_public::WsResponseCode::ERROR_FORMAT),
+                    Err(_) => room_service.error_response(
+                        session_id,
+                        Routes::SETTING,
+                        share_type_public::WsResponseCode::ERROR_FORMAT,
+                    ),
                 }
             }
             Routes::DISBAND => {
-                // Only position 0 can disband the room
                 if let Some(position) = room_service.session_position(session_id) {
                     if position != 0 {
                         return room_service.permission_denied_response(session_id, Routes::DISBAND);
@@ -222,3 +216,4 @@ impl GameHandler for LandlordGameHandler {
         }
     }
 }
+
