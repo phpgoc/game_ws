@@ -1,5 +1,6 @@
 pub mod broadcast;
 pub mod cli;
+pub mod game_state;
 pub mod net;
 pub mod room;
 pub mod runtime;
