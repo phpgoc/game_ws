@@ -2,6 +2,23 @@ use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 use crate::{GameParam, GameSettings};
 use serde_json::json;
+use serde_repr::{Deserialize_repr, Serialize_repr};
+
+#[typeshare]
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, Serialize_repr, Deserialize_repr)]
+#[allow(non_camel_case_types)]
+pub enum LandlordRoutes {
+    CALL_LANDLORD = 1001,
+}
+
+#[typeshare]
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, Serialize_repr, Deserialize_repr)]
+#[allow(non_camel_case_types)]
+pub enum LandlordWsCode {
+    CALL_LANDLORD = 1001,
+}
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -10,6 +27,17 @@ pub struct LandlordRoomSettings {
     pub away_time: GameParam,
     pub play_time: GameParam,
     pub deal_time: GameParam,
+}
+
+impl Default for LandlordRoomSettings {
+    fn default() -> Self {
+        Self {
+            round_time: GameParam { current: 30, min: 20, max: 40 },
+            away_time: GameParam { current: 5, min: 2, max: 5 },
+            play_time: GameParam { current: 300, min: 100, max: 500 },
+            deal_time: GameParam { current: 3000, min: 500, max: 4000 },
+        }
+    }
 }
 
 impl GameSettings for LandlordRoomSettings {
@@ -58,4 +86,56 @@ pub struct WsCallLandlordRequest {
 pub struct WsCallLandlordEvent {
     pub name: String,
     pub score: u8,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsDealRequest {
+    pub cards: Vec<i32>,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsDealEvent {
+    pub name: String,
+    pub cards: Vec<i32>,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsPlayRequest {
+    pub cards: Vec<i32>,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsPlayEvent {
+    pub name: String,
+    pub cards: Vec<i32>,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsDealOpenCardsEvent {
+    pub name: String,
+    pub cards: Vec<i32>,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsDealFaceDownCardsEvent {
+    pub cards: Vec<i32>,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsShowHiddenCardsEvent {
+    pub cards: Vec<String>,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsLandlordGameOverEvent {
+    pub winner: String,
+    pub is_landlord: bool,
 }

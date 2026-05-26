@@ -1,20 +1,20 @@
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
-use crate::r#const::{Routes, WsResponseCode};
+use crate::r#const::WsResponseCode;
 use crate::games::SettingTrait;
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsRequest<T> {
-    pub route: Routes,
+    pub route: i32,
     pub data: T,
 }
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsWithoutDataRequest {
-    pub route: Routes,
+    pub route: i32,
 }
 
 #[typeshare]
@@ -109,57 +109,15 @@ pub struct WsSettingEvent<T: SettingTrait> {
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsDealRequest {
-    pub cards: Vec<i32>,
-}
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsDealEvent {
-    pub name: String,
-    pub cards: Vec<i32>,
-}
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsPlayRequest {
-    pub cards: Vec<i32>,
-}
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsPlayEvent {
-    pub name: String,
-    pub cards: Vec<i32>,
-}
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsAwayEvent {
     pub name: String,
 }
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsDealOpenCardsEvent {
-    pub name : String,
-    pub cards: Vec<i32>,
+pub struct WsChangeTurnEvent {
+    pub position: i32,
 }
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsDealFaceDownCardsEvent {
-    pub cards: Vec<i32>,
-}
-
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsShowHiddenCardsEvent {
-    pub cards: Vec<String>,
-}
-
-
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]

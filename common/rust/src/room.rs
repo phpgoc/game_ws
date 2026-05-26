@@ -50,14 +50,27 @@ struct SessionState {
     position: Option<usize>,
 }
 
-#[derive(Debug)]
 struct RoomState {
     slots: HashMap<usize, SessionId>,
     settings: Box<dyn GameSettings>,
     min_players: usize,
     max_players: usize,
     paused: bool,
+    game: Option<Box<dyn crate::game_state::GameState>>,
 }
+
+impl std::fmt::Debug for RoomState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RoomState")
+            .field("slots", &self.slots)
+            .field("min_players", &self.min_players)
+            .field("max_players", &self.max_players)
+            .field("paused", &self.paused)
+            .field("game", &self.game.as_ref().map(|_| "<GameState>"))
+            .finish()
+    }
+}
+
 
 impl RoomService {
     pub fn connect(&mut self, session_id: SessionId) {
@@ -69,7 +82,7 @@ impl RoomService {
         let Some(mut session) = self.sessions.remove(&session_id) else {
             return dispatch;
         };
-        self.remove_from_current_room(session_id, &mut session, &mut dispatch, WsCode::QUIT);
+        self.remove_from_current_room(session_id, &mut session, &mut dispatch, WsCode::QUIT as i32);
         dispatch
     }
 
@@ -85,35 +98,35 @@ impl RoomService {
     {
         self.sessions.entry(session_id).or_default();
         match request.route {
-            Routes::CREATE => Some(self.handle_create_request(session_id, request.data.clone(), room_settings_builder, get_player_limits)),
-            Routes::JOIN => Some(self.handle_join_request(session_id, request.data.clone(), room_settings_builder, get_player_limits)),
-            Routes::QUIT => Some(self.handle_quit_request(session_id)),
-            Routes::DISBAND => Some(self.handle_disband_request(session_id)),
-            Routes::SETTING => Some(self.handle_setting_request(session_id, &request.data)),
-            Routes::MESSAGE => Some(self.handle_message_request(session_id, request.data.clone())),
-            Routes::PAUSE => Some(self.handle_pause_request(session_id)),
-            Routes::RESUME => Some(self.handle_resume_request(session_id)),
+            r if r == Routes::CREATE as i32 => Some(self.handle_create_request(session_id, request.data.clone(), room_settings_builder, get_player_limits)),
+            r if r == Routes::JOIN as i32 => Some(self.handle_join_request(session_id, request.data.clone(), room_settings_builder, get_player_limits)),
+            r if r == Routes::QUIT as i32 => Some(self.handle_quit_request(session_id)),
+            r if r == Routes::DISBAND as i32 => Some(self.handle_disband_request(session_id)),
+            r if r == Routes::SETTING as i32 => Some(self.handle_setting_request(session_id, &request.data)),
+            r if r == Routes::MESSAGE as i32 => Some(self.handle_message_request(session_id, request.data.clone())),
+            r if r == Routes::PAUSE as i32 => Some(self.handle_pause_request(session_id)),
+            r if r == Routes::RESUME as i32 => Some(self.handle_resume_request(session_id)),
             _ => None,
         }
     }
 
-    pub fn unsupported_response(&self, session_id: SessionId, route: Routes) -> Dispatch {
+    pub fn unsupported_response(&self, session_id: SessionId, route: i32) -> Dispatch {
         self.error_response(session_id, route, WsResponseCode::NOT_IN_RANGE)
     }
 
-    pub fn format_error_response(&self, session_id: SessionId, route: Routes) -> Dispatch {
+    pub fn format_error_response(&self, session_id: SessionId, route: i32) -> Dispatch {
         self.error_response(session_id, route, WsResponseCode::ERROR_FORMAT)
     }
 
-    pub fn permission_denied_response(&self, session_id: SessionId, route: Routes) -> Dispatch {
+    pub fn permission_denied_response(&self, session_id: SessionId, route: i32) -> Dispatch {
         self.error_response(session_id, route, WsResponseCode::NO_PERMISSION)
     }
 
-    pub fn ensure_in_room(&self, session_id: SessionId, route: Routes, dispatch: &mut Dispatch) -> bool {
+    pub fn ensure_in_room(&self, session_id: SessionId, route: i32, dispatch: &mut Dispatch) -> bool {
         self.require_login(session_id, route, dispatch)
     }
 
-    pub fn push_ok_response(&self, dispatch: &mut Dispatch, session_id: SessionId, route: Routes) {
+    pub fn push_ok_response(&self, dispatch: &mut Dispatch, session_id: SessionId, route: i32) {
         dispatch
             .messages
             .push(Self::direct_response(session_id, route, WsResponseCode::OK));
@@ -177,6 +190,31 @@ impl RoomService {
         Some(room.settings.to_current_json())
     }
 
+    pub fn get_room_settings_full(&self, room_key: &str) -> Option<Value> {
+        let room = self.rooms.get(room_key)?;
+        Some(room.settings.to_full_json())
+    }
+
+    pub fn set_room_game_state(&mut self, room_key: &str, game: Box<dyn crate::game_state::GameState>) {
+        if let Some(room) = self.rooms.get_mut(room_key) {
+            room.game = Some(game);
+        }
+    }
+
+    pub fn clear_room_game_state(&mut self, room_key: &str) {
+        if let Some(room) = self.rooms.get_mut(room_key) {
+            room.game = None;
+        }
+    }
+
+    /// Returns a snapshot of players tracked in the room's game state.
+    pub fn get_game_state_players(&self, room_key: &str) -> std::collections::HashMap<usize, (SessionId, String)> {
+        self.rooms.get(room_key)
+            .and_then(|r| r.game.as_ref())
+            .map(|g| g.players().clone())
+            .unwrap_or_default()
+    }
+
     pub fn update_room_settings(&mut self, session_id: SessionId, data: &Value) -> Result<(), String> {
         let room_key = self.room_key_of(session_id)
             .ok_or_else(|| "Not in any room".to_string())?;
@@ -189,7 +227,7 @@ impl RoomService {
     pub fn send_all<T: serde::Serialize>(
         &self,
         actor_session_id: SessionId,
-        code: WsCode,
+        code: i32,
         payload: T,
         dispatch: &mut Dispatch,
     ) -> bool {
@@ -199,7 +237,7 @@ impl RoomService {
     pub fn send_other<T: serde::Serialize>(
         &self,
         actor_session_id: SessionId,
-        code: WsCode,
+        code: i32,
         payload: T,
         dispatch: &mut Dispatch,
     ) -> bool {
@@ -210,7 +248,7 @@ impl RoomService {
         &self,
         actor_session_id: SessionId,
         name: &str,
-        code: WsCode,
+        code: i32,
         payload: T,
         dispatch: &mut Dispatch,
     ) -> bool {
@@ -241,7 +279,7 @@ impl RoomService {
         &self,
         actor_session_id: SessionId,
         position: usize,
-        code: WsCode,
+        code: i32,
         payload: T,
         dispatch: &mut Dispatch,
     ) -> bool {
@@ -268,13 +306,13 @@ impl RoomService {
         F: Fn(&str) -> Box<dyn GameSettings>,
     {
         if self.room_key_of(session_id).is_some() {
-            return self.error_response(session_id, Routes::CREATE, WsResponseCode::NO_PERMISSION);
+            return self.error_response(session_id, Routes::CREATE as i32, WsResponseCode::NO_PERMISSION);
         }
         let Ok(payload) = Self::parse::<WsCreateRequest>(data) else {
-            return self.error_response(session_id, Routes::CREATE, WsResponseCode::ERROR_FORMAT);
+            return self.error_response(session_id, Routes::CREATE as i32, WsResponseCode::ERROR_FORMAT);
         };
         if self.rooms.contains_key(&payload.password) {
-            return self.error_response(session_id, Routes::CREATE, WsResponseCode::NO_PERMISSION);
+            return self.error_response(session_id, Routes::CREATE as i32, WsResponseCode::NO_PERMISSION);
         }
         let settings = room_settings_builder(&payload.password);
         self.enter_room(
@@ -298,13 +336,13 @@ impl RoomService {
         F: Fn(&str) -> Box<dyn GameSettings>,
     {
         if self.room_key_of(session_id).is_some() {
-            return self.error_response(session_id, Routes::JOIN, WsResponseCode::NO_PERMISSION);
+            return self.error_response(session_id, Routes::JOIN as i32, WsResponseCode::NO_PERMISSION);
         }
         let Ok(payload) = Self::parse::<WsJoinRequest>(data) else {
-            return self.error_response(session_id, Routes::JOIN, WsResponseCode::ERROR_FORMAT);
+            return self.error_response(session_id, Routes::JOIN as i32, WsResponseCode::ERROR_FORMAT);
         };
         if !self.rooms.contains_key(&payload.password) {
-            return self.error_response(session_id, Routes::JOIN, WsResponseCode::NO_PERMISSION);
+            return self.error_response(session_id, Routes::JOIN as i32, WsResponseCode::NO_PERMISSION);
         }
         let settings = room_settings_builder(&payload.password);
         self.enter_room(
@@ -327,22 +365,22 @@ impl RoomService {
         get_player_limits: impl Fn() -> (usize, usize),
     ) -> Dispatch {
         if room_key.is_empty() || name.is_empty() {
-            return self.error_response(session_id, route, WsResponseCode::ERROR_FORMAT);
+            return self.error_response(session_id, route as i32, WsResponseCode::ERROR_FORMAT);
         }
 
         // Validate everything BEFORE any state mutation or event dispatch.
         let (room_settings, position, min_players, max_players) = if let Some(room) = self.rooms.get(&room_key) {
             if self.name_taken_in_room(&room_key, &name, Some(session_id)) {
-                return self.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
+                return self.error_response(session_id, route as i32, WsResponseCode::NO_PERMISSION);
             }
             let Some(position) = self.select_position(room, session_id) else {
-                return self.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
+                return self.error_response(session_id, route as i32, WsResponseCode::NO_PERMISSION);
             };
             (room.settings.clone(), position, room.min_players, room.max_players)
         } else {
             let (min_players, max_players) = get_player_limits();
             if max_players == 0 || min_players == 0 || min_players > max_players {
-                return self.error_response(session_id, route, WsResponseCode::ERROR_FORMAT);
+                return self.error_response(session_id, route as i32, WsResponseCode::ERROR_FORMAT);
             }
             (settings.clone(), 0, min_players, max_players)
         };
@@ -352,7 +390,7 @@ impl RoomService {
         let old_room = self.sessions.get(&session_id).and_then(|item| item.room_key.clone());
         if old_room.as_ref() != Some(&room_key) {
             let mut tmp = self.sessions.remove(&session_id).unwrap_or_default();
-            self.remove_from_current_room(session_id, &mut tmp, &mut dispatch, WsCode::QUIT);
+            self.remove_from_current_room(session_id, &mut tmp, &mut dispatch, WsCode::QUIT as i32);
             self.sessions.insert(session_id, tmp);
         }
 
@@ -362,8 +400,14 @@ impl RoomService {
             min_players,
             max_players,
             paused: false,
+            game: None,
         });
         room.slots.insert(position, session_id);
+
+        // Hook: notify game state of new player
+        if let Some(game) = room.game.as_mut() {
+            game.add_player(position, session_id, &name);
+        }
 
         {
             let session = self.sessions.entry(session_id).or_default();
@@ -374,7 +418,7 @@ impl RoomService {
 
         self.send_all(
             session_id,
-            WsCode::JOIN,
+            WsCode::JOIN as i32,
             json!({"name": name, "position": position as i32}),
             &mut dispatch,
         );
@@ -382,7 +426,7 @@ impl RoomService {
             // CREATE response includes full settings (with min/max/current)
             dispatch.messages.push(Self::direct_response_with_data(
                 session_id,
-                route,
+                route as i32,
                 WsResponseCode::OK,
                 room_settings.to_full_json(),
             ));
@@ -390,142 +434,142 @@ impl RoomService {
             // JOIN response only includes current values
             dispatch.messages.push(Self::direct_response_with_data(
                 session_id,
-                route,
+                route as i32,
                 WsResponseCode::JOINED,
                 room_settings.to_current_json(),
             ));
         } else {
-            self.push_ok_response(&mut dispatch, session_id, route);
+            self.push_ok_response(&mut dispatch, session_id, route as i32);
         }
         dispatch
     }
 
     fn handle_quit_request(&mut self, session_id: SessionId) -> Dispatch {
         let mut dispatch = Dispatch::default();
-        if !self.require_login(session_id, Routes::QUIT, &mut dispatch) {
+        if !self.require_login(session_id, Routes::QUIT as i32, &mut dispatch) {
             return dispatch;
         }
-        self.quit_room(session_id, &mut dispatch, WsCode::QUIT);
-        self.push_ok_response(&mut dispatch, session_id, Routes::QUIT);
+        self.quit_room(session_id, &mut dispatch, WsCode::QUIT as i32);
+        self.push_ok_response(&mut dispatch, session_id, Routes::QUIT as i32);
         dispatch
     }
 
     fn handle_disband_request(&mut self, session_id: SessionId) -> Dispatch {
         let mut dispatch = Dispatch::default();
-        if !self.require_login(session_id, Routes::DISBAND, &mut dispatch) {
+        if !self.require_login(session_id, Routes::DISBAND as i32, &mut dispatch) {
             return dispatch;
         }
         if self.session_position(session_id) != Some(0) {
-            return self.permission_denied_response(session_id, Routes::DISBAND);
+            return self.permission_denied_response(session_id, Routes::DISBAND as i32);
         }
         self.disband_room(session_id, &mut dispatch);
-        self.push_ok_response(&mut dispatch, session_id, Routes::DISBAND);
+        self.push_ok_response(&mut dispatch, session_id, Routes::DISBAND as i32);
         dispatch
     }
 
     fn handle_setting_request(&mut self, session_id: SessionId, data: &Value) -> Dispatch {
         let mut dispatch = Dispatch::default();
-        if !self.require_login(session_id, Routes::SETTING, &mut dispatch) {
+        if !self.require_login(session_id, Routes::SETTING as i32, &mut dispatch) {
             return dispatch;
         }
         if self.session_position(session_id) != Some(0) {
-            return self.permission_denied_response(session_id, Routes::SETTING);
+            return self.permission_denied_response(session_id, Routes::SETTING as i32);
         }
         match self.update_room_settings(session_id, data) {
             Ok(()) => {
                 let Some(current_settings) = self.get_room_settings_current(session_id) else {
-                    return self.error_response(session_id, Routes::SETTING, WsResponseCode::NOT_LOGIN);
+                    return self.error_response(session_id, Routes::SETTING as i32, WsResponseCode::NOT_LOGIN);
                 };
-                self.push_ok_response(&mut dispatch, session_id, Routes::SETTING);
+                self.push_ok_response(&mut dispatch, session_id, Routes::SETTING as i32);
                 let player_name = self.session_name(session_id);
                 self.send_other(
                     session_id,
-                    WsCode::SETTING,
+                    WsCode::SETTING as i32,
                     json!({"name": player_name, "settings": current_settings}),
                     &mut dispatch,
                 );
                 dispatch
             }
-            Err(_) => self.error_response(session_id, Routes::SETTING, WsResponseCode::ERROR_FORMAT),
+            Err(_) => self.error_response(session_id, Routes::SETTING as i32, WsResponseCode::ERROR_FORMAT),
         }
     }
 
     fn handle_message_request(&mut self, session_id: SessionId, data: Value) -> Dispatch {
         let mut dispatch = Dispatch::default();
-        if !self.require_login(session_id, Routes::MESSAGE, &mut dispatch) {
+        if !self.require_login(session_id, Routes::MESSAGE as i32, &mut dispatch) {
             return dispatch;
         }
         let Ok(payload) = Self::parse::<WsMessageRequest>(data) else {
-            return self.error_response(session_id, Routes::MESSAGE, WsResponseCode::ERROR_FORMAT);
+            return self.error_response(session_id, Routes::MESSAGE as i32, WsResponseCode::ERROR_FORMAT);
         };
         self.send_other(
             session_id,
-            WsCode::MESSAGE,
+            WsCode::MESSAGE as i32,
             WsMessageEvent {
                 name: self.session_name(session_id),
                 message: payload.message,
             },
             &mut dispatch,
         );
-        self.push_ok_response(&mut dispatch, session_id, Routes::MESSAGE);
+        self.push_ok_response(&mut dispatch, session_id, Routes::MESSAGE as i32);
         dispatch
     }
 
     fn handle_pause_request(&mut self, session_id: SessionId) -> Dispatch {
         let mut dispatch = Dispatch::default();
-        if !self.require_login(session_id, Routes::PAUSE, &mut dispatch) {
+        if !self.require_login(session_id, Routes::PAUSE as i32, &mut dispatch) {
             return dispatch;
         }
         let Some(room_key) = self.room_key_of(session_id) else {
-            return self.error_response(session_id, Routes::PAUSE, WsResponseCode::NOT_LOGIN);
+            return self.error_response(session_id, Routes::PAUSE as i32, WsResponseCode::NOT_LOGIN);
         };
         {
             let Some(room) = self.rooms.get_mut(&room_key) else {
-                return self.error_response(session_id, Routes::PAUSE, WsResponseCode::NOT_LOGIN);
+                return self.error_response(session_id, Routes::PAUSE as i32, WsResponseCode::NOT_LOGIN);
             };
             if room.paused {
-                return self.error_response(session_id, Routes::PAUSE, WsResponseCode::NO_PERMISSION);
+                return self.error_response(session_id, Routes::PAUSE as i32, WsResponseCode::NO_PERMISSION);
             }
             room.paused = true;
         }
         self.send_other(
             session_id,
-            WsCode::PAUSE,
+            WsCode::PAUSE as i32,
             WsPauseEvent {
                 name: self.session_name(session_id),
             },
             &mut dispatch,
         );
-        self.push_ok_response(&mut dispatch, session_id, Routes::PAUSE);
+        self.push_ok_response(&mut dispatch, session_id, Routes::PAUSE as i32);
         dispatch
     }
 
     fn handle_resume_request(&mut self, session_id: SessionId) -> Dispatch {
         let mut dispatch = Dispatch::default();
-        if !self.require_login(session_id, Routes::RESUME, &mut dispatch) {
+        if !self.require_login(session_id, Routes::RESUME as i32, &mut dispatch) {
             return dispatch;
         }
         let Some(room_key) = self.room_key_of(session_id) else {
-            return self.error_response(session_id, Routes::RESUME, WsResponseCode::NOT_LOGIN);
+            return self.error_response(session_id, Routes::RESUME as i32, WsResponseCode::NOT_LOGIN);
         };
         {
             let Some(room) = self.rooms.get_mut(&room_key) else {
-                return self.error_response(session_id, Routes::RESUME, WsResponseCode::NOT_LOGIN);
+                return self.error_response(session_id, Routes::RESUME as i32, WsResponseCode::NOT_LOGIN);
             };
             if !room.paused {
-                return self.error_response(session_id, Routes::RESUME, WsResponseCode::NO_PERMISSION);
+                return self.error_response(session_id, Routes::RESUME as i32, WsResponseCode::NO_PERMISSION);
             }
             room.paused = false;
         }
         self.send_other(
             session_id,
-            WsCode::RESUME,
+            WsCode::RESUME as i32,
             WsResumeEvent {
                 name: self.session_name(session_id),
             },
             &mut dispatch,
         );
-        self.push_ok_response(&mut dispatch, session_id, Routes::RESUME);
+        self.push_ok_response(&mut dispatch, session_id, Routes::RESUME as i32);
         dispatch
     }
 
@@ -533,7 +577,7 @@ impl RoomService {
         serde_json::from_value(value)
     }
 
-    fn require_login(&self, session_id: SessionId, route: Routes, dispatch: &mut Dispatch) -> bool {
+    fn require_login(&self, session_id: SessionId, route: i32, dispatch: &mut Dispatch) -> bool {
         let logged_in = self
             .sessions
             .get(&session_id)
@@ -580,7 +624,7 @@ impl RoomService {
         (0..room.max_players).find(|pos| !room.slots.contains_key(pos))
     }
 
-    fn quit_room(&mut self, session_id: SessionId, dispatch: &mut Dispatch, code: WsCode) {
+    fn quit_room(&mut self, session_id: SessionId, dispatch: &mut Dispatch, code: i32) {
         let Some(mut session) = self.sessions.remove(&session_id) else {
             return;
         };
@@ -598,7 +642,7 @@ impl RoomService {
 
         let actor = self.session_name(session_id);
         let event = CommonEvent {
-            code: WsCode::DISBAND,
+            code: WsCode::DISBAND as i32,
             data: serde_json::to_value(WsDisbandEvent { name: actor }).unwrap_or(Value::Null),
         };
 
@@ -622,7 +666,7 @@ impl RoomService {
         _session_id: SessionId,
         session: &mut SessionState,
         dispatch: &mut Dispatch,
-        code: WsCode,
+        code: i32,
     ) {
         let Some(room_key) = session.room_key.take() else {
             return;
@@ -637,18 +681,23 @@ impl RoomService {
         let mut recipients = Vec::new();
         if let Some(room) = self.rooms.get_mut(&room_key) {
             room.slots.remove(&position);
+            // Hook: notify game state of player removal
+            if let Some(game) = room.game.as_mut() {
+                game.remove_player(position);
+            }
             recipients.extend(room.slots.values().copied());
             if room.slots.is_empty() {
                 self.rooms.remove(&room_key);
             }
         }
 
-        let event = match code {
-            WsCode::QUIT => CommonEvent {
+        let event = if code == WsCode::QUIT as i32 {
+            CommonEvent {
                 code,
                 data: serde_json::to_value(WsQuitEvent { name }).unwrap_or(Value::Null),
-            },
-            _ => return,
+            }
+        } else {
+            return;
         };
 
         for recipient in recipients {
@@ -662,7 +711,7 @@ impl RoomService {
     fn broadcast_room_event<T: serde::Serialize>(
         &self,
         actor_session_id: SessionId,
-        code: WsCode,
+        code: i32,
         payload: T,
         include_self: bool,
         dispatch: &mut Dispatch,
@@ -689,7 +738,7 @@ impl RoomService {
     fn emit_to_recipient<T: serde::Serialize>(
         &self,
         recipient: SessionId,
-        code: WsCode,
+        code: i32,
         payload: T,
         dispatch: &mut Dispatch,
     ) -> bool {
@@ -701,13 +750,13 @@ impl RoomService {
         true
     }
 
-    pub fn error_response(&self, session_id: SessionId, route: Routes, code: WsResponseCode) -> Dispatch {
+    pub fn error_response(&self, session_id: SessionId, route: i32, code: WsResponseCode) -> Dispatch {
         Dispatch {
             messages: vec![Self::direct_response(session_id, route, code)],
         }
     }
 
-    fn direct_response(recipient: SessionId, _route: Routes, code: WsResponseCode) -> Delivery {
+    fn direct_response(recipient: SessionId, _route: i32, code: WsResponseCode) -> Delivery {
         Delivery {
             recipient,
             payload: OutboundPayload::Response(RequestResponse::WithoutData(WsWithoutDataResponse {
@@ -718,7 +767,7 @@ impl RoomService {
 
     pub fn direct_response_with_data(
         recipient: SessionId,
-        _route: Routes,
+        _route: i32,
         code: WsResponseCode,
         data: Value,
     ) -> Delivery {
@@ -737,12 +786,12 @@ mod tests {
 
     use super::{Dispatch, OutboundPayload, RequestResponse, RoomService};
 
-    fn recipients_of(code: WsCode, dispatch: &Dispatch) -> HashSet<u64> {
+    fn recipients_of(code: i32, dispatch: &Dispatch) -> HashSet<u64> {
         dispatch
             .messages
             .iter()
             .filter_map(|item| match &item.payload {
-                OutboundPayload::Event(event) if event.code as i32 == code as i32 => Some(item.recipient),
+                OutboundPayload::Event(event) if event.code == code => Some(item.recipient),
                 _ => None,
             })
             .collect()
@@ -780,7 +829,7 @@ mod tests {
         let _ = service.handle_common_request(
             1,
             &WsRequest {
-                route: Routes::CREATE,
+                route: Routes::CREATE as i32,
                 data: serde_json::json!({"name":"u1","password":"p1"}),
             },
             settings,
@@ -790,7 +839,7 @@ mod tests {
             .handle_common_request(
             2,
             &WsRequest {
-                route: Routes::JOIN,
+                route: Routes::JOIN as i32,
                 data: serde_json::json!({"name":"u2","password":"p1"}),
             },
             settings,
@@ -808,7 +857,7 @@ mod tests {
         });
         assert!(join_response_has_settings);
         let join_event_has_no_settings = join_dispatch.messages.iter().any(|item| match &item.payload {
-            OutboundPayload::Event(event) if event.code as i32 == WsCode::JOIN as i32 => {
+            OutboundPayload::Event(event) if event.code == WsCode::JOIN as i32 => {
                 event.data.get("settings").is_none() && event.data.get("position").is_some()
             }
             _ => false,
@@ -817,7 +866,7 @@ mod tests {
         let _ = service.handle_common_request(
             3,
             &WsRequest {
-                route: Routes::CREATE,
+                route: Routes::CREATE as i32,
                 data: serde_json::json!({"name":"u3","password":"p2"}),
             },
             settings,
@@ -828,40 +877,40 @@ mod tests {
             .handle_common_request(
                 1,
                 &WsRequest {
-                    route: Routes::MESSAGE,
+                    route: Routes::MESSAGE as i32,
                     data: serde_json::json!({"message":"hi"}),
                 },
                 settings,
                 || (3, 3),
             )
             .expect("message common");
-        assert_eq!(recipients_of(WsCode::MESSAGE, &message), [2_u64].into_iter().collect());
+        assert_eq!(recipients_of(WsCode::MESSAGE as i32, &message), [2_u64].into_iter().collect());
 
         let pause = service
             .handle_common_request(
                 1,
                 &WsRequest {
-                    route: Routes::PAUSE,
+                    route: Routes::PAUSE as i32,
                     data: serde_json::json!({}),
                 },
                 settings,
                 || (3, 3),
             )
             .expect("pause common");
-        assert_eq!(recipients_of(WsCode::PAUSE, &pause), [2_u64].into_iter().collect());
+        assert_eq!(recipients_of(WsCode::PAUSE as i32, &pause), [2_u64].into_iter().collect());
 
         let resume = service
             .handle_common_request(
                 1,
                 &WsRequest {
-                    route: Routes::RESUME,
+                    route: Routes::RESUME as i32,
                     data: serde_json::json!({}),
                 },
                 settings,
                 || (3, 3),
             )
             .expect("resume common");
-        assert_eq!(recipients_of(WsCode::RESUME, &resume), [2_u64].into_iter().collect());
+        assert_eq!(recipients_of(WsCode::RESUME as i32, &resume), [2_u64].into_iter().collect());
     }
 
     #[test]
@@ -875,7 +924,7 @@ mod tests {
         let _ = service.handle_common_request(
             1,
             &WsRequest {
-                route: Routes::CREATE,
+                route: Routes::CREATE as i32,
                 data: serde_json::json!({"name":"u1","password":"p1"}),
             },
             settings,
@@ -886,7 +935,7 @@ mod tests {
             .handle_common_request(
                 2,
                 &WsRequest {
-                    route: Routes::JOIN,
+                    route: Routes::JOIN as i32,
                     data: serde_json::json!({"name":"u1","password":"p1"}),
                 },
                 settings,
@@ -904,7 +953,7 @@ mod tests {
         let _ = service.handle_common_request(
             2,
             &WsRequest {
-                route: Routes::JOIN,
+                route: Routes::JOIN as i32,
                 data: serde_json::json!({"name":"u2","password":"p1"}),
             },
             settings,
@@ -913,7 +962,7 @@ mod tests {
         let _ = service.handle_common_request(
             3,
             &WsRequest {
-                route: Routes::JOIN,
+                route: Routes::JOIN as i32,
                 data: serde_json::json!({"name":"u3","password":"p1"}),
             },
             settings,
@@ -923,7 +972,7 @@ mod tests {
             .handle_common_request(
                 4,
                 &WsRequest {
-                    route: Routes::JOIN,
+                    route: Routes::JOIN as i32,
                     data: serde_json::json!({"name":"u4","password":"p1"}),
                 },
                 settings,
@@ -947,7 +996,7 @@ mod tests {
         let _ = service.handle_common_request(
             1,
             &WsRequest {
-                route: Routes::CREATE,
+                route: Routes::CREATE as i32,
                 data: serde_json::json!({"name":"u1","password":"p1"}),
             },
             settings,
@@ -958,7 +1007,7 @@ mod tests {
             .handle_common_request(
                 1,
                 &WsRequest {
-                    route: Routes::JOIN,
+                    route: Routes::JOIN as i32,
                     data: serde_json::json!({"name":"u1","password":"p1"}),
                 },
                 settings,
@@ -977,7 +1026,7 @@ mod tests {
             .handle_common_request(
                 1,
                 &WsRequest {
-                    route: Routes::CREATE,
+                    route: Routes::CREATE as i32,
                     data: serde_json::json!({"name":"u1","password":"p2"}),
                 },
                 settings,
@@ -1004,7 +1053,7 @@ mod tests {
         let _ = service.handle_common_request(
             1,
             &WsRequest {
-                route: Routes::CREATE,
+                route: Routes::CREATE as i32,
                 data: serde_json::json!({"name":"u1","password":"p1"}),
             },
             settings,
@@ -1013,7 +1062,7 @@ mod tests {
         let _ = service.handle_common_request(
             2,
             &WsRequest {
-                route: Routes::JOIN,
+                route: Routes::JOIN as i32,
                 data: serde_json::json!({"name":"u2","password":"p1"}),
             },
             settings,
@@ -1022,7 +1071,7 @@ mod tests {
         let _ = service.handle_common_request(
             3,
             &WsRequest {
-                route: Routes::JOIN,
+                route: Routes::JOIN as i32,
                 data: serde_json::json!({"name":"u3","password":"p1"}),
             },
             settings,
@@ -1032,7 +1081,7 @@ mod tests {
         let _ = service.handle_common_request(
             2,
             &WsRequest {
-                route: Routes::QUIT,
+                route: Routes::QUIT as i32,
                 data: serde_json::json!({}),
             },
             settings,
@@ -1043,7 +1092,7 @@ mod tests {
             .handle_common_request(
                 4,
                 &WsRequest {
-                    route: Routes::JOIN,
+                    route: Routes::JOIN as i32,
                     data: serde_json::json!({"name":"u4","password":"p1"}),
                 },
                 settings,
@@ -1052,7 +1101,7 @@ mod tests {
             .expect("join common");
 
         let reused = join4.messages.iter().any(|item| match &item.payload {
-            OutboundPayload::Event(event) if event.code as i32 == WsCode::JOIN as i32 => {
+            OutboundPayload::Event(event) if event.code == WsCode::JOIN as i32 => {
                 event.data.get("position").and_then(|v| v.as_i64()) == Some(1)
             }
             _ => false,
@@ -1069,7 +1118,7 @@ mod tests {
         let _ = service.handle_common_request(
             1,
             &WsRequest {
-                route: Routes::CREATE,
+                route: Routes::CREATE as i32,
                 data: serde_json::json!({"name":"u1","password":"p1"}),
             },
             settings,
@@ -1078,7 +1127,7 @@ mod tests {
         let _ = service.handle_common_request(
             2,
             &WsRequest {
-                route: Routes::JOIN,
+                route: Routes::JOIN as i32,
                 data: serde_json::json!({"name":"u2","password":"p1"}),
             },
             settings,
@@ -1089,7 +1138,7 @@ mod tests {
             .handle_common_request(
                 1,
                 &WsRequest {
-                    route: Routes::RESUME,
+                    route: Routes::RESUME as i32,
                     data: serde_json::json!({}),
                 },
                 settings,
@@ -1107,7 +1156,7 @@ mod tests {
         let _ = service.handle_common_request(
             1,
             &WsRequest {
-                route: Routes::PAUSE,
+                route: Routes::PAUSE as i32,
                 data: serde_json::json!({}),
             },
             settings,
@@ -1117,7 +1166,7 @@ mod tests {
             .handle_common_request(
                 1,
                 &WsRequest {
-                    route: Routes::PAUSE,
+                    route: Routes::PAUSE as i32,
                     data: serde_json::json!({}),
                 },
                 settings,
@@ -1143,7 +1192,7 @@ mod tests {
         let _ = service.handle_common_request(
             1,
             &WsRequest {
-                route: Routes::CREATE,
+                route: Routes::CREATE as i32,
                 data: serde_json::json!({"name":"u1","password":"p1"}),
             },
             settings,
@@ -1152,7 +1201,7 @@ mod tests {
         let _ = service.handle_common_request(
             2,
             &WsRequest {
-                route: Routes::JOIN,
+                route: Routes::JOIN as i32,
                 data: serde_json::json!({"name":"u2","password":"p1"}),
             },
             settings,
@@ -1161,7 +1210,7 @@ mod tests {
         let _ = service.handle_common_request(
             1,
             &WsRequest {
-                route: Routes::DISBAND,
+                route: Routes::DISBAND as i32,
                 data: serde_json::json!({}),
             },
             settings,
@@ -1172,7 +1221,7 @@ mod tests {
             .handle_common_request(
                 3,
                 &WsRequest {
-                    route: Routes::JOIN,
+                    route: Routes::JOIN as i32,
                     data: serde_json::json!({"name":"u3","password":"p1"}),
                 },
                 settings,
@@ -1191,7 +1240,7 @@ mod tests {
             .handle_common_request(
                 3,
                 &WsRequest {
-                    route: Routes::CREATE,
+                    route: Routes::CREATE as i32,
                     data: serde_json::json!({"name":"u3","password":"p1"}),
                 },
                 settings,

@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
 use serde::Serialize;
-use share_type_public::{CommonEvent, WsCode};
+use share_type_public::CommonEvent;
 use tokio::sync::Mutex;
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::{RoomService, SessionId, SessionSenders};
 
-fn build_event_frame<T: Serialize>(code: WsCode, payload: T) -> Option<Message> {
+fn build_event_frame<T: Serialize>(code: i32, payload: T) -> Option<Message> {
     let data = serde_json::to_value(payload).ok()?;
     let event = CommonEvent { code, data };
     let text = serde_json::to_string(&event).ok()?;
@@ -26,7 +26,7 @@ async fn send_to_sessions(session_ids: Vec<SessionId>, frame: Message, senders: 
 /// Send an event to every member in the room.
 pub async fn send_all<T: Serialize>(
     room_key: &str,
-    code: WsCode,
+    code: i32,
     payload: T,
     room_service: &Arc<Mutex<RoomService>>,
     senders: &SessionSenders,
@@ -46,7 +46,7 @@ pub async fn send_all<T: Serialize>(
 pub async fn send_except_one<T: Serialize>(
     room_key: &str,
     except: SessionId,
-    code: WsCode,
+    code: i32,
     payload: T,
     room_service: &Arc<Mutex<RoomService>>,
     senders: &SessionSenders,
@@ -66,7 +66,7 @@ pub async fn send_except_one<T: Serialize>(
 pub async fn send_to_name<T: Serialize>(
     room_key: &str,
     name: &str,
-    code: WsCode,
+    code: i32,
     payload: T,
     room_service: &Arc<Mutex<RoomService>>,
     senders: &SessionSenders,
@@ -86,7 +86,7 @@ pub async fn send_to_name<T: Serialize>(
 pub async fn send_to_position<T: Serialize>(
     room_key: &str,
     position: usize,
-    code: WsCode,
+    code: i32,
     payload: T,
     room_service: &Arc<Mutex<RoomService>>,
     senders: &SessionSenders,

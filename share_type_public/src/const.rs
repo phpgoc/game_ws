@@ -15,16 +15,13 @@ pub enum Routes {
     DISBAND = 7,
     SETTING = 8,
     START = 10,
+    AWAY = 12,
+    BACK = 13,
 
     DEAL = 20,
     PLAY = 21,
-    AWAY = 22,
-    DEAL_OPEN_CARDS = 23,
-    DEAL_FACE_DOWN_CARDS = 24,
 
     SHOW_HIDDEN_CARDS = 30,
-
-    CALL_LANDLORD = 1001,
 }
 
 #[typeshare]
@@ -40,20 +37,20 @@ pub enum WsCode {
     DISBAND = 7,
     SETTING = 8,
     START = 10,
+    GAME_OVER = 11,
+    AWAY = 12,
+    BACK = 13,
+
 
     DEAL = 20,
     PLAY = 21,
-    AWAY = 22,
-    DEAL_OPEN_CARDS = 23,
-    DEAL_FACE_DOWN_CARDS = 24,
-    CHANGE_ROUND = 25,
+    DEAL_OPEN_CARDS = 24,
+    DEAL_FACE_DOWN_CARDS = 25,
+    CHANGE_ROUND = 26,
 
     SHOW_HIDDEN_CARDS = 30,
 
     TEST_PULSE = 999,
-
-    CALL_LANDLORD = 1001,
-
 }
 
 #[typeshare]
