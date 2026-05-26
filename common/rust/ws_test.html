@@ -10,7 +10,7 @@
     input, button { padding: 6px 8px; font-size: 14px; }
     input { min-width: 180px; }
     button { cursor: pointer; }
-    #log { border: 1px solid #ddd; padding: 10px; min-height: 320px; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: #fafafa; }
+    #log { border: 1px solid #ddd; padding: 10px; height: 480px; overflow-y: auto; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: #fafafa; }
     .hint { color: #666; font-size: 13px; margin-bottom: 8px; }
   </style>
 </head>
@@ -19,7 +19,7 @@
   <div class="hint">开多个标签页测试：相同 password 在同房间，广播只会发到同房间。</div>
 
   <div class="row">
-    <input id="url" value="ws://127.0.0.1:9001" />
+    <input id="url" value="ws://127.0.0.1:9001" onclick="this.select()" />
     <button id="connect">连接</button>
     <button id="disconnect">断开</button>
   </div>

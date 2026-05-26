@@ -32,6 +32,11 @@ pub trait GameHandler: Send + 'static {
     fn get_player_limits(&self) -> (usize, usize) {
         (1, usize::MAX)
     }
+    /// Called after a room is successfully created.
+    /// Return Some to attach game state immediately so JOIN/QUIT hooks work.
+    fn build_game_state(&self) -> Option<Box<dyn crate::game_state::GameState>> {
+        None
+    }
     fn set_context(&mut self, _senders: SessionSenders, _room_service: Arc<Mutex<RoomService>>) {
         // Optional: override in games that need access to senders/room_service for event loops
     }
@@ -207,6 +212,17 @@ where
                 |room_key| handler.build_room_settings(room_key),
                 || handler.get_player_limits(),
             ) {
+                // After a successful CREATE, attach game state so JOIN/QUIT hooks work
+                if request.route == share_type_public::Routes::CREATE as i32 {
+                    if let Some(room_key) = room.room_key_of(session_id) {
+                        if let Some(mut gs) = handler.build_game_state() {
+                            for (sid, name, pos) in room.get_room_members(&room_key) {
+                                gs.add_player(pos, sid, &name);
+                            }
+                            room.set_room_game_state(&room_key, gs);
+                        }
+                    }
+                }
                 dispatch
             } else {
                 handler.handle_game_request(&mut room, session_id, request)
