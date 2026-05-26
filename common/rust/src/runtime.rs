@@ -60,7 +60,7 @@ where
     let listener = TcpListener::bind(&config.listen_addr)
         .await
         .with_context(|| format!("bind {} failed", config.listen_addr))?;
-    info!(service = config.service_name, listen = %config.listen_addr, "ws server started");
+    info!(service = config.service_name, listen = %format!(" ws://{}", config.listen_addr), "ws server started");
 
     let senders: SessionSenders = Arc::new(Mutex::new(HashMap::new()));
     let room_service = Arc::new(Mutex::new(RoomService::default()));

@@ -330,14 +330,7 @@ impl RoomService {
             return self.error_response(session_id, route, WsResponseCode::ERROR_FORMAT);
         }
 
-        let mut dispatch = Dispatch::default();
-        let old_room = self.sessions.get(&session_id).and_then(|item| item.room_key.clone());
-        if old_room.as_ref() != Some(&room_key) {
-            let mut tmp = self.sessions.remove(&session_id).unwrap_or_default();
-            self.remove_from_current_room(session_id, &mut tmp, &mut dispatch, WsCode::QUIT);
-            self.sessions.insert(session_id, tmp);
-        }
-
+        // Validate everything BEFORE any state mutation or event dispatch.
         let (room_settings, position, min_players, max_players) = if let Some(room) = self.rooms.get(&room_key) {
             if self.name_taken_in_room(&room_key, &name, Some(session_id)) {
                 return self.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
@@ -353,6 +346,15 @@ impl RoomService {
             }
             (settings.clone(), 0, min_players, max_players)
         };
+
+        // All checks passed — now mutate state and build dispatch.
+        let mut dispatch = Dispatch::default();
+        let old_room = self.sessions.get(&session_id).and_then(|item| item.room_key.clone());
+        if old_room.as_ref() != Some(&room_key) {
+            let mut tmp = self.sessions.remove(&session_id).unwrap_or_default();
+            self.remove_from_current_room(session_id, &mut tmp, &mut dispatch, WsCode::QUIT);
+            self.sessions.insert(session_id, tmp);
+        }
 
         let room = self.rooms.entry(room_key.clone()).or_insert_with(|| RoomState {
             slots: HashMap::new(),
