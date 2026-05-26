@@ -3,11 +3,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use share_type_public::{
-    Routes, WsCode, GameSettings, WsChangeTurnEvent,
+    Routes, WsCode, GameSettings, WsPositionEvent,
     LandlordRoutes, LandlordWsCode,
     WsDealEvent, WsDealFaceDownCardsEvent, WsDealOpenCardsEvent, WsPlayEvent, WsLandlordGameOverEvent,
     games::landlord::{LandlordRoomSettings, WsCallLandlordEvent},
-    ws::{WsAwayEvent, WsStartEvent},
 };
 use tokio::sync::{mpsc, Mutex};
 use ws_common::{ClientRequest, Dispatch, GameHandler, RoomService, SessionId, SessionSenders};
@@ -167,7 +166,7 @@ async fn call_landlord_phase(
         // Announce whose turn it is
         ws_common::send_all(
             room_key, WsCode::CHANGE_ROUND as i32,
-            WsChangeTurnEvent { position: pos as i32 },
+            WsPositionEvent { position: pos as i32 },
             room_service, senders,
         ).await;
 
@@ -179,7 +178,7 @@ async fn call_landlord_phase(
                 // Timeout — auto-pass, already marked away in wait_for_turn
                 ws_common::send_all(
                     room_key, WsCode::AWAY as i32,
-                    WsAwayEvent { name: name.clone() },
+                    WsPositionEvent { position: pos as i32 },
                     room_service, senders,
                 ).await;
                 0
@@ -244,7 +243,7 @@ async fn play_phase(
 
         ws_common::send_all(
             room_key, WsCode::CHANGE_ROUND as i32,
-            WsChangeTurnEvent { position: pos as i32 },
+            WsPositionEvent { position: pos as i32 },
             room_service, senders,
         ).await;
 
@@ -256,7 +255,7 @@ async fn play_phase(
                 // Timeout — auto-play first card, already marked away
                 ws_common::send_all(
                     room_key, WsCode::AWAY as i32,
-                    WsAwayEvent { name: name.clone() },
+                    WsPositionEvent { position: pos as i32 },
                     room_service, senders,
                 ).await;
                 let s = state.lock().unwrap();
@@ -424,11 +423,10 @@ impl GameHandler for LandlordGameHandler {
                         );
                     }
 
-                    let actor = room_service.session_name(session_id);
                     room_service.send_all(
                         session_id,
                         WsCode::START as i32,
-                        WsStartEvent { name: actor },
+                        serde_json::json!({}),
                         &mut dispatch,
                     );
                     room_service.push_ok_response(&mut dispatch, session_id, Routes::START as i32);

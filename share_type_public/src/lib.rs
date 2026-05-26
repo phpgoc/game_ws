@@ -21,7 +21,7 @@ pub use ws::WsRequest;
 pub use ws::WsResponse;
 pub use ws::WsWithoutDataResponse;
 pub use ws::WsWithoutDataRequest;
-pub use ws::WsChangeTurnEvent;
+pub use ws::WsPositionEvent;
 pub use settings::{GameSettings, GameParam};
 pub use games::landlord::LandlordRoutes;
 pub use games::landlord::LandlordWsCode;

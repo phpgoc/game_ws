@@ -17,6 +17,7 @@ pub enum Routes {
     START = 10,
     AWAY = 12,
     BACK = 13,
+    SWAP = 14,
 
     DEAL = 20,
     PLAY = 21,
@@ -40,7 +41,7 @@ pub enum WsCode {
     GAME_OVER = 11,
     AWAY = 12,
     BACK = 13,
-
+    SWAP = 14,
 
     DEAL = 20,
     PLAY = 21,

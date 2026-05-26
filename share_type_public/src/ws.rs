@@ -89,33 +89,13 @@ pub struct WsResumeEvent {
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsStartEvent {
-    pub name: String,
-}
-
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsSettingRequest<T: SettingTrait> {
-    pub settings: T,
-}
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsSettingEvent<T: SettingTrait> {
-    pub name: String,
     pub settings: T,
 }
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsAwayEvent {
-    pub name: String,
-}
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsChangeTurnEvent {
+pub struct WsPositionEvent {
     pub position: i32,
 }
 
@@ -139,6 +119,6 @@ pub struct WsMessageEvent {
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SwapPositionPayload {
-    pub a: String,
-    pub b: String,
+    pub a: usize,
+    pub b: usize,
 }

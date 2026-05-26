@@ -15,19 +15,19 @@
   </style>
 </head>
 <body>
-  <h3>WS 房间测试（create/join/quit/disband/message/pause/resume）</h3>
+  <h3>WS 房间测试（create/join/quit/disband/message/pause/resume/away/back/swap）</h3>
   <div class="hint">开多个标签页测试：相同 password 在同房间，广播只会发到同房间。</div>
 
   <div class="row">
-    <input id="url" value="ws://127.0.0.1:9001" onclick="this.select()" />
+    <input id="url" aria-label="服务器地址" value="ws://127.0.0.1:9001" onclick="this.select()" />
     <button id="connect">连接</button>
     <button id="disconnect">断开</button>
   </div>
 
   <div class="row">
-    <input id="name" placeholder="name" value="u1" />
-    <input id="password" placeholder="password(room key)" value="p1" />
-    <input id="message" placeholder="message" value="hello" />
+    <input id="name" aria-label="用户名" placeholder="name" value="u1" />
+    <input id="password" aria-label="房间密码" placeholder="password(room key)" value="p1" />
+    <input id="message" aria-label="消息内容" placeholder="message" value="hello" />
   </div>
 
   <div class="row">
@@ -39,7 +39,15 @@
     <button data-route="5" id="pause">PAUSE</button>
     <button data-route="6" id="resume">RESUME</button>
     <button data-route="10" id="start">START</button>
+    <button data-route="12" id="away">AWAY</button>
+    <button data-route="13" id="back">BACK</button>
     <button id="clear-log">清空日志</button>
+  </div>
+
+  <div class="row">
+    <label>swap a: <input id="swap-target-a" type="number" min="0" value="2" style="width: 60px;" /></label>
+    <label>swap b: <input id="swap-target-b" type="number" min="0" value="2" style="width: 60px;" /></label>
+    <button data-route="14" id="swap">SWAP</button>
   </div>
 
   <div class="row">
@@ -72,12 +80,25 @@
       DISBAND: 7,
       SETTING: 8,
       START: 10,
+      AWAY: 12,
+      BACK: 13,
+      SWAP: 14,
     };
 
     let ws = null;
 
     const $ = (id) => document.getElementById(id);
     const logEl = $("log");
+
+    // Cache settings inputs to avoid duplicate selector warnings
+    const elRoundTime  = $("round_time");
+    const elAwayTime   = $("away_time");
+    const elPlayTime   = $("play_time");
+    const elDealTime   = $("deal_time");
+    const elRoundLabel = $("round_time_label");
+    const elAwayLabel  = $("away_time_label");
+    const elPlayLabel  = $("play_time_label");
+    const elDealLabel  = $("deal_time_label");
 
     function now() {
       return new Date().toLocaleTimeString();
@@ -137,57 +158,38 @@
 
       function updateSettingsDisplay(settings, isFullFormat) {
         if (isFullFormat) {
-          // Full format: {current, min, max}
-          if (settings.round_time && settings.round_time.current !== undefined) {
-            $("round_time").value = settings.round_time.current;
-          }
-          if (settings.away_time && settings.away_time.current !== undefined) {
-            $("away_time").value = settings.away_time.current;
-          }
-          if (settings.play_time && settings.play_time.current !== undefined) {
-            $("play_time").value = settings.play_time.current;
-          }
-          if (settings.deal_time && settings.deal_time.current !== undefined) {
-            $("deal_time").value = settings.deal_time.current;
-          }
+          if (settings.round_time) elRoundTime.value = settings.round_time.current;
+          if (settings.away_time)  elAwayTime.value  = settings.away_time.current;
+          if (settings.play_time)  elPlayTime.value  = settings.play_time.current;
+          if (settings.deal_time)  elDealTime.value  = settings.deal_time.current;
         } else {
-          // Current values only format: {round_time: 30, away_time: 5, ...}
-          if (settings.round_time !== undefined) {
-            $("round_time").value = settings.round_time;
-          }
-          if (settings.away_time !== undefined) {
-            $("away_time").value = settings.away_time;
-          }
-          if (settings.play_time !== undefined) {
-            $("play_time").value = settings.play_time;
-          }
-          if (settings.deal_time !== undefined) {
-            $("deal_time").value = settings.deal_time;
-          }
+          if (settings.round_time !== undefined) elRoundTime.value = settings.round_time;
+          if (settings.away_time  !== undefined) elAwayTime.value  = settings.away_time;
+          if (settings.play_time  !== undefined) elPlayTime.value  = settings.play_time;
+          if (settings.deal_time  !== undefined) elDealTime.value  = settings.deal_time;
         }
       }
 
       function updateSettingsRange(settings) {
-        // Update min/max labels based on full settings from CREATE
         if (settings.round_time) {
-          $("round_time_label").textContent = `${settings.round_time.min}~${settings.round_time.max}`;
-          $("round_time").min = settings.round_time.min;
-          $("round_time").max = settings.round_time.max;
+          elRoundLabel.textContent = `${settings.round_time.min}~${settings.round_time.max}`;
+          elRoundTime.min = settings.round_time.min;
+          elRoundTime.max = settings.round_time.max;
         }
         if (settings.away_time) {
-          $("away_time_label").textContent = `${settings.away_time.min}~${settings.away_time.max}`;
-          $("away_time").min = settings.away_time.min;
-          $("away_time").max = settings.away_time.max;
+          elAwayLabel.textContent = `${settings.away_time.min}~${settings.away_time.max}`;
+          elAwayTime.min = settings.away_time.min;
+          elAwayTime.max = settings.away_time.max;
         }
         if (settings.play_time) {
-          $("play_time_label").textContent = `${settings.play_time.min}~${settings.play_time.max}`;
-          $("play_time").min = settings.play_time.min;
-          $("play_time").max = settings.play_time.max;
+          elPlayLabel.textContent = `${settings.play_time.min}~${settings.play_time.max}`;
+          elPlayTime.min = settings.play_time.min;
+          elPlayTime.max = settings.play_time.max;
         }
         if (settings.deal_time) {
-          $("deal_time_label").textContent = `${settings.deal_time.min}~${settings.deal_time.max}`;
-          $("deal_time").min = settings.deal_time.min;
-          $("deal_time").max = settings.deal_time.max;
+          elDealLabel.textContent = `${settings.deal_time.min}~${settings.deal_time.max}`;
+          elDealTime.min = settings.deal_time.min;
+          elDealTime.max = settings.deal_time.max;
         }
       }
     };
@@ -209,19 +211,22 @@
     $("send-message").onclick = () => {
       send(ROUTES.MESSAGE, { message: $("message").value });
     };
-    $("start").onclick = () => {
-      send(ROUTES.START, {});
+    $("start").onclick = () => send(ROUTES.START, {});
+    $("away").onclick = () => send(ROUTES.AWAY, {});
+    $("back").onclick = () => send(ROUTES.BACK, {});
+    $("swap").onclick = () => {
+      const a = parseInt($("swap-target-a").value);
+      const b = parseInt($("swap-target-b").value);
+      send(ROUTES.SWAP, { a, b });
     };
 
     $("apply-settings").onclick = () => {
-      // SETTING request only sends current values
-      const settings = {
-        round_time: parseInt($("round_time").value),
-        away_time: parseInt($("away_time").value),
-        play_time: parseInt($("play_time").value),
-        deal_time: parseInt($("deal_time").value),
-      };
-      send(ROUTES.SETTING, settings);
+      send(ROUTES.SETTING, {
+        round_time: parseInt(elRoundTime.value),
+        away_time:  parseInt(elAwayTime.value),
+        play_time:  parseInt(elPlayTime.value),
+        deal_time:  parseInt(elDealTime.value),
+      });
     };
 
     $("clear-log").onclick = () => {
