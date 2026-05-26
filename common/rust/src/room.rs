@@ -6,7 +6,7 @@ use share_type_public::{
     CommonEvent, Routes, WsCode, WsCreateRequest, WsJoinRequest, WsMessageRequest, WsRequest,
     WsResponseCode, WsWithoutDataResponse, GameSettings, WsPositionEvent, SwapPositionPayload,
     ws::WsResponse,
-    ws::{WsDisbandEvent, WsMessageEvent, WsPauseEvent, WsQuitEvent, WsResumeEvent},
+    ws::{WsMessageEvent, WsNameEvent},
 };
 
 pub type SessionId = u64;
@@ -537,7 +537,7 @@ impl RoomService {
         self.send_other(
             session_id,
             WsCode::PAUSE as i32,
-            WsPauseEvent {
+            WsNameEvent {
                 name: self.session_name(session_id),
             },
             &mut dispatch,
@@ -566,7 +566,7 @@ impl RoomService {
         self.send_other(
             session_id,
             WsCode::RESUME as i32,
-            WsResumeEvent {
+            WsNameEvent {
                 name: self.session_name(session_id),
             },
             &mut dispatch,
@@ -769,7 +769,7 @@ impl RoomService {
         let actor = self.session_name(session_id);
         let event = CommonEvent {
             code: WsCode::DISBAND as i32,
-            data: serde_json::to_value(WsDisbandEvent { name: actor }).unwrap_or(Value::Null),
+            data: serde_json::to_value(WsNameEvent { name: actor }).unwrap_or(Value::Null),
         };
 
         for member in room.slots.values() {
@@ -820,7 +820,7 @@ impl RoomService {
         let event = if code == WsCode::QUIT as i32 {
             CommonEvent {
                 code,
-                data: serde_json::to_value(WsQuitEvent { name }).unwrap_or(Value::Null),
+                data: serde_json::to_value(WsNameEvent { name }).unwrap_or(Value::Null),
             }
         } else {
             return;
@@ -882,10 +882,11 @@ impl RoomService {
         }
     }
 
-    fn direct_response(recipient: SessionId, _route: i32, code: WsResponseCode) -> Delivery {
+    fn direct_response(recipient: SessionId, route: i32, code: WsResponseCode) -> Delivery {
         Delivery {
             recipient,
             payload: OutboundPayload::Response(RequestResponse::WithoutData(WsWithoutDataResponse {
+                route,
                 code,
             })),
         }
@@ -893,13 +894,13 @@ impl RoomService {
 
     pub fn direct_response_with_data(
         recipient: SessionId,
-        _route: i32,
+        route: i32,
         code: WsResponseCode,
         data: Value,
     ) -> Delivery {
         Delivery {
             recipient,
-            payload: OutboundPayload::Response(RequestResponse::WithData(WsResponse { code, data })),
+            payload: OutboundPayload::Response(RequestResponse::WithData(WsResponse { route, code, data })),
         }
     }
 }

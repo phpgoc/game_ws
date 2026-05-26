@@ -47,7 +47,7 @@ pub enum WsCode {
     PLAY = 21,
     DEAL_OPEN_CARDS = 24,
     DEAL_FACE_DOWN_CARDS = 25,
-    CHANGE_ROUND = 26,
+    CHANGE_DEAL = 26,
 
     SHOW_HIDDEN_CARDS = 30,
 

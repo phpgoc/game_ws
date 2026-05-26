@@ -20,6 +20,7 @@ pub struct WsWithoutDataRequest {
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsResponse<T> {
+    pub route: i32,
     pub code: WsResponseCode,
     pub data: T,
 }
@@ -27,6 +28,7 @@ pub struct WsResponse<T> {
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsWithoutDataResponse {
+    pub route: i32,
     pub code: WsResponseCode,
 }
 
@@ -62,29 +64,8 @@ pub struct WsJoinEvent {
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsQuitEvent {
+pub struct WsNameEvent {
     pub name: String,
-}
-
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsPauseEvent {
-    pub name: String,
-}
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsDisbandEvent {
-    pub name: String,
-}
-
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsResumeEvent {
-    pub name: String,
-
 }
 
 #[typeshare]
