@@ -17,6 +17,13 @@ pub struct CommonWithoutDataEvent {
     pub code: WsCode,
 }
 
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommonResponse<T> {
+    pub code: i32,
+    pub data: T,
+}
+
 
 
 #[cfg(test)]

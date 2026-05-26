@@ -6,6 +6,7 @@ pub mod settings;
 
 pub use common::CommonEvent;
 pub use common::CommonWithoutDataEvent;
+pub use common::CommonResponse;
 pub use r#const::Routes;
 pub use r#const::WsCode;
 pub use r#const::WsResponseCode;

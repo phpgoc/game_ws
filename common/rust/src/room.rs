@@ -89,6 +89,7 @@ impl RoomService {
             Routes::JOIN => Some(self.handle_join_request(session_id, request.data.clone(), room_settings_builder, get_player_limits)),
             Routes::QUIT => Some(self.handle_quit_request(session_id)),
             Routes::DISBAND => Some(self.handle_disband_request(session_id)),
+            Routes::SETTING => Some(self.handle_setting_request(session_id, &request.data)),
             Routes::MESSAGE => Some(self.handle_message_request(session_id, request.data.clone())),
             Routes::PAUSE => Some(self.handle_pause_request(session_id)),
             Routes::RESUME => Some(self.handle_resume_request(session_id)),
@@ -412,9 +413,39 @@ impl RoomService {
         if !self.require_login(session_id, Routes::DISBAND, &mut dispatch) {
             return dispatch;
         }
+        if self.session_position(session_id) != Some(0) {
+            return self.permission_denied_response(session_id, Routes::DISBAND);
+        }
         self.disband_room(session_id, &mut dispatch);
         self.push_ok_response(&mut dispatch, session_id, Routes::DISBAND);
         dispatch
+    }
+
+    fn handle_setting_request(&mut self, session_id: SessionId, data: &Value) -> Dispatch {
+        let mut dispatch = Dispatch::default();
+        if !self.require_login(session_id, Routes::SETTING, &mut dispatch) {
+            return dispatch;
+        }
+        if self.session_position(session_id) != Some(0) {
+            return self.permission_denied_response(session_id, Routes::SETTING);
+        }
+        match self.update_room_settings(session_id, data) {
+            Ok(()) => {
+                let Some(current_settings) = self.get_room_settings_current(session_id) else {
+                    return self.error_response(session_id, Routes::SETTING, WsResponseCode::NOT_LOGIN);
+                };
+                self.push_ok_response(&mut dispatch, session_id, Routes::SETTING);
+                let player_name = self.session_name(session_id);
+                self.send_other(
+                    session_id,
+                    WsCode::SETTING,
+                    json!({"name": player_name, "settings": current_settings}),
+                    &mut dispatch,
+                );
+                dispatch
+            }
+            Err(_) => self.error_response(session_id, Routes::SETTING, WsResponseCode::ERROR_FORMAT),
+        }
     }
 
     fn handle_message_request(&mut self, session_id: SessionId, data: Value) -> Dispatch {
@@ -715,9 +746,26 @@ mod tests {
             .collect()
     }
 
-    fn settings(room_key: &str) -> serde_json::Value {
-        let _ = room_key;
-        serde_json::json!({ "min_players": 3, "max_players": 3 })
+    #[derive(Debug, Clone)]
+    struct TestSettings;
+
+    impl share_type_public::GameSettings for TestSettings {
+        fn to_full_json(&self) -> serde_json::Value {
+            serde_json::json!({"min_players": 3, "max_players": 3})
+        }
+        fn to_current_json(&self) -> serde_json::Value {
+            serde_json::json!({"min_players": 3, "max_players": 3})
+        }
+        fn update_from_json(&mut self, _data: &serde_json::Value) -> Result<(), String> {
+            Ok(())
+        }
+        fn clone_box(&self) -> Box<dyn share_type_public::GameSettings> {
+            Box::new(self.clone())
+        }
+    }
+
+    fn settings(_room_key: &str) -> Box<dyn share_type_public::GameSettings> {
+        Box::new(TestSettings)
     }
 
     #[test]
@@ -734,6 +782,7 @@ mod tests {
                 data: serde_json::json!({"name":"u1","password":"p1"}),
             },
             settings,
+            || (3, 3),
         );
         let join_dispatch = service
             .handle_common_request(
@@ -743,6 +792,7 @@ mod tests {
                 data: serde_json::json!({"name":"u2","password":"p1"}),
             },
             settings,
+            || (3, 3),
         )
             .expect("join common");
         let join_response_has_settings = join_dispatch.messages.iter().any(|item| match &item.payload {
@@ -769,6 +819,7 @@ mod tests {
                 data: serde_json::json!({"name":"u3","password":"p2"}),
             },
             settings,
+            || (3, 3),
         );
 
         let message = service
@@ -779,6 +830,7 @@ mod tests {
                     data: serde_json::json!({"message":"hi"}),
                 },
                 settings,
+                || (3, 3),
             )
             .expect("message common");
         assert_eq!(recipients_of(WsCode::MESSAGE, &message), [2_u64].into_iter().collect());
@@ -791,6 +843,7 @@ mod tests {
                     data: serde_json::json!({}),
                 },
                 settings,
+                || (3, 3),
             )
             .expect("pause common");
         assert_eq!(recipients_of(WsCode::PAUSE, &pause), [2_u64].into_iter().collect());
@@ -803,6 +856,7 @@ mod tests {
                     data: serde_json::json!({}),
                 },
                 settings,
+                || (3, 3),
             )
             .expect("resume common");
         assert_eq!(recipients_of(WsCode::RESUME, &resume), [2_u64].into_iter().collect());
@@ -823,6 +877,7 @@ mod tests {
                 data: serde_json::json!({"name":"u1","password":"p1"}),
             },
             settings,
+            || (3, 3),
         );
 
         let duplicate = service
@@ -833,6 +888,7 @@ mod tests {
                     data: serde_json::json!({"name":"u1","password":"p1"}),
                 },
                 settings,
+                || (3, 3),
             )
             .expect("join common");
         let duplicate_denied = duplicate.messages.iter().any(|item| match &item.payload {
@@ -850,6 +906,7 @@ mod tests {
                 data: serde_json::json!({"name":"u2","password":"p1"}),
             },
             settings,
+            || (3, 3),
         );
         let _ = service.handle_common_request(
             3,
@@ -858,6 +915,7 @@ mod tests {
                 data: serde_json::json!({"name":"u3","password":"p1"}),
             },
             settings,
+            || (3, 3),
         );
         let overflow = service
             .handle_common_request(
@@ -867,6 +925,7 @@ mod tests {
                     data: serde_json::json!({"name":"u4","password":"p1"}),
                 },
                 settings,
+                || (3, 3),
             )
             .expect("join common");
         let overflow_denied = overflow.messages.iter().any(|item| match &item.payload {
@@ -890,6 +949,7 @@ mod tests {
                 data: serde_json::json!({"name":"u1","password":"p1"}),
             },
             settings,
+            || (3, 3),
         );
 
         let rejoin = service
@@ -900,6 +960,7 @@ mod tests {
                     data: serde_json::json!({"name":"u1","password":"p1"}),
                 },
                 settings,
+                || (3, 3),
             )
             .expect("join common");
         let rejoin_denied = rejoin.messages.iter().any(|item| match &item.payload {
@@ -918,6 +979,7 @@ mod tests {
                     data: serde_json::json!({"name":"u1","password":"p2"}),
                 },
                 settings,
+                || (3, 3),
             )
             .expect("create common");
         let recreate_denied = recreate.messages.iter().any(|item| match &item.payload {
@@ -944,6 +1006,7 @@ mod tests {
                 data: serde_json::json!({"name":"u1","password":"p1"}),
             },
             settings,
+            || (3, 3),
         );
         let _ = service.handle_common_request(
             2,
@@ -952,6 +1015,7 @@ mod tests {
                 data: serde_json::json!({"name":"u2","password":"p1"}),
             },
             settings,
+            || (3, 3),
         );
         let _ = service.handle_common_request(
             3,
@@ -960,6 +1024,7 @@ mod tests {
                 data: serde_json::json!({"name":"u3","password":"p1"}),
             },
             settings,
+            || (3, 3),
         );
 
         let _ = service.handle_common_request(
@@ -969,6 +1034,7 @@ mod tests {
                 data: serde_json::json!({}),
             },
             settings,
+            || (3, 3),
         );
 
         let join4 = service
@@ -979,6 +1045,7 @@ mod tests {
                     data: serde_json::json!({"name":"u4","password":"p1"}),
                 },
                 settings,
+                || (3, 3),
             )
             .expect("join common");
 
@@ -1004,6 +1071,7 @@ mod tests {
                 data: serde_json::json!({"name":"u1","password":"p1"}),
             },
             settings,
+            || (3, 3),
         );
         let _ = service.handle_common_request(
             2,
@@ -1012,6 +1080,7 @@ mod tests {
                 data: serde_json::json!({"name":"u2","password":"p1"}),
             },
             settings,
+            || (3, 3),
         );
 
         let resume_before_pause = service
@@ -1022,6 +1091,7 @@ mod tests {
                     data: serde_json::json!({}),
                 },
                 settings,
+                || (3, 3),
             )
             .expect("resume common");
         let resume_denied = resume_before_pause.messages.iter().any(|item| match &item.payload {
@@ -1039,6 +1109,7 @@ mod tests {
                 data: serde_json::json!({}),
             },
             settings,
+            || (3, 3),
         );
         let pause_again = service
             .handle_common_request(
@@ -1048,6 +1119,7 @@ mod tests {
                     data: serde_json::json!({}),
                 },
                 settings,
+                || (3, 3),
             )
             .expect("pause common");
         let pause_denied = pause_again.messages.iter().any(|item| match &item.payload {
@@ -1073,6 +1145,7 @@ mod tests {
                 data: serde_json::json!({"name":"u1","password":"p1"}),
             },
             settings,
+            || (3, 3),
         );
         let _ = service.handle_common_request(
             2,
@@ -1081,6 +1154,7 @@ mod tests {
                 data: serde_json::json!({"name":"u2","password":"p1"}),
             },
             settings,
+            || (3, 3),
         );
         let _ = service.handle_common_request(
             1,
@@ -1089,6 +1163,7 @@ mod tests {
                 data: serde_json::json!({}),
             },
             settings,
+            || (3, 3),
         );
 
         let join_after_disband = service
@@ -1099,6 +1174,7 @@ mod tests {
                     data: serde_json::json!({"name":"u3","password":"p1"}),
                 },
                 settings,
+                || (3, 3),
             )
             .expect("join common");
         let denied = join_after_disband.messages.iter().any(|item| match &item.payload {
@@ -1117,10 +1193,11 @@ mod tests {
                     data: serde_json::json!({"name":"u3","password":"p1"}),
                 },
                 settings,
+                || (3, 3),
             )
             .expect("create common");
         let recreated_ok = recreate.messages.iter().any(|item| match &item.payload {
-            OutboundPayload::Response(RequestResponse::WithoutData(resp)) => {
+            OutboundPayload::Response(RequestResponse::WithData(resp)) => {
                 resp.code as i32 == WsResponseCode::OK as i32
             }
             _ => false,

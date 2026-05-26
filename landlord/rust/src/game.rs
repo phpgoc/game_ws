@@ -6,7 +6,6 @@ use share_type_public::{
     ws::WsStartEvent,
 };
 use tokio::sync::Mutex;
-use tokio_tungstenite::tungstenite::Message;
 use ws_common::{ClientRequest, Dispatch, GameHandler, RoomService, SessionId, SessionSenders};
 
 pub struct LandlordGameHandler {
@@ -54,24 +53,6 @@ pub fn build_room_settings(_room_key: &str) -> Box<dyn ws_common::GameSettings> 
     Box::new(settings)
 }
 
-/// Called every tick when the room is active. Returns false to stop the loop.
-async fn on_game_tick(
-    counter: u64,
-    members: &[(SessionId, String, usize)],
-    senders: &SessionSenders,
-) {
-    let payload = serde_json::json!({ "code": 999, "data": { "count": counter } });
-    if let Ok(msg_str) = serde_json::to_string(&payload) {
-        let frame = Message::text(msg_str);
-        let senders = senders.lock().await;
-        for (session_id, _, _) in members {
-            if let Some(tx) = senders.get(session_id) {
-                let _ = tx.send(frame.clone());
-            }
-        }
-    }
-}
-
 /// Spawns the per-room game event loop. Stops when any player leaves.
 fn start_game_loop(
     room_key: String,
@@ -102,7 +83,14 @@ fn start_game_loop(
             }
 
             counter += 1;
-            on_game_tick(counter, &members, &senders).await;
+            ws_common::send_all(
+                &room_key,
+                WsCode::TEST_PULSE,
+                serde_json::json!({ "count": counter }),
+                &room_service,
+                &senders,
+            )
+            .await;
         }
     });
 }
@@ -168,49 +156,6 @@ impl GameHandler for LandlordGameHandler {
                 );
                 room_service.push_ok_response(&mut dispatch, session_id, Routes::START);
                 dispatch
-            }
-            Routes::SETTING => {
-                if let Some(position) = room_service.session_position(session_id) {
-                    if position != 0 {
-                        return room_service.permission_denied_response(session_id, Routes::SETTING);
-                    }
-                } else {
-                    return room_service.unsupported_response(session_id, Routes::SETTING);
-                }
-
-                match room_service.update_room_settings(session_id, &request.data) {
-                    Ok(()) => {
-                        let mut dispatch = Dispatch::default();
-                        if let Some(current_settings) = room_service.get_room_settings_current(session_id) {
-                            room_service.push_ok_response(&mut dispatch, session_id, Routes::SETTING);
-                            let player_name = room_service.session_name(session_id);
-                            let _ = room_service.send_other(
-                                session_id,
-                                WsCode::SETTING,
-                                serde_json::json!({"name": player_name, "settings": current_settings}),
-                                &mut dispatch,
-                            );
-                        } else {
-                            return room_service.unsupported_response(session_id, Routes::SETTING);
-                        }
-                        dispatch
-                    }
-                    Err(_) => room_service.error_response(
-                        session_id,
-                        Routes::SETTING,
-                        share_type_public::WsResponseCode::ERROR_FORMAT,
-                    ),
-                }
-            }
-            Routes::DISBAND => {
-                if let Some(position) = room_service.session_position(session_id) {
-                    if position != 0 {
-                        return room_service.permission_denied_response(session_id, Routes::DISBAND);
-                    }
-                } else {
-                    return room_service.unsupported_response(session_id, Routes::DISBAND);
-                }
-                room_service.unsupported_response(session_id, Routes::DISBAND)
             }
             _ => room_service.unsupported_response(session_id, request.route),
         }
