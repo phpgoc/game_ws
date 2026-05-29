@@ -76,11 +76,12 @@ impl GameHandler for LandlordGameHandler {
                 }
 
                 if let Some(room_key) = room_service.room_key_of(session_id) {
-                    let turn_timeout_secs = room_service
+                    let room_settings = room_service
                         .get_room_settings_full(&room_key)
                         .and_then(|json| serde_json::from_value::<LandlordRoomSettings>(json).ok())
-                        .unwrap_or_default()
-                        .away_time.current as u32;
+                        .unwrap_or_default();
+                    let play_time_secs = room_settings.play_time.current as u32;
+                    let away_time_secs = room_settings.away_time.current as u32;
 
                     let players = room_service.get_game_state_players(&room_key);
                     let loop_state = Arc::new(std::sync::Mutex::new(LandlordLoopState::new(players)));
@@ -95,7 +96,8 @@ impl GameHandler for LandlordGameHandler {
                         start_game_loop(
                             room_key.clone(),
                             loop_state,
-                            turn_timeout_secs,
+                            play_time_secs,
+                            away_time_secs,
                             rx,
                             Arc::clone(room_service_arc),
                             Arc::clone(senders_arc),
@@ -144,14 +146,11 @@ impl GameHandler for LandlordGameHandler {
                     if score > 3 {
                         return room_service.permission_denied_response(session_id, LandlordRoutes::CALL_LANDLORD as i32);
                     }
-                    if score == 0 {
-                        s.action_received = true;
-                    } else if score <= s.score as u8 {
+                    if score > 0 && score <= s.score as u8 {
                         return room_service.permission_denied_response(session_id, LandlordRoutes::CALL_LANDLORD as i32);
-                    } else {
+                    }
+                    if score > 0 {
                         s.score = score as u32;
-                        s.action_received = true;
-                        s.landlord_position = Some(pos);
                     }
                 }
 

@@ -9,6 +9,10 @@ pub struct CommonGameState {
     pub players: HashMap<usize, (SessionId, String)>,
     /// 游戏暂停时 tick 不递减。
     pub paused: bool,
+    /// 当前轮是否已收到有效操作（由游戏循环消费输入后置 true）。
+    pub action_received: bool,
+    /// 当前轮剩余倒计时（秒）。
+    pub turn_countdown: u32,
     /// 本局中已超时被标记为 away 的 position 集合。
     pub away_positions: HashSet<usize>,
 }

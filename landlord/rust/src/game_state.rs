@@ -16,7 +16,7 @@ impl LandlordPhase {
             Self::Start        => Self::CallLandlord,
             Self::CallLandlord => Self::Play,
             Self::Play         => Self::Settlement,
-            Self::Settlement   => Self::Settlement,
+            Self::Settlement   => Self::Start,
         }
     }
 }
@@ -53,8 +53,9 @@ pub struct LandlordLoopState {
     pub landlord_position: Option<usize>,
     /// 叫分: 0 = 未叫, 1 = 叫地主, 2 = 抢地主, 3 = 超级抢
     pub score: u32,
-    /// 有效指令标志位：当前轮收到玩家有效操作时置 true。
-    pub action_received: bool,
+    pub call_round_count: usize,
+    pub last_play: Vec<i32>,
+    pub current_play: Vec<i32>,
 }
 
 impl LandlordLoopState {
@@ -71,7 +72,9 @@ impl LandlordLoopState {
             hidden_cards: Vec::new(),
             landlord_position: None,
             score: 0,
-            action_received: false,
+            call_round_count: 0,
+            last_play: Vec::new(),
+            current_play: Vec::new(),
         }
     }
 
@@ -105,7 +108,11 @@ impl LandlordLoopState {
         self.hidden_cards.clear();
         self.landlord_position = None;
         self.score = 0;
-        self.action_received = false;
+        self.call_round_count = 0;
+        self.last_play.clear();
+        self.current_play.clear();
+        self.base.action_received = false;
+        self.base.turn_countdown = 0;
         self.base.clear_away();
     }
 
