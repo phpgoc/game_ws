@@ -25,6 +25,7 @@ pub use ws::WsPositionEvent;
 pub use settings::{GameSettings, GameParam};
 pub use games::landlord::LandlordRoutes;
 pub use games::landlord::LandlordWsCode;
+pub use games::landlord::LandlordCard;
 pub use games::landlord::WsDealRequest;
 pub use games::landlord::WsDealEvent;
 pub use games::landlord::WsPlayRequest;

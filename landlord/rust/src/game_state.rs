@@ -54,6 +54,7 @@ pub struct LandlordLoopState {
     /// 叫分: 0 = 未叫, 1 = 叫地主, 2 = 抢地主, 3 = 超级抢
     pub score: u32,
     pub call_round_count: usize,
+    pub last_play_position: usize,
     pub last_play: Vec<i32>,
     pub current_play: Vec<i32>,
 }
@@ -73,6 +74,7 @@ impl LandlordLoopState {
             landlord_position: None,
             score: 0,
             call_round_count: 0,
+            last_play_position: call_position,
             last_play: Vec::new(),
             current_play: Vec::new(),
         }
@@ -109,6 +111,7 @@ impl LandlordLoopState {
         self.landlord_position = None;
         self.score = 0;
         self.call_round_count = 0;
+        self.last_play_position = self.call_position;
         self.last_play.clear();
         self.current_play.clear();
         self.base.action_received = false;

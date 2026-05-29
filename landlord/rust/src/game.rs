@@ -7,6 +7,7 @@ use ws_common::{ClientRequest, Dispatch, GameHandler, RoomService, SessionId, Se
 
 use crate::game_loop::{PlayerInput, start_game_loop};
 use crate::game_state::{LandlordGameState, LandlordLoopState, LandlordPhase};
+use crate::play_validator::validate_play_request;
 
 pub struct LandlordGameHandler {
     room_service: Option<Arc<Mutex<RoomService>>>,
@@ -180,8 +181,19 @@ impl GameHandler for LandlordGameHandler {
                     .and_then(|v| serde_json::from_value(v.clone()).ok())
                     .unwrap_or_default();
 
+                let Some(loop_state) = self.loop_states.get(&room_key) else {
+                    return room_service.permission_denied_response(session_id, Routes::PLAY as i32);
+                };
+                if !validate_play_request(loop_state, pos, &cards) {
+                    return room_service.permission_denied_response(session_id, Routes::PLAY as i32);
+                }
+
                 if let Some(tx) = self.action_senders.get(&room_key) {
-                    let _ = tx.try_send(PlayerInput::play(pos, cards));
+                    if tx.try_send(PlayerInput::play(pos, cards)).is_err() {
+                        return room_service.permission_denied_response(session_id, Routes::PLAY as i32);
+                    }
+                } else {
+                    return room_service.permission_denied_response(session_id, Routes::PLAY as i32);
                 }
 
                 let mut dispatch = Dispatch::default();

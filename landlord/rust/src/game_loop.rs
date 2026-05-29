@@ -253,7 +253,8 @@ async fn handle_play_phase(
     {
         let mut s = state.lock().unwrap();
         if !cards_played.is_empty() {
-            s.last_play = s.current_play.clone();
+            s.last_play_position = pos;
+            s.last_play = cards_played.clone();
             s.current_play = cards_played.clone();
         }
         if let Some(hand) = s.hands.get_mut(&pos) {
