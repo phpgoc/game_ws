@@ -229,73 +229,38 @@ impl RoomService {
 
     pub fn send_all<T: serde::Serialize>(
         &self,
-        actor_session_id: SessionId,
+        room_key: &str,
         code: i32,
         payload: T,
         dispatch: &mut Dispatch,
-    ) -> bool {
-        self.broadcast_room_event(actor_session_id, code, payload, true, dispatch)
+    ) {
+        let Some(room) = self.rooms.get(room_key) else { return };
+        let data = serde_json::to_value(payload).unwrap_or(Value::Null);
+        for recipient in room.slots.values() {
+            dispatch.messages.push(Delivery {
+                recipient: *recipient,
+                payload: OutboundPayload::Event(CommonEvent { code, data: data.clone() }),
+            });
+        }
     }
 
     pub fn send_other<T: serde::Serialize>(
         &self,
-        actor_session_id: SessionId,
+        room_key: &str,
+        exclude: SessionId,
         code: i32,
         payload: T,
         dispatch: &mut Dispatch,
-    ) -> bool {
-        self.broadcast_room_event(actor_session_id, code, payload, false, dispatch)
-    }
-
-    pub fn send_one_by_name<T: serde::Serialize>(
-        &self,
-        actor_session_id: SessionId,
-        name: &str,
-        code: i32,
-        payload: T,
-        dispatch: &mut Dispatch,
-    ) -> bool {
-        let Some(room_key) = self.room_key_of(actor_session_id) else {
-            return false;
-        };
-        let Some(room) = self.rooms.get(&room_key) else {
-            return false;
-        };
-        let Some(target_session_id) = room
-            .slots
-            .values()
-            .find(|session_id| {
-                self.sessions
-                    .get(session_id)
-                    .and_then(|item| item.name.as_deref())
-                    == Some(name)
-            })
-            .copied()
-        else {
-            return false;
-        };
-
-        self.emit_to_recipient(target_session_id, code, payload, dispatch)
-    }
-
-    pub fn send_one_by_position<T: serde::Serialize>(
-        &self,
-        actor_session_id: SessionId,
-        position: usize,
-        code: i32,
-        payload: T,
-        dispatch: &mut Dispatch,
-    ) -> bool {
-        let Some(room_key) = self.room_key_of(actor_session_id) else {
-            return false;
-        };
-        let Some(room) = self.rooms.get(&room_key) else {
-            return false;
-        };
-        let Some(target_session_id) = room.slots.get(&position).copied() else {
-            return false;
-        };
-        self.emit_to_recipient(target_session_id, code, payload, dispatch)
+    ) {
+        let Some(room) = self.rooms.get(room_key) else { return };
+        let data = serde_json::to_value(payload).unwrap_or(Value::Null);
+        for recipient in room.slots.values() {
+            if *recipient == exclude { continue; }
+            dispatch.messages.push(Delivery {
+                recipient: *recipient,
+                payload: OutboundPayload::Event(CommonEvent { code, data: data.clone() }),
+            });
+        }
     }
 
     fn handle_create_request<F>(
@@ -343,7 +308,6 @@ impl RoomService {
         if !self.rooms.contains_key(&payload.password) {
             return Self::error_response(session_id, Routes::JOIN as i32, WsResponseCode::NO_PERMISSION);
         }
-        // For JOIN, enter_room reads the existing room's settings — pass None.
         self.enter_room(
             session_id,
             Routes::JOIN,
@@ -415,12 +379,12 @@ impl RoomService {
         {
             let session = self.sessions.entry(session_id).or_default();
             session.name = Some(name.clone());
-            session.room_key = Some(room_key);
+            session.room_key = Some(room_key.clone());
             session.position = Some(position);
         }
 
         self.send_all(
-            session_id,
+            &room_key,
             WsCode::JOIN as i32,
             json!({"name": name, "position": position as i32}),
             &mut dispatch,
@@ -478,6 +442,9 @@ impl RoomService {
         if self.session_position(session_id) != Some(0) {
             return self.permission_denied_response(session_id, Routes::SETTING as i32);
         }
+        let Some(room_key) = self.room_key_of(session_id) else {
+            return Self::error_response(session_id, Routes::SETTING as i32, WsResponseCode::NOT_LOGIN);
+        };
         match self.update_room_settings(session_id, data) {
             Ok(()) => {
                 let Some(current_settings) = self.get_room_settings_current(session_id) else {
@@ -485,6 +452,7 @@ impl RoomService {
                 };
                 self.push_ok_response(&mut dispatch, session_id, Routes::SETTING as i32);
                 self.send_other(
+                    &room_key,
                     session_id,
                     WsCode::SETTING as i32,
                     json!({"settings": current_settings}),
@@ -504,7 +472,11 @@ impl RoomService {
         let Ok(payload) = Self::parse::<WsMessageRequest>(data) else {
             return Self::error_response(session_id, Routes::MESSAGE as i32, WsResponseCode::ERROR_FORMAT);
         };
+        let Some(room_key) = self.room_key_of(session_id) else {
+            return Self::error_response(session_id, Routes::MESSAGE as i32, WsResponseCode::NOT_LOGIN);
+        };
         self.send_other(
+            &room_key,
             session_id,
             WsCode::MESSAGE as i32,
             WsMessageEvent {
@@ -535,6 +507,7 @@ impl RoomService {
             room.paused = true;
         }
         self.send_other(
+            &room_key,
             session_id,
             WsCode::PAUSE as i32,
             WsNameEvent {
@@ -564,6 +537,7 @@ impl RoomService {
             room.paused = false;
         }
         self.send_other(
+            &room_key,
             session_id,
             WsCode::RESUME as i32,
             WsNameEvent {
@@ -600,7 +574,7 @@ impl RoomService {
             game.mark_away(position);
         }
         self.send_all(
-            session_id,
+            &room_key,
             WsCode::AWAY as i32,
             WsPositionEvent { position: position as i32 },
             &mut dispatch,
@@ -633,7 +607,7 @@ impl RoomService {
             game.common_state_mut().away_positions.remove(&position);
         }
         self.send_all(
-            session_id,
+            &room_key,
             WsCode::BACK as i32,
             WsPositionEvent { position: position as i32 },
             &mut dispatch,
@@ -690,7 +664,7 @@ impl RoomService {
         if let Some(s) = self.sessions.get_mut(&sid_b) { s.position = Some(pos_a); }
 
         self.send_all(
-            session_id,
+            &room_key,
             WsCode::SWAP as i32,
             WsSwapPositionPayload { a: pos_a, b: pos_b },
             &mut dispatch,
@@ -832,48 +806,6 @@ impl RoomService {
                 payload: OutboundPayload::Event(event.clone()),
             });
         }
-    }
-
-    fn broadcast_room_event<T: serde::Serialize>(
-        &self,
-        actor_session_id: SessionId,
-        code: i32,
-        payload: T,
-        include_self: bool,
-        dispatch: &mut Dispatch,
-    ) -> bool {
-        let Some(room_key) = self.room_key_of(actor_session_id) else {
-            return false;
-        };
-        let Some(room) = self.rooms.get(&room_key) else {
-            return false;
-        };
-        let data = serde_json::to_value(payload).unwrap_or(Value::Null);
-        for recipient in room.slots.values() {
-            if !include_self && *recipient == actor_session_id {
-                continue;
-            }
-            dispatch.messages.push(Delivery {
-                recipient: *recipient,
-                payload: OutboundPayload::Event(CommonEvent { code, data: data.clone() }),
-            });
-        }
-        true
-    }
-
-    fn emit_to_recipient<T: serde::Serialize>(
-        &self,
-        recipient: SessionId,
-        code: i32,
-        payload: T,
-        dispatch: &mut Dispatch,
-    ) -> bool {
-        let data = serde_json::to_value(payload).unwrap_or(Value::Null);
-        dispatch.messages.push(Delivery {
-            recipient,
-            payload: OutboundPayload::Event(CommonEvent { code, data }),
-        });
-        true
     }
 
     pub fn error_response( session_id: SessionId, route: i32, code: WsResponseCode) -> Dispatch {

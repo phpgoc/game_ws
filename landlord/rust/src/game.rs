@@ -132,7 +132,7 @@ impl LandlordGameHandler {
         }
 
         room_service.send_all(
-            session_id,
+            &room_key,
             WsCode::START as i32,
             serde_json::json!({}),
             &mut dispatch,
@@ -222,7 +222,7 @@ impl LandlordGameHandler {
         // 广播叫分事件给所有人（含自己，方便前端统一处理）
         let mut dispatch = Dispatch::default();
         room_service.send_all(
-            session_id,
+            &room_key,
             WsCode::CALL_LANDLORD as i32,
             WsCallLandlordEvent {
                 name,
@@ -278,7 +278,7 @@ impl LandlordGameHandler {
 
         let mut dispatch = Dispatch::default();
         room_service.send_all(
-            session_id,
+            &room_key,
             WsCode::PLAY as i32,
             WsPlayEvent { name, cards },
             &mut dispatch,

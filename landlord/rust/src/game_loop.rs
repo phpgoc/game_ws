@@ -9,7 +9,7 @@ use share_type_public::{
     },
 };
 use tokio::sync::Mutex;
-use ws_common::{RoomService, SessionSenders};
+use ws_common::{Delivery, OutboundPayload, RoomService, SessionSenders};
 
 use crate::game_state::LandlordLoopState;
 
@@ -27,6 +27,69 @@ fn turn_timeout(state: &LandlordLoopState, settings: &LandlordRoomSettings) -> u
     } else {
         settings.play_time.current as u32
     }
+}
+
+/// Send a dispatch to all recipients via session senders.
+async fn send_dispatch(dispatch: Vec<Delivery>, senders: &SessionSenders) {
+    let mut encoded = Vec::with_capacity(dispatch.len());
+    for delivery in dispatch {
+        if let Ok(frame) = ws_common::to_text_message(&delivery.payload) {
+            encoded.push((delivery.recipient, frame));
+        }
+    }
+    let senders = senders.lock().await;
+    for (recipient, frame) in encoded {
+        if let Some(tx) = senders.get(&recipient) {
+            let _ = tx.send(frame);
+        }
+    }
+}
+
+/// Build a Dispatch that sends an event to all room members.
+fn dispatch_all(
+    room_key: &str,
+    code: i32,
+    data: serde_json::Value,
+    room_service: &RoomService,
+) -> Vec<Delivery> {
+    room_service
+        .get_room_members(room_key)
+        .iter()
+        .map(|(sid, _, _)| Delivery {
+            recipient: *sid,
+            payload: OutboundPayload::Event(share_type_public::CommonEvent {
+                code,
+                data: data.clone(),
+            }),
+        })
+        .collect()
+}
+
+/// Build a Dispatch that sends an event to a specific position in the room.
+fn dispatch_to_position(
+    room_key: &str,
+    position: usize,
+    code: i32,
+    data: serde_json::Value,
+    room_service: &RoomService,
+) -> Vec<Delivery> {
+    room_service
+        .get_room_members(room_key)
+        .iter()
+        .filter_map(|(sid, _, pos)| {
+            if *pos == position {
+                Some(Delivery {
+                    recipient: *sid,
+                    payload: OutboundPayload::Event(share_type_public::CommonEvent {
+                        code,
+                        data: data.clone(),
+                    }),
+                })
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 // ─── Phase Handlers ───────────────────────────────────────────────────
@@ -62,31 +125,30 @@ async fn handle_start_phase(
     }
 
     // 2. Send events (outside lock)
+    let rs = room_service.lock().await;
+    let mut dispatch = Vec::new();
     for (pos, hand, name) in &deal_data {
-        ws_common::send_to_position(
+        dispatch.extend(dispatch_to_position(
             room_key,
             *pos,
             WsCode::DEAL as i32,
-            WsDealEvent {
+            serde_json::to_value(WsDealEvent {
                 name: name.clone(),
                 cards: hand.clone(),
-            },
-            room_service,
-            senders,
-        )
-        .await;
+            })
+            .unwrap_or_default(),
+            &rs,
+        ));
     }
-
-    ws_common::send_all(
+    dispatch.extend(dispatch_all(
         room_key,
         WsCode::DEAL_FACE_DOWN_CARDS as i32,
-        WsDealFaceDownCardsEvent {
-            cards: hidden,
-        },
-        room_service,
-        senders,
-    )
-    .await;
+        serde_json::to_value(WsDealFaceDownCardsEvent { cards: hidden })
+            .unwrap_or_default(),
+        &rs,
+    ));
+    drop(rs);
+    send_dispatch(dispatch, senders).await;
 }
 
 /// Advance through the CallLandlord phase: move to next player, check completion.
@@ -175,8 +237,6 @@ async fn handle_play_phase(
 
         if played.is_empty() {
             // Player passed — nothing changes except who's next.
-            // If the next position IS the last_play_position (everyone else passed),
-            // the last_play_position gets to lead again.
         } else {
             // Player played cards — this becomes the new benchmark
             s.last_play_position = pos;
@@ -221,33 +281,33 @@ async fn handle_play_phase(
     }
 
     if game_over {
+        let rs = room_service.lock().await;
+        let mut dispatch = Vec::new();
+
         // Broadcast hidden cards reveal
-        let hidden = {
-            let s = state.lock().unwrap();
-            s.hidden_cards.clone()
-        };
-        ws_common::send_all(
+        let hidden = state.lock().unwrap().hidden_cards.clone();
+        dispatch.extend(dispatch_all(
             room_key,
             WsCode::SHOW_HIDDEN_CARDS as i32,
-            WsShowHiddenCardsEvent { cards: hidden },
-            room_service,
-            senders,
-        )
-        .await;
+            serde_json::to_value(WsShowHiddenCardsEvent { cards: hidden })
+                .unwrap_or_default(),
+            &rs,
+        ));
 
         // Broadcast game over
         let landlord = state.lock().unwrap().landlord_position;
         let is_landlord_win = landlord.map(|lp| winner_pos == Some(lp)).unwrap_or(false);
-        ws_common::send_all(
+        dispatch.extend(dispatch_all(
             room_key,
             WsCode::GAME_OVER as i32,
-            WsLandlordGameOverEvent {
+            serde_json::to_value(WsLandlordGameOverEvent {
                 is_landlord: is_landlord_win,
-            },
-            room_service,
-            senders,
-        )
-        .await;
+            })
+            .unwrap_or_default(),
+            &rs,
+        ));
+        drop(rs);
+        send_dispatch(dispatch, senders).await;
         return true;
     }
 
