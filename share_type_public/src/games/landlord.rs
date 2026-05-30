@@ -4,6 +4,27 @@ use crate::{GameParam, GameSettings};
 use serde_json::json;
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
+#[typeshare]
+#[repr(i8)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LandlordPhase {
+    Start,
+    CallLandlord,
+    Play,
+    Settlement,
+}
+
+impl LandlordPhase {
+    pub fn next(self) -> Self {
+        match self {
+            Self::Start        => Self::CallLandlord,
+            Self::CallLandlord => Self::Play,
+            Self::Play         => Self::Settlement,
+            Self::Settlement   => Self::Start,
+        }
+    }
+}
+
 pub const LANDLORD_CARDS: [i32; 54] = {
     let mut cards = [0; 54];
     let mut i = 0;
@@ -201,12 +222,11 @@ pub struct WsDealFaceDownCardsEvent {
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsShowHiddenCardsEvent {
-    pub cards: Vec<String>,
+    pub cards: Vec<i32>,
 }
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsLandlordGameOverEvent {
-    pub winner: String,
     pub is_landlord: bool,
 }

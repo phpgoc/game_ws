@@ -1,25 +1,11 @@
 use std::collections::HashMap;
 
-use ws_common::{SessionId, game_state::{CommonGameState, GameState}};
+use ws_common::{
+    SessionId,
+    game_state::{CommonGameState, GameState},
+};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum LandlordPhase {
-    Start,
-    CallLandlord,
-    Play,
-    Settlement,
-}
-
-impl LandlordPhase {
-    fn next(self) -> Self {
-        match self {
-            Self::Start        => Self::CallLandlord,
-            Self::CallLandlord => Self::Play,
-            Self::Play         => Self::Settlement,
-            Self::Settlement   => Self::Start,
-        }
-    }
-}
+use share_type_public::LandlordPhase;
 
 /// Stored in RoomState as `Box<dyn GameState>`.
 /// Only holds the player roster; implements GameState via CommonGameState.
@@ -29,12 +15,18 @@ pub struct LandlordGameState {
 }
 
 impl LandlordGameState {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 }
 
 impl GameState for LandlordGameState {
-    fn common_state(&self) -> &CommonGameState { &self.base }
-    fn common_state_mut(&mut self) -> &mut CommonGameState { &mut self.base }
+    fn common_state(&self) -> &CommonGameState {
+        &self.base
+    }
+    fn common_state_mut(&mut self) -> &mut CommonGameState {
+        &mut self.base
+    }
 }
 
 /// Held exclusively by the game loop behind `Arc<std::sync::Mutex<>>`.
@@ -141,7 +133,9 @@ impl LandlordLoopState {
             .unwrap_or(42);
         let mut rng = seed;
         for i in (1..deck.len()).rev() {
-            rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            rng = rng
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             let j = (rng >> 33) as usize % (i + 1);
             deck.swap(i, j);
         }

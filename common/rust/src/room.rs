@@ -4,7 +4,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use share_type_public::{
     CommonEvent, Routes, WsCode, WsCreateRequest, WsJoinRequest, WsMessageRequest, WsRequest,
-    WsResponseCode, WsWithoutDataResponse, GameSettings, WsPositionEvent, SwapPositionPayload,
+    WsResponseCode, WsWithoutDataResponse, GameSettings, WsPositionEvent, WsSwapPositionPayload,
     ws::WsResponse,
     ws::{WsMessageEvent, WsNameEvent},
 };
@@ -114,15 +114,15 @@ impl RoomService {
     }
 
     pub fn unsupported_response(&self, session_id: SessionId, route: i32) -> Dispatch {
-        self.error_response(session_id, route, WsResponseCode::NOT_IN_RANGE)
+        Self::error_response(session_id, route, WsResponseCode::NOT_IN_RANGE)
     }
 
     pub fn format_error_response(&self, session_id: SessionId, route: i32) -> Dispatch {
-        self.error_response(session_id, route, WsResponseCode::ERROR_FORMAT)
+        Self::error_response(session_id, route, WsResponseCode::ERROR_FORMAT)
     }
 
     pub fn permission_denied_response(&self, session_id: SessionId, route: i32) -> Dispatch {
-        self.error_response(session_id, route, WsResponseCode::NO_PERMISSION)
+        Self::error_response(session_id, route, WsResponseCode::NO_PERMISSION)
     }
 
     pub fn ensure_in_room(&self, session_id: SessionId, route: i32, dispatch: &mut Dispatch) -> bool {
@@ -309,13 +309,13 @@ impl RoomService {
         F: Fn(&str) -> Box<dyn GameSettings>,
     {
         if self.room_key_of(session_id).is_some() {
-            return self.error_response(session_id, Routes::CREATE as i32, WsResponseCode::NO_PERMISSION);
+            return Self::error_response(session_id, Routes::CREATE as i32, WsResponseCode::NO_PERMISSION);
         }
         let Ok(payload) = Self::parse::<WsCreateRequest>(data) else {
-            return self.error_response(session_id, Routes::CREATE as i32, WsResponseCode::ERROR_FORMAT);
+            return Self::error_response(session_id, Routes::CREATE as i32, WsResponseCode::ERROR_FORMAT);
         };
         if self.rooms.contains_key(&payload.password) {
-            return self.error_response(session_id, Routes::CREATE as i32, WsResponseCode::NO_PERMISSION);
+            return Self::error_response(session_id, Routes::CREATE as i32, WsResponseCode::NO_PERMISSION);
         }
         let settings = room_settings_builder(&payload.password);
         self.enter_room(
@@ -339,13 +339,13 @@ impl RoomService {
         F: Fn(&str) -> Box<dyn GameSettings>,
     {
         if self.room_key_of(session_id).is_some() {
-            return self.error_response(session_id, Routes::JOIN as i32, WsResponseCode::NO_PERMISSION);
+            return Self::error_response(session_id, Routes::JOIN as i32, WsResponseCode::NO_PERMISSION);
         }
         let Ok(payload) = Self::parse::<WsJoinRequest>(data) else {
-            return self.error_response(session_id, Routes::JOIN as i32, WsResponseCode::ERROR_FORMAT);
+            return Self::error_response(session_id, Routes::JOIN as i32, WsResponseCode::ERROR_FORMAT);
         };
         if !self.rooms.contains_key(&payload.password) {
-            return self.error_response(session_id, Routes::JOIN as i32, WsResponseCode::NO_PERMISSION);
+            return Self::error_response(session_id, Routes::JOIN as i32, WsResponseCode::NO_PERMISSION);
         }
         let settings = room_settings_builder(&payload.password);
         self.enter_room(
@@ -368,22 +368,22 @@ impl RoomService {
         get_player_limits: impl Fn() -> (usize, usize),
     ) -> Dispatch {
         if room_key.is_empty() || name.is_empty() {
-            return self.error_response(session_id, route as i32, WsResponseCode::ERROR_FORMAT);
+            return Self::error_response(session_id, route as i32, WsResponseCode::ERROR_FORMAT);
         }
 
         // Validate everything BEFORE any state mutation or event dispatch.
         let (room_settings, position, min_players, max_players) = if let Some(room) = self.rooms.get(&room_key) {
             if self.name_taken_in_room(&room_key, &name, Some(session_id)) {
-                return self.error_response(session_id, route as i32, WsResponseCode::NO_PERMISSION);
+                return Self::error_response(session_id, route as i32, WsResponseCode::NO_PERMISSION);
             }
             let Some(position) = self.select_position(room, session_id) else {
-                return self.error_response(session_id, route as i32, WsResponseCode::NO_PERMISSION);
+                return Self::error_response(session_id, route as i32, WsResponseCode::NO_PERMISSION);
             };
             (room.settings.clone(), position, room.min_players, room.max_players)
         } else {
             let (min_players, max_players) = get_player_limits();
             if max_players == 0 || min_players == 0 || min_players > max_players {
-                return self.error_response(session_id, route as i32, WsResponseCode::ERROR_FORMAT);
+                return Self::error_response(session_id, route as i32, WsResponseCode::ERROR_FORMAT);
             }
             (settings.clone(), 0, min_players, max_players)
         };
@@ -481,7 +481,7 @@ impl RoomService {
         match self.update_room_settings(session_id, data) {
             Ok(()) => {
                 let Some(current_settings) = self.get_room_settings_current(session_id) else {
-                    return self.error_response(session_id, Routes::SETTING as i32, WsResponseCode::NOT_LOGIN);
+                    return Self::error_response(session_id, Routes::SETTING as i32, WsResponseCode::NOT_LOGIN);
                 };
                 self.push_ok_response(&mut dispatch, session_id, Routes::SETTING as i32);
                 self.send_other(
@@ -492,7 +492,7 @@ impl RoomService {
                 );
                 dispatch
             }
-            Err(_) => self.error_response(session_id, Routes::SETTING as i32, WsResponseCode::ERROR_FORMAT),
+            Err(_) => Self::error_response(session_id, Routes::SETTING as i32, WsResponseCode::ERROR_FORMAT),
         }
     }
 
@@ -502,7 +502,7 @@ impl RoomService {
             return dispatch;
         }
         let Ok(payload) = Self::parse::<WsMessageRequest>(data) else {
-            return self.error_response(session_id, Routes::MESSAGE as i32, WsResponseCode::ERROR_FORMAT);
+            return Self::error_response(session_id, Routes::MESSAGE as i32, WsResponseCode::ERROR_FORMAT);
         };
         self.send_other(
             session_id,
@@ -523,14 +523,14 @@ impl RoomService {
             return dispatch;
         }
         let Some(room_key) = self.room_key_of(session_id) else {
-            return self.error_response(session_id, Routes::PAUSE as i32, WsResponseCode::NOT_LOGIN);
+            return Self::error_response(session_id, Routes::PAUSE as i32, WsResponseCode::NOT_LOGIN);
         };
         {
             let Some(room) = self.rooms.get_mut(&room_key) else {
-                return self.error_response(session_id, Routes::PAUSE as i32, WsResponseCode::NOT_LOGIN);
+                return Self::error_response(session_id, Routes::PAUSE as i32, WsResponseCode::NOT_LOGIN);
             };
             if room.paused {
-                return self.error_response(session_id, Routes::PAUSE as i32, WsResponseCode::NO_PERMISSION);
+                return Self::error_response(session_id, Routes::PAUSE as i32, WsResponseCode::NO_PERMISSION);
             }
             room.paused = true;
         }
@@ -552,14 +552,14 @@ impl RoomService {
             return dispatch;
         }
         let Some(room_key) = self.room_key_of(session_id) else {
-            return self.error_response(session_id, Routes::RESUME as i32, WsResponseCode::NOT_LOGIN);
+            return Self::error_response(session_id, Routes::RESUME as i32, WsResponseCode::NOT_LOGIN);
         };
         {
             let Some(room) = self.rooms.get_mut(&room_key) else {
-                return self.error_response(session_id, Routes::RESUME as i32, WsResponseCode::NOT_LOGIN);
+                return Self::error_response(session_id, Routes::RESUME as i32, WsResponseCode::NOT_LOGIN);
             };
             if !room.paused {
-                return self.error_response(session_id, Routes::RESUME as i32, WsResponseCode::NO_PERMISSION);
+                return Self::error_response(session_id, Routes::RESUME as i32, WsResponseCode::NO_PERMISSION);
             }
             room.paused = false;
         }
@@ -581,21 +581,21 @@ impl RoomService {
             return dispatch;
         }
         let Some(room_key) = self.room_key_of(session_id) else {
-            return self.error_response(session_id, Routes::AWAY as i32, WsResponseCode::NOT_LOGIN);
+            return Self::error_response(session_id, Routes::AWAY as i32, WsResponseCode::NOT_LOGIN);
         };
         let Some(position) = self.session_position(session_id) else {
-            return self.error_response(session_id, Routes::AWAY as i32, WsResponseCode::NOT_LOGIN);
+            return Self::error_response(session_id, Routes::AWAY as i32, WsResponseCode::NOT_LOGIN);
         };
         {
             let Some(room) = self.rooms.get_mut(&room_key) else {
-                return self.error_response(session_id, Routes::AWAY as i32, WsResponseCode::NOT_LOGIN);
+                return Self::error_response(session_id, Routes::AWAY as i32, WsResponseCode::NOT_LOGIN);
             };
             let game = match room.game.as_mut() {
                 Some(g) => g,
-                None => return self.error_response(session_id, Routes::AWAY as i32, WsResponseCode::NO_PERMISSION),
+                None => return Self::error_response(session_id, Routes::AWAY as i32, WsResponseCode::NO_PERMISSION),
             };
             if game.is_away(position) {
-                return self.error_response(session_id, Routes::AWAY as i32, WsResponseCode::NO_PERMISSION);
+                return Self::error_response(session_id, Routes::AWAY as i32, WsResponseCode::NO_PERMISSION);
             }
             game.mark_away(position);
         }
@@ -614,21 +614,21 @@ impl RoomService {
             return dispatch;
         }
         let Some(room_key) = self.room_key_of(session_id) else {
-            return self.error_response(session_id, Routes::BACK as i32, WsResponseCode::NOT_LOGIN);
+            return Self::error_response(session_id, Routes::BACK as i32, WsResponseCode::NOT_LOGIN);
         };
         let Some(position) = self.session_position(session_id) else {
-            return self.error_response(session_id, Routes::BACK as i32, WsResponseCode::NOT_LOGIN);
+            return Self::error_response(session_id, Routes::BACK as i32, WsResponseCode::NOT_LOGIN);
         };
         {
             let Some(room) = self.rooms.get_mut(&room_key) else {
-                return self.error_response(session_id, Routes::BACK as i32, WsResponseCode::NOT_LOGIN);
+                return Self::error_response(session_id, Routes::BACK as i32, WsResponseCode::NOT_LOGIN);
             };
             let game = match room.game.as_mut() {
                 Some(g) => g,
-                None => return self.error_response(session_id, Routes::BACK as i32, WsResponseCode::NO_PERMISSION),
+                None => return Self::error_response(session_id, Routes::BACK as i32, WsResponseCode::NO_PERMISSION),
             };
             if !game.is_away(position) {
-                return self.error_response(session_id, Routes::BACK as i32, WsResponseCode::NO_PERMISSION);
+                return Self::error_response(session_id, Routes::BACK as i32, WsResponseCode::NO_PERMISSION);
             }
             game.common_state_mut().away_positions.remove(&position);
         }
@@ -648,31 +648,31 @@ impl RoomService {
             return dispatch;
         }
         if self.session_position(session_id) != Some(0) {
-            return self.error_response(session_id, Routes::SWAP as i32, WsResponseCode::NO_PERMISSION);
+            return Self::error_response(session_id, Routes::SWAP as i32, WsResponseCode::NO_PERMISSION);
         }
-        let Ok(payload) = Self::parse::<SwapPositionPayload>(data) else {
-            return self.error_response(session_id, Routes::SWAP as i32, WsResponseCode::ERROR_FORMAT);
+        let Ok(payload) = Self::parse::<WsSwapPositionPayload>(data) else {
+            return Self::error_response(session_id, Routes::SWAP as i32, WsResponseCode::ERROR_FORMAT);
         };
         let pos_a: usize = 0;
         let pos_b = payload.b;
         if pos_b == pos_a {
-            return self.error_response(session_id, Routes::SWAP as i32, WsResponseCode::ERROR_FORMAT);
+            return Self::error_response(session_id, Routes::SWAP as i32, WsResponseCode::ERROR_FORMAT);
         }
         let Some(room_key) = self.room_key_of(session_id) else {
-            return self.error_response(session_id, Routes::SWAP as i32, WsResponseCode::NOT_LOGIN);
+            return Self::error_response(session_id, Routes::SWAP as i32, WsResponseCode::NOT_LOGIN);
         };
         // Collect session IDs before mutating
         let (sid_a, sid_b) = {
             let Some(room) = self.rooms.get(&room_key) else {
-                return self.error_response(session_id, Routes::SWAP as i32, WsResponseCode::NOT_LOGIN);
+                return Self::error_response(session_id, Routes::SWAP as i32, WsResponseCode::NOT_LOGIN);
             };
             let sid_a = match room.slots.get(&pos_a).copied() {
                 Some(s) => s,
-                None => return self.error_response(session_id, Routes::SWAP as i32, WsResponseCode::NO_PERMISSION),
+                None => return Self::error_response(session_id, Routes::SWAP as i32, WsResponseCode::NO_PERMISSION),
             };
             let sid_b = match room.slots.get(&pos_b).copied() {
                 Some(s) => s,
-                None => return self.error_response(session_id, Routes::SWAP as i32, WsResponseCode::NO_PERMISSION),
+                None => return Self::error_response(session_id, Routes::SWAP as i32, WsResponseCode::NO_PERMISSION),
             };
             (sid_a, sid_b)
         };
@@ -692,14 +692,14 @@ impl RoomService {
         self.send_all(
             session_id,
             WsCode::SWAP as i32,
-            SwapPositionPayload { a: pos_a, b: pos_b },
+            WsSwapPositionPayload { a: pos_a, b: pos_b },
             &mut dispatch,
         );
         self.push_ok_response(&mut dispatch, session_id, Routes::SWAP as i32);
         dispatch
     }
 
-    fn parse<T: DeserializeOwned>(value: Value) -> Result<T, serde_json::Error> {
+    pub fn parse<T: DeserializeOwned>(value: Value) -> Result<T, serde_json::Error> {
         serde_json::from_value(value)
     }
 
@@ -876,7 +876,7 @@ impl RoomService {
         true
     }
 
-    pub fn error_response(&self, session_id: SessionId, route: i32, code: WsResponseCode) -> Dispatch {
+    pub fn error_response( session_id: SessionId, route: i32, code: WsResponseCode) -> Dispatch {
         Dispatch {
             messages: vec![Self::direct_response(session_id, route, code)],
         }

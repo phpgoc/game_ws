@@ -93,13 +93,9 @@ pub struct WsMessageEvent {
     pub message : String,
 }
 
-
-
-
-
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SwapPositionPayload {
+pub struct WsSwapPositionPayload {
     pub a: usize,
     pub b: usize,
 }

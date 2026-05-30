@@ -3,7 +3,8 @@ use std::sync::Arc;
 
 use share_type_public::games::landlord::LANDLORD_CARDS;
 
-use crate::game_state::{LandlordLoopState, LandlordPhase};
+use crate::game_state::LandlordLoopState;
+use share_type_public::LandlordPhase;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ComboKind {
@@ -131,28 +132,56 @@ fn classify(cards: &[i32]) -> Option<Combo> {
     groups.sort_by_key(|(r, _)| *r);
 
     if len == 2 && counts.get(&16) == Some(&1) && counts.get(&17) == Some(&1) {
-        return Some(Combo { kind: ComboKind::Rocket, main_rank: 17, sequence_len: 1 });
+        return Some(Combo {
+            kind: ComboKind::Rocket,
+            main_rank: 17,
+            sequence_len: 1,
+        });
     }
     if len == 4 && groups.len() == 1 && groups[0].1 == 4 {
-        return Some(Combo { kind: ComboKind::Bomb, main_rank: groups[0].0, sequence_len: 1 });
+        return Some(Combo {
+            kind: ComboKind::Bomb,
+            main_rank: groups[0].0,
+            sequence_len: 1,
+        });
     }
     if len == 1 {
-        return Some(Combo { kind: ComboKind::Single, main_rank: groups[0].0, sequence_len: 1 });
+        return Some(Combo {
+            kind: ComboKind::Single,
+            main_rank: groups[0].0,
+            sequence_len: 1,
+        });
     }
     if len == 2 && groups.len() == 1 && groups[0].1 == 2 {
-        return Some(Combo { kind: ComboKind::Pair, main_rank: groups[0].0, sequence_len: 1 });
+        return Some(Combo {
+            kind: ComboKind::Pair,
+            main_rank: groups[0].0,
+            sequence_len: 1,
+        });
     }
     if len == 3 && groups.len() == 1 && groups[0].1 == 3 {
-        return Some(Combo { kind: ComboKind::Triple, main_rank: groups[0].0, sequence_len: 1 });
+        return Some(Combo {
+            kind: ComboKind::Triple,
+            main_rank: groups[0].0,
+            sequence_len: 1,
+        });
     }
     if len == 4 && groups.len() == 2 {
         let triple = groups.iter().find(|(_, c)| *c == 3)?;
-        return Some(Combo { kind: ComboKind::TripleSingle, main_rank: triple.0, sequence_len: 1 });
+        return Some(Combo {
+            kind: ComboKind::TripleSingle,
+            main_rank: triple.0,
+            sequence_len: 1,
+        });
     }
     if len == 5 && groups.len() == 2 {
         let triple = groups.iter().find(|(_, c)| *c == 3)?;
         if groups.iter().any(|(_, c)| *c == 2) {
-            return Some(Combo { kind: ComboKind::TriplePair, main_rank: triple.0, sequence_len: 1 });
+            return Some(Combo {
+                kind: ComboKind::TriplePair,
+                main_rank: triple.0,
+                sequence_len: 1,
+            });
         }
     }
 
@@ -206,7 +235,10 @@ fn classify(cards: &[i32]) -> Option<Combo> {
             });
         }
         if len == n * 4 {
-            let wings = groups.iter().filter(|(r, c)| *c == 1 && !triple_ranks.contains(r)).count();
+            let wings = groups
+                .iter()
+                .filter(|(r, c)| *c == 1 && !triple_ranks.contains(r))
+                .count();
             if wings == n {
                 return Some(Combo {
                     kind: ComboKind::PlaneWithSingles,
@@ -216,7 +248,10 @@ fn classify(cards: &[i32]) -> Option<Combo> {
             }
         }
         if len == n * 5 {
-            let wing_pairs = groups.iter().filter(|(r, c)| *c == 2 && !triple_ranks.contains(r)).count();
+            let wing_pairs = groups
+                .iter()
+                .filter(|(r, c)| *c == 2 && !triple_ranks.contains(r))
+                .count();
             if wing_pairs == n {
                 return Some(Combo {
                     kind: ComboKind::PlaneWithPairs,
@@ -229,14 +264,22 @@ fn classify(cards: &[i32]) -> Option<Combo> {
 
     if len == 6 {
         if let Some((rank, _)) = groups.iter().find(|(_, c)| *c == 4) {
-            return Some(Combo { kind: ComboKind::FourWithTwoSingles, main_rank: *rank, sequence_len: 1 });
+            return Some(Combo {
+                kind: ComboKind::FourWithTwoSingles,
+                main_rank: *rank,
+                sequence_len: 1,
+            });
         }
     }
     if len == 8 {
         if let Some((rank, _)) = groups.iter().find(|(_, c)| *c == 4) {
             let pair_cnt = groups.iter().filter(|(_, c)| *c == 2).count();
             if pair_cnt == 2 {
-                return Some(Combo { kind: ComboKind::FourWithTwoPairs, main_rank: *rank, sequence_len: 1 });
+                return Some(Combo {
+                    kind: ComboKind::FourWithTwoPairs,
+                    main_rank: *rank,
+                    sequence_len: 1,
+                });
             }
         }
     }
