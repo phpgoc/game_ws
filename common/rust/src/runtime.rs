@@ -18,25 +18,20 @@ use tokio_tungstenite::{accept_async, tungstenite::Message};
 use tracing::{error, info, warn};
 
 use crate::{
-    ClientRequest, Dispatch, RoomService, SessionId, from_message, parse_bind_cli, resolve_host,
+    ClientRequest, Dispatch, RoomService, SettingsBuilderResult, SessionId, from_message,
+    parse_bind_cli, resolve_host,
     resolve_port,
     to_text_message,
 };
-use share_type_public::GameSettings;
 
 type SessionSender = mpsc::UnboundedSender<Message>;
 pub type SessionSenders = Arc<Mutex<HashMap<SessionId, SessionSender>>>;
 
 pub trait GameHandler: Send + 'static {
-    fn build_room_settings(&self) -> Box<dyn GameSettings>;
-    fn get_player_limits(&self) -> (usize, usize) {
-        (1, usize::MAX)
-    }
-    /// Called after a room is successfully created.
-    /// Return Some to attach game state immediately so JOIN/QUIT hooks work.
-    fn build_game_state(&self) -> Option<Box<dyn crate::game_state::GameState>> {
-        None
-    }
+    fn build_room_settings(&self) -> SettingsBuilderResult;
+    /// 创建游戏状态。
+    /// 在 CREATE 成功后立即调用，并将当前成员 populate 进去。
+    fn build_game_state(&self) -> Box<dyn crate::game_state::GameState>;
     fn set_context(&mut self, _senders: SessionSenders, _room_service: Arc<Mutex<RoomService>>) {
         // Optional: override in games that need access to senders/room_service for event loops
     }
@@ -210,17 +205,15 @@ where
                 session_id,
                 &request,
                 || handler.build_room_settings(),
-                || handler.get_player_limits(),
             ) {
                 // After a successful CREATE, attach game state so JOIN/QUIT hooks work
                 if request.route == share_type_public::Routes::CREATE as i32 {
                     if let Some(room_key) = room.room_key_of(session_id) {
-                        if let Some(mut gs) = handler.build_game_state() {
-                            for (sid, name, pos) in room.get_room_members(&room_key) {
-                                gs.add_player(pos, sid, &name);
-                            }
-                            room.set_room_game_state(&room_key, gs);
+                        let mut gs = handler.build_game_state();
+                        for (sid, name, pos) in room.get_room_members(&room_key) {
+                            gs.add_player(pos, sid, &name);
                         }
+                        room.set_room_game_state(&room_key, gs);
                     }
                 }
                 dispatch

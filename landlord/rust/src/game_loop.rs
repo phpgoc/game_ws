@@ -4,7 +4,7 @@ use std::time::Duration;
 use share_type_public::{
     LandlordPhase, WsCode,
     games::landlord::{
-        LandlordRoomSettings, WsDealEvent, WsDealFaceDownCardsEvent,
+        WsDealEvent, WsDealFaceDownCardsEvent,
         WsShowHiddenCardsEvent, WsLandlordGameOverEvent,
     },
 };
@@ -21,11 +21,13 @@ fn player_name(state: &LandlordLoopState, position: usize) -> String {
 
 /// Get the per-turn timeout for the current position:
 /// away players use away_time, others use play_time.
-fn turn_timeout(state: &LandlordLoopState, settings: &LandlordRoomSettings) -> u32 {
+fn turn_timeout(state: &LandlordLoopState, configs: &std::collections::HashMap<String, i32>) -> u32 {
+    let away_time = configs.get("away_time").copied().unwrap_or(5) as u32;
+    let play_time = configs.get("play_time").copied().unwrap_or(30) as u32;
     if state.base.is_away(state.current_position) {
-        settings.away_time.current as u32
+        away_time
     } else {
-        settings.play_time.current as u32
+        play_time
     }
 }
 
@@ -101,7 +103,7 @@ async fn handle_start_phase(
     sorted_positions: &[usize],
     room_service: &Arc<Mutex<RoomService>>,
     senders: &SessionSenders,
-    settings: &LandlordRoomSettings,
+    configs: &std::collections::HashMap<String, i32>,
 ) {
     // 1. Deal cards & advance phase inside lock
     let deal_data: Vec<(usize, Vec<i32>, String)>;
@@ -112,7 +114,7 @@ async fn handle_start_phase(
         s.generate_card();
         s.next_phase(); // Start → CallLandlord
         s.base.action_received = false;
-        s.base.turn_countdown = turn_timeout(&s, settings);
+        s.base.turn_countdown = turn_timeout(&s, configs);
 
         hidden = s.hidden_cards.clone();
         deal_data = sorted_positions
@@ -159,7 +161,7 @@ async fn handle_start_phase(
 async fn handle_call_landlord_phase(
     state: &Arc<std::sync::Mutex<LandlordLoopState>>,
     sorted_positions: &[usize],
-    settings: &LandlordRoomSettings,
+    configs: &std::collections::HashMap<String, i32>,
 ) {
     let mut s = state.lock().unwrap();
 
@@ -201,14 +203,14 @@ async fn handle_call_landlord_phase(
         }
         // Reset for landlord's first play
         s.base.action_received = false;
-        s.base.turn_countdown = turn_timeout(&s, settings);
+        s.base.turn_countdown = turn_timeout(&s, configs);
         return;
     }
 
     // Reset for next caller in the same round
     s.base.action_received = false;
-    s.base.turn_countdown = turn_timeout(&s, settings);
-}
+    s.base.turn_countdown = turn_timeout(&s, configs);
+  }
 
 /// Process a play tick: apply the current play (pass or cards), advance turns.
 ///
@@ -222,7 +224,7 @@ async fn handle_call_landlord_phase(
 async fn handle_play_phase(
     state: &Arc<std::sync::Mutex<LandlordLoopState>>,
     sorted_positions: &[usize],
-    settings: &LandlordRoomSettings,
+    configs: &std::collections::HashMap<String, i32>,
     room_key: &str,
     room_service: &Arc<Mutex<RoomService>>,
     senders: &SessionSenders,
@@ -276,7 +278,7 @@ async fn handle_play_phase(
 
             // Reset for next turn
             s.base.action_received = false;
-            s.base.turn_countdown = turn_timeout(&s, settings);
+            s.base.turn_countdown = turn_timeout(&s, configs);
         }
     }
 
@@ -350,13 +352,12 @@ pub(crate) fn start_game_loop(
             p
         };
 
-        // Read settings once; they won't change mid-game.
-        let settings: LandlordRoomSettings = {
+        // Read configs once; they won't change mid-game.
+        let configs: std::collections::HashMap<String, i32> = {
             room_service
                 .lock()
                 .await
-                .get_room_settings_full(&room_key)
-                .and_then(|json| serde_json::from_value(json).ok())
+                .get_room_configs(&room_key)
                 .unwrap_or_default()
         };
 
@@ -402,18 +403,18 @@ pub(crate) fn start_game_loop(
                         &sorted_positions,
                         &room_service,
                         &senders,
-                        &settings,
+                        &configs,
                     )
                     .await;
                 }
                 LandlordPhase::CallLandlord => {
-                    handle_call_landlord_phase(&state, &sorted_positions, &settings).await;
+                    handle_call_landlord_phase(&state, &sorted_positions, &configs).await;
                 }
                 LandlordPhase::Play => {
                     let ended = handle_play_phase(
                         &state,
                         &sorted_positions,
-                        &settings,
+                        &configs,
                         &room_key,
                         &room_service,
                         &senders,

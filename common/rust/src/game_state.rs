@@ -73,3 +73,13 @@ pub trait GameState: Send {
     fn is_away(&self, pos: usize) -> bool { self.common_state().is_away(pos) }
     fn clear_away(&mut self) { self.common_state_mut().clear_away(); }
 }
+
+/// Wrap CommonGameState so it can be used as Box<dyn GameState>.
+impl GameState for CommonGameState {
+    fn common_state(&self) -> &CommonGameState {
+        self
+    }
+    fn common_state_mut(&mut self) -> &mut CommonGameState {
+        self
+    }
+}

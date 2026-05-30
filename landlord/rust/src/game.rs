@@ -5,13 +5,13 @@ use share_type_public::games::landlord::{
     WsCallLandlordEvent, WsCallLandlordRequest, WsPlayEvent,
 };
 use share_type_public::{
-    GameSettings, LandlordRoutes, Routes, WsCode, WsResponseCode,
-    games::landlord::LandlordRoomSettings,
+    LandlordRoutes, Routes, WsCode, WsResponseCode,
 };
 use tokio::sync::Mutex;
 use ws_common::{ClientRequest, Dispatch, GameHandler, RoomService, SessionId, SessionSenders};
 
 use crate::game_loop::start_game_loop;
+use crate::game_setting::build_landlord_settings;
 use crate::game_state::{LandlordGameState, LandlordLoopState};
 use share_type_public::LandlordPhase;
 
@@ -33,24 +33,13 @@ impl Default for LandlordGameHandler {
     }
 }
 
-const MIN_PLAYERS: usize = 3;
-const MAX_PLAYERS: usize = 3;
-
-fn build_room_settings() -> Box<dyn ws_common::GameSettings> {
-    Box::new(LandlordRoomSettings::default())
-}
-
 impl GameHandler for LandlordGameHandler {
-    fn build_room_settings(&self) -> Box<dyn GameSettings> {
-        build_room_settings()
+    fn build_room_settings(&self) -> ws_common::SettingsBuilderResult {
+        build_landlord_settings()
     }
 
-    fn get_player_limits(&self) -> (usize, usize) {
-        (MIN_PLAYERS, MAX_PLAYERS)
-    }
-
-    fn build_game_state(&self) -> Option<Box<dyn ws_common::game_state::GameState>> {
-        Some(Box::new(LandlordGameState::new()))
+    fn build_game_state(&self) -> Box<dyn ws_common::game_state::GameState> {
+        Box::new(LandlordGameState::new())
     }
 
     fn set_context(&mut self, senders: SessionSenders, room_service: Arc<Mutex<RoomService>>) {
