@@ -94,12 +94,12 @@ impl RoomService {
         get_player_limits: impl Fn() -> (usize, usize),
     ) -> Option<Dispatch>
     where
-        F: Fn(&str) -> Box<dyn GameSettings>,
+        F: Fn() -> Box<dyn GameSettings>,
     {
         self.sessions.entry(session_id).or_default();
         match request.route {
             r if r == Routes::CREATE as i32 => Some(self.handle_create_request(session_id, request.data.clone(), room_settings_builder, get_player_limits)),
-            r if r == Routes::JOIN as i32 => Some(self.handle_join_request(session_id, request.data.clone(), room_settings_builder, get_player_limits)),
+            r if r == Routes::JOIN as i32 => Some(self.handle_join_request(session_id, request.data.clone(), get_player_limits)),
             r if r == Routes::QUIT as i32 => Some(self.handle_quit_request(session_id)),
             r if r == Routes::DISBAND as i32 => Some(self.handle_disband_request(session_id)),
             r if r == Routes::SETTING as i32 => Some(self.handle_setting_request(session_id, &request.data)),
@@ -306,7 +306,7 @@ impl RoomService {
         get_player_limits: impl Fn() -> (usize, usize),
     ) -> Dispatch
     where
-        F: Fn(&str) -> Box<dyn GameSettings>,
+        F: Fn() -> Box<dyn GameSettings>,
     {
         if self.room_key_of(session_id).is_some() {
             return Self::error_response(session_id, Routes::CREATE as i32, WsResponseCode::NO_PERMISSION);
@@ -317,27 +317,23 @@ impl RoomService {
         if self.rooms.contains_key(&payload.password) {
             return Self::error_response(session_id, Routes::CREATE as i32, WsResponseCode::NO_PERMISSION);
         }
-        let settings = room_settings_builder(&payload.password);
+        let settings = room_settings_builder();
         self.enter_room(
             session_id,
             Routes::CREATE,
             payload.name,
             payload.password,
-            settings,
+            Some(settings),
             get_player_limits,
         )
     }
 
-    fn handle_join_request<F>(
+    fn handle_join_request(
         &mut self,
         session_id: SessionId,
         data: Value,
-        room_settings_builder: F,
         get_player_limits: impl Fn() -> (usize, usize),
-    ) -> Dispatch
-    where
-        F: Fn(&str) -> Box<dyn GameSettings>,
-    {
+    ) -> Dispatch {
         if self.room_key_of(session_id).is_some() {
             return Self::error_response(session_id, Routes::JOIN as i32, WsResponseCode::NO_PERMISSION);
         }
@@ -347,13 +343,13 @@ impl RoomService {
         if !self.rooms.contains_key(&payload.password) {
             return Self::error_response(session_id, Routes::JOIN as i32, WsResponseCode::NO_PERMISSION);
         }
-        let settings = room_settings_builder(&payload.password);
+        // For JOIN, enter_room reads the existing room's settings — pass None.
         self.enter_room(
             session_id,
             Routes::JOIN,
             payload.name,
             payload.password,
-            settings,
+            None,
             get_player_limits,
         )
     }
@@ -364,7 +360,7 @@ impl RoomService {
         route: Routes,
         name: String,
         room_key: String,
-        settings: Box<dyn GameSettings>,
+        settings: Option<Box<dyn GameSettings>>,
         get_player_limits: impl Fn() -> (usize, usize),
     ) -> Dispatch {
         if room_key.is_empty() || name.is_empty() {
@@ -381,6 +377,10 @@ impl RoomService {
             };
             (room.settings.clone(), position, room.min_players, room.max_players)
         } else {
+            // CREATE path: settings must be provided
+            let Some(ref settings) = settings else {
+                return Self::error_response(session_id, route as i32, WsResponseCode::ERROR_FORMAT);
+            };
             let (min_players, max_players) = get_player_limits();
             if max_players == 0 || min_players == 0 || min_players > max_players {
                 return Self::error_response(session_id, route as i32, WsResponseCode::ERROR_FORMAT);
@@ -942,7 +942,7 @@ mod tests {
         }
     }
 
-    fn settings(_room_key: &str) -> Box<dyn share_type_public::GameSettings> {
+    fn settings() -> Box<dyn share_type_public::GameSettings> {
         Box::new(TestSettings)
     }
 

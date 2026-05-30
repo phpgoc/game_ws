@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use share_type_public::games::landlord::LANDLORD_CARDS;
 
@@ -31,12 +30,13 @@ struct Combo {
     sequence_len: usize,
 }
 
+/// Validate a play request. Takes a borrowed `LandlordLoopState` reference
+/// (the caller should hold the lock).
 pub(crate) fn validate_play_request(
-    state: &Arc<std::sync::Mutex<LandlordLoopState>>,
+    s: &LandlordLoopState,
     position: usize,
     cards: &[i32],
 ) -> bool {
-    let s = state.lock().unwrap();
     if s.phase != LandlordPhase::Play || s.current_position != position {
         return false;
     }
@@ -46,7 +46,7 @@ pub(crate) fn validate_play_request(
         None => return false,
     };
 
-    if !cards.iter().all(is_valid_card_id) {
+    if !cards.iter().all(|c| is_valid_card_id(c)) {
         return false;
     }
     if !cards_in_hand(cards, hand) {

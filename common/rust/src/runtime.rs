@@ -28,7 +28,7 @@ type SessionSender = mpsc::UnboundedSender<Message>;
 pub type SessionSenders = Arc<Mutex<HashMap<SessionId, SessionSender>>>;
 
 pub trait GameHandler: Send + 'static {
-    fn build_room_settings(&self, room_key: &str) -> Box<dyn GameSettings>;
+    fn build_room_settings(&self) -> Box<dyn GameSettings>;
     fn get_player_limits(&self) -> (usize, usize) {
         (1, usize::MAX)
     }
@@ -209,7 +209,7 @@ where
             if let Some(dispatch) = room.handle_common_request(
                 session_id,
                 &request,
-                |room_key| handler.build_room_settings(room_key),
+                || handler.build_room_settings(),
                 || handler.get_player_limits(),
             ) {
                 // After a successful CREATE, attach game state so JOIN/QUIT hooks work

@@ -38,14 +38,15 @@ pub struct LandlordLoopState {
     pub phase: LandlordPhase,
     /// The position that starts the call-landlord phase each deal.
     /// Rotates by 1 on redeal so a different player calls first.
-    call_position: usize,
+    pub call_position: usize,
     pub current_position: usize,
     pub hands: HashMap<usize, Vec<i32>>,
     pub hidden_cards: Vec<i32>,
     pub landlord_position: Option<usize>,
-    /// 叫分: 0 = 未叫, 1 = 叫地主, 2 = 抢地主, 3 = 超级抢
+    /// 当前最高叫分: 0 = 未叫, 1/2/3
     pub score: u32,
-    pub call_round_count: usize,
+    /// 叫分记录: (position, score)
+    pub call_history: Vec<(usize, u8)>,
     pub last_play_position: usize,
     pub last_play: Vec<i32>,
     pub current_play: Vec<i32>,
@@ -65,7 +66,7 @@ impl LandlordLoopState {
             hidden_cards: Vec::new(),
             landlord_position: None,
             score: 0,
-            call_round_count: 0,
+            call_history: Vec::new(),
             last_play_position: call_position,
             last_play: Vec::new(),
             current_play: Vec::new(),
@@ -102,7 +103,7 @@ impl LandlordLoopState {
         self.hidden_cards.clear();
         self.landlord_position = None;
         self.score = 0;
-        self.call_round_count = 0;
+        self.call_history.clear();
         self.last_play_position = self.call_position;
         self.last_play.clear();
         self.current_play.clear();
@@ -113,6 +114,7 @@ impl LandlordLoopState {
 
     /// Shuffle a 54-card deck and deal 17 cards to each of the 3 sorted
     /// positions, storing the remaining 3 as hidden cards (底牌).
+    /// Each player's hand is sorted for convenience.
     pub fn generate_card(&mut self) {
         let deck = Self::shuffle();
         let mut sorted: Vec<usize> = self.base.players.keys().copied().collect();
@@ -120,7 +122,9 @@ impl LandlordLoopState {
         self.hands.clear();
         for (i, &pos) in sorted.iter().enumerate() {
             let start = i * 17;
-            self.hands.insert(pos, deck[start..start + 17].to_vec());
+            let mut hand = deck[start..start + 17].to_vec();
+            hand.sort_unstable();
+            self.hands.insert(pos, hand);
         }
         self.hidden_cards = deck[51..54].to_vec();
     }
