@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
 use crate::r#const::WsResponseCode;
-use crate::games::SettingTrait;
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,7 +31,6 @@ pub struct WsWithoutDataResponse {
     pub code: WsResponseCode,
 }
 
-
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsCreateRequest {
@@ -40,6 +38,12 @@ pub struct WsCreateRequest {
     pub password: String,
 }
 
+/// CREATE 响应和 SWAP 成房主时的事件。
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsCreateResponse {
+    pub param_descriptions: std::collections::HashMap<String, crate::settings::GameParam>,
+}
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,13 +51,6 @@ pub struct WsJoinRequest {
     pub name: String,
     pub password: String,
 }
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsJoinResponse<T: SettingTrait> {
-    pub settings: T,
-}
-
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,10 +65,13 @@ pub struct WsNameEvent {
     pub name: String,
 }
 
+/// SETTING 请求和响应的 payload。
+/// 请求：{ current_configs: { key: value, ... } }
+/// 响应（事件）：{ current_configs: { key: value, ... } }
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsSettingEvent<T: SettingTrait> {
-    pub settings: T,
+pub struct WsSettingPayload {
+    pub current_configs: std::collections::HashMap<String, i32>,
 }
 
 #[typeshare]

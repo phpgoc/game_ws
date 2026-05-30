@@ -154,7 +154,8 @@ impl RoomService {
         count >= entry.min_players
     }
 
-    /// 给指定 session 发送参数描述（GameParam map），用于 CREATE 响应和换房主（SWAP 到 position 0）时。
+    /// 给房主（position 0）发送 param_descriptions。
+    /// 用于 CREATE 响应和 SWAP（成为房主时）。
     fn send_param_descriptions_to(
         &self,
         session_id: SessionId,
@@ -164,15 +165,13 @@ impl RoomService {
         dispatch: &mut Dispatch,
     ) {
         let Some(room_entry) = self.rooms.get(room_key) else { return };
-        let data = json!({
-            "current_configs": room_entry.configs,
-            "param_descriptions": room_entry.param_descriptions,
-        });
         dispatch.messages.push(Self::direct_response_with_data(
             session_id,
             route,
             code,
-            data,
+            share_type_public::WsCreateResponse {
+                param_descriptions: room_entry.param_descriptions.clone(),
+            },
         ));
     }
 
@@ -260,15 +259,47 @@ impl RoomService {
     }
 
     /// 更新房间设置（只能由 position 0 调用）。
-    pub fn update_room_settings(&mut self, session_id: SessionId, data: &Value) -> Result<(), String> {
+    /// 参数来自 SETTING 请求的 `WsSettingPayload`（`{ current_configs: { key: value } }`）。
+    /// 验证每个参数：
+    ///   - Range：值在 [min, max] 内
+    ///   - Enum：值在 options 索引范围内
+    /// 验证通过后同步更新 `configs` 和 `param_descriptions` 中的 `default`。
+    pub fn update_room_settings(&mut self, session_id: SessionId, payload: &share_type_public::WsSettingPayload) -> Result<(), String> {
         let room_key = self.room_key_of(session_id)
             .ok_or_else(|| "Not in any room".to_string())?;
         let entry = self.rooms.get_mut(&room_key)
             .ok_or_else(|| "Room not found".to_string())?;
-        let obj = data.as_object().ok_or("data must be an object")?;
-        for (key, val) in obj {
-            if let Some(n) = val.as_i64() {
-                entry.configs.insert(key.clone(), n as i32);
+        for (key, val) in &payload.current_configs {
+            let Some(param) = entry.param_descriptions.get(key) else {
+                return Err(format!("Unknown setting: {}", key));
+            };
+            match param {
+                share_type_public::GameParam::Range(range) => {
+                    if *val < range.min || *val > range.max {
+                        return Err(format!(
+                            "Value {} for '{}' out of range [{}, {}]",
+                            val, key, range.min, range.max
+                        ));
+                    }
+                }
+                share_type_public::GameParam::Enum(e) => {
+                    if *val < 0 || *val as usize >= e.options.len() {
+                        return Err(format!(
+                            "Value {} for '{}' is not a valid enum index (0..{})",
+                            val,
+                            key,
+                            e.options.len().saturating_sub(1)
+                        ));
+                    }
+                }
+            }
+            entry.configs.insert(key.clone(), *val);
+            // 同步更新 param_descriptions 中的 default
+            if let Some(param) = entry.param_descriptions.get_mut(key) {
+                match param {
+                    share_type_public::GameParam::Range(r) => r.default = *val,
+                    share_type_public::GameParam::Enum(e) => e.default = *val as usize,
+                }
             }
         }
         Ok(())
@@ -319,26 +350,63 @@ impl RoomService {
     where
         F: Fn() -> SettingsBuilderResult,
     {
+        // — 前置检查 —
         if self.room_key_of(session_id).is_some() {
             return Self::error_response(session_id, Routes::CREATE as i32, WsResponseCode::NO_PERMISSION);
         }
         let Ok(payload) = Self::parse::<WsCreateRequest>(data) else {
             return Self::error_response(session_id, Routes::CREATE as i32, WsResponseCode::ERROR_FORMAT);
         };
-        if self.rooms.contains_key(&payload.password) {
+        let password = payload.password;
+        let name = payload.name;
+        if password.is_empty() || name.is_empty() {
+            return Self::error_response(session_id, Routes::CREATE as i32, WsResponseCode::ERROR_FORMAT);
+        }
+        if self.rooms.contains_key(&password) {
             return Self::error_response(session_id, Routes::CREATE as i32, WsResponseCode::NO_PERMISSION);
         }
+
         let (settings, param_descriptions) = room_settings_builder();
-        self.enter_room(
+
+        // — 离开旧房间 —
+        let mut dispatch = Dispatch::default();
+        let old_room = self.sessions.get(&session_id).and_then(|item| item.room_key.clone());
+        if old_room.as_ref() != Some(&password) {
+            let mut tmp = self.sessions.remove(&session_id).unwrap_or_default();
+            self.remove_from_current_room(session_id, &mut tmp, &mut dispatch, WsCode::QUIT as i32);
+            self.sessions.insert(session_id, tmp);
+        }
+
+        // — 创建房间 —
+        let position = 0usize;
+        self.rooms.insert(password.clone(), RoomEntry {
+            configs: settings.values,
+            param_descriptions: param_descriptions.clone(),
+            min_players: settings.min_players,
+            max_players: settings.max_players,
+            state: Box::new(crate::game_state::CommonGameState::new()),
+        });
+        {
+            let entry = self.rooms.get_mut(&password).unwrap();
+            entry.state.add_player(position, session_id, &name);
+        }
+
+        {
+            let session = self.sessions.entry(session_id).or_default();
+            session.name = Some(name.clone());
+            session.room_key = Some(password.clone());
+            session.position = Some(position);
+        }
+
+        // — 响应 —
+        self.send_param_descriptions_to(
             session_id,
-            Routes::CREATE,
-            payload.name,
-            payload.password,
-            settings.values,
-            Some(param_descriptions),
-            settings.min_players,
-            settings.max_players,
-        )
+            Routes::CREATE as i32,
+            WsResponseCode::OK,
+            &password,
+            &mut dispatch,
+        );
+        dispatch
     }
 
     fn handle_join_request(
@@ -346,92 +414,58 @@ impl RoomService {
         session_id: SessionId,
         data: Value,
     ) -> Dispatch {
+        // — 前置检查 —
         if self.room_key_of(session_id).is_some() {
             return Self::error_response(session_id, Routes::JOIN as i32, WsResponseCode::NO_PERMISSION);
         }
         let Ok(payload) = Self::parse::<WsJoinRequest>(data) else {
             return Self::error_response(session_id, Routes::JOIN as i32, WsResponseCode::ERROR_FORMAT);
         };
-        if !self.rooms.contains_key(&payload.password) {
-            return Self::error_response(session_id, Routes::JOIN as i32, WsResponseCode::NO_PERMISSION);
+        let password = payload.password;
+        let name = payload.name;
+        if password.is_empty() || name.is_empty() {
+            return Self::error_response(session_id, Routes::JOIN as i32, WsResponseCode::ERROR_FORMAT);
         }
-        let room_key = payload.password.clone();
-        let configs = self.rooms.get(&room_key).map(|e| e.configs.clone()).unwrap_or_default();
-        self.enter_room(
-            session_id,
-            Routes::JOIN,
-            payload.name,
-            payload.password,
-            configs,
-            None,
-            0,    // will be taken from existing room
-            0,
-        )
-    }
-
-    fn enter_room(
-        &mut self,
-        session_id: SessionId,
-        route: Routes,
-        name: String,
-        room_key: String,
-        configs: HashMap<String, i32>,
-        param_descriptions: Option<HashMap<String, GameParam>>,
-        min_players: usize,
-        max_players: usize,
-    ) -> Dispatch {
-        if room_key.is_empty() || name.is_empty() {
-            return Self::error_response(session_id, route as i32, WsResponseCode::ERROR_FORMAT);
+        if !self.rooms.contains_key(&password) {
+            return Self::error_response(session_id, Routes::JOIN as i32, WsResponseCode::NO_PERMISSION);
         }
 
         let mut dispatch = Dispatch::default();
+
+        // — 离开旧房间 —
         let old_room = self.sessions.get(&session_id).and_then(|item| item.room_key.clone());
-        if old_room.as_ref() != Some(&room_key) {
+        if old_room.as_ref() != Some(&password) {
             let mut tmp = self.sessions.remove(&session_id).unwrap_or_default();
             self.remove_from_current_room(session_id, &mut tmp, &mut dispatch, WsCode::QUIT as i32);
             self.sessions.insert(session_id, tmp);
         }
 
-        let is_new_room = !self.rooms.contains_key(&room_key);
-
-        // Check name uniqueness before mutable borrow
-        if !is_new_room && self.name_taken_in_room(&room_key, &name, Some(session_id)) {
-            return Self::error_response(session_id, route as i32, WsResponseCode::NO_PERMISSION);
+        // — 检查名字唯一性 & 空位 —
+        let max_players = self.rooms.get(&password).map(|e| e.max_players).unwrap_or(2);
+        if self.name_taken_in_room(&password, &name, Some(session_id)) {
+            return Self::error_response(session_id, Routes::JOIN as i32, WsResponseCode::NO_PERMISSION);
         }
+        let Some(position) = self.select_position(&password, max_players, session_id) else {
+            return Self::error_response(session_id, Routes::JOIN as i32, WsResponseCode::NO_PERMISSION);
+        };
 
-        // Check if there's space
-        let existing_max = self.rooms.get(&room_key).map(|e| e.max_players).unwrap_or(max_players);
-        let position = self.select_position(&room_key, existing_max, session_id);
-        if position.is_none() {
-            return Self::error_response(session_id, route as i32, WsResponseCode::NO_PERMISSION);
-        }
-        let position = position.unwrap();
-
-        // Now do the mutable operations
+        // — 加入 —
         let name_for_event = name.clone();
         {
-            let entry = self.rooms.entry(room_key.clone()).or_insert_with(|| {
-                RoomEntry {
-                    configs: configs.clone(),
-                    param_descriptions: param_descriptions.clone().unwrap_or_default(),
-                    min_players,
-                    max_players,
-                    state: Box::new(crate::game_state::CommonGameState::new()),
-                }
-            });
+            let entry = self.rooms.get_mut(&password).unwrap();
             entry.state.add_player(position, session_id, &name);
         }
 
         {
             let session = self.sessions.entry(session_id).or_default();
             session.name = Some(name.clone());
-            session.room_key = Some(room_key.clone());
+            session.room_key = Some(password.clone());
             session.position = Some(position);
         }
 
-        // Broadcast JOIN event
+        // — 广播 JOIN 事件 —
         {
-            let entry = self.rooms.get(&room_key).unwrap();
+            let entry = self.rooms.get(&password).unwrap();
             let players = entry.state.players();
             if players.len() > 1 {
                 let data = serde_json::to_value(json!({"name": name_for_event, "position": position as i32})).unwrap_or(Value::Null);
@@ -448,23 +482,17 @@ impl RoomService {
             }
         }
 
-        if route as i32 == Routes::CREATE as i32 {
-            self.send_param_descriptions_to(
+        // — 响应 —
+        {
+            let entry = self.rooms.get(&password).unwrap();
+            dispatch.messages.push(Self::direct_response_with_data(
                 session_id,
-                route as i32,
-                WsResponseCode::OK,
-                &room_key,
-                &mut dispatch,
-            );
-        } else {
-            if let Some(configs_json) = self.current_configs_json(&room_key) {
-                dispatch.messages.push(Self::direct_response_with_data(
-                    session_id,
-                    route as i32,
-                    WsResponseCode::JOINED,
-                    json!({"current_configs": configs_json}),
-                ));
-            }
+                Routes::JOIN as i32,
+                WsResponseCode::JOINED,
+                share_type_public::WsSettingPayload {
+                    current_configs: entry.configs.clone(),
+                },
+            ));
         }
         dispatch
     }
@@ -503,16 +531,18 @@ impl RoomService {
         let Some(room_key) = self.room_key_of(session_id) else {
             return Self::error_response(session_id, Routes::SETTING as i32, WsResponseCode::NOT_LOGIN);
         };
-        match self.update_room_settings(session_id, data) {
+        let Ok(payload) = Self::parse::<share_type_public::WsSettingPayload>(data.clone()) else {
+            return Self::error_response(session_id, Routes::SETTING as i32, WsResponseCode::ERROR_FORMAT);
+        };
+        match self.update_room_settings(session_id, &payload) {
             Ok(()) => {
-                let configs_json = self.current_configs_json(&room_key)
-                    .unwrap_or(Value::Null);
+                let current_configs = self.rooms.get(&room_key).map(|e| e.configs.clone()).unwrap_or_default();
                 self.push_ok_response(&mut dispatch, session_id, Routes::SETTING as i32);
                 self.send_other(
                     &room_key,
                     session_id,
                     WsCode::SETTING as i32,
-                    json!({"settings": configs_json}),
+                    share_type_public::WsSettingPayload { current_configs },
                     &mut dispatch,
                 );
                 dispatch
@@ -882,26 +912,33 @@ impl RoomService {
         }
     }
 
-    pub fn direct_response_with_data(
+    pub fn direct_response_with_data<T: serde::Serialize>(
         recipient: SessionId,
         route: i32,
         code: WsResponseCode,
-        data: Value,
+        data: T,
     ) -> Delivery {
         Delivery {
             recipient,
-            payload: OutboundPayload::Response(RequestResponse::WithData(WsResponse { route, code, data })),
+            payload: OutboundPayload::Response(RequestResponse::WithData(WsResponse {
+                route,
+                code,
+                data: serde_json::to_value(data).unwrap_or(Value::Null),
+            })),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
 
-    use share_type_public::{Routes, WsCode, WsRequest, WsResponseCode};
+    use share_type_public::{
+        Routes, WsCode, WsRequest, WsResponseCode, GameParam, GameParamRange,
+    };
 
     use super::{Dispatch, OutboundPayload, RequestResponse, RoomService};
+    use crate::game_setting::GameSettings;
 
     fn recipients_of(code: i32, dispatch: &Dispatch) -> HashSet<u64> {
         dispatch
@@ -914,29 +951,24 @@ mod tests {
             .collect()
     }
 
-    #[derive(Debug, Clone)]
-    struct TestSettings;
+    fn settings() -> super::SettingsBuilderResult {
+        let params: HashMap<String, GameParam> = [
+            (
+                "test_param".into(),
+                GameParam::Range(GameParamRange { default: 200, min: 50, max: 2000 }),
+            ),
+        ]
+        .into_iter()
+        .collect();
 
-    impl share_type_public::GameSettings for TestSettings {
-        fn to_full_json(&self) -> serde_json::Value {
-            serde_json::json!({"min_players": 3, "max_players": 3})
+        let mut s = GameSettings::new(3, 3);
+        for (key, param) in &params {
+            if let GameParam::Range(r) = param {
+                s.values.insert(key.clone(), r.default);
+            }
         }
-        fn to_current_json(&self) -> serde_json::Value {
-            serde_json::json!({"min_players": 3, "max_players": 3})
-        }
-        fn update_from_json(&mut self, _data: &serde_json::Value) -> Result<(), String> {
-            Ok(())
-        }
-        fn clone_box(&self) -> Box<dyn share_type_public::GameSettings> {
-            Box::new(self.clone())
-        }
-        fn player_limits(&self) -> (usize, usize) {
-            (3, 3)
-        }
-    }
 
-    fn settings() -> Box<dyn share_type_public::GameSettings> {
-        Box::new(TestSettings)
+        (s, params)
     }
 
     #[test]
@@ -968,7 +1000,7 @@ mod tests {
             OutboundPayload::Response(RequestResponse::WithData(resp)) => {
                 item.recipient == 2
                     && resp.code as i32 == WsResponseCode::JOINED as i32
-                    && resp.data.get("min_players").is_some()
+                    && resp.data.get("current_configs").is_some()
                     && resp.data.get("name").is_none()
             }
             _ => false,
