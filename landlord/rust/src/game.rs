@@ -66,7 +66,7 @@ impl GameHandler for LandlordGameHandler {
                 self.handle_play(room_service, session_id, request.data)
             }
 
-            _ => room_service.unsupported_response(session_id, request.route),
+            _ => room_service.error_response(session_id, request.route, WsResponseCode::NOT_IN_RANGE),
         }
     }
 }
@@ -80,10 +80,10 @@ impl LandlordGameHandler {
     ) -> Dispatch {
         // Only the creator (position 0) may start
         let Some(position) = room_service.session_position(session_id) else {
-            return room_service.unsupported_response(session_id, Routes::START as i32);
-        };
-        if position != 0 {
-            return room_service.permission_denied_response(session_id, Routes::START as i32);
+            return room_service.error_response(session_id, Routes::START as i32, WsResponseCode::NOT_LOGIN);
+  };
+  if position != 0 {
+            return room_service.error_response(session_id, Routes::START as i32, WsResponseCode::NO_PERMISSION);
         }
 
         let mut dispatch = Dispatch::default();
@@ -91,16 +91,15 @@ impl LandlordGameHandler {
             return dispatch;
         }
         if !room_service.room_ready_to_start(session_id) {
-            return room_service.unsupported_response(session_id, Routes::START as i32);
-        }
-
-        let Some(room_key) = room_service.room_key_of(session_id) else {
-            return room_service.unsupported_response(session_id, Routes::START as i32);
-        };
+            return room_service.error_response(session_id, Routes::START as i32, WsResponseCode::NOT_IN_RANGE);
+  }
+  let Some(room_key) = room_service.room_key_of(session_id) else {
+            return room_service.error_response(session_id, Routes::START as i32, WsResponseCode::NOT_IN_RANGE);
+  };
 
         // Prevent re-starting if game loop is already running
         if self.loop_states.contains_key(&room_key) {
-            return room_service.permission_denied_response(session_id, Routes::START as i32);
+            return room_service.error_response(session_id, Routes::START as i32, WsResponseCode::NO_PERMISSION);
         }
 
         let players = room_service.get_game_state_players(&room_key);
@@ -140,20 +139,22 @@ impl LandlordGameHandler {
         data: serde_json::Value,
     ) -> Dispatch {
         let Some(pos) = room_service.session_position(session_id) else {
-            return room_service.permission_denied_response(
+            return room_service.error_response(
                 session_id,
                 LandlordRoutes::CALL_LANDLORD as i32,
+                WsResponseCode::NOT_LOGIN,
             );
         };
         let Some(room_key) = room_service.room_key_of(session_id) else {
-            return room_service.permission_denied_response(
+            return room_service.error_response(
                 session_id,
                 LandlordRoutes::CALL_LANDLORD as i32,
+                WsResponseCode::NOT_LOGIN,
             );
         };
 
         let Ok(payload) = RoomService::parse::<WsCallLandlordRequest>(data) else {
-            return RoomService::error_response(
+            return room_service.error_response(
                 session_id,
                 LandlordRoutes::CALL_LANDLORD as i32,
                 WsResponseCode::ERROR_FORMAT,
@@ -163,9 +164,10 @@ impl LandlordGameHandler {
         let score: u8 = payload.score;
 
         let Some(loop_state) = self.loop_states.get(&room_key) else {
-            return room_service.permission_denied_response(
+            return room_service.error_response(
                 session_id,
                 LandlordRoutes::CALL_LANDLORD as i32,
+                WsResponseCode::NO_PERMISSION,
             );
         };
 
@@ -173,27 +175,31 @@ impl LandlordGameHandler {
         {
             let mut s = loop_state.lock().unwrap();
             if s.phase != LandlordPhase::CallLandlord {
-                return room_service.permission_denied_response(
+                return room_service.error_response(
                     session_id,
                     LandlordRoutes::CALL_LANDLORD as i32,
+                    WsResponseCode::NO_PERMISSION,
                 );
             }
             if s.current_position != pos {
-                return room_service.permission_denied_response(
+                return room_service.error_response(
                     session_id,
                     LandlordRoutes::CALL_LANDLORD as i32,
+                    WsResponseCode::NO_PERMISSION,
                 );
             }
             if score > 3 {
-                return room_service.permission_denied_response(
+                return room_service.error_response(
                     session_id,
                     LandlordRoutes::CALL_LANDLORD as i32,
+                    WsResponseCode::NO_PERMISSION,
                 );
             }
             if score > 0 && score <= s.score as u8 {
-                return room_service.permission_denied_response(
+                return room_service.error_response(
                     session_id,
                     LandlordRoutes::CALL_LANDLORD as i32,
+                    WsResponseCode::NO_PERMISSION,
                 );
             }
 
@@ -237,10 +243,10 @@ impl LandlordGameHandler {
         data: serde_json::Value,
     ) -> Dispatch {
         let Some(pos) = room_service.session_position(session_id) else {
-            return room_service.unsupported_response(session_id, Routes::PLAY as i32);
-        };
-        let Some(room_key) = room_service.room_key_of(session_id) else {
-            return room_service.unsupported_response(session_id, Routes::PLAY as i32);
+            return room_service.error_response(session_id, Routes::PLAY as i32, WsResponseCode::NOT_LOGIN);
+            };
+            let Some(room_key) = room_service.room_key_of(session_id) else {
+                return room_service.error_response(session_id, Routes::PLAY as i32, WsResponseCode::NOT_LOGIN);
         };
 
         let cards: Vec<i32> = data
@@ -249,14 +255,14 @@ impl LandlordGameHandler {
             .unwrap_or_default();
 
         let Some(loop_state) = self.loop_states.get(&room_key) else {
-            return room_service.permission_denied_response(session_id, Routes::PLAY as i32);
+            return room_service.error_response(session_id, Routes::PLAY as i32, WsResponseCode::NO_PERMISSION);
         };
 
         let name;
         {
             let mut s = loop_state.lock().unwrap();
             if !validate_play_request_inner(&s, pos, &cards) {
-                return room_service.permission_denied_response(session_id, Routes::PLAY as i32);
+                return room_service.error_response(session_id, Routes::PLAY as i32, WsResponseCode::NO_PERMISSION);
             }
 
             // Record the play in the loop state
