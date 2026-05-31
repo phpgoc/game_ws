@@ -52,9 +52,18 @@ pub struct WsJoinRequest {
     pub password: String,
 }
 
+
+/// JOIN 响应，发给新人。
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsJoinEvent {
+pub struct WsJoinResponse {
+    pub current_configs: std::collections::HashMap<String, i32>,
+    pub existing_members: Vec<WsMemberInfo>,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsMemberInfo {
     pub name: String,
     pub position: i32,
 }

@@ -463,34 +463,38 @@ impl RoomService {
             session.position = Some(position);
         }
 
-        // — 广播 JOIN 事件 —
-        {
-            let entry = self.rooms.get(&password).unwrap();
-            let players = entry.state.players();
-            if players.len() > 1 {
-                let data = serde_json::to_value(json!({"name": name_for_event, "position": position as i32})).unwrap_or(Value::Null);
-                for (_, (sid, _)) in players {
-                    if *sid == session_id { continue; }
-                    dispatch.messages.push(Delivery {
-                        recipient: *sid,
-                        payload: OutboundPayload::Event(CommonEvent {
-                            code: WsCode::JOIN as i32,
-                            data: data.clone(),
-                        }),
-                    });
-                }
-            }
-        }
+        // — 广播 JOIN 事件给其他人 —
+        self.send_other(
+            &password,
+            session_id,
+            WsCode::JOIN as i32,
+            share_type_public::WsMemberInfo {
+                name: name_for_event,
+                position: position as i32,
+            },
+            &mut dispatch,
+        );
 
-        // — 响应 —
+        // — JOIN 响应（含 current_configs + existing_members） —
         {
             let entry = self.rooms.get(&password).unwrap();
+            let existing_members: Vec<share_type_public::WsMemberInfo> = entry
+                .state
+                .players()
+                .iter()
+                .filter(|(p, _)| **p != position)
+                .map(|(p, (_, n))| share_type_public::WsMemberInfo {
+                    name: n.clone(),
+                    position: *p as i32,
+                })
+                .collect();
             dispatch.messages.push(Self::direct_response_with_data(
                 session_id,
                 Routes::JOIN as i32,
                 WsResponseCode::JOINED,
-                share_type_public::WsSettingPayload {
+                share_type_public::WsJoinResponse {
                     current_configs: entry.configs.clone(),
+                    existing_members,
                 },
             ));
         }
