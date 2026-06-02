@@ -232,7 +232,7 @@ impl RoomService {
     pub fn clear_room_game_state(&mut self, room_key: &str) {
         if let Some(entry) = self.rooms.get_mut(room_key) {
 
-            entry.state = Box::new(crate::game_state::CommonGameState::new());
+            entry.state = Box::new(crate::game_state::SharedGameState::new());
         }
     }
 
@@ -240,8 +240,18 @@ impl RoomService {
     pub fn get_game_state_players(&self, room_key: &str) -> std::collections::HashMap<usize, (SessionId, String)> {
         self.rooms
             .get(room_key)
-            .map(|e| e.state.players().clone())
+            .map(|e| e.state.players())
             .unwrap_or_default()
+    }
+
+    /// 获取房间共享 CommonGameState 句柄（供游戏 loop 与 common 同步访问）。
+    pub fn get_room_common_state_handle(
+        &self,
+        room_key: &str,
+    ) -> Option<std::sync::Arc<std::sync::Mutex<crate::game_state::CommonGameState>>> {
+        self.rooms
+            .get(room_key)
+            .map(|entry| entry.state.shared_common_state())
     }
 
     /// 更新房间设置（只能由 position 0 调用）。
@@ -302,7 +312,7 @@ impl RoomService {
         let data = serde_json::to_value(payload).unwrap_or(Value::Null);
         for (_, (sid, _)) in entry.state.players() {
             dispatch.messages.push(Delivery {
-                recipient: *sid,
+                recipient: sid,
                 payload: OutboundPayload::Event(CommonEvent { code, data: data.clone() }),
             });
         }
@@ -319,9 +329,9 @@ impl RoomService {
         let Some(entry) = self.rooms.get(room_key) else { return };
         let data = serde_json::to_value(payload).unwrap_or(Value::Null);
         for (_, (sid, _)) in entry.state.players() {
-            if *sid == exclude { continue; }
+            if sid == exclude { continue; }
             dispatch.messages.push(Delivery {
-                recipient: *sid,
+                recipient: sid,
                 payload: OutboundPayload::Event(CommonEvent { code, data: data.clone() }),
             });
         }
@@ -370,7 +380,7 @@ impl RoomService {
             param_descriptions: param_descriptions.clone(),
             min_players: settings.min_players,
             max_players: settings.max_players,
-            state: Box::new(crate::game_state::CommonGameState::new()),
+            state: Box::new(crate::game_state::SharedGameState::new()),
         });
         {
             let entry = self.rooms.get_mut(&password).unwrap();
@@ -679,7 +689,7 @@ impl RoomService {
             if !entry.state.is_away(position) {
                 return self.error_response(session_id, Routes::BACK as i32, WsResponseCode::NO_PERMISSION);
             }
-            entry.state.common_state_mut().away_positions.remove(&position);
+            entry.state.clear_away_position(position);
         }
         self.send_all(
             &room_key,
@@ -809,7 +819,10 @@ impl RoomService {
         };
         let players = entry.state.players();
         // 如果已经在房间中，返回现有位置
-        if let Some(pos) = players.iter().find_map(|(p, (sid, _))| if *sid == session_id { Some(*p) } else { None }) {
+        if let Some(pos) = players
+            .iter()
+            .find_map(|(p, (sid, _))| if *sid == session_id { Some(*p) } else { None })
+        {
             return Some(pos);
         }
         (0..max_players).find(|pos| !players.contains_key(pos))

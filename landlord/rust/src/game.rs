@@ -102,8 +102,14 @@ impl LandlordGameHandler {
             return room_service.error_response(session_id, Routes::START as i32, WsResponseCode::NO_PERMISSION);
         }
 
-        let players = room_service.get_game_state_players(&room_key);
-        let loop_state = Arc::new(std::sync::Mutex::new(LandlordLoopState::new(players)));
+        let Some(shared_common_state) = room_service.get_room_common_state_handle(&room_key) else {
+            return room_service.error_response(
+                session_id,
+                Routes::START as i32,
+                WsResponseCode::NO_PERMISSION,
+            );
+        };
+        let loop_state = Arc::new(std::sync::Mutex::new(LandlordLoopState::new(shared_common_state)));
 
         self.loop_states
             .insert(room_key.clone(), Arc::clone(&loop_state));
@@ -210,8 +216,8 @@ impl LandlordGameHandler {
             // Record the call in history for game loop's landlord determination
             s.call_history.push((pos, score));
             // 本轮叫分/不叫已收到
-            s.base.action_received = true;
-            name = s.base.player_name(pos);
+            s.set_action_received(true);
+            name = s.player_name(pos);
         }
 
         // 广播叫分事件给所有人（含自己，方便前端统一处理）
@@ -267,8 +273,8 @@ impl LandlordGameHandler {
 
             // Record the play in the loop state
             s.current_play = cards.clone();
-            s.base.action_received = true;
-            name = s.base.player_name(pos);
+            s.set_action_received(true);
+            name = s.player_name(pos);
         }
 
         let mut dispatch = Dispatch::default();

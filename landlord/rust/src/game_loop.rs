@@ -16,7 +16,7 @@ use crate::game_state::LandlordLoopState;
 // ─── Helpers ──────────────────────────────────────────────────────────
 
 fn player_name(state: &LandlordLoopState, position: usize) -> String {
-    state.base.player_name(position)
+    state.player_name(position)
 }
 
 /// Get the per-turn timeout for the current position:
@@ -24,7 +24,7 @@ fn player_name(state: &LandlordLoopState, position: usize) -> String {
 fn turn_timeout(state: &LandlordLoopState, configs: &std::collections::HashMap<String, i32>) -> u32 {
     let away_time = configs.get("away_time").copied().unwrap_or(5) as u32;
     let play_time = configs.get("play_time").copied().unwrap_or(30) as u32;
-    if state.base.is_away(state.current_position) {
+    if state.is_away(state.current_position) {
         away_time
     } else {
         play_time
@@ -113,8 +113,8 @@ async fn handle_start_phase(
         let mut s = state.lock().unwrap();
         s.generate_card();
         s.next_phase(); // Start → CallLandlord
-        s.base.action_received = false;
-        s.base.turn_countdown = turn_timeout(&s, configs);
+        s.set_action_received(false);
+        s.set_turn_countdown(turn_timeout(&s, configs));
 
         hidden = s.hidden_cards.clone();
         deal_data = sorted_positions
@@ -202,14 +202,14 @@ async fn handle_call_landlord_phase(
             hand.sort_unstable();
         }
         // Reset for landlord's first play
-        s.base.action_received = false;
-        s.base.turn_countdown = turn_timeout(&s, configs);
+        s.set_action_received(false);
+        s.set_turn_countdown(turn_timeout(&s, configs));
         return;
     }
 
     // Reset for next caller in the same round
-    s.base.action_received = false;
-    s.base.turn_countdown = turn_timeout(&s, configs);
+    s.set_action_received(false);
+    s.set_turn_countdown(turn_timeout(&s, configs));
   }
 
 /// Process a play tick: apply the current play (pass or cards), advance turns.
@@ -277,8 +277,8 @@ async fn handle_play_phase(
             }
 
             // Reset for next turn
-            s.base.action_received = false;
-            s.base.turn_countdown = turn_timeout(&s, configs);
+            s.set_action_received(false);
+            s.set_turn_countdown(turn_timeout(&s, configs));
         }
     }
 
@@ -319,18 +319,18 @@ async fn handle_play_phase(
 /// Handle timeout: mark the current player as away and simulate their action.
 fn handle_timeout(state: &mut LandlordLoopState, _phase: LandlordPhase) {
     let pos = state.current_position;
-    state.base.mark_away(pos);
+    state.mark_away(pos);
 
     match state.phase {
         LandlordPhase::CallLandlord => {
             // Timed out = no call (score 0). Record it.
             state.call_history.push((pos, 0));
-            state.base.action_received = true;
+            state.set_action_received(true);
         }
         LandlordPhase::Play => {
             // Timed out = pass (empty play)
             state.current_play = Vec::new();
-            state.base.action_received = true;
+            state.set_action_received(true);
         }
         _ => {}
     }
@@ -347,7 +347,7 @@ pub(crate) fn start_game_loop(
     tokio::spawn(async move {
         let sorted_positions: Vec<usize> = {
             let s = state.lock().unwrap();
-            let mut p: Vec<usize> = s.base.players.keys().copied().collect();
+            let mut p: Vec<usize> = s.players_snapshot().keys().copied().collect();
             p.sort();
             p
         };
@@ -368,7 +368,7 @@ pub(crate) fn start_game_loop(
             // ─── Phase-independent checks ─────────────────────────────
             {
                 let s = state.lock().unwrap();
-                if s.base.paused {
+                if s.is_paused() {
                     continue;
                 }
             }
@@ -381,10 +381,10 @@ pub(crate) fn start_game_loop(
 
             if matches!(phase, LandlordPhase::CallLandlord | LandlordPhase::Play) {
                 let mut s = state.lock().unwrap();
-                if s.base.action_received {
+                if s.action_received() {
                     // Action received — let phase handler process it
-                } else if s.base.turn_countdown > 0 {
-                    s.base.turn_countdown -= 1;
+                } else if s.turn_countdown() > 0 {
+                    s.set_turn_countdown(s.turn_countdown() - 1);
                     continue; // Wait for action or timeout
                 } else {
                     // Timeout

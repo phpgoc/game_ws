@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use ws_common::{
     SessionId,
@@ -8,10 +9,18 @@ use ws_common::{
 use share_type_public::LandlordPhase;
 
 /// Stored in RoomState as `Box<dyn GameState>`.
-/// Only holds the player roster; implements GameState via CommonGameState.
-#[derive(Debug, Default)]
+/// Holds the shared common state that is also read/written by game loop.
+#[derive(Debug, Clone)]
 pub struct LandlordGameState {
-    pub base: CommonGameState,
+    pub base: Arc<Mutex<CommonGameState>>,
+}
+
+impl Default for LandlordGameState {
+    fn default() -> Self {
+        Self {
+            base: Arc::new(Mutex::new(CommonGameState::new())),
+        }
+    }
 }
 
 impl LandlordGameState {
@@ -21,20 +30,17 @@ impl LandlordGameState {
 }
 
 impl GameState for LandlordGameState {
-    fn common_state(&self) -> &CommonGameState {
-        &self.base
-    }
-    fn common_state_mut(&mut self) -> &mut CommonGameState {
-        &mut self.base
+    fn shared_common_state(&self) -> Arc<Mutex<CommonGameState>> {
+        Arc::clone(&self.base)
     }
 }
 
 /// Held exclusively by the game loop behind `Arc<std::sync::Mutex<>>`.
 /// Contains all in-game mutable state.
-/// `base` holds players, paused flag, and away_positions (shared concepts across all games).
+/// `base` is shared with RoomService common state.
 #[derive(Debug)]
 pub struct LandlordLoopState {
-    pub base: CommonGameState,
+    pub base: Arc<Mutex<CommonGameState>>,
     pub phase: LandlordPhase,
     /// The position that starts the call-landlord phase each deal.
     /// Rotates by 1 on redeal so a different player calls first.
@@ -53,10 +59,11 @@ pub struct LandlordLoopState {
 }
 
 impl LandlordLoopState {
-    pub fn new(players: HashMap<usize, (SessionId, String)>) -> Self {
-        let call_position = players.keys().copied().min().unwrap_or(0);
-        let mut base = CommonGameState::new();
-        base.players = players;
+    pub fn new(base: Arc<Mutex<CommonGameState>>) -> Self {
+        let call_position = {
+            let state = base.lock().unwrap();
+            state.players.keys().copied().min().unwrap_or(0)
+        };
         Self {
             base,
             phase: LandlordPhase::Start,
@@ -71,6 +78,46 @@ impl LandlordLoopState {
             last_play: Vec::new(),
             current_play: Vec::new(),
         }
+    }
+
+    pub fn players_snapshot(&self) -> HashMap<usize, (SessionId, String)> {
+        self.base.lock().unwrap().players.clone()
+    }
+
+    pub fn player_name(&self, position: usize) -> String {
+        self.base.lock().unwrap().player_name(position)
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.base.lock().unwrap().paused
+    }
+
+    pub fn is_away(&self, pos: usize) -> bool {
+        self.base.lock().unwrap().is_away(pos)
+    }
+
+    pub fn mark_away(&self, pos: usize) {
+        self.base.lock().unwrap().mark_away(pos);
+    }
+
+    pub fn clear_away(&self) {
+        self.base.lock().unwrap().clear_away();
+    }
+
+    pub fn action_received(&self) -> bool {
+        self.base.lock().unwrap().action_received
+    }
+
+    pub fn set_action_received(&self, action_received: bool) {
+        self.base.lock().unwrap().action_received = action_received;
+    }
+
+    pub fn turn_countdown(&self) -> u32 {
+        self.base.lock().unwrap().turn_countdown
+    }
+
+    pub fn set_turn_countdown(&self, turn_countdown: u32) {
+        self.base.lock().unwrap().turn_countdown = turn_countdown;
     }
 
     /// Advance to the next game phase.
@@ -95,7 +142,7 @@ impl LandlordLoopState {
     /// Reset for a new deal — called after settlement or all-pass.
     /// Rotates the starting caller so a different player calls first next deal.
     pub fn redeal(&mut self) {
-        let n = self.base.players.len().max(1);
+        let n = self.players_snapshot().len().max(1);
         self.call_position = (self.call_position + 1) % n;
         self.current_position = self.call_position;
         self.phase = LandlordPhase::Start;
@@ -107,9 +154,9 @@ impl LandlordLoopState {
         self.last_play_position = self.call_position;
         self.last_play.clear();
         self.current_play.clear();
-        self.base.action_received = false;
-        self.base.turn_countdown = 0;
-        self.base.clear_away();
+        self.set_action_received(false);
+        self.set_turn_countdown(0);
+        self.clear_away();
     }
 
     /// Shuffle a 54-card deck and deal 17 cards to each of the 3 sorted
@@ -117,7 +164,7 @@ impl LandlordLoopState {
     /// Each player's hand is sorted for convenience.
     pub fn generate_card(&mut self) {
         let deck = Self::shuffle();
-        let mut sorted: Vec<usize> = self.base.players.keys().copied().collect();
+        let mut sorted: Vec<usize> = self.players_snapshot().keys().copied().collect();
         sorted.sort();
         self.hands.clear();
         for (i, &pos) in sorted.iter().enumerate() {
