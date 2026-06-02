@@ -85,6 +85,7 @@
       PAUSE: 5, RESUME: 6, DISBAND: 7, SETTING: 8,
       START: 10, GAME_OVER: 11,
       DEAL: 20, PLAY: 21, DEAL_OPEN_CARDS: 24, DEAL_FACE_DOWN_CARDS: 25,
+      SHOW_HIDDEN_CARDS: 30,
       CALL_LANDLORD: 1001,
     };
     const RESP_CODES = { OK: 0, JOINED: 201, ERROR_FORMAT: 400, NOT_LOGIN: 401, NO_PERMISSION: 403 };
@@ -148,8 +149,8 @@
           }
         }
 
-        // — 事件 (只有 code + data) —
-        if (msg.code !== undefined && msg.data !== undefined && msg.route === undefined) {
+        // — 事件 (code + data) —
+        if (msg.code !== undefined && msg.data !== undefined) {
           const ec = msg.code;
           if (ec === WS_CODES.SETTING && msg.data.current_configs) {
             applyCurrentConfigs(msg.data.current_configs);
@@ -158,13 +159,13 @@
             log("===== 游戏开始了！=====");
           }
           // DEAL 发牌
-          if (ec === WS_CODES.DEAL && msg.data.cards) {
+          if (ec === WS_CODES.DEAL && Array.isArray(msg.data.cards)) {
             myCards = msg.data.cards;
             renderCards();
             log(`收到 DEAL (${myCards.length} 张): ${cardListStr(myCards)}`);
           }
           // PLAY 出牌事件
-          if (ec === WS_CODES.PLAY && msg.data && msg.data.cards) {
+          if (ec === WS_CODES.PLAY && msg.data && Array.isArray(msg.data.cards)) {
             log(`${msg.data.name} 出牌: ${cardListStr(msg.data.cards)}`);
           }
           // CALL_LANDLORD 叫地主
@@ -172,12 +173,22 @@
             log(`${msg.data.name} 叫分: ${msg.data.score}`);
           }
           // DEAL_FACE_DOWN_CARDS 底牌
-          if (ec === WS_CODES.DEAL_FACE_DOWN_CARDS && msg.data && msg.data.cards) {
-            log(`底牌: ${cardListStr(msg.data.cards)}`);
+          if (ec === WS_CODES.DEAL_FACE_DOWN_CARDS && msg.data && Array.isArray(msg.data.cards)) {
+            const cards = msg.data.cards.filter(n => Number.isInteger(n) && n > 0);
+            if (cards.length > 0) {
+              log(`底牌: ${cardListStr(cards)}`);
+            } else {
+              const count = msg.data.cards.length || 3;
+              log(`底牌: 暗牌 x${count}`);
+            }
           }
           // DEAL_OPEN_CARDS 亮牌
-          if (ec === WS_CODES.DEAL_OPEN_CARDS && msg.data) {
+          if (ec === WS_CODES.DEAL_OPEN_CARDS && msg.data && Array.isArray(msg.data.cards)) {
             log(`${msg.data.name} 亮牌: ${cardListStr(msg.data.cards)}`);
+          }
+          // SHOW_HIDDEN_CARDS 结算亮底牌
+          if (ec === WS_CODES.SHOW_HIDDEN_CARDS && msg.data && Array.isArray(msg.data.cards)) {
+            log(`结算底牌: ${cardListStr(msg.data.cards)}`);
           }
         }
       };

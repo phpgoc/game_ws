@@ -165,6 +165,7 @@ pub struct WsDealFaceDownCardsEvent {
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsShowHiddenCardsEvent {
+    pub name: String,
     pub cards: Vec<i32>,
 }
 
