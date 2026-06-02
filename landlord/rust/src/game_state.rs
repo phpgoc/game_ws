@@ -96,8 +96,8 @@ impl LandlordLoopState {
         self.base.lock().unwrap().is_away(pos)
     }
 
-    pub fn mark_away(&self, pos: usize) {
-        self.base.lock().unwrap().mark_away(pos);
+    pub fn mark_away(&self, pos: usize) -> bool {
+        self.base.lock().unwrap().mark_away(pos)
     }
 
     pub fn clear_away(&self) {
@@ -142,8 +142,7 @@ impl LandlordLoopState {
     /// Reset for a new deal — called after settlement or all-pass.
     /// Rotates the starting caller so a different player calls first next deal.
     pub fn redeal(&mut self) {
-        let n = self.players_snapshot().len().max(1);
-        self.call_position = (self.call_position + 1) % n;
+        self.call_position = (self.call_position + 1) % 3;
         self.current_position = self.call_position;
         self.phase = LandlordPhase::Start;
         self.hands.clear();

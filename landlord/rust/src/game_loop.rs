@@ -1,17 +1,19 @@
+use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
 use share_type_public::{
-    LandlordPhase, WsCode,
+    LandlordPhase, WsCode, WsPositionEvent,
     games::landlord::{
-        WsDealEvent, WsDealFaceDownCardsEvent,
-        WsShowHiddenCardsEvent, WsLandlordGameOverEvent,
+        WsDealEvent, WsDealFaceDownCardsEvent, WsDealOpenCardsEvent, WsLandlordGameOverEvent,
+        WsShowHiddenCardsEvent,
     },
 };
 use tokio::sync::Mutex;
 use ws_common::{Delivery, OutboundPayload, RoomService, SessionSenders};
 
 use crate::game_state::LandlordLoopState;
+use crate::play_validator::validate_play_request;
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 
@@ -21,7 +23,10 @@ fn player_name(state: &LandlordLoopState, position: usize) -> String {
 
 /// Get the per-turn timeout for the current position:
 /// away players use away_time, others use play_time.
-fn turn_timeout(state: &LandlordLoopState, configs: &std::collections::HashMap<String, i32>) -> u32 {
+fn turn_timeout(
+    state: &LandlordLoopState,
+    configs: &std::collections::HashMap<String, i32>,
+) -> u32 {
     let away_time = configs.get("away_time").copied().unwrap_or(5) as u32;
     let play_time = configs.get("play_time").copied().unwrap_or(30) as u32;
     if state.is_away(state.current_position) {
@@ -94,6 +99,154 @@ fn dispatch_to_position(
         .collect()
 }
 
+fn card_rank(card: i32) -> u8 {
+    match card {
+        53 => 16,
+        54 => 17,
+        _ => (((card - 1) % 13) + 3) as u8,
+    }
+}
+
+fn group_by_rank(hand: &[i32]) -> BTreeMap<u8, Vec<i32>> {
+    let mut grouped: BTreeMap<u8, Vec<i32>> = BTreeMap::new();
+    for &card in hand {
+        grouped.entry(card_rank(card)).or_default().push(card);
+    }
+    for cards in grouped.values_mut() {
+        cards.sort_unstable();
+    }
+    grouped
+}
+
+fn push_candidate(cards: Vec<i32>, seen: &mut HashSet<Vec<i32>>, out: &mut Vec<Vec<i32>>) {
+    let mut normalized = cards;
+    normalized.sort_unstable();
+    if seen.insert(normalized.clone()) {
+        out.push(normalized);
+    }
+}
+
+fn build_auto_candidates(hand: &[i32]) -> Vec<Vec<i32>> {
+    let grouped = group_by_rank(hand);
+    let mut seen: HashSet<Vec<i32>> = HashSet::new();
+    let mut candidates = Vec::new();
+
+    // 顺子
+    let single_ranks: Vec<u8> = grouped
+        .iter()
+        .filter_map(|(&rank, cards)| {
+            if rank < 15 && !cards.is_empty() {
+                Some(rank)
+            } else {
+                None
+            }
+        })
+        .collect();
+    let mut i = 0usize;
+    while i < single_ranks.len() {
+        let mut j = i;
+        while j + 1 < single_ranks.len() && single_ranks[j + 1] == single_ranks[j] + 1 {
+            j += 1;
+        }
+        let run = &single_ranks[i..=j];
+        if run.len() >= 5 {
+            for len in 5..=run.len() {
+                for start in 0..=run.len() - len {
+                    let mut cards = Vec::with_capacity(len);
+                    for rank in &run[start..start + len] {
+                        if let Some(&card) = grouped.get(rank).and_then(|v| v.first()) {
+                            cards.push(card);
+                        }
+                    }
+                    if cards.len() == len {
+                        push_candidate(cards, &mut seen, &mut candidates);
+                    }
+                }
+            }
+        }
+        i = j + 1;
+    }
+
+    // 3带（先三带一，再三带一对，再三张）
+    let triple_ranks: Vec<u8> = grouped
+        .iter()
+        .filter_map(|(&rank, cards)| if cards.len() >= 3 { Some(rank) } else { None })
+        .collect();
+    for &triple_rank in &triple_ranks {
+        let triple = grouped[&triple_rank][..3].to_vec();
+        if let Some(single) = grouped
+            .iter()
+            .filter(|(rank, cards)| **rank != triple_rank && !cards.is_empty())
+            .map(|(_, cards)| cards[0])
+            .next()
+        {
+            let mut cards = triple.clone();
+            cards.push(single);
+            push_candidate(cards, &mut seen, &mut candidates);
+        }
+        if let Some(pair_cards) = grouped
+            .iter()
+            .filter(|(rank, cards)| **rank != triple_rank && cards.len() >= 2)
+            .map(|(_, cards)| vec![cards[0], cards[1]])
+            .next()
+        {
+            let mut cards = triple.clone();
+            cards.extend(pair_cards);
+            push_candidate(cards, &mut seen, &mut candidates);
+        }
+        push_candidate(triple, &mut seen, &mut candidates);
+    }
+
+    // 对子
+    for cards in grouped.values().filter(|cards| cards.len() >= 2) {
+        push_candidate(vec![cards[0], cards[1]], &mut seen, &mut candidates);
+    }
+
+    // 单张
+    for cards in grouped.values() {
+        if let Some(&card) = cards.first() {
+            push_candidate(vec![card], &mut seen, &mut candidates);
+        }
+    }
+
+    // 炸弹
+    for cards in grouped.values().filter(|cards| cards.len() == 4) {
+        push_candidate(cards.clone(), &mut seen, &mut candidates);
+    }
+
+    // 火箭
+    if hand.contains(&53) && hand.contains(&54) {
+        push_candidate(vec![53, 54], &mut seen, &mut candidates);
+    }
+
+    candidates
+}
+
+fn choose_auto_play(state: &LandlordLoopState, position: usize) -> Vec<i32> {
+    let hand = match state.hands.get(&position) {
+        Some(cards) => cards,
+        None => return Vec::new(),
+    };
+    //怎么可能有空手牌？
+    // if hand.is_empty() {
+    //     return Vec::new();
+    // }
+
+    for candidate in build_auto_candidates(hand) {
+        if validate_play_request(state, position, &candidate) {
+            return candidate;
+        }
+    }
+
+    // 兜底：轮到自己起牌时，至少出最小单张。
+    if state.last_play.is_empty() || state.last_play_position == position {
+        let mut smallest = hand.clone();
+        smallest.sort_by_key(|card| (card_rank(*card), *card));
+        return vec![smallest[0]];
+    }
+    Vec::new()
+}
+
 // ─── Phase Handlers ───────────────────────────────────────────────────
 
 /// Start → deal cards, advance to CallLandlord, set timer.
@@ -107,7 +260,7 @@ async fn handle_start_phase(
 ) {
     // 1. Deal cards & advance phase inside lock
     let deal_data: Vec<(usize, Vec<i32>, String)>;
-    let hidden: Vec<i32>;
+    let hidden_count: usize;
 
     {
         let mut s = state.lock().unwrap();
@@ -116,7 +269,7 @@ async fn handle_start_phase(
         s.set_action_received(false);
         s.set_turn_countdown(turn_timeout(&s, configs));
 
-        hidden = s.hidden_cards.clone();
+        hidden_count = s.hidden_cards.len();
         deal_data = sorted_positions
             .iter()
             .filter_map(|&pos| {
@@ -145,8 +298,10 @@ async fn handle_start_phase(
     dispatch.extend(dispatch_all(
         room_key,
         WsCode::DEAL_FACE_DOWN_CARDS as i32,
-        serde_json::to_value(WsDealFaceDownCardsEvent { cards: hidden })
-            .unwrap_or_default(),
+        serde_json::to_value(WsDealFaceDownCardsEvent {
+            cards: vec![0; hidden_count],
+        })
+        .unwrap_or_default(),
         &rs,
     ));
     drop(rs);
@@ -159,58 +314,76 @@ async fn handle_start_phase(
 /// - If nobody called (score == 0) → redeal
 /// - Otherwise, the highest bidder (last in call_history with max score) becomes landlord
 async fn handle_call_landlord_phase(
+    room_key: &str,
     state: &Arc<std::sync::Mutex<LandlordLoopState>>,
     sorted_positions: &[usize],
     configs: &std::collections::HashMap<String, i32>,
+    room_service: &Arc<Mutex<RoomService>>,
+    senders: &SessionSenders,
 ) {
-    let mut s = state.lock().unwrap();
+    let open_hidden_event: Option<(String, Vec<i32>)> = {
+        let mut s = state.lock().unwrap();
 
-    // Move to next position
-    let current_idx = sorted_positions
-        .iter()
-        .position(|&p| p == s.current_position)
-        .unwrap_or(0);
-    s.current_position = sorted_positions[(current_idx + 1) % sorted_positions.len()];
-
-    // If we've looped back to call_position, one full round is done
-    if s.current_position == s.call_position {
-        if s.score == 0 {
-            // Everyone passed → redeal
-            s.redeal();
-            return;
-        }
-
-        // Find the player with the highest bid.
-        // call_history is in call order; the highest score wins.
-        // If tie (can't happen in 3-player since each round is one direction),
-        // the last highest bidder wins.
-        let max_score = s.call_history.iter().map(|(_, sc)| *sc).max().unwrap_or(0);
-        let landlord_pos = s
-            .call_history
+        // Move to next position
+        let current_idx = sorted_positions
             .iter()
-            .rev()
-            .find(|(_, sc)| *sc == max_score)
-            .map(|(pos, _)| *pos)
-            .unwrap_or(s.call_position);
+            .position(|&p| p == s.current_position)
+            .unwrap_or(0);
+        s.current_position = sorted_positions[(current_idx + 1) % sorted_positions.len()];
 
-        s.landlord_position = Some(landlord_pos);
-        s.next_phase(); // CallLandlord → Play
-        // Give hidden cards to landlord
-        let hidden = s.hidden_cards.clone();
-        if let Some(hand) = s.hands.get_mut(&landlord_pos) {
-            hand.extend(hidden);
-            hand.sort_unstable();
+        // If we've looped back to call_position, one full round is done
+        if s.current_position == s.call_position {
+            if s.score == 0 {
+                // Everyone passed → redeal
+                s.redeal();
+                return;
+            }
+
+            // Find the player with the highest bid.
+            // call_history is in call order; the highest score wins.
+            // If tie (can't happen in 3-player since each round is one direction),
+            // the last highest bidder wins.
+            let max_score = s.call_history.iter().map(|(_, sc)| *sc).max().unwrap_or(0);
+            let landlord_pos = s
+                .call_history
+                .iter()
+                .rev()
+                .find(|(_, sc)| *sc == max_score)
+                .map(|(pos, _)| *pos)
+                .unwrap_or(s.call_position);
+
+            s.landlord_position = Some(landlord_pos);
+            s.next_phase(); // CallLandlord → Play
+            // Give hidden cards to landlord
+            let hidden = s.hidden_cards.clone();
+            if let Some(hand) = s.hands.get_mut(&landlord_pos) {
+                hand.extend(hidden.clone());
+                hand.sort_unstable();
+            }
+            // Reset for landlord's first play
+            s.set_action_received(false);
+            s.set_turn_countdown(turn_timeout(&s, configs));
+            Some((player_name(&s, landlord_pos), hidden))
+        } else {
+            // Reset for next caller in the same round
+            s.set_action_received(false);
+            s.set_turn_countdown(turn_timeout(&s, configs));
+            None
         }
-        // Reset for landlord's first play
-        s.set_action_received(false);
-        s.set_turn_countdown(turn_timeout(&s, configs));
-        return;
-    }
+    };
 
-    // Reset for next caller in the same round
-    s.set_action_received(false);
-    s.set_turn_countdown(turn_timeout(&s, configs));
-  }
+    if let Some((name, cards)) = open_hidden_event {
+        let rs = room_service.lock().await;
+        let dispatch = dispatch_all(
+            room_key,
+            WsCode::DEAL_OPEN_CARDS as i32,
+            serde_json::to_value(WsDealOpenCardsEvent { name, cards }).unwrap_or_default(),
+            &rs,
+        );
+        drop(rs);
+        send_dispatch(dispatch, senders).await;
+    }
+}
 
 /// Process a play tick: apply the current play (pass or cards), advance turns.
 ///
@@ -263,10 +436,7 @@ async fn handle_play_phase(
 
         if !game_over {
             // Advance to next position
-            let current_idx = sorted_positions
-                .iter()
-                .position(|&p| p == pos)
-                .unwrap_or(0);
+            let current_idx = sorted_positions.iter().position(|&p| p == pos).unwrap_or(0);
             let next_pos = sorted_positions[(current_idx + 1) % sorted_positions.len()];
             s.current_position = next_pos;
 
@@ -285,16 +455,53 @@ async fn handle_play_phase(
     if game_over {
         let rs = room_service.lock().await;
         let mut dispatch = Vec::new();
+        let (hidden_owner_name, hidden_cards, remaining_hands) = {
+            let s = state.lock().unwrap();
+            let hidden_cards = s.hidden_cards.clone();
+            let players = s.players_snapshot();
+            let hidden_owner_name = s
+                .landlord_position
+                .and_then(|pos| players.get(&pos).map(|(_, name)| name.clone()))
+                .unwrap_or_default();
+            let mut remaining_hands: Vec<(usize, Vec<i32>)> = s
+                .hands
+                .iter()
+                .map(|(pos, cards)| (*pos, cards.clone()))
+                .collect();
+            remaining_hands.sort_by_key(|(pos, _)| *pos);
+            let payloads = remaining_hands
+                .into_iter()
+                .map(|(pos, cards)| WsDealOpenCardsEvent {
+                    name: players
+                        .get(&pos)
+                        .map(|(_, name)| name.clone())
+                        .unwrap_or_default(),
+                    cards,
+                })
+                .collect::<Vec<_>>();
+            (hidden_owner_name, hidden_cards, payloads)
+        };
 
         // Broadcast hidden cards reveal
-        let hidden = state.lock().unwrap().hidden_cards.clone();
         dispatch.extend(dispatch_all(
             room_key,
             WsCode::SHOW_HIDDEN_CARDS as i32,
-            serde_json::to_value(WsShowHiddenCardsEvent { cards: hidden })
-                .unwrap_or_default(),
+            serde_json::to_value(WsShowHiddenCardsEvent {
+                name: hidden_owner_name,
+                cards: hidden_cards,
+            })
+            .unwrap_or_default(),
             &rs,
         ));
+        // 显示每个人剩余的手牌
+        for item in remaining_hands {
+            dispatch.extend(dispatch_all(
+                room_key,
+                WsCode::DEAL_OPEN_CARDS as i32,
+                serde_json::to_value(item).unwrap_or_default(),
+                &rs,
+            ));
+        }
 
         // Broadcast game over
         let landlord = state.lock().unwrap().landlord_position;
@@ -316,24 +523,53 @@ async fn handle_play_phase(
     false
 }
 
+async fn handle_settlement_phase(state: &Arc<std::sync::Mutex<LandlordLoopState>>) -> bool {
+    // 人数，如果人数还是3，等待几秒，next_phase(), 之后返回true 不满足直接返回false
+    if state.lock().unwrap().players_snapshot().len() != 3 {
+        return true;
+    }
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    let mut s = state.lock().unwrap();
+    if s.players_snapshot().len() != 3 {
+        return true;
+    }
+    s.redeal();
+    false
+}
+
 /// Handle timeout: mark the current player as away and simulate their action.
-fn handle_timeout(state: &mut LandlordLoopState, _phase: LandlordPhase) {
+fn handle_timeout(state: &mut LandlordLoopState) -> Option<usize> {
     let pos = state.current_position;
-    state.mark_away(pos);
+    let newly_away = if state.mark_away(pos) {
+        Some(pos)
+    } else {
+        None
+    };
+    // 广播away
 
     match state.phase {
         LandlordPhase::CallLandlord => {
             // Timed out = no call (score 0). Record it.
             state.call_history.push((pos, 0));
-            state.set_action_received(true);
+            next_call(state);
         }
         LandlordPhase::Play => {
             // Timed out = pass (empty play)
-            state.current_play = Vec::new();
-            state.set_action_received(true);
+            // 自动出牌，能管上就管，如果自己最大率先出牌，必出最小的牌，先看能不能顺，再看能不能3带，再看对，最后出单。
+            state.current_play = choose_auto_play(state, pos);
+            next_play(state);
         }
         _ => {}
     }
+    newly_away
+}
+
+fn next_call(state: &mut LandlordLoopState) {
+    state.set_action_received(true);
+}
+
+fn next_play(state: &mut LandlordLoopState) {
+    state.set_action_received(true);
 }
 
 // ─── Game Loop ────────────────────────────────────────────────────────
@@ -379,6 +615,7 @@ pub(crate) fn start_game_loop(
                 s.phase
             };
 
+            let mut away_position: Option<usize> = None;
             if matches!(phase, LandlordPhase::CallLandlord | LandlordPhase::Play) {
                 let mut s = state.lock().unwrap();
                 if s.action_received() {
@@ -388,8 +625,22 @@ pub(crate) fn start_game_loop(
                     continue; // Wait for action or timeout
                 } else {
                     // Timeout
-                    handle_timeout(&mut s, phase);
+                    away_position = handle_timeout(&mut s);
                 }
+            }
+            if let Some(position) = away_position {
+                let rs = room_service.lock().await;
+                let dispatch = dispatch_all(
+                    &room_key,
+                    WsCode::AWAY as i32,
+                    serde_json::to_value(WsPositionEvent {
+                        position: position as i32,
+                    })
+                    .unwrap_or_default(),
+                    &rs,
+                );
+                drop(rs);
+                send_dispatch(dispatch, &senders).await;
             }
 
             // ─── Phase dispatch ────────────────────────────────────────
@@ -408,7 +659,15 @@ pub(crate) fn start_game_loop(
                     .await;
                 }
                 LandlordPhase::CallLandlord => {
-                    handle_call_landlord_phase(&state, &sorted_positions, &configs).await;
+                    handle_call_landlord_phase(
+                        &room_key,
+                        &state,
+                        &sorted_positions,
+                        &configs,
+                        &room_service,
+                        &senders,
+                    )
+                    .await;
                 }
                 LandlordPhase::Play => {
                     let ended = handle_play_phase(
@@ -425,7 +684,9 @@ pub(crate) fn start_game_loop(
                     }
                 }
                 LandlordPhase::Settlement => {
-                    break;
+                    if handle_settlement_phase(&state).await {
+                        break;
+                    }
                 }
             }
         }

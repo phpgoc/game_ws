@@ -55,8 +55,9 @@ impl CommonGameState {
     pub fn resume(&mut self) {
         self.paused = false;
     }
-    pub fn mark_away(&mut self, pos: usize) {
-        self.away_positions.insert(pos);
+    pub fn mark_away(&mut self, pos: usize)  -> bool{
+
+        self.away_positions.insert(pos)
     }
     pub fn is_away(&self, pos: usize) -> bool {
         self.away_positions.contains(&pos)
