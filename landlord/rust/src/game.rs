@@ -1,12 +1,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use share_type_public::games::landlord::{
-    WsCallLandlordEvent, WsCallLandlordRequest, WsPlayEvent,
-};
-use share_type_public::{
-    LandlordRoutes, Routes, WsCode, WsResponseCode,
-};
+use share_type_public::games::landlord::{WsCallLandlordEvent, WsCallLandlordRequest, WsPlayEvent};
+use share_type_public::{LandlordRoutes, Routes, WsCode, WsResponseCode};
 use tokio::sync::Mutex;
 use ws_common::{ClientRequest, Dispatch, GameHandler, RoomService, SessionId, SessionSenders};
 
@@ -54,9 +50,7 @@ impl GameHandler for LandlordGameHandler {
         request: ClientRequest,
     ) -> Dispatch {
         match request.route {
-            r if r == Routes::START as i32 => {
-                self.handle_start(room_service, session_id)
-            }
+            r if r == Routes::START as i32 => self.handle_start(room_service, session_id),
 
             r if r == LandlordRoutes::CALL_LANDLORD as i32 => {
                 self.handle_call_landlord(room_service, session_id, request.data)
@@ -66,24 +60,30 @@ impl GameHandler for LandlordGameHandler {
                 self.handle_play(room_service, session_id, request.data)
             }
 
-            _ => room_service.error_response(session_id, request.route, WsResponseCode::NOT_IN_RANGE),
+            _ => {
+                room_service.error_response(session_id, request.route, WsResponseCode::NOT_IN_RANGE)
+            }
         }
     }
 }
 
 // ─── START ────────────────────────────────────────────────────────────
 impl LandlordGameHandler {
-    fn handle_start(
-        &mut self,
-        room_service: &mut RoomService,
-        session_id: SessionId,
-    ) -> Dispatch {
+    fn handle_start(&mut self, room_service: &mut RoomService, session_id: SessionId) -> Dispatch {
         // Only the creator (position 0) may start
         let Some(position) = room_service.session_position(session_id) else {
-            return room_service.error_response(session_id, Routes::START as i32, WsResponseCode::NOT_LOGIN);
-  };
-  if position != 0 {
-            return room_service.error_response(session_id, Routes::START as i32, WsResponseCode::NO_PERMISSION);
+            return room_service.error_response(
+                session_id,
+                Routes::START as i32,
+                WsResponseCode::NOT_LOGIN,
+            );
+        };
+        if position != 0 {
+            return room_service.error_response(
+                session_id,
+                Routes::START as i32,
+                WsResponseCode::NO_PERMISSION,
+            );
         }
 
         let mut dispatch = Dispatch::default();
@@ -91,15 +91,27 @@ impl LandlordGameHandler {
             return dispatch;
         }
         if !room_service.room_ready_to_start(session_id) {
-            return room_service.error_response(session_id, Routes::START as i32, WsResponseCode::NOT_IN_RANGE);
-  }
-  let Some(room_key) = room_service.room_key_of(session_id) else {
-            return room_service.error_response(session_id, Routes::START as i32, WsResponseCode::NOT_IN_RANGE);
-  };
+            return room_service.error_response(
+                session_id,
+                Routes::START as i32,
+                WsResponseCode::NOT_IN_RANGE,
+            );
+        }
+        let Some(room_key) = room_service.room_key_of(session_id) else {
+            return room_service.error_response(
+                session_id,
+                Routes::START as i32,
+                WsResponseCode::NOT_IN_RANGE,
+            );
+        };
 
         // Prevent re-starting if game loop is already running
         if self.loop_states.contains_key(&room_key) {
-            return room_service.error_response(session_id, Routes::START as i32, WsResponseCode::NO_PERMISSION);
+            return room_service.error_response(
+                session_id,
+                Routes::START as i32,
+                WsResponseCode::NO_PERMISSION,
+            );
         }
 
         let Some(shared_common_state) = room_service.get_room_common_state_handle(&room_key) else {
@@ -109,7 +121,9 @@ impl LandlordGameHandler {
                 WsResponseCode::NO_PERMISSION,
             );
         };
-        let loop_state = Arc::new(std::sync::Mutex::new(LandlordLoopState::new(shared_common_state)));
+        let loop_state = Arc::new(std::sync::Mutex::new(LandlordLoopState::new(
+            shared_common_state,
+        )));
 
         self.loop_states
             .insert(room_key.clone(), Arc::clone(&loop_state));
@@ -225,10 +239,7 @@ impl LandlordGameHandler {
         room_service.send_all(
             &room_key,
             WsCode::CALL_LANDLORD as i32,
-            WsCallLandlordEvent {
-                name,
-                score,
-            },
+            WsCallLandlordEvent { name, score },
             &mut dispatch,
         );
         room_service.push_ok_response(
@@ -249,10 +260,18 @@ impl LandlordGameHandler {
         data: serde_json::Value,
     ) -> Dispatch {
         let Some(pos) = room_service.session_position(session_id) else {
-            return room_service.error_response(session_id, Routes::PLAY as i32, WsResponseCode::NOT_LOGIN);
-            };
-            let Some(room_key) = room_service.room_key_of(session_id) else {
-                return room_service.error_response(session_id, Routes::PLAY as i32, WsResponseCode::NOT_LOGIN);
+            return room_service.error_response(
+                session_id,
+                Routes::PLAY as i32,
+                WsResponseCode::NOT_LOGIN,
+            );
+        };
+        let Some(room_key) = room_service.room_key_of(session_id) else {
+            return room_service.error_response(
+                session_id,
+                Routes::PLAY as i32,
+                WsResponseCode::NOT_LOGIN,
+            );
         };
 
         let cards: Vec<i32> = data
@@ -261,14 +280,22 @@ impl LandlordGameHandler {
             .unwrap_or_default();
 
         let Some(loop_state) = self.loop_states.get(&room_key) else {
-            return room_service.error_response(session_id, Routes::PLAY as i32, WsResponseCode::NO_PERMISSION);
+            return room_service.error_response(
+                session_id,
+                Routes::PLAY as i32,
+                WsResponseCode::NO_PERMISSION,
+            );
         };
 
         let name;
         {
             let mut s = loop_state.lock().unwrap();
             if !validate_play_request_inner(&s, pos, &cards) {
-                return room_service.error_response(session_id, Routes::PLAY as i32, WsResponseCode::NO_PERMISSION);
+                return room_service.error_response(
+                    session_id,
+                    Routes::PLAY as i32,
+                    WsResponseCode::NO_PERMISSION,
+                );
             }
 
             // Record the play in the loop state
@@ -290,11 +317,7 @@ impl LandlordGameHandler {
 }
 
 /// Pure check shared between game handler and play_validator
-fn validate_play_request_inner(
-    s: &LandlordLoopState,
-    position: usize,
-    cards: &[i32],
-) -> bool {
+fn validate_play_request_inner(s: &LandlordLoopState, position: usize, cards: &[i32]) -> bool {
     if s.phase != LandlordPhase::Play || s.current_position != position {
         return false;
     }

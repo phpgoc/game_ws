@@ -32,11 +32,7 @@ struct Combo {
 
 /// Validate a play request. Takes a borrowed `LandlordLoopState` reference
 /// (the caller should hold the lock).
-pub(crate) fn validate_play_request(
-    s: &LandlordLoopState,
-    position: usize,
-    cards: &[i32],
-) -> bool {
+pub(crate) fn validate_play_request(s: &LandlordLoopState, position: usize, cards: &[i32]) -> bool {
     if s.phase != LandlordPhase::Play || s.current_position != position {
         return false;
     }
