@@ -36,6 +36,18 @@ fn turn_timeout(
     }
 }
 
+fn fixed_wait_seconds(
+    configs: &std::collections::HashMap<String, i32>,
+    key: &str,
+    default: u64,
+) -> u64 {
+    configs
+        .get(key)
+        .copied()
+        .unwrap_or(default as i32)
+        .max(0) as u64
+}
+
 /// Send a dispatch to all recipients via session senders.
 async fn send_dispatch(dispatch: Vec<Delivery>, senders: &SessionSenders) {
     let mut encoded = Vec::with_capacity(dispatch.len());
@@ -249,7 +261,7 @@ fn choose_auto_play(state: &LandlordLoopState, position: usize) -> Vec<i32> {
 
 // ─── Phase Handlers ───────────────────────────────────────────────────
 
-/// Start → deal cards, advance to CallLandlord, set timer.
+/// Start → deal cards, wait fixed start_time, then advance to CallLandlord.
 async fn handle_start_phase(
     room_key: &str,
     state: &Arc<std::sync::Mutex<LandlordLoopState>>,
@@ -257,17 +269,20 @@ async fn handle_start_phase(
     room_service: &Arc<Mutex<RoomService>>,
     senders: &SessionSenders,
     configs: &std::collections::HashMap<String, i32>,
-) {
+) -> bool {
     // 1. Deal cards & advance phase inside lock
     let deal_data: Vec<(usize, Vec<i32>, String)>;
     let hidden_count: usize;
 
     {
         let mut s = state.lock().unwrap();
+        if s.players_snapshot().len() != sorted_positions.len() {
+            return true;
+        }
+        if s.phase != LandlordPhase::Start {
+            return false;
+        }
         s.generate_card();
-        s.next_phase(); // Start → CallLandlord
-        s.set_action_received(false);
-        s.set_turn_countdown(turn_timeout(&s, configs));
 
         hidden_count = s.hidden_cards.len();
         deal_data = sorted_positions
@@ -306,6 +321,27 @@ async fn handle_start_phase(
     ));
     drop(rs);
     send_dispatch(dispatch, senders).await;
+
+    tokio::time::sleep(Duration::from_secs(fixed_wait_seconds(
+        configs,
+        "start_time",
+        1,
+    )))
+    .await;
+
+    {
+        let mut s = state.lock().unwrap();
+        if s.players_snapshot().len() != sorted_positions.len() {
+            return true;
+        }
+        if s.phase != LandlordPhase::Start {
+            return false;
+        }
+        s.next_phase(); // Start → CallLandlord
+        s.set_action_received(false);
+        s.set_turn_countdown(turn_timeout(&s, configs));
+    }
+    false
 }
 
 /// Advance through the CallLandlord phase: move to next player, check completion.
@@ -523,13 +559,24 @@ async fn handle_play_phase(
     false
 }
 
-async fn handle_settlement_phase(state: &Arc<std::sync::Mutex<LandlordLoopState>>) -> bool {
-    // 人数，如果人数还是3，等待几秒，next_phase(), 之后返回true 不满足直接返回false
+async fn handle_settlement_phase(
+    state: &Arc<std::sync::Mutex<LandlordLoopState>>,
+    configs: &std::collections::HashMap<String, i32>,
+) -> bool {
+    // 人数，如果人数还是3，等待固定结算时间后进入下一局；否则结束循环
     if state.lock().unwrap().players_snapshot().len() != 3 {
         return true;
     }
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    tokio::time::sleep(Duration::from_secs(fixed_wait_seconds(
+        configs,
+        "settlement_time",
+        5,
+    )))
+    .await;
     let mut s = state.lock().unwrap();
+    if s.phase != LandlordPhase::Settlement {
+        return false;
+    }
     if s.players_snapshot().len() != 3 {
         return true;
     }
@@ -598,57 +645,17 @@ pub(crate) fn start_game_loop(
         };
 
         loop {
-            // Tick once per second
-            tokio::time::sleep(Duration::from_secs(1)).await;
-
-            // ─── Phase-independent checks ─────────────────────────────
-            {
-                let s = state.lock().unwrap();
-                if s.is_paused() {
-                    continue;
-                }
+            let paused = { state.lock().unwrap().is_paused() };
+            if paused {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                continue;
             }
 
-            // ─── Tick: countdown or timeout ───────────────────────────
-            let phase = {
-                let s = state.lock().unwrap();
-                s.phase
-            };
-
-            let mut away_position: Option<usize> = None;
-            if matches!(phase, LandlordPhase::CallLandlord | LandlordPhase::Play) {
-                let mut s = state.lock().unwrap();
-                if s.action_received() {
-                    // Action received — let phase handler process it
-                } else if s.turn_countdown() > 0 {
-                    s.set_turn_countdown(s.turn_countdown() - 1);
-                    continue; // Wait for action or timeout
-                } else {
-                    // Timeout
-                    away_position = handle_timeout(&mut s);
-                }
-            }
-            if let Some(position) = away_position {
-                let rs = room_service.lock().await;
-                let dispatch = dispatch_all(
-                    &room_key,
-                    WsCode::AWAY as i32,
-                    serde_json::to_value(WsPositionEvent {
-                        position: position as i32,
-                    })
-                    .unwrap_or_default(),
-                    &rs,
-                );
-                drop(rs);
-                send_dispatch(dispatch, &senders).await;
-            }
-
-            // ─── Phase dispatch ────────────────────────────────────────
             let current_phase = { state.lock().unwrap().phase };
 
             match current_phase {
                 LandlordPhase::Start => {
-                    handle_start_phase(
+                    let should_stop = handle_start_phase(
                         &room_key,
                         &state,
                         &sorted_positions,
@@ -657,34 +664,74 @@ pub(crate) fn start_game_loop(
                         &configs,
                     )
                     .await;
-                }
-                LandlordPhase::CallLandlord => {
-                    handle_call_landlord_phase(
-                        &room_key,
-                        &state,
-                        &sorted_positions,
-                        &configs,
-                        &room_service,
-                        &senders,
-                    )
-                    .await;
-                }
-                LandlordPhase::Play => {
-                    let ended = handle_play_phase(
-                        &state,
-                        &sorted_positions,
-                        &configs,
-                        &room_key,
-                        &room_service,
-                        &senders,
-                    )
-                    .await;
-                    if ended {
+                    if should_stop {
                         break;
                     }
                 }
+                LandlordPhase::CallLandlord | LandlordPhase::Play => {
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+
+                    let phase = { state.lock().unwrap().phase };
+                    let mut away_position: Option<usize> = None;
+                    if matches!(phase, LandlordPhase::CallLandlord | LandlordPhase::Play) {
+                        let mut s = state.lock().unwrap();
+                        if s.action_received() {
+                            // Action received — let phase handler process it
+                        } else if s.turn_countdown() > 0 {
+                            s.set_turn_countdown(s.turn_countdown() - 1);
+                            continue; // Wait for action or timeout
+                        } else {
+                            // Timeout
+                            away_position = handle_timeout(&mut s);
+                        }
+                    }
+                    if let Some(position) = away_position {
+                        let rs = room_service.lock().await;
+                        let dispatch = dispatch_all(
+                            &room_key,
+                            WsCode::AWAY as i32,
+                            serde_json::to_value(WsPositionEvent {
+                                position: position as i32,
+                            })
+                            .unwrap_or_default(),
+                            &rs,
+                        );
+                        drop(rs);
+                        send_dispatch(dispatch, &senders).await;
+                    }
+
+                    let phase_after_tick = { state.lock().unwrap().phase };
+                    match phase_after_tick {
+                        LandlordPhase::CallLandlord => {
+                            handle_call_landlord_phase(
+                                &room_key,
+                                &state,
+                                &sorted_positions,
+                                &configs,
+                                &room_service,
+                                &senders,
+                            )
+                            .await;
+                        }
+                        LandlordPhase::Play => {
+                            let ended = handle_play_phase(
+                                &state,
+                                &sorted_positions,
+                                &configs,
+                                &room_key,
+                                &room_service,
+                                &senders,
+                            )
+                            .await;
+                            if ended {
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
                 LandlordPhase::Settlement => {
-                    if handle_settlement_phase(&state).await {
+                    if handle_settlement_phase(&state, &configs).await {
                         break;
                     }
                 }

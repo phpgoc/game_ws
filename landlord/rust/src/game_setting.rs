@@ -45,7 +45,7 @@ pub fn build_landlord_settings() -> (GameSettings, HashMap<String, GameParam>) {
         ),
         (
             // 开始阶段等待时间 秒
-            "state_time".into(),
+            "start_time".into(),
             GameParam::Range(GameParamRange {
                 default: 1,
                 min: 0,

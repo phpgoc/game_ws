@@ -43,6 +43,8 @@ pub struct WsCreateRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsCreateResponse {
     pub param_descriptions: std::collections::HashMap<String, crate::settings::GameParam>,
+    pub start_time: i32,
+    pub settlement_time: i32,
 }
 
 #[typeshare]
@@ -52,13 +54,14 @@ pub struct WsJoinRequest {
     pub password: String,
 }
 
-
 /// JOIN 响应，发给新人。
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsJoinResponse {
     pub current_configs: std::collections::HashMap<String, i32>,
     pub existing_members: Vec<WsMemberInfo>,
+    pub start_time: i32,
+    pub settlement_time: i32,
 }
 
 #[typeshare]
@@ -92,14 +95,14 @@ pub struct WsPositionEvent {
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsMessageRequest {
-    pub message : String,
+    pub message: String,
 }
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsMessageEvent {
     pub name: String,
-    pub message : String,
+    pub message: String,
 }
 
 #[typeshare]
