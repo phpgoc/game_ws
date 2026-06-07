@@ -5,8 +5,8 @@ use std::time::Duration;
 use share_type_public::{
     LandlordPhase, WsCode, WsPositionEvent,
     games::landlord::{
-        WsDealEvent, WsDealFaceDownCardsEvent, WsDealOpenCardsEvent, WsLandlordGameOverEvent,
-        WsShowHiddenCardsEvent,
+        WsCallLandlordEvent, WsDealEvent, WsDealOpenCardsEvent, WsLandlordGameOverEvent,
+        WsPlayEvent, WsShowHiddenCardsEvent,
     },
 };
 use tokio::sync::Mutex;
@@ -270,9 +270,8 @@ async fn handle_start_phase(
     senders: &SessionSenders,
     configs: &std::collections::HashMap<String, i32>,
 ) -> bool {
-    // 1. Deal cards & advance phase inside lock
+    // 1. Deal cards inside lock
     let deal_data: Vec<(usize, Vec<i32>, String)>;
-    let hidden_count: usize;
 
     {
         let mut s = state.lock().unwrap();
@@ -283,8 +282,6 @@ async fn handle_start_phase(
             return false;
         }
         s.generate_card();
-
-        hidden_count = s.hidden_cards.len();
         deal_data = sorted_positions
             .iter()
             .filter_map(|&pos| {
@@ -310,15 +307,6 @@ async fn handle_start_phase(
             &rs,
         ));
     }
-    dispatch.extend(dispatch_all(
-        room_key,
-        WsCode::DEAL_FACE_DOWN_CARDS as i32,
-        serde_json::to_value(WsDealFaceDownCardsEvent {
-            cards: vec![0; hidden_count],
-        })
-        .unwrap_or_default(),
-        &rs,
-    ));
     drop(rs);
     send_dispatch(dispatch, senders).await;
 
@@ -359,16 +347,19 @@ async fn handle_call_landlord_phase(
 ) {
     let open_hidden_event: Option<(String, Vec<i32>)> = {
         let mut s = state.lock().unwrap();
-
-        // Move to next position
         let current_idx = sorted_positions
             .iter()
             .position(|&p| p == s.current_position)
             .unwrap_or(0);
-        s.current_position = sorted_positions[(current_idx + 1) % sorted_positions.len()];
+        let next_pos = sorted_positions[(current_idx + 1) % sorted_positions.len()];
+        let should_finalize = if s.score == 3 {
+            true
+        } else {
+            s.current_position = next_pos;
+            s.current_position == s.call_position
+        };
 
-        // If we've looped back to call_position, one full round is done
-        if s.current_position == s.call_position {
+        if should_finalize {
             if s.score == 0 {
                 // Everyone passed → redeal
                 s.redeal();
@@ -401,6 +392,7 @@ async fn handle_call_landlord_phase(
             s.set_turn_countdown(turn_timeout(&s, configs));
             Some((player_name(&s, landlord_pos), hidden))
         } else {
+            s.current_position = next_pos;
             // Reset for next caller in the same round
             s.set_action_received(false);
             s.set_turn_countdown(turn_timeout(&s, configs));
@@ -585,30 +577,51 @@ async fn handle_settlement_phase(
 }
 
 /// Handle timeout: mark the current player as away and simulate their action.
-fn handle_timeout(state: &mut LandlordLoopState) -> Option<usize> {
+fn handle_timeout(state: &mut LandlordLoopState) -> (Option<usize>, Option<AutoBroadcastEvent>) {
     let pos = state.current_position;
     let newly_away = if state.mark_away(pos) {
         Some(pos)
     } else {
         None
     };
+    let mut auto_event = None;
     // 广播away
 
     match state.phase {
         LandlordPhase::CallLandlord => {
             // Timed out = no call (score 0). Record it.
+            let name = state.player_name(pos);
             state.call_history.push((pos, 0));
+            println!(
+                "[landlord][auto-call] pos={} name={} timeout -> score=0 history_len={}",
+                pos,
+                name,
+                state.call_history.len()
+            );
+            auto_event = Some(AutoBroadcastEvent::Call(WsCallLandlordEvent { name, score: 0 }));
             next_call(state);
         }
         LandlordPhase::Play => {
             // Timed out = pass (empty play)
             // 自动出牌，能管上就管，如果自己最大率先出牌，必出最小的牌，先看能不能顺，再看能不能3带，再看对，最后出单。
-            state.current_play = choose_auto_play(state, pos);
+            let auto_cards = choose_auto_play(state, pos);
+            let name = state.player_name(pos);
+            println!(
+                "[landlord][auto-play] pos={} name={} timeout -> cards={:?}",
+                pos,
+                name,
+                auto_cards
+            );
+            auto_event = Some(AutoBroadcastEvent::Play(WsPlayEvent {
+                name,
+                cards: auto_cards.clone(),
+            }));
+            state.current_play = auto_cards;
             next_play(state);
         }
         _ => {}
     }
-    newly_away
+    (newly_away, auto_event)
 }
 
 fn next_call(state: &mut LandlordLoopState) {
@@ -617,6 +630,11 @@ fn next_call(state: &mut LandlordLoopState) {
 
 fn next_play(state: &mut LandlordLoopState) {
     state.set_action_received(true);
+}
+
+enum AutoBroadcastEvent {
+    Call(WsCallLandlordEvent),
+    Play(WsPlayEvent),
 }
 
 // ─── Game Loop ────────────────────────────────────────────────────────
@@ -669,33 +687,69 @@ pub(crate) fn start_game_loop(
                     }
                 }
                 LandlordPhase::CallLandlord | LandlordPhase::Play => {
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-
                     let phase = { state.lock().unwrap().phase };
                     let mut away_position: Option<usize> = None;
+                    let mut auto_event: Option<AutoBroadcastEvent> = None;
                     if matches!(phase, LandlordPhase::CallLandlord | LandlordPhase::Play) {
-                        let mut s = state.lock().unwrap();
-                        if s.action_received() {
-                            // Action received — let phase handler process it
-                        } else if s.turn_countdown() > 0 {
-                            s.set_turn_countdown(s.turn_countdown() - 1);
-                            continue; // Wait for action or timeout
-                        } else {
-                            // Timeout
-                            away_position = handle_timeout(&mut s);
+                        let should_wait_tick = {
+                            let s = state.lock().unwrap();
+                            !s.action_received()
+                        };
+                        if should_wait_tick {
+                            tokio::time::sleep(Duration::from_secs(1)).await;
+                            if state.lock().unwrap().is_paused() {
+                                continue;
+                            }
+                            let mut s = state.lock().unwrap();
+                            if !matches!(s.phase, LandlordPhase::CallLandlord | LandlordPhase::Play)
+                            {
+                                continue;
+                            }
+                            if s.action_received() {
+                                // Action received while waiting this tick.
+                            } else if s.turn_countdown() > 0 {
+                                s.set_turn_countdown(s.turn_countdown() - 1);
+                                continue; // Wait for action or timeout
+                            } else {
+                                // Timeout
+                                (away_position, auto_event) = handle_timeout(&mut s);
+                            }
                         }
                     }
-                    if let Some(position) = away_position {
+                    if away_position.is_some() || auto_event.is_some() {
                         let rs = room_service.lock().await;
-                        let dispatch = dispatch_all(
-                            &room_key,
-                            WsCode::AWAY as i32,
-                            serde_json::to_value(WsPositionEvent {
-                                position: position as i32,
-                            })
-                            .unwrap_or_default(),
-                            &rs,
-                        );
+                        let mut dispatch = Vec::new();
+                        if let Some(position) = away_position {
+                            dispatch.extend(dispatch_all(
+                                &room_key,
+                                WsCode::AWAY as i32,
+                                serde_json::to_value(WsPositionEvent {
+                                    position: position as i32,
+                                })
+                                .unwrap_or_default(),
+                                &rs,
+                            ));
+                        }
+                        if let Some(event) = auto_event {
+                            match event {
+                                AutoBroadcastEvent::Call(payload) => {
+                                    dispatch.extend(dispatch_all(
+                                        &room_key,
+                                        WsCode::CALL_LANDLORD as i32,
+                                        serde_json::to_value(payload).unwrap_or_default(),
+                                        &rs,
+                                    ));
+                                }
+                                AutoBroadcastEvent::Play(payload) => {
+                                    dispatch.extend(dispatch_all(
+                                        &room_key,
+                                        WsCode::PLAY as i32,
+                                        serde_json::to_value(payload).unwrap_or_default(),
+                                        &rs,
+                                    ));
+                                }
+                            }
+                        }
                         drop(rs);
                         send_dispatch(dispatch, &senders).await;
                     }

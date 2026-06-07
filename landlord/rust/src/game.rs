@@ -105,15 +105,6 @@ impl LandlordGameHandler {
             );
         };
 
-        // Prevent re-starting if game loop is already running
-        if self.loop_states.contains_key(&room_key) {
-            return room_service.error_response(
-                session_id,
-                Routes::START as i32,
-                WsResponseCode::NO_PERMISSION,
-            );
-        }
-
         let Some(shared_common_state) = room_service.get_room_common_state_handle(&room_key) else {
             return room_service.error_response(
                 session_id,
@@ -121,6 +112,23 @@ impl LandlordGameHandler {
                 WsResponseCode::NO_PERMISSION,
             );
         };
+
+        // Prevent re-starting if the current room loop is already running.
+        // If an old room with the same key left a stale loop_state, remove it.
+        if let Some(existing) = self.loop_states.get(&room_key) {
+            let same_state = {
+                let s = existing.lock().unwrap();
+                Arc::ptr_eq(&s.base, &shared_common_state)
+            };
+            if same_state {
+                return room_service.error_response(
+                    session_id,
+                    Routes::START as i32,
+                    WsResponseCode::NO_PERMISSION,
+                );
+            }
+            self.loop_states.remove(&room_key);
+        }
         let loop_state = Arc::new(std::sync::Mutex::new(LandlordLoopState::new(
             shared_common_state,
         )));
@@ -232,6 +240,15 @@ impl LandlordGameHandler {
             // 本轮叫分/不叫已收到
             s.set_action_received(true);
             name = s.player_name(pos);
+            println!(
+                "[landlord][call] room={} pos={} name={} score={} current_max={} history_len={}",
+                room_key,
+                pos,
+                name,
+                score,
+                s.score,
+                s.call_history.len()
+            );
         }
 
         // 广播叫分事件给所有人（含自己，方便前端统一处理）
@@ -302,6 +319,10 @@ impl LandlordGameHandler {
             s.current_play = cards.clone();
             s.set_action_received(true);
             name = s.player_name(pos);
+            println!(
+                "[landlord][play] room={} pos={} name={} cards={:?}",
+                room_key, pos, name, cards
+            );
         }
 
         let mut dispatch = Dispatch::default();

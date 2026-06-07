@@ -34,6 +34,8 @@
     <button id="quit">QUIT</button>
     <button id="disband">DISBAND</button>
     <button id="start">START</button>
+    <button id="away">AWAY</button>
+    <button id="back">BACK</button>
   </div>
 
   <div class="section-title">设置</div>
@@ -85,7 +87,7 @@
     const WS_CODES = {
       JOIN: 2, QUIT: 3, MESSAGE: 4,
       PAUSE: 5, RESUME: 6, DISBAND: 7, SETTING: 8,
-      START: 10, GAME_OVER: 11,
+      START: 10, GAME_OVER: 11, AWAY: 12, BACK: 13,
       DEAL: 20, PLAY: 21, DEAL_OPEN_CARDS: 24, DEAL_FACE_DOWN_CARDS: 25,
       SHOW_HIDDEN_CARDS: 30,
       CALL_LANDLORD: 1001,
@@ -97,6 +99,7 @@
 
     const $ = (id) => document.getElementById(id);
     const logEl = $("log");
+    const currentName = () => $("name").value.trim();
 
     function now() { return new Date().toLocaleTimeString(); }
 
@@ -117,11 +120,40 @@
     function renderCards() {
       const el = $("#my-cards");
       if (myCards.length === 0) { el.textContent = "（无）"; return; }
-      el.innerHTML = myCards.map(c => `<span class="card">${c} ${cardName(c)}</span>`).join('');
+      el.innerHTML = myCards.map(c => `<span class="card">${c} (${cardName(c)})</span>`).join('');
     }
 
     function cardListStr(cards) {
       return cards.map(c => `${c}(${cardName(c)})`).join(', ');
+    }
+
+    function normalizeCards(raw) {
+      if (!Array.isArray(raw)) return [];
+      return raw
+        .map(n => parseInt(n))
+        .filter(n => Number.isInteger(n) && n > 0)
+        .sort((a, b) => a - b);
+    }
+
+    function removeCardsFromMyHand(cards) {
+      const remove = new Set(normalizeCards(cards));
+      if (remove.size === 0) return;
+      myCards = myCards.filter(c => !remove.has(c));
+      renderCards();
+    }
+
+    function extractCardsFromMessage(msg) {
+      const queue = [msg];
+      while (queue.length > 0) {
+        const cur = queue.shift();
+        if (!cur || typeof cur !== "object") continue;
+        const cards = normalizeCards(cur.cards);
+        if (cards.length > 0) return cards;
+        for (const v of Object.values(cur)) {
+          if (v && typeof v === "object") queue.push(v);
+        }
+      }
+      return [];
     }
 
     // 连接
@@ -152,23 +184,41 @@
         }
 
         // — 事件 (code + data) —
-        if (msg.code !== undefined && msg.data !== undefined) {
-          const ec = msg.code;
+        const ec = msg.code !== undefined
+          ? Number(msg.code)
+          : (msg.route !== undefined && msg.data !== undefined ? Number(msg.route) : NaN);
+        if (!Number.isNaN(ec)) {
           if (ec === WS_CODES.SETTING && msg.data.current_configs) {
             applyCurrentConfigs(msg.data.current_configs);
           }
           if (ec === WS_CODES.START) {
+            myCards = [];
+            renderCards();
             log("===== 游戏开始了！=====");
           }
+          if (ec === WS_CODES.AWAY && msg.data && Number.isInteger(msg.data.position)) {
+            log(`位置 ${msg.data.position} 进入 away`);
+          }
+          if (ec === WS_CODES.BACK && msg.data && Number.isInteger(msg.data.position)) {
+            log(`位置 ${msg.data.position} 回到游戏`);
+          }
           // DEAL 发牌
-          if (ec === WS_CODES.DEAL && Array.isArray(msg.data.cards)) {
-            myCards = msg.data.cards;
-            renderCards();
-            log(`收到 DEAL (${myCards.length} 张): ${cardListStr(myCards)}`);
+          if (ec === WS_CODES.DEAL) {
+            const cards = extractCardsFromMessage(msg);
+            if (cards.length > 0) {
+              myCards = cards;
+              renderCards();
+              log(`收到 DEAL (${myCards.length} 张): ${cardListStr(myCards)}`);
+            } else {
+              log("收到 DEAL 但未解析到 cards", msg);
+            }
           }
           // PLAY 出牌事件
           if (ec === WS_CODES.PLAY && msg.data && Array.isArray(msg.data.cards)) {
             log(`${msg.data.name} 出牌: ${cardListStr(msg.data.cards)}`);
+            if (msg.data.name === currentName()) {
+              removeCardsFromMyHand(msg.data.cards);
+            }
           }
           // CALL_LANDLORD 叫地主
           if (ec === WS_CODES.CALL_LANDLORD && msg.data) {
@@ -177,16 +227,16 @@
           // DEAL_FACE_DOWN_CARDS 底牌
           if (ec === WS_CODES.DEAL_FACE_DOWN_CARDS && msg.data && Array.isArray(msg.data.cards)) {
             const cards = msg.data.cards.filter(n => Number.isInteger(n) && n > 0);
-            if (cards.length > 0) {
-              log(`底牌: ${cardListStr(cards)}`);
-            } else {
-              const count = msg.data.cards.length || 3;
-              log(`底牌: 暗牌 x${count}`);
-            }
+            if (cards.length > 0) log(`底牌: ${cardListStr(cards)}`);
           }
           // DEAL_OPEN_CARDS 亮牌
           if (ec === WS_CODES.DEAL_OPEN_CARDS && msg.data && Array.isArray(msg.data.cards)) {
             log(`${msg.data.name} 亮牌: ${cardListStr(msg.data.cards)}`);
+            if (msg.data.name === currentName()) {
+              const merged = new Set([...myCards, ...msg.data.cards.filter(n => Number.isInteger(n) && n > 0)]);
+              myCards = Array.from(merged).sort((a, b) => a - b);
+              renderCards();
+            }
           }
           // SHOW_HIDDEN_CARDS 结算亮底牌
           if (ec === WS_CODES.SHOW_HIDDEN_CARDS && msg.data && Array.isArray(msg.data.cards)) {
@@ -203,6 +253,8 @@
     $("quit").onclick    = () => send(ROUTES.QUIT, {});
     $("disband").onclick = () => send(ROUTES.DISBAND, {});
     $("start").onclick   = () => send(ROUTES.START, {});
+    $("away").onclick    = () => send(ROUTES.AWAY, {});
+    $("back").onclick    = () => send(ROUTES.BACK, {});
     $("apply-settings").onclick = () => {
       const cs = {};
       cs.animation_time = parseInt($("animation_time").value);

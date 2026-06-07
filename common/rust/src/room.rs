@@ -1074,7 +1074,7 @@ impl RoomService {
 
     fn remove_from_current_room(
         &mut self,
-        _session_id: SessionId,
+        session_id: SessionId,
         session: &mut SessionState,
         dispatch: &mut Dispatch,
         code: i32,
@@ -1082,16 +1082,26 @@ impl RoomService {
         let Some(room_key) = session.room_key.take() else {
             return;
         };
-        let Some(name) = session.name.clone() else {
-            return;
-        };
-        let Some(position) = session.position.take() else {
-            return;
-        };
+        let mut leave_name = session.name.clone().unwrap_or_default();
 
         let mut recipients = Vec::new();
         if let Some(entry) = self.rooms.get_mut(&room_key) {
-            entry.state.remove_player(position);
+            let players = entry.state.players();
+            let mut position = session.position.take();
+            if position.is_none() {
+                if let Some((pos, (_, name))) = players
+                    .iter()
+                    .find(|(_, (sid, _))| *sid == session_id)
+                {
+                    position = Some(*pos);
+                    if leave_name.is_empty() {
+                        leave_name = name.clone();
+                    }
+                }
+            }
+            if let Some(pos) = position {
+                entry.state.remove_player(pos);
+            }
             recipients.extend(entry.state.players().values().map(|(sid, _)| *sid));
             // 如果房间里没人了，删除房间
             if entry.state.players().is_empty() {
@@ -1102,7 +1112,7 @@ impl RoomService {
         let event = if code == WsCode::QUIT as i32 {
             CommonEvent {
                 code,
-                data: serde_json::to_value(WsNameEvent { name }).unwrap_or(Value::Null),
+                data: serde_json::to_value(WsNameEvent { name: leave_name }).unwrap_or(Value::Null),
             }
         } else {
             return;
