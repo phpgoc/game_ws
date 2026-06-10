@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 
-use serde::{de::DeserializeOwned, Serialize};
-use serde_json::{json, Value};
+use serde::{Serialize, de::DeserializeOwned};
+use serde_json::{Value, json};
 use share_type_public::{
-    ws::WsResponse,
-    ws::{WsMessageEvent, WsNameEvent},
     CommonEvent, GameParam, Routes, WsCode, WsCreateRequest, WsJoinRequest, WsMessageRequest,
     WsPositionEvent, WsRequest, WsResponseCode, WsSwapPositionPayload, WsWithoutDataResponse,
+    ws::WsResponse,
+    ws::{WsMessageEvent, WsNameEvent},
 };
 
 use crate::game_setting::GameSettings;
@@ -1089,9 +1089,8 @@ impl RoomService {
             let players = entry.state.players();
             let mut position = session.position.take();
             if position.is_none() {
-                if let Some((pos, (_, name))) = players
-                    .iter()
-                    .find(|(_, (sid, _))| *sid == session_id)
+                if let Some((pos, (_, name))) =
+                    players.iter().find(|(_, (sid, _))| *sid == session_id)
                 {
                     position = Some(*pos);
                     if leave_name.is_empty() {

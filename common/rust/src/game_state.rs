@@ -24,7 +24,8 @@ impl CommonGameState {
     }
 
     pub fn add_player(&mut self, position: usize, session_id: SessionId, name: &str) {
-        self.players.insert(position, (session_id, name.to_string()));
+        self.players
+            .insert(position, (session_id, name.to_string()));
     }
 
     pub fn swap_player(&mut self, pos_a: usize, pos_b: usize) {
@@ -55,8 +56,7 @@ impl CommonGameState {
     pub fn resume(&mut self) {
         self.paused = false;
     }
-    pub fn mark_away(&mut self, pos: usize)  -> bool{
-
+    pub fn mark_away(&mut self, pos: usize) -> bool {
         self.away_positions.insert(pos)
     }
     pub fn is_away(&self, pos: usize) -> bool {
@@ -89,7 +89,10 @@ pub trait GameState: Send {
     }
 
     fn player_name(&self, position: usize) -> String {
-        self.shared_common_state().lock().unwrap().player_name(position)
+        self.shared_common_state()
+            .lock()
+            .unwrap()
+            .player_name(position)
     }
 
     fn add_player(&mut self, position: usize, session_id: SessionId, name: &str) {

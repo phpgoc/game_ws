@@ -41,11 +41,7 @@ fn fixed_wait_seconds(
     key: &str,
     default: u64,
 ) -> u64 {
-    configs
-        .get(key)
-        .copied()
-        .unwrap_or(default as i32)
-        .max(0) as u64
+    configs.get(key).copied().unwrap_or(default as i32).max(0) as u64
 }
 
 /// Send a dispatch to all recipients via session senders.
@@ -598,7 +594,10 @@ fn handle_timeout(state: &mut LandlordLoopState) -> (Option<usize>, Option<AutoB
                 name,
                 state.call_history.len()
             );
-            auto_event = Some(AutoBroadcastEvent::Call(WsCallLandlordEvent { name, score: 0 }));
+            auto_event = Some(AutoBroadcastEvent::Call(WsCallLandlordEvent {
+                name,
+                score: 0,
+            }));
             next_call(state);
         }
         LandlordPhase::Play => {
@@ -608,9 +607,7 @@ fn handle_timeout(state: &mut LandlordLoopState) -> (Option<usize>, Option<AutoB
             let name = state.player_name(pos);
             println!(
                 "[landlord][auto-play] pos={} name={} timeout -> cards={:?}",
-                pos,
-                name,
-                auto_cards
+                pos, name, auto_cards
             );
             auto_event = Some(AutoBroadcastEvent::Play(WsPlayEvent {
                 name,

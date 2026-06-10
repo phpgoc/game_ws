@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
 /// 范围选择参数 — 告知前端这是一个 slider，范围 [min, max]，默认值 default。

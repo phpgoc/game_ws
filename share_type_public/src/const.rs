@@ -60,7 +60,7 @@ pub enum WsCode {
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, Serialize_repr, Deserialize_repr)]
 #[allow(non_camel_case_types)]
-pub enum WsResponseCode{
+pub enum WsResponseCode {
     OK = 0,
     JOINED = 201,
     ERROR_FORMAT = 400,

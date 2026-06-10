@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
-
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommonEvent<T> {
@@ -21,8 +20,6 @@ pub struct CommonResponse<T> {
     pub code: i32,
     pub data: T,
 }
-
-
 
 #[cfg(test)]
 mod tests {

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
-use typeshare::typeshare;
 use serde_repr::{Deserialize_repr, Serialize_repr};
+use typeshare::typeshare;
 
 #[typeshare]
 #[repr(i8)]
@@ -15,10 +15,10 @@ pub enum LandlordPhase {
 impl LandlordPhase {
     pub fn next(self) -> Self {
         match self {
-            Self::Start        => Self::CallLandlord,
+            Self::Start => Self::CallLandlord,
             Self::CallLandlord => Self::Play,
-            Self::Play         => Self::Settlement,
-            Self::Settlement   => Self::Start,
+            Self::Play => Self::Settlement,
+            Self::Settlement => Self::Start,
         }
     }
 }

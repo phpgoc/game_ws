@@ -18,10 +18,8 @@ use tokio_tungstenite::{accept_async, tungstenite::Message};
 use tracing::{error, info, warn};
 
 use crate::{
-    ClientRequest, Dispatch, RoomService, SettingsBuilderResult, SessionId, from_message,
-    parse_bind_cli, resolve_host,
-    resolve_port,
-    to_text_message,
+    ClientRequest, Dispatch, RoomService, SessionId, SettingsBuilderResult, from_message,
+    parse_bind_cli, resolve_host, resolve_port, to_text_message,
 };
 
 type SessionSender = mpsc::UnboundedSender<Message>;
@@ -65,13 +63,13 @@ where
     let senders: SessionSenders = Arc::new(Mutex::new(HashMap::new()));
     let room_service = Arc::new(Mutex::new(RoomService::default()));
     let game_handler = Arc::new(Mutex::new(handler));
-    
+
     // Set context for game-specific initialization
     {
         let mut h = game_handler.lock().await;
         h.set_context(Arc::clone(&senders), Arc::clone(&room_service));
     }
-    
+
     let next_session = Arc::new(AtomicU64::new(1));
 
     loop {
@@ -201,11 +199,9 @@ where
         let dispatch = {
             let mut room = room_service.lock().await;
             let mut handler = game_handler.lock().await;
-            if let Some(dispatch) = room.handle_common_request(
-                session_id,
-                &request,
-                || handler.build_room_settings(),
-            ) {
+            if let Some(dispatch) =
+                room.handle_common_request(session_id, &request, || handler.build_room_settings())
+            {
                 // After a successful CREATE, attach game state so JOIN/QUIT hooks work
                 if request.route == share_type_public::Routes::CREATE as i32 {
                     if let Some(room_key) = room.room_key_of(session_id) {
@@ -251,8 +247,7 @@ async fn deliver(dispatch: Dispatch, senders: &SessionSenders) -> anyhow::Result
 fn init_tracing() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .try_init();
 }

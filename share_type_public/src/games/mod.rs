@@ -1,8 +1,8 @@
 pub mod landlord;
 
+pub use crate::GameParamRange;
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
-pub use crate::GameParamRange;
 
 pub trait SettingTrait {}
 
