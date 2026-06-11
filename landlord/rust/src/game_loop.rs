@@ -341,7 +341,7 @@ async fn handle_call_landlord_phase(
     room_service: &Arc<Mutex<RoomService>>,
     senders: &SessionSenders,
 ) {
-    let open_hidden_event: Option<(String, Vec<i32>)> = {
+    let (open_hidden_event, next_turn_position): (Option<(String, Vec<i32>)>, Option<usize>) = {
         let mut s = state.lock().unwrap();
         let current_idx = sorted_positions
             .iter()
@@ -386,27 +386,46 @@ async fn handle_call_landlord_phase(
             // Reset for landlord's first play
             s.set_action_received(false);
             s.set_turn_countdown(turn_timeout(&s, configs));
-            Some((player_name(&s, landlord_pos), hidden))
+            (
+                Some((player_name(&s, landlord_pos), hidden)),
+                Some(s.current_position),
+            )
         } else {
             s.current_position = next_pos;
             // Reset for next caller in the same round
             s.set_action_received(false);
             s.set_turn_countdown(turn_timeout(&s, configs));
-            None
+            (None, Some(s.current_position))
         }
     };
 
+    if open_hidden_event.is_none() && next_turn_position.is_none() {
+        return;
+    }
+
+    let rs = room_service.lock().await;
+    let mut dispatch = Vec::new();
     if let Some((name, cards)) = open_hidden_event {
-        let rs = room_service.lock().await;
-        let dispatch = dispatch_all(
+        dispatch.extend(dispatch_all(
             room_key,
             WsCode::DEAL_OPEN_CARDS as i32,
             serde_json::to_value(WsDealOpenCardsEvent { name, cards }).unwrap_or_default(),
             &rs,
-        );
-        drop(rs);
-        send_dispatch(dispatch, senders).await;
+        ));
     }
+    if let Some(position) = next_turn_position {
+        dispatch.extend(dispatch_all(
+            room_key,
+            WsCode::CHANGE_DEAL as i32,
+            serde_json::to_value(WsPositionEvent {
+                position: position as i32,
+            })
+            .unwrap_or_default(),
+            &rs,
+        ));
+    }
+    drop(rs);
+    send_dispatch(dispatch, senders).await;
 }
 
 /// Process a play tick: apply the current play (pass or cards), advance turns.
@@ -428,6 +447,7 @@ async fn handle_play_phase(
 ) -> bool {
     let mut game_over = false;
     let mut winner_pos = None;
+    let mut next_turn_position: Option<usize> = None;
 
     {
         let mut s = state.lock().unwrap();
@@ -473,7 +493,23 @@ async fn handle_play_phase(
             // Reset for next turn
             s.set_action_received(false);
             s.set_turn_countdown(turn_timeout(&s, configs));
+            next_turn_position = Some(next_pos);
         }
+    }
+
+    if let Some(position) = next_turn_position {
+        let rs = room_service.lock().await;
+        let dispatch = dispatch_all(
+            room_key,
+            WsCode::CHANGE_DEAL as i32,
+            serde_json::to_value(WsPositionEvent {
+                position: position as i32,
+            })
+            .unwrap_or_default(),
+            &rs,
+        );
+        drop(rs);
+        send_dispatch(dispatch, senders).await;
     }
 
     if game_over {
