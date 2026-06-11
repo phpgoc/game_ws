@@ -61,6 +61,7 @@ pub struct WsJoinResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsReJoinResponse {
     pub other_cards_numbers: Option<HashMap<i32, i32>>,
+    pub my_cards: Vec<i32>,
     pub now_playing: i32,
 }
 

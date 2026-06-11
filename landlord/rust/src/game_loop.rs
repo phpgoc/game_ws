@@ -80,6 +80,22 @@ fn dispatch_all(
         .collect()
 }
 
+fn dispatch_phase(
+    room_key: &str,
+    state: &LandlordLoopState,
+    room_service: &RoomService,
+) -> Vec<Delivery> {
+    dispatch_all(
+        room_key,
+        WsCode::CHANGE_PHASE as i32,
+        serde_json::json!({
+            "phase": state.phase as i32,
+            "position": state.current_position as i32,
+        }),
+        room_service,
+    )
+}
+
 /// Build a Dispatch that sends an event to a specific position in the room.
 fn dispatch_to_position(
     room_key: &str,
@@ -285,7 +301,7 @@ async fn handle_start_phase(
                 Some((pos, hand, player_name(&s, pos)))
             })
             .collect();
-    }
+    };
 
     // 2. Send events (outside lock)
     let rs = room_service.lock().await;
@@ -313,7 +329,7 @@ async fn handle_start_phase(
     )))
     .await;
 
-    {
+    let (first_call_position, phase_payload) = {
         let mut s = state.lock().unwrap();
         if s.players_snapshot().len() != sorted_positions.len() {
             return true;
@@ -324,7 +340,32 @@ async fn handle_start_phase(
         s.next_phase(); // Start → CallLandlord
         s.set_action_received(false);
         s.set_turn_countdown(turn_timeout(&s, configs));
-    }
+        (
+            s.current_position,
+            (s.phase as i32, s.current_position as i32),
+        )
+    };
+    let rs = room_service.lock().await;
+    let mut dispatch = dispatch_all(
+        room_key,
+        WsCode::CHANGE_PHASE as i32,
+        serde_json::json!({
+            "phase": phase_payload.0,
+            "position": phase_payload.1,
+        }),
+        &rs,
+    );
+    dispatch.extend(dispatch_all(
+        room_key,
+        WsCode::CHANGE_DEAL as i32,
+        serde_json::to_value(WsPositionEvent {
+            position: first_call_position as i32,
+        })
+        .unwrap_or_default(),
+        &rs,
+    ));
+    drop(rs);
+    send_dispatch(dispatch, senders).await;
     false
 }
 
@@ -341,7 +382,11 @@ async fn handle_call_landlord_phase(
     room_service: &Arc<Mutex<RoomService>>,
     senders: &SessionSenders,
 ) {
-    let (open_hidden_event, next_turn_position): (Option<(String, Vec<i32>)>, Option<usize>) = {
+    let (open_hidden_event, next_turn_position, phase_changed): (
+        Option<(String, Vec<i32>)>,
+        Option<usize>,
+        bool,
+    ) = {
         let mut s = state.lock().unwrap();
         let current_idx = sorted_positions
             .iter()
@@ -359,52 +404,57 @@ async fn handle_call_landlord_phase(
             if s.score == 0 {
                 // Everyone passed → redeal
                 s.redeal();
-                return;
-            }
+                (None, Some(s.current_position), true)
+            } else {
+                // Find the player with the highest bid.
+                // call_history is in call order; the highest score wins.
+                // If tie (can't happen in 3-player since each round is one direction),
+                // the last highest bidder wins.
+                let max_score = s.call_history.iter().map(|(_, sc)| *sc).max().unwrap_or(0);
+                let landlord_pos = s
+                    .call_history
+                    .iter()
+                    .rev()
+                    .find(|(_, sc)| *sc == max_score)
+                    .map(|(pos, _)| *pos)
+                    .unwrap_or(s.call_position);
 
-            // Find the player with the highest bid.
-            // call_history is in call order; the highest score wins.
-            // If tie (can't happen in 3-player since each round is one direction),
-            // the last highest bidder wins.
-            let max_score = s.call_history.iter().map(|(_, sc)| *sc).max().unwrap_or(0);
-            let landlord_pos = s
-                .call_history
-                .iter()
-                .rev()
-                .find(|(_, sc)| *sc == max_score)
-                .map(|(pos, _)| *pos)
-                .unwrap_or(s.call_position);
-
-            s.landlord_position = Some(landlord_pos);
-            s.next_phase(); // CallLandlord → Play
-            // Give hidden cards to landlord
-            let hidden = s.hidden_cards.clone();
-            if let Some(hand) = s.hands.get_mut(&landlord_pos) {
-                hand.extend(hidden.clone());
-                hand.sort_unstable();
+                s.landlord_position = Some(landlord_pos);
+                s.next_phase(); // CallLandlord → Play
+                // Give hidden cards to landlord
+                let hidden = s.hidden_cards.clone();
+                if let Some(hand) = s.hands.get_mut(&landlord_pos) {
+                    hand.extend(hidden.clone());
+                    hand.sort_unstable();
+                }
+                // Reset for landlord's first play
+                s.set_action_received(false);
+                s.set_turn_countdown(turn_timeout(&s, configs));
+                (
+                    Some((player_name(&s, landlord_pos), hidden)),
+                    Some(s.current_position),
+                    true,
+                )
             }
-            // Reset for landlord's first play
-            s.set_action_received(false);
-            s.set_turn_countdown(turn_timeout(&s, configs));
-            (
-                Some((player_name(&s, landlord_pos), hidden)),
-                Some(s.current_position),
-            )
         } else {
             s.current_position = next_pos;
             // Reset for next caller in the same round
             s.set_action_received(false);
             s.set_turn_countdown(turn_timeout(&s, configs));
-            (None, Some(s.current_position))
+            (None, Some(s.current_position), false)
         }
     };
 
-    if open_hidden_event.is_none() && next_turn_position.is_none() {
+    if open_hidden_event.is_none() && next_turn_position.is_none() && !phase_changed {
         return;
     }
 
     let rs = room_service.lock().await;
     let mut dispatch = Vec::new();
+    if phase_changed {
+        let s = state.lock().unwrap();
+        dispatch.extend(dispatch_phase(room_key, &s, &rs));
+    }
     if let Some((name, cards)) = open_hidden_event {
         dispatch.extend(dispatch_all(
             room_key,
@@ -515,6 +565,10 @@ async fn handle_play_phase(
     if game_over {
         let rs = room_service.lock().await;
         let mut dispatch = Vec::new();
+        {
+            let s = state.lock().unwrap();
+            dispatch.extend(dispatch_phase(room_key, &s, &rs));
+        }
         let (hidden_owner_name, hidden_cards, remaining_hands) = {
             let s = state.lock().unwrap();
             let hidden_cards = s.hidden_cards.clone();
@@ -584,8 +638,11 @@ async fn handle_play_phase(
 }
 
 async fn handle_settlement_phase(
+    room_key: &str,
     state: &Arc<std::sync::Mutex<LandlordLoopState>>,
     configs: &std::collections::HashMap<String, i32>,
+    room_service: &Arc<Mutex<RoomService>>,
+    senders: &SessionSenders,
 ) -> bool {
     // 人数仍是 3 且没有断线玩家，才等待结算后进入下一局；否则结束循环。
     if settlement_should_stop(state) {
@@ -597,14 +654,29 @@ async fn handle_settlement_phase(
         5,
     )))
     .await;
-    let mut s = state.lock().unwrap();
-    if s.phase != LandlordPhase::Settlement {
-        return false;
-    }
-    if s.players_snapshot().len() != 3 || s.has_disconnected_players() {
-        return true;
-    }
-    s.redeal();
+    let (phase, position) = {
+        let mut s = state.lock().unwrap();
+        if s.phase != LandlordPhase::Settlement {
+            return false;
+        }
+        if s.players_snapshot().len() != 3 || s.has_disconnected_players() {
+            return true;
+        }
+        s.redeal();
+        (s.phase as i32, s.current_position as i32)
+    };
+    let rs = room_service.lock().await;
+    let dispatch = dispatch_all(
+        room_key,
+        WsCode::CHANGE_PHASE as i32,
+        serde_json::json!({
+            "phase": phase,
+            "position": position,
+        }),
+        &rs,
+    );
+    drop(rs);
+    send_dispatch(dispatch, senders).await;
     false
 }
 
@@ -823,7 +895,9 @@ pub(crate) fn start_game_loop(
                     }
                 }
                 LandlordPhase::Settlement => {
-                    if handle_settlement_phase(&state, &configs).await {
+                    if handle_settlement_phase(&room_key, &state, &configs, &room_service, &senders)
+                        .await
+                    {
                         break;
                     }
                 }

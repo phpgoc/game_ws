@@ -90,6 +90,9 @@ impl GameHandler for LandlordGameHandler {
         let current_position = room_service.session_position(session_id);
         let rejoin_data = {
             let state = loop_state.lock().unwrap();
+            let my_cards = current_position
+                .and_then(|position| state.hands.get(&position).cloned())
+                .unwrap_or_default();
             let other_cards_numbers = if state.hands.is_empty() {
                 None
             } else {
@@ -104,6 +107,7 @@ impl GameHandler for LandlordGameHandler {
             };
             WsReJoinResponse {
                 other_cards_numbers,
+                my_cards,
                 now_playing: state.current_position as i32,
             }
         };

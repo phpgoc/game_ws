@@ -49,6 +49,7 @@ pub enum WsCode {
     DEAL_OPEN_CARDS = 24,
     DEAL_FACE_DOWN_CARDS = 25,
     CHANGE_DEAL = 26,
+    CHANGE_PHASE = 27,
 
     SHOW_HIDDEN_CARDS = 30,
 
