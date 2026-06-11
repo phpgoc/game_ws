@@ -587,8 +587,8 @@ async fn handle_settlement_phase(
     state: &Arc<std::sync::Mutex<LandlordLoopState>>,
     configs: &std::collections::HashMap<String, i32>,
 ) -> bool {
-    // 人数，如果人数还是3，等待固定结算时间后进入下一局；否则结束循环
-    if state.lock().unwrap().players_snapshot().len() != 3 {
+    // 人数仍是 3 且没有断线玩家，才等待结算后进入下一局；否则结束循环。
+    if settlement_should_stop(state) {
         return true;
     }
     tokio::time::sleep(Duration::from_secs(fixed_wait_seconds(
@@ -601,11 +601,16 @@ async fn handle_settlement_phase(
     if s.phase != LandlordPhase::Settlement {
         return false;
     }
-    if s.players_snapshot().len() != 3 {
+    if s.players_snapshot().len() != 3 || s.has_disconnected_players() {
         return true;
     }
     s.redeal();
     false
+}
+
+fn settlement_should_stop(state: &Arc<std::sync::Mutex<LandlordLoopState>>) -> bool {
+    let s = state.lock().unwrap();
+    s.players_snapshot().len() != 3 || s.has_disconnected_players()
 }
 
 /// Handle timeout: mark the current player as away and simulate their action.

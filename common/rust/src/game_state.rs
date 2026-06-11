@@ -16,6 +16,8 @@ pub struct CommonGameState {
     pub turn_countdown: u32,
     /// 本局中已超时被标记为 away 的 position 集合。
     pub away_positions: HashSet<usize>,
+    /// WebSocket 已断开但仍保留座位、允许按 name 重连的 position 集合。
+    pub disconnected_positions: HashSet<usize>,
 }
 
 impl CommonGameState {
@@ -26,21 +28,40 @@ impl CommonGameState {
     pub fn add_player(&mut self, position: usize, session_id: SessionId, name: &str) {
         self.players
             .insert(position, (session_id, name.to_string()));
+        self.disconnected_positions.remove(&position);
     }
 
     pub fn swap_player(&mut self, pos_a: usize, pos_b: usize) {
         let a = self.players.remove(&pos_a);
         let b = self.players.remove(&pos_b);
+        let a_away = self.away_positions.remove(&pos_a);
+        let b_away = self.away_positions.remove(&pos_b);
+        let a_disconnected = self.disconnected_positions.remove(&pos_a);
+        let b_disconnected = self.disconnected_positions.remove(&pos_b);
         if let Some(p) = b {
             self.players.insert(pos_a, p);
         }
         if let Some(p) = a {
             self.players.insert(pos_b, p);
         }
+        if b_away {
+            self.away_positions.insert(pos_a);
+        }
+        if a_away {
+            self.away_positions.insert(pos_b);
+        }
+        if b_disconnected {
+            self.disconnected_positions.insert(pos_a);
+        }
+        if a_disconnected {
+            self.disconnected_positions.insert(pos_b);
+        }
     }
 
     pub fn remove_player(&mut self, position: usize) {
         self.players.remove(&position);
+        self.away_positions.remove(&position);
+        self.disconnected_positions.remove(&position);
     }
 
     pub fn player_name(&self, position: usize) -> String {
@@ -65,6 +86,18 @@ impl CommonGameState {
     pub fn clear_away(&mut self) {
         self.away_positions.clear();
     }
+    pub fn mark_disconnected(&mut self, pos: usize) -> bool {
+        self.disconnected_positions.insert(pos)
+    }
+    pub fn is_disconnected(&self, pos: usize) -> bool {
+        self.disconnected_positions.contains(&pos)
+    }
+    pub fn has_disconnected_players(&self) -> bool {
+        !self.disconnected_positions.is_empty()
+    }
+    pub fn clear_disconnected_position(&mut self, pos: usize) {
+        self.disconnected_positions.remove(&pos);
+    }
 }
 
 /// Shared holder so room service and game loop can reference the same common state.
@@ -76,6 +109,10 @@ pub struct SharedGameState {
 impl SharedGameState {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn from_common(common: Arc<Mutex<CommonGameState>>) -> Self {
+        Self { common }
     }
 }
 
@@ -146,6 +183,34 @@ pub trait GameState: Send {
             .unwrap()
             .away_positions
             .remove(&pos);
+    }
+
+    fn mark_disconnected(&mut self, pos: usize) {
+        self.shared_common_state()
+            .lock()
+            .unwrap()
+            .mark_disconnected(pos);
+    }
+
+    fn is_disconnected(&self, pos: usize) -> bool {
+        self.shared_common_state()
+            .lock()
+            .unwrap()
+            .is_disconnected(pos)
+    }
+
+    fn has_disconnected_players(&self) -> bool {
+        self.shared_common_state()
+            .lock()
+            .unwrap()
+            .has_disconnected_players()
+    }
+
+    fn clear_disconnected_position(&mut self, pos: usize) {
+        self.shared_common_state()
+            .lock()
+            .unwrap()
+            .clear_disconnected_position(pos);
     }
 
     fn action_received(&self) -> bool {

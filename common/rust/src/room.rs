@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use crate::dlog;
+use crate::game_setting::GameSettings;
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use share_type_public::{
@@ -8,8 +10,6 @@ use share_type_public::{
     ws::WsResponse,
     ws::{WsMessageEvent, WsNameEvent},
 };
-
-use crate::game_setting::GameSettings;
 
 pub type SessionId = u64;
 pub type ClientRequest = WsRequest<Value>;
@@ -93,7 +93,7 @@ impl RoomService {
         let Some(mut session) = self.sessions.remove(&session_id) else {
             return dispatch;
         };
-        self.remove_from_current_room(session_id, &mut session, &mut dispatch, WsCode::QUIT as i32);
+        self.mark_disconnected(session_id, &mut session, &mut dispatch);
         dispatch
     }
 
@@ -254,7 +254,8 @@ impl RoomService {
     /// 清除 game state（游戏结束时调用）。
     pub fn clear_room_game_state(&mut self, room_key: &str) {
         if let Some(entry) = self.rooms.get_mut(room_key) {
-            entry.state = Box::new(crate::game_state::SharedGameState::new());
+            let common = entry.state.shared_common_state();
+            entry.state = Box::new(crate::game_state::SharedGameState::from_common(common));
         }
     }
 
@@ -406,6 +407,13 @@ impl RoomService {
                 WsResponseCode::ERROR_FORMAT,
             );
         }
+        dlog!(
+            tracing::Level::INFO,
+            "Session {} attempts to join room '{}' with name '{}'",
+            session_id,
+            password,
+            name
+        );
 
         if let Some(current_room) = self.room_key_of(session_id) {
             let current_name = self.session_name(session_id);
@@ -419,7 +427,6 @@ impl RoomService {
                     );
                 };
                 if let Some(entry) = self.rooms.get(&password) {
-
                     let existing_members: Vec<share_type_public::WsMemberInfo> = entry
                         .state
                         .players()
@@ -428,7 +435,7 @@ impl RoomService {
                         .map(|(p, (_, n))| share_type_public::WsMemberInfo {
                             name: n.clone(),
                             position: *p as i32,
-                            is_active: !entry.state.is_away(*p),
+                            is_active: !entry.state.is_disconnected(*p),
                         })
                         .collect();
                     self.push_response_with_data(
@@ -467,6 +474,65 @@ impl RoomService {
         }
 
         let mut dispatch = Dispatch::default();
+
+        if let Some((position, existing_session_id)) = self.player_by_name(&password, &name) {
+            if self.session_active_in_room(existing_session_id, &password) {
+                return self.error_response(
+                    session_id,
+                    Routes::JOIN as i32,
+                    WsResponseCode::NO_PERMISSION,
+                );
+            }
+
+            {
+                let entry = self.rooms.get_mut(&password).unwrap();
+                entry.state.add_player(position, session_id, &name);
+                entry.state.clear_disconnected_position(position);
+            }
+            {
+                let session = self.sessions.entry(session_id).or_default();
+                session.name = Some(name.clone());
+                session.room_key = Some(password.clone());
+                session.position = Some(position);
+            }
+
+            self.send_other(
+                &password,
+                session_id,
+                WsCode::JOIN as i32,
+                share_type_public::WsMemberInfo {
+                    name: name.clone(),
+                    position: position as i32,
+                    is_active: true,
+                },
+                &mut dispatch,
+            );
+
+            let entry = self.rooms.get(&password).unwrap();
+            let existing_members: Vec<share_type_public::WsMemberInfo> = entry
+                .state
+                .players()
+                .iter()
+                .filter(|(p, _)| **p != position)
+                .map(|(p, (_, n))| share_type_public::WsMemberInfo {
+                    name: n.clone(),
+                    position: *p as i32,
+                    is_active: !entry.state.is_disconnected(*p),
+                })
+                .collect();
+            self.push_response_with_data(
+                session_id,
+                Routes::JOIN as i32,
+                WsResponseCode::JOINED,
+                share_type_public::WsJoinResponse {
+                    current_configs: entry.configs.clone(),
+                    existing_members,
+                    rejoin_data: None,
+                },
+                &mut dispatch,
+            );
+            return dispatch;
+        }
 
         // — 离开旧房间 —
         let old_room = self
@@ -538,7 +604,7 @@ impl RoomService {
                 .map(|(p, (_, n))| share_type_public::WsMemberInfo {
                     name: n.clone(),
                     position: *p as i32,
-                    is_active: !entry.state.is_away(*p),
+                    is_active: !entry.state.is_disconnected(*p),
                 })
                 .collect();
             self.push_response_with_data(
@@ -971,6 +1037,28 @@ impl RoomService {
         })
     }
 
+    fn player_by_name(&self, room_key: &str, name: &str) -> Option<(usize, SessionId)> {
+        let entry = self.rooms.get(room_key)?;
+        entry
+            .state
+            .players()
+            .into_iter()
+            .find_map(|(position, (sid, player_name))| {
+                if player_name == name {
+                    Some((position, sid))
+                } else {
+                    None
+                }
+            })
+    }
+
+    fn session_active_in_room(&self, session_id: SessionId, room_key: &str) -> bool {
+        self.sessions
+            .get(&session_id)
+            .and_then(|session| session.room_key.as_deref())
+            == Some(room_key)
+    }
+
     fn select_position(
         &self,
         room_key: &str,
@@ -997,6 +1085,60 @@ impl RoomService {
         };
         self.remove_from_current_room(session_id, &mut session, dispatch, code);
         self.sessions.insert(session_id, session);
+    }
+
+    fn mark_disconnected(
+        &mut self,
+        session_id: SessionId,
+        session: &mut SessionState,
+        dispatch: &mut Dispatch,
+    ) {
+        let Some(room_key) = session.room_key.take() else {
+            return;
+        };
+        let mut name = session.name.clone().unwrap_or_default();
+        let mut position = session.position.take();
+        let mut recipients = Vec::new();
+
+        if let Some(entry) = self.rooms.get_mut(&room_key) {
+            let players = entry.state.players();
+            if position.is_none() {
+                if let Some((pos, (_, player_name))) =
+                    players.iter().find(|(_, (sid, _))| *sid == session_id)
+                {
+                    position = Some(*pos);
+                    if name.is_empty() {
+                        name = player_name.clone();
+                    }
+                }
+            }
+            let Some(pos) = position else {
+                return;
+            };
+            entry.state.mark_disconnected(pos);
+            recipients.extend(
+                entry
+                    .state
+                    .players()
+                    .values()
+                    .filter_map(|(sid, _)| (*sid != session_id).then_some(*sid)),
+            );
+            let event = CommonEvent {
+                code: WsCode::JOIN as i32,
+                data: serde_json::to_value(share_type_public::WsMemberInfo {
+                    name,
+                    position: pos as i32,
+                    is_active: false,
+                })
+                .unwrap_or(Value::Null),
+            };
+            for recipient in recipients {
+                dispatch.messages.push(Delivery {
+                    recipient,
+                    payload: OutboundPayload::Event(event.clone()),
+                });
+            }
+        }
     }
 
     fn disband_room(&mut self, session_id: SessionId, dispatch: &mut Dispatch) {
@@ -1373,6 +1515,131 @@ mod tests {
                     _ => false,
                 });
         assert!(join_other_room_denied);
+    }
+
+    #[test]
+    fn disconnected_name_can_rejoin_same_position() {
+        let mut service = RoomService::default();
+        service.connect(1);
+        service.connect(2);
+        service.connect(3);
+
+        let _ = service.handle_common_request(
+            1,
+            &WsRequest {
+                route: Routes::JOIN as i32,
+                data: serde_json::json!({"name":"u1","password":"p1"}),
+            },
+            settings,
+        );
+        let _ = service.handle_common_request(
+            2,
+            &WsRequest {
+                route: Routes::JOIN as i32,
+                data: serde_json::json!({"name":"u2","password":"p1"}),
+            },
+            settings,
+        );
+
+        let disconnect = service.disconnect(1);
+        let inactive_event = disconnect.messages.iter().any(|item| match &item.payload {
+            OutboundPayload::Event(event) if event.code == WsCode::JOIN as i32 => {
+                item.recipient == 2
+                    && event.data.get("name").and_then(|v| v.as_str()) == Some("u1")
+                    && event.data.get("position").and_then(|v| v.as_i64()) == Some(0)
+                    && event.data.get("is_active").and_then(|v| v.as_bool()) == Some(false)
+            }
+            _ => false,
+        });
+        assert!(inactive_event);
+
+        let rejoin = service
+            .handle_common_request(
+                3,
+                &WsRequest {
+                    route: Routes::JOIN as i32,
+                    data: serde_json::json!({"name":"u1","password":"p1"}),
+                },
+                settings,
+            )
+            .expect("join common");
+
+        assert_eq!(service.session_position(3), Some(0));
+        assert_eq!(
+            service
+                .get_game_state_players("p1")
+                .get(&0)
+                .map(|(sid, _)| *sid),
+            Some(3)
+        );
+        let active_event = rejoin.messages.iter().any(|item| match &item.payload {
+            OutboundPayload::Event(event) if event.code == WsCode::JOIN as i32 => {
+                item.recipient == 2
+                    && event.data.get("name").and_then(|v| v.as_str()) == Some("u1")
+                    && event.data.get("position").and_then(|v| v.as_i64()) == Some(0)
+                    && event.data.get("is_active").and_then(|v| v.as_bool()) == Some(true)
+            }
+            _ => false,
+        });
+        assert!(active_event);
+        let joined = rejoin.messages.iter().any(|item| match &item.payload {
+            OutboundPayload::Response(RequestResponse::WithData(resp)) => {
+                item.recipient == 3 && resp.code as i32 == WsResponseCode::JOINED as i32
+            }
+            _ => false,
+        });
+        assert!(joined);
+    }
+
+    #[test]
+    fn clearing_game_state_preserves_room_members() {
+        let mut service = RoomService::default();
+        service.connect(1);
+        service.connect(2);
+
+        let _ = service.handle_common_request(
+            1,
+            &WsRequest {
+                route: Routes::JOIN as i32,
+                data: serde_json::json!({"name":"u1","password":"p1"}),
+            },
+            settings,
+        );
+        let _ = service.handle_common_request(
+            2,
+            &WsRequest {
+                route: Routes::JOIN as i32,
+                data: serde_json::json!({"name":"u2","password":"p1"}),
+            },
+            settings,
+        );
+        let _ = service.disconnect(2);
+
+        service.clear_room_game_state("p1");
+
+        let players = service.get_game_state_players("p1");
+        assert_eq!(players.len(), 2);
+        assert_eq!(players.get(&0).map(|(_, name)| name.as_str()), Some("u1"));
+        assert_eq!(players.get(&1).map(|(_, name)| name.as_str()), Some("u2"));
+
+        let rejoin = service
+            .handle_common_request(
+                2,
+                &WsRequest {
+                    route: Routes::JOIN as i32,
+                    data: serde_json::json!({"name":"u2","password":"p1"}),
+                },
+                settings,
+            )
+            .expect("join common");
+        let joined = rejoin.messages.iter().any(|item| match &item.payload {
+            OutboundPayload::Response(RequestResponse::WithData(resp)) => {
+                item.recipient == 2 && resp.code as i32 == WsResponseCode::JOINED as i32
+            }
+            _ => false,
+        });
+        assert!(joined);
+        assert_eq!(service.session_position(2), Some(1));
     }
 
     #[test]

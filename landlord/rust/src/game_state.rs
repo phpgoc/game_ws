@@ -96,6 +96,10 @@ impl LandlordLoopState {
         self.base.lock().unwrap().is_away(pos)
     }
 
+    pub fn has_disconnected_players(&self) -> bool {
+        self.base.lock().unwrap().has_disconnected_players()
+    }
+
     pub fn mark_away(&self, pos: usize) -> bool {
         self.base.lock().unwrap().mark_away(pos)
     }
