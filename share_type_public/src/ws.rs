@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use typeshare::typeshare;
 
 use crate::r#const::WsResponseCode;
@@ -51,10 +52,16 @@ pub struct WsJoinRequest {
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsJoinResponse {
-    pub current_configs: std::collections::HashMap<String, i32>,
+    pub current_configs: HashMap<String, i32>,
     pub existing_members: Vec<WsMemberInfo>,
-    pub start_time: i32,
-    pub settlement_time: i32,
+    pub rejoin_data: Option<WsReJoinResponse>,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsReJoinResponse {
+    pub other_cards_numbers: Option<HashMap<i32, i32>>,
+    pub now_playing: i32,
 }
 
 #[typeshare]
@@ -62,6 +69,7 @@ pub struct WsJoinResponse {
 pub struct WsMemberInfo {
     pub name: String,
     pub position: i32,
+    pub is_active: bool,
 }
 
 #[typeshare]

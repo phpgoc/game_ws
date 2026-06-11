@@ -33,6 +33,15 @@ pub trait GameHandler: Send + 'static {
     fn set_context(&mut self, _senders: SessionSenders, _room_service: Arc<Mutex<RoomService>>) {
         // Optional: override in games that need access to senders/room_service for event loops
     }
+    fn after_common_request(
+        &mut self,
+        _room_service: &mut RoomService,
+        _session_id: SessionId,
+        _request: &ClientRequest,
+        _dispatch: &mut Dispatch,
+    ) {
+        // Optional: override in games that need to enrich common responses/events.
+    }
     fn handle_game_request(
         &mut self,
         room_service: &mut RoomService,
@@ -212,7 +221,7 @@ where
             } else {
                 false
             };
-            if let Some(dispatch) =
+            if let Some(mut dispatch) =
                 room.handle_common_request(session_id, &request, || handler.build_room_settings())
             {
                 // 首个 JOIN 建房成功后，挂载游戏态，确保后续逻辑走具体游戏状态。
@@ -225,6 +234,7 @@ where
                         room.set_room_game_state(&room_key, gs);
                     }
                 }
+                handler.after_common_request(&mut room, session_id, &request, &mut dispatch);
                 dispatch
             } else {
                 handler.handle_game_request(&mut room, session_id, request)

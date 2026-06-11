@@ -30,6 +30,7 @@ pub use ws::WsMemberInfo;
 pub use ws::WsMessageEvent;
 pub use ws::WsMessageRequest;
 pub use ws::WsPositionEvent;
+pub use ws::WsReJoinResponse;
 pub use ws::WsRequest;
 pub use ws::WsResponse;
 pub use ws::WsSettingPayload;

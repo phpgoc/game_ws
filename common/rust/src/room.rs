@@ -419,6 +419,7 @@ impl RoomService {
                     );
                 };
                 if let Some(entry) = self.rooms.get(&password) {
+
                     let existing_members: Vec<share_type_public::WsMemberInfo> = entry
                         .state
                         .players()
@@ -427,6 +428,7 @@ impl RoomService {
                         .map(|(p, (_, n))| share_type_public::WsMemberInfo {
                             name: n.clone(),
                             position: *p as i32,
+                            is_active: !entry.state.is_away(*p),
                         })
                         .collect();
                     self.push_response_with_data(
@@ -436,8 +438,7 @@ impl RoomService {
                         share_type_public::WsJoinResponse {
                             current_configs: entry.configs.clone(),
                             existing_members,
-                            start_time: config_value(&entry.configs, "start_time", 1),
-                            settlement_time: config_value(&entry.configs, "settlement_time", 5),
+                            rejoin_data: None,
                         },
                         &mut dispatch,
                     );
@@ -521,6 +522,7 @@ impl RoomService {
             share_type_public::WsMemberInfo {
                 name: name_for_event,
                 position: position as i32,
+                is_active: true,
             },
             &mut dispatch,
         );
@@ -536,6 +538,7 @@ impl RoomService {
                 .map(|(p, (_, n))| share_type_public::WsMemberInfo {
                     name: n.clone(),
                     position: *p as i32,
+                    is_active: !entry.state.is_away(*p),
                 })
                 .collect();
             self.push_response_with_data(
@@ -545,8 +548,7 @@ impl RoomService {
                 share_type_public::WsJoinResponse {
                     current_configs: entry.configs.clone(),
                     existing_members,
-                    start_time: config_value(&entry.configs, "start_time", 1),
-                    settlement_time: config_value(&entry.configs, "settlement_time", 5),
+                    rejoin_data: None,
                 },
                 &mut dispatch,
             );

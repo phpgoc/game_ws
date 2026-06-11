@@ -2,9 +2,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use share_type_public::games::landlord::{WsCallLandlordEvent, WsCallLandlordRequest, WsPlayEvent};
-use share_type_public::{LandlordRoutes, Routes, WsCode, WsResponseCode};
+use share_type_public::{LandlordRoutes, Routes, WsCode, WsReJoinResponse, WsResponseCode};
 use tokio::sync::Mutex;
-use ws_common::{ClientRequest, Dispatch, GameHandler, RoomService, SessionId, SessionSenders};
+use ws_common::{
+    ClientRequest, Dispatch, GameHandler, OutboundPayload, RequestResponse, RoomService, SessionId,
+    SessionSenders,
+};
 
 use crate::game_loop::start_game_loop;
 use crate::game_setting::build_landlord_settings;
@@ -65,6 +68,77 @@ impl GameHandler for LandlordGameHandler {
             }
         }
     }
+
+    fn after_common_request(
+        &mut self,
+        room_service: &mut RoomService,
+        session_id: SessionId,
+        request: &ClientRequest,
+        dispatch: &mut Dispatch,
+    ) {
+        if request.route != Routes::JOIN as i32 || !join_succeeded(dispatch, session_id) {
+            return;
+        }
+
+        let Some(room_key) = room_service.room_key_of(session_id) else {
+            return;
+        };
+        let Some(loop_state) = self.loop_states.get(&room_key) else {
+            return;
+        };
+
+        let current_position = room_service.session_position(session_id);
+        let rejoin_data = {
+            let state = loop_state.lock().unwrap();
+            let other_cards_numbers = if state.hands.is_empty() {
+                None
+            } else {
+                Some(
+                    state
+                        .hands
+                        .iter()
+                        .filter(|(position, _)| Some(**position) != current_position)
+                        .map(|(position, cards)| (*position as i32, cards.len() as i32))
+                        .collect(),
+                )
+            };
+            WsReJoinResponse {
+                other_cards_numbers,
+                now_playing: state.current_position as i32,
+            }
+        };
+
+        for message in dispatch.messages.iter_mut() {
+            if message.recipient != session_id {
+                continue;
+            }
+            let OutboundPayload::Response(RequestResponse::WithData(response)) =
+                &mut message.payload
+            else {
+                continue;
+            };
+            if response.route == Routes::JOIN as i32
+                && response.code as i32 == WsResponseCode::JOINED as i32
+            {
+                response.data["rejoin_data"] =
+                    serde_json::to_value(&rejoin_data).unwrap_or(serde_json::Value::Null);
+            }
+        }
+    }
+}
+
+fn join_succeeded(dispatch: &Dispatch, session_id: SessionId) -> bool {
+    dispatch.messages.iter().any(|message| {
+        if message.recipient != session_id {
+            return false;
+        }
+        matches!(
+            &message.payload,
+            OutboundPayload::Response(RequestResponse::WithData(response))
+                if response.route == Routes::JOIN as i32
+                    && response.code as i32 == WsResponseCode::JOINED as i32
+        )
+    })
 }
 
 // ─── START ────────────────────────────────────────────────────────────
