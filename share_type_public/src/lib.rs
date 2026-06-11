@@ -23,7 +23,6 @@ pub use games::landlord::WsPlayEvent;
 pub use games::landlord::WsPlayRequest;
 pub use games::landlord::WsShowHiddenCardsEvent;
 pub use settings::{GameParam, GameParamRange};
-pub use ws::WsCreateRequest;
 pub use ws::WsCreateResponse;
 pub use ws::WsJoinRequest;
 pub use ws::WsJoinResponse;

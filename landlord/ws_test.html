@@ -29,7 +29,6 @@
   <div class="row">
     <input id="name" placeholder="用户名" value="u1" />
     <input id="password" placeholder="房间密码" value="p1" />
-    <button id="create">CREATE</button>
     <button id="join">JOIN</button>
     <button id="quit">QUIT</button>
     <button id="disband">DISBAND</button>
@@ -78,7 +77,7 @@
     function cardName(n) { return CARD_NAMES[n] || n.toString(); }
 
     const ROUTES = {
-      CREATE: 1, JOIN: 2, QUIT: 3, MESSAGE: 4,
+      JOIN: 2, QUIT: 3, MESSAGE: 4,
       PAUSE: 5, RESUME: 6, DISBAND: 7, SETTING: 8,
       START: 10, AWAY: 12, BACK: 13, SWAP: 14,
       DEAL: 20, PLAY: 21,
@@ -172,7 +171,7 @@
 
         // — 响应 (有 route) —
         if (msg.route !== undefined && msg.code !== undefined) {
-          if (msg.route === ROUTES.CREATE && msg.code === RESP_CODES.OK && msg.data && msg.data.param_descriptions) {
+          if ( msg.code === RESP_CODES.OK && msg.data && msg.data.param_descriptions) {
             applyParamDescriptions(msg.data.param_descriptions);
           }
           if (msg.route === ROUTES.JOIN && msg.code === RESP_CODES.JOINED && msg.data) {
@@ -248,7 +247,6 @@
 
     $("disconnect").onclick = () => { if (ws) ws.close(); };
 
-    $("create").onclick = () => send(ROUTES.CREATE, { name: $("name").value.trim(), password: $("password").value.trim() });
     $("join").onclick   = () => send(ROUTES.JOIN,   { name: $("name").value.trim(), password: $("password").value.trim() });
     $("quit").onclick    = () => send(ROUTES.QUIT, {});
     $("disband").onclick = () => send(ROUTES.DISBAND, {});

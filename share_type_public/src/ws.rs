@@ -31,14 +31,7 @@ pub struct WsWithoutDataResponse {
     pub code: WsResponseCode,
 }
 
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsCreateRequest {
-    pub name: String,
-    pub password: String,
-}
-
-/// CREATE 响应和 SWAP 成房主时的事件。
+/// 首个 JOIN 建房后的房主参数响应，以及 SWAP 成房主时的响应。
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsCreateResponse {

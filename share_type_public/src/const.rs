@@ -6,7 +6,6 @@ use typeshare::typeshare;
 #[derive(Debug, Clone, Copy, Serialize_repr, Deserialize_repr)]
 #[allow(non_camel_case_types)]
 pub enum Routes {
-    CREATE = 1,
     JOIN = 2,
     QUIT = 3,
     MESSAGE = 4,

@@ -28,7 +28,7 @@ pub type SessionSenders = Arc<Mutex<HashMap<SessionId, SessionSender>>>;
 pub trait GameHandler: Send + 'static {
     fn build_room_settings(&self) -> SettingsBuilderResult;
     /// 创建游戏状态。
-    /// 在 CREATE 成功后立即调用，并将当前成员 populate 进去。
+    /// 在首个 JOIN 建房成功后立即调用，并将当前成员 populate 进去。
     fn build_game_state(&self) -> Box<dyn crate::game_state::GameState>;
     fn set_context(&mut self, _senders: SessionSenders, _room_service: Arc<Mutex<RoomService>>) {
         // Optional: override in games that need access to senders/room_service for event loops
@@ -199,11 +199,24 @@ where
         let dispatch = {
             let mut room = room_service.lock().await;
             let mut handler = game_handler.lock().await;
+            let creates_room_on_join = if request.route == share_type_public::Routes::JOIN as i32 {
+                let join_key = serde_json::from_value::<share_type_public::WsJoinRequest>(
+                    request.data.clone(),
+                )
+                .ok()
+                .map(|join| join.password);
+                join_key
+                    .as_ref()
+                    .map(|room_key| !room.room_exists(room_key))
+                    .unwrap_or(false)
+            } else {
+                false
+            };
             if let Some(dispatch) =
                 room.handle_common_request(session_id, &request, || handler.build_room_settings())
             {
-                // After a successful CREATE, attach game state so JOIN/QUIT hooks work
-                if request.route == share_type_public::Routes::CREATE as i32 {
+                // 首个 JOIN 建房成功后，挂载游戏态，确保后续逻辑走具体游戏状态。
+                if creates_room_on_join {
                     if let Some(room_key) = room.room_key_of(session_id) {
                         let mut gs = handler.build_game_state();
                         for (sid, name, pos) in room.get_room_members(&room_key) {
