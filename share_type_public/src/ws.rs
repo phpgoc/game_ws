@@ -60,9 +60,15 @@ pub struct WsJoinResponse {
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsReJoinResponse {
-    pub other_cards_numbers: Option<HashMap<i32, i32>>,
+    pub other_cards_numbers: HashMap<i32, i32>,
     pub my_cards: Vec<i32>,
     pub now_playing: i32,
+    pub phase: i32,
+    pub landlord_position: Option<i32>,
+    pub score: u32,
+    pub hidden_cards: Vec<i32>,
+    pub last_play_position: Option<i32>,
+    pub last_play: Vec<i32>,
 }
 
 #[typeshare]

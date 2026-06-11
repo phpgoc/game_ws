@@ -90,25 +90,40 @@ impl GameHandler for LandlordGameHandler {
         let current_position = room_service.session_position(session_id);
         let rejoin_data = {
             let state = loop_state.lock().unwrap();
-            let my_cards = current_position
-                .and_then(|position| state.hands.get(&position).cloned())
-                .unwrap_or_default();
-            let other_cards_numbers = if state.hands.is_empty() {
+            if !matches!(
+                state.phase,
+                LandlordPhase::CallLandlord | LandlordPhase::Play
+            ) {
                 None
             } else {
-                Some(
-                    state
-                        .hands
-                        .iter()
-                        .filter(|(position, _)| Some(**position) != current_position)
-                        .map(|(position, cards)| (*position as i32, cards.len() as i32))
-                        .collect(),
-                )
-            };
-            WsReJoinResponse {
-                other_cards_numbers,
-                my_cards,
-                now_playing: state.current_position as i32,
+                let my_cards = current_position
+                    .and_then(|position| state.hands.get(&position).cloned())
+                    .unwrap_or_default();
+                let other_cards_numbers = state
+                    .hands
+                    .iter()
+                    .filter(|(position, _)| Some(**position) != current_position)
+                    .map(|(position, cards)| (*position as i32, cards.len() as i32))
+                    .collect();
+                Some(WsReJoinResponse {
+                    other_cards_numbers,
+                    my_cards,
+                    now_playing: state.current_position as i32,
+                    phase: state.phase as i32,
+                    landlord_position: state.landlord_position.map(|position| position as i32),
+                    score: state.score,
+                    hidden_cards: if state.phase == LandlordPhase::Play {
+                        state.hidden_cards.clone()
+                    } else {
+                        Vec::new()
+                    },
+                    last_play_position: if state.last_play.is_empty() {
+                        None
+                    } else {
+                        Some(state.last_play_position as i32)
+                    },
+                    last_play: state.last_play.clone(),
+                })
             }
         };
 
