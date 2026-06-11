@@ -191,8 +191,8 @@ impl RoomService {
             .unwrap_or(false)
     }
 
-    /// 返回房间内所有成员 (SessionId, name, position)。
-    pub fn get_room_members(&self, room_key: &str) -> Vec<(SessionId, String, usize)> {
+    /// 返回房间内所有成员 (SessionId, name, position, avatar_url)。
+    pub fn get_room_members(&self, room_key: &str) -> Vec<(SessionId, String, usize, String)> {
         let Some(entry) = self.rooms.get(room_key) else {
             return Vec::new();
         };
@@ -200,7 +200,9 @@ impl RoomService {
             .state
             .players()
             .iter()
-            .filter_map(|(pos, (sid, name))| Some((*sid, name.clone(), *pos)))
+            .filter_map(|(pos, (sid, name))| {
+                Some((*sid, name.clone(), *pos, entry.state.player_avatar(*pos)))
+            })
             .collect()
     }
 
@@ -400,6 +402,7 @@ impl RoomService {
         };
         let password = payload.password;
         let name = payload.name;
+        let avatar_url = payload.avatar_url;
         if password.is_empty() || name.is_empty() {
             return self.error_response(
                 session_id,
@@ -434,6 +437,7 @@ impl RoomService {
                         .filter(|(p, _)| **p != position)
                         .map(|(p, (_, n))| share_type_public::WsMemberInfo {
                             name: n.clone(),
+                            avatar_url: entry.state.player_avatar(*p),
                             position: *p as i32,
                             is_active: !entry.state.is_disconnected(*p),
                         })
@@ -487,6 +491,7 @@ impl RoomService {
             {
                 let entry = self.rooms.get_mut(&password).unwrap();
                 entry.state.add_player(position, session_id, &name);
+                entry.state.set_avatar(position, &avatar_url);
                 entry.state.clear_disconnected_position(position);
             }
             {
@@ -502,6 +507,7 @@ impl RoomService {
                 WsCode::JOIN as i32,
                 share_type_public::WsMemberInfo {
                     name: name.clone(),
+                    avatar_url: avatar_url.clone(),
                     position: position as i32,
                     is_active: true,
                 },
@@ -516,6 +522,7 @@ impl RoomService {
                 .filter(|(p, _)| **p != position)
                 .map(|(p, (_, n))| share_type_public::WsMemberInfo {
                     name: n.clone(),
+                    avatar_url: entry.state.player_avatar(*p),
                     position: *p as i32,
                     is_active: !entry.state.is_disconnected(*p),
                 })
@@ -571,6 +578,7 @@ impl RoomService {
         {
             let entry = self.rooms.get_mut(&password).unwrap();
             entry.state.add_player(position, session_id, &name);
+            entry.state.set_avatar(position, &avatar_url);
         }
 
         {
@@ -587,6 +595,7 @@ impl RoomService {
             WsCode::JOIN as i32,
             share_type_public::WsMemberInfo {
                 name: name_for_event,
+                avatar_url: avatar_url.clone(),
                 position: position as i32,
                 is_active: true,
             },
@@ -603,6 +612,7 @@ impl RoomService {
                 .filter(|(p, _)| **p != position)
                 .map(|(p, (_, n))| share_type_public::WsMemberInfo {
                     name: n.clone(),
+                    avatar_url: entry.state.player_avatar(*p),
                     position: *p as i32,
                     is_active: !entry.state.is_disconnected(*p),
                 })
@@ -1127,6 +1137,7 @@ impl RoomService {
                 code: WsCode::JOIN as i32,
                 data: serde_json::to_value(share_type_public::WsMemberInfo {
                     name,
+                    avatar_url: entry.state.player_avatar(pos),
                     position: pos as i32,
                     is_active: false,
                 })

@@ -228,8 +228,9 @@ where
                 if creates_room_on_join {
                     if let Some(room_key) = room.room_key_of(session_id) {
                         let mut gs = handler.build_game_state();
-                        for (sid, name, pos) in room.get_room_members(&room_key) {
+                        for (sid, name, pos, avatar) in room.get_room_members(&room_key) {
                             gs.add_player(pos, sid, &name);
+                            gs.set_avatar(pos, &avatar);
                         }
                         room.set_room_game_state(&room_key, gs);
                     }

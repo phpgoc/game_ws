@@ -8,6 +8,8 @@ use crate::SessionId;
 #[derive(Debug, Default)]
 pub struct CommonGameState {
     pub players: HashMap<usize, (SessionId, String)>,
+    /// 各 position 的头像 URL。
+    pub avatars: HashMap<usize, String>,
     /// 游戏暂停时 tick 不递减。
     pub paused: bool,
     /// 当前轮是否已收到有效操作（由游戏循环消费输入后置 true）。
@@ -31,9 +33,28 @@ impl CommonGameState {
         self.disconnected_positions.remove(&position);
     }
 
+    pub fn set_avatar(&mut self, position: usize, avatar: &str) {
+        if avatar.is_empty() {
+            return;
+        }
+        self.avatars.insert(position, avatar.to_string());
+    }
+
+    pub fn player_avatar(&self, position: usize) -> String {
+        self.avatars.get(&position).cloned().unwrap_or_default()
+    }
+
     pub fn swap_player(&mut self, pos_a: usize, pos_b: usize) {
         let a = self.players.remove(&pos_a);
         let b = self.players.remove(&pos_b);
+        let a_avatar = self.avatars.remove(&pos_a);
+        let b_avatar = self.avatars.remove(&pos_b);
+        if let Some(av) = b_avatar {
+            self.avatars.insert(pos_a, av);
+        }
+        if let Some(av) = a_avatar {
+            self.avatars.insert(pos_b, av);
+        }
         let a_away = self.away_positions.remove(&pos_a);
         let b_away = self.away_positions.remove(&pos_b);
         let a_disconnected = self.disconnected_positions.remove(&pos_a);
@@ -60,6 +81,7 @@ impl CommonGameState {
 
     pub fn remove_player(&mut self, position: usize) {
         self.players.remove(&position);
+        self.avatars.remove(&position);
         self.away_positions.remove(&position);
         self.disconnected_positions.remove(&position);
     }
@@ -137,6 +159,20 @@ pub trait GameState: Send {
             .lock()
             .unwrap()
             .add_player(position, session_id, name);
+    }
+
+    fn set_avatar(&mut self, position: usize, avatar: &str) {
+        self.shared_common_state()
+            .lock()
+            .unwrap()
+            .set_avatar(position, avatar);
+    }
+
+    fn player_avatar(&self, position: usize) -> String {
+        self.shared_common_state()
+            .lock()
+            .unwrap()
+            .player_avatar(position)
     }
 
     fn swap_player(&mut self, pos_a: usize, pos_b: usize) {

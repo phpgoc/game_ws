@@ -46,6 +46,9 @@ pub struct WsCreateResponse {
 pub struct WsJoinRequest {
     pub name: String,
     pub password: String,
+    /// 头像 URL（官方为 http 开头的全路径，非官方可为 / 开头的相对路径）。
+    #[serde(default)]
+    pub avatar_url: String,
 }
 
 /// JOIN 响应，发给新人。
@@ -76,6 +79,9 @@ pub struct WsReJoinResponse {
 pub struct WsMemberInfo {
     pub name: String,
     pub position: i32,
+    /// 头像 URL。
+    #[serde(default)]
+    pub avatar_url: String,
     pub is_active: bool,
 }
 
@@ -91,7 +97,7 @@ pub struct WsNameEvent {
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsSettingPayload {
-    pub current_configs: std::collections::HashMap<String, i32>,
+    pub current_configs: HashMap<String, i32>,
 }
 
 #[typeshare]

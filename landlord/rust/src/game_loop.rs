@@ -70,7 +70,7 @@ fn dispatch_all(
     room_service
         .get_room_members(room_key)
         .iter()
-        .map(|(sid, _, _)| Delivery {
+        .map(|(sid, _, _, _)| Delivery {
             recipient: *sid,
             payload: OutboundPayload::Event(share_type_public::CommonEvent {
                 code,
@@ -107,7 +107,7 @@ fn dispatch_to_position(
     room_service
         .get_room_members(room_key)
         .iter()
-        .filter_map(|(sid, _, pos)| {
+        .filter_map(|(sid, _, pos, _)| {
             if *pos == position {
                 Some(Delivery {
                     recipient: *sid,
