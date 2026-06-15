@@ -548,7 +548,7 @@ impl RoomService {
             .and_then(|item| item.room_key.clone());
         if old_room.as_ref() != Some(&password) {
             let mut tmp = self.sessions.remove(&session_id).unwrap_or_default();
-            self.remove_from_current_room(session_id, &mut tmp, &mut dispatch, WsCode::QUIT as i32);
+            self.remove_from_current_room(session_id, &mut tmp, &mut dispatch);
             self.sessions.insert(session_id, tmp);
         }
 
@@ -637,7 +637,7 @@ impl RoomService {
         if !self.require_login(session_id, Routes::QUIT as i32, &mut dispatch) {
             return dispatch;
         }
-        self.quit_room(session_id, &mut dispatch, WsCode::QUIT as i32);
+        self.quit_room(session_id, &mut dispatch);
         self.push_ok_response(&mut dispatch, session_id, Routes::QUIT as i32);
         dispatch
     }
@@ -1089,11 +1089,11 @@ impl RoomService {
         (0..max_players).find(|pos| !players.contains_key(pos))
     }
 
-    fn quit_room(&mut self, session_id: SessionId, dispatch: &mut Dispatch, code: i32) {
+    fn quit_room(&mut self, session_id: SessionId, dispatch: &mut Dispatch) {
         let Some(mut session) = self.sessions.remove(&session_id) else {
             return;
         };
-        self.remove_from_current_room(session_id, &mut session, dispatch, code);
+        self.remove_from_current_room(session_id, &mut session, dispatch);
         self.sessions.insert(session_id, session);
     }
 
@@ -1187,7 +1187,6 @@ impl RoomService {
         session_id: SessionId,
         session: &mut SessionState,
         dispatch: &mut Dispatch,
-        code: i32,
     ) {
         let Some(room_key) = session.room_key.take() else {
             return;
@@ -1212,19 +1211,16 @@ impl RoomService {
                 entry.state.remove_player(pos);
             }
             recipients.extend(entry.state.players().values().map(|(sid, _)| *sid));
+            entry.state.resume(); // 无论是不是暂停都设置为非暂停，让loop可以正常退出。
             // 如果房间里没人了，删除房间
             if entry.state.players().is_empty() {
                 self.rooms.remove(&room_key);
             }
         }
 
-        let event = if code == WsCode::QUIT as i32 {
-            CommonEvent {
-                code,
-                data: serde_json::to_value(WsNameEvent { name: leave_name }).unwrap_or(Value::Null),
-            }
-        } else {
-            return;
+        let event = CommonEvent {
+            code: WsCode::QUIT as i32,
+            data: serde_json::to_value(WsNameEvent { name: leave_name }).unwrap_or(Value::Null),
         };
 
         for recipient in recipients {
@@ -1233,6 +1229,7 @@ impl RoomService {
                 payload: OutboundPayload::Event(event.clone()),
             });
         }
+
     }
 
     pub fn error_response(

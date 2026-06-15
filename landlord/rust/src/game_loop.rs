@@ -10,7 +10,7 @@ use share_type_public::{
     },
 };
 use tokio::sync::Mutex;
-use ws_common::{Delivery, OutboundPayload, RoomService, SessionSenders};
+use ws_common::{Delivery, OutboundPayload, RoomService, SessionSenders, dlog, tracing};
 
 use crate::game_state::LandlordLoopState;
 use crate::play_validator::validate_play_request;
@@ -780,6 +780,18 @@ pub(crate) fn start_game_loop(
             }
 
             let current_phase = { state.lock().unwrap().phase };
+            let player_num = state.lock().unwrap().base.lock().unwrap().players.len();
+            dlog!(
+                tracing::Level::INFO,
+                "[landlord][game-loop] room={} phase={:?} play number ={} action_received={}",
+                room_key,
+                current_phase,
+                player_num,
+                state.lock().unwrap().action_received()
+            );
+            if player_num != 3 {
+                break;
+            }
 
             match current_phase {
                 LandlordPhase::Start => {

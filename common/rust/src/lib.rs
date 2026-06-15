@@ -22,6 +22,7 @@ pub use runtime::{
 pub use share_type_public::GameParamRange;
 #[cfg(debug_assertions)]
 use std::io::IsTerminal;
+pub use tracing;
 
 pub use transport::{TransportError, from_message, to_text_message};
 

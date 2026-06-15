@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use typeshare::typeshare;
+use std::fmt::Display;
 
 #[typeshare]
 #[repr(i8)]
@@ -10,6 +11,16 @@ pub enum LandlordPhase {
     CallLandlord,
     Play,
     Settlement,
+}
+impl  Display  for LandlordPhase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Start => write!(f, "Start"),
+            Self::CallLandlord => write!(f, "CallLandlord"),
+            Self::Play => write!(f, "Play"),
+            Self::Settlement => write!(f, "Settlement"),
+        }
+    }
 }
 
 impl LandlordPhase {
