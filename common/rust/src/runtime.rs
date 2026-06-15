@@ -188,7 +188,11 @@ where
 
     loop {
         let frame = match tokio::time::timeout(idle_timeout, source.next()).await {
-            Ok(Some(frame)) => frame?,
+            Ok(Some(Ok(frame))) => frame,
+            Ok(Some(Err(err))) => {
+                info!(session_id, peer = %peer, ?err, "connection reset, treating as disconnect");
+                break;
+            }
             Ok(None) => break,
             Err(_) => {
                 warn!(session_id, peer = %peer, "idle timeout, closing connection");

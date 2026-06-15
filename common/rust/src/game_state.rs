@@ -20,6 +20,8 @@ pub struct CommonGameState {
     pub away_positions: HashSet<usize>,
     /// WebSocket 已断开但仍保留座位、允许按 name 重连的 position 集合。
     pub disconnected_positions: HashSet<usize>,
+    /// 房间生命周期已结束，游戏 loop 应尽快退出。
+    pub stop_requested: bool,
 }
 
 impl CommonGameState {
@@ -119,6 +121,15 @@ impl CommonGameState {
     }
     pub fn clear_disconnected_position(&mut self, pos: usize) {
         self.disconnected_positions.remove(&pos);
+    }
+
+    pub fn request_stop(&mut self) {
+        self.stop_requested = true;
+        self.paused = false;
+    }
+
+    pub fn stop_requested(&self) -> bool {
+        self.stop_requested
     }
 }
 
@@ -263,6 +274,14 @@ pub trait GameState: Send {
 
     fn set_turn_countdown(&mut self, countdown: u32) {
         self.shared_common_state().lock().unwrap().turn_countdown = countdown;
+    }
+
+    fn request_stop(&mut self) {
+        self.shared_common_state().lock().unwrap().request_stop();
+    }
+
+    fn stop_requested(&self) -> bool {
+        self.shared_common_state().lock().unwrap().stop_requested()
     }
 }
 

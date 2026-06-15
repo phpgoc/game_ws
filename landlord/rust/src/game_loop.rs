@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -754,6 +754,7 @@ pub(crate) fn start_game_loop(
     state: Arc<std::sync::Mutex<LandlordLoopState>>,
     room_service: Arc<Mutex<RoomService>>,
     senders: SessionSenders,
+    loop_states: Arc<std::sync::Mutex<HashMap<String, Arc<std::sync::Mutex<LandlordLoopState>>>>>,
 ) {
     tokio::spawn(async move {
         let sorted_positions: Vec<usize> = {
@@ -773,6 +774,9 @@ pub(crate) fn start_game_loop(
         };
 
         loop {
+            if state.lock().unwrap().stop_requested() {
+                break;
+            }
             let paused = { state.lock().unwrap().is_paused() };
             if paused {
                 tokio::time::sleep(Duration::from_secs(1)).await;
@@ -917,6 +921,17 @@ pub(crate) fn start_game_loop(
         }
 
         // Cleanup
-        room_service.lock().await.clear_room_game_state(&room_key);
+        let common = { Arc::clone(&state.lock().unwrap().base) };
+        room_service
+            .lock()
+            .await
+            .clear_room_game_state_if_same(&room_key, &common);
+        let mut states = loop_states.lock().unwrap();
+        if states
+            .get(&room_key)
+            .is_some_and(|current| Arc::ptr_eq(current, &state))
+        {
+            states.remove(&room_key);
+        }
     });
 }

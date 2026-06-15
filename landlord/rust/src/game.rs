@@ -6,7 +6,7 @@ use share_type_public::{LandlordRoutes, Routes, WsCode, WsReJoinResponse, WsResp
 use tokio::sync::Mutex;
 use ws_common::{
     ClientRequest, Dispatch, GameHandler, OutboundPayload, RequestResponse, RoomService, SessionId,
-    SessionSenders,
+    SessionSenders, game_state::SharedGameState,
 };
 
 use crate::game_loop::start_game_loop;
@@ -16,10 +16,13 @@ use share_type_public::LandlordPhase;
 
 use crate::play_validator::validate_play_request;
 
+type LoopStateHandle = Arc<std::sync::Mutex<LandlordLoopState>>;
+type LoopStateRegistry = Arc<std::sync::Mutex<HashMap<String, LoopStateHandle>>>;
+
 pub struct LandlordGameHandler {
     room_service: Option<Arc<Mutex<RoomService>>>,
     senders: Option<SessionSenders>,
-    loop_states: HashMap<String, Arc<std::sync::Mutex<LandlordLoopState>>>,
+    loop_states: LoopStateRegistry,
 }
 
 impl Default for LandlordGameHandler {
@@ -27,7 +30,7 @@ impl Default for LandlordGameHandler {
         Self {
             room_service: None,
             senders: None,
-            loop_states: HashMap::new(),
+            loop_states: Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
     }
 }
@@ -38,7 +41,7 @@ impl GameHandler for LandlordGameHandler {
     }
 
     fn build_game_state(&self) -> Box<dyn ws_common::game_state::GameState> {
-        Box::new(LandlordGameState::new())
+        Box::new(SharedGameState::new())
     }
 
     fn set_context(&mut self, senders: SessionSenders, room_service: Arc<Mutex<RoomService>>) {
@@ -77,13 +80,17 @@ impl GameHandler for LandlordGameHandler {
         dispatch: &mut Dispatch,
     ) {
         if request.route != Routes::JOIN as i32 || !join_succeeded(dispatch, session_id) {
+            if matches!(request.route, r if r == Routes::QUIT as i32 || r == Routes::DISBAND as i32)
+            {
+                self.prune_stopped_loop_states();
+            }
             return;
         }
 
         let Some(room_key) = room_service.room_key_of(session_id) else {
             return;
         };
-        let Some(loop_state) = self.loop_states.get(&room_key) else {
+        let Some(loop_state) = self.loop_state(&room_key) else {
             return;
         };
 
@@ -162,6 +169,17 @@ fn join_succeeded(dispatch: &Dispatch, session_id: SessionId) -> bool {
 
 // ─── START ────────────────────────────────────────────────────────────
 impl LandlordGameHandler {
+    fn loop_state(&self, room_key: &str) -> Option<LoopStateHandle> {
+        self.loop_states.lock().unwrap().get(room_key).cloned()
+    }
+
+    fn prune_stopped_loop_states(&self) {
+        self.loop_states.lock().unwrap().retain(|_, state| {
+            let state = state.lock().unwrap();
+            !state.stop_requested()
+        });
+    }
+
     fn handle_start(&mut self, room_service: &mut RoomService, session_id: SessionId) -> Dispatch {
         // Only the creator (position 0) may start
         let Some(position) = room_service.session_position(session_id) else {
@@ -208,7 +226,7 @@ impl LandlordGameHandler {
 
         // Prevent re-starting if the current room loop is already running.
         // If an old room with the same key left a stale loop_state, remove it.
-        if let Some(existing) = self.loop_states.get(&room_key) {
+        if let Some(existing) = self.loop_state(&room_key) {
             let same_state = {
                 let s = existing.lock().unwrap();
                 Arc::ptr_eq(&s.base, &shared_common_state)
@@ -220,13 +238,19 @@ impl LandlordGameHandler {
                     WsResponseCode::NO_PERMISSION,
                 );
             }
-            self.loop_states.remove(&room_key);
+            self.loop_states.lock().unwrap().remove(&room_key);
         }
-        let loop_state = Arc::new(std::sync::Mutex::new(LandlordLoopState::new(
-            shared_common_state,
-        )));
+        let loop_state = Arc::new(std::sync::Mutex::new(LandlordLoopState::new(Arc::clone(
+            &shared_common_state,
+        ))));
 
+        room_service.set_room_game_state(
+            &room_key,
+            Box::new(LandlordGameState::from_loop_state(Arc::clone(&loop_state))),
+        );
         self.loop_states
+            .lock()
+            .unwrap()
             .insert(room_key.clone(), Arc::clone(&loop_state));
 
         if let (Some(room_service_arc), Some(senders_arc)) =
@@ -237,6 +261,7 @@ impl LandlordGameHandler {
                 loop_state,
                 Arc::clone(room_service_arc),
                 Arc::clone(senders_arc),
+                Arc::clone(&self.loop_states),
             );
         }
 
@@ -284,7 +309,7 @@ impl LandlordGameHandler {
 
         let score: u8 = payload.score;
 
-        let Some(loop_state) = self.loop_states.get(&room_key) else {
+        let Some(loop_state) = self.loop_state(&room_key) else {
             return room_service.error_response(
                 session_id,
                 LandlordRoutes::CALL_LANDLORD as i32,
@@ -389,7 +414,7 @@ impl LandlordGameHandler {
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default();
 
-        let Some(loop_state) = self.loop_states.get(&room_key) else {
+        let Some(loop_state) = self.loop_state(&room_key) else {
             return room_service.error_response(
                 session_id,
                 Routes::PLAY as i32,
@@ -441,6 +466,6 @@ fn validate_play_request_inner(s: &LandlordLoopState, position: usize, cards: &[
 // Cleanup hook for game loop to remove loop_state when a room ends
 impl LandlordGameHandler {
     pub fn remove_loop_state(&mut self, room_key: &str) {
-        self.loop_states.remove(room_key);
+        self.loop_states.lock().unwrap().remove(room_key);
     }
 }

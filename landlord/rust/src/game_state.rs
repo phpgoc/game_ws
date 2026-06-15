@@ -8,30 +8,22 @@ use ws_common::{
 
 use share_type_public::LandlordPhase;
 
-/// Stored in RoomState as `Box<dyn GameState>`.
-/// Holds the shared common state that is also read/written by game loop.
+/// Stored in RoomState as `Box<dyn GameState>` while a landlord game is running.
+/// Wraps the exact same loop state used by the game loop.
 #[derive(Debug, Clone)]
 pub struct LandlordGameState {
-    pub base: Arc<Mutex<CommonGameState>>,
-}
-
-impl Default for LandlordGameState {
-    fn default() -> Self {
-        Self {
-            base: Arc::new(Mutex::new(CommonGameState::new())),
-        }
-    }
+    inner: Arc<Mutex<LandlordLoopState>>,
 }
 
 impl LandlordGameState {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn from_loop_state(inner: Arc<Mutex<LandlordLoopState>>) -> Self {
+        Self { inner }
     }
 }
 
 impl GameState for LandlordGameState {
     fn shared_common_state(&self) -> Arc<Mutex<CommonGameState>> {
-        Arc::clone(&self.base)
+        Arc::clone(&self.inner.lock().unwrap().base)
     }
 }
 
@@ -122,6 +114,14 @@ impl LandlordLoopState {
 
     pub fn set_turn_countdown(&self, turn_countdown: u32) {
         self.base.lock().unwrap().turn_countdown = turn_countdown;
+    }
+
+    pub fn request_stop(&self) {
+        self.base.lock().unwrap().request_stop();
+    }
+
+    pub fn stop_requested(&self) -> bool {
+        self.base.lock().unwrap().stop_requested()
     }
 
     /// Advance to the next game phase.

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use crate::dlog;
 use crate::game_setting::GameSettings;
@@ -258,6 +258,21 @@ impl RoomService {
         if let Some(entry) = self.rooms.get_mut(room_key) {
             let common = entry.state.shared_common_state();
             entry.state = Box::new(crate::game_state::SharedGameState::from_common(common));
+        }
+    }
+
+    /// 清除 game state，但只在当前房间仍然是同一个 common state 时执行。
+    /// 避免旧 loop 退出时误清理同名新房间的状态。
+    pub fn clear_room_game_state_if_same(
+        &mut self,
+        room_key: &str,
+        common: &Arc<std::sync::Mutex<crate::game_state::CommonGameState>>,
+    ) {
+        if let Some(entry) = self.rooms.get_mut(room_key) {
+            let current = entry.state.shared_common_state();
+            if Arc::ptr_eq(&current, common) {
+                entry.state = Box::new(crate::game_state::SharedGameState::from_common(current));
+            }
         }
     }
 
@@ -1156,6 +1171,15 @@ impl RoomService {
         let Some(room_key) = self.room_key_of(session_id) else {
             return;
         };
+        dlog!(
+            tracing::Level::WARN,
+            "Session {} disbands room '{}'",
+            session_id,
+            room_key
+        );
+        if let Some(entry) = self.rooms.get_mut(&room_key) {
+            entry.state.request_stop();
+        }
         let Some(entry) = self.rooms.remove(&room_key) else {
             return;
         };
@@ -1211,9 +1235,14 @@ impl RoomService {
                 entry.state.remove_player(pos);
             }
             recipients.extend(entry.state.players().values().map(|(sid, _)| *sid));
-            entry.state.resume(); // 无论是不是暂停都设置为非暂停，让loop可以正常退出。
+            entry.state.request_stop();
             // 如果房间里没人了，删除房间
             if entry.state.players().is_empty() {
+                dlog!(
+                    tracing::Level::WARN,
+                    "Room '{}' is now empty and will be removed",
+                    room_key
+                );
                 self.rooms.remove(&room_key);
             }
         }
@@ -1229,7 +1258,6 @@ impl RoomService {
                 payload: OutboundPayload::Event(event.clone()),
             });
         }
-
     }
 
     pub fn error_response(
