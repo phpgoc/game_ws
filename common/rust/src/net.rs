@@ -1,5 +1,14 @@
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener};
 
+fn find_bindable_port(host: Ipv4Addr) -> Option<u16> {
+    (9001..=u16::MAX).find(|port| is_bindable(host, *port))
+}
+
+fn is_bindable(host: Ipv4Addr, port: u16) -> bool {
+    let addr = SocketAddrV4::new(host, port);
+    TcpListener::bind(addr).is_ok()
+}
+
 pub fn resolve_host(host: Option<String>) -> anyhow::Result<Ipv4Addr> {
     match host {
         Some(host) => host
@@ -33,13 +42,4 @@ fn select_private_ipv4() -> Option<Ipv4Addr> {
         std::net::IpAddr::V4(v4) if v4.is_private() => Some(v4),
         _ => None,
     })
-}
-
-fn find_bindable_port(host: Ipv4Addr) -> Option<u16> {
-    (9001..=u16::MAX).find(|port| is_bindable(host, *port))
-}
-
-fn is_bindable(host: Ipv4Addr, port: u16) -> bool {
-    let addr = SocketAddrV4::new(host, port);
-    TcpListener::bind(addr).is_ok()
 }

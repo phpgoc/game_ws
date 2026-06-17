@@ -15,139 +15,9 @@ use ws_common::{Delivery, OutboundPayload, RoomService, SessionSenders, dlog, tr
 use crate::game_state::LandlordLoopState;
 use crate::play_validator::validate_play_request;
 
-// ─── Helpers ──────────────────────────────────────────────────────────
-
-fn player_name(state: &LandlordLoopState, position: usize) -> String {
-    state.player_name(position)
-}
-
-/// Get the per-turn timeout for the current position:
-/// away players use away_time, others use play_time.
-fn turn_timeout(
-    state: &LandlordLoopState,
-    configs: &std::collections::HashMap<String, i32>,
-) -> u32 {
-    let away_time = configs.get("away_time").copied().unwrap_or(5) as u32;
-    let play_time = configs.get("play_time").copied().unwrap_or(30) as u32;
-    if state.is_away(state.current_position) {
-        away_time
-    } else {
-        play_time
-    }
-}
-
-fn fixed_wait_seconds(
-    configs: &std::collections::HashMap<String, i32>,
-    key: &str,
-    default: u64,
-) -> u64 {
-    configs.get(key).copied().unwrap_or(default as i32).max(0) as u64
-}
-
-/// Send a dispatch to all recipients via session senders.
-async fn send_dispatch(dispatch: Vec<Delivery>, senders: &SessionSenders) {
-    let mut encoded = Vec::with_capacity(dispatch.len());
-    for delivery in dispatch {
-        if let Ok(frame) = ws_common::to_text_message(&delivery.payload) {
-            encoded.push((delivery.recipient, frame));
-        }
-    }
-    let senders = senders.lock().await;
-    for (recipient, frame) in encoded {
-        if let Some(tx) = senders.get(&recipient) {
-            let _ = tx.send(frame);
-        }
-    }
-}
-
-/// Build a Dispatch that sends an event to all room members.
-fn dispatch_all(
-    room_key: &str,
-    code: i32,
-    data: serde_json::Value,
-    room_service: &RoomService,
-) -> Vec<Delivery> {
-    room_service
-        .get_room_members(room_key)
-        .iter()
-        .map(|(sid, _, _, _)| Delivery {
-            recipient: *sid,
-            payload: OutboundPayload::Event(share_type_public::CommonEvent {
-                code,
-                data: data.clone(),
-            }),
-        })
-        .collect()
-}
-
-fn dispatch_phase(
-    room_key: &str,
-    state: &LandlordLoopState,
-    room_service: &RoomService,
-) -> Vec<Delivery> {
-    dispatch_all(
-        room_key,
-        WsCode::CHANGE_PHASE as i32,
-        serde_json::json!({
-            "phase": state.phase as i32,
-            "position": state.current_position as i32,
-        }),
-        room_service,
-    )
-}
-
-/// Build a Dispatch that sends an event to a specific position in the room.
-fn dispatch_to_position(
-    room_key: &str,
-    position: usize,
-    code: i32,
-    data: serde_json::Value,
-    room_service: &RoomService,
-) -> Vec<Delivery> {
-    room_service
-        .get_room_members(room_key)
-        .iter()
-        .filter_map(|(sid, _, pos, _)| {
-            if *pos == position {
-                Some(Delivery {
-                    recipient: *sid,
-                    payload: OutboundPayload::Event(share_type_public::CommonEvent {
-                        code,
-                        data: data.clone(),
-                    }),
-                })
-            } else {
-                None
-            }
-        })
-        .collect()
-}
-
-fn card_rank(card: i32) -> u8 {
-    match card {
-        53 => 16,
-        54 => 17,
-        _ => (((card - 1) % 13) + 3) as u8,
-    }
-}
-
-fn group_by_rank(hand: &[i32]) -> BTreeMap<u8, Vec<i32>> {
-    let mut grouped: BTreeMap<u8, Vec<i32>> = BTreeMap::new();
-    for &card in hand {
-        grouped.entry(card_rank(card)).or_default().push(card);
-    }
-    for cards in grouped.values_mut() {
-        cards.sort_unstable();
-    }
-    grouped
-}
-
-fn push_candidate(cards: Vec<i32>, seen: &mut HashSet<Vec<i32>>, out: &mut Vec<Vec<i32>>) {
-    let mut normalized = cards;
-    normalized.sort_unstable();
-    if seen.insert(normalized.clone()) {
-        out.push(normalized);
-    }
+enum AutoBroadcastEvent {
+    Call(WsCallLandlordEvent),
+    Play(WsPlayEvent),
 }
 
 fn build_auto_candidates(hand: &[i32]) -> Vec<Vec<i32>> {
@@ -246,6 +116,14 @@ fn build_auto_candidates(hand: &[i32]) -> Vec<Vec<i32>> {
     candidates
 }
 
+fn card_rank(card: i32) -> u8 {
+    match card {
+        53 => 16,
+        54 => 17,
+        _ => (((card - 1) % 13) + 3) as u8,
+    }
+}
+
 fn choose_auto_play(state: &LandlordLoopState, position: usize) -> Vec<i32> {
     let hand = match state.hands.get(&position) {
         Some(cards) => cards,
@@ -271,102 +149,86 @@ fn choose_auto_play(state: &LandlordLoopState, position: usize) -> Vec<i32> {
     Vec::new()
 }
 
-// ─── Phase Handlers ───────────────────────────────────────────────────
-
-/// Start → deal cards, wait fixed start_time, then advance to CallLandlord.
-async fn handle_start_phase(
+/// Build a Dispatch that sends an event to all room members.
+fn dispatch_all(
     room_key: &str,
-    state: &Arc<std::sync::Mutex<LandlordLoopState>>,
-    sorted_positions: &[usize],
-    room_service: &Arc<Mutex<RoomService>>,
-    senders: &SessionSenders,
-    configs: &std::collections::HashMap<String, i32>,
-) -> bool {
-    // 1. Deal cards inside lock
-    let deal_data: Vec<(usize, Vec<i32>, String)>;
+    code: i32,
+    data: serde_json::Value,
+    room_service: &RoomService,
+) -> Vec<Delivery> {
+    room_service
+        .get_room_members(room_key)
+        .iter()
+        .map(|(sid, _, _, _)| Delivery {
+            recipient: *sid,
+            payload: OutboundPayload::Event(share_type_public::CommonEvent {
+                code,
+                data: data.clone(),
+            }),
+        })
+        .collect()
+}
 
-    {
-        let mut s = state.lock().unwrap();
-        if s.players_snapshot().len() != sorted_positions.len() {
-            return true;
-        }
-        if s.phase != LandlordPhase::Start {
-            return false;
-        }
-        s.generate_card();
-        deal_data = sorted_positions
-            .iter()
-            .filter_map(|&pos| {
-                let hand = s.hands.get(&pos)?.clone();
-                Some((pos, hand, player_name(&s, pos)))
-            })
-            .collect();
-    };
-
-    // 2. Send events (outside lock)
-    let rs = room_service.lock().await;
-    let mut dispatch = Vec::new();
-    for (pos, hand, name) in &deal_data {
-        dispatch.extend(dispatch_to_position(
-            room_key,
-            *pos,
-            WsCode::DEAL as i32,
-            serde_json::to_value(WsDealEvent {
-                name: name.clone(),
-                cards: hand.clone(),
-            })
-            .unwrap_or_default(),
-            &rs,
-        ));
-    }
-    drop(rs);
-    send_dispatch(dispatch, senders).await;
-
-    tokio::time::sleep(Duration::from_secs(fixed_wait_seconds(
-        configs,
-        "start_time",
-        1,
-    )))
-    .await;
-
-    let (first_call_position, phase_payload) = {
-        let mut s = state.lock().unwrap();
-        if s.players_snapshot().len() != sorted_positions.len() {
-            return true;
-        }
-        if s.phase != LandlordPhase::Start {
-            return false;
-        }
-        s.next_phase(); // Start → CallLandlord
-        s.set_action_received(false);
-        s.set_turn_countdown(turn_timeout(&s, configs));
-        (
-            s.current_position,
-            (s.phase as i32, s.current_position as i32),
-        )
-    };
-    let rs = room_service.lock().await;
-    let mut dispatch = dispatch_all(
+fn dispatch_phase(
+    room_key: &str,
+    state: &LandlordLoopState,
+    room_service: &RoomService,
+) -> Vec<Delivery> {
+    dispatch_all(
         room_key,
         WsCode::CHANGE_PHASE as i32,
         serde_json::json!({
-            "phase": phase_payload.0,
-            "position": phase_payload.1,
+            "phase": state.phase as i32,
+            "position": state.current_position as i32,
         }),
-        &rs,
-    );
-    dispatch.extend(dispatch_all(
-        room_key,
-        WsCode::CHANGE_DEAL as i32,
-        serde_json::to_value(WsPositionEvent {
-            position: first_call_position as i32,
+        room_service,
+    )
+}
+
+/// Build a Dispatch that sends an event to a specific position in the room.
+fn dispatch_to_position(
+    room_key: &str,
+    position: usize,
+    code: i32,
+    data: serde_json::Value,
+    room_service: &RoomService,
+) -> Vec<Delivery> {
+    room_service
+        .get_room_members(room_key)
+        .iter()
+        .filter_map(|(sid, _, pos, _)| {
+            if *pos == position {
+                Some(Delivery {
+                    recipient: *sid,
+                    payload: OutboundPayload::Event(share_type_public::CommonEvent {
+                        code,
+                        data: data.clone(),
+                    }),
+                })
+            } else {
+                None
+            }
         })
-        .unwrap_or_default(),
-        &rs,
-    ));
-    drop(rs);
-    send_dispatch(dispatch, senders).await;
-    false
+        .collect()
+}
+
+fn fixed_wait_seconds(
+    configs: &std::collections::HashMap<String, i32>,
+    key: &str,
+    default: u64,
+) -> u64 {
+    configs.get(key).copied().unwrap_or(default as i32).max(0) as u64
+}
+
+fn group_by_rank(hand: &[i32]) -> BTreeMap<u8, Vec<i32>> {
+    let mut grouped: BTreeMap<u8, Vec<i32>> = BTreeMap::new();
+    for &card in hand {
+        grouped.entry(card_rank(card)).or_default().push(card);
+    }
+    for cards in grouped.values_mut() {
+        cards.sort_unstable();
+    }
+    grouped
 }
 
 /// Advance through the CallLandlord phase: move to next player, check completion.
@@ -680,9 +542,102 @@ async fn handle_settlement_phase(
     false
 }
 
-fn settlement_should_stop(state: &Arc<std::sync::Mutex<LandlordLoopState>>) -> bool {
-    let s = state.lock().unwrap();
-    s.players_snapshot().len() != 3 || s.has_disconnected_players()
+// ─── Phase Handlers ───────────────────────────────────────────────────
+
+/// Start → deal cards, wait fixed start_time, then advance to CallLandlord.
+async fn handle_start_phase(
+    room_key: &str,
+    state: &Arc<std::sync::Mutex<LandlordLoopState>>,
+    sorted_positions: &[usize],
+    room_service: &Arc<Mutex<RoomService>>,
+    senders: &SessionSenders,
+    configs: &std::collections::HashMap<String, i32>,
+) -> bool {
+    // 1. Deal cards inside lock
+    let deal_data: Vec<(usize, Vec<i32>, String)>;
+
+    {
+        let mut s = state.lock().unwrap();
+        if s.players_snapshot().len() != sorted_positions.len() {
+            return true;
+        }
+        if s.phase != LandlordPhase::Start {
+            return false;
+        }
+        s.generate_card();
+        deal_data = sorted_positions
+            .iter()
+            .filter_map(|&pos| {
+                let hand = s.hands.get(&pos)?.clone();
+                Some((pos, hand, player_name(&s, pos)))
+            })
+            .collect();
+    };
+
+    // 2. Send events (outside lock)
+    let rs = room_service.lock().await;
+    let mut dispatch = Vec::new();
+    for (pos, hand, name) in &deal_data {
+        dispatch.extend(dispatch_to_position(
+            room_key,
+            *pos,
+            WsCode::DEAL as i32,
+            serde_json::to_value(WsDealEvent {
+                name: name.clone(),
+                cards: hand.clone(),
+            })
+            .unwrap_or_default(),
+            &rs,
+        ));
+    }
+    drop(rs);
+    send_dispatch(dispatch, senders).await;
+
+    tokio::time::sleep(Duration::from_secs(fixed_wait_seconds(
+        configs,
+        "start_time",
+        1,
+    )))
+    .await;
+
+    let (first_call_position, phase_payload) = {
+        let mut s = state.lock().unwrap();
+        if s.players_snapshot().len() != sorted_positions.len() {
+            return true;
+        }
+        if s.phase != LandlordPhase::Start {
+            return false;
+        }
+        s.next_phase(); // Start → CallLandlord
+        s.set_action_received(false);
+        s.set_turn_countdown(turn_timeout(&s, configs));
+        (
+            s.current_position,
+            (s.phase as i32, s.current_position as i32),
+        )
+    };
+    let rs = room_service.lock().await;
+    let mut dispatch = dispatch_all(
+        room_key,
+        WsCode::CHANGE_PHASE as i32,
+        serde_json::json!({
+            "phase": phase_payload.0,
+            "position": phase_payload.1,
+        }),
+        &rs,
+    );
+    dispatch.extend(dispatch_all(
+        room_key,
+        WsCode::CHANGE_DEAL as i32,
+        serde_json::to_value(WsPositionEvent {
+            position: first_call_position as i32,
+        })
+        .unwrap_or_default(),
+        &rs,
+    ));
+    drop(rs);
+    send_dispatch(dispatch, senders).await;
+    false
 }
 
 /// Handle timeout: mark the current player as away and simulate their action.
@@ -742,9 +697,39 @@ fn next_play(state: &mut LandlordLoopState) {
     state.set_action_received(true);
 }
 
-enum AutoBroadcastEvent {
-    Call(WsCallLandlordEvent),
-    Play(WsPlayEvent),
+// ─── Helpers ──────────────────────────────────────────────────────────
+
+fn player_name(state: &LandlordLoopState, position: usize) -> String {
+    state.player_name(position)
+}
+
+fn push_candidate(cards: Vec<i32>, seen: &mut HashSet<Vec<i32>>, out: &mut Vec<Vec<i32>>) {
+    let mut normalized = cards;
+    normalized.sort_unstable();
+    if seen.insert(normalized.clone()) {
+        out.push(normalized);
+    }
+}
+
+/// Send a dispatch to all recipients via session senders.
+async fn send_dispatch(dispatch: Vec<Delivery>, senders: &SessionSenders) {
+    let mut encoded = Vec::with_capacity(dispatch.len());
+    for delivery in dispatch {
+        if let Ok(frame) = ws_common::to_text_message(&delivery.payload) {
+            encoded.push((delivery.recipient, frame));
+        }
+    }
+    let senders = senders.lock().await;
+    for (recipient, frame) in encoded {
+        if let Some(tx) = senders.get(&recipient) {
+            let _ = tx.send(frame);
+        }
+    }
+}
+
+fn settlement_should_stop(state: &Arc<std::sync::Mutex<LandlordLoopState>>) -> bool {
+    let s = state.lock().unwrap();
+    s.players_snapshot().len() != 3 || s.has_disconnected_players()
 }
 
 // ─── Game Loop ────────────────────────────────────────────────────────
@@ -934,4 +919,19 @@ pub(crate) fn start_game_loop(
             states.remove(&room_key);
         }
     });
+}
+
+/// Get the per-turn timeout for the current position:
+/// away players use away_time, others use play_time.
+fn turn_timeout(
+    state: &LandlordLoopState,
+    configs: &std::collections::HashMap<String, i32>,
+) -> u32 {
+    let away_time = configs.get("away_time").copied().unwrap_or(5) as u32;
+    let play_time = configs.get("play_time").copied().unwrap_or(30) as u32;
+    if state.is_away(state.current_position) {
+        away_time
+    } else {
+        play_time
+    }
 }

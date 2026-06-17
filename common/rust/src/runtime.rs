@@ -22,17 +22,7 @@ use crate::{
     parse_bind_cli, resolve_host, resolve_port, to_text_message,
 };
 
-type SessionSender = mpsc::UnboundedSender<Message>;
-pub type SessionSenders = Arc<Mutex<HashMap<SessionId, SessionSender>>>;
-
 pub trait GameHandler: Send + 'static {
-    fn build_room_settings(&self) -> SettingsBuilderResult;
-    /// 创建游戏状态。
-    /// 在首个 JOIN 建房成功后立即调用，并将当前成员 populate 进去。
-    fn build_game_state(&self) -> Box<dyn crate::game_state::GameState>;
-    fn set_context(&mut self, _senders: SessionSenders, _room_service: Arc<Mutex<RoomService>>) {
-        // Optional: override in games that need access to senders/room_service for event loops
-    }
     fn after_common_request(
         &mut self,
         _room_service: &mut RoomService,
@@ -42,12 +32,20 @@ pub trait GameHandler: Send + 'static {
     ) {
         // Optional: override in games that need to enrich common responses/events.
     }
+    /// 创建游戏状态。
+    /// 在首个 JOIN 建房成功后立即调用，并将当前成员 populate 进去。
+    fn build_game_state(&self) -> Box<dyn crate::game_state::GameState>;
+
+    fn build_room_settings(&self) -> SettingsBuilderResult;
     fn handle_game_request(
         &mut self,
         room_service: &mut RoomService,
         session_id: SessionId,
         request: ClientRequest,
     ) -> Dispatch;
+    fn set_context(&mut self, _senders: SessionSenders, _room_service: Arc<Mutex<RoomService>>) {
+        // Optional: override in games that need access to senders/room_service for event loops
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -58,94 +56,22 @@ pub struct RuntimeConfig {
     pub heartbeat_interval: Duration,
 }
 
-pub async fn run_room_runtime<H>(config: RuntimeConfig, handler: H) -> anyhow::Result<()>
-where
-    H: GameHandler,
-{
-    init_tracing();
+type SessionSender = mpsc::UnboundedSender<Message>;
+pub type SessionSenders = Arc<Mutex<HashMap<SessionId, SessionSender>>>;
 
-    let listener = TcpListener::bind(&config.listen_addr)
-        .await
-        .with_context(|| format!("bind {} failed", config.listen_addr))?;
-    info!(service = config.service_name, listen = %format!(" ws://{}", config.listen_addr), "ws server started");
-
-    let senders: SessionSenders = Arc::new(Mutex::new(HashMap::new()));
-    let room_service = Arc::new(Mutex::new(RoomService::default()));
-    let game_handler = Arc::new(Mutex::new(handler));
-
-    // Set context for game-specific initialization
-    {
-        let mut h = game_handler.lock().await;
-        h.set_context(Arc::clone(&senders), Arc::clone(&room_service));
+async fn deliver(dispatch: Dispatch, senders: &SessionSenders) -> anyhow::Result<()> {
+    let mut encoded = Vec::with_capacity(dispatch.messages.len());
+    for message in dispatch.messages {
+        encoded.push((message.recipient, to_text_message(&message.payload)?));
     }
 
-    let next_session = Arc::new(AtomicU64::new(1));
-
-    loop {
-        let (stream, peer) = listener.accept().await?;
-        let session_id = next_session.fetch_add(1, Ordering::Relaxed);
-        let senders = Arc::clone(&senders);
-        let room_service = Arc::clone(&room_service);
-        let game_handler = Arc::clone(&game_handler);
-        let idle_timeout = config.idle_timeout;
-        let heartbeat_interval = config.heartbeat_interval;
-
-        tokio::spawn(async move {
-            if let Err(err) = handle_connection(
-                stream,
-                peer,
-                session_id,
-                idle_timeout,
-                heartbeat_interval,
-                senders,
-                room_service,
-                game_handler,
-            )
-            .await
-            {
-                error!(session_id, peer = %peer, ?err, "connection ended with error");
-            } else {
-                info!(session_id, peer = %peer, "connection closed");
-            }
-        });
+    let senders = senders.lock().await;
+    for (recipient, frame) in encoded {
+        if let Some(tx) = senders.get(&recipient) {
+            let _ = tx.send(frame);
+        }
     }
-}
-
-pub async fn run_game_server<H>(
-    service_name: &'static str,
-    host: Option<String>,
-    port: Option<u16>,
-    idle_timeout: Duration,
-    handler: H,
-) -> anyhow::Result<()>
-where
-    H: GameHandler,
-{
-    let host = resolve_host(host)?;
-    let port = resolve_port(host, port)?;
-
-    run_room_runtime(
-        RuntimeConfig {
-            service_name,
-            listen_addr: format!("{host}:{port}"),
-            idle_timeout,
-            heartbeat_interval: Duration::from_secs(20),
-        },
-        handler,
-    )
-    .await
-}
-
-pub async fn run_game_server_with_cli<H>(
-    service_name: &'static str,
-    idle_timeout: Duration,
-    handler: H,
-) -> anyhow::Result<()>
-where
-    H: GameHandler,
-{
-    let cli = parse_bind_cli();
-    run_game_server(service_name, cli.host, cli.port, idle_timeout, handler).await
+    Ok(())
 }
 
 async fn handle_connection<H>(
@@ -257,25 +183,100 @@ where
     Ok(())
 }
 
-async fn deliver(dispatch: Dispatch, senders: &SessionSenders) -> anyhow::Result<()> {
-    let mut encoded = Vec::with_capacity(dispatch.messages.len());
-    for message in dispatch.messages {
-        encoded.push((message.recipient, to_text_message(&message.payload)?));
-    }
-
-    let senders = senders.lock().await;
-    for (recipient, frame) in encoded {
-        if let Some(tx) = senders.get(&recipient) {
-            let _ = tx.send(frame);
-        }
-    }
-    Ok(())
-}
-
 fn init_tracing() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .try_init();
+}
+
+pub async fn run_game_server<H>(
+    service_name: &'static str,
+    host: Option<String>,
+    port: Option<u16>,
+    idle_timeout: Duration,
+    handler: H,
+) -> anyhow::Result<()>
+where
+    H: GameHandler,
+{
+    let host = resolve_host(host)?;
+    let port = resolve_port(host, port)?;
+
+    run_room_runtime(
+        RuntimeConfig {
+            service_name,
+            listen_addr: format!("{host}:{port}"),
+            idle_timeout,
+            heartbeat_interval: Duration::from_secs(20),
+        },
+        handler,
+    )
+    .await
+}
+
+pub async fn run_game_server_with_cli<H>(
+    service_name: &'static str,
+    idle_timeout: Duration,
+    handler: H,
+) -> anyhow::Result<()>
+where
+    H: GameHandler,
+{
+    let cli = parse_bind_cli();
+    run_game_server(service_name, cli.host, cli.port, idle_timeout, handler).await
+}
+
+pub async fn run_room_runtime<H>(config: RuntimeConfig, handler: H) -> anyhow::Result<()>
+where
+    H: GameHandler,
+{
+    init_tracing();
+
+    let listener = TcpListener::bind(&config.listen_addr)
+        .await
+        .with_context(|| format!("bind {} failed", config.listen_addr))?;
+    info!(service = config.service_name, listen = %format!(" ws://{}", config.listen_addr), "ws server started");
+
+    let senders: SessionSenders = Arc::new(Mutex::new(HashMap::new()));
+    let room_service = Arc::new(Mutex::new(RoomService::default()));
+    let game_handler = Arc::new(Mutex::new(handler));
+
+    // Set context for game-specific initialization
+    {
+        let mut h = game_handler.lock().await;
+        h.set_context(Arc::clone(&senders), Arc::clone(&room_service));
+    }
+
+    let next_session = Arc::new(AtomicU64::new(1));
+
+    loop {
+        let (stream, peer) = listener.accept().await?;
+        let session_id = next_session.fetch_add(1, Ordering::Relaxed);
+        let senders = Arc::clone(&senders);
+        let room_service = Arc::clone(&room_service);
+        let game_handler = Arc::clone(&game_handler);
+        let idle_timeout = config.idle_timeout;
+        let heartbeat_interval = config.heartbeat_interval;
+
+        tokio::spawn(async move {
+            if let Err(err) = handle_connection(
+                stream,
+                peer,
+                session_id,
+                idle_timeout,
+                heartbeat_interval,
+                senders,
+                room_service,
+                game_handler,
+            )
+            .await
+            {
+                error!(session_id, peer = %peer, ?err, "connection ended with error");
+            } else {
+                info!(session_id, peer = %peer, "connection closed");
+            }
+        });
+    }
 }

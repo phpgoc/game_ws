@@ -24,15 +24,208 @@ pub struct CommonGameState {
     pub stop_requested: bool,
 }
 
-impl CommonGameState {
-    pub fn new() -> Self {
-        Self::default()
+/// Trait implemented by game-specific state objects.
+/// Implementors provide a shared CommonGameState handle; all other methods are defaults.
+pub trait GameState: Send {
+    fn action_received(&self) -> bool {
+        self.shared_common_state().lock().unwrap().action_received
     }
 
+    fn add_player(&mut self, position: usize, session_id: SessionId, name: &str) {
+        self.shared_common_state()
+            .lock()
+            .unwrap()
+            .add_player(position, session_id, name);
+    }
+
+    fn clear_away(&mut self) {
+        self.shared_common_state().lock().unwrap().clear_away();
+    }
+
+    fn clear_away_position(&mut self, pos: usize) {
+        self.shared_common_state()
+            .lock()
+            .unwrap()
+            .away_positions
+            .remove(&pos);
+    }
+
+    fn clear_disconnected_position(&mut self, pos: usize) {
+        self.shared_common_state()
+            .lock()
+            .unwrap()
+            .clear_disconnected_position(pos);
+    }
+
+    fn has_disconnected_players(&self) -> bool {
+        self.shared_common_state()
+            .lock()
+            .unwrap()
+            .has_disconnected_players()
+    }
+
+    fn is_away(&self, pos: usize) -> bool {
+        self.shared_common_state().lock().unwrap().is_away(pos)
+    }
+
+    fn is_disconnected(&self, pos: usize) -> bool {
+        self.shared_common_state()
+            .lock()
+            .unwrap()
+            .is_disconnected(pos)
+    }
+
+    fn is_paused(&self) -> bool {
+        self.shared_common_state().lock().unwrap().paused
+    }
+
+    fn mark_away(&mut self, pos: usize) {
+        self.shared_common_state().lock().unwrap().mark_away(pos);
+    }
+
+    fn mark_disconnected(&mut self, pos: usize) {
+        self.shared_common_state()
+            .lock()
+            .unwrap()
+            .mark_disconnected(pos);
+    }
+
+    fn pause(&mut self) {
+        self.shared_common_state().lock().unwrap().pause();
+    }
+
+    fn player_avatar(&self, position: usize) -> String {
+        self.shared_common_state()
+            .lock()
+            .unwrap()
+            .player_avatar(position)
+    }
+
+    fn player_name(&self, position: usize) -> String {
+        self.shared_common_state()
+            .lock()
+            .unwrap()
+            .player_name(position)
+    }
+
+    fn players(&self) -> HashMap<usize, (SessionId, String)> {
+        self.shared_common_state().lock().unwrap().players.clone()
+    }
+
+    fn remove_player(&mut self, position: usize) {
+        self.shared_common_state()
+            .lock()
+            .unwrap()
+            .remove_player(position);
+    }
+
+    fn request_stop(&mut self) {
+        self.shared_common_state().lock().unwrap().request_stop();
+    }
+
+    fn resume(&mut self) {
+        self.shared_common_state().lock().unwrap().resume();
+    }
+
+    fn set_action_received(&mut self, received: bool) {
+        self.shared_common_state().lock().unwrap().action_received = received;
+    }
+
+    fn set_avatar(&mut self, position: usize, avatar: &str) {
+        self.shared_common_state()
+            .lock()
+            .unwrap()
+            .set_avatar(position, avatar);
+    }
+
+    fn set_turn_countdown(&mut self, countdown: u32) {
+        self.shared_common_state().lock().unwrap().turn_countdown = countdown;
+    }
+
+    fn shared_common_state(&self) -> Arc<Mutex<CommonGameState>>;
+
+    fn stop_requested(&self) -> bool {
+        self.shared_common_state().lock().unwrap().stop_requested()
+    }
+
+    fn swap_player(&mut self, pos_a: usize, pos_b: usize) {
+        self.shared_common_state()
+            .lock()
+            .unwrap()
+            .swap_player(pos_a, pos_b);
+    }
+
+    fn turn_countdown(&self) -> u32 {
+        self.shared_common_state().lock().unwrap().turn_countdown
+    }
+}
+
+/// Shared holder so room service and game loop can reference the same common state.
+#[derive(Debug, Clone, Default)]
+pub struct SharedGameState {
+    common: Arc<Mutex<CommonGameState>>,
+}
+
+impl CommonGameState {
     pub fn add_player(&mut self, position: usize, session_id: SessionId, name: &str) {
         self.players
             .insert(position, (session_id, name.to_string()));
         self.disconnected_positions.remove(&position);
+    }
+    pub fn clear_away(&mut self) {
+        self.away_positions.clear();
+    }
+    pub fn clear_disconnected_position(&mut self, pos: usize) {
+        self.disconnected_positions.remove(&pos);
+    }
+    pub fn has_disconnected_players(&self) -> bool {
+        !self.disconnected_positions.is_empty()
+    }
+    pub fn is_away(&self, pos: usize) -> bool {
+        self.away_positions.contains(&pos)
+    }
+    pub fn is_disconnected(&self, pos: usize) -> bool {
+        self.disconnected_positions.contains(&pos)
+    }
+    pub fn mark_away(&mut self, pos: usize) -> bool {
+        self.away_positions.insert(pos)
+    }
+    pub fn mark_disconnected(&mut self, pos: usize) -> bool {
+        self.disconnected_positions.insert(pos)
+    }
+
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn pause(&mut self) {
+        self.paused = true;
+    }
+
+    pub fn player_avatar(&self, position: usize) -> String {
+        self.avatars.get(&position).cloned().unwrap_or_default()
+    }
+
+    pub fn player_name(&self, position: usize) -> String {
+        self.players
+            .get(&position)
+            .map(|(_, name)| name.clone())
+            .unwrap_or_default()
+    }
+
+    pub fn remove_player(&mut self, position: usize) {
+        self.players.remove(&position);
+        self.avatars.remove(&position);
+        self.away_positions.remove(&position);
+        self.disconnected_positions.remove(&position);
+    }
+
+    pub fn request_stop(&mut self) {
+        self.stop_requested = true;
+        self.paused = false;
+    }
+    pub fn resume(&mut self) {
+        self.paused = false;
     }
 
     pub fn set_avatar(&mut self, position: usize, avatar: &str) {
@@ -42,8 +235,8 @@ impl CommonGameState {
         self.avatars.insert(position, avatar.to_string());
     }
 
-    pub fn player_avatar(&self, position: usize) -> String {
-        self.avatars.get(&position).cloned().unwrap_or_default()
+    pub fn stop_requested(&self) -> bool {
+        self.stop_requested
     }
 
     pub fn swap_player(&mut self, pos_a: usize, pos_b: usize) {
@@ -80,208 +273,15 @@ impl CommonGameState {
             self.disconnected_positions.insert(pos_b);
         }
     }
-
-    pub fn remove_player(&mut self, position: usize) {
-        self.players.remove(&position);
-        self.avatars.remove(&position);
-        self.away_positions.remove(&position);
-        self.disconnected_positions.remove(&position);
-    }
-
-    pub fn player_name(&self, position: usize) -> String {
-        self.players
-            .get(&position)
-            .map(|(_, name)| name.clone())
-            .unwrap_or_default()
-    }
-
-    pub fn pause(&mut self) {
-        self.paused = true;
-    }
-    pub fn resume(&mut self) {
-        self.paused = false;
-    }
-    pub fn mark_away(&mut self, pos: usize) -> bool {
-        self.away_positions.insert(pos)
-    }
-    pub fn is_away(&self, pos: usize) -> bool {
-        self.away_positions.contains(&pos)
-    }
-    pub fn clear_away(&mut self) {
-        self.away_positions.clear();
-    }
-    pub fn mark_disconnected(&mut self, pos: usize) -> bool {
-        self.disconnected_positions.insert(pos)
-    }
-    pub fn is_disconnected(&self, pos: usize) -> bool {
-        self.disconnected_positions.contains(&pos)
-    }
-    pub fn has_disconnected_players(&self) -> bool {
-        !self.disconnected_positions.is_empty()
-    }
-    pub fn clear_disconnected_position(&mut self, pos: usize) {
-        self.disconnected_positions.remove(&pos);
-    }
-
-    pub fn request_stop(&mut self) {
-        self.stop_requested = true;
-        self.paused = false;
-    }
-
-    pub fn stop_requested(&self) -> bool {
-        self.stop_requested
-    }
-}
-
-/// Shared holder so room service and game loop can reference the same common state.
-#[derive(Debug, Clone, Default)]
-pub struct SharedGameState {
-    common: Arc<Mutex<CommonGameState>>,
 }
 
 impl SharedGameState {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     pub fn from_common(common: Arc<Mutex<CommonGameState>>) -> Self {
         Self { common }
     }
-}
 
-/// Trait implemented by game-specific state objects.
-/// Implementors provide a shared CommonGameState handle; all other methods are defaults.
-pub trait GameState: Send {
-    fn shared_common_state(&self) -> Arc<Mutex<CommonGameState>>;
-
-    fn players(&self) -> HashMap<usize, (SessionId, String)> {
-        self.shared_common_state().lock().unwrap().players.clone()
-    }
-
-    fn player_name(&self, position: usize) -> String {
-        self.shared_common_state()
-            .lock()
-            .unwrap()
-            .player_name(position)
-    }
-
-    fn add_player(&mut self, position: usize, session_id: SessionId, name: &str) {
-        self.shared_common_state()
-            .lock()
-            .unwrap()
-            .add_player(position, session_id, name);
-    }
-
-    fn set_avatar(&mut self, position: usize, avatar: &str) {
-        self.shared_common_state()
-            .lock()
-            .unwrap()
-            .set_avatar(position, avatar);
-    }
-
-    fn player_avatar(&self, position: usize) -> String {
-        self.shared_common_state()
-            .lock()
-            .unwrap()
-            .player_avatar(position)
-    }
-
-    fn swap_player(&mut self, pos_a: usize, pos_b: usize) {
-        self.shared_common_state()
-            .lock()
-            .unwrap()
-            .swap_player(pos_a, pos_b);
-    }
-
-    fn remove_player(&mut self, position: usize) {
-        self.shared_common_state()
-            .lock()
-            .unwrap()
-            .remove_player(position);
-    }
-
-    fn is_paused(&self) -> bool {
-        self.shared_common_state().lock().unwrap().paused
-    }
-
-    fn pause(&mut self) {
-        self.shared_common_state().lock().unwrap().pause();
-    }
-
-    fn resume(&mut self) {
-        self.shared_common_state().lock().unwrap().resume();
-    }
-
-    fn mark_away(&mut self, pos: usize) {
-        self.shared_common_state().lock().unwrap().mark_away(pos);
-    }
-
-    fn is_away(&self, pos: usize) -> bool {
-        self.shared_common_state().lock().unwrap().is_away(pos)
-    }
-
-    fn clear_away(&mut self) {
-        self.shared_common_state().lock().unwrap().clear_away();
-    }
-
-    fn clear_away_position(&mut self, pos: usize) {
-        self.shared_common_state()
-            .lock()
-            .unwrap()
-            .away_positions
-            .remove(&pos);
-    }
-
-    fn mark_disconnected(&mut self, pos: usize) {
-        self.shared_common_state()
-            .lock()
-            .unwrap()
-            .mark_disconnected(pos);
-    }
-
-    fn is_disconnected(&self, pos: usize) -> bool {
-        self.shared_common_state()
-            .lock()
-            .unwrap()
-            .is_disconnected(pos)
-    }
-
-    fn has_disconnected_players(&self) -> bool {
-        self.shared_common_state()
-            .lock()
-            .unwrap()
-            .has_disconnected_players()
-    }
-
-    fn clear_disconnected_position(&mut self, pos: usize) {
-        self.shared_common_state()
-            .lock()
-            .unwrap()
-            .clear_disconnected_position(pos);
-    }
-
-    fn action_received(&self) -> bool {
-        self.shared_common_state().lock().unwrap().action_received
-    }
-
-    fn set_action_received(&mut self, received: bool) {
-        self.shared_common_state().lock().unwrap().action_received = received;
-    }
-
-    fn turn_countdown(&self) -> u32 {
-        self.shared_common_state().lock().unwrap().turn_countdown
-    }
-
-    fn set_turn_countdown(&mut self, countdown: u32) {
-        self.shared_common_state().lock().unwrap().turn_countdown = countdown;
-    }
-
-    fn request_stop(&mut self) {
-        self.shared_common_state().lock().unwrap().request_stop();
-    }
-
-    fn stop_requested(&self) -> bool {
-        self.shared_common_state().lock().unwrap().stop_requested()
+    pub fn new() -> Self {
+        Self::default()
     }
 }
 

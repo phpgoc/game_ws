@@ -15,18 +15,6 @@ pub struct LandlordGameState {
     inner: Arc<Mutex<LandlordLoopState>>,
 }
 
-impl LandlordGameState {
-    pub fn from_loop_state(inner: Arc<Mutex<LandlordLoopState>>) -> Self {
-        Self { inner }
-    }
-}
-
-impl GameState for LandlordGameState {
-    fn shared_common_state(&self) -> Arc<Mutex<CommonGameState>> {
-        Arc::clone(&self.inner.lock().unwrap().base)
-    }
-}
-
 /// Held exclusively by the game loop behind `Arc<std::sync::Mutex<>>`.
 /// Contains all in-game mutable state.
 /// `base` is shared with RoomService common state.
@@ -50,7 +38,60 @@ pub struct LandlordLoopState {
     pub current_play: Vec<i32>,
 }
 
+impl LandlordGameState {
+    pub fn from_loop_state(inner: Arc<Mutex<LandlordLoopState>>) -> Self {
+        Self { inner }
+    }
+}
+
+impl GameState for LandlordGameState {
+    fn shared_common_state(&self) -> Arc<Mutex<CommonGameState>> {
+        Arc::clone(&self.inner.lock().unwrap().base)
+    }
+}
+
 impl LandlordLoopState {
+    pub fn action_received(&self) -> bool {
+        self.base.lock().unwrap().action_received
+    }
+
+    pub fn clear_away(&self) {
+        self.base.lock().unwrap().clear_away();
+    }
+
+    /// Shuffle a 54-card deck and deal 17 cards to each of the 3 sorted
+    /// positions, storing the remaining 3 as hidden cards (底牌).
+    /// Each player's hand is sorted for convenience.
+    pub fn generate_card(&mut self) {
+        let deck = Self::shuffle();
+        let mut sorted: Vec<usize> = self.players_snapshot().keys().copied().collect();
+        sorted.sort();
+        self.hands.clear();
+        for (i, &pos) in sorted.iter().enumerate() {
+            let start = i * 17;
+            let mut hand = deck[start..start + 17].to_vec();
+            hand.sort_unstable();
+            self.hands.insert(pos, hand);
+        }
+        self.hidden_cards = deck[51..54].to_vec();
+    }
+
+    pub fn has_disconnected_players(&self) -> bool {
+        self.base.lock().unwrap().has_disconnected_players()
+    }
+
+    pub fn is_away(&self, pos: usize) -> bool {
+        self.base.lock().unwrap().is_away(pos)
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.base.lock().unwrap().paused
+    }
+
+    pub fn mark_away(&self, pos: usize) -> bool {
+        self.base.lock().unwrap().mark_away(pos)
+    }
+
     pub fn new(base: Arc<Mutex<CommonGameState>>) -> Self {
         let call_position = {
             let state = base.lock().unwrap();
@@ -72,58 +113,6 @@ impl LandlordLoopState {
         }
     }
 
-    pub fn players_snapshot(&self) -> HashMap<usize, (SessionId, String)> {
-        self.base.lock().unwrap().players.clone()
-    }
-
-    pub fn player_name(&self, position: usize) -> String {
-        self.base.lock().unwrap().player_name(position)
-    }
-
-    pub fn is_paused(&self) -> bool {
-        self.base.lock().unwrap().paused
-    }
-
-    pub fn is_away(&self, pos: usize) -> bool {
-        self.base.lock().unwrap().is_away(pos)
-    }
-
-    pub fn has_disconnected_players(&self) -> bool {
-        self.base.lock().unwrap().has_disconnected_players()
-    }
-
-    pub fn mark_away(&self, pos: usize) -> bool {
-        self.base.lock().unwrap().mark_away(pos)
-    }
-
-    pub fn clear_away(&self) {
-        self.base.lock().unwrap().clear_away();
-    }
-
-    pub fn action_received(&self) -> bool {
-        self.base.lock().unwrap().action_received
-    }
-
-    pub fn set_action_received(&self, action_received: bool) {
-        self.base.lock().unwrap().action_received = action_received;
-    }
-
-    pub fn turn_countdown(&self) -> u32 {
-        self.base.lock().unwrap().turn_countdown
-    }
-
-    pub fn set_turn_countdown(&self, turn_countdown: u32) {
-        self.base.lock().unwrap().turn_countdown = turn_countdown;
-    }
-
-    pub fn request_stop(&self) {
-        self.base.lock().unwrap().request_stop();
-    }
-
-    pub fn stop_requested(&self) -> bool {
-        self.base.lock().unwrap().stop_requested()
-    }
-
     /// Advance to the next game phase.
     /// Start → CallLandlord: current_position = call_position (first to call).
     /// CallLandlord → Play:  current_position = landlord_position.
@@ -141,6 +130,14 @@ impl LandlordLoopState {
             }
             _ => {}
         }
+    }
+
+    pub fn player_name(&self, position: usize) -> String {
+        self.base.lock().unwrap().player_name(position)
+    }
+
+    pub fn players_snapshot(&self) -> HashMap<usize, (SessionId, String)> {
+        self.base.lock().unwrap().players.clone()
     }
 
     /// Reset for a new deal — called after settlement or all-pass.
@@ -162,21 +159,16 @@ impl LandlordLoopState {
         self.clear_away();
     }
 
-    /// Shuffle a 54-card deck and deal 17 cards to each of the 3 sorted
-    /// positions, storing the remaining 3 as hidden cards (底牌).
-    /// Each player's hand is sorted for convenience.
-    pub fn generate_card(&mut self) {
-        let deck = Self::shuffle();
-        let mut sorted: Vec<usize> = self.players_snapshot().keys().copied().collect();
-        sorted.sort();
-        self.hands.clear();
-        for (i, &pos) in sorted.iter().enumerate() {
-            let start = i * 17;
-            let mut hand = deck[start..start + 17].to_vec();
-            hand.sort_unstable();
-            self.hands.insert(pos, hand);
-        }
-        self.hidden_cards = deck[51..54].to_vec();
+    pub fn request_stop(&self) {
+        self.base.lock().unwrap().request_stop();
+    }
+
+    pub fn set_action_received(&self, action_received: bool) {
+        self.base.lock().unwrap().action_received = action_received;
+    }
+
+    pub fn set_turn_countdown(&self, turn_countdown: u32) {
+        self.base.lock().unwrap().turn_countdown = turn_countdown;
     }
 
     fn shuffle() -> Vec<i32> {
@@ -194,5 +186,13 @@ impl LandlordLoopState {
             deck.swap(i, j);
         }
         deck
+    }
+
+    pub fn stop_requested(&self) -> bool {
+        self.base.lock().unwrap().stop_requested()
+    }
+
+    pub fn turn_countdown(&self) -> u32 {
+        self.base.lock().unwrap().turn_countdown
     }
 }

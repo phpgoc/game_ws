@@ -16,142 +16,14 @@ use share_type_public::LandlordPhase;
 
 use crate::play_validator::validate_play_request;
 
-type LoopStateHandle = Arc<std::sync::Mutex<LandlordLoopState>>;
-type LoopStateRegistry = Arc<std::sync::Mutex<HashMap<String, LoopStateHandle>>>;
-
 pub struct LandlordGameHandler {
     room_service: Option<Arc<Mutex<RoomService>>>,
     senders: Option<SessionSenders>,
     loop_states: LoopStateRegistry,
 }
 
-impl Default for LandlordGameHandler {
-    fn default() -> Self {
-        Self {
-            room_service: None,
-            senders: None,
-            loop_states: Arc::new(std::sync::Mutex::new(HashMap::new())),
-        }
-    }
-}
-
-impl GameHandler for LandlordGameHandler {
-    fn build_room_settings(&self) -> ws_common::SettingsBuilderResult {
-        build_landlord_settings()
-    }
-
-    fn build_game_state(&self) -> Box<dyn ws_common::game_state::GameState> {
-        Box::new(SharedGameState::new())
-    }
-
-    fn set_context(&mut self, senders: SessionSenders, room_service: Arc<Mutex<RoomService>>) {
-        self.senders = Some(senders);
-        self.room_service = Some(room_service);
-    }
-
-    fn handle_game_request(
-        &mut self,
-        room_service: &mut RoomService,
-        session_id: SessionId,
-        request: ClientRequest,
-    ) -> Dispatch {
-        match request.route {
-            r if r == Routes::START as i32 => self.handle_start(room_service, session_id),
-
-            r if r == LandlordRoutes::CALL_LANDLORD as i32 => {
-                self.handle_call_landlord(room_service, session_id, request.data)
-            }
-
-            r if r == Routes::PLAY as i32 => {
-                self.handle_play(room_service, session_id, request.data)
-            }
-
-            _ => {
-                room_service.error_response(session_id, request.route, WsResponseCode::NOT_IN_RANGE)
-            }
-        }
-    }
-
-    fn after_common_request(
-        &mut self,
-        room_service: &mut RoomService,
-        session_id: SessionId,
-        request: &ClientRequest,
-        dispatch: &mut Dispatch,
-    ) {
-        if request.route != Routes::JOIN as i32 || !join_succeeded(dispatch, session_id) {
-            if matches!(request.route, r if r == Routes::QUIT as i32 || r == Routes::DISBAND as i32)
-            {
-                self.prune_stopped_loop_states();
-            }
-            return;
-        }
-
-        let Some(room_key) = room_service.room_key_of(session_id) else {
-            return;
-        };
-        let Some(loop_state) = self.loop_state(&room_key) else {
-            return;
-        };
-
-        let current_position = room_service.session_position(session_id);
-        let rejoin_data = {
-            let state = loop_state.lock().unwrap();
-            if !matches!(
-                state.phase,
-                LandlordPhase::CallLandlord | LandlordPhase::Play
-            ) {
-                None
-            } else {
-                let my_cards = current_position
-                    .and_then(|position| state.hands.get(&position).cloned())
-                    .unwrap_or_default();
-                let other_cards_numbers = state
-                    .hands
-                    .iter()
-                    .filter(|(position, _)| Some(**position) != current_position)
-                    .map(|(position, cards)| (*position as i32, cards.len() as i32))
-                    .collect();
-                Some(WsReJoinResponse {
-                    other_cards_numbers,
-                    my_cards,
-                    now_playing: state.current_position as i32,
-                    phase: state.phase as i32,
-                    landlord_position: state.landlord_position.map(|position| position as i32),
-                    score: state.score,
-                    hidden_cards: if state.phase == LandlordPhase::Play {
-                        state.hidden_cards.clone()
-                    } else {
-                        Vec::new()
-                    },
-                    last_play_position: if state.last_play.is_empty() {
-                        None
-                    } else {
-                        Some(state.last_play_position as i32)
-                    },
-                    last_play: state.last_play.clone(),
-                })
-            }
-        };
-
-        for message in dispatch.messages.iter_mut() {
-            if message.recipient != session_id {
-                continue;
-            }
-            let OutboundPayload::Response(RequestResponse::WithData(response)) =
-                &mut message.payload
-            else {
-                continue;
-            };
-            if response.route == Routes::JOIN as i32
-                && response.code as i32 == WsResponseCode::JOINED as i32
-            {
-                response.data["rejoin_data"] =
-                    serde_json::to_value(&rejoin_data).unwrap_or(serde_json::Value::Null);
-            }
-        }
-    }
-}
+type LoopStateHandle = Arc<std::sync::Mutex<LandlordLoopState>>;
+type LoopStateRegistry = Arc<std::sync::Mutex<HashMap<String, LoopStateHandle>>>;
 
 fn join_succeeded(dispatch: &Dispatch, session_id: SessionId) -> bool {
     dispatch.messages.iter().any(|message| {
@@ -167,19 +39,16 @@ fn join_succeeded(dispatch: &Dispatch, session_id: SessionId) -> bool {
     })
 }
 
+/// Pure check shared between game handler and play_validator
+fn validate_play_request_inner(s: &LandlordLoopState, position: usize, cards: &[i32]) -> bool {
+    if s.phase != LandlordPhase::Play || s.current_position != position {
+        return false;
+    }
+    validate_play_request(s, position, cards)
+}
+
 // ─── START ────────────────────────────────────────────────────────────
 impl LandlordGameHandler {
-    fn loop_state(&self, room_key: &str) -> Option<LoopStateHandle> {
-        self.loop_states.lock().unwrap().get(room_key).cloned()
-    }
-
-    fn prune_stopped_loop_states(&self) {
-        self.loop_states.lock().unwrap().retain(|_, state| {
-            let state = state.lock().unwrap();
-            !state.stop_requested()
-        });
-    }
-
     fn handle_start(&mut self, room_service: &mut RoomService, session_id: SessionId) -> Dispatch {
         // Only the creator (position 0) may start
         let Some(position) = room_service.session_position(session_id) else {
@@ -273,6 +142,17 @@ impl LandlordGameHandler {
         );
         room_service.push_ok_response(&mut dispatch, session_id, Routes::START as i32);
         dispatch
+    }
+
+    fn loop_state(&self, room_key: &str) -> Option<LoopStateHandle> {
+        self.loop_states.lock().unwrap().get(room_key).cloned()
+    }
+
+    fn prune_stopped_loop_states(&self) {
+        self.loop_states.lock().unwrap().retain(|_, state| {
+            let state = state.lock().unwrap();
+            !state.stop_requested()
+        });
     }
 }
 
@@ -455,17 +335,137 @@ impl LandlordGameHandler {
     }
 }
 
-/// Pure check shared between game handler and play_validator
-fn validate_play_request_inner(s: &LandlordLoopState, position: usize, cards: &[i32]) -> bool {
-    if s.phase != LandlordPhase::Play || s.current_position != position {
-        return false;
-    }
-    validate_play_request(s, position, cards)
-}
-
 // Cleanup hook for game loop to remove loop_state when a room ends
 impl LandlordGameHandler {
     pub fn remove_loop_state(&mut self, room_key: &str) {
         self.loop_states.lock().unwrap().remove(room_key);
+    }
+}
+
+impl Default for LandlordGameHandler {
+    fn default() -> Self {
+        Self {
+            room_service: None,
+            senders: None,
+            loop_states: Arc::new(std::sync::Mutex::new(HashMap::new())),
+        }
+    }
+}
+
+impl GameHandler for LandlordGameHandler {
+    fn after_common_request(
+        &mut self,
+        room_service: &mut RoomService,
+        session_id: SessionId,
+        request: &ClientRequest,
+        dispatch: &mut Dispatch,
+    ) {
+        if request.route != Routes::JOIN as i32 || !join_succeeded(dispatch, session_id) {
+            if matches!(request.route, r if r == Routes::QUIT as i32 || r == Routes::DISBAND as i32)
+            {
+                self.prune_stopped_loop_states();
+            }
+            return;
+        }
+
+        let Some(room_key) = room_service.room_key_of(session_id) else {
+            return;
+        };
+        let Some(loop_state) = self.loop_state(&room_key) else {
+            return;
+        };
+
+        let current_position = room_service.session_position(session_id);
+        let rejoin_data = {
+            let state = loop_state.lock().unwrap();
+            if !matches!(
+                state.phase,
+                LandlordPhase::CallLandlord | LandlordPhase::Play
+            ) {
+                None
+            } else {
+                let my_cards = current_position
+                    .and_then(|position| state.hands.get(&position).cloned())
+                    .unwrap_or_default();
+                let other_cards_numbers = state
+                    .hands
+                    .iter()
+                    .filter(|(position, _)| Some(**position) != current_position)
+                    .map(|(position, cards)| (*position as i32, cards.len() as i32))
+                    .collect();
+                Some(WsReJoinResponse {
+                    other_cards_numbers,
+                    my_cards,
+                    now_playing: state.current_position as i32,
+                    phase: state.phase as i32,
+                    landlord_position: state.landlord_position.map(|position| position as i32),
+                    score: state.score,
+                    hidden_cards: if state.phase == LandlordPhase::Play {
+                        state.hidden_cards.clone()
+                    } else {
+                        Vec::new()
+                    },
+                    last_play_position: if state.last_play.is_empty() {
+                        None
+                    } else {
+                        Some(state.last_play_position as i32)
+                    },
+                    last_play: state.last_play.clone(),
+                })
+            }
+        };
+
+        for message in dispatch.messages.iter_mut() {
+            if message.recipient != session_id {
+                continue;
+            }
+            let OutboundPayload::Response(RequestResponse::WithData(response)) =
+                &mut message.payload
+            else {
+                continue;
+            };
+            if response.route == Routes::JOIN as i32
+                && response.code as i32 == WsResponseCode::JOINED as i32
+            {
+                response.data["rejoin_data"] =
+                    serde_json::to_value(&rejoin_data).unwrap_or(serde_json::Value::Null);
+            }
+        }
+    }
+
+    fn build_game_state(&self) -> Box<dyn ws_common::game_state::GameState> {
+        Box::new(SharedGameState::new())
+    }
+
+    fn build_room_settings(&self) -> ws_common::SettingsBuilderResult {
+        build_landlord_settings()
+    }
+
+    fn handle_game_request(
+        &mut self,
+        room_service: &mut RoomService,
+        session_id: SessionId,
+        request: ClientRequest,
+    ) -> Dispatch {
+        match request.route {
+            r if r == Routes::START as i32 => self.handle_start(room_service, session_id),
+
+            r if r == LandlordRoutes::CALL_LANDLORD as i32 => {
+                self.handle_call_landlord(room_service, session_id, request.data)
+            }
+
+            r if r == Routes::PLAY as i32 => {
+                self.handle_play(room_service, session_id, request.data)
+            }
+
+            _ => {
+                room_service.error_response(session_id, request.route, WsResponseCode::NOT_IN_RANGE)
+            }
+        }
+    }
+
+    fn set_context(&mut self, senders: SessionSenders, room_service: Arc<Mutex<RoomService>>) {
+        self.senders = Some(senders);
+        self.room_service = Some(room_service);
     }
 }

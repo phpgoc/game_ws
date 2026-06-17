@@ -10,20 +10,21 @@ pub struct CommonEvent<T> {
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CommonWithoutDataEvent {
-    pub code: i32,
-}
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommonResponse<T> {
     pub code: i32,
     pub data: T,
 }
 
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommonWithoutDataEvent {
+    pub code: i32,
+}
+
 #[cfg(test)]
 mod tests {
     use crate::r#const::WsCode;
+
     #[test]
     fn common_event_uses_ws_code() {
         let item = super::CommonEvent::<i32> {

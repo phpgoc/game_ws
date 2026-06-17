@@ -5,6 +5,13 @@ use share_type_public::games::landlord::LANDLORD_CARDS;
 use crate::game_state::LandlordLoopState;
 use share_type_public::LandlordPhase;
 
+#[derive(Clone)]
+struct Combo {
+    kind: ComboKind,
+    main_rank: u8,
+    sequence_len: usize,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ComboKind {
     Rocket,
@@ -23,54 +30,31 @@ enum ComboKind {
     FourWithTwoPairs,
 }
 
-#[derive(Clone)]
-struct Combo {
-    kind: ComboKind,
-    main_rank: u8,
-    sequence_len: usize,
+fn can_beat(curr: &Combo, prev: &Combo) -> bool {
+    if curr.kind == ComboKind::Rocket {
+        return prev.kind != ComboKind::Rocket;
+    }
+    if curr.kind == ComboKind::Bomb {
+        return match prev.kind {
+            ComboKind::Rocket => false,
+            ComboKind::Bomb => curr.main_rank > prev.main_rank,
+            _ => true,
+        };
+    }
+    if prev.kind == ComboKind::Rocket || prev.kind == ComboKind::Bomb {
+        return false;
+    }
+    curr.kind == prev.kind
+        && curr.sequence_len == prev.sequence_len
+        && curr.main_rank > prev.main_rank
 }
 
-/// Validate a play request. Takes a borrowed `LandlordLoopState` reference
-/// (the caller should hold the lock).
-pub(crate) fn validate_play_request(s: &LandlordLoopState, position: usize, cards: &[i32]) -> bool {
-    if s.phase != LandlordPhase::Play || s.current_position != position {
-        return false;
+fn card_rank(card: i32) -> u8 {
+    match card {
+        53 => 16,
+        54 => 17,
+        _ => (((card - 1) % 13) + 3) as u8,
     }
-
-    let hand = match s.hands.get(&position) {
-        Some(h) => h,
-        None => return false,
-    };
-
-    if !cards.iter().all(|c| is_valid_card_id(c)) {
-        return false;
-    }
-    if !cards_in_hand(cards, hand) {
-        return false;
-    }
-
-    if cards.is_empty() {
-        if s.last_play.is_empty() {
-            return false;
-        }
-        return s.last_play_position != position;
-    }
-
-    if s.last_play.is_empty() || s.last_play_position == position {
-        return classify(cards).is_some();
-    }
-
-    let Some(prev) = classify(&s.last_play) else {
-        return false;
-    };
-    let Some(curr) = classify(cards) else {
-        return false;
-    };
-    can_beat(&curr, &prev)
-}
-
-fn is_valid_card_id(card: &i32) -> bool {
-    LANDLORD_CARDS.binary_search(card).is_ok()
 }
 
 fn cards_in_hand(played: &[i32], hand: &[i32]) -> bool {
@@ -86,34 +70,6 @@ fn cards_in_hand(played: &[i32], hand: &[i32]) -> bool {
             return false;
         }
         *cnt -= 1;
-    }
-    true
-}
-
-fn card_rank(card: i32) -> u8 {
-    match card {
-        53 => 16,
-        54 => 17,
-        _ => (((card - 1) % 13) + 3) as u8,
-    }
-}
-
-fn rank_counts(cards: &[i32]) -> HashMap<u8, usize> {
-    let mut m: HashMap<u8, usize> = HashMap::new();
-    for &c in cards {
-        *m.entry(card_rank(c)).or_insert(0) += 1;
-    }
-    m
-}
-
-fn is_consecutive(ranks: &[u8]) -> bool {
-    if ranks.is_empty() {
-        return false;
-    }
-    for i in 1..ranks.len() {
-        if ranks[i] != ranks[i - 1] + 1 {
-            return false;
-        }
     }
     true
 }
@@ -283,21 +239,65 @@ fn classify(cards: &[i32]) -> Option<Combo> {
     None
 }
 
-fn can_beat(curr: &Combo, prev: &Combo) -> bool {
-    if curr.kind == ComboKind::Rocket {
-        return prev.kind != ComboKind::Rocket;
-    }
-    if curr.kind == ComboKind::Bomb {
-        return match prev.kind {
-            ComboKind::Rocket => false,
-            ComboKind::Bomb => curr.main_rank > prev.main_rank,
-            _ => true,
-        };
-    }
-    if prev.kind == ComboKind::Rocket || prev.kind == ComboKind::Bomb {
+fn is_consecutive(ranks: &[u8]) -> bool {
+    if ranks.is_empty() {
         return false;
     }
-    curr.kind == prev.kind
-        && curr.sequence_len == prev.sequence_len
-        && curr.main_rank > prev.main_rank
+    for i in 1..ranks.len() {
+        if ranks[i] != ranks[i - 1] + 1 {
+            return false;
+        }
+    }
+    true
+}
+
+fn is_valid_card_id(card: &i32) -> bool {
+    LANDLORD_CARDS.binary_search(card).is_ok()
+}
+
+fn rank_counts(cards: &[i32]) -> HashMap<u8, usize> {
+    let mut m: HashMap<u8, usize> = HashMap::new();
+    for &c in cards {
+        *m.entry(card_rank(c)).or_insert(0) += 1;
+    }
+    m
+}
+
+/// Validate a play request. Takes a borrowed `LandlordLoopState` reference
+/// (the caller should hold the lock).
+pub(crate) fn validate_play_request(s: &LandlordLoopState, position: usize, cards: &[i32]) -> bool {
+    if s.phase != LandlordPhase::Play || s.current_position != position {
+        return false;
+    }
+
+    let hand = match s.hands.get(&position) {
+        Some(h) => h,
+        None => return false,
+    };
+
+    if !cards.iter().all(|c| is_valid_card_id(c)) {
+        return false;
+    }
+    if !cards_in_hand(cards, hand) {
+        return false;
+    }
+
+    if cards.is_empty() {
+        if s.last_play.is_empty() {
+            return false;
+        }
+        return s.last_play_position != position;
+    }
+
+    if s.last_play.is_empty() || s.last_play_position == position {
+        return classify(cards).is_some();
+    }
+
+    let Some(prev) = classify(&s.last_play) else {
+        return false;
+    };
+    let Some(curr) = classify(cards) else {
+        return false;
+    };
+    can_beat(&curr, &prev)
 }

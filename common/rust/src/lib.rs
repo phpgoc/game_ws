@@ -1,3 +1,19 @@
+#[macro_export]
+macro_rules! dlog {
+    ($level:path, $($arg:tt)+) => {{
+        #[cfg(debug_assertions)]
+        {
+            $crate::__dlog(&format!($($arg)+), $level, file!(), line!());
+        }
+    }};
+    ($message:expr, $level:expr $(,)?) => {{
+        #[cfg(debug_assertions)]
+        {
+            $crate::__dlog($message, $level, file!(), line!());
+        }
+    }};
+}
+
 pub mod cli;
 pub mod game_setting;
 pub mod game_state;
@@ -25,22 +41,6 @@ use std::io::IsTerminal;
 pub use tracing;
 
 pub use transport::{TransportError, from_message, to_text_message};
-
-#[macro_export]
-macro_rules! dlog {
-    ($level:path, $($arg:tt)+) => {{
-        #[cfg(debug_assertions)]
-        {
-            $crate::__dlog(&format!($($arg)+), $level, file!(), line!());
-        }
-    }};
-    ($message:expr, $level:expr $(,)?) => {{
-        #[cfg(debug_assertions)]
-        {
-            $crate::__dlog($message, $level, file!(), line!());
-        }
-    }};
-}
 
 #[cfg(debug_assertions)]
 #[doc(hidden)]

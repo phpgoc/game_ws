@@ -1,38 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use typeshare::typeshare;
 use std::fmt::Display;
-
-#[typeshare]
-#[repr(i8)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum LandlordPhase {
-    Start,
-    CallLandlord,
-    Play,
-    Settlement,
-}
-impl  Display  for LandlordPhase {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Start => write!(f, "Start"),
-            Self::CallLandlord => write!(f, "CallLandlord"),
-            Self::Play => write!(f, "Play"),
-            Self::Settlement => write!(f, "Settlement"),
-        }
-    }
-}
-
-impl LandlordPhase {
-    pub fn next(self) -> Self {
-        match self {
-            Self::Start => Self::CallLandlord,
-            Self::CallLandlord => Self::Play,
-            Self::Play => Self::Settlement,
-            Self::Settlement => Self::Start,
-        }
-    }
-}
+use typeshare::typeshare;
 
 pub const LANDLORD_CARDS: [i32; 54] = {
     let mut cards = [0; 54];
@@ -106,6 +75,16 @@ pub enum LandlordCard {
 }
 
 #[typeshare]
+#[repr(i8)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LandlordPhase {
+    Start,
+    CallLandlord,
+    Play,
+    Settlement,
+}
+
+#[typeshare]
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, Serialize_repr, Deserialize_repr)]
 #[allow(non_camel_case_types)]
@@ -123,12 +102,6 @@ pub enum LandlordWsCode {
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsCallLandlordRequest {
-    pub score: u8,
-}
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsCallLandlordEvent {
     pub name: String,
     pub score: u8,
@@ -136,33 +109,13 @@ pub struct WsCallLandlordEvent {
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsDealRequest {
-    pub cards: Vec<i32>,
+pub struct WsCallLandlordRequest {
+    pub score: u8,
 }
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsDealEvent {
-    pub name: String,
-    pub cards: Vec<i32>,
-}
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsPlayRequest {
-    pub cards: Vec<i32>,
-}
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsPlayEvent {
-    pub name: String,
-    pub cards: Vec<i32>,
-}
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsDealOpenCardsEvent {
     pub name: String,
     pub cards: Vec<i32>,
 }
@@ -175,8 +128,14 @@ pub struct WsDealFaceDownCardsEvent {
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsShowHiddenCardsEvent {
+pub struct WsDealOpenCardsEvent {
     pub name: String,
+    pub cards: Vec<i32>,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsDealRequest {
     pub cards: Vec<i32>,
 }
 
@@ -184,4 +143,45 @@ pub struct WsShowHiddenCardsEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsLandlordGameOverEvent {
     pub is_landlord: bool,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsPlayEvent {
+    pub name: String,
+    pub cards: Vec<i32>,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsPlayRequest {
+    pub cards: Vec<i32>,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsShowHiddenCardsEvent {
+    pub name: String,
+    pub cards: Vec<i32>,
+}
+
+impl LandlordPhase {
+    pub fn next(self) -> Self {
+        match self {
+            Self::Start => Self::CallLandlord,
+            Self::CallLandlord => Self::Play,
+            Self::Play => Self::Settlement,
+            Self::Settlement => Self::Start,
+        }
+    }
+}
+impl Display for LandlordPhase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Start => write!(f, "Start"),
+            Self::CallLandlord => write!(f, "CallLandlord"),
+            Self::Play => write!(f, "Play"),
+            Self::Settlement => write!(f, "Settlement"),
+        }
+    }
 }

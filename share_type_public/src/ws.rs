@@ -4,34 +4,6 @@ use typeshare::typeshare;
 
 use crate::r#const::WsResponseCode;
 
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsRequest<T> {
-    pub route: i32,
-    pub data: T,
-}
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsWithoutDataRequest {
-    pub route: i32,
-}
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsResponse<T> {
-    pub route: i32,
-    pub code: WsResponseCode,
-    pub data: T,
-}
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsWithoutDataResponse {
-    pub route: i32,
-    pub code: WsResponseCode,
-}
-
 /// 首个 JOIN 建房后的房主参数响应，以及 SWAP 成房主时的响应。
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,6 +34,42 @@ pub struct WsJoinResponse {
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsMemberInfo {
+    pub name: String,
+    pub position: i32,
+    /// 头像 URL。
+    #[serde(default)]
+    pub avatar_url: String,
+    pub is_active: bool,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsMessageEvent {
+    pub name: String,
+    pub message: String,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsMessageRequest {
+    pub message: String,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsNameEvent {
+    pub name: String,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsPositionEvent {
+    pub position: i32,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsReJoinResponse {
     pub other_cards_numbers: HashMap<i32, i32>,
     pub my_cards: Vec<i32>,
@@ -76,19 +84,17 @@ pub struct WsReJoinResponse {
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsMemberInfo {
-    pub name: String,
-    pub position: i32,
-    /// 头像 URL。
-    #[serde(default)]
-    pub avatar_url: String,
-    pub is_active: bool,
+pub struct WsRequest<T> {
+    pub route: i32,
+    pub data: T,
 }
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsNameEvent {
-    pub name: String,
+pub struct WsResponse<T> {
+    pub route: i32,
+    pub code: WsResponseCode,
+    pub data: T,
 }
 
 /// SETTING 请求和响应的 payload。
@@ -102,26 +108,20 @@ pub struct WsSettingPayload {
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsPositionEvent {
-    pub position: i32,
-}
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsMessageRequest {
-    pub message: String,
-}
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsMessageEvent {
-    pub name: String,
-    pub message: String,
-}
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsSwapPositionPayload {
     pub a: usize,
     pub b: usize,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsWithoutDataRequest {
+    pub route: i32,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsWithoutDataResponse {
+    pub route: i32,
+    pub code: WsResponseCode,
 }
