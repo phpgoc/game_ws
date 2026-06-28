@@ -1,5 +1,5 @@
 [package]
-name = "landlord_ws_server"
+name = "landlord"
 version = "0.1.0"
 edition = "2024"
 
