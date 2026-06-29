@@ -4,8 +4,8 @@ use std::sync::Arc;
 use serde_json::{Value, json};
 use share_type_public::games::shenyang_mahjong::{
     ShenyangMahjongAction, ShenyangMahjongMeldKind, ShenyangMahjongPhase,
-    WsShenyangMahjongClaimWindowEvent, WsShenyangMahjongDealEvent,
-    WsShenyangMahjongPlayEvent, WsShenyangMahjongPlayRequest, WsShenyangMahjongPlayerSnapshot,
+    WsShenyangMahjongClaimWindowEvent, WsShenyangMahjongDealEvent, WsShenyangMahjongPlayEvent,
+    WsShenyangMahjongPlayRequest, WsShenyangMahjongPlayerSnapshot,
     WsShenyangMahjongSettlementEvent,
 };
 use share_type_public::{Routes, WsCode, WsResponseCode};
@@ -22,17 +22,146 @@ use crate::game_state::{
 };
 use crate::rules::{can_chi, can_peng, is_standard_win, tiles_in_hand};
 
+pub(crate) type LoopStateHandle = Arc<std::sync::Mutex<ShenyangMahjongLoopState>>;
+pub(crate) type LoopStateRegistry = Arc<std::sync::Mutex<HashMap<String, LoopStateHandle>>>;
+
 pub struct ShenyangMahjongGameHandler {
     room_service: Option<Arc<Mutex<RoomService>>>,
     senders: Option<SessionSenders>,
     loop_states: LoopStateRegistry,
 }
 
-pub(crate) type LoopStateHandle = Arc<std::sync::Mutex<ShenyangMahjongLoopState>>;
-pub(crate) type LoopStateRegistry = Arc<std::sync::Mutex<HashMap<String, LoopStateHandle>>>;
+pub(crate) fn advance_to_next_turn(
+    room_service: &RoomService,
+    room_key: &str,
+    state: &mut ShenyangMahjongLoopState,
+    configs: &HashMap<String, i32>,
+    dispatch: &mut Dispatch,
+) {
+    let next_position = state.next_position(state.current_position);
+    if let Some(tile) = state.draw_for_position(next_position) {
+        state.set_turn_countdown(current_play_time(configs));
+        push_draw_events(room_service, room_key, state, dispatch, next_position, tile);
+        push_phase_change(
+            room_service,
+            room_key,
+            dispatch,
+            state.phase,
+            state.current_position,
+        );
+        return;
+    }
+
+    state.enter_settlement(Vec::new(), None, None, false);
+    push_phase_change(
+        room_service,
+        room_key,
+        dispatch,
+        ShenyangMahjongPhase::Settlement,
+        state.current_position,
+    );
+    if let Some(event) = build_settlement_event(state) {
+        push_room_event(
+            room_service,
+            room_key,
+            dispatch,
+            WsCode::GAME_OVER as i32,
+            event,
+        );
+    }
+}
+
+pub(crate) fn allow_multi_hu(configs: &HashMap<String, i32>) -> bool {
+    config_value(configs, "multi_hu_mode", 1) == 1
+}
+
+pub(crate) fn build_settlement_event(
+    state: &ShenyangMahjongLoopState,
+) -> Option<WsShenyangMahjongSettlementEvent> {
+    let settlement = state.settlement.as_ref()?;
+    let players = state.players_snapshot();
+    let mut snapshots = Vec::new();
+    let mut positions: Vec<usize> = players.keys().copied().collect();
+    positions.sort_unstable();
+
+    for position in positions {
+        let (_, name) = players.get(&position).cloned().unwrap_or_default();
+        let mut hand_tiles = state.hands.get(&position).cloned().unwrap_or_default();
+        if !settlement.is_self_draw
+            && settlement.winner_positions.contains(&position)
+            && let Some(tile) = settlement.win_tile
+        {
+            hand_tiles.push(tile);
+            hand_tiles.sort_unstable();
+        }
+        snapshots.push(WsShenyangMahjongPlayerSnapshot {
+            position: position as i32,
+            name,
+            hand_tiles,
+            discards: state.discards.get(&position).cloned().unwrap_or_default(),
+            melds: state.melds.get(&position).cloned().unwrap_or_default(),
+        });
+    }
+
+    Some(WsShenyangMahjongSettlementEvent {
+        winner_positions: settlement
+            .winner_positions
+            .iter()
+            .map(|position| *position as i32)
+            .collect(),
+        from_position: settlement.from_position.map(|position| position as i32),
+        win_tile: settlement.win_tile,
+        is_self_draw: settlement.is_self_draw,
+        players: snapshots,
+    })
+}
 
 fn config_value(configs: &HashMap<String, i32>, key: &str, fallback: i32) -> i32 {
     configs.get(key).copied().unwrap_or(fallback)
+}
+
+pub(crate) fn current_claim_time(configs: &HashMap<String, i32>) -> u32 {
+    config_value(configs, "claim_time", 5).max(1) as u32
+}
+
+pub(crate) fn current_play_time(configs: &HashMap<String, i32>) -> u32 {
+    config_value(configs, "play_time", 20).max(1) as u32
+}
+
+pub(crate) fn determine_claim_eligible_positions(
+    state: &ShenyangMahjongLoopState,
+    tile: i32,
+    from_position: usize,
+) -> Vec<usize> {
+    let mut positions: Vec<usize> = state.players_snapshot().keys().copied().collect();
+    positions.sort_unstable();
+    let next_position = state.next_position(from_position);
+    let mut eligible = Vec::new();
+    for position in positions {
+        if position == from_position {
+            continue;
+        }
+        let hand = state.hands.get(&position).cloned().unwrap_or_default();
+        let can_hu = {
+            let mut test = hand.clone();
+            test.push(tile);
+            test.sort_unstable();
+            is_standard_win(&test)
+        };
+        let can_peng_now = can_peng(&hand, tile);
+        let can_chi_now = position == next_position
+            && ([
+                [tile - 2, tile - 1],
+                [tile - 1, tile + 1],
+                [tile + 1, tile + 2],
+            ]
+            .into_iter()
+            .any(|sequence| can_chi(&hand, tile, &sequence)));
+        if can_hu || can_peng_now || can_chi_now {
+            eligible.push(position);
+        }
+    }
+    eligible
 }
 
 fn join_succeeded(dispatch: &Dispatch, session_id: SessionId) -> bool {
@@ -47,26 +176,6 @@ fn join_succeeded(dispatch: &Dispatch, session_id: SessionId) -> bool {
                     && response.code as i32 == WsResponseCode::JOINED as i32
         )
     })
-}
-
-pub(crate) fn allow_multi_hu(configs: &HashMap<String, i32>) -> bool {
-    config_value(configs, "multi_hu_mode", 1) == 1
-}
-
-pub(crate) fn current_claim_time(configs: &HashMap<String, i32>) -> u32 {
-    config_value(configs, "claim_time", 5).max(1) as u32
-}
-
-pub(crate) fn current_play_time(configs: &HashMap<String, i32>) -> u32 {
-    config_value(configs, "play_time", 20).max(1) as u32
-}
-
-pub(crate) fn settlement_time(configs: &HashMap<String, i32>) -> u64 {
-    config_value(configs, "settlement_time", 5).max(1) as u64
-}
-
-pub(crate) fn start_time(configs: &HashMap<String, i32>) -> u64 {
-    config_value(configs, "start_time", 1).max(0) as u64
 }
 
 pub(crate) fn push_direct_event<T: serde::Serialize>(
@@ -84,14 +193,36 @@ pub(crate) fn push_direct_event<T: serde::Serialize>(
     });
 }
 
-pub(crate) fn push_room_event<T: serde::Serialize>(
+pub(crate) fn push_draw_events(
     room_service: &RoomService,
     room_key: &str,
+    state: &ShenyangMahjongLoopState,
     dispatch: &mut Dispatch,
-    code: i32,
-    payload: T,
+    position: usize,
+    tile: i32,
 ) {
-    room_service.send_all(room_key, code, payload, dispatch);
+    let name = state.player_name(position);
+    for (session_id, _, member_position, _) in room_service.get_room_members(room_key) {
+        let tiles = if member_position == position {
+            vec![tile]
+        } else {
+            Vec::new()
+        };
+        push_direct_event(
+            dispatch,
+            session_id,
+            WsCode::PLAY as i32,
+            WsShenyangMahjongPlayEvent {
+                name: name.clone(),
+                position: position as i32,
+                action: ShenyangMahjongAction::DRAW,
+                tiles,
+                target_tile: Some(tile),
+                from_position: None,
+                wall_count: state.wall_count() as i32,
+            },
+        );
+    }
 }
 
 pub(crate) fn push_phase_change(
@@ -135,129 +266,14 @@ pub(crate) fn push_private_deal_events(
     }
 }
 
-pub(crate) fn push_draw_events(
+pub(crate) fn push_room_event<T: serde::Serialize>(
     room_service: &RoomService,
     room_key: &str,
-    state: &ShenyangMahjongLoopState,
     dispatch: &mut Dispatch,
-    position: usize,
-    tile: i32,
+    code: i32,
+    payload: T,
 ) {
-    let name = state.player_name(position);
-    for (session_id, _, member_position, _) in room_service.get_room_members(room_key) {
-        let tiles = if member_position == position {
-            vec![tile]
-        } else {
-            Vec::new()
-        };
-        push_direct_event(
-            dispatch,
-            session_id,
-            WsCode::PLAY as i32,
-            WsShenyangMahjongPlayEvent {
-                name: name.clone(),
-                position: position as i32,
-                action: ShenyangMahjongAction::DRAW,
-                tiles,
-                target_tile: Some(tile),
-                from_position: None,
-                wall_count: state.wall_count() as i32,
-            },
-        );
-    }
-}
-
-pub(crate) fn build_settlement_event(state: &ShenyangMahjongLoopState) -> Option<WsShenyangMahjongSettlementEvent> {
-    let settlement = state.settlement.as_ref()?;
-    let players = state.players_snapshot();
-    let mut snapshots = Vec::new();
-    let mut positions: Vec<usize> = players.keys().copied().collect();
-    positions.sort_unstable();
-
-    for position in positions {
-        let (_, name) = players.get(&position).cloned().unwrap_or_default();
-        let mut hand_tiles = state.hands.get(&position).cloned().unwrap_or_default();
-        if !settlement.is_self_draw
-            && settlement.winner_positions.contains(&position)
-            && let Some(tile) = settlement.win_tile
-        {
-            hand_tiles.push(tile);
-            hand_tiles.sort_unstable();
-        }
-        snapshots.push(WsShenyangMahjongPlayerSnapshot {
-            position: position as i32,
-            name,
-            hand_tiles,
-            discards: state.discards.get(&position).cloned().unwrap_or_default(),
-            melds: state.melds.get(&position).cloned().unwrap_or_default(),
-        });
-    }
-
-    Some(WsShenyangMahjongSettlementEvent {
-        winner_positions: settlement
-            .winner_positions
-            .iter()
-            .map(|position| *position as i32)
-            .collect(),
-        from_position: settlement.from_position.map(|position| position as i32),
-        win_tile: settlement.win_tile,
-        is_self_draw: settlement.is_self_draw,
-        players: snapshots,
-    })
-}
-
-pub(crate) fn determine_claim_eligible_positions(
-    state: &ShenyangMahjongLoopState,
-    tile: i32,
-    from_position: usize,
-) -> Vec<usize> {
-    let mut positions: Vec<usize> = state.players_snapshot().keys().copied().collect();
-    positions.sort_unstable();
-    let next_position = state.next_position(from_position);
-    let mut eligible = Vec::new();
-    for position in positions {
-        if position == from_position {
-            continue;
-        }
-        let hand = state.hands.get(&position).cloned().unwrap_or_default();
-        let can_hu = {
-            let mut test = hand.clone();
-            test.push(tile);
-            test.sort_unstable();
-            is_standard_win(&test)
-        };
-        let can_peng_now = can_peng(&hand, tile);
-        let can_chi_now = position == next_position
-            && ([[tile - 2, tile - 1], [tile - 1, tile + 1], [tile + 1, tile + 2]]
-                .into_iter()
-                .any(|sequence| can_chi(&hand, tile, &sequence)));
-        if can_hu || can_peng_now || can_chi_now {
-            eligible.push(position);
-        }
-    }
-    eligible
-}
-
-pub(crate) fn advance_to_next_turn(
-    room_service: &RoomService,
-    room_key: &str,
-    state: &mut ShenyangMahjongLoopState,
-    configs: &HashMap<String, i32>,
-    dispatch: &mut Dispatch,
-) {
-    let next_position = state.next_position(state.current_position);
-    if let Some(tile) = state.draw_for_position(next_position) {
-        state.set_turn_countdown(current_play_time(configs));
-        push_draw_events(room_service, room_key, state, dispatch, next_position, tile);
-        push_phase_change(room_service, room_key, dispatch, state.phase, state.current_position);
-        return;
-    }
-
-    state.enter_settlement(Vec::new(), None, None, false);
-    push_phase_change(room_service, room_key, dispatch, ShenyangMahjongPhase::Settlement, state.current_position);
-    if let Some(event) = build_settlement_event(state) {
-        push_room_event(room_service, room_key, dispatch, WsCode::GAME_OVER as i32, event);
-    }
+    room_service.send_all(room_key, code, payload, dispatch);
 }
 
 pub(crate) fn resolve_claim_window(
@@ -343,7 +359,13 @@ pub(crate) fn resolve_claim_window(
             state.current_position,
         );
         if let Some(event) = build_settlement_event(state) {
-            push_room_event(room_service, room_key, dispatch, WsCode::GAME_OVER as i32, event);
+            push_room_event(
+                room_service,
+                room_key,
+                dispatch,
+                WsCode::GAME_OVER as i32,
+                event,
+            );
         }
         return;
     }
@@ -355,15 +377,11 @@ pub(crate) fn resolve_claim_window(
     {
         if state.remove_tiles_from_hand(winner, &[claim_window.tile, claim_window.tile]) {
             state.remove_last_discard(claim_window.from_position);
-            state
-                .melds
-                .entry(winner)
-                .or_default()
-                .push(build_meld(
-                    ShenyangMahjongMeldKind::PENG,
-                    vec![claim_window.tile, claim_window.tile, claim_window.tile],
-                    Some(claim_window.from_position),
-                ));
+            state.melds.entry(winner).or_default().push(build_meld(
+                ShenyangMahjongMeldKind::PENG,
+                vec![claim_window.tile, claim_window.tile, claim_window.tile],
+                Some(claim_window.from_position),
+            ));
             state.current_position = winner;
             state.last_drawn_tile = None;
             state.claim_window = None;
@@ -383,7 +401,13 @@ pub(crate) fn resolve_claim_window(
                     wall_count: state.wall_count() as i32,
                 },
             );
-            push_phase_change(room_service, room_key, dispatch, state.phase, state.current_position);
+            push_phase_change(
+                room_service,
+                room_key,
+                dispatch,
+                state.phase,
+                state.current_position,
+            );
         }
         return;
     }
@@ -396,15 +420,11 @@ pub(crate) fn resolve_claim_window(
             state.remove_last_discard(claim_window.from_position);
             let mut meld_tiles = consume_tiles.clone();
             meld_tiles.push(claim_window.tile);
-            state
-                .melds
-                .entry(winner)
-                .or_default()
-                .push(build_meld(
-                    ShenyangMahjongMeldKind::CHI,
-                    meld_tiles.clone(),
-                    Some(claim_window.from_position),
-                ));
+            state.melds.entry(winner).or_default().push(build_meld(
+                ShenyangMahjongMeldKind::CHI,
+                meld_tiles.clone(),
+                Some(claim_window.from_position),
+            ));
             state.current_position = winner;
             state.last_drawn_tile = None;
             state.claim_window = None;
@@ -424,7 +444,13 @@ pub(crate) fn resolve_claim_window(
                     wall_count: state.wall_count() as i32,
                 },
             );
-            push_phase_change(room_service, room_key, dispatch, state.phase, state.current_position);
+            push_phase_change(
+                room_service,
+                room_key,
+                dispatch,
+                state.phase,
+                state.current_position,
+            );
         }
         return;
     }
@@ -434,103 +460,15 @@ pub(crate) fn resolve_claim_window(
     advance_to_next_turn(room_service, room_key, state, configs, dispatch);
 }
 
+pub(crate) fn settlement_time(configs: &HashMap<String, i32>) -> u64 {
+    config_value(configs, "settlement_time", 5).max(1) as u64
+}
+
+pub(crate) fn start_time(configs: &HashMap<String, i32>) -> u64 {
+    config_value(configs, "start_time", 1).max(0) as u64
+}
+
 impl ShenyangMahjongGameHandler {
-    fn handle_start(&mut self, room_service: &mut RoomService, session_id: SessionId) -> Dispatch {
-        let Some(position) = room_service.session_position(session_id) else {
-            return room_service.error_response(
-                session_id,
-                Routes::START as i32,
-                WsResponseCode::NOT_LOGIN,
-            );
-        };
-        if position != 0 {
-            return room_service.error_response(
-                session_id,
-                Routes::START as i32,
-                WsResponseCode::NO_PERMISSION,
-            );
-        }
-
-        let mut dispatch = Dispatch::default();
-        if !room_service.ensure_in_room(session_id, Routes::START as i32, &mut dispatch) {
-            return dispatch;
-        }
-        if !room_service.room_ready_to_start(session_id) {
-            return room_service.error_response(
-                session_id,
-                Routes::START as i32,
-                WsResponseCode::NOT_IN_RANGE,
-            );
-        }
-        let Some(room_key) = room_service.room_key_of(session_id) else {
-            return room_service.error_response(
-                session_id,
-                Routes::START as i32,
-                WsResponseCode::NOT_IN_RANGE,
-            );
-        };
-        let Some(shared_common_state) = room_service.get_room_common_state_handle(&room_key) else {
-            return room_service.error_response(
-                session_id,
-                Routes::START as i32,
-                WsResponseCode::NO_PERMISSION,
-            );
-        };
-
-        if let Some(existing) = self.loop_state(&room_key) {
-            let same_state = {
-                let state = existing.lock().unwrap();
-                Arc::ptr_eq(&state.base, &shared_common_state)
-            };
-            if same_state {
-                return room_service.error_response(
-                    session_id,
-                    Routes::START as i32,
-                    WsResponseCode::NO_PERMISSION,
-                );
-            }
-            self.loop_states.lock().unwrap().remove(&room_key);
-        }
-
-        let loop_state = Arc::new(std::sync::Mutex::new(ShenyangMahjongLoopState::new(
-            Arc::clone(&shared_common_state),
-        )));
-        room_service.set_room_game_state(
-            &room_key,
-            Box::new(ShenyangMahjongGameState::from_loop_state(Arc::clone(&loop_state))),
-        );
-        self.loop_states
-            .lock()
-            .unwrap()
-            .insert(room_key.clone(), Arc::clone(&loop_state));
-
-        {
-            let state = loop_state.lock().unwrap();
-            state.set_turn_countdown(0);
-        }
-
-        if let (Some(room_service_arc), Some(senders_arc)) =
-            (self.room_service.as_ref(), self.senders.as_ref())
-        {
-            start_game_loop(
-                room_key.clone(),
-                loop_state,
-                Arc::clone(room_service_arc),
-                Arc::clone(senders_arc),
-                Arc::clone(&self.loop_states),
-            );
-        }
-
-        room_service.send_all(
-            &room_key,
-            WsCode::START as i32,
-            serde_json::json!({}),
-            &mut dispatch,
-        );
-        room_service.push_ok_response(&mut dispatch, session_id, Routes::START as i32);
-        dispatch
-    }
-
     fn handle_play(
         &self,
         room_service: &mut RoomService,
@@ -655,7 +593,13 @@ impl ShenyangMahjongGameHandler {
                 };
                 state.set_action_received(true);
                 if all_received {
-                    resolve_claim_window(room_service, &room_key, &mut state, &configs, &mut dispatch);
+                    resolve_claim_window(
+                        room_service,
+                        &room_key,
+                        &mut state,
+                        &configs,
+                        &mut dispatch,
+                    );
                 }
             } else {
                 if state.current_position != position {
@@ -771,12 +715,7 @@ impl ShenyangMahjongGameHandler {
                             },
                         );
                         let win_tile = state.last_drawn_tile;
-                        state.enter_settlement(
-                            vec![position],
-                            None,
-                            win_tile,
-                            true,
-                        );
+                        state.enter_settlement(vec![position], None, win_tile, true);
                         push_phase_change(
                             room_service,
                             &room_key,
@@ -806,6 +745,104 @@ impl ShenyangMahjongGameHandler {
         }
 
         room_service.push_ok_response(&mut dispatch, session_id, Routes::PLAY as i32);
+        dispatch
+    }
+
+    fn handle_start(&mut self, room_service: &mut RoomService, session_id: SessionId) -> Dispatch {
+        let Some(position) = room_service.session_position(session_id) else {
+            return room_service.error_response(
+                session_id,
+                Routes::START as i32,
+                WsResponseCode::NOT_LOGIN,
+            );
+        };
+        if position != 0 {
+            return room_service.error_response(
+                session_id,
+                Routes::START as i32,
+                WsResponseCode::NO_PERMISSION,
+            );
+        }
+
+        let mut dispatch = Dispatch::default();
+        if !room_service.ensure_in_room(session_id, Routes::START as i32, &mut dispatch) {
+            return dispatch;
+        }
+        if !room_service.room_ready_to_start(session_id) {
+            return room_service.error_response(
+                session_id,
+                Routes::START as i32,
+                WsResponseCode::NOT_IN_RANGE,
+            );
+        }
+        let Some(room_key) = room_service.room_key_of(session_id) else {
+            return room_service.error_response(
+                session_id,
+                Routes::START as i32,
+                WsResponseCode::NOT_IN_RANGE,
+            );
+        };
+        let Some(shared_common_state) = room_service.get_room_common_state_handle(&room_key) else {
+            return room_service.error_response(
+                session_id,
+                Routes::START as i32,
+                WsResponseCode::NO_PERMISSION,
+            );
+        };
+
+        if let Some(existing) = self.loop_state(&room_key) {
+            let same_state = {
+                let state = existing.lock().unwrap();
+                Arc::ptr_eq(&state.base, &shared_common_state)
+            };
+            if same_state {
+                return room_service.error_response(
+                    session_id,
+                    Routes::START as i32,
+                    WsResponseCode::NO_PERMISSION,
+                );
+            }
+            self.loop_states.lock().unwrap().remove(&room_key);
+        }
+
+        let loop_state = Arc::new(std::sync::Mutex::new(ShenyangMahjongLoopState::new(
+            Arc::clone(&shared_common_state),
+        )));
+        room_service.set_room_game_state(
+            &room_key,
+            Box::new(ShenyangMahjongGameState::from_loop_state(Arc::clone(
+                &loop_state,
+            ))),
+        );
+        self.loop_states
+            .lock()
+            .unwrap()
+            .insert(room_key.clone(), Arc::clone(&loop_state));
+
+        {
+            let state = loop_state.lock().unwrap();
+            state.set_turn_countdown(0);
+        }
+
+        if let (Some(room_service_arc), Some(senders_arc)) =
+            (self.room_service.as_ref(), self.senders.as_ref())
+        {
+            start_game_loop(
+                room_key.clone(),
+                loop_state,
+                Arc::clone(room_service_arc),
+                Arc::clone(senders_arc),
+                Arc::clone(&self.loop_states),
+            );
+        }
+
+        room_service.send_all(
+            &room_key,
+            WsCode::START as i32,
+            serde_json::json!({}),
+            &mut dispatch,
+        );
+        room_service.push_ok_response(&mut dispatch, session_id, Routes::START as i32);
         dispatch
     }
 
@@ -861,8 +898,12 @@ impl GameHandler for ShenyangMahjongGameHandler {
     ) -> Dispatch {
         match request.route {
             r if r == Routes::START as i32 => self.handle_start(room_service, session_id),
-            r if r == Routes::PLAY as i32 => self.handle_play(room_service, session_id, request.data),
-            _ => room_service.error_response(session_id, request.route, WsResponseCode::NOT_IN_RANGE),
+            r if r == Routes::PLAY as i32 => {
+                self.handle_play(room_service, session_id, request.data)
+            }
+            _ => {
+                room_service.error_response(session_id, request.route, WsResponseCode::NOT_IN_RANGE)
+            }
         }
     }
 

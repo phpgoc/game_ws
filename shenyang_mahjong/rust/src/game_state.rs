@@ -13,19 +13,6 @@ use ws_common::{
 use crate::rules::{remove_tiles, sort_tiles};
 
 #[derive(Debug, Clone)]
-pub struct ShenyangMahjongGameState {
-    inner: Arc<Mutex<ShenyangMahjongLoopState>>,
-}
-
-#[derive(Debug, Clone)]
-pub struct SettlementState {
-    pub winner_positions: Vec<usize>,
-    pub from_position: Option<usize>,
-    pub win_tile: Option<i32>,
-    pub is_self_draw: bool,
-}
-
-#[derive(Debug, Clone)]
 pub enum ClaimResponse {
     Pass,
     Chi { consume_tiles: Vec<i32> },
@@ -39,6 +26,19 @@ pub struct ClaimWindowState {
     pub from_position: usize,
     pub eligible_positions: Vec<usize>,
     pub responses: HashMap<usize, ClaimResponse>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SettlementState {
+    pub winner_positions: Vec<usize>,
+    pub from_position: Option<usize>,
+    pub win_tile: Option<i32>,
+    pub is_self_draw: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct ShenyangMahjongGameState {
+    inner: Arc<Mutex<ShenyangMahjongLoopState>>,
 }
 
 #[derive(Debug)]
@@ -56,6 +56,28 @@ pub struct ShenyangMahjongLoopState {
     pub settlement: Option<SettlementState>,
 }
 
+pub fn build_meld(
+    kind: ShenyangMahjongMeldKind,
+    mut tiles: Vec<i32>,
+    from_position: Option<usize>,
+) -> WsShenyangMahjongMeld {
+    sort_tiles(&mut tiles);
+    WsShenyangMahjongMeld {
+        kind,
+        tiles,
+        from_position: from_position.map(|position| position as i32),
+    }
+}
+
+pub fn claim_action_to_play_action(response: &ClaimResponse) -> ShenyangMahjongAction {
+    match response {
+        ClaimResponse::Pass => ShenyangMahjongAction::PASS,
+        ClaimResponse::Chi { .. } => ShenyangMahjongAction::CHI,
+        ClaimResponse::Peng => ShenyangMahjongAction::PENG,
+        ClaimResponse::Hu => ShenyangMahjongAction::HU,
+    }
+}
+
 impl ShenyangMahjongGameState {
     pub fn from_loop_state(inner: Arc<Mutex<ShenyangMahjongLoopState>>) -> Self {
         Self { inner }
@@ -69,26 +91,6 @@ impl GameState for ShenyangMahjongGameState {
 }
 
 impl ShenyangMahjongLoopState {
-    pub fn new(base: Arc<Mutex<CommonGameState>>) -> Self {
-        let dealer_position = {
-            let state = base.lock().unwrap();
-            state.players.keys().copied().min().unwrap_or(0)
-        };
-        Self {
-            base,
-            phase: ShenyangMahjongPhase::Start,
-            dealer_position,
-            current_position: dealer_position,
-            wall: Vec::new(),
-            hands: HashMap::new(),
-            discards: HashMap::new(),
-            melds: HashMap::new(),
-            claim_window: None,
-            last_drawn_tile: None,
-            settlement: None,
-        }
-    }
-
     pub fn action_received(&self) -> bool {
         self.base.lock().unwrap().action_received
     }
@@ -165,6 +167,26 @@ impl ShenyangMahjongLoopState {
         self.set_action_received(false);
     }
 
+    pub fn new(base: Arc<Mutex<CommonGameState>>) -> Self {
+        let dealer_position = {
+            let state = base.lock().unwrap();
+            state.players.keys().copied().min().unwrap_or(0)
+        };
+        Self {
+            base,
+            phase: ShenyangMahjongPhase::Start,
+            dealer_position,
+            current_position: dealer_position,
+            wall: Vec::new(),
+            hands: HashMap::new(),
+            discards: HashMap::new(),
+            melds: HashMap::new(),
+            claim_window: None,
+            last_drawn_tile: None,
+            settlement: None,
+        }
+    }
+
     pub fn next_phase(&mut self, phase: ShenyangMahjongPhase) {
         self.phase = phase;
     }
@@ -175,7 +197,10 @@ impl ShenyangMahjongLoopState {
         if positions.is_empty() {
             return position;
         }
-        let current_index = positions.iter().position(|item| *item == position).unwrap_or(0);
+        let current_index = positions
+            .iter()
+            .position(|item| *item == position)
+            .unwrap_or(0);
         positions[(current_index + 1) % positions.len()]
     }
 
@@ -228,18 +253,6 @@ impl ShenyangMahjongLoopState {
         self.base.lock().unwrap().turn_countdown = turn_countdown;
     }
 
-    pub fn stop_requested(&self) -> bool {
-        self.base.lock().unwrap().stop_requested()
-    }
-
-    pub fn turn_countdown(&self) -> u32 {
-        self.base.lock().unwrap().turn_countdown
-    }
-
-    pub fn wall_count(&self) -> usize {
-        self.wall.len()
-    }
-
     fn shuffle_wall() -> Vec<i32> {
         let mut wall = Vec::with_capacity(136);
         for tile in SHENYANG_MAHJONG_TILE_KINDS {
@@ -261,26 +274,16 @@ impl ShenyangMahjongLoopState {
         }
         wall
     }
-}
 
-pub fn build_meld(
-    kind: ShenyangMahjongMeldKind,
-    mut tiles: Vec<i32>,
-    from_position: Option<usize>,
-) -> WsShenyangMahjongMeld {
-    sort_tiles(&mut tiles);
-    WsShenyangMahjongMeld {
-        kind,
-        tiles,
-        from_position: from_position.map(|position| position as i32),
+    pub fn stop_requested(&self) -> bool {
+        self.base.lock().unwrap().stop_requested()
     }
-}
 
-pub fn claim_action_to_play_action(response: &ClaimResponse) -> ShenyangMahjongAction {
-    match response {
-        ClaimResponse::Pass => ShenyangMahjongAction::PASS,
-        ClaimResponse::Chi { .. } => ShenyangMahjongAction::CHI,
-        ClaimResponse::Peng => ShenyangMahjongAction::PENG,
-        ClaimResponse::Hu => ShenyangMahjongAction::HU,
+    pub fn turn_countdown(&self) -> u32 {
+        self.base.lock().unwrap().turn_countdown
+    }
+
+    pub fn wall_count(&self) -> usize {
+        self.wall.len()
     }
 }

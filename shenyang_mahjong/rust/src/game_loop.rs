@@ -16,21 +16,6 @@ use share_type_public::games::shenyang_mahjong::{
     ShenyangMahjongAction, ShenyangMahjongPhase, WsShenyangMahjongPlayEvent,
 };
 
-async fn deliver(dispatch: ws_common::Dispatch, senders: &SessionSenders) {
-    let mut frames = Vec::with_capacity(dispatch.messages.len());
-    for message in dispatch.messages {
-        if let Ok(frame) = ws_common::to_text_message(&message.payload) {
-            frames.push((message.recipient, frame));
-        }
-    }
-    let senders = senders.lock().await;
-    for (session_id, frame) in frames {
-        if let Some(tx) = senders.get(&session_id) {
-            let _ = tx.send(frame);
-        }
-    }
-}
-
 fn auto_discard_tile(state: &ShenyangMahjongLoopState, position: usize) -> Option<i32> {
     if let Some(tile) = state.last_drawn_tile
         && state
@@ -45,6 +30,21 @@ fn auto_discard_tile(state: &ShenyangMahjongLoopState, position: usize) -> Optio
         .hands
         .get(&position)
         .and_then(|hand| hand.last().copied())
+}
+
+async fn deliver(dispatch: ws_common::Dispatch, senders: &SessionSenders) {
+    let mut frames = Vec::with_capacity(dispatch.messages.len());
+    for message in dispatch.messages {
+        if let Ok(frame) = ws_common::to_text_message(&message.payload) {
+            frames.push((message.recipient, frame));
+        }
+    }
+    let senders = senders.lock().await;
+    for (session_id, frame) in frames {
+        if let Some(tx) = senders.get(&session_id) {
+            let _ = tx.send(frame);
+        }
+    }
 }
 
 fn settlement_should_stop(state: &Arc<std::sync::Mutex<ShenyangMahjongLoopState>>) -> bool {
@@ -137,7 +137,13 @@ pub(crate) fn start_game_loop(
                                         .or_insert(ClaimResponse::Pass);
                                 }
                             }
-                            resolve_claim_window(&room, &room_key, &mut guard, &configs, &mut dispatch);
+                            resolve_claim_window(
+                                &room,
+                                &room_key,
+                                &mut guard,
+                                &configs,
+                                &mut dispatch,
+                            );
                         }
                         deliver(dispatch, &senders).await;
                         continue;
@@ -171,13 +177,18 @@ pub(crate) fn start_game_loop(
                                     wall_count: guard.wall_count() as i32,
                                 },
                             );
-                            let eligible_positions = crate::game::determine_claim_eligible_positions(
-                                &guard,
-                                tile,
-                                position,
-                            );
+                            let eligible_positions =
+                                crate::game::determine_claim_eligible_positions(
+                                    &guard, tile, position,
+                                );
                             if eligible_positions.is_empty() {
-                                advance_to_next_turn(&room, &room_key, &mut guard, &configs, &mut dispatch);
+                                advance_to_next_turn(
+                                    &room,
+                                    &room_key,
+                                    &mut guard,
+                                    &configs,
+                                    &mut dispatch,
+                                );
                             } else {
                                 guard.claim_window = Some(crate::game_state::ClaimWindowState {
                                     tile,

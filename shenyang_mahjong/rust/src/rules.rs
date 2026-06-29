@@ -12,64 +12,6 @@ pub fn can_chi(hand: &[i32], target_tile: i32, consume_tiles: &[i32]) -> bool {
     is_valid_sequence(&sequence)
 }
 
-pub fn can_peng(hand: &[i32], target_tile: i32) -> bool {
-    hand.iter().filter(|&&tile| tile == target_tile).count() >= 2
-}
-
-pub fn is_standard_win(tiles: &[i32]) -> bool {
-    if tiles.len() % 3 != 2 {
-        return false;
-    }
-    let mut counts = [0u8; 38];
-    for &tile in tiles {
-        if !is_valid_tile(tile) {
-            return false;
-        }
-        counts[tile as usize] += 1;
-    }
-
-    for tile in SHENYANG_MAHJONG_TILE_KINDS {
-        let index = tile as usize;
-        if counts[index] < 2 {
-            continue;
-        }
-        counts[index] -= 2;
-        if can_form_sets(&mut counts) {
-            return true;
-        }
-        counts[index] += 2;
-    }
-    false
-}
-
-pub fn remove_tiles(hand: &mut Vec<i32>, tiles: &[i32]) -> bool {
-    if !tiles_in_hand(hand, tiles) {
-        return false;
-    }
-    for tile in tiles {
-        if let Some(index) = hand.iter().position(|item| item == tile) {
-            hand.remove(index);
-        }
-    }
-    hand.sort_unstable();
-    true
-}
-
-pub fn sort_tiles(hand: &mut [i32]) {
-    hand.sort_unstable();
-}
-
-pub fn tiles_in_hand(hand: &[i32], tiles: &[i32]) -> bool {
-    let mut working = hand.to_vec();
-    for tile in tiles {
-        let Some(index) = working.iter().position(|item| item == tile) else {
-            return false;
-        };
-        working.remove(index);
-    }
-    true
-}
-
 fn can_form_sets(counts: &mut [u8; 38]) -> bool {
     let Some(tile) = SHENYANG_MAHJONG_TILE_KINDS
         .into_iter()
@@ -114,6 +56,36 @@ fn can_form_sets(counts: &mut [u8; 38]) -> bool {
     false
 }
 
+pub fn can_peng(hand: &[i32], target_tile: i32) -> bool {
+    hand.iter().filter(|&&tile| tile == target_tile).count() >= 2
+}
+
+pub fn is_standard_win(tiles: &[i32]) -> bool {
+    if tiles.len() % 3 != 2 {
+        return false;
+    }
+    let mut counts = [0u8; 38];
+    for &tile in tiles {
+        if !is_valid_tile(tile) {
+            return false;
+        }
+        counts[tile as usize] += 1;
+    }
+
+    for tile in SHENYANG_MAHJONG_TILE_KINDS {
+        let index = tile as usize;
+        if counts[index] < 2 {
+            continue;
+        }
+        counts[index] -= 2;
+        if can_form_sets(&mut counts) {
+            return true;
+        }
+        counts[index] += 2;
+    }
+    false
+}
+
 fn is_suited_tile(tile: i32) -> bool {
     matches!(tile, 1..=9 | 11..=19 | 21..=29)
 }
@@ -130,19 +102,41 @@ fn is_valid_tile(tile: i32) -> bool {
     SHENYANG_MAHJONG_TILE_KINDS.contains(&tile)
 }
 
+pub fn remove_tiles(hand: &mut Vec<i32>, tiles: &[i32]) -> bool {
+    if !tiles_in_hand(hand, tiles) {
+        return false;
+    }
+    for tile in tiles {
+        if let Some(index) = hand.iter().position(|item| item == tile) {
+            hand.remove(index);
+        }
+    }
+    hand.sort_unstable();
+    true
+}
+
 fn same_suit(a: i32, b: i32) -> bool {
     a / 10 == b / 10
+}
+
+pub fn sort_tiles(hand: &mut [i32]) {
+    hand.sort_unstable();
+}
+
+pub fn tiles_in_hand(hand: &[i32], tiles: &[i32]) -> bool {
+    let mut working = hand.to_vec();
+    for tile in tiles {
+        let Some(index) = working.iter().position(|item| item == tile) else {
+            return false;
+        };
+        working.remove(index);
+    }
+    true
 }
 
 #[cfg(test)]
 mod tests {
     use super::{can_chi, can_peng, is_standard_win};
-
-    #[test]
-    fn standard_hand_is_recognized() {
-        let tiles = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35];
-        assert!(is_standard_win(&tiles));
-    }
 
     #[test]
     fn chi_requires_real_sequence() {
@@ -157,5 +151,11 @@ mod tests {
         let hand = vec![31, 31, 32, 33];
         assert!(can_peng(&hand, 31));
         assert!(!can_peng(&hand, 32));
+    }
+
+    #[test]
+    fn standard_hand_is_recognized() {
+        let tiles = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35];
+        assert!(is_standard_win(&tiles));
     }
 }

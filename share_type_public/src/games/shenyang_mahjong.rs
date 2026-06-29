@@ -4,18 +4,9 @@ use std::fmt::Display;
 use typeshare::typeshare;
 
 pub const SHENYANG_MAHJONG_TILE_KINDS: [i32; 34] = [
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 23, 24, 25, 26,
-    27, 28, 29, 31, 32, 33, 34, 35, 36, 37,
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 23, 24, 25, 26, 27, 28,
+    29, 31, 32, 33, 34, 35, 36, 37,
 ];
-
-#[typeshare]
-#[repr(i8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ShenyangMahjongPhase {
-    Start,
-    Play,
-    Settlement,
-}
 
 #[typeshare]
 #[repr(i32)]
@@ -37,6 +28,15 @@ pub enum ShenyangMahjongAction {
 pub enum ShenyangMahjongMeldKind {
     CHI = 1,
     PENG = 2,
+}
+
+#[typeshare]
+#[repr(i8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShenyangMahjongPhase {
+    Start,
+    Play,
+    Settlement,
 }
 
 #[typeshare]
