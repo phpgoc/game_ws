@@ -5,6 +5,7 @@ WS 子模块目录：
 - `share_type_public/`：公共协议类型（可开源）
 - `common/rust/`：Rust WS 公共库 + 启动入口（`main` 在这里）
 - `landlord/rust/`：斗地主 WS 业务库（只放协议与游戏逻辑）
+- `shenyang_mahjong/rust/`：沈阳麻将 WS 业务库（当前实现到 play / settlement）
 
 ## 为什么不用 axum ws
 

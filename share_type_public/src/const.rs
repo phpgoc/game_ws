@@ -54,6 +54,7 @@ pub enum WsCode {
     SHOW_HIDDEN_CARDS = 30,
 
     CALL_LANDLORD = 1001,
+    CLAIM_WINDOW = 2001,
 }
 
 #[typeshare]

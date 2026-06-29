@@ -1,4 +1,5 @@
 pub mod landlord;
+pub mod shenyang_mahjong;
 
 pub use crate::GameParamRange;
 use serde::{Deserialize, Serialize};

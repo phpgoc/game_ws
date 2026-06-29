@@ -1,6 +1,6 @@
 use std::{process, time::Duration};
 
-use landlord::game::LandlordGameHandler;
+use shenyang_mahjong::game::ShenyangMahjongGameHandler;
 use ws_common::run_game_server_with_cli;
 
 #[tokio::main]
@@ -13,9 +13,9 @@ async fn main() {
 
 async fn run() -> anyhow::Result<()> {
     run_game_server_with_cli(
-        "landlord",
+        "shenyang_mahjong",
         Duration::from_secs(120),
-        LandlordGameHandler::default(),
+        ShenyangMahjongGameHandler::default(),
     )
     .await
 }
