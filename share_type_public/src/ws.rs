@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use typeshare::typeshare;
 
-use crate::r#const::WsResponseCode;
+use crate::{GameParam, r#const::WsResponseCode};
 
 /// 首个 JOIN 建房后的房主参数响应，以及 SWAP 成房主时的响应。
 #[typeshare]
@@ -29,6 +29,7 @@ pub struct WsJoinRequest {
 pub struct WsJoinResponse {
     pub current_configs: HashMap<String, i32>,
     pub existing_members: Vec<WsMemberInfo>,
+    pub param_descriptions: Option<HashMap<String, GameParam>>,
     pub rejoin_data: Option<WsReJoinResponse>,
 }
 

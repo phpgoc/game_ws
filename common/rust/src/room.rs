@@ -435,6 +435,11 @@ impl RoomService {
                         share_type_public::WsJoinResponse {
                             current_configs: entry.configs.clone(),
                             existing_members,
+                            param_descriptions: if position == 0 {
+                                Some(entry.param_descriptions.clone())
+                            } else {
+                                None
+                            },
                             rejoin_data: None,
                         },
                         &mut dispatch,
@@ -520,6 +525,11 @@ impl RoomService {
                 share_type_public::WsJoinResponse {
                     current_configs: entry.configs.clone(),
                     existing_members,
+                    param_descriptions: if position == 0 {
+                        Some(entry.param_descriptions.clone())
+                    } else {
+                        None
+                    },
                     rejoin_data: None,
                 },
                 &mut dispatch,
@@ -610,6 +620,11 @@ impl RoomService {
                 share_type_public::WsJoinResponse {
                     current_configs: entry.configs.clone(),
                     existing_members,
+                    param_descriptions: if position == 0 {
+                        Some(entry.param_descriptions.clone())
+                    } else {
+                        None
+                    },
                     rejoin_data: None,
                 },
                 &mut dispatch,
