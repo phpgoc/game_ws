@@ -23,6 +23,8 @@ use crate::{
 };
 
 pub trait GameHandler: Send + 'static {
+    fn game_id(&self) -> share_type_public::GameId;
+
     fn after_common_request(
         &mut self,
         _room_service: &mut RoomService,
@@ -151,8 +153,11 @@ where
             } else {
                 false
             };
+            let game_id = handler.game_id();
             if let Some(mut dispatch) =
-                room.handle_common_request(session_id, &request, || handler.build_room_settings())
+                room.handle_common_request(session_id, &request, game_id, || {
+                    handler.build_room_settings()
+                })
             {
                 // 首个 JOIN 建房成功后，挂载游戏态，确保后续逻辑走具体游戏状态。
                 if creates_room_on_join {

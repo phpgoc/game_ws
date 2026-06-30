@@ -7,6 +7,7 @@ pub mod ws;
 pub use common::CommonEvent;
 pub use common::CommonResponse;
 pub use common::CommonWithoutDataEvent;
+pub use r#const::GameId;
 pub use r#const::Routes;
 pub use r#const::WsCode;
 pub use r#const::WsResponseCode;

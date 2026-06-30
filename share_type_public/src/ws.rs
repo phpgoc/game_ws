@@ -2,7 +2,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use typeshare::typeshare;
 
-use crate::{GameParam, r#const::WsResponseCode};
+use crate::{
+    GameParam,
+    r#const::{GameId, WsResponseCode},
+};
 
 /// 首个 JOIN 建房后的房主参数响应，以及 SWAP 成房主时的响应。
 #[typeshare]
@@ -18,6 +21,8 @@ pub struct WsCreateResponse {
 pub struct WsJoinRequest {
     pub name: String,
     pub password: String,
+    #[serde(default)]
+    pub game_id: GameId,
     /// 头像 URL（官方为 http 开头的全路径，非官方可为 / 开头的相对路径）。
     #[serde(default)]
     pub avatar_url: String,

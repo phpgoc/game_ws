@@ -3,6 +3,45 @@ use typeshare::typeshare;
 
 #[typeshare]
 #[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
+#[allow(non_camel_case_types)]
+pub enum GameId {
+    ALL = 0,
+    LANDLORD = 1,
+    SHENYANG_MAHJONG = 2,
+    TEXAS_HOLD_EM = 3,
+    UPGRADE = 4,
+}
+
+impl Default for GameId {
+    fn default() -> Self {
+        Self::ALL
+    }
+}
+
+impl From<GameId> for i32 {
+    fn from(value: GameId) -> Self {
+        value as i32
+    }
+}
+
+impl TryFrom<i32> for GameId {
+    type Error = ();
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::ALL),
+            1 => Ok(Self::LANDLORD),
+            2 => Ok(Self::SHENYANG_MAHJONG),
+            3 => Ok(Self::TEXAS_HOLD_EM),
+            4 => Ok(Self::UPGRADE),
+            _ => Err(()),
+        }
+    }
+}
+
+#[typeshare]
+#[repr(i32)]
 #[derive(Debug, Clone, Copy, Serialize_repr, Deserialize_repr)]
 #[allow(non_camel_case_types)]
 pub enum Routes {
@@ -66,6 +105,7 @@ pub enum WsResponseCode {
     JOINED = 201,
     ERROR_FORMAT = 400,
     NOT_LOGIN = 401,
+    WRONG_GAME = 402,
     NO_PERMISSION = 403,
     NOT_IN_RANGE = 410,
 }

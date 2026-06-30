@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use share_type_public::games::landlord::{WsCallLandlordEvent, WsCallLandlordRequest, WsPlayEvent};
-use share_type_public::{LandlordRoutes, Routes, WsCode, WsReJoinResponse, WsResponseCode};
+use share_type_public::{GameId, LandlordRoutes, Routes, WsCode, WsReJoinResponse, WsResponseCode};
 use tokio::sync::Mutex;
 use ws_common::{
     ClientRequest, Dispatch, GameHandler, OutboundPayload, RequestResponse, RoomService, SessionId,
@@ -353,6 +353,10 @@ impl Default for LandlordGameHandler {
 }
 
 impl GameHandler for LandlordGameHandler {
+    fn game_id(&self) -> GameId {
+        GameId::LANDLORD
+    }
+
     fn after_common_request(
         &mut self,
         room_service: &mut RoomService,

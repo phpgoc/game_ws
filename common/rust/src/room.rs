@@ -4,8 +4,8 @@ use crate::game_setting::GameSettings;
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use share_type_public::{
-    CommonEvent, GameParam, Routes, WsCode, WsJoinRequest, WsMessageRequest, WsPositionEvent,
-    WsRequest, WsResponseCode, WsSwapPositionPayload, WsWithoutDataResponse,
+    CommonEvent, GameId, GameParam, Routes, WsCode, WsJoinRequest, WsMessageRequest,
+    WsPositionEvent, WsRequest, WsResponseCode, WsSwapPositionPayload, WsWithoutDataResponse,
     ws::WsResponse,
     ws::{WsMessageEvent, WsNameEvent},
 };
@@ -322,6 +322,7 @@ impl RoomService {
         &mut self,
         session_id: SessionId,
         request: &ClientRequest,
+        game_id: GameId,
         room_settings_builder: F,
     ) -> Option<Dispatch>
     where
@@ -332,6 +333,7 @@ impl RoomService {
             r if r == Routes::JOIN as i32 => Some(self.handle_join_request(
                 session_id,
                 request.data.clone(),
+                game_id,
                 room_settings_builder,
             )),
             r if r == Routes::QUIT as i32 => Some(self.handle_quit_request(session_id)),
@@ -374,6 +376,7 @@ impl RoomService {
         &mut self,
         session_id: SessionId,
         data: Value,
+        game_id: GameId,
         room_settings_builder: F,
     ) -> Dispatch
     where
@@ -389,6 +392,13 @@ impl RoomService {
         let password = payload.password;
         let name = payload.name;
         let avatar_url = payload.avatar_url;
+        if payload.game_id != game_id {
+            return self.error_response(
+                session_id,
+                Routes::JOIN as i32,
+                WsResponseCode::WRONG_GAME,
+            );
+        }
         if password.is_empty() || name.is_empty() {
             return self.error_response(
                 session_id,
@@ -1300,7 +1310,9 @@ impl RoomService {
 mod tests {
     use std::collections::{HashMap, HashSet};
 
-    use share_type_public::{GameParam, GameParamRange, Routes, WsCode, WsRequest, WsResponseCode};
+    use share_type_public::{
+        GameId, GameParam, GameParamRange, Routes, WsCode, WsRequest, WsResponseCode,
+    };
 
     use super::{Dispatch, OutboundPayload, RequestResponse, RoomService};
     use crate::game_setting::GameSettings;
@@ -1315,16 +1327,18 @@ mod tests {
             1,
             &WsRequest {
                 route: Routes::JOIN as i32,
-                data: serde_json::json!({"name":"u1","password":"p1"}),
+                data: serde_json::json!({"name":"u1","password":"p1","game_id":GameId::LANDLORD as i32}),
             },
+            GameId::LANDLORD,
             settings,
         );
         let _ = service.handle_common_request(
             2,
             &WsRequest {
                 route: Routes::JOIN as i32,
-                data: serde_json::json!({"name":"u2","password":"p1"}),
+                data: serde_json::json!({"name":"u2","password":"p1","game_id":GameId::LANDLORD as i32}),
             },
+            GameId::LANDLORD,
             settings,
         );
         let _ = service.disconnect(2);
@@ -1341,8 +1355,9 @@ mod tests {
                 2,
                 &WsRequest {
                     route: Routes::JOIN as i32,
-                    data: serde_json::json!({"name":"u2","password":"p1"}),
+                    data: serde_json::json!({"name":"u2","password":"p1","game_id":GameId::LANDLORD as i32}),
                 },
+                GameId::LANDLORD,
                 settings,
             )
             .expect("join common");
@@ -1367,16 +1382,18 @@ mod tests {
             1,
             &WsRequest {
                 route: Routes::JOIN as i32,
-                data: serde_json::json!({"name":"u1","password":"p1"}),
+                data: serde_json::json!({"name":"u1","password":"p1","game_id":GameId::LANDLORD as i32}),
             },
+            GameId::LANDLORD,
             settings,
         );
         let _ = service.handle_common_request(
             2,
             &WsRequest {
                 route: Routes::JOIN as i32,
-                data: serde_json::json!({"name":"u2","password":"p1"}),
+                data: serde_json::json!({"name":"u2","password":"p1","game_id":GameId::LANDLORD as i32}),
             },
+            GameId::LANDLORD,
             settings,
         );
         let _ = service.handle_common_request(
@@ -1385,6 +1402,7 @@ mod tests {
                 route: Routes::DISBAND as i32,
                 data: serde_json::json!({}),
             },
+            GameId::LANDLORD,
             settings,
         );
 
@@ -1393,8 +1411,9 @@ mod tests {
                 3,
                 &WsRequest {
                     route: Routes::JOIN as i32,
-                    data: serde_json::json!({"name":"u3","password":"p1"}),
+                    data: serde_json::json!({"name":"u3","password":"p1","game_id":GameId::LANDLORD as i32}),
                 },
+                GameId::LANDLORD,
                 settings,
             )
             .expect("join common");
@@ -1421,16 +1440,18 @@ mod tests {
             1,
             &WsRequest {
                 route: Routes::JOIN as i32,
-                data: serde_json::json!({"name":"u1","password":"p1"}),
+                data: serde_json::json!({"name":"u1","password":"p1","game_id":GameId::LANDLORD as i32}),
             },
+            GameId::LANDLORD,
             settings,
         );
         let _ = service.handle_common_request(
             2,
             &WsRequest {
                 route: Routes::JOIN as i32,
-                data: serde_json::json!({"name":"u2","password":"p1"}),
+                data: serde_json::json!({"name":"u2","password":"p1","game_id":GameId::LANDLORD as i32}),
             },
+            GameId::LANDLORD,
             settings,
         );
 
@@ -1451,8 +1472,9 @@ mod tests {
                 3,
                 &WsRequest {
                     route: Routes::JOIN as i32,
-                    data: serde_json::json!({"name":"u1","password":"p1"}),
+                    data: serde_json::json!({"name":"u1","password":"p1","game_id":GameId::LANDLORD as i32}),
                 },
+                GameId::LANDLORD,
                 settings,
             )
             .expect("join common");
@@ -1493,8 +1515,9 @@ mod tests {
             1,
             &WsRequest {
                 route: Routes::JOIN as i32,
-                data: serde_json::json!({"name":"u1","password":"p1"}),
+                data: serde_json::json!({"name":"u1","password":"p1","game_id":GameId::LANDLORD as i32}),
             },
+            GameId::LANDLORD,
             settings,
         );
 
@@ -1503,8 +1526,9 @@ mod tests {
                 1,
                 &WsRequest {
                     route: Routes::JOIN as i32,
-                    data: serde_json::json!({"name":"u1","password":"p1"}),
+                    data: serde_json::json!({"name":"u1","password":"p1","game_id":GameId::LANDLORD as i32}),
                 },
+                GameId::LANDLORD,
                 settings,
             )
             .expect("join common");
@@ -1521,8 +1545,9 @@ mod tests {
                 1,
                 &WsRequest {
                     route: Routes::JOIN as i32,
-                    data: serde_json::json!({"name":"u1","password":"p2"}),
+                    data: serde_json::json!({"name":"u1","password":"p2","game_id":GameId::LANDLORD as i32}),
                 },
+                GameId::LANDLORD,
                 settings,
             )
             .expect("join common");
@@ -1551,8 +1576,9 @@ mod tests {
             1,
             &WsRequest {
                 route: Routes::JOIN as i32,
-                data: serde_json::json!({"name":"u1","password":"p1"}),
+                data: serde_json::json!({"name":"u1","password":"p1","game_id":GameId::LANDLORD as i32}),
             },
+            GameId::LANDLORD,
             settings,
         );
 
@@ -1561,8 +1587,9 @@ mod tests {
                 2,
                 &WsRequest {
                     route: Routes::JOIN as i32,
-                    data: serde_json::json!({"name":"u1","password":"p1"}),
+                    data: serde_json::json!({"name":"u1","password":"p1","game_id":GameId::LANDLORD as i32}),
                 },
+                GameId::LANDLORD,
                 settings,
             )
             .expect("join common");
@@ -1578,16 +1605,18 @@ mod tests {
             2,
             &WsRequest {
                 route: Routes::JOIN as i32,
-                data: serde_json::json!({"name":"u2","password":"p1"}),
+                data: serde_json::json!({"name":"u2","password":"p1","game_id":GameId::LANDLORD as i32}),
             },
+            GameId::LANDLORD,
             settings,
         );
         let _ = service.handle_common_request(
             3,
             &WsRequest {
                 route: Routes::JOIN as i32,
-                data: serde_json::json!({"name":"u3","password":"p1"}),
+                data: serde_json::json!({"name":"u3","password":"p1","game_id":GameId::LANDLORD as i32}),
             },
+            GameId::LANDLORD,
             settings,
         );
         let overflow = service
@@ -1595,8 +1624,9 @@ mod tests {
                 4,
                 &WsRequest {
                     route: Routes::JOIN as i32,
-                    data: serde_json::json!({"name":"u4","password":"p1"}),
+                    data: serde_json::json!({"name":"u4","password":"p1","game_id":GameId::LANDLORD as i32}),
                 },
+                GameId::LANDLORD,
                 settings,
             )
             .expect("join common");
@@ -1610,6 +1640,37 @@ mod tests {
     }
 
     #[test]
+    fn join_rejects_wrong_game_id() {
+        let mut service = RoomService::default();
+        service.connect(1);
+
+        let dispatch = service
+            .handle_common_request(
+                1,
+                &WsRequest {
+                    route: Routes::JOIN as i32,
+                    data: serde_json::json!({
+                        "name": "u1",
+                        "password": "p1",
+                        "game_id": GameId::SHENYANG_MAHJONG as i32
+                    }),
+                },
+                GameId::LANDLORD,
+                settings,
+            )
+            .expect("join common");
+
+        let wrong_game = dispatch.messages.iter().any(|item| match &item.payload {
+            OutboundPayload::Response(RequestResponse::WithoutData(resp)) => {
+                item.recipient == 1 && resp.code as i32 == WsResponseCode::WRONG_GAME as i32
+            }
+            _ => false,
+        });
+        assert!(wrong_game);
+        assert!(service.room_key_of(1).is_none());
+    }
+
+    #[test]
     fn message_pause_resume_go_to_other_only() {
         let mut service = RoomService::default();
         service.connect(1);
@@ -1620,8 +1681,9 @@ mod tests {
             1,
             &WsRequest {
                 route: Routes::JOIN as i32,
-                data: serde_json::json!({"name":"u1","password":"p1"}),
+                data: serde_json::json!({"name":"u1","password":"p1","game_id":GameId::LANDLORD as i32}),
             },
+            GameId::LANDLORD,
             settings,
         );
         let join_dispatch = service
@@ -1629,8 +1691,9 @@ mod tests {
                 2,
                 &WsRequest {
                     route: Routes::JOIN as i32,
-                    data: serde_json::json!({"name":"u2","password":"p1"}),
+                    data: serde_json::json!({"name":"u2","password":"p1","game_id":GameId::LANDLORD as i32}),
                 },
+                GameId::LANDLORD,
                 settings,
             )
             .expect("join common");
@@ -1663,8 +1726,9 @@ mod tests {
             3,
             &WsRequest {
                 route: Routes::JOIN as i32,
-                data: serde_json::json!({"name":"u3","password":"p2"}),
+                data: serde_json::json!({"name":"u3","password":"p2","game_id":GameId::LANDLORD as i32}),
             },
+            GameId::LANDLORD,
             settings,
         );
 
@@ -1675,6 +1739,7 @@ mod tests {
                     route: Routes::MESSAGE as i32,
                     data: serde_json::json!({"message":"hi"}),
                 },
+                GameId::LANDLORD,
                 settings,
             )
             .expect("message common");
@@ -1690,6 +1755,7 @@ mod tests {
                     route: Routes::PAUSE as i32,
                     data: serde_json::json!({}),
                 },
+                GameId::LANDLORD,
                 settings,
             )
             .expect("pause common");
@@ -1705,6 +1771,7 @@ mod tests {
                     route: Routes::RESUME as i32,
                     data: serde_json::json!({}),
                 },
+                GameId::LANDLORD,
                 settings,
             )
             .expect("resume common");
@@ -1724,16 +1791,18 @@ mod tests {
             1,
             &WsRequest {
                 route: Routes::JOIN as i32,
-                data: serde_json::json!({"name":"u1","password":"p1"}),
+                data: serde_json::json!({"name":"u1","password":"p1","game_id":GameId::LANDLORD as i32}),
             },
+            GameId::LANDLORD,
             settings,
         );
         let _ = service.handle_common_request(
             2,
             &WsRequest {
                 route: Routes::JOIN as i32,
-                data: serde_json::json!({"name":"u2","password":"p1"}),
+                data: serde_json::json!({"name":"u2","password":"p1","game_id":GameId::LANDLORD as i32}),
             },
+            GameId::LANDLORD,
             settings,
         );
 
@@ -1744,6 +1813,7 @@ mod tests {
                     route: Routes::RESUME as i32,
                     data: serde_json::json!({}),
                 },
+                GameId::LANDLORD,
                 settings,
             )
             .expect("resume common");
@@ -1764,6 +1834,7 @@ mod tests {
                 route: Routes::PAUSE as i32,
                 data: serde_json::json!({}),
             },
+            GameId::LANDLORD,
             settings,
         );
         let pause_again = service
@@ -1773,6 +1844,7 @@ mod tests {
                     route: Routes::PAUSE as i32,
                     data: serde_json::json!({}),
                 },
+                GameId::LANDLORD,
                 settings,
             )
             .expect("pause common");
@@ -1797,24 +1869,27 @@ mod tests {
             1,
             &WsRequest {
                 route: Routes::JOIN as i32,
-                data: serde_json::json!({"name":"u1","password":"p1"}),
+                data: serde_json::json!({"name":"u1","password":"p1","game_id":GameId::LANDLORD as i32}),
             },
+            GameId::LANDLORD,
             settings,
         );
         let _ = service.handle_common_request(
             2,
             &WsRequest {
                 route: Routes::JOIN as i32,
-                data: serde_json::json!({"name":"u2","password":"p1"}),
+                data: serde_json::json!({"name":"u2","password":"p1","game_id":GameId::LANDLORD as i32}),
             },
+            GameId::LANDLORD,
             settings,
         );
         let _ = service.handle_common_request(
             3,
             &WsRequest {
                 route: Routes::JOIN as i32,
-                data: serde_json::json!({"name":"u3","password":"p1"}),
+                data: serde_json::json!({"name":"u3","password":"p1","game_id":GameId::LANDLORD as i32}),
             },
+            GameId::LANDLORD,
             settings,
         );
 
@@ -1824,6 +1899,7 @@ mod tests {
                 route: Routes::QUIT as i32,
                 data: serde_json::json!({}),
             },
+            GameId::LANDLORD,
             settings,
         );
 
@@ -1832,8 +1908,9 @@ mod tests {
                 4,
                 &WsRequest {
                     route: Routes::JOIN as i32,
-                    data: serde_json::json!({"name":"u4","password":"p1"}),
+                    data: serde_json::json!({"name":"u4","password":"p1","game_id":GameId::LANDLORD as i32}),
                 },
+                GameId::LANDLORD,
                 settings,
             )
             .expect("join common");

@@ -8,7 +8,7 @@ use share_type_public::games::shenyang_mahjong::{
     WsShenyangMahjongPlayRequest, WsShenyangMahjongPlayerSnapshot,
     WsShenyangMahjongSettlementEvent,
 };
-use share_type_public::{Routes, WsCode, WsResponseCode};
+use share_type_public::{GameId, Routes, WsCode, WsResponseCode};
 use tokio::sync::Mutex;
 use ws_common::{
     ClientRequest, Delivery, Dispatch, GameHandler, OutboundPayload, RequestResponse, RoomService,
@@ -869,6 +869,10 @@ impl Default for ShenyangMahjongGameHandler {
 }
 
 impl GameHandler for ShenyangMahjongGameHandler {
+    fn game_id(&self) -> GameId {
+        GameId::SHENYANG_MAHJONG
+    }
+
     fn after_common_request(
         &mut self,
         _room_service: &mut RoomService,
