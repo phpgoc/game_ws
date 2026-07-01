@@ -873,7 +873,7 @@ pub(crate) fn start_game_loop(
                             .await;
                         }
                         LandlordPhase::Play => {
-                            let ended = handle_play_phase(
+                            let _ended = handle_play_phase(
                                 &state,
                                 &sorted_positions,
                                 &configs,
@@ -882,9 +882,6 @@ pub(crate) fn start_game_loop(
                                 &senders,
                             )
                             .await;
-                            if ended {
-                                break;
-                            }
                         }
                         _ => {}
                     }
