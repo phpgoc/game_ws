@@ -48,6 +48,7 @@ pub(crate) fn advance_to_next_turn(
             dispatch,
             state.phase,
             state.current_position,
+            state.turn_countdown(),
         );
         return;
     }
@@ -59,6 +60,7 @@ pub(crate) fn advance_to_next_turn(
         dispatch,
         ShenyangMahjongPhase::Settlement,
         state.current_position,
+        0,
     );
     if let Some(event) = build_settlement_event(state) {
         push_room_event(
@@ -231,6 +233,7 @@ pub(crate) fn push_phase_change(
     dispatch: &mut Dispatch,
     phase: ShenyangMahjongPhase,
     current_position: usize,
+    turn_countdown: u32,
 ) {
     push_room_event(
         room_service,
@@ -240,6 +243,7 @@ pub(crate) fn push_phase_change(
         json!({
             "phase": phase as i32,
             "position": current_position as i32,
+            "turn_countdown": turn_countdown as i32,
         }),
     );
 }
@@ -261,6 +265,7 @@ pub(crate) fn push_private_deal_events(
                 dealer_position: state.dealer_position as i32,
                 current_position: state.current_position as i32,
                 wall_count: state.wall_count() as i32,
+                turn_countdown: state.turn_countdown() as i32,
             },
         );
     }
@@ -357,6 +362,7 @@ pub(crate) fn resolve_claim_window(
             dispatch,
             ShenyangMahjongPhase::Settlement,
             state.current_position,
+            0,
         );
         if let Some(event) = build_settlement_event(state) {
             push_room_event(
@@ -407,6 +413,7 @@ pub(crate) fn resolve_claim_window(
                 dispatch,
                 state.phase,
                 state.current_position,
+                state.turn_countdown(),
             );
         }
         return;
@@ -450,6 +457,7 @@ pub(crate) fn resolve_claim_window(
                 dispatch,
                 state.phase,
                 state.current_position,
+                state.turn_countdown(),
             );
         }
         return;
@@ -722,6 +730,7 @@ impl ShenyangMahjongGameHandler {
                             &mut dispatch,
                             ShenyangMahjongPhase::Settlement,
                             state.current_position,
+                            0,
                         );
                         if let Some(event) = build_settlement_event(&state) {
                             push_room_event(

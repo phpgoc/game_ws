@@ -320,13 +320,14 @@ async fn handle_call_landlord_phase(
         ));
     }
     if let Some(position) = next_turn_position {
+        let countdown = state.lock().unwrap().turn_countdown();
         dispatch.extend(dispatch_all(
             room_key,
             WsCode::CHANGE_DEAL as i32,
-            serde_json::to_value(WsPositionEvent {
-                position: position as i32,
-            })
-            .unwrap_or_default(),
+            serde_json::json!({
+                "position": position as i32,
+                "turn_countdown": countdown as i32,
+            }),
             &rs,
         ));
     }
@@ -405,13 +406,14 @@ async fn handle_play_phase(
 
     if let Some(position) = next_turn_position {
         let rs = room_service.lock().await;
+        let countdown = state.lock().unwrap().turn_countdown();
         let dispatch = dispatch_all(
             room_key,
             WsCode::CHANGE_DEAL as i32,
-            serde_json::to_value(WsPositionEvent {
-                position: position as i32,
-            })
-            .unwrap_or_default(),
+            serde_json::json!({
+                "position": position as i32,
+                "turn_countdown": countdown as i32,
+            }),
             &rs,
         );
         drop(rs);
@@ -623,10 +625,10 @@ async fn handle_start_phase(
     dispatch.extend(dispatch_all(
         room_key,
         WsCode::CHANGE_DEAL as i32,
-        serde_json::to_value(WsPositionEvent {
-            position: first_call_position as i32,
-        })
-        .unwrap_or_default(),
+        serde_json::json!({
+            "position": first_call_position as i32,
+            "turn_countdown": state.lock().unwrap().turn_countdown() as i32,
+        }),
         &rs,
     ));
     drop(rs);

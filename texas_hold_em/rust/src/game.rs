@@ -82,6 +82,7 @@ impl TexasHoldEmGameHandler {
             .copied()
             .unwrap_or(10)
             .max(small_blind + 1);
+        let play_time = configs.get("play_time").copied().unwrap_or(20).max(1) as u32;
 
         let mut state = TexasHoldEmGameState::from_common(Arc::clone(&common));
         if state
@@ -94,6 +95,7 @@ impl TexasHoldEmGameHandler {
                 WsResponseCode::NOT_IN_RANGE,
             );
         }
+        state.set_turn_countdown(play_time);
         let state = Arc::new(std::sync::Mutex::new(state));
         room_service.set_room_game_state(
             &room_key,
@@ -167,6 +169,14 @@ impl TexasHoldEmGameHandler {
                 );
             };
             s.set_action_received(true);
+            let play_time = room_service
+                .get_room_configs(&room_key)
+                .unwrap_or_default()
+                .get("play_time")
+                .copied()
+                .unwrap_or(20)
+                .max(1) as u32;
+            s.set_turn_countdown(play_time);
             event
         };
 
@@ -246,6 +256,7 @@ impl TexasHoldEmGameHandler {
                 min_raise: s.min_raise,
                 current_bet: s.current_bet,
                 pot: s.pot,
+                turn_countdown: s.turn_countdown() as i32,
             },
             dispatch,
         );

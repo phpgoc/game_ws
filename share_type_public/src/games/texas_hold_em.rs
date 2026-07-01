@@ -108,6 +108,7 @@ pub struct WsTexasHoldEmTurnEvent {
     pub min_raise: i32,
     pub current_bet: i32,
     pub pot: i32,
+    pub turn_countdown: i32,
 }
 
 impl Display for TexasHoldEmPhase {

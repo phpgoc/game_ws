@@ -67,6 +67,10 @@ pub(crate) fn start_game_loop(
             .unwrap_or_default();
 
         loop {
+            if state.lock().unwrap().is_paused() {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                continue;
+            }
             let phase = { state.lock().unwrap().phase };
             match phase {
                 ShenyangMahjongPhase::Start => {
@@ -89,6 +93,7 @@ pub(crate) fn start_game_loop(
                             &mut dispatch,
                             guard.phase,
                             guard.current_position,
+                            guard.turn_countdown(),
                         );
                         push_private_deal_events(&room, &room_key, &guard, &mut dispatch);
                         push_room_event(
@@ -96,15 +101,19 @@ pub(crate) fn start_game_loop(
                             &room_key,
                             &mut dispatch,
                             WsCode::CHANGE_DEAL as i32,
-                            WsPositionEvent {
-                                position: guard.current_position as i32,
-                            },
+                            serde_json::json!({
+                                "position": guard.current_position as i32,
+                                "turn_countdown": guard.turn_countdown() as i32,
+                            }),
                         );
                     }
                     deliver(dispatch, &senders).await;
                 }
                 ShenyangMahjongPhase::Play => {
                     tokio::time::sleep(Duration::from_secs(1)).await;
+                    if state.lock().unwrap().is_paused() {
+                        continue;
+                    }
 
                     let mut should_resolve_claims = false;
                     let mut should_auto_discard = None;
@@ -251,6 +260,7 @@ pub(crate) fn start_game_loop(
                             &mut dispatch,
                             guard.phase,
                             guard.current_position,
+                            guard.turn_countdown(),
                         );
                     }
                     deliver(dispatch, &senders).await;

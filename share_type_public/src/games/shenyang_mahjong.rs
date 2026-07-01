@@ -55,6 +55,7 @@ pub struct WsShenyangMahjongDealEvent {
     pub dealer_position: i32,
     pub current_position: i32,
     pub wall_count: i32,
+    pub turn_countdown: i32,
 }
 
 #[typeshare]

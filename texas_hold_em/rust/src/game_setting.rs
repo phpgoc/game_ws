@@ -30,6 +30,14 @@ pub fn build_texas_hold_em_settings() -> (GameSettings, HashMap<String, GamePara
             }),
         ),
         (
+            "play_time".into(),
+            GameParam::Range(GameParamRange {
+                default: 20,
+                min: 5,
+                max: 120,
+            }),
+        ),
+        (
             "start_time".into(),
             GameParam::Range(GameParamRange {
                 default: 1,

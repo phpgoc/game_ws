@@ -224,6 +224,14 @@ impl TexasHoldEmGameState {
         self.base.lock().unwrap().action_received = received;
     }
 
+    pub fn set_turn_countdown(&mut self, countdown: u32) {
+        self.base.lock().unwrap().turn_countdown = countdown;
+    }
+
+    pub fn turn_countdown(&self) -> u32 {
+        self.base.lock().unwrap().turn_countdown
+    }
+
     pub fn player_name(&self, position: usize) -> String {
         self.base.lock().unwrap().player_name(position)
     }

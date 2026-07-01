@@ -1111,6 +1111,7 @@ impl RoomService {
             if let Some(pos) = position {
                 entry.state.remove_player(pos);
             }
+            entry.state.set_turn_countdown(0);
             recipients.extend(entry.state.players().values().map(|(sid, _)| *sid));
             entry.state.request_stop();
             // 如果房间里没人了，删除房间
