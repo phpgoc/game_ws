@@ -1,7 +1,6 @@
-use std::{process, time::Duration};
+use std::process;
 
-use landlord::game::LandlordGameHandler;
-use ws_common::run_game_server_with_cli;
+use landlord::server::run_landlord_server_with_cli;
 
 #[tokio::main]
 async fn main() {
@@ -12,10 +11,5 @@ async fn main() {
 }
 
 async fn run() -> anyhow::Result<()> {
-    run_game_server_with_cli(
-        "landlord",
-        Duration::from_secs(120),
-        LandlordGameHandler::default(),
-    )
-    .await
+    run_landlord_server_with_cli().await
 }

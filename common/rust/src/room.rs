@@ -1057,7 +1057,10 @@ impl RoomService {
                     WsResponseCode::NOT_LOGIN,
                 );
             };
-            if entry.state.is_ai_position(pos_a) || entry.state.is_ai_position(pos_b) {
+            if !entry.state.can_accept_players()
+                || entry.state.is_ai_position(pos_a)
+                || entry.state.is_ai_position(pos_b)
+            {
                 return self.error_response(
                     session_id,
                     Routes::SWAP as i32,
@@ -1573,7 +1576,10 @@ impl RoomService {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{HashMap, HashSet};
+    use std::{
+        collections::{HashMap, HashSet},
+        sync::{Arc, Mutex},
+    };
 
     use share_type_public::{
         GameId, GameParam, GameParamRange, Routes, WsCode, WsRequest, WsResponseCode,
@@ -1581,6 +1587,21 @@ mod tests {
 
     use super::{Dispatch, OutboundPayload, RequestResponse, RoomService};
     use crate::game_setting::GameSettings;
+    use crate::game_state::{CommonGameState, GameState};
+
+    struct NoAcceptState {
+        common: Arc<Mutex<CommonGameState>>,
+    }
+
+    impl GameState for NoAcceptState {
+        fn can_accept_players(&self) -> bool {
+            false
+        }
+
+        fn shared_common_state(&self) -> Arc<Mutex<CommonGameState>> {
+            Arc::clone(&self.common)
+        }
+    }
 
     #[test]
     fn clearing_game_state_preserves_room_members() {

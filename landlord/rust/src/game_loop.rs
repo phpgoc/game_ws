@@ -12,6 +12,7 @@ use share_type_public::{
 use tokio::sync::Mutex;
 use ws_common::{Delivery, OutboundPayload, RoomService, SessionSenders, dlog, tracing};
 
+use crate::core::play::card_rank;
 use crate::game_state::LandlordLoopState;
 use crate::play_validator::validate_play_request;
 
@@ -114,14 +115,6 @@ fn build_auto_candidates(hand: &[i32]) -> Vec<Vec<i32>> {
     }
 
     candidates
-}
-
-fn card_rank(card: i32) -> u8 {
-    match card {
-        53 => 16,
-        54 => 17,
-        _ => (((card - 1) % 13) + 3) as u8,
-    }
 }
 
 fn choose_auto_play(state: &LandlordLoopState, position: usize) -> Vec<i32> {
