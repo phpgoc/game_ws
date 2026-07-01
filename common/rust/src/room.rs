@@ -107,6 +107,23 @@ impl RoomService {
         }
     }
 
+    pub fn reset_room_common_state_for_new_game(
+        &mut self,
+        room_key: &str,
+    ) -> Option<Arc<std::sync::Mutex<crate::game_state::CommonGameState>>> {
+        let entry = self.rooms.get_mut(room_key)?;
+        let current = entry.state.shared_common_state();
+        let current = current.lock().unwrap();
+        let mut next = crate::game_state::CommonGameState::new();
+        next.players = current.players.clone();
+        next.avatars = current.avatars.clone();
+        let next = Arc::new(std::sync::Mutex::new(next));
+        entry.state = Box::new(crate::game_state::SharedGameState::from_common(Arc::clone(
+            &next,
+        )));
+        Some(next)
+    }
+
     pub fn connect(&mut self, session_id: SessionId) {
         self.sessions.entry(session_id).or_default();
     }

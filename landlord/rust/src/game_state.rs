@@ -31,6 +31,8 @@ pub struct LandlordLoopState {
     pub landlord_position: Option<usize>,
     /// 当前最高叫分: 0 = 未叫, 1/2/3
     pub score: u32,
+    /// 累计分数，按座位保存。只属于斗地主运行态，用于断线重连恢复显示。
+    pub player_scores: HashMap<usize, i32>,
     /// 叫分记录: (position, score)
     pub call_history: Vec<(usize, u8)>,
     pub last_play_position: usize,
@@ -106,6 +108,7 @@ impl LandlordLoopState {
             hidden_cards: Vec::new(),
             landlord_position: None,
             score: 0,
+            player_scores: HashMap::new(),
             call_history: Vec::new(),
             last_play_position: call_position,
             last_play: Vec::new(),
@@ -157,6 +160,28 @@ impl LandlordLoopState {
         self.set_action_received(false);
         self.set_turn_countdown(0);
         self.clear_away();
+    }
+
+    pub fn apply_settlement_scores(&mut self, is_landlord_win: bool) {
+        let Some(landlord_position) = self.landlord_position else {
+            return;
+        };
+        let base_score = self.score.max(1) as i32;
+        for position in self.players_snapshot().keys().copied() {
+            let is_landlord = position == landlord_position;
+            let delta = if is_landlord {
+                if is_landlord_win {
+                    base_score * 2
+                } else {
+                    base_score * -2
+                }
+            } else if is_landlord_win {
+                -base_score
+            } else {
+                base_score
+            };
+            *self.player_scores.entry(position).or_insert(0) += delta;
+        }
     }
 
     pub fn request_stop(&self) {

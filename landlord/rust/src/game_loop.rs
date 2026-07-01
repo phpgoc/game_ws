@@ -238,6 +238,9 @@ async fn handle_call_landlord_phase(
     room_service: &Arc<Mutex<RoomService>>,
     senders: &SessionSenders,
 ) {
+    if loop_should_stop(state) {
+        return;
+    }
     let (open_hidden_event, next_turn_position, phase_changed): (
         Option<(String, Vec<i32>)>,
         Option<usize>,
@@ -352,6 +355,9 @@ async fn handle_play_phase(
     room_service: &Arc<Mutex<RoomService>>,
     senders: &SessionSenders,
 ) -> bool {
+    if loop_should_stop(state) {
+        return true;
+    }
     let mut game_over = false;
     let mut winner_pos = None;
     let mut next_turn_position: Option<usize> = None;
@@ -476,8 +482,15 @@ async fn handle_play_phase(
         }
 
         // Broadcast game over
-        let landlord = state.lock().unwrap().landlord_position;
-        let is_landlord_win = landlord.map(|lp| winner_pos == Some(lp)).unwrap_or(false);
+        let is_landlord_win = {
+            let mut s = state.lock().unwrap();
+            let is_win = s
+                .landlord_position
+                .map(|lp| winner_pos == Some(lp))
+                .unwrap_or(false);
+            s.apply_settlement_scores(is_win);
+            is_win
+        };
         dispatch.extend(dispatch_all(
             room_key,
             WsCode::GAME_OVER as i32,
@@ -506,18 +519,20 @@ async fn handle_settlement_phase(
     if settlement_should_stop(state) {
         return true;
     }
-    tokio::time::sleep(Duration::from_secs(fixed_wait_seconds(
-        configs,
-        "settlement_time",
-        5,
-    )))
-    .await;
+    if sleep_or_stop(
+        state,
+        Duration::from_secs(fixed_wait_seconds(configs, "settlement_time", 5)),
+    )
+    .await
+    {
+        return true;
+    }
     let (phase, position) = {
         let mut s = state.lock().unwrap();
         if s.phase != LandlordPhase::Settlement {
             return false;
         }
-        if s.players_snapshot().len() != 3 || s.has_disconnected_players() {
+        if s.stop_requested() || s.players_snapshot().len() != 3 || s.has_disconnected_players() {
             return true;
         }
         s.redeal();
@@ -554,7 +569,7 @@ async fn handle_start_phase(
 
     {
         let mut s = state.lock().unwrap();
-        if s.players_snapshot().len() != sorted_positions.len() {
+        if s.stop_requested() || s.players_snapshot().len() != sorted_positions.len() {
             return true;
         }
         if s.phase != LandlordPhase::Start {
@@ -589,16 +604,18 @@ async fn handle_start_phase(
     drop(rs);
     send_dispatch(dispatch, senders).await;
 
-    tokio::time::sleep(Duration::from_secs(fixed_wait_seconds(
-        configs,
-        "start_time",
-        1,
-    )))
-    .await;
+    if sleep_or_stop(
+        state,
+        Duration::from_secs(fixed_wait_seconds(configs, "start_time", 1)),
+    )
+    .await
+    {
+        return true;
+    }
 
     let (first_call_position, phase_payload) = {
         let mut s = state.lock().unwrap();
-        if s.players_snapshot().len() != sorted_positions.len() {
+        if s.stop_requested() || s.players_snapshot().len() != sorted_positions.len() {
             return true;
         }
         if s.phase != LandlordPhase::Start {
@@ -725,7 +742,28 @@ async fn send_dispatch(dispatch: Vec<Delivery>, senders: &SessionSenders) {
 
 fn settlement_should_stop(state: &Arc<std::sync::Mutex<LandlordLoopState>>) -> bool {
     let s = state.lock().unwrap();
-    s.players_snapshot().len() != 3 || s.has_disconnected_players()
+    s.stop_requested() || s.players_snapshot().len() != 3 || s.has_disconnected_players()
+}
+
+fn loop_should_stop(state: &Arc<std::sync::Mutex<LandlordLoopState>>) -> bool {
+    let s = state.lock().unwrap();
+    s.stop_requested() || s.players_snapshot().len() != 3
+}
+
+async fn sleep_or_stop(
+    state: &Arc<std::sync::Mutex<LandlordLoopState>>,
+    duration: Duration,
+) -> bool {
+    let mut remaining = duration.as_millis();
+    while remaining > 0 {
+        if loop_should_stop(state) {
+            return true;
+        }
+        let step = remaining.min(100) as u64;
+        tokio::time::sleep(Duration::from_millis(step)).await;
+        remaining -= u128::from(step);
+    }
+    loop_should_stop(state)
 }
 
 // ─── Game Loop ────────────────────────────────────────────────────────
@@ -760,7 +798,9 @@ pub(crate) fn start_game_loop(
             }
             let paused = { state.lock().unwrap().is_paused() };
             if paused {
-                tokio::time::sleep(Duration::from_secs(1)).await;
+                if sleep_or_stop(&state, Duration::from_secs(1)).await {
+                    break;
+                }
                 continue;
             }
 
@@ -803,7 +843,9 @@ pub(crate) fn start_game_loop(
                             !s.action_received()
                         };
                         if should_wait_tick {
-                            tokio::time::sleep(Duration::from_secs(1)).await;
+                            if sleep_or_stop(&state, Duration::from_secs(1)).await {
+                                break;
+                            }
                             if state.lock().unwrap().is_paused() {
                                 continue;
                             }
@@ -859,6 +901,10 @@ pub(crate) fn start_game_loop(
                         }
                         drop(rs);
                         send_dispatch(dispatch, &senders).await;
+                    }
+
+                    if loop_should_stop(&state) {
+                        break;
                     }
 
                     let phase_after_tick = { state.lock().unwrap().phase };

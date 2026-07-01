@@ -78,6 +78,7 @@ pub struct WsPositionEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsReJoinResponse {
     pub other_cards_numbers: HashMap<i32, i32>,
+    pub player_scores: HashMap<i32, i32>,
     pub my_cards: Vec<i32>,
     pub now_playing: i32,
     pub phase: i32,

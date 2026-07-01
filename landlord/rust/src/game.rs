@@ -50,6 +50,8 @@ fn validate_play_request_inner(s: &LandlordLoopState, position: usize, cards: &[
 // ─── START ────────────────────────────────────────────────────────────
 impl LandlordGameHandler {
     fn handle_start(&mut self, room_service: &mut RoomService, session_id: SessionId) -> Dispatch {
+        self.prune_stopped_loop_states();
+
         // Only the creator (position 0) may start
         let Some(position) = room_service.session_position(session_id) else {
             return room_service.error_response(
@@ -85,13 +87,27 @@ impl LandlordGameHandler {
             );
         };
 
-        let Some(shared_common_state) = room_service.get_room_common_state_handle(&room_key) else {
+        let Some(mut shared_common_state) = room_service.get_room_common_state_handle(&room_key)
+        else {
             return room_service.error_response(
                 session_id,
                 Routes::START as i32,
                 WsResponseCode::NO_PERMISSION,
             );
         };
+        let stop_requested = shared_common_state.lock().unwrap().stop_requested();
+        if stop_requested {
+            let Some(next_common_state) =
+                room_service.reset_room_common_state_for_new_game(&room_key)
+            else {
+                return room_service.error_response(
+                    session_id,
+                    Routes::START as i32,
+                    WsResponseCode::NO_PERMISSION,
+                );
+            };
+            shared_common_state = next_common_state;
+        }
 
         // Prevent re-starting if the current room loop is already running.
         // If an old room with the same key left a stale loop_state, remove it.
@@ -397,8 +413,14 @@ impl GameHandler for LandlordGameHandler {
                     .filter(|(position, _)| Some(**position) != current_position)
                     .map(|(position, cards)| (*position as i32, cards.len() as i32))
                     .collect();
+                let player_scores = state
+                    .player_scores
+                    .iter()
+                    .map(|(position, score)| (*position as i32, *score))
+                    .collect();
                 Some(WsReJoinResponse {
                     other_cards_numbers,
+                    player_scores,
                     my_cards,
                     now_playing: state.current_position as i32,
                     phase: state.phase as i32,
