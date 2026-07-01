@@ -9,8 +9,6 @@ use ws_common::game_state::{CommonGameState, GameState};
 
 use crate::hand_evaluator::{EvaluatedHand, evaluate_best};
 
-pub type TexasHoldEmStateHandle = Arc<Mutex<TexasHoldEmGameState>>;
-
 #[derive(Debug)]
 pub struct TexasHoldEmGameState {
     pub base: Arc<Mutex<CommonGameState>>,
@@ -35,43 +33,20 @@ pub struct TexasHoldEmGameState {
     pub big_blind: i32,
 }
 
+pub type TexasHoldEmStateHandle = Arc<Mutex<TexasHoldEmGameState>>;
+
 impl TexasHoldEmGameState {
-    pub fn from_common(base: Arc<Mutex<CommonGameState>>) -> Self {
-        Self {
-            base,
-            phase: TexasHoldEmPhase::Start,
-            deck: Vec::new(),
-            public_cards: Vec::new(),
-            hands: HashMap::new(),
-            chips: HashMap::new(),
-            round_bets: HashMap::new(),
-            folded: HashSet::new(),
-            all_in: HashSet::new(),
-            acted: HashSet::new(),
-            dealer_position: 0,
-            small_blind_position: 0,
-            big_blind_position: 0,
-            current_position: 0,
-            current_bet: 0,
-            min_raise: 0,
-            pot: 0,
-            initial_chips: 1000,
-            small_blind: 5,
-            big_blind: 10,
-        }
+    pub fn active_not_folded_positions(&self) -> Vec<usize> {
+        self.active_positions()
+            .into_iter()
+            .filter(|position| !self.folded.contains(position))
+            .collect()
     }
 
     pub fn active_positions(&self) -> Vec<usize> {
         let mut positions: Vec<_> = self.base.lock().unwrap().players.keys().copied().collect();
         positions.sort_unstable();
         positions
-    }
-
-    pub fn active_not_folded_positions(&self) -> Vec<usize> {
-        self.active_positions()
-            .into_iter()
-            .filter(|position| !self.folded.contains(position))
-            .collect()
     }
 
     pub fn bet_of(&self, position: usize) -> i32 {
@@ -84,6 +59,21 @@ impl TexasHoldEmGameState {
 
     pub fn chip_count(&self, position: usize) -> i32 {
         self.chips.get(&position).copied().unwrap_or_default()
+    }
+
+    pub fn commit(&mut self, position: usize, amount: i32) -> i32 {
+        let available = self.chip_count(position);
+        let paid = amount.max(0).min(available);
+        if paid == 0 {
+            return 0;
+        }
+        *self.chips.entry(position).or_default() -= paid;
+        *self.round_bets.entry(position).or_default() += paid;
+        self.pot += paid;
+        if self.chip_count(position) == 0 {
+            self.all_in.insert(position);
+        }
+        paid
     }
 
     pub fn deal_new_hand(
@@ -136,19 +126,35 @@ impl TexasHoldEmGameState {
         Ok(())
     }
 
-    pub fn commit(&mut self, position: usize, amount: i32) -> i32 {
-        let available = self.chip_count(position);
-        let paid = amount.max(0).min(available);
-        if paid == 0 {
-            return 0;
+    pub fn evaluated_hand(&self, position: usize) -> Option<EvaluatedHand> {
+        let mut cards = self.hands.get(&position)?.clone();
+        cards.extend(self.public_cards.iter().copied());
+        evaluate_best(&cards)
+    }
+
+    pub fn from_common(base: Arc<Mutex<CommonGameState>>) -> Self {
+        Self {
+            base,
+            phase: TexasHoldEmPhase::Start,
+            deck: Vec::new(),
+            public_cards: Vec::new(),
+            hands: HashMap::new(),
+            chips: HashMap::new(),
+            round_bets: HashMap::new(),
+            folded: HashSet::new(),
+            all_in: HashSet::new(),
+            acted: HashSet::new(),
+            dealer_position: 0,
+            small_blind_position: 0,
+            big_blind_position: 0,
+            current_position: 0,
+            current_bet: 0,
+            min_raise: 0,
+            pot: 0,
+            initial_chips: 1000,
+            small_blind: 5,
+            big_blind: 10,
         }
-        *self.chips.entry(position).or_default() -= paid;
-        *self.round_bets.entry(position).or_default() += paid;
-        self.pot += paid;
-        if self.chip_count(position) == 0 {
-            self.all_in.insert(position);
-        }
-        paid
     }
 
     pub fn is_hand_over_by_folds(&self) -> bool {
@@ -181,6 +187,10 @@ impl TexasHoldEmGameState {
         let positions = self.active_positions();
         let start = positions.iter().position(|position| *position == from)?;
         Some(positions[(start + 1) % positions.len()])
+    }
+
+    pub fn player_name(&self, position: usize) -> String {
+        self.base.lock().unwrap().player_name(position)
     }
 
     pub fn reveal_next_phase(&mut self) -> TexasHoldEmPhase {
@@ -230,16 +240,6 @@ impl TexasHoldEmGameState {
 
     pub fn turn_countdown(&self) -> u32 {
         self.base.lock().unwrap().turn_countdown
-    }
-
-    pub fn player_name(&self, position: usize) -> String {
-        self.base.lock().unwrap().player_name(position)
-    }
-
-    pub fn evaluated_hand(&self, position: usize) -> Option<EvaluatedHand> {
-        let mut cards = self.hands.get(&position)?.clone();
-        cards.extend(self.public_cards.iter().copied());
-        evaluate_best(&cards)
     }
 }
 

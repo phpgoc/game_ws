@@ -14,18 +14,6 @@ pub const TEXAS_HOLD_EM_CARDS: [i32; 52] = {
 };
 
 #[typeshare]
-#[repr(i8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
-pub enum TexasHoldEmPhase {
-    Start,
-    PreFlop,
-    Flop,
-    Turn,
-    River,
-    Settlement,
-}
-
-#[typeshare]
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
 #[allow(non_camel_case_types)]
@@ -36,6 +24,18 @@ pub enum TexasHoldEmAction {
     BET = 4,
     RAISE = 5,
     ALL_IN = 6,
+}
+
+#[typeshare]
+#[repr(i8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
+pub enum TexasHoldEmPhase {
+    Start,
+    PreFlop,
+    Flop,
+    Turn,
+    River,
+    Settlement,
 }
 
 #[typeshare]

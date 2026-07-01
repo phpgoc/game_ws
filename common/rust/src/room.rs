@@ -84,14 +84,6 @@ impl std::fmt::Debug for RoomEntry {
 }
 
 impl RoomService {
-    pub fn room_count(&self) -> usize {
-        self.rooms.len()
-    }
-
-    pub fn session_count(&self) -> usize {
-        self.sessions.len()
-    }
-
     /// 清除 game state（游戏结束时调用）。
     pub fn clear_room_game_state(&mut self, room_key: &str) {
         if let Some(entry) = self.rooms.get_mut(room_key) {
@@ -113,23 +105,6 @@ impl RoomService {
                 entry.state = Box::new(crate::game_state::SharedGameState::from_common(current));
             }
         }
-    }
-
-    pub fn reset_room_common_state_for_new_game(
-        &mut self,
-        room_key: &str,
-    ) -> Option<Arc<std::sync::Mutex<crate::game_state::CommonGameState>>> {
-        let entry = self.rooms.get_mut(room_key)?;
-        let current = entry.state.shared_common_state();
-        let current = current.lock().unwrap();
-        let mut next = crate::game_state::CommonGameState::new();
-        next.players = current.players.clone();
-        next.avatars = current.avatars.clone();
-        let next = Arc::new(std::sync::Mutex::new(next));
-        entry.state = Box::new(crate::game_state::SharedGameState::from_common(Arc::clone(
-            &next,
-        )));
-        Some(next)
     }
 
     pub fn connect(&mut self, session_id: SessionId) {
@@ -1179,6 +1154,27 @@ impl RoomService {
         logged_in
     }
 
+    pub fn reset_room_common_state_for_new_game(
+        &mut self,
+        room_key: &str,
+    ) -> Option<Arc<std::sync::Mutex<crate::game_state::CommonGameState>>> {
+        let entry = self.rooms.get_mut(room_key)?;
+        let current = entry.state.shared_common_state();
+        let current = current.lock().unwrap();
+        let mut next = crate::game_state::CommonGameState::new();
+        next.players = current.players.clone();
+        next.avatars = current.avatars.clone();
+        let next = Arc::new(std::sync::Mutex::new(next));
+        entry.state = Box::new(crate::game_state::SharedGameState::from_common(Arc::clone(
+            &next,
+        )));
+        Some(next)
+    }
+
+    pub fn room_count(&self) -> usize {
+        self.rooms.len()
+    }
+
     pub fn room_exists(&self, room_key: &str) -> bool {
         self.rooms.contains_key(room_key)
     }
@@ -1300,6 +1296,10 @@ impl RoomService {
             .get(&session_id)
             .and_then(|session| session.room_key.as_deref())
             == Some(room_key)
+    }
+
+    pub fn session_count(&self) -> usize {
+        self.sessions.len()
     }
 
     pub fn session_name(&self, session_id: SessionId) -> String {

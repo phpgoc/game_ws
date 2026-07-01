@@ -25,284 +25,6 @@ pub struct TexasHoldEmGameHandler {
     states: StateRegistry,
 }
 
-impl Default for TexasHoldEmGameHandler {
-    fn default() -> Self {
-        Self {
-            states: Arc::new(std::sync::Mutex::new(HashMap::new())),
-        }
-    }
-}
-
-impl TexasHoldEmGameHandler {
-    fn handle_start(&self, room_service: &mut RoomService, session_id: SessionId) -> Dispatch {
-        let Some(position) = room_service.session_position(session_id) else {
-            return room_service.error_response(
-                session_id,
-                Routes::START as i32,
-                WsResponseCode::NOT_LOGIN,
-            );
-        };
-        if position != 0 {
-            return room_service.error_response(
-                session_id,
-                Routes::START as i32,
-                WsResponseCode::NO_PERMISSION,
-            );
-        }
-        let mut dispatch = Dispatch::default();
-        if !room_service.ensure_in_room(session_id, Routes::START as i32, &mut dispatch) {
-            return dispatch;
-        }
-        if !room_service.room_ready_to_start(session_id) {
-            return room_service.error_response(
-                session_id,
-                Routes::START as i32,
-                WsResponseCode::NOT_IN_RANGE,
-            );
-        }
-        let Some(room_key) = room_service.room_key_of(session_id) else {
-            return room_service.error_response(
-                session_id,
-                Routes::START as i32,
-                WsResponseCode::NOT_LOGIN,
-            );
-        };
-        let Some(common) = room_service.get_room_common_state_handle(&room_key) else {
-            return room_service.error_response(
-                session_id,
-                Routes::START as i32,
-                WsResponseCode::NO_PERMISSION,
-            );
-        };
-        let configs = room_service.get_room_configs(&room_key).unwrap_or_default();
-        let initial_chips = configs.get("initial_chips").copied().unwrap_or(1000);
-        let small_blind = configs.get("small_blind").copied().unwrap_or(5);
-        let big_blind = configs
-            .get("big_blind")
-            .copied()
-            .unwrap_or(10)
-            .max(small_blind + 1);
-        let play_time = configs.get("play_time").copied().unwrap_or(20).max(1) as u32;
-
-        let mut state = TexasHoldEmGameState::from_common(Arc::clone(&common));
-        if state
-            .deal_new_hand(initial_chips, small_blind, big_blind)
-            .is_err()
-        {
-            return room_service.error_response(
-                session_id,
-                Routes::START as i32,
-                WsResponseCode::NOT_IN_RANGE,
-            );
-        }
-        state.set_turn_countdown(play_time);
-        let state = Arc::new(std::sync::Mutex::new(state));
-        room_service.set_room_game_state(
-            &room_key,
-            Box::new(SharedGameState::from_common(Arc::clone(&common))),
-        );
-        self.states
-            .lock()
-            .unwrap()
-            .insert(room_key.clone(), Arc::clone(&state));
-
-        room_service.send_all(&room_key, WsCode::START as i32, json!({}), &mut dispatch);
-        self.push_private_deals(&room_key, room_service, &state, &mut dispatch);
-        self.push_turn_event(&room_key, room_service, &state, &mut dispatch);
-        room_service.push_ok_response(&mut dispatch, session_id, Routes::START as i32);
-        dispatch
-    }
-
-    fn handle_play(
-        &self,
-        room_service: &mut RoomService,
-        session_id: SessionId,
-        data: Value,
-    ) -> Dispatch {
-        let Some(position) = room_service.session_position(session_id) else {
-            return room_service.error_response(
-                session_id,
-                Routes::PLAY as i32,
-                WsResponseCode::NOT_LOGIN,
-            );
-        };
-        let Some(room_key) = room_service.room_key_of(session_id) else {
-            return room_service.error_response(
-                session_id,
-                Routes::PLAY as i32,
-                WsResponseCode::NOT_LOGIN,
-            );
-        };
-        let Ok(payload) = RoomService::parse::<WsTexasHoldEmPlayRequest>(data) else {
-            return room_service.error_response(
-                session_id,
-                Routes::PLAY as i32,
-                WsResponseCode::ERROR_FORMAT,
-            );
-        };
-        let Some(state) = self.state(&room_key) else {
-            return room_service.error_response(
-                session_id,
-                Routes::PLAY as i32,
-                WsResponseCode::NO_PERMISSION,
-            );
-        };
-
-        let action_event = {
-            let mut s = state.lock().unwrap();
-            if s.phase == TexasHoldEmPhase::Settlement
-                || s.current_position != position
-                || s.folded.contains(&position)
-                || s.all_in.contains(&position)
-            {
-                return room_service.error_response(
-                    session_id,
-                    Routes::PLAY as i32,
-                    WsResponseCode::NO_PERMISSION,
-                );
-            }
-            let Some(event) = apply_action(&mut s, position, payload) else {
-                return room_service.error_response(
-                    session_id,
-                    Routes::PLAY as i32,
-                    WsResponseCode::NO_PERMISSION,
-                );
-            };
-            s.set_action_received(true);
-            let play_time = room_service
-                .get_room_configs(&room_key)
-                .unwrap_or_default()
-                .get("play_time")
-                .copied()
-                .unwrap_or(20)
-                .max(1) as u32;
-            s.set_turn_countdown(play_time);
-            event
-        };
-
-        let mut dispatch = Dispatch::default();
-        room_service.send_all(&room_key, WsCode::PLAY as i32, action_event, &mut dispatch);
-        self.advance_after_action(&room_key, room_service, &state, &mut dispatch);
-        room_service.push_ok_response(&mut dispatch, session_id, Routes::PLAY as i32);
-        dispatch
-    }
-
-    fn state(&self, room_key: &str) -> Option<TexasHoldEmStateHandle> {
-        self.states.lock().unwrap().get(room_key).cloned()
-    }
-
-    fn push_private_deals(
-        &self,
-        room_key: &str,
-        room_service: &RoomService,
-        state: &TexasHoldEmStateHandle,
-        dispatch: &mut Dispatch,
-    ) {
-        let s = state.lock().unwrap();
-        for (session_id, _, position, _) in room_service.get_room_members(room_key) {
-            let payload = WsTexasHoldEmDealEvent {
-                my_cards: s.hands.get(&position).cloned().unwrap_or_default(),
-                dealer_position: s.dealer_position as i32,
-                small_blind_position: s.small_blind_position as i32,
-                big_blind_position: s.big_blind_position as i32,
-                chips: s.chip_count(position),
-                pot: s.pot,
-            };
-            dispatch.messages.push(Delivery {
-                recipient: session_id,
-                payload: OutboundPayload::Event(CommonEvent {
-                    code: WsCode::DEAL as i32,
-                    data: serde_json::to_value(payload).unwrap_or(Value::Null),
-                }),
-            });
-        }
-    }
-
-    fn push_public_cards(
-        &self,
-        room_key: &str,
-        room_service: &RoomService,
-        state: &TexasHoldEmStateHandle,
-        dispatch: &mut Dispatch,
-    ) {
-        let s = state.lock().unwrap();
-        room_service.send_all(
-            room_key,
-            WsCode::DEAL_OPEN_CARDS as i32,
-            WsTexasHoldEmPublicCardsEvent {
-                phase: s.phase,
-                cards: s.public_cards.clone(),
-                pot: s.pot,
-            },
-            dispatch,
-        );
-    }
-
-    fn push_turn_event(
-        &self,
-        room_key: &str,
-        room_service: &RoomService,
-        state: &TexasHoldEmStateHandle,
-        dispatch: &mut Dispatch,
-    ) {
-        let s = state.lock().unwrap();
-        room_service.send_all(
-            room_key,
-            WsCode::CHANGE_DEAL as i32,
-            WsTexasHoldEmTurnEvent {
-                position: s.current_position as i32,
-                phase: s.phase,
-                call_amount: s.call_amount(s.current_position),
-                min_raise: s.min_raise,
-                current_bet: s.current_bet,
-                pot: s.pot,
-                turn_countdown: s.turn_countdown() as i32,
-            },
-            dispatch,
-        );
-    }
-
-    fn advance_after_action(
-        &self,
-        room_key: &str,
-        room_service: &mut RoomService,
-        state: &TexasHoldEmStateHandle,
-        dispatch: &mut Dispatch,
-    ) {
-        let mut should_settle = false;
-        {
-            let mut s = state.lock().unwrap();
-            if s.is_hand_over_by_folds() {
-                should_settle = true;
-            } else if s.is_round_complete() {
-                loop {
-                    let phase = s.reveal_next_phase();
-                    if phase == TexasHoldEmPhase::Settlement {
-                        should_settle = true;
-                        break;
-                    }
-                    if s.next_action_position(s.dealer_position).is_some() {
-                        break;
-                    }
-                }
-            } else if let Some(next) = s.next_action_position(s.current_position) {
-                s.current_position = next;
-            }
-        }
-
-        if should_settle {
-            let settlement = settle_hand(state);
-            room_service.send_all(room_key, WsCode::GAME_OVER as i32, settlement, dispatch);
-            self.states.lock().unwrap().remove(room_key);
-            room_service.clear_room_game_state(room_key);
-            return;
-        }
-
-        self.push_public_cards(room_key, room_service, state, dispatch);
-        self.push_turn_event(room_key, room_service, state, dispatch);
-    }
-}
-
 fn apply_action(
     s: &mut TexasHoldEmGameState,
     position: usize,
@@ -447,17 +169,295 @@ fn settle_hand(state: &TexasHoldEmStateHandle) -> WsTexasHoldEmSettlementEvent {
     }
 }
 
-impl GameHandler for TexasHoldEmGameHandler {
-    fn game_id(&self) -> GameId {
-        GameId::TEXAS_HOLD_EM
+impl TexasHoldEmGameHandler {
+    fn advance_after_action(
+        &self,
+        room_key: &str,
+        room_service: &mut RoomService,
+        state: &TexasHoldEmStateHandle,
+        dispatch: &mut Dispatch,
+    ) {
+        let mut should_settle = false;
+        {
+            let mut s = state.lock().unwrap();
+            if s.is_hand_over_by_folds() {
+                should_settle = true;
+            } else if s.is_round_complete() {
+                loop {
+                    let phase = s.reveal_next_phase();
+                    if phase == TexasHoldEmPhase::Settlement {
+                        should_settle = true;
+                        break;
+                    }
+                    if s.next_action_position(s.dealer_position).is_some() {
+                        break;
+                    }
+                }
+            } else if let Some(next) = s.next_action_position(s.current_position) {
+                s.current_position = next;
+            }
+        }
+
+        if should_settle {
+            let settlement = settle_hand(state);
+            room_service.send_all(room_key, WsCode::GAME_OVER as i32, settlement, dispatch);
+            self.states.lock().unwrap().remove(room_key);
+            room_service.clear_room_game_state(room_key);
+            return;
+        }
+
+        self.push_public_cards(room_key, room_service, state, dispatch);
+        self.push_turn_event(room_key, room_service, state, dispatch);
     }
 
+    fn handle_play(
+        &self,
+        room_service: &mut RoomService,
+        session_id: SessionId,
+        data: Value,
+    ) -> Dispatch {
+        let Some(position) = room_service.session_position(session_id) else {
+            return room_service.error_response(
+                session_id,
+                Routes::PLAY as i32,
+                WsResponseCode::NOT_LOGIN,
+            );
+        };
+        let Some(room_key) = room_service.room_key_of(session_id) else {
+            return room_service.error_response(
+                session_id,
+                Routes::PLAY as i32,
+                WsResponseCode::NOT_LOGIN,
+            );
+        };
+        let Ok(payload) = RoomService::parse::<WsTexasHoldEmPlayRequest>(data) else {
+            return room_service.error_response(
+                session_id,
+                Routes::PLAY as i32,
+                WsResponseCode::ERROR_FORMAT,
+            );
+        };
+        let Some(state) = self.state(&room_key) else {
+            return room_service.error_response(
+                session_id,
+                Routes::PLAY as i32,
+                WsResponseCode::NO_PERMISSION,
+            );
+        };
+
+        let action_event = {
+            let mut s = state.lock().unwrap();
+            if s.phase == TexasHoldEmPhase::Settlement
+                || s.current_position != position
+                || s.folded.contains(&position)
+                || s.all_in.contains(&position)
+            {
+                return room_service.error_response(
+                    session_id,
+                    Routes::PLAY as i32,
+                    WsResponseCode::NO_PERMISSION,
+                );
+            }
+            let Some(event) = apply_action(&mut s, position, payload) else {
+                return room_service.error_response(
+                    session_id,
+                    Routes::PLAY as i32,
+                    WsResponseCode::NO_PERMISSION,
+                );
+            };
+            s.set_action_received(true);
+            let play_time = room_service
+                .get_room_configs(&room_key)
+                .unwrap_or_default()
+                .get("play_time")
+                .copied()
+                .unwrap_or(20)
+                .max(1) as u32;
+            s.set_turn_countdown(play_time);
+            event
+        };
+
+        let mut dispatch = Dispatch::default();
+        room_service.send_all(&room_key, WsCode::PLAY as i32, action_event, &mut dispatch);
+        self.advance_after_action(&room_key, room_service, &state, &mut dispatch);
+        room_service.push_ok_response(&mut dispatch, session_id, Routes::PLAY as i32);
+        dispatch
+    }
+
+    fn handle_start(&self, room_service: &mut RoomService, session_id: SessionId) -> Dispatch {
+        let Some(position) = room_service.session_position(session_id) else {
+            return room_service.error_response(
+                session_id,
+                Routes::START as i32,
+                WsResponseCode::NOT_LOGIN,
+            );
+        };
+        if position != 0 {
+            return room_service.error_response(
+                session_id,
+                Routes::START as i32,
+                WsResponseCode::NO_PERMISSION,
+            );
+        }
+        let mut dispatch = Dispatch::default();
+        if !room_service.ensure_in_room(session_id, Routes::START as i32, &mut dispatch) {
+            return dispatch;
+        }
+        if !room_service.room_ready_to_start(session_id) {
+            return room_service.error_response(
+                session_id,
+                Routes::START as i32,
+                WsResponseCode::NOT_IN_RANGE,
+            );
+        }
+        let Some(room_key) = room_service.room_key_of(session_id) else {
+            return room_service.error_response(
+                session_id,
+                Routes::START as i32,
+                WsResponseCode::NOT_LOGIN,
+            );
+        };
+        let Some(common) = room_service.get_room_common_state_handle(&room_key) else {
+            return room_service.error_response(
+                session_id,
+                Routes::START as i32,
+                WsResponseCode::NO_PERMISSION,
+            );
+        };
+        let configs = room_service.get_room_configs(&room_key).unwrap_or_default();
+        let initial_chips = configs.get("initial_chips").copied().unwrap_or(1000);
+        let small_blind = configs.get("small_blind").copied().unwrap_or(5);
+        let big_blind = configs
+            .get("big_blind")
+            .copied()
+            .unwrap_or(10)
+            .max(small_blind + 1);
+        let play_time = configs.get("play_time").copied().unwrap_or(20).max(1) as u32;
+
+        let mut state = TexasHoldEmGameState::from_common(Arc::clone(&common));
+        if state
+            .deal_new_hand(initial_chips, small_blind, big_blind)
+            .is_err()
+        {
+            return room_service.error_response(
+                session_id,
+                Routes::START as i32,
+                WsResponseCode::NOT_IN_RANGE,
+            );
+        }
+        state.set_turn_countdown(play_time);
+        let state = Arc::new(std::sync::Mutex::new(state));
+        room_service.set_room_game_state(
+            &room_key,
+            Box::new(SharedGameState::from_common(Arc::clone(&common))),
+        );
+        self.states
+            .lock()
+            .unwrap()
+            .insert(room_key.clone(), Arc::clone(&state));
+
+        room_service.send_all(&room_key, WsCode::START as i32, json!({}), &mut dispatch);
+        self.push_private_deals(&room_key, room_service, &state, &mut dispatch);
+        self.push_turn_event(&room_key, room_service, &state, &mut dispatch);
+        room_service.push_ok_response(&mut dispatch, session_id, Routes::START as i32);
+        dispatch
+    }
+
+    fn push_private_deals(
+        &self,
+        room_key: &str,
+        room_service: &RoomService,
+        state: &TexasHoldEmStateHandle,
+        dispatch: &mut Dispatch,
+    ) {
+        let s = state.lock().unwrap();
+        for (session_id, _, position, _) in room_service.get_room_members(room_key) {
+            let payload = WsTexasHoldEmDealEvent {
+                my_cards: s.hands.get(&position).cloned().unwrap_or_default(),
+                dealer_position: s.dealer_position as i32,
+                small_blind_position: s.small_blind_position as i32,
+                big_blind_position: s.big_blind_position as i32,
+                chips: s.chip_count(position),
+                pot: s.pot,
+            };
+            dispatch.messages.push(Delivery {
+                recipient: session_id,
+                payload: OutboundPayload::Event(CommonEvent {
+                    code: WsCode::DEAL as i32,
+                    data: serde_json::to_value(payload).unwrap_or(Value::Null),
+                }),
+            });
+        }
+    }
+
+    fn push_public_cards(
+        &self,
+        room_key: &str,
+        room_service: &RoomService,
+        state: &TexasHoldEmStateHandle,
+        dispatch: &mut Dispatch,
+    ) {
+        let s = state.lock().unwrap();
+        room_service.send_all(
+            room_key,
+            WsCode::DEAL_OPEN_CARDS as i32,
+            WsTexasHoldEmPublicCardsEvent {
+                phase: s.phase,
+                cards: s.public_cards.clone(),
+                pot: s.pot,
+            },
+            dispatch,
+        );
+    }
+
+    fn push_turn_event(
+        &self,
+        room_key: &str,
+        room_service: &RoomService,
+        state: &TexasHoldEmStateHandle,
+        dispatch: &mut Dispatch,
+    ) {
+        let s = state.lock().unwrap();
+        room_service.send_all(
+            room_key,
+            WsCode::CHANGE_DEAL as i32,
+            WsTexasHoldEmTurnEvent {
+                position: s.current_position as i32,
+                phase: s.phase,
+                call_amount: s.call_amount(s.current_position),
+                min_raise: s.min_raise,
+                current_bet: s.current_bet,
+                pot: s.pot,
+                turn_countdown: s.turn_countdown() as i32,
+            },
+            dispatch,
+        );
+    }
+
+    fn state(&self, room_key: &str) -> Option<TexasHoldEmStateHandle> {
+        self.states.lock().unwrap().get(room_key).cloned()
+    }
+}
+
+impl Default for TexasHoldEmGameHandler {
+    fn default() -> Self {
+        Self {
+            states: Arc::new(std::sync::Mutex::new(HashMap::new())),
+        }
+    }
+}
+
+impl GameHandler for TexasHoldEmGameHandler {
     fn build_game_state(&self) -> Box<dyn ws_common::game_state::GameState> {
         Box::new(SharedGameState::new())
     }
 
     fn build_room_settings(&self) -> ws_common::SettingsBuilderResult {
         build_texas_hold_em_settings()
+    }
+
+    fn game_id(&self) -> GameId {
+        GameId::TEXAS_HOLD_EM
     }
 
     fn handle_game_request(
@@ -497,27 +497,6 @@ mod tests {
     }
 
     #[test]
-    fn texas_room_allows_two_to_eight_players() {
-        let handler = TexasHoldEmGameHandler::default();
-        let mut room = RoomService::default();
-        for session_id in 1..=8 {
-            let dispatch = room.handle_common_request(
-                session_id,
-                &join_request(&format!("u{session_id}")),
-                handler.game_id(),
-                || handler.build_room_settings(),
-            );
-            assert!(dispatch.is_some());
-        }
-        let denied = room
-            .handle_common_request(9, &join_request("u9"), handler.game_id(), || {
-                handler.build_room_settings()
-            })
-            .unwrap();
-        assert_eq!(denied.messages.len(), 1);
-    }
-
-    #[test]
     fn start_deals_private_cards() {
         let handler = TexasHoldEmGameHandler::default();
         let mut room = RoomService::default();
@@ -541,5 +520,26 @@ mod tests {
             })
             .count();
         assert_eq!(private_deals, 2);
+    }
+
+    #[test]
+    fn texas_room_allows_two_to_eight_players() {
+        let handler = TexasHoldEmGameHandler::default();
+        let mut room = RoomService::default();
+        for session_id in 1..=8 {
+            let dispatch = room.handle_common_request(
+                session_id,
+                &join_request(&format!("u{session_id}")),
+                handler.game_id(),
+                || handler.build_room_settings(),
+            );
+            assert!(dispatch.is_some());
+        }
+        let denied = room
+            .handle_common_request(9, &join_request("u9"), handler.game_id(), || {
+                handler.build_room_settings()
+            })
+            .unwrap();
+        assert_eq!(denied.messages.len(), 1);
     }
 }

@@ -57,6 +57,28 @@ impl LandlordLoopState {
         self.base.lock().unwrap().action_received
     }
 
+    pub fn apply_settlement_scores(&mut self, is_landlord_win: bool) {
+        let Some(landlord_position) = self.landlord_position else {
+            return;
+        };
+        let base_score = self.score.max(1) as i32;
+        for position in self.players_snapshot().keys().copied() {
+            let is_landlord = position == landlord_position;
+            let delta = if is_landlord {
+                if is_landlord_win {
+                    base_score * 2
+                } else {
+                    base_score * -2
+                }
+            } else if is_landlord_win {
+                -base_score
+            } else {
+                base_score
+            };
+            *self.player_scores.entry(position).or_insert(0) += delta;
+        }
+    }
+
     pub fn clear_away(&self) {
         self.base.lock().unwrap().clear_away();
     }
@@ -160,28 +182,6 @@ impl LandlordLoopState {
         self.set_action_received(false);
         self.set_turn_countdown(0);
         self.clear_away();
-    }
-
-    pub fn apply_settlement_scores(&mut self, is_landlord_win: bool) {
-        let Some(landlord_position) = self.landlord_position else {
-            return;
-        };
-        let base_score = self.score.max(1) as i32;
-        for position in self.players_snapshot().keys().copied() {
-            let is_landlord = position == landlord_position;
-            let delta = if is_landlord {
-                if is_landlord_win {
-                    base_score * 2
-                } else {
-                    base_score * -2
-                }
-            } else if is_landlord_win {
-                -base_score
-            } else {
-                base_score
-            };
-            *self.player_scores.entry(position).or_insert(0) += delta;
-        }
     }
 
     pub fn request_stop(&self) {

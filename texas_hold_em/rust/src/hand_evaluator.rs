@@ -8,20 +8,6 @@ pub struct EvaluatedHand {
     pub name: &'static str,
 }
 
-impl Ord for EvaluatedHand {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.category
-            .cmp(&other.category)
-            .then_with(|| self.ranks.cmp(&other.ranks))
-    }
-}
-
-impl PartialOrd for EvaluatedHand {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
 pub fn card_rank(card: i32) -> i32 {
     ((card - 1) % 13) + 2
 }
@@ -48,27 +34,6 @@ pub fn evaluate_best(cards: &[i32]) -> Option<EvaluatedHand> {
                     }
                 }
             }
-        }
-    }
-    best
-}
-
-fn straight_high(mut ranks: Vec<i32>) -> Option<i32> {
-    ranks.sort_unstable();
-    ranks.dedup();
-    if ranks.contains(&14) {
-        ranks.insert(0, 1);
-    }
-    let mut best = None;
-    let mut run = 1;
-    for idx in 1..ranks.len() {
-        if ranks[idx] == ranks[idx - 1] + 1 {
-            run += 1;
-            if run >= 5 {
-                best = Some(ranks[idx]);
-            }
-        } else {
-            run = 1;
         }
     }
     best
@@ -190,9 +155,58 @@ pub fn evaluate_five(cards: &[i32; 5]) -> EvaluatedHand {
     }
 }
 
+fn straight_high(mut ranks: Vec<i32>) -> Option<i32> {
+    ranks.sort_unstable();
+    ranks.dedup();
+    if ranks.contains(&14) {
+        ranks.insert(0, 1);
+    }
+    let mut best = None;
+    let mut run = 1;
+    for idx in 1..ranks.len() {
+        if ranks[idx] == ranks[idx - 1] + 1 {
+            run += 1;
+            if run >= 5 {
+                best = Some(ranks[idx]);
+            }
+        } else {
+            run = 1;
+        }
+    }
+    best
+}
+
+impl Ord for EvaluatedHand {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.category
+            .cmp(&other.category)
+            .then_with(|| self.ranks.cmp(&other.ranks))
+    }
+}
+
+impl PartialOrd for EvaluatedHand {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn best_of_seven_prefers_full_house() {
+        let hand = evaluate_best(&[11, 24, 37, 10, 23, 4, 5]).unwrap();
+        assert_eq!(hand.category, 6);
+        assert_eq!(hand.ranks, vec![12, 11]);
+    }
+
+    #[test]
+    fn evaluates_four_of_a_kind() {
+        let hand = evaluate_five(&[13, 26, 39, 52, 12]);
+        assert_eq!(hand.category, 7);
+        assert_eq!(hand.ranks, vec![14, 13]);
+    }
 
     #[test]
     fn evaluates_straight_flush() {
@@ -206,19 +220,5 @@ mod tests {
         let hand = evaluate_five(&[1, 2, 3, 4, 26]);
         assert_eq!(hand.category, 4);
         assert_eq!(hand.ranks, vec![5]);
-    }
-
-    #[test]
-    fn evaluates_four_of_a_kind() {
-        let hand = evaluate_five(&[13, 26, 39, 52, 12]);
-        assert_eq!(hand.category, 7);
-        assert_eq!(hand.ranks, vec![14, 13]);
-    }
-
-    #[test]
-    fn best_of_seven_prefers_full_house() {
-        let hand = evaluate_best(&[11, 24, 37, 10, 23, 4, 5]).unwrap();
-        assert_eq!(hand.category, 6);
-        assert_eq!(hand.ranks, vec![12, 11]);
     }
 }

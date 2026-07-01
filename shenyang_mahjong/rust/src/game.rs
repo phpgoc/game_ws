@@ -878,10 +878,6 @@ impl Default for ShenyangMahjongGameHandler {
 }
 
 impl GameHandler for ShenyangMahjongGameHandler {
-    fn game_id(&self) -> GameId {
-        GameId::SHENYANG_MAHJONG
-    }
-
     fn after_common_request(
         &mut self,
         _room_service: &mut RoomService,
@@ -901,6 +897,10 @@ impl GameHandler for ShenyangMahjongGameHandler {
 
     fn build_room_settings(&self) -> ws_common::SettingsBuilderResult {
         build_shenyang_mahjong_settings()
+    }
+
+    fn game_id(&self) -> GameId {
+        GameId::SHENYANG_MAHJONG
     }
 
     fn handle_game_request(

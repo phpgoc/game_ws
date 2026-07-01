@@ -369,10 +369,6 @@ impl Default for LandlordGameHandler {
 }
 
 impl GameHandler for LandlordGameHandler {
-    fn game_id(&self) -> GameId {
-        GameId::LANDLORD
-    }
-
     fn after_common_request(
         &mut self,
         room_service: &mut RoomService,
@@ -465,6 +461,10 @@ impl GameHandler for LandlordGameHandler {
 
     fn build_room_settings(&self) -> ws_common::SettingsBuilderResult {
         build_landlord_settings()
+    }
+
+    fn game_id(&self) -> GameId {
+        GameId::LANDLORD
     }
 
     fn handle_game_request(

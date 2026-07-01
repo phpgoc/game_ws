@@ -23,8 +23,6 @@ use crate::{
 };
 
 pub trait GameHandler: Send + 'static {
-    fn game_id(&self) -> share_type_public::GameId;
-
     fn after_common_request(
         &mut self,
         _room_service: &mut RoomService,
@@ -39,6 +37,8 @@ pub trait GameHandler: Send + 'static {
     fn build_game_state(&self) -> Box<dyn crate::game_state::GameState>;
 
     fn build_room_settings(&self) -> SettingsBuilderResult;
+
+    fn game_id(&self) -> share_type_public::GameId;
     fn handle_game_request(
         &mut self,
         room_service: &mut RoomService,
@@ -58,60 +58,22 @@ pub struct RuntimeConfig {
     pub heartbeat_interval: Duration,
 }
 
-type SessionSender = mpsc::UnboundedSender<Message>;
-pub type SessionSenders = Arc<Mutex<HashMap<SessionId, SessionSender>>>;
-
 #[derive(Clone)]
 pub struct RuntimeStats {
     room_service: Arc<Mutex<RoomService>>,
     senders: SessionSenders,
 }
 
-impl RuntimeStats {
-    pub async fn client_count(&self) -> usize {
-        self.senders.lock().await.len()
-    }
-
-    pub async fn room_count(&self) -> usize {
-        self.room_service.lock().await.room_count()
-    }
-}
-
-#[derive(Clone)]
-pub struct StopSignal {
-    rx: watch::Receiver<bool>,
-}
-
-impl StopSignal {
-    pub fn new(rx: watch::Receiver<bool>) -> Self {
-        Self { rx }
-    }
-
-    pub fn is_stopped(&self) -> bool {
-        *self.rx.borrow()
-    }
-
-    pub async fn stopped(&mut self) {
-        if self.is_stopped() {
-            return;
-        }
-        let _ = self.rx.changed().await;
-    }
-}
-
 pub struct RuntimeStopHandle {
     tx: watch::Sender<bool>,
 }
 
-impl RuntimeStopHandle {
-    pub fn stop(&self) {
-        let _ = self.tx.send(true);
-    }
-}
+type SessionSender = mpsc::UnboundedSender<Message>;
+pub type SessionSenders = Arc<Mutex<HashMap<SessionId, SessionSender>>>;
 
-pub fn runtime_stop_channel() -> (RuntimeStopHandle, StopSignal) {
-    let (tx, rx) = watch::channel(false);
-    (RuntimeStopHandle { tx }, StopSignal::new(rx))
+#[derive(Clone)]
+pub struct StopSignal {
+    rx: watch::Receiver<bool>,
 }
 
 async fn deliver(dispatch: Dispatch, senders: &SessionSenders) -> anyhow::Result<()> {
@@ -368,4 +330,42 @@ where
     }
 
     Ok(stats)
+}
+
+pub fn runtime_stop_channel() -> (RuntimeStopHandle, StopSignal) {
+    let (tx, rx) = watch::channel(false);
+    (RuntimeStopHandle { tx }, StopSignal::new(rx))
+}
+
+impl RuntimeStats {
+    pub async fn client_count(&self) -> usize {
+        self.senders.lock().await.len()
+    }
+
+    pub async fn room_count(&self) -> usize {
+        self.room_service.lock().await.room_count()
+    }
+}
+
+impl RuntimeStopHandle {
+    pub fn stop(&self) {
+        let _ = self.tx.send(true);
+    }
+}
+
+impl StopSignal {
+    pub fn is_stopped(&self) -> bool {
+        *self.rx.borrow()
+    }
+
+    pub fn new(rx: watch::Receiver<bool>) -> Self {
+        Self { rx }
+    }
+
+    pub async fn stopped(&mut self) {
+        if self.is_stopped() {
+            return;
+        }
+        let _ = self.rx.changed().await;
+    }
 }

@@ -2,6 +2,11 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::{sync::mpsc, task::JoinHandle};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
+enum WsClientCommand {
+    SendText(String),
+    Close { code: Option<u16>, reason: String },
+}
+
 #[derive(Debug, Clone)]
 pub enum WsClientEvent {
     Message(String),
@@ -9,34 +14,15 @@ pub enum WsClientEvent {
     Error(String),
 }
 
-enum WsClientCommand {
-    SendText(String),
-    Close { code: Option<u16>, reason: String },
+pub struct WsClientHandle {
+    commands: mpsc::UnboundedSender<WsClientCommand>,
+    _task: JoinHandle<()>,
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum WsClientSendError {
     #[error("websocket client is closed")]
     Closed,
-}
-
-pub struct WsClientHandle {
-    commands: mpsc::UnboundedSender<WsClientCommand>,
-    _task: JoinHandle<()>,
-}
-
-impl WsClientHandle {
-    pub fn send_text(&self, message: String) -> Result<(), WsClientSendError> {
-        self.commands
-            .send(WsClientCommand::SendText(message))
-            .map_err(|_| WsClientSendError::Closed)
-    }
-
-    pub fn close(&self, code: Option<u16>, reason: String) -> Result<(), WsClientSendError> {
-        self.commands
-            .send(WsClientCommand::Close { code, reason })
-            .map_err(|_| WsClientSendError::Closed)
-    }
 }
 
 pub async fn connect_ws_client(
@@ -121,4 +107,18 @@ pub async fn connect_ws_client(
         },
         events_rx,
     ))
+}
+
+impl WsClientHandle {
+    pub fn close(&self, code: Option<u16>, reason: String) -> Result<(), WsClientSendError> {
+        self.commands
+            .send(WsClientCommand::Close { code, reason })
+            .map_err(|_| WsClientSendError::Closed)
+    }
+
+    pub fn send_text(&self, message: String) -> Result<(), WsClientSendError> {
+        self.commands
+            .send(WsClientCommand::SendText(message))
+            .map_err(|_| WsClientSendError::Closed)
+    }
 }

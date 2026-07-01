@@ -702,6 +702,11 @@ fn handle_timeout(state: &mut LandlordLoopState) -> (Option<usize>, Option<AutoB
     (newly_away, auto_event)
 }
 
+fn loop_should_stop(state: &Arc<std::sync::Mutex<LandlordLoopState>>) -> bool {
+    let s = state.lock().unwrap();
+    s.stop_requested() || s.players_snapshot().len() != 3
+}
+
 fn next_call(state: &mut LandlordLoopState) {
     state.set_action_received(true);
 }
@@ -743,11 +748,6 @@ async fn send_dispatch(dispatch: Vec<Delivery>, senders: &SessionSenders) {
 fn settlement_should_stop(state: &Arc<std::sync::Mutex<LandlordLoopState>>) -> bool {
     let s = state.lock().unwrap();
     s.stop_requested() || s.players_snapshot().len() != 3 || s.has_disconnected_players()
-}
-
-fn loop_should_stop(state: &Arc<std::sync::Mutex<LandlordLoopState>>) -> bool {
-    let s = state.lock().unwrap();
-    s.stop_requested() || s.players_snapshot().len() != 3
 }
 
 async fn sleep_or_stop(

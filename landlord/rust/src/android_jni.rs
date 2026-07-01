@@ -12,16 +12,12 @@ use ws_common::{
 
 use crate::game::LandlordGameHandler;
 
+static SERVER: OnceLock<Mutex<Option<AndroidServer>>> = OnceLock::new();
+
 struct AndroidServer {
     stop: RuntimeStopHandle,
     join: Option<JoinHandle<()>>,
     stats: RuntimeStats,
-}
-
-static SERVER: OnceLock<Mutex<Option<AndroidServer>>> = OnceLock::new();
-
-fn server_slot() -> &'static Mutex<Option<AndroidServer>> {
-    SERVER.get_or_init(|| Mutex::new(None))
 }
 
 fn block_on_count<F>(future: F) -> c_int
@@ -33,6 +29,48 @@ where
         .build()
         .map(|runtime| runtime.block_on(future) as c_int)
         .unwrap_or(0)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn java_com_example_landlord_server_rust_landlord_server_native_client_count(
+    _env: *mut std::ffi::c_void,
+    _class: *mut std::ffi::c_void,
+) -> c_int {
+    let stats = server_slot()
+        .lock()
+        .ok()
+        .and_then(|guard| guard.as_ref().map(|server| server.stats.clone()));
+    stats
+        .map(|stats| block_on_count(async move { stats.client_count().await }))
+        .unwrap_or(0)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn java_com_example_landlord_server_rust_landlord_server_native_room_count(
+    _env: *mut std::ffi::c_void,
+    _class: *mut std::ffi::c_void,
+) -> c_int {
+    let stats = server_slot()
+        .lock()
+        .ok()
+        .and_then(|guard| guard.as_ref().map(|server| server.stats.clone()));
+    stats
+        .map(|stats| block_on_count(async move { stats.room_count().await }))
+        .unwrap_or(0)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn java_com_example_landlord_server_rust_landlord_server_native_stop(
+    _env: *mut std::ffi::c_void,
+    _class: *mut std::ffi::c_void,
+) {
+    let server = server_slot().lock().ok().and_then(|mut guard| guard.take());
+    if let Some(mut server) = server {
+        server.stop.stop();
+        if let Some(join) = server.join.take() {
+            let _ = join.join();
+        }
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -95,44 +133,6 @@ pub extern "C" fn java_com_example_landlordserver_rust_landlord_server_native_st
     1
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn java_com_example_landlord_server_rust_landlord_server_native_stop(
-    _env: *mut std::ffi::c_void,
-    _class: *mut std::ffi::c_void,
-) {
-    let server = server_slot().lock().ok().and_then(|mut guard| guard.take());
-    if let Some(mut server) = server {
-        server.stop.stop();
-        if let Some(join) = server.join.take() {
-            let _ = join.join();
-        }
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn java_com_example_landlord_server_rust_landlord_server_native_client_count(
-    _env: *mut std::ffi::c_void,
-    _class: *mut std::ffi::c_void,
-) -> c_int {
-    let stats = server_slot()
-        .lock()
-        .ok()
-        .and_then(|guard| guard.as_ref().map(|server| server.stats.clone()));
-    stats
-        .map(|stats| block_on_count(async move { stats.client_count().await }))
-        .unwrap_or(0)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn java_com_example_landlord_server_rust_landlord_server_native_room_count(
-    _env: *mut std::ffi::c_void,
-    _class: *mut std::ffi::c_void,
-) -> c_int {
-    let stats = server_slot()
-        .lock()
-        .ok()
-        .and_then(|guard| guard.as_ref().map(|server| server.stats.clone()));
-    stats
-        .map(|stats| block_on_count(async move { stats.room_count().await }))
-        .unwrap_or(0)
+fn server_slot() -> &'static Mutex<Option<AndroidServer>> {
+    SERVER.get_or_init(|| Mutex::new(None))
 }

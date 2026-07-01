@@ -10,12 +10,15 @@ use ws_common::{RuntimeConfig, run_room_runtime};
 
 type Client = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
-fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .expect("bind free port")
-        .local_addr()
-        .expect("local addr")
-        .port()
+fn cards_from_deal(event: &Value) -> Vec<i32> {
+    event
+        .get("data")
+        .and_then(|data| data.get("cards"))
+        .and_then(Value::as_array)
+        .expect("deal cards")
+        .iter()
+        .map(|card| card.as_i64().expect("card number") as i32)
+        .collect()
 }
 
 async fn connect_client(url: &str) -> Client {
@@ -23,46 +26,12 @@ async fn connect_client(url: &str) -> Client {
     ws
 }
 
-async fn recv_json(client: &mut Client, label: &str) -> Value {
-    loop {
-        let frame = tokio::time::timeout(Duration::from_secs(5), client.next())
-            .await
-            .unwrap_or_else(|_| panic!("websocket message timeout while waiting for {label}"))
-            .expect("websocket frame")
-            .expect("websocket frame ok");
-        match frame {
-            Message::Text(text) => return serde_json::from_str(text.as_ref()).expect("json frame"),
-            Message::Ping(_) | Message::Pong(_) => continue,
-            other => panic!("unexpected frame: {other:?}"),
-        }
-    }
-}
-
-async fn send_request(client: &mut Client, route: i32, data: Value) {
-    client
-        .send(Message::Text(
-            json!({ "route": route, "data": data }).to_string().into(),
-        ))
-        .await
-        .expect("send request");
-}
-
-async fn recv_until<F>(client: &mut Client, label: &str, mut pred: F) -> Value
-where
-    F: FnMut(&Value) -> bool,
-{
-    let mut recent = Vec::new();
-    for _ in 0..80 {
-        let value = recv_json(client, label).await;
-        if pred(&value) {
-            return value;
-        }
-        recent.push(value);
-        if recent.len() > 8 {
-            recent.remove(0);
-        }
-    }
-    panic!("expected websocket frame not received for {label}; recent={recent:?}");
+fn free_port() -> u16 {
+    TcpListener::bind("127.0.0.1:0")
+        .expect("bind free port")
+        .local_addr()
+        .expect("local addr")
+        .port()
 }
 
 async fn join(client: &mut Client, name: &str, password: &str) -> Value {
@@ -82,36 +51,6 @@ async fn join(client: &mut Client, name: &str, password: &str) -> Value {
             && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::JOINED as i64)
     })
     .await
-}
-
-fn position_from_joined(response: &Value) -> usize {
-    response
-        .get("data")
-        .and_then(|data| data.get("existing_members"))
-        .and_then(Value::as_array)
-        .map(|members| {
-            let used: Vec<usize> = members
-                .iter()
-                .filter_map(|item| {
-                    item.get("position")
-                        .and_then(Value::as_u64)
-                        .map(|v| v as usize)
-                })
-                .collect();
-            (0..3).find(|pos| !used.contains(pos)).unwrap_or(0)
-        })
-        .unwrap_or(0)
-}
-
-fn cards_from_deal(event: &Value) -> Vec<i32> {
-    event
-        .get("data")
-        .and_then(|data| data.get("cards"))
-        .and_then(Value::as_array)
-        .expect("deal cards")
-        .iter()
-        .map(|card| card.as_i64().expect("card number") as i32)
-        .collect()
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -286,4 +225,65 @@ async fn landlord_three_players_can_start_call_and_play_over_ws() {
     assert_eq!(next_turn["data"]["position"], json!(expected_next as i32));
 
     server.abort();
+}
+
+fn position_from_joined(response: &Value) -> usize {
+    response
+        .get("data")
+        .and_then(|data| data.get("existing_members"))
+        .and_then(Value::as_array)
+        .map(|members| {
+            let used: Vec<usize> = members
+                .iter()
+                .filter_map(|item| {
+                    item.get("position")
+                        .and_then(Value::as_u64)
+                        .map(|v| v as usize)
+                })
+                .collect();
+            (0..3).find(|pos| !used.contains(pos)).unwrap_or(0)
+        })
+        .unwrap_or(0)
+}
+
+async fn recv_json(client: &mut Client, label: &str) -> Value {
+    loop {
+        let frame = tokio::time::timeout(Duration::from_secs(5), client.next())
+            .await
+            .unwrap_or_else(|_| panic!("websocket message timeout while waiting for {label}"))
+            .expect("websocket frame")
+            .expect("websocket frame ok");
+        match frame {
+            Message::Text(text) => return serde_json::from_str(text.as_ref()).expect("json frame"),
+            Message::Ping(_) | Message::Pong(_) => continue,
+            other => panic!("unexpected frame: {other:?}"),
+        }
+    }
+}
+
+async fn recv_until<F>(client: &mut Client, label: &str, mut pred: F) -> Value
+where
+    F: FnMut(&Value) -> bool,
+{
+    let mut recent = Vec::new();
+    for _ in 0..80 {
+        let value = recv_json(client, label).await;
+        if pred(&value) {
+            return value;
+        }
+        recent.push(value);
+        if recent.len() > 8 {
+            recent.remove(0);
+        }
+    }
+    panic!("expected websocket frame not received for {label}; recent={recent:?}");
+}
+
+async fn send_request(client: &mut Client, route: i32, data: Value) {
+    client
+        .send(Message::Text(
+            json!({ "route": route, "data": data }).to_string().into(),
+        ))
+        .await
+        .expect("send request");
 }
