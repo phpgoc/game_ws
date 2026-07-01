@@ -9,9 +9,6 @@ data class ServerStatus(
     val clientCount: Int,
     val roomCount: Int,
 ) {
-    val statusText: String
-        get() = if (running) "运行中" else "已停止"
-
     fun writeTo(intent: Intent) {
         intent.putExtra(EXTRA_RUNNING, running)
         intent.putExtra(EXTRA_HOST, host)
@@ -30,7 +27,7 @@ data class ServerStatus(
         fun fromIntent(intent: Intent): ServerStatus = ServerStatus(
             running = intent.getBooleanExtra(EXTRA_RUNNING, false),
             host = intent.getStringExtra(EXTRA_HOST) ?: "0.0.0.0",
-            port = intent.getIntExtra(EXTRA_PORT, 9001),
+            port = intent.getIntExtra(EXTRA_PORT, ActiveGameServer.port),
             clientCount = intent.getIntExtra(EXTRA_CLIENT_COUNT, 0),
             roomCount = intent.getIntExtra(EXTRA_ROOM_COUNT, 0),
         )

@@ -29,7 +29,11 @@ class LandlordServerService : Service() {
     }
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
-    private val port = 9001
+    private val port = ActiveGameServer.port
+
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(localizedContext(newBase))
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -43,7 +47,10 @@ class LandlordServerService : Service() {
                 stopSelf()
                 return START_NOT_STICKY
             }
-            ACTION_STATUS_REQUEST -> broadcastStatus()
+            ACTION_STATUS_REQUEST -> {
+                broadcastStatus()
+                if (running) updateNotification()
+            }
             else -> startServer()
         }
         return START_STICKY
@@ -131,6 +138,7 @@ class LandlordServerService : Service() {
     }
 
     private fun buildNotification(host: String): Notification {
+        val locale = localizedContext(this)
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
         } else {
@@ -139,15 +147,27 @@ class LandlordServerService : Service() {
         }
         return builder
             .setSmallIcon(android.R.drawable.stat_sys_upload_done)
-            .setContentTitle("斗地主 WS 服务运行中")
-            .setContentText("ws://$host:$port · ${if (running) LandlordNativeServer.clientCount() else 0} 个连接")
+            .setContentTitle(locale.getString(R.string.notification_title_running))
+            .setContentText(
+                locale.getString(
+                    R.string.notification_text_format,
+                    host,
+                    port,
+                    if (running) LandlordNativeServer.clientCount() else 0,
+                ),
+            )
             .setOngoing(true)
             .build()
     }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val channel = NotificationChannel(CHANNEL_ID, "Landlord WS Server", NotificationManager.IMPORTANCE_LOW)
+        val locale = localizedContext(this)
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            locale.getString(R.string.notification_channel_name),
+            NotificationManager.IMPORTANCE_LOW,
+        )
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
