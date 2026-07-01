@@ -828,7 +828,15 @@ impl RoomService {
                     .get(&room_key)
                     .map(|e| e.configs.clone())
                     .unwrap_or_default();
-                self.push_ok_response(&mut dispatch, session_id, Routes::SETTING as i32);
+                self.push_response_with_data(
+                    session_id,
+                    Routes::SETTING as i32,
+                    WsResponseCode::OK,
+                    share_type_public::WsSettingPayload {
+                        current_configs: current_configs.clone(),
+                    },
+                    &mut dispatch,
+                );
                 self.send_other(
                     &room_key,
                     session_id,
@@ -1744,6 +1752,102 @@ mod tests {
         });
         assert!(wrong_game);
         assert!(service.room_key_of(1).is_none());
+    }
+
+    #[test]
+    fn setting_updates_room_broadcasts_and_affects_later_join() {
+        let mut service = RoomService::default();
+        service.connect(1);
+        service.connect(2);
+        service.connect(3);
+
+        let _ = service.handle_common_request(
+            1,
+            &WsRequest {
+                route: Routes::JOIN as i32,
+                data: serde_json::json!({"name":"u1","password":"p1","game_id":GameId::LANDLORD as i32}),
+            },
+            GameId::LANDLORD,
+            settings,
+        );
+        let _ = service.handle_common_request(
+            2,
+            &WsRequest {
+                route: Routes::JOIN as i32,
+                data: serde_json::json!({"name":"u2","password":"p1","game_id":GameId::LANDLORD as i32}),
+            },
+            GameId::LANDLORD,
+            settings,
+        );
+
+        let setting = service
+            .handle_common_request(
+                1,
+                &WsRequest {
+                    route: Routes::SETTING as i32,
+                    data: serde_json::json!({"current_configs":{"test_param":500}}),
+                },
+                GameId::LANDLORD,
+                settings,
+            )
+            .expect("setting common");
+
+        let owner_gets_current_configs = setting.messages.iter().any(|item| match &item.payload {
+            OutboundPayload::Response(RequestResponse::WithData(resp)) => {
+                item.recipient == 1
+                    && resp.route == Routes::SETTING as i32
+                    && resp.code as i32 == WsResponseCode::OK as i32
+                    && resp
+                        .data
+                        .get("current_configs")
+                        .and_then(|configs| configs.get("test_param"))
+                        .and_then(|value| value.as_i64())
+                        == Some(500)
+            }
+            _ => false,
+        });
+        assert!(owner_gets_current_configs);
+
+        let other_gets_setting_event = setting.messages.iter().any(|item| match &item.payload {
+            OutboundPayload::Event(event) if event.code == WsCode::SETTING as i32 => {
+                item.recipient == 2
+                    && event
+                        .data
+                        .get("current_configs")
+                        .and_then(|configs| configs.get("test_param"))
+                        .and_then(|value| value.as_i64())
+                        == Some(500)
+            }
+            _ => false,
+        });
+        assert!(other_gets_setting_event);
+
+        let later_join = service
+            .handle_common_request(
+                3,
+                &WsRequest {
+                    route: Routes::JOIN as i32,
+                    data: serde_json::json!({"name":"u3","password":"p1","game_id":GameId::LANDLORD as i32}),
+                },
+                GameId::LANDLORD,
+                settings,
+            )
+            .expect("join common");
+        let later_join_gets_updated_configs =
+            later_join.messages.iter().any(|item| match &item.payload {
+                OutboundPayload::Response(RequestResponse::WithData(resp)) => {
+                    item.recipient == 3
+                        && resp.route == Routes::JOIN as i32
+                        && resp
+                            .data
+                            .get("current_configs")
+                            .and_then(|configs| configs.get("test_param"))
+                            .and_then(|value| value.as_i64())
+                            == Some(500)
+                }
+                _ => false,
+            });
+        assert!(later_join_gets_updated_configs);
     }
 
     #[test]
