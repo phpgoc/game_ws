@@ -1,17 +1,7 @@
 # share_type_public
 
-公共类型 crate（可开源），包含：
+- 用于websocket服务器和客户端之间的通信。
 
-- `src/common.rs`
-- `src/const.rs`（路由码常量）
-- `src/ws.rs`
-
-API 侧也依赖这里的公共类型。
-
-其中 `src/common.rs` 里有：
-
-- `CommonRequest<T> { code: Routes, data }`
-- `CommonResponse<T> { code: WsCode, data }`
 
 ## 修改后重生成
 
