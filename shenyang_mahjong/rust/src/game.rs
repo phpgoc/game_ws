@@ -6,7 +6,8 @@ use share_type_public::games::shenyang_mahjong::{
     ShenyangMahjongAction, ShenyangMahjongMeldKind, ShenyangMahjongPhase,
     WsShenyangMahjongClaimWindowEvent, WsShenyangMahjongDealEvent, WsShenyangMahjongPlayEvent,
     WsShenyangMahjongPlayRequest, WsShenyangMahjongPlayerSnapshot,
-    WsShenyangMahjongSettlementEvent,
+    WsShenyangMahjongPublicPlayerSnapshot, WsShenyangMahjongSettlementEvent,
+    WsShenyangMahjongTableSnapshotEvent,
 };
 use share_type_public::{GameId, Routes, WsCode, WsResponseCode};
 use tokio::sync::Mutex;
@@ -116,6 +117,53 @@ pub(crate) fn build_settlement_event(
         is_self_draw: settlement.is_self_draw,
         players: snapshots,
     })
+}
+
+pub(crate) fn build_table_snapshot_event(
+    state: &ShenyangMahjongLoopState,
+    viewer_position: usize,
+) -> WsShenyangMahjongTableSnapshotEvent {
+    let players = state.players_snapshot();
+    let mut positions: Vec<usize> = players.keys().copied().collect();
+    positions.sort_unstable();
+    let mut snapshots = Vec::new();
+
+    for position in positions {
+        let (_, name) = players.get(&position).cloned().unwrap_or_default();
+        snapshots.push(WsShenyangMahjongPublicPlayerSnapshot {
+            position: position as i32,
+            name,
+            hand_count: state.hands.get(&position).map(|hand| hand.len()).unwrap_or(0) as i32,
+            discards: state.discards.get(&position).cloned().unwrap_or_default(),
+            melds: state.melds.get(&position).cloned().unwrap_or_default(),
+        });
+    }
+
+    WsShenyangMahjongTableSnapshotEvent {
+        my_tiles: state
+            .hands
+            .get(&viewer_position)
+            .cloned()
+            .unwrap_or_default(),
+        players: snapshots,
+        phase: state.phase,
+        current_position: state.current_position as i32,
+        dealer_position: state.dealer_position as i32,
+        wall_count: state.wall_count() as i32,
+        turn_countdown: state.turn_countdown() as i32,
+        claim_window: state.claim_window.as_ref().map(|window| {
+            WsShenyangMahjongClaimWindowEvent {
+                tile: window.tile,
+                from_position: window.from_position as i32,
+                eligible_positions: window
+                    .eligible_positions
+                    .iter()
+                    .map(|position| *position as i32)
+                    .collect(),
+                seconds: state.turn_countdown() as i32,
+            }
+        }),
+    }
 }
 
 fn config_value(configs: &HashMap<String, i32>, key: &str, fallback: i32) -> i32 {
@@ -279,6 +327,109 @@ pub(crate) fn push_room_event<T: serde::Serialize>(
     payload: T,
 ) {
     room_service.send_all(room_key, code, payload, dispatch);
+}
+
+pub(crate) fn perform_discard(
+    room_service: &RoomService,
+    room_key: &str,
+    state: &mut ShenyangMahjongLoopState,
+    configs: &HashMap<String, i32>,
+    dispatch: &mut Dispatch,
+    position: usize,
+    tile: i32,
+) -> bool {
+    if !state.remove_tiles_from_hand(position, &[tile]) {
+        return false;
+    }
+    state.discards.entry(position).or_default().push(tile);
+    state.last_drawn_tile = None;
+    push_room_event(
+        room_service,
+        room_key,
+        dispatch,
+        WsCode::PLAY as i32,
+        WsShenyangMahjongPlayEvent {
+            name: state.player_name(position),
+            position: position as i32,
+            action: ShenyangMahjongAction::DISCARD,
+            tiles: vec![tile],
+            target_tile: Some(tile),
+            from_position: None,
+            wall_count: state.wall_count() as i32,
+        },
+    );
+
+    let eligible_positions = determine_claim_eligible_positions(state, tile, position);
+    if eligible_positions.is_empty() {
+        advance_to_next_turn(room_service, room_key, state, configs, dispatch);
+    } else {
+        state.claim_window = Some(ClaimWindowState {
+            tile,
+            from_position: position,
+            eligible_positions: eligible_positions.clone(),
+            responses: HashMap::new(),
+        });
+        state.set_turn_countdown(current_claim_time(configs));
+        push_room_event(
+            room_service,
+            room_key,
+            dispatch,
+            WsCode::CLAIM_WINDOW as i32,
+            WsShenyangMahjongClaimWindowEvent {
+                tile,
+                from_position: position as i32,
+                eligible_positions: eligible_positions
+                    .iter()
+                    .map(|item| *item as i32)
+                    .collect(),
+                seconds: current_claim_time(configs) as i32,
+            },
+        );
+    }
+    true
+}
+
+pub(crate) fn perform_self_draw_hu(
+    room_service: &RoomService,
+    room_key: &str,
+    state: &mut ShenyangMahjongLoopState,
+    dispatch: &mut Dispatch,
+    position: usize,
+) {
+    push_room_event(
+        room_service,
+        room_key,
+        dispatch,
+        WsCode::PLAY as i32,
+        WsShenyangMahjongPlayEvent {
+            name: state.player_name(position),
+            position: position as i32,
+            action: ShenyangMahjongAction::HU,
+            tiles: Vec::new(),
+            target_tile: state.last_drawn_tile,
+            from_position: None,
+            wall_count: state.wall_count() as i32,
+        },
+    );
+    let win_tile = state.last_drawn_tile;
+    state.enter_settlement(vec![position], None, win_tile, true);
+    push_phase_change(
+        room_service,
+        room_key,
+        dispatch,
+        ShenyangMahjongPhase::Settlement,
+        state.current_position,
+        0,
+    );
+    if let Some(event) = build_settlement_event(state) {
+        push_room_event(
+            room_service,
+            room_key,
+            dispatch,
+            WsCode::GAME_OVER as i32,
+            event,
+        );
+    }
 }
 
 pub(crate) fn resolve_claim_window(
@@ -631,70 +782,26 @@ impl ShenyangMahjongGameHandler {
                                 WsResponseCode::NO_PERMISSION,
                             );
                         };
-                        if hand.len() % 3 != 2 || !tiles_in_hand(&hand, &[tile]) {
+                        if !tiles_in_hand(&hand, &[tile]) {
                             return room_service.error_response(
                                 session_id,
                                 Routes::PLAY as i32,
                                 WsResponseCode::NO_PERMISSION,
                             );
                         }
-                        if !state.remove_tiles_from_hand(position, &[tile]) {
-                            return room_service.error_response(
-                                session_id,
-                                Routes::PLAY as i32,
-                                WsResponseCode::NO_PERMISSION,
-                            );
-                        }
-                        state.discards.entry(position).or_default().push(tile);
-                        state.last_drawn_tile = None;
-                        push_room_event(
+                        if !perform_discard(
                             room_service,
                             &room_key,
+                            &mut state,
+                            &configs,
                             &mut dispatch,
-                            WsCode::PLAY as i32,
-                            WsShenyangMahjongPlayEvent {
-                                name: state.player_name(position),
-                                position: position as i32,
-                                action: ShenyangMahjongAction::DISCARD,
-                                tiles: vec![tile],
-                                target_tile: Some(tile),
-                                from_position: None,
-                                wall_count: state.wall_count() as i32,
-                            },
-                        );
-
-                        let eligible_positions =
-                            determine_claim_eligible_positions(&state, tile, position);
-                        if eligible_positions.is_empty() {
-                            advance_to_next_turn(
-                                room_service,
-                                &room_key,
-                                &mut state,
-                                &configs,
-                                &mut dispatch,
-                            );
-                        } else {
-                            state.claim_window = Some(ClaimWindowState {
-                                tile,
-                                from_position: position,
-                                eligible_positions: eligible_positions.clone(),
-                                responses: HashMap::new(),
-                            });
-                            state.set_turn_countdown(current_claim_time(&configs));
-                            push_room_event(
-                                room_service,
-                                &room_key,
-                                &mut dispatch,
-                                WsCode::CLAIM_WINDOW as i32,
-                                WsShenyangMahjongClaimWindowEvent {
-                                    tile,
-                                    from_position: position as i32,
-                                    eligible_positions: eligible_positions
-                                        .iter()
-                                        .map(|item| *item as i32)
-                                        .collect(),
-                                    seconds: current_claim_time(&configs) as i32,
-                                },
+                            position,
+                            tile,
+                        ) {
+                            return room_service.error_response(
+                                session_id,
+                                Routes::PLAY as i32,
+                                WsResponseCode::NO_PERMISSION,
                             );
                         }
                     }
@@ -707,40 +814,13 @@ impl ShenyangMahjongGameHandler {
                                 WsResponseCode::NO_PERMISSION,
                             );
                         }
-                        push_room_event(
+                        perform_self_draw_hu(
                             room_service,
                             &room_key,
+                            &mut state,
                             &mut dispatch,
-                            WsCode::PLAY as i32,
-                            WsShenyangMahjongPlayEvent {
-                                name: state.player_name(position),
-                                position: position as i32,
-                                action: ShenyangMahjongAction::HU,
-                                tiles: Vec::new(),
-                                target_tile: state.last_drawn_tile,
-                                from_position: None,
-                                wall_count: state.wall_count() as i32,
-                            },
+                            position,
                         );
-                        let win_tile = state.last_drawn_tile;
-                        state.enter_settlement(vec![position], None, win_tile, true);
-                        push_phase_change(
-                            room_service,
-                            &room_key,
-                            &mut dispatch,
-                            ShenyangMahjongPhase::Settlement,
-                            state.current_position,
-                            0,
-                        );
-                        if let Some(event) = build_settlement_event(&state) {
-                            push_room_event(
-                                room_service,
-                                &room_key,
-                                &mut dispatch,
-                                WsCode::GAME_OVER as i32,
-                                event,
-                            );
-                        }
                     }
                     _ => {
                         return room_service.error_response(
@@ -880,15 +960,36 @@ impl Default for ShenyangMahjongGameHandler {
 impl GameHandler for ShenyangMahjongGameHandler {
     fn after_common_request(
         &mut self,
-        _room_service: &mut RoomService,
-        _session_id: SessionId,
+        room_service: &mut RoomService,
+        session_id: SessionId,
         request: &ClientRequest,
-        _dispatch: &mut Dispatch,
+        dispatch: &mut Dispatch,
     ) {
         if matches!(request.route, r if r == Routes::QUIT as i32 || r == Routes::DISBAND as i32) {
             self.prune_stopped_loop_states();
         }
-        let _ = join_succeeded;
+        if request.route != Routes::JOIN as i32 || !join_succeeded(dispatch, session_id) {
+            return;
+        }
+        let Some(room_key) = room_service.room_key_of(session_id) else {
+            return;
+        };
+        let Some(position) = room_service.session_position(session_id) else {
+            return;
+        };
+        let Some(loop_state) = self.loop_state(&room_key) else {
+            return;
+        };
+        let state = loop_state.lock().unwrap();
+        if state.phase == ShenyangMahjongPhase::Start {
+            return;
+        }
+        push_direct_event(
+            dispatch,
+            session_id,
+            WsCode::TABLE_SNAPSHOT as i32,
+            build_table_snapshot_event(&state, position),
+        );
     }
 
     fn build_game_state(&self) -> Box<dyn ws_common::game_state::GameState> {

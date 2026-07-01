@@ -1,3 +1,4 @@
+mod ai;
 pub mod game;
 mod game_loop;
 pub mod game_setting;

@@ -56,6 +56,7 @@ pub enum Routes {
     AWAY = 12,
     BACK = 13,
     SWAP = 14,
+    ADD_AI = 15,
 
     DEAL = 20,
     PLAY = 21,
@@ -89,6 +90,7 @@ pub enum WsCode {
     DEAL_FACE_DOWN_CARDS = 25,
     CHANGE_DEAL = 26,
     CHANGE_PHASE = 27,
+    TABLE_SNAPSHOT = 28,
 
     SHOW_HIDDEN_CARDS = 30,
 

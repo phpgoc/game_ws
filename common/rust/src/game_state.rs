@@ -20,6 +20,8 @@ pub struct CommonGameState {
     pub away_positions: HashSet<usize>,
     /// WebSocket 已断开但仍保留座位、允许按 name 重连的 position 集合。
     pub disconnected_positions: HashSet<usize>,
+    /// 由服务器托管的虚拟玩家位置。AI 是房间成员，但不是 WebSocket session。
+    pub ai_positions: HashSet<usize>,
     /// 房间生命周期已结束，游戏 loop 应尽快退出。
     pub stop_requested: bool,
 }
@@ -31,7 +33,7 @@ pub trait GameState: Send {
         self.shared_common_state().lock().unwrap().action_received
     }
 
-    fn can_swap_players(&self) -> bool {
+    fn can_accept_players(&self) -> bool {
         true
     }
 
@@ -72,6 +74,10 @@ pub trait GameState: Send {
         self.shared_common_state().lock().unwrap().is_away(pos)
     }
 
+    fn is_ai_position(&self, pos: usize) -> bool {
+        self.shared_common_state().lock().unwrap().is_ai_position(pos)
+    }
+
     fn is_disconnected(&self, pos: usize) -> bool {
         self.shared_common_state()
             .lock()
@@ -85,6 +91,13 @@ pub trait GameState: Send {
 
     fn mark_away(&mut self, pos: usize) {
         self.shared_common_state().lock().unwrap().mark_away(pos);
+    }
+
+    fn mark_ai_position(&mut self, pos: usize) {
+        self.shared_common_state()
+            .lock()
+            .unwrap()
+            .mark_ai_position(pos);
     }
 
     fn mark_disconnected(&mut self, pos: usize) {
@@ -175,6 +188,7 @@ impl CommonGameState {
         self.players
             .insert(position, (session_id, name.to_string()));
         self.disconnected_positions.remove(&position);
+        self.ai_positions.remove(&position);
     }
     pub fn clear_away(&mut self) {
         self.away_positions.clear();
@@ -188,11 +202,17 @@ impl CommonGameState {
     pub fn is_away(&self, pos: usize) -> bool {
         self.away_positions.contains(&pos)
     }
+    pub fn is_ai_position(&self, pos: usize) -> bool {
+        self.ai_positions.contains(&pos)
+    }
     pub fn is_disconnected(&self, pos: usize) -> bool {
         self.disconnected_positions.contains(&pos)
     }
     pub fn mark_away(&mut self, pos: usize) -> bool {
         self.away_positions.insert(pos)
+    }
+    pub fn mark_ai_position(&mut self, pos: usize) -> bool {
+        self.ai_positions.insert(pos)
     }
     pub fn mark_disconnected(&mut self, pos: usize) -> bool {
         self.disconnected_positions.insert(pos)
@@ -222,6 +242,7 @@ impl CommonGameState {
         self.avatars.remove(&position);
         self.away_positions.remove(&position);
         self.disconnected_positions.remove(&position);
+        self.ai_positions.remove(&position);
     }
 
     pub fn request_stop(&mut self) {
@@ -258,6 +279,8 @@ impl CommonGameState {
         let b_away = self.away_positions.remove(&pos_b);
         let a_disconnected = self.disconnected_positions.remove(&pos_a);
         let b_disconnected = self.disconnected_positions.remove(&pos_b);
+        let a_ai = self.ai_positions.remove(&pos_a);
+        let b_ai = self.ai_positions.remove(&pos_b);
         if let Some(p) = b {
             self.players.insert(pos_a, p);
         }
@@ -275,6 +298,12 @@ impl CommonGameState {
         }
         if a_disconnected {
             self.disconnected_positions.insert(pos_b);
+        }
+        if b_ai {
+            self.ai_positions.insert(pos_a);
+        }
+        if a_ai {
+            self.ai_positions.insert(pos_b);
         }
     }
 }

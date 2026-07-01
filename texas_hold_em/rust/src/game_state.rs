@@ -244,6 +244,10 @@ impl TexasHoldEmGameState {
 }
 
 impl GameState for TexasHoldEmGameState {
+    fn can_accept_players(&self) -> bool {
+        false
+    }
+
     fn shared_common_state(&self) -> Arc<Mutex<CommonGameState>> {
         Arc::clone(&self.base)
     }

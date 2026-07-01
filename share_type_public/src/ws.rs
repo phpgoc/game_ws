@@ -7,6 +7,13 @@ use crate::{
     r#const::{GameId, WsResponseCode},
 };
 
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsAddAiRequest {
+    #[serde(default)]
+    pub count: i32,
+}
+
 /// 首个 JOIN 建房后的房主参数响应，以及 SWAP 成房主时的响应。
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,6 +54,8 @@ pub struct WsMemberInfo {
     #[serde(default)]
     pub avatar_url: String,
     pub is_active: bool,
+    #[serde(default)]
+    pub is_ai: bool,
 }
 
 #[typeshare]

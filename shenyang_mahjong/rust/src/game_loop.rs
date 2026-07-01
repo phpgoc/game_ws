@@ -6,15 +6,13 @@ use share_type_public::WsCode;
 use tokio::sync::Mutex;
 use ws_common::{RoomService, SessionSenders};
 
+use crate::ai::{maybe_play_ai_turn, maybe_resolve_ai_claims};
 use crate::game::{
-    LoopStateRegistry, advance_to_next_turn, current_claim_time, current_play_time,
-    push_phase_change, push_private_deal_events, push_room_event, resolve_claim_window,
-    settlement_time, start_time,
+    LoopStateRegistry, current_play_time, perform_discard, push_phase_change,
+    push_private_deal_events, push_room_event, resolve_claim_window, settlement_time, start_time,
 };
 use crate::game_state::{ClaimResponse, ShenyangMahjongLoopState};
-use share_type_public::games::shenyang_mahjong::{
-    ShenyangMahjongAction, ShenyangMahjongPhase, WsShenyangMahjongPlayEvent,
-};
+use share_type_public::games::shenyang_mahjong::ShenyangMahjongPhase;
 
 fn auto_discard_tile(state: &ShenyangMahjongLoopState, position: usize) -> Option<i32> {
     if let Some(tile) = state.last_drawn_tile
@@ -30,6 +28,35 @@ fn auto_discard_tile(state: &ShenyangMahjongLoopState, position: usize) -> Optio
         .hands
         .get(&position)
         .and_then(|hand| hand.last().copied())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use ws_common::game_state::CommonGameState;
+
+    use super::*;
+
+    #[test]
+    fn auto_discard_prefers_the_last_drawn_tile() {
+        let base = Arc::new(Mutex::new(CommonGameState::default()));
+        let mut state = ShenyangMahjongLoopState::new(base);
+        state.hands.insert(0, vec![1, 2, 9]);
+        state.last_drawn_tile = Some(2);
+
+        assert_eq!(auto_discard_tile(&state, 0), Some(2));
+    }
+
+    #[test]
+    fn auto_discard_falls_back_to_the_last_tile_in_hand() {
+        let base = Arc::new(Mutex::new(CommonGameState::default()));
+        let mut state = ShenyangMahjongLoopState::new(base);
+        state.hands.insert(0, vec![1, 2, 9]);
+        state.last_drawn_tile = Some(8);
+
+        assert_eq!(auto_discard_tile(&state, 0), Some(9));
+    }
 }
 
 async fn deliver(dispatch: ws_common::Dispatch, senders: &SessionSenders) {
@@ -115,6 +142,33 @@ pub(crate) fn start_game_loop(
                         continue;
                     }
 
+                    let mut ai_dispatch = ws_common::Dispatch::default();
+                    let ai_acted = {
+                        let room = room_service.lock().await;
+                        let mut guard = state.lock().unwrap();
+                        if maybe_resolve_ai_claims(
+                            &room,
+                            &room_key,
+                            &mut guard,
+                            &configs,
+                            &mut ai_dispatch,
+                        ) {
+                            true
+                        } else {
+                            maybe_play_ai_turn(
+                                &room,
+                                &room_key,
+                                &mut guard,
+                                &configs,
+                                &mut ai_dispatch,
+                            )
+                        }
+                    };
+                    if ai_acted {
+                        deliver(ai_dispatch, &senders).await;
+                        continue;
+                    }
+
                     let mut should_resolve_claims = false;
                     let mut should_auto_discard = None;
                     {
@@ -166,61 +220,16 @@ pub(crate) fn start_game_loop(
                             if guard.current_position != position || guard.claim_window.is_some() {
                                 continue;
                             }
-                            if !guard.remove_tiles_from_hand(position, &[tile]) {
-                                continue;
-                            }
-                            guard.discards.entry(position).or_default().push(tile);
-                            guard.last_drawn_tile = None;
-                            push_room_event(
+                            if !perform_discard(
                                 &room,
                                 &room_key,
+                                &mut guard,
+                                &configs,
                                 &mut dispatch,
-                                WsCode::PLAY as i32,
-                                WsShenyangMahjongPlayEvent {
-                                    name: guard.player_name(position),
-                                    position: position as i32,
-                                    action: ShenyangMahjongAction::DISCARD,
-                                    tiles: vec![tile],
-                                    target_tile: Some(tile),
-                                    from_position: None,
-                                    wall_count: guard.wall_count() as i32,
-                                },
-                            );
-                            let eligible_positions =
-                                crate::game::determine_claim_eligible_positions(
-                                    &guard, tile, position,
-                                );
-                            if eligible_positions.is_empty() {
-                                advance_to_next_turn(
-                                    &room,
-                                    &room_key,
-                                    &mut guard,
-                                    &configs,
-                                    &mut dispatch,
-                                );
-                            } else {
-                                guard.claim_window = Some(crate::game_state::ClaimWindowState {
-                                    tile,
-                                    from_position: position,
-                                    eligible_positions: eligible_positions.clone(),
-                                    responses: HashMap::new(),
-                                });
-                                guard.set_turn_countdown(current_claim_time(&configs));
-                                push_room_event(
-                                    &room,
-                                    &room_key,
-                                    &mut dispatch,
-                                    WsCode::CLAIM_WINDOW as i32,
-                                    share_type_public::games::shenyang_mahjong::WsShenyangMahjongClaimWindowEvent {
-                                        tile,
-                                        from_position: position as i32,
-                                        eligible_positions: eligible_positions
-                                            .iter()
-                                            .map(|item| *item as i32)
-                                            .collect(),
-                                        seconds: current_claim_time(&configs) as i32,
-                                    },
-                                );
+                                position,
+                                tile,
+                            ) {
+                                continue;
                             }
                         }
                         deliver(dispatch, &senders).await;

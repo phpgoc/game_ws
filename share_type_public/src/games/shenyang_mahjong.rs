@@ -32,7 +32,7 @@ pub enum ShenyangMahjongMeldKind {
 
 #[typeshare]
 #[repr(i8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
 pub enum ShenyangMahjongPhase {
     Start,
     Play,
@@ -95,6 +95,29 @@ pub struct WsShenyangMahjongPlayerSnapshot {
     pub hand_tiles: Vec<i32>,
     pub discards: Vec<i32>,
     pub melds: Vec<WsShenyangMahjongMeld>,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsShenyangMahjongPublicPlayerSnapshot {
+    pub position: i32,
+    pub name: String,
+    pub hand_count: i32,
+    pub discards: Vec<i32>,
+    pub melds: Vec<WsShenyangMahjongMeld>,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsShenyangMahjongTableSnapshotEvent {
+    pub my_tiles: Vec<i32>,
+    pub players: Vec<WsShenyangMahjongPublicPlayerSnapshot>,
+    pub phase: ShenyangMahjongPhase,
+    pub current_position: i32,
+    pub dealer_position: i32,
+    pub wall_count: i32,
+    pub turn_countdown: i32,
+    pub claim_window: Option<WsShenyangMahjongClaimWindowEvent>,
 }
 
 #[typeshare]

@@ -85,6 +85,10 @@ impl ShenyangMahjongGameState {
 }
 
 impl GameState for ShenyangMahjongGameState {
+    fn can_accept_players(&self) -> bool {
+        false
+    }
+
     fn shared_common_state(&self) -> Arc<Mutex<CommonGameState>> {
         Arc::clone(&self.inner.lock().unwrap().base)
     }
@@ -101,6 +105,14 @@ impl ShenyangMahjongLoopState {
 
     pub fn is_paused(&self) -> bool {
         self.base.lock().unwrap().paused
+    }
+
+    pub fn is_ai_position(&self, position: usize) -> bool {
+        self.base.lock().unwrap().is_ai_position(position)
+    }
+
+    pub fn is_away(&self, position: usize) -> bool {
+        self.base.lock().unwrap().is_away(position)
     }
 
     pub fn deal_new_round(&mut self) {
