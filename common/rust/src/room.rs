@@ -111,6 +111,31 @@ impl RoomService {
         self.sessions.entry(session_id).or_default();
     }
 
+    pub fn connected_session_ids(&self, room_key: &str) -> Vec<SessionId> {
+        self.sessions
+            .iter()
+            .filter_map(|(sid, session)| {
+                (session.room_key.as_deref() == Some(room_key) && session.position.is_some())
+                    .then_some(*sid)
+            })
+            .collect()
+    }
+
+    pub fn connected_session_ids_for_position(
+        &self,
+        room_key: &str,
+        position: usize,
+    ) -> Vec<SessionId> {
+        self.sessions
+            .iter()
+            .filter_map(|(sid, session)| {
+                (session.room_key.as_deref() == Some(room_key)
+                    && session.position == Some(position))
+                .then_some(*sid)
+            })
+            .collect()
+    }
+
     /// 获取当前 configs JSON（用于 SETTING/JOIN 响应）。
     fn current_configs_json(&self, room_key: &str) -> Option<Value> {
         self.rooms.get(room_key).map(|e| json!(e.configs))
@@ -1183,6 +1208,31 @@ impl RoomService {
         };
         let data = serde_json::to_value(payload).unwrap_or(Value::Null);
         for (_, (sid, _)) in entry.state.players() {
+            dispatch.messages.push(Delivery {
+                recipient: sid,
+                payload: OutboundPayload::Event(CommonEvent {
+                    code,
+                    data: data.clone(),
+                }),
+            });
+        }
+    }
+
+    /// Broadcast to currently connected sessions in a room without reading game state.
+    ///
+    /// This is useful inside game request handlers: the runtime already holds the
+    /// `RoomService` lock, while some game loops may hold game-state locks and then
+    /// wait for `RoomService`. Reading `entry.state.players()` here can invert that
+    /// lock order and deadlock.
+    pub fn send_all_connected<T: serde::Serialize>(
+        &self,
+        room_key: &str,
+        code: i32,
+        payload: T,
+        dispatch: &mut Dispatch,
+    ) {
+        let data = serde_json::to_value(payload).unwrap_or(Value::Null);
+        for sid in self.connected_session_ids(room_key) {
             dispatch.messages.push(Delivery {
                 recipient: sid,
                 payload: OutboundPayload::Event(CommonEvent {

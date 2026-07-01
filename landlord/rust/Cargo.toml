@@ -9,3 +9,7 @@ serde_json = "1"
 share_type_public = { path = "../../share_type_public" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 ws_common = { path = "../../common/rust" }
+
+[dev-dependencies]
+futures-util = "0.3"
+tokio-tungstenite = "0.29"
