@@ -157,10 +157,10 @@ fn dispatch_all(
     room_service: &RoomService,
 ) -> Vec<Delivery> {
     room_service
-        .get_room_members(room_key)
-        .iter()
-        .map(|(sid, _, _, _)| Delivery {
-            recipient: *sid,
+        .connected_session_ids(room_key)
+        .into_iter()
+        .map(|sid| Delivery {
+            recipient: sid,
             payload: OutboundPayload::Event(share_type_public::CommonEvent {
                 code,
                 data: data.clone(),
@@ -194,20 +194,14 @@ fn dispatch_to_position(
     room_service: &RoomService,
 ) -> Vec<Delivery> {
     room_service
-        .get_room_members(room_key)
-        .iter()
-        .filter_map(|(sid, _, pos, _)| {
-            if *pos == position {
-                Some(Delivery {
-                    recipient: *sid,
-                    payload: OutboundPayload::Event(share_type_public::CommonEvent {
-                        code,
-                        data: data.clone(),
-                    }),
-                })
-            } else {
-                None
-            }
+        .connected_session_ids_for_position(room_key, position)
+        .into_iter()
+        .map(|sid| Delivery {
+            recipient: sid,
+            payload: OutboundPayload::Event(share_type_public::CommonEvent {
+                code,
+                data: data.clone(),
+            }),
         })
         .collect()
 }
