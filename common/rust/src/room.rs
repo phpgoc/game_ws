@@ -84,6 +84,14 @@ impl std::fmt::Debug for RoomEntry {
 }
 
 impl RoomService {
+    pub fn room_count(&self) -> usize {
+        self.rooms.len()
+    }
+
+    pub fn session_count(&self) -> usize {
+        self.sessions.len()
+    }
+
     /// 清除 game state（游戏结束时调用）。
     pub fn clear_room_game_state(&mut self, room_key: &str) {
         if let Some(entry) = self.rooms.get_mut(room_key) {

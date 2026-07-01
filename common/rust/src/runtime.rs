@@ -12,7 +12,7 @@ use anyhow::Context;
 use futures_util::{SinkExt, StreamExt};
 use tokio::{
     net::{TcpListener, TcpStream},
-    sync::{Mutex, mpsc},
+    sync::{Mutex, mpsc, watch},
 };
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 use tracing::{error, info, warn};
@@ -61,6 +61,59 @@ pub struct RuntimeConfig {
 type SessionSender = mpsc::UnboundedSender<Message>;
 pub type SessionSenders = Arc<Mutex<HashMap<SessionId, SessionSender>>>;
 
+#[derive(Clone)]
+pub struct RuntimeStats {
+    room_service: Arc<Mutex<RoomService>>,
+    senders: SessionSenders,
+}
+
+impl RuntimeStats {
+    pub async fn client_count(&self) -> usize {
+        self.senders.lock().await.len()
+    }
+
+    pub async fn room_count(&self) -> usize {
+        self.room_service.lock().await.room_count()
+    }
+}
+
+#[derive(Clone)]
+pub struct StopSignal {
+    rx: watch::Receiver<bool>,
+}
+
+impl StopSignal {
+    pub fn new(rx: watch::Receiver<bool>) -> Self {
+        Self { rx }
+    }
+
+    pub fn is_stopped(&self) -> bool {
+        *self.rx.borrow()
+    }
+
+    pub async fn stopped(&mut self) {
+        if self.is_stopped() {
+            return;
+        }
+        let _ = self.rx.changed().await;
+    }
+}
+
+pub struct RuntimeStopHandle {
+    tx: watch::Sender<bool>,
+}
+
+impl RuntimeStopHandle {
+    pub fn stop(&self) {
+        let _ = self.tx.send(true);
+    }
+}
+
+pub fn runtime_stop_channel() -> (RuntimeStopHandle, StopSignal) {
+    let (tx, rx) = watch::channel(false);
+    (RuntimeStopHandle { tx }, StopSignal::new(rx))
+}
+
 async fn deliver(dispatch: Dispatch, senders: &SessionSenders) -> anyhow::Result<()> {
     let mut encoded = Vec::with_capacity(dispatch.messages.len());
     for message in dispatch.messages {
@@ -85,6 +138,7 @@ async fn handle_connection<H>(
     senders: SessionSenders,
     room_service: Arc<Mutex<RoomService>>,
     game_handler: Arc<Mutex<H>>,
+    mut stop_signal: StopSignal,
 ) -> anyhow::Result<()>
 where
     H: GameHandler,
@@ -115,16 +169,21 @@ where
     });
 
     loop {
-        let frame = match tokio::time::timeout(idle_timeout, source.next()).await {
-            Ok(Some(Ok(frame))) => frame,
-            Ok(Some(Err(err))) => {
-                info!(session_id, peer = %peer, ?err, "connection reset, treating as disconnect");
-                break;
-            }
-            Ok(None) => break,
-            Err(_) => {
-                warn!(session_id, peer = %peer, "idle timeout, closing connection");
-                break;
+        let frame = tokio::select! {
+            _ = stop_signal.stopped() => break,
+            result = tokio::time::timeout(idle_timeout, source.next()) => {
+                match result {
+                    Ok(Some(Ok(frame))) => frame,
+                    Ok(Some(Err(err))) => {
+                        info!(session_id, peer = %peer, ?err, "connection reset, treating as disconnect");
+                        break;
+                    }
+                    Ok(None) => break,
+                    Err(_) => {
+                        warn!(session_id, peer = %peer, "idle timeout, closing connection");
+                        break;
+                    }
+                }
             }
         };
 
@@ -237,6 +296,20 @@ pub async fn run_room_runtime<H>(config: RuntimeConfig, handler: H) -> anyhow::R
 where
     H: GameHandler,
 {
+    let (_stop_handle, stop_signal) = runtime_stop_channel();
+    run_room_runtime_until_stopped(config, handler, stop_signal)
+        .await
+        .map(|_| ())
+}
+
+pub async fn run_room_runtime_until_stopped<H>(
+    config: RuntimeConfig,
+    handler: H,
+    mut stop_signal: StopSignal,
+) -> anyhow::Result<RuntimeStats>
+where
+    H: GameHandler,
+{
     init_tracing();
 
     let listener = TcpListener::bind(&config.listen_addr)
@@ -246,6 +319,10 @@ where
 
     let senders: SessionSenders = Arc::new(Mutex::new(HashMap::new()));
     let room_service = Arc::new(Mutex::new(RoomService::default()));
+    let stats = RuntimeStats {
+        room_service: Arc::clone(&room_service),
+        senders: Arc::clone(&senders),
+    };
     let game_handler = Arc::new(Mutex::new(handler));
 
     // Set context for game-specific initialization
@@ -257,13 +334,17 @@ where
     let next_session = Arc::new(AtomicU64::new(1));
 
     loop {
-        let (stream, peer) = listener.accept().await?;
+        let (stream, peer) = tokio::select! {
+            _ = stop_signal.stopped() => break,
+            result = listener.accept() => result?,
+        };
         let session_id = next_session.fetch_add(1, Ordering::Relaxed);
         let senders = Arc::clone(&senders);
         let room_service = Arc::clone(&room_service);
         let game_handler = Arc::clone(&game_handler);
         let idle_timeout = config.idle_timeout;
         let heartbeat_interval = config.heartbeat_interval;
+        let stop_signal = stop_signal.clone();
 
         tokio::spawn(async move {
             if let Err(err) = handle_connection(
@@ -275,6 +356,7 @@ where
                 senders,
                 room_service,
                 game_handler,
+                stop_signal,
             )
             .await
             {
@@ -284,4 +366,6 @@ where
             }
         });
     }
+
+    Ok(stats)
 }
