@@ -47,7 +47,7 @@ impl LandlordGameState {
 }
 
 impl GameState for LandlordGameState {
-    fn can_swap_players(&self) -> bool {
+    fn can_accept_players(&self) -> bool {
         false
     }
 

@@ -31,7 +31,7 @@ pub trait GameState: Send {
         self.shared_common_state().lock().unwrap().action_received
     }
 
-    fn can_swap_players(&self) -> bool {
+    fn can_accept_players(&self) -> bool {
         true
     }
 

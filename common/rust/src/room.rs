@@ -896,7 +896,7 @@ impl RoomService {
                     WsResponseCode::NOT_LOGIN,
                 );
             };
-            if !entry.state.can_swap_players() {
+            if !entry.state.can_accept_players() {
                 return self.error_response(
                     session_id,
                     Routes::SWAP as i32,
@@ -1417,12 +1417,12 @@ mod tests {
     use crate::game_setting::GameSettings;
     use crate::game_state::{CommonGameState, GameState};
 
-    struct NoSwapState {
+    struct NoAcceptState {
         common: Arc<Mutex<CommonGameState>>,
     }
 
-    impl GameState for NoSwapState {
-        fn can_swap_players(&self) -> bool {
+    impl GameState for NoAcceptState {
+        fn can_accept_players(&self) -> bool {
             false
         }
 

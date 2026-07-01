@@ -5,12 +5,9 @@ use std::{
     time::Duration,
 };
 
-use ws_common::{
-    RuntimeConfig, RuntimeStats, RuntimeStopHandle, run_room_runtime_until_stopped,
-    runtime_stop_channel,
-};
+use ws_common::{RuntimeStats, RuntimeStopHandle, runtime_stop_channel};
 
-use crate::game::LandlordGameHandler;
+use crate::server::run_landlord_runtime_until_stopped;
 
 static SERVER: OnceLock<Mutex<Option<AndroidServer>>> = OnceLock::new();
 
@@ -100,17 +97,7 @@ pub extern "C" fn java_com_example_landlordserver_rust_landlord_server_native_st
             Err(_) => return,
         };
         runtime.block_on(async move {
-            let result = run_room_runtime_until_stopped(
-                RuntimeConfig {
-                    service_name: "landlord-android",
-                    listen_addr,
-                    idle_timeout: Duration::from_secs(120),
-                    heartbeat_interval: Duration::from_secs(20),
-                },
-                LandlordGameHandler::default(),
-                stop_signal,
-            )
-            .await;
+            let result = run_landlord_runtime_until_stopped(listen_addr, stop_signal).await;
             if let Ok(stats) = result {
                 let _ = stats_tx.send(stats);
             }
