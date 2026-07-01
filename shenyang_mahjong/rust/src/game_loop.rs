@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use share_type_public::{WsCode, WsPositionEvent};
+use share_type_public::WsCode;
 use tokio::sync::Mutex;
 use ws_common::{RoomService, SessionSenders};
 

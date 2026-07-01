@@ -99,6 +99,10 @@ impl ShenyangMahjongLoopState {
         self.base.lock().unwrap().clear_away();
     }
 
+    pub fn is_paused(&self) -> bool {
+        self.base.lock().unwrap().paused
+    }
+
     pub fn deal_new_round(&mut self) {
         self.phase = ShenyangMahjongPhase::Play;
         self.claim_window = None;

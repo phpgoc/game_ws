@@ -5,10 +5,7 @@ use landlord::game::LandlordGameHandler;
 use serde_json::{Value, json};
 use share_type_public::{GameId, LandlordRoutes, Routes, WsCode, WsResponseCode};
 use tokio::net::TcpListener as TokioTcpListener;
-use tokio_tungstenite::{
-    WebSocketStream, connect_async,
-    tungstenite::Message,
-};
+use tokio_tungstenite::{WebSocketStream, connect_async, tungstenite::Message};
 use ws_common::{RuntimeConfig, run_room_runtime};
 
 type Client = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
@@ -43,7 +40,9 @@ async fn recv_json(client: &mut Client, label: &str) -> Value {
 
 async fn send_request(client: &mut Client, route: i32, data: Value) {
     client
-        .send(Message::Text(json!({ "route": route, "data": data }).to_string().into()))
+        .send(Message::Text(
+            json!({ "route": route, "data": data }).to_string().into(),
+        ))
         .await
         .expect("send request");
 }
@@ -93,7 +92,11 @@ fn position_from_joined(response: &Value) -> usize {
         .map(|members| {
             let used: Vec<usize> = members
                 .iter()
-                .filter_map(|item| item.get("position").and_then(Value::as_u64).map(|v| v as usize))
+                .filter_map(|item| {
+                    item.get("position")
+                        .and_then(Value::as_u64)
+                        .map(|v| v as usize)
+                })
                 .collect();
             (0..3).find(|pos| !used.contains(pos)).unwrap_or(0)
         })
@@ -212,8 +215,7 @@ async fn landlord_three_players_can_start_call_and_play_over_ws() {
     )
     .await;
     recv_until(clients[first_caller], "call landlord ok", |value| {
-        value.get("route").and_then(Value::as_i64)
-            == Some(LandlordRoutes::CALL_LANDLORD as i64)
+        value.get("route").and_then(Value::as_i64) == Some(LandlordRoutes::CALL_LANDLORD as i64)
             && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
     })
     .await;
@@ -269,7 +271,9 @@ async fn landlord_three_players_can_start_call_and_play_over_ws() {
                 .get("data")
                 .and_then(|data| data.get("cards"))
                 .and_then(Value::as_array)
-                .is_some_and(|cards| cards.first().and_then(Value::as_i64) == Some(play_card as i64))
+                .is_some_and(|cards| {
+                    cards.first().and_then(Value::as_i64) == Some(play_card as i64)
+                })
     })
     .await;
     assert_eq!(play_event["data"]["cards"], json!([play_card]));
