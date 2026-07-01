@@ -1,5 +1,6 @@
 pub mod landlord;
 pub mod shenyang_mahjong;
+pub mod texas_hold_em;
 
 pub use crate::GameParamRange;
 use serde::{Deserialize, Serialize};
