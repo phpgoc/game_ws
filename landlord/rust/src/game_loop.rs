@@ -10,7 +10,7 @@ use share_type_public::{
     },
 };
 use tokio::sync::Mutex;
-use ws_common::{Delivery, OutboundPayload, RoomService, SessionSenders, dlog, tracing};
+use ws_common::{Delivery, OutboundPayload, RoomService, SessionSenders, dlog};
 
 use crate::core::play::card_rank;
 use crate::game_state::LandlordLoopState;
@@ -800,7 +800,7 @@ pub(crate) fn start_game_loop(
             let current_phase = { state.lock().unwrap().phase };
             let player_num = state.lock().unwrap().base.lock().unwrap().players.len();
             dlog!(
-                tracing::Level::INFO,
+                ws_common::tracing::Level::INFO,
                 "[landlord][game-loop] room={} phase={:?} play number ={} action_received={}",
                 room_key,
                 current_phase,

@@ -36,7 +36,7 @@ pub use room::{
 pub use runtime::{
     GameHandler, RuntimeConfig, RuntimeStats, RuntimeStopHandle, SessionSenders, StopSignal,
     run_game_server, run_game_server_with_cli, run_room_runtime, run_room_runtime_until_stopped,
-    runtime_stop_channel,
+    run_room_runtime_until_stopped_with_ready, runtime_stop_channel,
 };
 pub use share_type_public::GameParamRange;
 #[cfg(debug_assertions)]

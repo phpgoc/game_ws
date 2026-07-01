@@ -4,6 +4,7 @@ use std::{
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
+        mpsc::SyncSender,
     },
     time::Duration,
 };
@@ -267,7 +268,31 @@ where
 pub async fn run_room_runtime_until_stopped<H>(
     config: RuntimeConfig,
     handler: H,
+    stop_signal: StopSignal,
+) -> anyhow::Result<RuntimeStats>
+where
+    H: GameHandler,
+{
+    run_room_runtime_until_stopped_inner(config, handler, stop_signal, None).await
+}
+
+pub async fn run_room_runtime_until_stopped_with_ready<H>(
+    config: RuntimeConfig,
+    handler: H,
+    stop_signal: StopSignal,
+    ready: SyncSender<RuntimeStats>,
+) -> anyhow::Result<RuntimeStats>
+where
+    H: GameHandler,
+{
+    run_room_runtime_until_stopped_inner(config, handler, stop_signal, Some(ready)).await
+}
+
+async fn run_room_runtime_until_stopped_inner<H>(
+    config: RuntimeConfig,
+    handler: H,
     mut stop_signal: StopSignal,
+    ready: Option<SyncSender<RuntimeStats>>,
 ) -> anyhow::Result<RuntimeStats>
 where
     H: GameHandler,
@@ -291,6 +316,10 @@ where
     {
         let mut h = game_handler.lock().await;
         h.set_context(Arc::clone(&senders), Arc::clone(&room_service));
+    }
+
+    if let Some(ready) = ready {
+        let _ = ready.send(stats.clone());
     }
 
     let next_session = Arc::new(AtomicU64::new(1));

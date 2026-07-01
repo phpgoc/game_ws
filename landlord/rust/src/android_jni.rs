@@ -1,4 +1,5 @@
 use std::{
+    ffi::c_void,
     os::raw::{c_int, c_uchar},
     sync::{Mutex, OnceLock},
     thread::{self, JoinHandle},
@@ -7,7 +8,7 @@ use std::{
 
 use ws_common::{RuntimeStats, RuntimeStopHandle, runtime_stop_channel};
 
-use crate::server::run_landlord_runtime_until_stopped;
+use crate::server::run_landlord_runtime_until_stopped_with_ready;
 
 static SERVER: OnceLock<Mutex<Option<AndroidServer>>> = OnceLock::new();
 
@@ -29,9 +30,9 @@ where
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn java_com_example_landlord_server_rust_landlord_server_native_client_count(
-    _env: *mut std::ffi::c_void,
-    _class: *mut std::ffi::c_void,
+pub extern "system" fn Java_com_example_landlordserver_rust_LandlordNativeServer_nativeClientCount(
+    _env: *mut c_void,
+    _class: *mut c_void,
 ) -> c_int {
     let stats = server_slot()
         .lock()
@@ -43,9 +44,9 @@ pub extern "C" fn java_com_example_landlord_server_rust_landlord_server_native_c
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn java_com_example_landlord_server_rust_landlord_server_native_room_count(
-    _env: *mut std::ffi::c_void,
-    _class: *mut std::ffi::c_void,
+pub extern "system" fn Java_com_example_landlordserver_rust_LandlordNativeServer_nativeRoomCount(
+    _env: *mut c_void,
+    _class: *mut c_void,
 ) -> c_int {
     let stats = server_slot()
         .lock()
@@ -57,9 +58,9 @@ pub extern "C" fn java_com_example_landlord_server_rust_landlord_server_native_r
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn java_com_example_landlord_server_rust_landlord_server_native_stop(
-    _env: *mut std::ffi::c_void,
-    _class: *mut std::ffi::c_void,
+pub extern "system" fn Java_com_example_landlordserver_rust_LandlordNativeServer_nativeStop(
+    _env: *mut c_void,
+    _class: *mut c_void,
 ) {
     let server = server_slot().lock().ok().and_then(|mut guard| guard.take());
     if let Some(mut server) = server {
@@ -71,9 +72,9 @@ pub extern "C" fn java_com_example_landlord_server_rust_landlord_server_native_s
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn java_com_example_landlordserver_rust_landlord_server_native_start(
-    _env: *mut std::ffi::c_void,
-    _class: *mut std::ffi::c_void,
+pub extern "system" fn Java_com_example_landlordserver_rust_LandlordNativeServer_nativeStart(
+    _env: *mut c_void,
+    _class: *mut c_void,
     port: c_int,
 ) -> c_uchar {
     let slot = server_slot();
@@ -97,10 +98,9 @@ pub extern "C" fn java_com_example_landlordserver_rust_landlord_server_native_st
             Err(_) => return,
         };
         runtime.block_on(async move {
-            let result = run_landlord_runtime_until_stopped(listen_addr, stop_signal).await;
-            if let Ok(stats) = result {
-                let _ = stats_tx.send(stats);
-            }
+            let _ =
+                run_landlord_runtime_until_stopped_with_ready(listen_addr, stop_signal, stats_tx)
+                    .await;
         });
     });
 
