@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>斗地主 WS 测试</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 16px; max-width: 800px; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; align-items: center; }
+    input, button, select { padding: 6px 8px; font-size: 14px; }
+    input { min-width: 60px; }
+    button { cursor: pointer; }
+    #log { border: 1px solid #ddd; padding: 10px; height: 360px; overflow-y: auto; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: #fafafa; font-size: 13px; }
+    .hint { color: #666; font-size: 13px; margin-bottom: 8px; }
+    #my-cards { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0; min-height: 32px; border: 1px dashed #ccc; padding: 6px; align-items: center; }
+    .card { display: inline-block; padding: 4px 8px; border: 1px solid #999; border-radius: 4px; background: #fff; font-size: 13px; font-family: monospace; }
+    .section-title { font-weight: bold; margin: 8px 0 4px; }
+  </style>
+</head>
+<body>
+  <h3>斗地主 WS 测试</h3>
+
+  <div class="row">
+    <input id="url" value="ws://127.0.0.1:9001" onclick="this.select()" style="min-width: 200px;" />
+    <button id="connect">连接</button>
+    <button id="disconnect">断开</button>
+  </div>
+
+  <div class="row">
+    <input id="name" placeholder="用户名" value="u1" />
+    <input id="password" placeholder="房间密码" value="p1" />
+    <button id="join">JOIN</button>
+    <button id="quit">QUIT</button>
+    <button id="disband">DISBAND</button>
+    <button id="start">START</button>
+    <button id="away">AWAY</button>
+    <button id="back">BACK</button>
+  </div>
+
+  <div class="section-title">设置</div>
+  <div class="row">
+    <label>animation_time: <input id="animation_time" type="number" value="200" style="width: 60px;" /></label>
+    <label>away_time: <input id="away_time" type="number" value="5" style="width: 50px;" /></label>
+    <label>play_time: <input id="play_time" type="number" value="30" style="width: 50px;" /></label>
+    <label>deal_time: <input id="deal_time" type="number" value="3000" style="width: 60px;" /></label>
+    <label>start_time: <input id="start_time" type="number" value="1" style="width: 50px;" /></label>
+    <label>settlement_time: <input id="settlement_time" type="number" value="5" style="width: 50px;" /></label>
+    <button id="apply-settings">应用</button>
+  </div>
+
+  <div class="section-title">叫地主</div>
+  <div class="row">
+    <label>score: <input id="call-score" type="number" min="0" max="3" value="0" style="width: 50px;" /></label>
+    <button id="call-landlord">叫地主</button>
+  </div>
+
+  <div class="section-title">出牌</div>
+  <div class="row">
+    <input id="play-input" placeholder="牌数字,逗号分隔 如 1,2,3" style="min-width: 240px;" />
+    <button id="play-cards">出牌</button>
+  </div>
+
+  <div class="section-title">我的手牌</div>
+  <div id="my-cards">（未开始）</div>
+
+  <div id="log"></div>
+
+  <script>
+    // 牌数字 -> 显示名（对应 LandlordCard 枚举）
+    const CARD_NAMES = {
+      1:'3♠', 2:'4♠', 3:'5♠', 4:'6♠', 5:'7♠', 6:'8♠', 7:'9♠', 8:'10♠', 9:'J♠', 10:'Q♠', 11:'K♠', 12:'A♠', 13:'2♠',
+      14:'3♥',15:'4♥',16:'5♥',17:'6♥',18:'7♥',19:'8♥',20:'9♥',21:'10♥',22:'J♥',23:'Q♥',24:'K♥',25:'A♥',26:'2♥',
+      27:'3♣',28:'4♣',29:'5♣',30:'6♣',31:'7♣',32:'8♣',33:'9♣',34:'10♣',35:'J♣',36:'Q♣',37:'K♣',38:'A♣',39:'2♣',
+      40:'3♦',41:'4♦',42:'5♦',43:'6♦',44:'7♦',45:'8♦',46:'9♦',47:'10♦',48:'J♦',49:'Q♦',50:'K♦',51:'A♦',52:'2♦',
+      53:'小🃏',54:'大🃏',
+    };
+    function cardName(n) { return CARD_NAMES[n] || n.toString(); }
+
+    const ROUTES = {
+      JOIN: 2, QUIT: 3, MESSAGE: 4,
+      PAUSE: 5, RESUME: 6, DISBAND: 7, SETTING: 8,
+      START: 10, AWAY: 12, BACK: 13, SWAP: 14,
+      DEAL: 20, PLAY: 21,
+      CALL_LANDLORD: 1001,
+    };
+    const WS_CODES = {
+      JOIN: 2, QUIT: 3, MESSAGE: 4,
+      PAUSE: 5, RESUME: 6, DISBAND: 7, SETTING: 8,
+      START: 10, GAME_OVER: 11, AWAY: 12, BACK: 13,
+      DEAL: 20, PLAY: 21, DEAL_OPEN_CARDS: 24, DEAL_FACE_DOWN_CARDS: 25,
+      SHOW_HIDDEN_CARDS: 30,
+      CALL_LANDLORD: 1001,
+    };
+    const RESP_CODES = { OK: 0, JOINED: 201, ERROR_FORMAT: 400, NOT_LOGIN: 401, NO_PERMISSION: 403 };
+
+    let ws = null;
+    let myCards = [];
+
+    const $ = (id) => document.getElementById(id);
+    const logEl = $("log");
+    const currentName = () => $("name").value.trim();
+
+    function now() { return new Date().toLocaleTimeString(); }
+
+    function log(line, obj) {
+      let text = `[${now()}] ${line}`;
+      if (obj !== undefined) text += `\n${JSON.stringify(obj, null, 2)}`;
+      logEl.textContent += `${text}\n\n`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function send(route, data) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) { log("未连接"); return; }
+      const p = { route, data };
+      ws.send(JSON.stringify(p));
+      log("=> 发出", p);
+    }
+
+    function renderCards() {
+      const el = $("#my-cards");
+      if (myCards.length === 0) { el.textContent = "（无）"; return; }
+      el.innerHTML = myCards.map(c => `<span class="card">${c} (${cardName(c)})</span>`).join('');
+    }
+
+    function cardListStr(cards) {
+      return cards.map(c => `${c}(${cardName(c)})`).join(', ');
+    }
+
+    function normalizeCards(raw) {
+      if (!Array.isArray(raw)) return [];
+      return raw
+        .map(n => parseInt(n))
+        .filter(n => Number.isInteger(n) && n > 0)
+        .sort((a, b) => a - b);
+    }
+
+    function removeCardsFromMyHand(cards) {
+      const remove = new Set(normalizeCards(cards));
+      if (remove.size === 0) return;
+      myCards = myCards.filter(c => !remove.has(c));
+      renderCards();
+    }
+
+    function extractCardsFromMessage(msg) {
+      const queue = [msg];
+      while (queue.length > 0) {
+        const cur = queue.shift();
+        if (!cur || typeof cur !== "object") continue;
+        const cards = normalizeCards(cur.cards);
+        if (cards.length > 0) return cards;
+        for (const v of Object.values(cur)) {
+          if (v && typeof v === "object") queue.push(v);
+        }
+      }
+      return [];
+    }
+
+    // 连接
+    $("connect").onclick = () => {
+      if (ws && ws.readyState === WebSocket.OPEN) { log("已连接"); return; }
+      ws = new WebSocket($("url").value.trim());
+      ws.onopen = () => log("已连接");
+      ws.onclose = () => { log("断开了"); myCards = []; renderCards(); };
+      ws.onerror = () => log("连接错误");
+      ws.onmessage = (ev) => {
+        let raw = ev.data;
+        try { raw = JSON.parse(ev.data); } catch (_) {}
+        log("<= 收到", raw);
+
+        const msg = raw;
+
+        // — 响应 (有 route) —
+        if (msg.route !== undefined && msg.code !== undefined) {
+          if ( msg.code === RESP_CODES.OK && msg.data && msg.data.param_descriptions) {
+            applyParamDescriptions(msg.data.param_descriptions);
+          }
+          if (msg.route === ROUTES.JOIN && msg.code === RESP_CODES.JOINED && msg.data) {
+            if (msg.data.current_configs) applyCurrentConfigs(msg.data.current_configs);
+            if (msg.data.existing_members && msg.data.existing_members.length > 0) {
+              log(`已有成员: ${msg.data.existing_members.map(m => m.name + '#' + m.position).join(', ')}`);
+            }
+          }
+        }
+
+        // — 事件 (code + data) —
+        const ec = msg.code !== undefined
+          ? Number(msg.code)
+          : (msg.route !== undefined && msg.data !== undefined ? Number(msg.route) : NaN);
+        if (!Number.isNaN(ec)) {
+          if (ec === WS_CODES.SETTING && msg.data.current_configs) {
+            applyCurrentConfigs(msg.data.current_configs);
+          }
+          if (ec === WS_CODES.START) {
+            myCards = [];
+            renderCards();
+            log("===== 游戏开始了！=====");
+          }
+          if (ec === WS_CODES.AWAY && msg.data && Number.isInteger(msg.data.position)) {
+            log(`位置 ${msg.data.position} 进入 away`);
+          }
+          if (ec === WS_CODES.BACK && msg.data && Number.isInteger(msg.data.position)) {
+            log(`位置 ${msg.data.position} 回到游戏`);
+          }
+          // DEAL 发牌
+          if (ec === WS_CODES.DEAL) {
+            const cards = extractCardsFromMessage(msg);
+            if (cards.length > 0) {
+              myCards = cards;
+              renderCards();
+              log(`收到 DEAL (${myCards.length} 张): ${cardListStr(myCards)}`);
+            } else {
+              log("收到 DEAL 但未解析到 cards", msg);
+            }
+          }
+          // PLAY 出牌事件
+          if (ec === WS_CODES.PLAY && msg.data && Array.isArray(msg.data.cards)) {
+            log(`${msg.data.name} 出牌: ${cardListStr(msg.data.cards)}`);
+            if (msg.data.name === currentName()) {
+              removeCardsFromMyHand(msg.data.cards);
+            }
+          }
+          // CALL_LANDLORD 叫地主
+          if (ec === WS_CODES.CALL_LANDLORD && msg.data) {
+            log(`${msg.data.name} 叫分: ${msg.data.score}`);
+          }
+          // DEAL_FACE_DOWN_CARDS 底牌
+          if (ec === WS_CODES.DEAL_FACE_DOWN_CARDS && msg.data && Array.isArray(msg.data.cards)) {
+            const cards = msg.data.cards.filter(n => Number.isInteger(n) && n > 0);
+            if (cards.length > 0) log(`底牌: ${cardListStr(cards)}`);
+          }
+          // DEAL_OPEN_CARDS 亮牌
+          if (ec === WS_CODES.DEAL_OPEN_CARDS && msg.data && Array.isArray(msg.data.cards)) {
+            log(`${msg.data.name} 亮牌: ${cardListStr(msg.data.cards)}`);
+            if (msg.data.name === currentName()) {
+              const merged = new Set([...myCards, ...msg.data.cards.filter(n => Number.isInteger(n) && n > 0)]);
+              myCards = Array.from(merged).sort((a, b) => a - b);
+              renderCards();
+            }
+          }
+          // SHOW_HIDDEN_CARDS 结算亮底牌
+          if (ec === WS_CODES.SHOW_HIDDEN_CARDS && msg.data && Array.isArray(msg.data.cards)) {
+            log(`结算底牌: ${cardListStr(msg.data.cards)}`);
+          }
+        }
+      };
+    };
+
+    $("disconnect").onclick = () => { if (ws) ws.close(); };
+
+    $("join").onclick   = () => send(ROUTES.JOIN,   { name: $("name").value.trim(), password: $("password").value.trim() });
+    $("quit").onclick    = () => send(ROUTES.QUIT, {});
+    $("disband").onclick = () => send(ROUTES.DISBAND, {});
+    $("start").onclick   = () => send(ROUTES.START, {});
+    $("away").onclick    = () => send(ROUTES.AWAY, {});
+    $("back").onclick    = () => send(ROUTES.BACK, {});
+    $("apply-settings").onclick = () => {
+      const cs = {};
+      cs.animation_time = parseInt($("animation_time").value);
+      cs.away_time      = parseInt($("away_time").value);
+      cs.play_time      = parseInt($("play_time").value);
+      cs.deal_time      = parseInt($("deal_time").value);
+      cs.start_time     = parseInt($("start_time").value);
+      cs.settlement_time = parseInt($("settlement_time").value);
+      send(ROUTES.SETTING, { current_configs: cs });
+    };
+    $("call-landlord").onclick = () => {
+      const score = parseInt($("call-score").value);
+      send(ROUTES.CALL_LANDLORD, { score });
+    };
+    $("play-cards").onclick = () => {
+      const input = $("play-input").value.trim();
+      if (!input) { log("请输入牌"); return; }
+      const cards = input.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+      if (cards.length === 0) { log("无效的牌"); return; }
+      send(ROUTES.PLAY, { cards });
+    };
+
+    function applyParamDescriptions(descs) {
+      for (const [key, param] of Object.entries(descs)) {
+        let defaultVal, min, max;
+        if (param.Range) {
+          defaultVal = param.Range.default;
+          min = param.Range.min;
+          max = param.Range.max;
+        } else if (param.Enum) {
+          defaultVal = param.Enum.default;
+        } else { continue; }
+        const el = $(key);
+        if (el) {
+          el.value = defaultVal;
+          if (min !== undefined) { el.min = min; el.max = max; }
+        }
+      }
+    }
+
+    function applyCurrentConfigs(configs) {
+      for (const [key, val] of Object.entries(configs)) {
+        const el = $(key);
+        if (el) el.value = val;
+      }
+    }
+  </script>
+</body>
+</html>

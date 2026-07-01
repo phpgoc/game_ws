@@ -13,7 +13,7 @@
 真正的 WebSocket 服务、房间逻辑、斗地主规则都在：
 
 ```text
-ws/landlord/rust
+ws/rust/landlord
 ```
 
 Gradle 构建 Android App 时，会先用 `cargo-ndk` 把 Rust 编译成：
@@ -63,7 +63,7 @@ export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/30.0.14904198"
 进入目录：
 
 ```bash
-cd ws/landlord/android
+cd ws/android
 ```
 
 ### 模拟器
@@ -96,7 +96,7 @@ app/build/outputs/apk/debug/app-debug.apk
 
 ## Android Studio 运行
 
-1. Android Studio 打开 `ws/landlord/android`。
+1. Android Studio 打开 `ws/android`。
 2. 等 Gradle Sync 完成。
 3. 选择模拟器或真机。
 4. 点击 Run。
