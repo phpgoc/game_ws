@@ -31,6 +31,10 @@ pub trait GameState: Send {
         self.shared_common_state().lock().unwrap().action_received
     }
 
+    fn can_swap_players(&self) -> bool {
+        true
+    }
+
     fn add_player(&mut self, position: usize, session_id: SessionId, name: &str) {
         self.shared_common_state()
             .lock()

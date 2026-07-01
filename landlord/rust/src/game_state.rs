@@ -47,6 +47,10 @@ impl LandlordGameState {
 }
 
 impl GameState for LandlordGameState {
+    fn can_swap_players(&self) -> bool {
+        false
+    }
+
     fn shared_common_state(&self) -> Arc<Mutex<CommonGameState>> {
         Arc::clone(&self.inner.lock().unwrap().base)
     }

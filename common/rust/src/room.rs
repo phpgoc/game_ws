@@ -873,7 +873,7 @@ impl RoomService {
                 WsResponseCode::ERROR_FORMAT,
             );
         };
-        let pos_a: usize = 0;
+        let pos_a = payload.a;
         let pos_b = payload.b;
         if pos_b == pos_a {
             return self.error_response(
@@ -896,6 +896,13 @@ impl RoomService {
                     WsResponseCode::NOT_LOGIN,
                 );
             };
+            if !entry.state.can_swap_players() {
+                return self.error_response(
+                    session_id,
+                    Routes::SWAP as i32,
+                    WsResponseCode::NO_PERMISSION,
+                );
+            }
             let players = entry.state.players();
             let (sid_a_ref, _) = match players.get(&pos_a) {
                 Some(val) => val,
@@ -940,10 +947,17 @@ impl RoomService {
         );
 
         // 如果 position 0 (房主) 换了新人（sid_b 成为了新的 0），给新人发 param_descriptions
-        {
+        let new_owner_session = if pos_a == 0 {
+            Some(sid_b)
+        } else if pos_b == 0 {
+            Some(sid_a)
+        } else {
+            None
+        };
+        if let Some(owner_session) = new_owner_session {
             let entry = self.rooms.get(&room_key).unwrap();
             self.push_response_with_data(
-                sid_b,
+                owner_session,
                 Routes::SWAP as i32,
                 WsResponseCode::OK,
                 share_type_public::WsCreateResponse {
@@ -1393,6 +1407,7 @@ impl RoomService {
 #[cfg(test)]
 mod tests {
     use std::collections::{HashMap, HashSet};
+    use std::sync::{Arc, Mutex};
 
     use share_type_public::{
         GameId, GameParam, GameParamRange, Routes, WsCode, WsRequest, WsResponseCode,
@@ -1400,6 +1415,21 @@ mod tests {
 
     use super::{Dispatch, OutboundPayload, RequestResponse, RoomService};
     use crate::game_setting::GameSettings;
+    use crate::game_state::{CommonGameState, GameState};
+
+    struct NoSwapState {
+        common: Arc<Mutex<CommonGameState>>,
+    }
+
+    impl GameState for NoSwapState {
+        fn can_swap_players(&self) -> bool {
+            false
+        }
+
+        fn shared_common_state(&self) -> Arc<Mutex<CommonGameState>> {
+            Arc::clone(&self.common)
+        }
+    }
 
     #[test]
     fn clearing_game_state_preserves_room_members() {
@@ -2006,6 +2036,107 @@ mod tests {
             _ => false,
         });
         assert!(reused);
+    }
+
+    #[test]
+    fn swap_can_exchange_two_non_owner_players() {
+        let mut service = RoomService::default();
+        service.connect(1);
+        service.connect(2);
+        service.connect(3);
+
+        for (session_id, name) in [(1_u64, "u1"), (2, "u2"), (3, "u3")] {
+            let _ = service.handle_common_request(
+                session_id,
+                &WsRequest {
+                    route: Routes::JOIN as i32,
+                    data: serde_json::json!({
+                        "name": name,
+                        "password": "p1",
+                        "game_id": GameId::LANDLORD as i32
+                    }),
+                },
+                GameId::LANDLORD,
+                settings,
+            );
+        }
+
+        let swap = service
+            .handle_common_request(
+                1,
+                &WsRequest {
+                    route: Routes::SWAP as i32,
+                    data: serde_json::json!({ "a": 1, "b": 2 }),
+                },
+                GameId::LANDLORD,
+                settings,
+            )
+            .expect("swap common");
+
+        assert_eq!(service.session_position(1), Some(0));
+        assert_eq!(service.session_position(2), Some(2));
+        assert_eq!(service.session_position(3), Some(1));
+
+        let swap_event = swap.messages.iter().any(|item| match &item.payload {
+            OutboundPayload::Event(event) if event.code == WsCode::SWAP as i32 => {
+                event.data.get("a").and_then(|v| v.as_u64()) == Some(1)
+                    && event.data.get("b").and_then(|v| v.as_u64()) == Some(2)
+            }
+            _ => false,
+        });
+        assert!(swap_event);
+    }
+
+    #[test]
+    fn swap_rejects_state_that_disallows_swap() {
+        let mut service = RoomService::default();
+        service.connect(1);
+        service.connect(2);
+
+        for (session_id, name) in [(1_u64, "u1"), (2, "u2")] {
+            let _ = service.handle_common_request(
+                session_id,
+                &WsRequest {
+                    route: Routes::JOIN as i32,
+                    data: serde_json::json!({
+                        "name": name,
+                        "password": "p1",
+                        "game_id": GameId::LANDLORD as i32
+                    }),
+                },
+                GameId::LANDLORD,
+                settings,
+            );
+        }
+
+        let room_key = service.room_key_of(1).expect("room key");
+        let common = service
+            .get_room_common_state_handle(&room_key)
+            .expect("common state");
+        service.set_room_game_state(&room_key, Box::new(NoSwapState { common }));
+
+        let swap = service
+            .handle_common_request(
+                1,
+                &WsRequest {
+                    route: Routes::SWAP as i32,
+                    data: serde_json::json!({ "a": 0, "b": 1 }),
+                },
+                GameId::LANDLORD,
+                settings,
+            )
+            .expect("swap common");
+
+        let rejected = swap.messages.iter().any(|item| match &item.payload {
+            OutboundPayload::Response(RequestResponse::WithoutData(resp)) => {
+                resp.route == Routes::SWAP as i32
+                    && resp.code as i32 == WsResponseCode::NO_PERMISSION as i32
+            }
+            _ => false,
+        });
+        assert!(rejected);
+        assert_eq!(service.session_position(1), Some(0));
+        assert_eq!(service.session_position(2), Some(1));
     }
 
     fn recipients_of(code: i32, dispatch: &Dispatch) -> HashSet<u64> {
