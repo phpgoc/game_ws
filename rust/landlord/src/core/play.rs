@@ -245,6 +245,30 @@ pub fn classify(cards: &[i32]) -> Option<Combo> {
     None
 }
 
+fn is_consecutive(ranks: &[u8]) -> bool {
+    if ranks.is_empty() {
+        return false;
+    }
+    for i in 1..ranks.len() {
+        if ranks[i] != ranks[i - 1] + 1 {
+            return false;
+        }
+    }
+    true
+}
+
+fn is_valid_card_id(card: &i32) -> bool {
+    LANDLORD_CARDS.binary_search(card).is_ok()
+}
+
+fn rank_counts(cards: &[i32]) -> HashMap<u8, usize> {
+    let mut m: HashMap<u8, usize> = HashMap::new();
+    for &c in cards {
+        *m.entry(card_rank(c)).or_insert(0) += 1;
+    }
+    m
+}
+
 pub fn validate_play(context: PlayValidationContext<'_>, position: usize, cards: &[i32]) -> bool {
     if context.phase != LandlordPhase::Play || context.current_position != position {
         return false;
@@ -275,28 +299,4 @@ pub fn validate_play(context: PlayValidationContext<'_>, position: usize, cards:
         return false;
     };
     can_beat(&curr, &prev)
-}
-
-fn is_consecutive(ranks: &[u8]) -> bool {
-    if ranks.is_empty() {
-        return false;
-    }
-    for i in 1..ranks.len() {
-        if ranks[i] != ranks[i - 1] + 1 {
-            return false;
-        }
-    }
-    true
-}
-
-fn is_valid_card_id(card: &i32) -> bool {
-    LANDLORD_CARDS.binary_search(card).is_ok()
-}
-
-fn rank_counts(cards: &[i32]) -> HashMap<u8, usize> {
-    let mut m: HashMap<u8, usize> = HashMap::new();
-    for &c in cards {
-        *m.entry(card_rank(c)).or_insert(0) += 1;
-    }
-    m
 }

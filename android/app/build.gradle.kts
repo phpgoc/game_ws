@@ -12,9 +12,9 @@ val rustAbis = providers.gradleProperty("rustAbis")
     ?.map { it.trim() }
     ?.filter { it.isNotEmpty() }
     ?: listOf("arm64-v8a", "x86_64")
-val rustProjectDir = layout.projectDirectory.dir("../../rust")
-val rustCommonDir = layout.projectDirectory.dir("../../../common/rust")
-val rustShareTypesDir = layout.projectDirectory.dir("../../../share_type_public")
+val rustProjectDir = layout.projectDirectory.dir("../../rust/landlord")
+val rustCommonDir = layout.projectDirectory.dir("../../rust/common")
+val rustShareTypesDir = layout.projectDirectory.dir("../../share_type_public")
 val rustJniLibsDir = layout.projectDirectory.dir("src/main/jniLibs")
 val rustLibraries = rustAbis.map { rustJniLibsDir.file("$it/liblandlord.so") }
 val cargoBinDir = file("${System.getProperty("user.home")}/.cargo/bin")

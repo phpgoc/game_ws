@@ -5,11 +5,11 @@
 ## 目录
 
 - `share_type_public/`: 公共协议类型，用于 web / ws / Android。
-- `common/rust/`: Rust WS 公共库，包含房间、连接、运行时。
-- `landlord/rust/`: 斗地主 Rust 服务端。
-- `landlord/android/`: Android 前台服务壳，使用 NDK 运行 `landlord/rust`。
-- `shenyang_mahjong/rust/`: 沈阳麻将 Rust 服务端。
-- `texas_hold_em/rust/`: 德州扑克 Rust 服务端。
+- `rust/common/`: Rust WS 公共库，包含房间、连接、运行时。
+- `rust/landlord/`: 斗地主 Rust 服务端。
+- `rust/shenyang_mahjong/`: 沈阳麻将 Rust 服务端。
+- `rust/texas_hold_em/`: 德州扑克 Rust 服务端。
+- `android/`: 通用 Android 前台服务壳，当前使用 NDK 运行 `rust/landlord`。
 
 ## 依赖
 
@@ -66,7 +66,7 @@ cargo check -p shenyang_mahjong -p texas_hold_em
 Android 目录：
 
 ```sh
-cd ws/landlord/android
+cd ws/android
 ```
 
 模拟器：

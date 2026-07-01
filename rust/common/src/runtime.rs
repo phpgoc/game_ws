@@ -276,18 +276,6 @@ where
     run_room_runtime_until_stopped_inner(config, handler, stop_signal, None).await
 }
 
-pub async fn run_room_runtime_until_stopped_with_ready<H>(
-    config: RuntimeConfig,
-    handler: H,
-    stop_signal: StopSignal,
-    ready: SyncSender<RuntimeStats>,
-) -> anyhow::Result<RuntimeStats>
-where
-    H: GameHandler,
-{
-    run_room_runtime_until_stopped_inner(config, handler, stop_signal, Some(ready)).await
-}
-
 async fn run_room_runtime_until_stopped_inner<H>(
     config: RuntimeConfig,
     handler: H,
@@ -359,6 +347,18 @@ where
     }
 
     Ok(stats)
+}
+
+pub async fn run_room_runtime_until_stopped_with_ready<H>(
+    config: RuntimeConfig,
+    handler: H,
+    stop_signal: StopSignal,
+    ready: SyncSender<RuntimeStats>,
+) -> anyhow::Result<RuntimeStats>
+where
+    H: GameHandler,
+{
+    run_room_runtime_until_stopped_inner(config, handler, stop_signal, Some(ready)).await
 }
 
 pub fn runtime_stop_channel() -> (RuntimeStopHandle, StopSignal) {

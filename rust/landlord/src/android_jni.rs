@@ -18,17 +18,6 @@ struct AndroidServer {
     stats: RuntimeStats,
 }
 
-fn block_on_count<F>(future: F) -> c_int
-where
-    F: std::future::Future<Output = usize>,
-{
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map(|runtime| runtime.block_on(future) as c_int)
-        .unwrap_or(0)
-}
-
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_example_landlordserver_rust_LandlordNativeServer_nativeClientCount(
     _env: *mut c_void,
@@ -55,20 +44,6 @@ pub extern "system" fn Java_com_example_landlordserver_rust_LandlordNativeServer
     stats
         .map(|stats| block_on_count(async move { stats.room_count().await }))
         .unwrap_or(0)
-}
-
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_com_example_landlordserver_rust_LandlordNativeServer_nativeStop(
-    _env: *mut c_void,
-    _class: *mut c_void,
-) {
-    let server = server_slot().lock().ok().and_then(|mut guard| guard.take());
-    if let Some(mut server) = server {
-        server.stop.stop();
-        if let Some(join) = server.join.take() {
-            let _ = join.join();
-        }
-    }
 }
 
 #[unsafe(no_mangle)]
@@ -118,6 +93,31 @@ pub extern "system" fn Java_com_example_landlordserver_rust_LandlordNativeServer
         stats,
     });
     1
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_example_landlordserver_rust_LandlordNativeServer_nativeStop(
+    _env: *mut c_void,
+    _class: *mut c_void,
+) {
+    let server = server_slot().lock().ok().and_then(|mut guard| guard.take());
+    if let Some(mut server) = server {
+        server.stop.stop();
+        if let Some(join) = server.join.take() {
+            let _ = join.join();
+        }
+    }
+}
+
+fn block_on_count<F>(future: F) -> c_int
+where
+    F: std::future::Future<Output = usize>,
+{
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map(|runtime| runtime.block_on(future) as c_int)
+        .unwrap_or(0)
 }
 
 fn server_slot() -> &'static Mutex<Option<AndroidServer>> {
