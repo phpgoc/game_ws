@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use ws_common::{
     RuntimeConfig, RuntimeStats, StopSignal, run_game_server_with_cli,
-    run_room_runtime_until_stopped,
+    run_room_runtime_until_stopped, run_room_runtime_until_stopped_with_ready,
 };
 
 use crate::game::LandlordGameHandler;
@@ -38,6 +38,20 @@ pub async fn run_landlord_runtime_until_stopped(
         landlord_runtime_config(LANDLORD_ANDROID_SERVICE_NAME, listen_addr),
         LandlordGameHandler::default(),
         stop_signal,
+    )
+    .await
+}
+
+pub async fn run_landlord_runtime_until_stopped_with_ready(
+    listen_addr: String,
+    stop_signal: StopSignal,
+    ready: std::sync::mpsc::SyncSender<RuntimeStats>,
+) -> anyhow::Result<RuntimeStats> {
+    run_room_runtime_until_stopped_with_ready(
+        landlord_runtime_config(LANDLORD_ANDROID_SERVICE_NAME, listen_addr),
+        LandlordGameHandler::default(),
+        stop_signal,
+        ready,
     )
     .await
 }

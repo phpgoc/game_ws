@@ -11,8 +11,12 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.Gravity
+import android.view.View
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.Spinner
 import android.widget.TextView
 
 class MainActivity : android.app.Activity() {
@@ -20,6 +24,8 @@ class MainActivity : android.app.Activity() {
     private lateinit var endpointText: TextView
     private lateinit var clientsText: TextView
     private lateinit var roomsText: TextView
+    private lateinit var ipSpinner: Spinner
+    private var updatingIpSpinner = false
 
     private val stateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -35,6 +41,24 @@ class MainActivity : android.app.Activity() {
         endpointText = label("地址: -")
         clientsText = label("连接数: 0")
         roomsText = label("房间数: 0")
+        ipSpinner = Spinner(this).apply {
+            onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(
+                    parent: AdapterView<*>?,
+                    view: View?,
+                    position: Int,
+                    id: Long,
+                ) {
+                    if (updatingIpSpinner) return
+                    val host = parent?.getItemAtPosition(position)?.toString().orEmpty()
+                    saveSelectedIpv4Address(this@MainActivity, host)
+                    endpointText.text = "地址: ws://$host:9001"
+                    LandlordServerService.requestStatus(this@MainActivity)
+                }
+
+                override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+            }
+        }
 
         val startButton = Button(this).apply {
             text = "启动服务"
@@ -59,6 +83,8 @@ class MainActivity : android.app.Activity() {
             setPadding(40, 64, 40, 40)
             addView(title("斗地主 WS 服务"))
             addView(statusText)
+            addView(label("内网 IP"))
+            addView(ipSpinner)
             addView(endpointText)
             addView(clientsText)
             addView(roomsText)
@@ -80,6 +106,7 @@ class MainActivity : android.app.Activity() {
             @Suppress("DEPRECATION")
             registerReceiver(stateReceiver, filter)
         }
+        refreshIpList()
         LandlordServerService.requestStatus(this)
     }
 
@@ -93,6 +120,20 @@ class MainActivity : android.app.Activity() {
         endpointText.text = "地址: ws://${state.host}:${state.port}"
         clientsText.text = "连接数: ${state.clientCount}"
         roomsText.text = "房间数: ${state.roomCount}"
+    }
+
+    private fun refreshIpList() {
+        val addresses = privateIpv4Addresses()
+        val items = if (addresses.isEmpty()) listOf("未找到 private IPv4") else addresses
+        val selected = selectedIpv4Address(this)
+        updatingIpSpinner = true
+        ipSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, items).apply {
+            setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        }
+        val selectedIndex = items.indexOf(selected).takeIf { it >= 0 } ?: 0
+        ipSpinner.setSelection(selectedIndex, false)
+        ipSpinner.isEnabled = addresses.isNotEmpty()
+        updatingIpSpinner = false
     }
 
     private fun requestNotificationPermission() {

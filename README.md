@@ -1,37 +1,95 @@
 # game_ws
 
-WS 子模块目录：
+`ws` 是可开源的 WebSocket 游戏服务端目录。
 
-- `share_type_public/`：公共协议类型（可开源）
-- `common/rust/`：Rust WS 公共库 + 启动入口（`main` 在这里）
-- `landlord/rust/`：斗地主 WS 业务库（只放协议与游戏逻辑）
-- `shenyang_mahjong/rust/`：沈阳麻将 WS 业务库（当前实现到 play / settlement）
+## 目录
 
-## 为什么不用 axum ws
+- `share_type_public/`: 公共协议类型，用于 web / ws / Android。
+- `common/rust/`: Rust WS 公共库，包含房间、连接、运行时。
+- `landlord/rust/`: 斗地主 Rust 服务端。
+- `landlord/android/`: Android 前台服务壳，使用 NDK 运行 `landlord/rust`。
+- `shenyang_mahjong/rust/`: 沈阳麻将 Rust 服务端。
+- `texas_hold_em/rust/`: 德州扑克 Rust 服务端。
 
-这里选择 `tokio-tungstenite` 直连 `TcpListener`，并把启动流程收敛到 `common`：
+## 依赖
 
-- 抽象更少，可读性更直观
-- 对游戏服连接生命周期控制更直接
-- 更适合先做协议驱动的实时 server
+基础 Rust：
 
-## 启动
-
-在 `ws` 目录运行：
-
-```bash
-cargo run -p landlord_ws_server -- --host 192.168.1.10 --port 9001
+```sh
+rustup toolchain install stable
+rustup default stable
+rustup component add rustfmt
 ```
 
-参数规则：
+Android 额外需要：
 
-- `--host` 可选：不传时自动选择私网 IPv4（10.x / 172.16-31.x / 192.168.x）
-- `--port` 可选：不传时自动选择大于 9000 的可用端口
-- `host/port` 不合法时，进程直接退出
+```sh
+cargo install cargo-ndk
+rustup target add aarch64-linux-android x86_64-linux-android
+```
+
+并在 Android Studio SDK Manager 中安装 Android NDK。
+
+## 运行 Rust WS 服务
+
+在项目根目录运行更方便：
+
+```sh
+cargo run -p landlord -- --host 0.0.0.0 --port 9001
+cargo run -p shenyang_mahjong -- --host 0.0.0.0 --port 9002
+cargo run -p texas_hold_em -- --host 0.0.0.0 --port 9003
+```
+
+也可以在本目录运行：
+
+```sh
+cd ws
+cargo run -p landlord -- --host 0.0.0.0 --port 9001
+```
+
+参数：
+
+- `--host 0.0.0.0`: 局域网可访问。
+- `--host 127.0.0.1`: 只允许本机访问。
+- `--port`: 指定端口。
+
+## 检查和测试
+
+```sh
+cargo check -p landlord
+cargo test -p landlord
+cargo check -p shenyang_mahjong -p texas_hold_em
+```
+
+## 运行 Android 斗地主服务
+
+Android 目录：
+
+```sh
+cd ws/landlord/android
+```
+
+模拟器：
+
+```sh
+./gradlew --no-daemon :app:assembleDebug -PrustAbis=x86_64
+```
+
+真机：
+
+```sh
+./gradlew --no-daemon :app:assembleDebug -PrustAbis=arm64-v8a
+```
+
+默认同时构建 `arm64-v8a` 和 `x86_64`：
+
+```sh
+./gradlew --no-daemon :app:assembleDebug
+```
 
 ## 网络配置
 
-服务使用纯 WS（WebSocket）协议，未来在生产环境可通过 Nginx 反向代理转换为 WSS：
+服务使用纯 WS 协议。生产环境如果需要 WSS，可以用 Nginx 反向代理：
 
 ```nginx
 upstream game_ws {
@@ -43,7 +101,7 @@ server {
     server_name your.domain.com;
 
     ssl_certificate /path/to/cert.pem;
-    ssl_certificate_key /path/to/key.pem;
+    ssl_certificate_key /path/to/cert.key;
 
     location / {
         proxy_pass http://game_ws;
@@ -52,3 +110,4 @@ server {
         proxy_set_header Connection "upgrade";
     }
 }
+```

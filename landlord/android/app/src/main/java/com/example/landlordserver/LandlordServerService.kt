@@ -8,13 +8,25 @@ import android.content.Context
 import android.content.Intent
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.PowerManager
-import com.example.landlordserver.server.LandlordWebSocketServer
-import java.net.InetSocketAddress
+import com.example.landlordserver.rust.LandlordNativeServer
 
 class LandlordServerService : Service() {
-    private var server: LandlordWebSocketServer? = null
+    @Volatile
+    private var running = false
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val statusTicker = object : Runnable {
+        override fun run() {
+            if (!running) return
+            broadcastStatus()
+            updateNotification()
+            mainHandler.postDelayed(this, STATUS_REFRESH_MS)
+        }
+    }
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
     private val port = 9001
@@ -45,26 +57,34 @@ class LandlordServerService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun startServer() {
-        if (server != null) {
+        if (running) {
             broadcastStatus()
             return
         }
 
         acquireLocks()
-        val host = localIpv4Address()
-        val nextServer = LandlordWebSocketServer(InetSocketAddress("0.0.0.0", port)) {
+        val host = selectedIpv4Address(this)
+        val started = runCatching { LandlordNativeServer.start(port) }.getOrDefault(false)
+        if (!started) {
+            releaseLocks()
+            running = false
             broadcastStatus()
-            updateNotification()
+            stopSelf()
+            return
         }
-        nextServer.start()
-        server = nextServer
+        running = true
         startForeground(NOTIFICATION_ID, buildNotification(host))
+        mainHandler.removeCallbacks(statusTicker)
+        mainHandler.post(statusTicker)
         broadcastStatus()
     }
 
     private fun stopServer() {
-        server?.stop(1000)
-        server = null
+        mainHandler.removeCallbacks(statusTicker)
+        if (running) {
+            LandlordNativeServer.stop()
+        }
+        running = false
         releaseLocks()
         broadcastStatus()
     }
@@ -98,16 +118,16 @@ class LandlordServerService : Service() {
     }
 
     private fun currentStatus(): ServerStatus = ServerStatus(
-        running = server != null,
-        host = localIpv4Address(),
+        running = running,
+        host = selectedIpv4Address(this),
         port = port,
-        clientCount = server?.clientCount() ?: 0,
-        roomCount = server?.roomCount() ?: 0,
+        clientCount = if (running) LandlordNativeServer.clientCount() else 0,
+        roomCount = if (running) LandlordNativeServer.roomCount() else 0,
     )
 
     private fun updateNotification() {
         val manager = getSystemService(NotificationManager::class.java)
-        manager.notify(NOTIFICATION_ID, buildNotification(localIpv4Address()))
+        manager.notify(NOTIFICATION_ID, buildNotification(selectedIpv4Address(this)))
     }
 
     private fun buildNotification(host: String): Notification {
@@ -120,7 +140,7 @@ class LandlordServerService : Service() {
         return builder
             .setSmallIcon(android.R.drawable.stat_sys_upload_done)
             .setContentTitle("斗地主 WS 服务运行中")
-            .setContentText("ws://$host:$port · ${server?.clientCount() ?: 0} 个连接")
+            .setContentText("ws://$host:$port · ${if (running) LandlordNativeServer.clientCount() else 0} 个连接")
             .setOngoing(true)
             .build()
     }
@@ -137,6 +157,7 @@ class LandlordServerService : Service() {
         private const val ACTION_STATUS_REQUEST = "com.example.landlordserver.STATUS_REQUEST"
         private const val CHANNEL_ID = "landlord_ws_server"
         private const val NOTIFICATION_ID = 9001
+        private const val STATUS_REFRESH_MS = 2_000L
 
         fun start(context: Context) {
             val intent = Intent(context, LandlordServerService::class.java)

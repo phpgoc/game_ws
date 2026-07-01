@@ -1,56 +1,188 @@
 # Landlord Android WS Server
 
-Android/Kotlin version of the Landlord websocket server.
+这个目录是 Android 版斗地主 WebSocket 服务。
 
-## What It Does
+现在 Android 端不是纯 Kotlin 实现。Kotlin 只负责：
 
-- Starts a websocket server on port `9001`.
-- Shows the current LAN address, port, connected clients, and room count.
-- Runs inside a foreground service with a persistent notification.
-- Uses `WakeLock` and `WifiLock` to reduce the chance of being suspended in the background.
-- Implements the Landlord websocket routes used by the current web client:
-  - `JOIN`
-  - `QUIT`
-  - `DISBAND`
-  - `SETTING`
-  - `START`
-  - `CALL_LANDLORD`
-  - `PLAY`
-  - `AWAY`
-  - `BACK`
+- Activity 界面
+- 前台 Service
+- 通知栏
+- WakeLock / WifiLock
+- 显示连接数和房间数
 
-## Build
+真正的 WebSocket 服务、房间逻辑、斗地主规则都在：
 
-Open `ws/landlord/android` in Android Studio, or run:
+```text
+ws/landlord/rust
+```
+
+Gradle 构建 Android App 时，会先用 `cargo-ndk` 把 Rust 编译成：
+
+```text
+app/src/main/jniLibs/<abi>/liblandlord.so
+```
+
+然后 Kotlin 通过 JNI 调用它。
+
+## 需要安装什么
+
+### Android
+
+安装 Android Studio，并在 SDK Manager 里安装：
+
+- Android SDK Platform 35
+- Android NDK
+- Android SDK Build-Tools
+
+### JDK
+
+推荐使用 Android Studio 自带 JDK 17。
+
+### Rust / NDK 工具
 
 ```bash
-JAVA_HOME="$HOME/Applications/Android Studio.app/Contents/jbr/Contents/Home" gradle --no-daemon :app:assembleDebug
+cargo install cargo-ndk
+rustup target add aarch64-linux-android x86_64-linux-android
 ```
 
-This workspace does not include a Gradle wrapper yet.
-
-On this machine the Android SDK is configured in `local.properties`:
-
-```properties
-sdk.dir=/Users/yangdianqing/Library/Android/sdk
-```
-
-If you prefer the SDKMAN JDK, this also works:
+如果 `cargo-ndk` 找不到 NDK，设置环境变量：
 
 ```bash
-JAVA_HOME="$HOME/.sdkman/candidates/java/current" gradle --no-daemon :app:assembleDebug
+export ANDROID_HOME="$HOME/Library/Android/sdk"
+export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/<你的ndk版本>"
 ```
 
-## Notes
+例如本机可能是：
 
-- The server is intended for LAN / hotspot usage. Mobile networks usually put phones behind NAT, so other devices may not be able to connect.
-- Android can still kill long-running background work under memory pressure, aggressive OEM battery policies, or if the user force-stops the app.
-- The app asks for notification permission on Android 13+ and provides a button to open battery optimization settings.
-- This is a Kotlin implementation, not a JNI wrapper around the Rust server.
+```bash
+export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/30.0.14904198"
+```
 
-## Before Shipping
+## 命令行构建
 
-- Test on target Android devices and ROMs.
-- Decide whether to add boot auto-start.
-- Add a Gradle wrapper if this project should be built outside Android Studio.
-- Consider adding instrumentation tests for websocket flows.
+进入目录：
+
+```bash
+cd ws/landlord/android
+```
+
+### 模拟器
+
+大多数模拟器是 `x86_64`：
+
+```bash
+./gradlew --no-daemon :app:assembleDebug -PrustAbis=x86_64
+```
+
+### 真机
+
+大多数 Android 真机是 `arm64-v8a`：
+
+```bash
+./gradlew --no-daemon :app:assembleDebug -PrustAbis=arm64-v8a
+```
+
+### 同时构建真机和模拟器
+
+```bash
+./gradlew --no-daemon :app:assembleDebug
+```
+
+生成 APK：
+
+```text
+app/build/outputs/apk/debug/app-debug.apk
+```
+
+## Android Studio 运行
+
+1. Android Studio 打开 `ws/landlord/android`。
+2. 等 Gradle Sync 完成。
+3. 选择模拟器或真机。
+4. 点击 Run。
+
+第一次构建会比较慢，因为会先编译 Rust native library。
+
+如果只想跑模拟器，可以在 Android Studio 的 Gradle 参数里加：
+
+```text
+-PrustAbis=x86_64
+```
+
+如果只想跑真机：
+
+```text
+-PrustAbis=arm64-v8a
+```
+
+## 只检查 Kotlin
+
+如果你只是改 UI 或 Service，不想编 Rust：
+
+```bash
+./gradlew --no-daemon :app:compileDebugKotlin -x buildRustLandlord
+```
+
+## 常见问题
+
+### cargo-ndk is required
+
+执行：
+
+```bash
+cargo install cargo-ndk
+```
+
+### target not installed
+
+模拟器：
+
+```bash
+rustup target add x86_64-linux-android
+```
+
+真机：
+
+```bash
+rustup target add aarch64-linux-android
+```
+
+### 找不到 NDK
+
+先确认 SDK 目录：
+
+```bash
+ls "$ANDROID_HOME/ndk"
+```
+
+然后设置：
+
+```bash
+export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/<版本号>"
+```
+
+### 模拟器启动时报找不到 liblandlord.so
+
+通常是 ABI 不匹配。重新构建模拟器 ABI：
+
+```bash
+./gradlew --no-daemon :app:assembleDebug -PrustAbis=x86_64
+```
+
+### 真机启动时报找不到 liblandlord.so
+
+重新构建真机 ABI：
+
+```bash
+./gradlew --no-daemon :app:assembleDebug -PrustAbis=arm64-v8a
+```
+
+## 服务地址
+
+App 启动后会在界面显示局域网地址，例如：
+
+```text
+ws://192.168.1.20:9001
+```
+
+同一局域网里的 web 前端可以用这个地址连接。
