@@ -475,14 +475,16 @@ async fn handle_play_phase(
         }
 
         // Broadcast game over
-        let is_landlord_win = {
+        let (is_landlord_win, landlord_position, score) = {
             let mut s = state.lock().unwrap();
             let is_win = s
                 .landlord_position
                 .map(|lp| winner_pos == Some(lp))
                 .unwrap_or(false);
+            let landlord_position = s.landlord_position;
+            let score = s.score;
             s.apply_settlement_scores(is_win);
-            is_win
+            (is_win, landlord_position, score)
         };
         dispatch.extend(dispatch_all(
             room_key,
@@ -494,6 +496,14 @@ async fn handle_play_phase(
             &rs,
         ));
         drop(rs);
+        crate::official::settle_round(
+            room_service,
+            room_key,
+            landlord_position,
+            is_landlord_win,
+            score,
+        )
+        .await;
         send_dispatch(dispatch, senders).await;
         return true;
     }

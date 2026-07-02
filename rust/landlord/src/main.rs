@@ -11,5 +11,8 @@ async fn main() {
 }
 
 async fn run() -> anyhow::Result<()> {
+    #[cfg(feature = "official")]
+    data::init().await?;
+
     run_landlord_server_with_cli().await
 }

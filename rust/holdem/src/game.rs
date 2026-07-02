@@ -226,6 +226,7 @@ impl HoldemGameHandler {
 
         if should_settle {
             let settlement = settle_hand(state);
+            crate::official::settle_round(room_service, room_key);
             room_service.send_all(room_key, WsCode::GAME_OVER as i32, settlement, dispatch);
             self.states.lock().unwrap().remove(room_key);
             room_service.clear_room_game_state(room_key);
@@ -518,6 +519,9 @@ impl HoldemGameHandler {
             .unwrap()
             .insert(room_key.clone(), Arc::clone(&state));
 
+        if let Some(game_id) = room_service.room_game_id(&room_key) {
+            crate::official::create_match(room_service, &room_key, game_id);
+        }
         room_service.send_all(&room_key, WsCode::START as i32, json!({}), &mut dispatch);
         self.push_private_deals(&room_key, room_service, &state, &mut dispatch);
         self.push_turn_event(&room_key, room_service, &state, &mut dispatch);
@@ -811,6 +815,7 @@ mod tests {
                 name: name.to_string(),
                 password: "room".to_string(),
                 game_id,
+                session_id: String::new(),
                 avatar_url: String::new(),
             })
             .unwrap(),

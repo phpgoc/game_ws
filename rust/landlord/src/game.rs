@@ -138,6 +138,7 @@ impl LandlordGameHandler {
             .unwrap()
             .insert(room_key.clone(), Arc::clone(&loop_state));
 
+        crate::official::create_match(room_service, &room_key);
         if let (Some(room_service_arc), Some(senders_arc)) =
             (self.room_service.as_ref(), self.senders.as_ref())
         {

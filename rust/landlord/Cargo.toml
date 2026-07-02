@@ -3,11 +3,16 @@ name = "landlord"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+official = ["dep:data"]
+
 [lib]
 crate-type = ["rlib", "cdylib"]
 
 [dependencies]
 anyhow = "1"
+data = { path = "../../../data", optional = true }
 serde_json = "1"
 share_type_public = { path = "../../share_type_public" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }

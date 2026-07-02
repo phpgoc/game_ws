@@ -135,13 +135,21 @@ impl TractorGameHandler {
         if finished {
             let settlement = {
                 let s = state.lock().unwrap();
+                let partner_position = (s.dealer_position + 2) % 4;
                 WsTractorSettlementEvent {
-                    winner_positions: vec![s.dealer_position as i32],
-                    score: 0,
-                    blood_units: s.rules.blood_units(0),
+                    winner_positions: vec![s.dealer_position as i32, partner_position as i32],
+                    score: 1,
+                    blood_units: s.rules.blood_units(1),
                     target_rank: s.rules.target_rank,
                 }
             };
+            crate::official::settle_round(
+                room_service,
+                &room_key,
+                &settlement.winner_positions,
+                settlement.score,
+                settlement.target_rank,
+            );
             room_service.send_all(
                 &room_key,
                 WsCode::GAME_OVER as i32,
@@ -220,6 +228,7 @@ impl TractorGameHandler {
             .unwrap()
             .insert(room_key.clone(), Arc::clone(&state));
 
+        crate::official::create_match(room_service, &room_key);
         room_service.send_all(&room_key, WsCode::START as i32, json!({}), &mut dispatch);
         self.push_private_deals(&room_key, room_service, &state, &mut dispatch);
         self.push_table_snapshot(&room_key, room_service, &state, &mut dispatch);
@@ -332,6 +341,7 @@ mod tests {
                 name: name.to_string(),
                 password: "room".to_string(),
                 game_id: GameId::TRACTOR,
+                session_id: String::new(),
                 avatar_url: String::new(),
             })
             .unwrap(),

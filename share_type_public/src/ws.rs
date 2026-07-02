@@ -30,6 +30,9 @@ pub struct WsJoinRequest {
     pub password: String,
     #[serde(default)]
     pub game_id: GameId,
+    /// 官方服登录 session id。非官方服、Android 本地服可以不传。
+    #[serde(default)]
+    pub session_id: String,
     /// 头像 URL（官方为 http 开头的全路径，非官方可为 / 开头的相对路径）。
     #[serde(default)]
     pub avatar_url: String,

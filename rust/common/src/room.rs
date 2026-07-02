@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use crate::game_setting::GameSettings;
+use crate::official::OfficialPlayerSession;
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use share_type_public::{
@@ -51,6 +52,8 @@ struct RoomEntry {
     min_players: usize,
     max_players: usize,
     state: Box<dyn crate::game_state::GameState>,
+    official_match_id: Option<i64>,
+    official_user_ids_by_position: HashMap<usize, i64>,
 }
 
 #[derive(Debug, Default)]
@@ -67,6 +70,7 @@ struct SessionState {
     name: Option<String>,
     room_key: Option<String>,
     position: Option<usize>,
+    official_session_id: Option<String>,
 }
 
 /// 构建房间设置的结果：GameSettings（含默认值和人数限制）和参数描述。
@@ -84,6 +88,11 @@ impl std::fmt::Debug for RoomEntry {
             .field("param_descriptions", &self.param_descriptions.len())
             .field("min_players", &self.min_players)
             .field("max_players", &self.max_players)
+            .field("official_match_id", &self.official_match_id)
+            .field(
+                "official_user_ids_by_position",
+                &self.official_user_ids_by_position,
+            )
             .field("state", &format_args!("<GameState>"))
             .finish()
     }
@@ -113,6 +122,8 @@ impl RoomService {
         if let Some(entry) = self.rooms.get_mut(room_key) {
             let common = entry.state.shared_common_state();
             entry.state = Box::new(crate::game_state::SharedGameState::from_common(common));
+            entry.official_match_id = None;
+            entry.official_user_ids_by_position.clear();
         }
     }
 
@@ -127,6 +138,8 @@ impl RoomService {
             let current = entry.state.shared_common_state();
             if Arc::ptr_eq(&current, common) {
                 entry.state = Box::new(crate::game_state::SharedGameState::from_common(current));
+                entry.official_match_id = None;
+                entry.official_user_ids_by_position.clear();
             }
         }
     }
@@ -202,6 +215,7 @@ impl RoomService {
             if let Some(session) = self.sessions.get_mut(sid) {
                 session.room_key = None;
                 session.position = None;
+                session.official_session_id = None;
             }
             if *sid == session_id {
                 continue;
@@ -568,6 +582,7 @@ impl RoomService {
         };
         let password = payload.password;
         let name = payload.name;
+        let official_session_id = (!payload.session_id.is_empty()).then_some(payload.session_id);
         let avatar_url = payload.avatar_url;
         if !accepts_game_id(payload.game_id) {
             return self.error_response(
@@ -650,6 +665,8 @@ impl RoomService {
                     min_players: settings.min_players,
                     max_players: settings.max_players,
                     state: Box::new(crate::game_state::SharedGameState::new()),
+                    official_match_id: None,
+                    official_user_ids_by_position: HashMap::new(),
                 },
             );
         } else if self
@@ -699,6 +716,7 @@ impl RoomService {
                 session.name = Some(name.clone());
                 session.room_key = Some(password.clone());
                 session.position = Some(position);
+                session.official_session_id = official_session_id.clone();
             }
 
             self.send_other(
@@ -801,6 +819,7 @@ impl RoomService {
             session.name = Some(name.clone());
             session.room_key = Some(password.clone());
             session.position = Some(position);
+            session.official_session_id = official_session_id;
         }
 
         // — 广播 JOIN 事件给其他人 —
@@ -1169,6 +1188,7 @@ impl RoomService {
         let Some(room_key) = session.room_key.take() else {
             return;
         };
+        session.official_session_id = None;
         let mut name = session.name.clone().unwrap_or_default();
         let mut position = session.position.take();
         let mut recipients = Vec::new();
@@ -1305,6 +1325,7 @@ impl RoomService {
         let Some(room_key) = session.room_key.take() else {
             return;
         };
+        session.official_session_id = None;
         let mut leave_name = session.name.clone().unwrap_or_default();
 
         let mut recipients = Vec::new();
@@ -1395,6 +1416,46 @@ impl RoomService {
 
     pub fn room_game_id(&self, room_key: &str) -> Option<GameId> {
         self.rooms.get(room_key).map(|entry| entry.game_id)
+    }
+
+    pub fn room_official_match_id(&self, room_key: &str) -> Option<i64> {
+        self.rooms
+            .get(room_key)
+            .and_then(|entry| entry.official_match_id)
+    }
+
+    pub fn room_official_user_id(&self, room_key: &str, position: usize) -> Option<i64> {
+        self.rooms
+            .get(room_key)
+            .and_then(|entry| entry.official_user_ids_by_position.get(&position).copied())
+    }
+
+    pub fn room_official_player_sessions(&self, room_key: &str) -> Vec<OfficialPlayerSession> {
+        let Some(entry) = self.rooms.get(room_key) else {
+            return Vec::new();
+        };
+        let mut players = entry
+            .state
+            .players()
+            .into_iter()
+            .filter_map(|(position, (session_id, _))| {
+                if entry.state.is_ai_position(position) {
+                    return None;
+                }
+                let session_id = self
+                    .sessions
+                    .get(&session_id)
+                    .and_then(|session| session.official_session_id.as_ref())
+                    .filter(|session_id| !session_id.is_empty())?
+                    .clone();
+                Some(OfficialPlayerSession {
+                    position,
+                    session_id,
+                })
+            })
+            .collect::<Vec<_>>();
+        players.sort_by_key(|player| player.position);
+        players
     }
 
     pub fn room_key_of(&self, session_id: SessionId) -> Option<String> {
@@ -1532,6 +1593,18 @@ impl RoomService {
         self.sessions
             .get(&session_id)
             .and_then(|item| item.position)
+    }
+
+    pub fn set_room_official_match(
+        &mut self,
+        room_key: &str,
+        match_id: i64,
+        user_ids_by_position: HashMap<usize, i64>,
+    ) {
+        if let Some(entry) = self.rooms.get_mut(room_key) {
+            entry.official_match_id = Some(match_id);
+            entry.official_user_ids_by_position = user_ids_by_position;
+        }
     }
 
     /// 设置 game state（游戏开始时调用）。

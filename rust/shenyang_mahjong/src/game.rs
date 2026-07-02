@@ -55,6 +55,7 @@ pub(crate) fn advance_to_next_turn(
     }
 
     state.enter_settlement(Vec::new(), None, None, false);
+    maybe_record_settlement(room_service, room_key, state);
     push_phase_change(
         room_service,
         room_key,
@@ -177,6 +178,16 @@ pub(crate) fn build_settlement_event(
         is_self_draw: settlement.is_self_draw,
         players: snapshots,
     })
+}
+
+fn maybe_record_settlement(
+    room_service: &RoomService,
+    room_key: &str,
+    state: &ShenyangMahjongLoopState,
+) {
+    if let Some(settlement) = state.settlement.as_ref() {
+        crate::official::settle_round(room_service, room_key, settlement);
+    }
 }
 
 pub(crate) fn build_table_snapshot_event(
@@ -346,6 +357,7 @@ pub(crate) fn perform_self_draw_hu(
     );
     let win_tile = state.last_drawn_tile;
     state.enter_settlement(vec![position], None, win_tile, true);
+    maybe_record_settlement(room_service, room_key, state);
     push_phase_change(
         room_service,
         room_key,
@@ -544,6 +556,7 @@ pub(crate) fn resolve_claim_window(
             Some(claim_window.tile),
             false,
         );
+        maybe_record_settlement(room_service, room_key, state);
         push_phase_change(
             room_service,
             room_key,
@@ -655,6 +668,7 @@ pub(crate) fn resolve_claim_window(
                         );
                     } else {
                         state.enter_settlement(Vec::new(), None, None, false);
+                        maybe_record_settlement(room_service, room_key, state);
                         push_phase_change(
                             room_service,
                             room_key,
@@ -1028,6 +1042,7 @@ impl ShenyangMahjongGameHandler {
             .unwrap()
             .insert(room_key.clone(), Arc::clone(&loop_state));
 
+        crate::official::create_match(room_service, &room_key);
         {
             let state = loop_state.lock().unwrap();
             state.set_turn_countdown(0);

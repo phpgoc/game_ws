@@ -12,6 +12,9 @@ async fn main() {
 }
 
 async fn run() -> anyhow::Result<()> {
+    #[cfg(feature = "official")]
+    data::init().await?;
+
     run_game_server_with_cli(
         "shenyang_mahjong",
         Duration::from_secs(120),
