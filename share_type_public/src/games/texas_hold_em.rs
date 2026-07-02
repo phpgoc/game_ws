@@ -89,17 +89,17 @@ pub struct WsTexasHoldEmPlayRequest {
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsTexasHoldEmPublicHoleCards {
-    pub position: i32,
-    pub cards: Vec<i32>,
-}
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsTexasHoldEmPublicCardsEvent {
     pub phase: TexasHoldEmPhase,
     pub cards: Vec<i32>,
     pub pot: i32,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsTexasHoldEmPublicHoleCards {
+    pub position: i32,
+    pub cards: Vec<i32>,
 }
 
 #[typeshare]

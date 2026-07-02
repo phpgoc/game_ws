@@ -180,16 +180,6 @@ pub(crate) fn build_settlement_event(
     })
 }
 
-fn maybe_record_settlement(
-    room_service: &RoomService,
-    room_key: &str,
-    state: &ShenyangMahjongLoopState,
-) {
-    if let Some(settlement) = state.settlement.as_ref() {
-        crate::official::settle_round(room_service, room_key, settlement);
-    }
-}
-
 pub(crate) fn build_table_snapshot_event(
     state: &ShenyangMahjongLoopState,
     viewer_position: usize,
@@ -273,6 +263,16 @@ fn join_succeeded(dispatch: &Dispatch, session_id: SessionId) -> bool {
                     && response.code as i32 == WsResponseCode::JOINED as i32
         )
     })
+}
+
+fn maybe_record_settlement(
+    room_service: &RoomService,
+    room_key: &str,
+    state: &ShenyangMahjongLoopState,
+) {
+    if let Some(settlement) = state.settlement.as_ref() {
+        crate::official::settle_round(room_service, room_key, settlement);
+    }
 }
 
 pub(crate) fn perform_discard(

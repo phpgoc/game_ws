@@ -1418,16 +1418,17 @@ impl RoomService {
         self.rooms.get(room_key).map(|entry| entry.game_id)
     }
 
+    pub fn room_key_of(&self, session_id: SessionId) -> Option<String> {
+        self.sessions
+            .get(&session_id)
+            .and_then(|item| item.room_key.as_ref())
+            .cloned()
+    }
+
     pub fn room_official_match_id(&self, room_key: &str) -> Option<i64> {
         self.rooms
             .get(room_key)
             .and_then(|entry| entry.official_match_id)
-    }
-
-    pub fn room_official_user_id(&self, room_key: &str, position: usize) -> Option<i64> {
-        self.rooms
-            .get(room_key)
-            .and_then(|entry| entry.official_user_ids_by_position.get(&position).copied())
     }
 
     pub fn room_official_player_sessions(&self, room_key: &str) -> Vec<OfficialPlayerSession> {
@@ -1458,11 +1459,10 @@ impl RoomService {
         players
     }
 
-    pub fn room_key_of(&self, session_id: SessionId) -> Option<String> {
-        self.sessions
-            .get(&session_id)
-            .and_then(|item| item.room_key.as_ref())
-            .cloned()
+    pub fn room_official_user_id(&self, room_key: &str, position: usize) -> Option<i64> {
+        self.rooms
+            .get(room_key)
+            .and_then(|entry| entry.official_user_ids_by_position.get(&position).copied())
     }
 
     /// 房间人数是否达到下限（可以开始了）。
@@ -1595,6 +1595,17 @@ impl RoomService {
             .and_then(|item| item.position)
     }
 
+    /// 设置 game state（游戏开始时调用）。
+    pub fn set_room_game_state(
+        &mut self,
+        room_key: &str,
+        game: Box<dyn crate::game_state::GameState>,
+    ) {
+        if let Some(entry) = self.rooms.get_mut(room_key) {
+            entry.state = game;
+        }
+    }
+
     pub fn set_room_official_match(
         &mut self,
         room_key: &str,
@@ -1604,17 +1615,6 @@ impl RoomService {
         if let Some(entry) = self.rooms.get_mut(room_key) {
             entry.official_match_id = Some(match_id);
             entry.official_user_ids_by_position = user_ids_by_position;
-        }
-    }
-
-    /// 设置 game state（游戏开始时调用）。
-    pub fn set_room_game_state(
-        &mut self,
-        room_key: &str,
-        game: Box<dyn crate::game_state::GameState>,
-    ) {
-        if let Some(entry) = self.rooms.get_mut(room_key) {
-            entry.state = game;
         }
     }
 
