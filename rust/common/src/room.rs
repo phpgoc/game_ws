@@ -603,11 +603,7 @@ impl RoomService {
                         share_type_public::WsJoinResponse {
                             current_configs: entry.configs.clone(),
                             existing_members,
-                            param_descriptions: if position == 0 {
-                                Some(entry.param_descriptions.clone())
-                            } else {
-                                None
-                            },
+                            param_descriptions: Some(entry.param_descriptions.clone()),
                             rejoin_data: None,
                         },
                         &mut dispatch,
@@ -707,11 +703,7 @@ impl RoomService {
                 share_type_public::WsJoinResponse {
                     current_configs: entry.configs.clone(),
                     existing_members,
-                    param_descriptions: if position == 0 {
-                        Some(entry.param_descriptions.clone())
-                    } else {
-                        None
-                    },
+                    param_descriptions: Some(entry.param_descriptions.clone()),
                     rejoin_data: None,
                 },
                 &mut dispatch,
@@ -816,11 +808,7 @@ impl RoomService {
                 share_type_public::WsJoinResponse {
                     current_configs: entry.configs.clone(),
                     existing_members,
-                    param_descriptions: if position == 0 {
-                        Some(entry.param_descriptions.clone())
-                    } else {
-                        None
-                    },
+                    param_descriptions: Some(entry.param_descriptions.clone()),
                     rejoin_data: None,
                 },
                 &mut dispatch,
@@ -1034,9 +1022,9 @@ impl RoomService {
                 WsResponseCode::ERROR_FORMAT,
             );
         };
-        let pos_a: usize = 0;
+        let pos_a = payload.a;
         let pos_b = payload.b;
-        if pos_b == pos_a {
+        if pos_a == pos_b {
             return self.error_response(
                 session_id,
                 Routes::SWAP as i32,
@@ -1110,11 +1098,12 @@ impl RoomService {
             &mut dispatch,
         );
 
-        // 如果 position 0 (房主) 换了新人（sid_b 成为了新的 0），给新人发 param_descriptions
-        {
+        // 如果 position 0 (房主) 换了新人，给新房主发建房参数响应。
+        if pos_a == 0 || pos_b == 0 {
             let entry = self.rooms.get(&room_key).unwrap();
+            let owner_sid = if pos_a == 0 { sid_b } else { sid_a };
             self.push_response_with_data(
-                sid_b,
+                owner_sid,
                 Routes::SWAP as i32,
                 WsResponseCode::OK,
                 share_type_public::WsCreateResponse {
@@ -2307,6 +2296,51 @@ mod tests {
         assert!(later_join_gets_updated_configs);
     }
 
+    #[test]
+    fn non_owner_join_receives_param_descriptions_for_viewing_settings() {
+        let mut service = RoomService::default();
+        service.connect(1);
+        service.connect(2);
+
+        let _ = service.handle_common_request(
+            1,
+            &WsRequest {
+                route: Routes::JOIN as i32,
+                data: serde_json::json!({"name":"u1","password":"p1","game_id":GameId::LANDLORD as i32}),
+            },
+            GameId::LANDLORD,
+            settings,
+        );
+
+        let join = service
+            .handle_common_request(
+                2,
+                &WsRequest {
+                    route: Routes::JOIN as i32,
+                    data: serde_json::json!({"name":"u2","password":"p1","game_id":GameId::LANDLORD as i32}),
+                },
+                GameId::LANDLORD,
+                settings,
+            )
+            .expect("join common");
+
+        let non_owner_gets_param_descriptions =
+            join.messages.iter().any(|item| match &item.payload {
+                OutboundPayload::Response(RequestResponse::WithData(resp)) => {
+                    item.recipient == 2
+                        && resp.route == Routes::JOIN as i32
+                        && resp.code as i32 == WsResponseCode::JOINED as i32
+                        && resp
+                            .data
+                            .get("param_descriptions")
+                            .and_then(|params| params.get("test_param"))
+                            .is_some()
+                }
+                _ => false,
+            });
+        assert!(non_owner_gets_param_descriptions);
+    }
+
     fn settings() -> super::SettingsBuilderResult {
         let params: HashMap<String, GameParam> = [(
             "test_param".into(),
@@ -2404,7 +2438,7 @@ mod tests {
         let common = service
             .get_room_common_state_handle(&room_key)
             .expect("common state");
-        service.set_room_game_state(&room_key, Box::new(NoSwapState { common }));
+        service.set_room_game_state(&room_key, Box::new(NoAcceptState { common }));
 
         let swap = service
             .handle_common_request(
