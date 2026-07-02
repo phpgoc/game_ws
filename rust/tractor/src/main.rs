@@ -1,6 +1,6 @@
 use std::process;
 
-use upgrade::server::run_upgrade_server_with_cli;
+use tractor::server::run_tractor_server_with_cli;
 
 #[tokio::main]
 async fn main() {
@@ -11,5 +11,5 @@ async fn main() {
 }
 
 async fn run() -> anyhow::Result<()> {
-    run_upgrade_server_with_cli().await
+    run_tractor_server_with_cli().await
 }

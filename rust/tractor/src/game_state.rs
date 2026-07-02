@@ -5,36 +5,36 @@ use std::{
 
 use rand::seq::SliceRandom;
 use share_type_public::{
-    UpgradePhase, UpgradeRank, WsUpgradePlayedCards, WsUpgradeTableSnapshotEvent,
+    TractorPhase, TractorRank, WsTractorPlayedCards, WsTractorTableSnapshotEvent,
 };
 use ws_common::game_state::{CommonGameState, GameState};
 
 #[derive(Debug, Clone)]
-pub struct UpgradeRules {
+pub struct TractorRules {
     pub blood_enabled: bool,
     pub blood_score_per_unit: i32,
     pub blood_start_score: i32,
     pub bottom_card_count: usize,
     pub deck_count: usize,
-    pub target_rank: UpgradeRank,
+    pub target_rank: TractorRank,
 }
 
 #[derive(Debug)]
-pub struct UpgradeGameState {
+pub struct TractorGameState {
     pub base: Arc<Mutex<CommonGameState>>,
-    pub phase: UpgradePhase,
-    pub rules: UpgradeRules,
+    pub phase: TractorPhase,
+    pub rules: TractorRules,
     pub hands: HashMap<usize, Vec<i32>>,
     pub bottom_cards: Vec<i32>,
     pub dealer_position: usize,
     pub current_position: usize,
     pub trick_index: i32,
-    pub current_trick: Vec<WsUpgradePlayedCards>,
+    pub current_trick: Vec<WsTractorPlayedCards>,
 }
 
-pub type UpgradeStateHandle = Arc<Mutex<UpgradeGameState>>;
+pub type TractorStateHandle = Arc<Mutex<TractorGameState>>;
 
-impl UpgradeRules {
+impl TractorRules {
     pub fn blood_units(&self, score: i32) -> i32 {
         if !self.blood_enabled || score < self.blood_start_score {
             return 0;
@@ -43,18 +43,18 @@ impl UpgradeRules {
     }
 }
 
-impl UpgradeGameState {
+impl TractorGameState {
     pub fn from_common(base: Arc<Mutex<CommonGameState>>) -> Self {
         Self {
             base,
-            phase: UpgradePhase::Start,
-            rules: UpgradeRules {
+            phase: TractorPhase::Start,
+            rules: TractorRules {
                 blood_enabled: true,
                 blood_score_per_unit: 40,
                 blood_start_score: 80,
                 bottom_card_count: 8,
                 deck_count: 2,
-                target_rank: UpgradeRank::A,
+                target_rank: TractorRank::A,
             },
             hands: HashMap::new(),
             bottom_cards: Vec::new(),
@@ -71,15 +71,15 @@ impl UpgradeGameState {
         positions
     }
 
-    pub fn deal_new_round(&mut self, mut rules: UpgradeRules) -> Result<(), &'static str> {
+    pub fn deal_new_round(&mut self, mut rules: TractorRules) -> Result<(), &'static str> {
         rules.deck_count = rules.deck_count.clamp(2, 4);
         rules.blood_score_per_unit = rules.blood_score_per_unit.max(1);
         let positions = self.active_positions();
         if positions.len() != 4 {
-            return Err("Upgrade requires exactly 4 players");
+            return Err("Tractor requires exactly 4 players");
         }
 
-        let mut deck = build_upgrade_deck(rules.deck_count);
+        let mut deck = build_tractor_deck(rules.deck_count);
         deck.shuffle(&mut rand::rng());
         rules.bottom_card_count = adjusted_bottom_card_count(
             deck.len(),
@@ -89,7 +89,7 @@ impl UpgradeGameState {
         )
         .ok_or("invalid bottom card count")?;
 
-        self.phase = UpgradePhase::Deal;
+        self.phase = TractorPhase::Deal;
         self.rules = rules;
         self.hands.clear();
         self.bottom_cards.clear();
@@ -110,7 +110,7 @@ impl UpgradeGameState {
         for hand in self.hands.values_mut() {
             hand.sort_unstable();
         }
-        self.phase = UpgradePhase::Play;
+        self.phase = TractorPhase::Play;
         self.base.lock().unwrap().action_received = false;
         Ok(())
     }
@@ -134,13 +134,13 @@ impl UpgradeGameState {
         position: usize,
         name: String,
         cards: Vec<i32>,
-    ) -> Result<WsUpgradePlayedCards, &'static str> {
-        if self.phase != UpgradePhase::Play || self.current_position != position || cards.is_empty()
+    ) -> Result<WsTractorPlayedCards, &'static str> {
+        if self.phase != TractorPhase::Play || self.current_position != position || cards.is_empty()
         {
             return Err("not current turn");
         }
         remove_cards_from_hand(self.hands.entry(position).or_default(), &cards)?;
-        let played = WsUpgradePlayedCards {
+        let played = WsTractorPlayedCards {
             position: position as i32,
             name,
             cards,
@@ -152,7 +152,7 @@ impl UpgradeGameState {
         }
         self.current_position = self.next_position(position).unwrap_or(position);
         if self.is_finished() {
-            self.phase = UpgradePhase::Settlement;
+            self.phase = TractorPhase::Settlement;
         }
         self.base.lock().unwrap().action_received = true;
         Ok(played)
@@ -173,8 +173,8 @@ impl UpgradeGameState {
         self.base.lock().unwrap().turn_countdown = countdown;
     }
 
-    pub fn snapshot(&self) -> WsUpgradeTableSnapshotEvent {
-        WsUpgradeTableSnapshotEvent {
+    pub fn snapshot(&self) -> WsTractorTableSnapshotEvent {
+        WsTractorTableSnapshotEvent {
             phase: self.phase,
             deck_count: self.rules.deck_count as i32,
             target_rank: self.rules.target_rank,
@@ -192,9 +192,9 @@ impl UpgradeGameState {
     }
 }
 
-impl GameState for UpgradeGameState {
+impl GameState for TractorGameState {
     fn can_accept_players(&self) -> bool {
-        self.phase == UpgradePhase::Start
+        self.phase == TractorPhase::Start
     }
 
     fn shared_common_state(&self) -> Arc<Mutex<CommonGameState>> {
@@ -230,7 +230,7 @@ pub fn min_bottom_card_count(deck_count: usize) -> usize {
     }
 }
 
-pub fn build_upgrade_deck(deck_count: usize) -> Vec<i32> {
+pub fn build_tractor_deck(deck_count: usize) -> Vec<i32> {
     let deck_count = deck_count.clamp(2, 4);
     let mut cards = Vec::with_capacity(deck_count * 54);
     for deck_index in 0..deck_count {
@@ -268,7 +268,7 @@ mod tests {
     #[test]
     fn adjusted_bottom_keeps_all_hands_equal() {
         for deck_count in 2..=4 {
-            let total = build_upgrade_deck(deck_count).len();
+            let total = build_tractor_deck(deck_count).len();
             let bottom =
                 adjusted_bottom_card_count(total, 4, 8, min_bottom_card_count(deck_count)).unwrap();
             assert_eq!((total - bottom) % 4, 0);
@@ -278,13 +278,13 @@ mod tests {
 
     #[test]
     fn blood_units_start_after_threshold() {
-        let rules = UpgradeRules {
+        let rules = TractorRules {
             blood_enabled: true,
             blood_score_per_unit: 40,
             blood_start_score: 80,
             bottom_card_count: 8,
             deck_count: 2,
-            target_rank: UpgradeRank::A,
+            target_rank: TractorRank::A,
         };
         assert_eq!(rules.blood_units(79), 0);
         assert_eq!(rules.blood_units(80), 1);
@@ -293,7 +293,7 @@ mod tests {
 
     #[test]
     fn three_decks_uses_at_least_ten_bottom_cards() {
-        let total = build_upgrade_deck(3).len();
+        let total = build_tractor_deck(3).len();
         let bottom = adjusted_bottom_card_count(total, 4, 8, min_bottom_card_count(3)).unwrap();
         assert_eq!(bottom, 10);
         assert_eq!((total - bottom) % 4, 0);

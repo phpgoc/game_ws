@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 use share_type_public::{GameId, Routes, WsCode, WsResponseCode};
 use tokio::net::TcpListener as TokioTcpListener;
 use tokio_tungstenite::{WebSocketStream, connect_async, tungstenite::Message};
-use upgrade::game::UpgradeGameHandler;
+use tractor::game::TractorGameHandler;
 use ws_common::{RuntimeConfig, run_room_runtime};
 
 type Client = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
@@ -30,7 +30,7 @@ async fn join(client: &mut Client, name: &str, password: &str) -> Value {
         json!({
             "name": name,
             "password": password,
-            "game_id": GameId::UPGRADE as i32,
+            "game_id": GameId::TRACTOR as i32,
             "avatar_url": ""
         }),
     )
@@ -43,18 +43,18 @@ async fn join(client: &mut Client, name: &str, password: &str) -> Value {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn upgrade_four_players_can_start_custom_three_deck_room() {
+async fn tractor_four_players_can_start_custom_three_deck_room() {
     let port = free_port();
     let listen_addr = format!("127.0.0.1:{port}");
     let url = format!("ws://{listen_addr}");
     let server = tokio::spawn(run_room_runtime(
         RuntimeConfig {
-            service_name: "upgrade-test",
+            service_name: "tractor-test",
             listen_addr,
             idle_timeout: Duration::from_secs(30),
             heartbeat_interval: Duration::from_secs(30),
         },
-        UpgradeGameHandler::default(),
+        TractorGameHandler::default(),
     ));
 
     for _ in 0..50 {
@@ -68,7 +68,7 @@ async fn upgrade_four_players_can_start_custom_three_deck_room() {
     let mut b = connect_client(&url).await;
     let mut c = connect_client(&url).await;
     let mut d = connect_client(&url).await;
-    let room = "upgrade-flow-room";
+    let room = "tractor-flow-room";
 
     join(&mut a, "a", room).await;
     join(&mut b, "b", room).await;
@@ -100,7 +100,7 @@ async fn upgrade_four_players_can_start_custom_three_deck_room() {
 
     let mut deals = Vec::new();
     for client in [&mut a, &mut b, &mut c, &mut d] {
-        let deal = recv_until(client, "upgrade deal", |value| {
+        let deal = recv_until(client, "tractor deal", |value| {
             value.get("code").and_then(Value::as_i64) == Some(WsCode::DEAL as i64)
         })
         .await;

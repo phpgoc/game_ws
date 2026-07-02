@@ -14,7 +14,7 @@ pub const KEY_SETTLEMENT_TIME: &str = "settlement_time";
 pub const KEY_START_TIME: &str = "start_time";
 pub const KEY_TARGET_RANK: &str = "target_rank";
 
-pub fn build_upgrade_settings() -> (GameSettings, HashMap<String, GameParam>) {
+pub fn build_tractor_settings() -> (GameSettings, HashMap<String, GameParam>) {
     let params: HashMap<String, GameParam> = [
         (
             KEY_DECK_COUNT.into(),

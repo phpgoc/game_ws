@@ -2,9 +2,9 @@ use std::{collections::HashMap, sync::Arc};
 
 use serde_json::{Value, json};
 use share_type_public::{
-    CommonEvent, GameId, Routes, UpgradeRank, WsCode, WsResponseCode,
-    games::upgrade::{
-        WsUpgradeDealEvent, WsUpgradePlayEvent, WsUpgradePlayRequest, WsUpgradeSettlementEvent,
+    CommonEvent, GameId, Routes, TractorRank, WsCode, WsResponseCode,
+    games::tractor::{
+        WsTractorDealEvent, WsTractorPlayEvent, WsTractorPlayRequest, WsTractorSettlementEvent,
     },
 };
 use ws_common::{
@@ -14,20 +14,20 @@ use ws_common::{
 use crate::{
     game_setting::{
         KEY_BLOOD_ENABLED, KEY_BLOOD_SCORE_PER_UNIT, KEY_BLOOD_START_SCORE, KEY_BOTTOM_CARD_COUNT,
-        KEY_DECK_COUNT, KEY_PLAY_TIME, KEY_TARGET_RANK, build_upgrade_settings,
+        KEY_DECK_COUNT, KEY_PLAY_TIME, KEY_TARGET_RANK, build_tractor_settings,
     },
-    game_state::{UpgradeGameState, UpgradeRules, UpgradeStateHandle},
+    game_state::{TractorGameState, TractorRules, TractorStateHandle},
 };
 
-type StateRegistry = Arc<std::sync::Mutex<HashMap<String, UpgradeStateHandle>>>;
+type StateRegistry = Arc<std::sync::Mutex<HashMap<String, TractorStateHandle>>>;
 
-pub struct UpgradeGameHandler {
+pub struct TractorGameHandler {
     states: StateRegistry,
 }
 
-impl UpgradeGameHandler {
-    fn configs_to_rules(configs: &HashMap<String, i32>) -> UpgradeRules {
-        UpgradeRules {
+impl TractorGameHandler {
+    fn configs_to_rules(configs: &HashMap<String, i32>) -> TractorRules {
+        TractorRules {
             blood_enabled: configs.get(KEY_BLOOD_ENABLED).copied().unwrap_or(1) != 0,
             blood_score_per_unit: configs
                 .get(KEY_BLOOD_SCORE_PER_UNIT)
@@ -46,10 +46,10 @@ impl UpgradeGameHandler {
                 .unwrap_or(2)
                 .clamp(2, 4) as usize,
             target_rank: match configs.get(KEY_TARGET_RANK).copied().unwrap_or(3) {
-                0 => UpgradeRank::J,
-                1 => UpgradeRank::Q,
-                2 => UpgradeRank::K,
-                _ => UpgradeRank::A,
+                0 => TractorRank::J,
+                1 => TractorRank::Q,
+                2 => TractorRank::K,
+                _ => TractorRank::A,
             },
         }
     }
@@ -74,7 +74,7 @@ impl UpgradeGameHandler {
                 WsResponseCode::NOT_LOGIN,
             );
         };
-        let Ok(payload) = RoomService::parse::<WsUpgradePlayRequest>(data) else {
+        let Ok(payload) = RoomService::parse::<WsTractorPlayRequest>(data) else {
             return room_service.error_response(
                 session_id,
                 Routes::PLAY as i32,
@@ -107,7 +107,7 @@ impl UpgradeGameHandler {
                 .unwrap_or(30)
                 .max(1) as u32;
             s.set_turn_countdown(play_time);
-            let play_event = WsUpgradePlayEvent {
+            let play_event = WsTractorPlayEvent {
                 position: played.position,
                 name,
                 cards: played.cards,
@@ -131,7 +131,7 @@ impl UpgradeGameHandler {
         if finished {
             let settlement = {
                 let s = state.lock().unwrap();
-                WsUpgradeSettlementEvent {
+                WsTractorSettlementEvent {
                     winner_positions: vec![s.dealer_position as i32],
                     score: 0,
                     blood_units: s.rules.blood_units(0),
@@ -195,7 +195,7 @@ impl UpgradeGameHandler {
         let rules = Self::configs_to_rules(&configs);
         let play_time = configs.get(KEY_PLAY_TIME).copied().unwrap_or(30).max(1) as u32;
 
-        let mut game_state = UpgradeGameState::from_common(Arc::clone(&common));
+        let mut game_state = TractorGameState::from_common(Arc::clone(&common));
         if game_state.deal_new_round(rules).is_err() {
             return room_service.error_response(
                 session_id,
@@ -207,7 +207,7 @@ impl UpgradeGameHandler {
         let state = Arc::new(std::sync::Mutex::new(game_state));
         room_service.set_room_game_state(
             &room_key,
-            Box::new(UpgradeGameStateHandle {
+            Box::new(TractorGameStateHandle {
                 inner: Arc::clone(&state),
             }),
         );
@@ -227,13 +227,13 @@ impl UpgradeGameHandler {
         &self,
         room_key: &str,
         room_service: &RoomService,
-        state: &UpgradeStateHandle,
+        state: &TractorStateHandle,
         dispatch: &mut Dispatch,
     ) {
         let members = room_service.get_room_members(room_key);
         let s = state.lock().unwrap();
         for (session_id, _, position, _) in members {
-            let payload = WsUpgradeDealEvent {
+            let payload = WsTractorDealEvent {
                 position: position as i32,
                 cards: s.hands.get(&position).cloned().unwrap_or_default(),
                 deck_count: s.rules.deck_count as i32,
@@ -255,19 +255,19 @@ impl UpgradeGameHandler {
         &self,
         room_key: &str,
         room_service: &RoomService,
-        state: &UpgradeStateHandle,
+        state: &TractorStateHandle,
         dispatch: &mut Dispatch,
     ) {
         let snapshot = state.lock().unwrap().snapshot();
         room_service.send_all(room_key, WsCode::TABLE_SNAPSHOT as i32, snapshot, dispatch);
     }
 
-    fn state(&self, room_key: &str) -> Option<UpgradeStateHandle> {
+    fn state(&self, room_key: &str) -> Option<TractorStateHandle> {
         self.states.lock().unwrap().get(room_key).cloned()
     }
 }
 
-impl Default for UpgradeGameHandler {
+impl Default for TractorGameHandler {
     fn default() -> Self {
         Self {
             states: Arc::new(std::sync::Mutex::new(HashMap::new())),
@@ -275,17 +275,17 @@ impl Default for UpgradeGameHandler {
     }
 }
 
-impl GameHandler for UpgradeGameHandler {
+impl GameHandler for TractorGameHandler {
     fn build_game_state(&self) -> Box<dyn ws_common::game_state::GameState> {
         Box::new(ws_common::game_state::SharedGameState::new())
     }
 
     fn build_room_settings(&self) -> ws_common::SettingsBuilderResult {
-        build_upgrade_settings()
+        build_tractor_settings()
     }
 
     fn game_id(&self) -> GameId {
-        GameId::UPGRADE
+        GameId::TRACTOR
     }
 
     fn handle_game_request(
@@ -306,13 +306,13 @@ impl GameHandler for UpgradeGameHandler {
     }
 }
 
-struct UpgradeGameStateHandle {
-    inner: UpgradeStateHandle,
+struct TractorGameStateHandle {
+    inner: TractorStateHandle,
 }
 
-impl ws_common::game_state::GameState for UpgradeGameStateHandle {
+impl ws_common::game_state::GameState for TractorGameStateHandle {
     fn can_accept_players(&self) -> bool {
-        self.inner.lock().unwrap().phase == share_type_public::UpgradePhase::Start
+        self.inner.lock().unwrap().phase == share_type_public::TractorPhase::Start
     }
 
     fn shared_common_state(&self) -> Arc<std::sync::Mutex<ws_common::game_state::CommonGameState>> {
@@ -331,7 +331,7 @@ mod tests {
             data: serde_json::to_value(WsJoinRequest {
                 name: name.to_string(),
                 password: "room".to_string(),
-                game_id: GameId::UPGRADE,
+                game_id: GameId::TRACTOR,
                 avatar_url: String::new(),
             })
             .unwrap(),
@@ -340,7 +340,7 @@ mod tests {
 
     #[test]
     fn start_deals_equal_private_hands() {
-        let handler = UpgradeGameHandler::default();
+        let handler = TractorGameHandler::default();
         let mut room = RoomService::default();
         for session_id in 1..=4 {
             room.handle_common_request(
@@ -356,7 +356,7 @@ mod tests {
             .iter()
             .filter_map(|message| match &message.payload {
                 OutboundPayload::Event(event) if event.code == WsCode::DEAL as i32 => {
-                    serde_json::from_value::<WsUpgradeDealEvent>(event.data.clone()).ok()
+                    serde_json::from_value::<WsTractorDealEvent>(event.data.clone()).ok()
                 }
                 _ => None,
             })

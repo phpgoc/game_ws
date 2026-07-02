@@ -7,7 +7,7 @@ use typeshare::typeshare;
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
 #[allow(non_camel_case_types)]
-pub enum UpgradeRank {
+pub enum TractorRank {
     J = 11,
     Q = 12,
     K = 13,
@@ -17,7 +17,7 @@ pub enum UpgradeRank {
 #[typeshare]
 #[repr(i8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
-pub enum UpgradePhase {
+pub enum TractorPhase {
     Start,
     Deal,
     Play,
@@ -26,24 +26,24 @@ pub enum UpgradePhase {
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsUpgradeDealEvent {
+pub struct WsTractorDealEvent {
     pub position: i32,
     pub cards: Vec<i32>,
     pub deck_count: i32,
     pub hand_count: i32,
     pub bottom_card_count: i32,
-    pub target_rank: UpgradeRank,
+    pub target_rank: TractorRank,
 }
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsUpgradePlayRequest {
+pub struct WsTractorPlayRequest {
     pub cards: Vec<i32>,
 }
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsUpgradePlayedCards {
+pub struct WsTractorPlayedCards {
     pub position: i32,
     pub name: String,
     pub cards: Vec<i32>,
@@ -51,7 +51,7 @@ pub struct WsUpgradePlayedCards {
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsUpgradePlayEvent {
+pub struct WsTractorPlayEvent {
     pub position: i32,
     pub name: String,
     pub cards: Vec<i32>,
@@ -62,19 +62,19 @@ pub struct WsUpgradePlayEvent {
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsUpgradeSettlementEvent {
+pub struct WsTractorSettlementEvent {
     pub winner_positions: Vec<i32>,
     pub score: i32,
     pub blood_units: i32,
-    pub target_rank: UpgradeRank,
+    pub target_rank: TractorRank,
 }
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsUpgradeTableSnapshotEvent {
-    pub phase: UpgradePhase,
+pub struct WsTractorTableSnapshotEvent {
+    pub phase: TractorPhase,
     pub deck_count: i32,
-    pub target_rank: UpgradeRank,
+    pub target_rank: TractorRank,
     pub blood_enabled: bool,
     pub blood_start_score: i32,
     pub blood_score_per_unit: i32,
@@ -83,11 +83,11 @@ pub struct WsUpgradeTableSnapshotEvent {
     pub dealer_position: i32,
     pub current_position: i32,
     pub trick_index: i32,
-    pub current_trick: Vec<WsUpgradePlayedCards>,
+    pub current_trick: Vec<WsTractorPlayedCards>,
     pub turn_countdown: i32,
 }
 
-impl Display for UpgradePhase {
+impl Display for TractorPhase {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Start => write!(f, "Start"),
