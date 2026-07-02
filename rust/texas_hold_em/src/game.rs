@@ -711,6 +711,18 @@ mod tests {
             })
             .count();
         assert_eq!(private_deals, 2);
+        for message in dispatch.messages.iter().filter(|message| {
+            matches!(
+                &message.payload,
+                OutboundPayload::Event(event) if event.code == WsCode::DEAL as i32
+            )
+        }) {
+            let OutboundPayload::Event(event) = &message.payload else {
+                unreachable!();
+            };
+            let deal: WsTexasHoldEmDealEvent = serde_json::from_value(event.data.clone()).unwrap();
+            assert_eq!(deal.my_cards.len(), 2);
+        }
     }
 
     #[test]
