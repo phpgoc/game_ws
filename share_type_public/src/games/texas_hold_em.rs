@@ -27,6 +27,15 @@ pub enum TexasHoldEmAction {
 }
 
 #[typeshare]
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
+#[allow(non_camel_case_types)]
+pub enum TexasHoldEmAutoStrategy {
+    CHECK_FOLD = 1,
+    CHECK_CALL = 2,
+}
+
+#[typeshare]
 #[repr(i8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
 pub enum TexasHoldEmPhase {
@@ -49,6 +58,12 @@ pub struct WsTexasHoldEmActionEvent {
     pub current_bet: i32,
     pub pot: i32,
     pub chips: i32,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsTexasHoldEmAutoStrategyRequest {
+    pub strategy: TexasHoldEmAutoStrategy,
 }
 
 #[typeshare]

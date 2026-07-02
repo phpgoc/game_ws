@@ -1,17 +1,19 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use serde_json::{Value, json};
 use share_type_public::{
-    CommonEvent, GameId, Routes, TexasHoldEmAction, TexasHoldEmPhase, WsCode, WsResponseCode,
+    CommonEvent, GameId, Routes, TexasHoldEmAction, TexasHoldEmAutoStrategy, TexasHoldEmPhase,
+    WsCode, WsResponseCode,
     games::texas_hold_em::{
-        WsTexasHoldEmActionEvent, WsTexasHoldEmDealEvent, WsTexasHoldEmPlayRequest,
-        WsTexasHoldEmPublicCardsEvent, WsTexasHoldEmSettlementEvent, WsTexasHoldEmSettlementPlayer,
-        WsTexasHoldEmTurnEvent,
+        WsTexasHoldEmActionEvent, WsTexasHoldEmAutoStrategyRequest, WsTexasHoldEmDealEvent,
+        WsTexasHoldEmPlayRequest, WsTexasHoldEmPublicCardsEvent, WsTexasHoldEmSettlementEvent,
+        WsTexasHoldEmSettlementPlayer, WsTexasHoldEmTurnEvent,
     },
 };
+use tokio::sync::Mutex;
 use ws_common::{
     ClientRequest, Delivery, Dispatch, GameHandler, OutboundPayload, RoomService, SessionId,
-    game_state::SharedGameState,
+    SessionSenders, game_state::SharedGameState, to_text_message,
 };
 
 use crate::{
@@ -23,6 +25,24 @@ type StateRegistry = Arc<std::sync::Mutex<HashMap<String, TexasHoldEmStateHandle
 
 pub struct TexasHoldEmGameHandler {
     states: StateRegistry,
+    auto_strategies:
+        Arc<std::sync::Mutex<HashMap<String, HashMap<usize, TexasHoldEmAutoStrategy>>>>,
+}
+
+async fn deliver_dispatch(dispatch: Dispatch, senders: &SessionSenders) {
+    let mut frames = Vec::with_capacity(dispatch.messages.len());
+    for message in dispatch.messages {
+        if let Ok(frame) = to_text_message(&message.payload) {
+            frames.push((message.recipient, frame));
+        }
+    }
+
+    let senders = senders.lock().await;
+    for (recipient, frame) in frames {
+        if let Some(tx) = senders.get(&recipient) {
+            let _ = tx.send(frame);
+        }
+    }
 }
 
 fn apply_action(
@@ -170,6 +190,19 @@ fn settle_hand(state: &TexasHoldEmStateHandle) -> WsTexasHoldEmSettlementEvent {
 }
 
 impl TexasHoldEmGameHandler {
+    fn auto_payload_for(
+        strategy: TexasHoldEmAutoStrategy,
+        call_amount: i32,
+    ) -> WsTexasHoldEmPlayRequest {
+        let action = match strategy {
+            TexasHoldEmAutoStrategy::CHECK_CALL if call_amount > 0 => TexasHoldEmAction::CALL,
+            TexasHoldEmAutoStrategy::CHECK_CALL => TexasHoldEmAction::CHECK,
+            TexasHoldEmAutoStrategy::CHECK_FOLD if call_amount > 0 => TexasHoldEmAction::FOLD,
+            TexasHoldEmAutoStrategy::CHECK_FOLD => TexasHoldEmAction::CHECK,
+        };
+        WsTexasHoldEmPlayRequest { action, amount: 0 }
+    }
+
     fn advance_after_action(
         &self,
         room_key: &str,
@@ -210,6 +243,145 @@ impl TexasHoldEmGameHandler {
         self.push_turn_event(room_key, room_service, state, dispatch);
     }
 
+    fn apply_position_action(
+        &self,
+        room_key: &str,
+        room_service: &mut RoomService,
+        state: &TexasHoldEmStateHandle,
+        position: usize,
+        payload: WsTexasHoldEmPlayRequest,
+        dispatch: &mut Dispatch,
+    ) -> bool {
+        let action_event = {
+            let mut s = state.lock().unwrap();
+            if s.phase == TexasHoldEmPhase::Settlement
+                || s.current_position != position
+                || s.folded.contains(&position)
+                || s.all_in.contains(&position)
+            {
+                return false;
+            }
+            let Some(event) = apply_action(&mut s, position, payload) else {
+                return false;
+            };
+            s.set_action_received(true);
+            let play_time = room_service
+                .get_room_configs(room_key)
+                .unwrap_or_default()
+                .get("play_time")
+                .copied()
+                .unwrap_or(20)
+                .max(1) as u32;
+            s.set_turn_countdown(play_time);
+            event
+        };
+
+        room_service.send_all(room_key, WsCode::PLAY as i32, action_event, dispatch);
+        self.advance_after_action(room_key, room_service, state, dispatch);
+        true
+    }
+
+    fn auto_tick(
+        &self,
+        room_service: &mut RoomService,
+        room_key: &str,
+        state: &TexasHoldEmStateHandle,
+        dispatch: &mut Dispatch,
+    ) {
+        if room_service.is_room_paused(room_key) {
+            return;
+        }
+
+        let mut should_push_turn = false;
+        let Some((position, call_amount, should_auto)) = ({
+            let mut s = state.lock().unwrap();
+            if s.phase == TexasHoldEmPhase::Settlement {
+                None
+            } else {
+                let position = s.current_position;
+                let should_auto = s.base.lock().unwrap().is_away(position);
+                if should_auto {
+                    Some((position, s.call_amount(position), should_auto))
+                } else if s.turn_countdown() > 0 {
+                    let countdown = s.turn_countdown();
+                    s.set_turn_countdown(countdown - 1);
+                    should_push_turn = true;
+                    None
+                } else {
+                    Some((position, s.call_amount(position), should_auto))
+                }
+            }
+        }) else {
+            if should_push_turn {
+                self.push_turn_event(room_key, room_service, state, dispatch);
+            }
+            return;
+        };
+
+        let strategy = self
+            .auto_strategies
+            .lock()
+            .unwrap()
+            .get(room_key)
+            .and_then(|strategies| strategies.get(&position).copied())
+            .unwrap_or(TexasHoldEmAutoStrategy::CHECK_FOLD);
+        if !should_auto {
+            let base = state.lock().unwrap().base.clone();
+            base.lock().unwrap().mark_away(position);
+            room_service.send_all(
+                room_key,
+                WsCode::AWAY as i32,
+                share_type_public::WsPositionEvent {
+                    position: position as i32,
+                },
+                dispatch,
+            );
+        }
+        let payload = Self::auto_payload_for(strategy, call_amount);
+        let _ =
+            self.apply_position_action(room_key, room_service, state, position, payload, dispatch);
+    }
+
+    fn handle_auto_strategy(
+        &self,
+        room_service: &mut RoomService,
+        session_id: SessionId,
+        data: Value,
+    ) -> Dispatch {
+        let Some(position) = room_service.session_position(session_id) else {
+            return room_service.error_response(
+                session_id,
+                Routes::AUTO_STRATEGY as i32,
+                WsResponseCode::NOT_LOGIN,
+            );
+        };
+        let Some(room_key) = room_service.room_key_of(session_id) else {
+            return room_service.error_response(
+                session_id,
+                Routes::AUTO_STRATEGY as i32,
+                WsResponseCode::NOT_LOGIN,
+            );
+        };
+        let Ok(payload) = RoomService::parse::<WsTexasHoldEmAutoStrategyRequest>(data) else {
+            return room_service.error_response(
+                session_id,
+                Routes::AUTO_STRATEGY as i32,
+                WsResponseCode::ERROR_FORMAT,
+            );
+        };
+
+        self.auto_strategies
+            .lock()
+            .unwrap()
+            .entry(room_key)
+            .or_default()
+            .insert(position, payload.strategy);
+
+        let mut dispatch = Dispatch::default();
+        room_service.push_ok_response(&mut dispatch, session_id, Routes::AUTO_STRATEGY as i32);
+        dispatch
+    }
+
     fn handle_play(
         &self,
         room_service: &mut RoomService,
@@ -245,41 +417,21 @@ impl TexasHoldEmGameHandler {
             );
         };
 
-        let action_event = {
-            let mut s = state.lock().unwrap();
-            if s.phase == TexasHoldEmPhase::Settlement
-                || s.current_position != position
-                || s.folded.contains(&position)
-                || s.all_in.contains(&position)
-            {
-                return room_service.error_response(
-                    session_id,
-                    Routes::PLAY as i32,
-                    WsResponseCode::NO_PERMISSION,
-                );
-            }
-            let Some(event) = apply_action(&mut s, position, payload) else {
-                return room_service.error_response(
-                    session_id,
-                    Routes::PLAY as i32,
-                    WsResponseCode::NO_PERMISSION,
-                );
-            };
-            s.set_action_received(true);
-            let play_time = room_service
-                .get_room_configs(&room_key)
-                .unwrap_or_default()
-                .get("play_time")
-                .copied()
-                .unwrap_or(20)
-                .max(1) as u32;
-            s.set_turn_countdown(play_time);
-            event
-        };
-
         let mut dispatch = Dispatch::default();
-        room_service.send_all(&room_key, WsCode::PLAY as i32, action_event, &mut dispatch);
-        self.advance_after_action(&room_key, room_service, &state, &mut dispatch);
+        if !self.apply_position_action(
+            &room_key,
+            room_service,
+            &state,
+            position,
+            payload,
+            &mut dispatch,
+        ) {
+            return room_service.error_response(
+                session_id,
+                Routes::PLAY as i32,
+                WsResponseCode::NO_PERMISSION,
+            );
+        }
         room_service.push_ok_response(&mut dispatch, session_id, Routes::PLAY as i32);
         dispatch
     }
@@ -443,6 +595,7 @@ impl Default for TexasHoldEmGameHandler {
     fn default() -> Self {
         Self {
             states: Arc::new(std::sync::Mutex::new(HashMap::new())),
+            auto_strategies: Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
     }
 }
@@ -471,10 +624,48 @@ impl GameHandler for TexasHoldEmGameHandler {
             r if r == Routes::PLAY as i32 => {
                 self.handle_play(room_service, session_id, request.data)
             }
+            r if r == Routes::AUTO_STRATEGY as i32 => {
+                self.handle_auto_strategy(room_service, session_id, request.data)
+            }
             _ => {
                 room_service.error_response(session_id, request.route, WsResponseCode::NOT_IN_RANGE)
             }
         }
+    }
+
+    fn set_context(&mut self, senders: SessionSenders, room_service: Arc<Mutex<RoomService>>) {
+        let states = Arc::clone(&self.states);
+        let auto_strategies = Arc::clone(&self.auto_strategies);
+        tokio::spawn(async move {
+            let handler = TexasHoldEmGameHandler {
+                states,
+                auto_strategies,
+            };
+            let mut ticker = tokio::time::interval(Duration::from_secs(1));
+            loop {
+                ticker.tick().await;
+                let rooms: Vec<(String, TexasHoldEmStateHandle)> = handler
+                    .states
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .map(|(room_key, state)| (room_key.clone(), Arc::clone(state)))
+                    .collect();
+                if rooms.is_empty() {
+                    continue;
+                }
+                let mut room = room_service.lock().await;
+                let mut dispatch = Dispatch::default();
+                for (room_key, state) in rooms {
+                    handler.auto_tick(&mut room, &room_key, &state, &mut dispatch);
+                }
+                if dispatch.messages.is_empty() {
+                    continue;
+                }
+                drop(room);
+                deliver_dispatch(dispatch, &senders).await;
+            }
+        });
     }
 }
 
@@ -541,5 +732,77 @@ mod tests {
             })
             .unwrap();
         assert_eq!(denied.messages.len(), 1);
+    }
+
+    #[test]
+    fn auto_strategy_maps_to_check_fold_or_check_call() {
+        assert_eq!(
+            TexasHoldEmGameHandler::auto_payload_for(TexasHoldEmAutoStrategy::CHECK_FOLD, 0).action,
+            TexasHoldEmAction::CHECK
+        );
+        assert_eq!(
+            TexasHoldEmGameHandler::auto_payload_for(TexasHoldEmAutoStrategy::CHECK_FOLD, 10)
+                .action,
+            TexasHoldEmAction::FOLD
+        );
+        assert_eq!(
+            TexasHoldEmGameHandler::auto_payload_for(TexasHoldEmAutoStrategy::CHECK_CALL, 0).action,
+            TexasHoldEmAction::CHECK
+        );
+        assert_eq!(
+            TexasHoldEmGameHandler::auto_payload_for(TexasHoldEmAutoStrategy::CHECK_CALL, 10)
+                .action,
+            TexasHoldEmAction::CALL
+        );
+    }
+
+    #[test]
+    fn auto_strategy_response_is_private_to_requester() {
+        let mut handler = TexasHoldEmGameHandler::default();
+        let mut room = RoomService::default();
+        for session_id in 1..=2 {
+            room.handle_common_request(
+                session_id,
+                &join_request(&format!("u{session_id}")),
+                handler.game_id(),
+                || handler.build_room_settings(),
+            );
+        }
+
+        let dispatch = handler.handle_game_request(
+            &mut room,
+            1,
+            ClientRequest {
+                route: Routes::AUTO_STRATEGY as i32,
+                data: serde_json::to_value(WsTexasHoldEmAutoStrategyRequest {
+                    strategy: TexasHoldEmAutoStrategy::CHECK_CALL,
+                })
+                .unwrap(),
+            },
+        );
+
+        assert_eq!(dispatch.messages.len(), 1);
+        assert_eq!(dispatch.messages[0].recipient, 1);
+        assert!(matches!(
+            &dispatch.messages[0].payload,
+            OutboundPayload::Response(ws_common::RequestResponse::WithoutData(response))
+                if response.route == Routes::AUTO_STRATEGY as i32
+                    && matches!(response.code, WsResponseCode::OK)
+        ));
+        assert!(
+            dispatch
+                .messages
+                .iter()
+                .all(|message| !matches!(&message.payload, OutboundPayload::Event(_)))
+        );
+        assert_eq!(
+            handler
+                .auto_strategies
+                .lock()
+                .unwrap()
+                .get("room")
+                .and_then(|strategies| strategies.get(&0).copied()),
+            Some(TexasHoldEmAutoStrategy::CHECK_CALL)
+        );
     }
 }
