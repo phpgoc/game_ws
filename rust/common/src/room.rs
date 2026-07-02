@@ -1397,6 +1397,10 @@ impl RoomService {
         self.rooms.contains_key(room_key)
     }
 
+    pub fn room_game_id(&self, room_key: &str) -> Option<GameId> {
+        self.rooms.get(room_key).map(|entry| entry.game_id)
+    }
+
     pub fn room_key_of(&self, session_id: SessionId) -> Option<String> {
         self.sessions
             .get(&session_id)
@@ -1809,6 +1813,95 @@ mod tests {
     }
 
     #[test]
+    fn join_accepts_multiple_game_ids_but_room_keeps_created_game() {
+        let mut service = RoomService::default();
+        service.connect(1);
+        service.connect(2);
+        service.connect(3);
+
+        let accepted = |game_id| {
+            matches!(
+                game_id,
+                GameId::TEXAS_HOLD_EM | GameId::OPEN_HOLD_EM | GameId::OMAHA_HOLD_EM
+            )
+        };
+
+        let texas_join = service
+            .handle_common_request_with_game_acceptance(
+                1,
+                &WsRequest {
+                    route: Routes::JOIN as i32,
+                    data: serde_json::json!({
+                        "name": "u1",
+                        "password": "poker-room",
+                        "game_id": GameId::TEXAS_HOLD_EM as i32
+                    }),
+                },
+                accepted,
+                settings,
+            )
+            .expect("join common");
+        assert!(texas_join.messages.iter().any(|item| match &item.payload {
+            OutboundPayload::Response(RequestResponse::WithData(resp)) => {
+                item.recipient == 1 && resp.code as i32 == WsResponseCode::JOINED as i32
+            }
+            _ => false,
+        }));
+        assert_eq!(
+            service.room_game_id("poker-room"),
+            Some(GameId::TEXAS_HOLD_EM)
+        );
+
+        let mixed_game = service
+            .handle_common_request_with_game_acceptance(
+                2,
+                &WsRequest {
+                    route: Routes::JOIN as i32,
+                    data: serde_json::json!({
+                        "name": "u2",
+                        "password": "poker-room",
+                        "game_id": GameId::OMAHA_HOLD_EM as i32
+                    }),
+                },
+                accepted,
+                settings,
+            )
+            .expect("join common");
+        assert!(mixed_game.messages.iter().any(|item| match &item.payload {
+            OutboundPayload::Response(RequestResponse::WithoutData(resp)) => {
+                item.recipient == 2 && resp.code as i32 == WsResponseCode::WRONG_GAME as i32
+            }
+            _ => false,
+        }));
+
+        let open_join = service
+            .handle_common_request_with_game_acceptance(
+                3,
+                &WsRequest {
+                    route: Routes::JOIN as i32,
+                    data: serde_json::json!({
+                        "name": "u3",
+                        "password": "open-room",
+                        "game_id": GameId::OPEN_HOLD_EM as i32
+                    }),
+                },
+                accepted,
+                settings,
+            )
+            .expect("join common");
+        assert!(open_join.messages.iter().any(|item| match &item.payload {
+            OutboundPayload::Response(RequestResponse::WithData(resp)) => {
+                item.recipient == 3 && resp.code as i32 == WsResponseCode::JOINED as i32
+            }
+            _ => false,
+        }));
+        assert_eq!(
+            service.room_game_id("open-room"),
+            Some(GameId::OPEN_HOLD_EM)
+        );
+    }
+
+    #[test]
     fn join_idempotent_for_same_room_same_name() {
         let mut service = RoomService::default();
         service.connect(1);
@@ -2173,6 +2266,51 @@ mod tests {
     }
 
     #[test]
+    fn non_owner_join_receives_param_descriptions_for_viewing_settings() {
+        let mut service = RoomService::default();
+        service.connect(1);
+        service.connect(2);
+
+        let _ = service.handle_common_request(
+            1,
+            &WsRequest {
+                route: Routes::JOIN as i32,
+                data: serde_json::json!({"name":"u1","password":"p1","game_id":GameId::LANDLORD as i32}),
+            },
+            GameId::LANDLORD,
+            settings,
+        );
+
+        let join = service
+            .handle_common_request(
+                2,
+                &WsRequest {
+                    route: Routes::JOIN as i32,
+                    data: serde_json::json!({"name":"u2","password":"p1","game_id":GameId::LANDLORD as i32}),
+                },
+                GameId::LANDLORD,
+                settings,
+            )
+            .expect("join common");
+
+        let non_owner_gets_param_descriptions =
+            join.messages.iter().any(|item| match &item.payload {
+                OutboundPayload::Response(RequestResponse::WithData(resp)) => {
+                    item.recipient == 2
+                        && resp.route == Routes::JOIN as i32
+                        && resp.code as i32 == WsResponseCode::JOINED as i32
+                        && resp
+                            .data
+                            .get("param_descriptions")
+                            .and_then(|params| params.get("test_param"))
+                            .is_some()
+                }
+                _ => false,
+            });
+        assert!(non_owner_gets_param_descriptions);
+    }
+
+    #[test]
     fn pause_resume_must_follow_state() {
         let mut service = RoomService::default();
         service.connect(1);
@@ -2420,51 +2558,6 @@ mod tests {
                 _ => false,
             });
         assert!(later_join_gets_updated_configs);
-    }
-
-    #[test]
-    fn non_owner_join_receives_param_descriptions_for_viewing_settings() {
-        let mut service = RoomService::default();
-        service.connect(1);
-        service.connect(2);
-
-        let _ = service.handle_common_request(
-            1,
-            &WsRequest {
-                route: Routes::JOIN as i32,
-                data: serde_json::json!({"name":"u1","password":"p1","game_id":GameId::LANDLORD as i32}),
-            },
-            GameId::LANDLORD,
-            settings,
-        );
-
-        let join = service
-            .handle_common_request(
-                2,
-                &WsRequest {
-                    route: Routes::JOIN as i32,
-                    data: serde_json::json!({"name":"u2","password":"p1","game_id":GameId::LANDLORD as i32}),
-                },
-                GameId::LANDLORD,
-                settings,
-            )
-            .expect("join common");
-
-        let non_owner_gets_param_descriptions =
-            join.messages.iter().any(|item| match &item.payload {
-                OutboundPayload::Response(RequestResponse::WithData(resp)) => {
-                    item.recipient == 2
-                        && resp.route == Routes::JOIN as i32
-                        && resp.code as i32 == WsResponseCode::JOINED as i32
-                        && resp
-                            .data
-                            .get("param_descriptions")
-                            .and_then(|params| params.get("test_param"))
-                            .is_some()
-                }
-                _ => false,
-            });
-        assert!(non_owner_gets_param_descriptions);
     }
 
     fn settings() -> super::SettingsBuilderResult {

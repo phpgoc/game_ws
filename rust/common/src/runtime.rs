@@ -24,6 +24,10 @@ use crate::{
 };
 
 pub trait GameHandler: Send + 'static {
+    fn accepts_game_id(&self, game_id: share_type_public::GameId) -> bool {
+        game_id == self.game_id()
+    }
+
     fn after_common_request(
         &mut self,
         _room_service: &mut RoomService,

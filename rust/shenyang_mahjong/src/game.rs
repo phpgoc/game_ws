@@ -78,6 +78,66 @@ pub(crate) fn allow_multi_hu(configs: &HashMap<String, i32>) -> bool {
     config_value(configs, "multi_hu_mode", 1) == 1
 }
 
+pub(crate) fn build_claim_options(
+    state: &ShenyangMahjongLoopState,
+    tile: i32,
+    from_position: usize,
+) -> Vec<WsShenyangMahjongClaimOption> {
+    let mut positions: Vec<usize> = state.players_snapshot().keys().copied().collect();
+    positions.sort_unstable();
+    let next_position = state.next_position(from_position);
+    let mut options = Vec::new();
+
+    for position in positions {
+        if position == from_position {
+            continue;
+        }
+        let hand = state.hands.get(&position).cloned().unwrap_or_default();
+        let can_hu = {
+            let mut test = hand.clone();
+            test.push(tile);
+            test.sort_unstable();
+            is_standard_win(&test)
+        };
+        let can_peng_now = can_peng(&hand, tile);
+        let can_gang_now = can_gang(&hand, tile);
+        let chi_options = if position == next_position {
+            chi_options_for_hand(&hand, tile)
+        } else {
+            Vec::new()
+        };
+
+        if can_hu || can_peng_now || can_gang_now || !chi_options.is_empty() {
+            options.push(WsShenyangMahjongClaimOption {
+                position: position as i32,
+                can_hu,
+                can_peng: can_peng_now,
+                can_gang: can_gang_now,
+                chi_options,
+            });
+        }
+    }
+
+    options
+}
+
+pub(crate) fn build_claim_window_event(
+    state: &ShenyangMahjongLoopState,
+    tile: i32,
+    from_position: usize,
+    seconds: i32,
+) -> WsShenyangMahjongClaimWindowEvent {
+    let options = build_claim_options(state, tile, from_position);
+    let eligible_positions = options.iter().map(|option| option.position).collect();
+    WsShenyangMahjongClaimWindowEvent {
+        tile,
+        from_position: from_position as i32,
+        eligible_positions,
+        seconds,
+        options,
+    }
+}
+
 pub(crate) fn build_settlement_event(
     state: &ShenyangMahjongLoopState,
 ) -> Option<WsShenyangMahjongSettlementEvent> {
@@ -166,18 +226,6 @@ pub(crate) fn build_table_snapshot_event(
     }
 }
 
-fn config_value(configs: &HashMap<String, i32>, key: &str, fallback: i32) -> i32 {
-    configs.get(key).copied().unwrap_or(fallback)
-}
-
-pub(crate) fn current_claim_time(configs: &HashMap<String, i32>) -> u32 {
-    config_value(configs, "claim_time", 5).max(1) as u32
-}
-
-pub(crate) fn current_play_time(configs: &HashMap<String, i32>) -> u32 {
-    config_value(configs, "play_time", 20).max(1) as u32
-}
-
 fn chi_options_for_hand(hand: &[i32], tile: i32) -> Vec<Vec<i32>> {
     [
         [tile - 2, tile - 1],
@@ -190,64 +238,16 @@ fn chi_options_for_hand(hand: &[i32], tile: i32) -> Vec<Vec<i32>> {
     .collect()
 }
 
-pub(crate) fn build_claim_options(
-    state: &ShenyangMahjongLoopState,
-    tile: i32,
-    from_position: usize,
-) -> Vec<WsShenyangMahjongClaimOption> {
-    let mut positions: Vec<usize> = state.players_snapshot().keys().copied().collect();
-    positions.sort_unstable();
-    let next_position = state.next_position(from_position);
-    let mut options = Vec::new();
-
-    for position in positions {
-        if position == from_position {
-            continue;
-        }
-        let hand = state.hands.get(&position).cloned().unwrap_or_default();
-        let can_hu = {
-            let mut test = hand.clone();
-            test.push(tile);
-            test.sort_unstable();
-            is_standard_win(&test)
-        };
-        let can_peng_now = can_peng(&hand, tile);
-        let can_gang_now = can_gang(&hand, tile);
-        let chi_options = if position == next_position {
-            chi_options_for_hand(&hand, tile)
-        } else {
-            Vec::new()
-        };
-
-        if can_hu || can_peng_now || can_gang_now || !chi_options.is_empty() {
-            options.push(WsShenyangMahjongClaimOption {
-                position: position as i32,
-                can_hu,
-                can_peng: can_peng_now,
-                can_gang: can_gang_now,
-                chi_options,
-            });
-        }
-    }
-
-    options
+fn config_value(configs: &HashMap<String, i32>, key: &str, fallback: i32) -> i32 {
+    configs.get(key).copied().unwrap_or(fallback)
 }
 
-pub(crate) fn build_claim_window_event(
-    state: &ShenyangMahjongLoopState,
-    tile: i32,
-    from_position: usize,
-    seconds: i32,
-) -> WsShenyangMahjongClaimWindowEvent {
-    let options = build_claim_options(state, tile, from_position);
-    let eligible_positions = options.iter().map(|option| option.position).collect();
-    WsShenyangMahjongClaimWindowEvent {
-        tile,
-        from_position: from_position as i32,
-        eligible_positions,
-        seconds,
-        options,
-    }
+pub(crate) fn current_claim_time(configs: &HashMap<String, i32>) -> u32 {
+    config_value(configs, "claim_time", 5).max(1) as u32
+}
+
+pub(crate) fn current_play_time(configs: &HashMap<String, i32>) -> u32 {
+    config_value(configs, "play_time", 20).max(1) as u32
 }
 
 fn join_succeeded(dispatch: &Dispatch, session_id: SessionId) -> bool {
@@ -1181,6 +1181,21 @@ mod tests {
         assert!(!options.iter().any(|option| option.position == 3));
     }
 
+    fn playable_state() -> ShenyangMahjongLoopState {
+        let base = Arc::new(StdMutex::new(CommonGameState::default()));
+        {
+            let mut common = base.lock().unwrap();
+            for position in 0..4 {
+                common.add_player(position, position as u64 + 1, &format!("P{}", position));
+            }
+        }
+        let mut state = ShenyangMahjongLoopState::new(base);
+        state.phase = ShenyangMahjongPhase::Play;
+        state.current_position = 0;
+        state.dealer_position = 0;
+        state
+    }
+
     #[test]
     fn resolve_claim_window_gang_consumes_three_tiles_and_draws_replacement() {
         let mut state = playable_state();
@@ -1225,20 +1240,5 @@ mod tests {
         let meld = state.melds.get(&1).unwrap().first().unwrap();
         assert_eq!(meld.kind, ShenyangMahjongMeldKind::GANG);
         assert_eq!(meld.tiles, vec![3, 3, 3, 3]);
-    }
-
-    fn playable_state() -> ShenyangMahjongLoopState {
-        let base = Arc::new(StdMutex::new(CommonGameState::default()));
-        {
-            let mut common = base.lock().unwrap();
-            for position in 0..4 {
-                common.add_player(position, position as u64 + 1, &format!("P{}", position));
-            }
-        }
-        let mut state = ShenyangMahjongLoopState::new(base);
-        state.phase = ShenyangMahjongPhase::Play;
-        state.current_position = 0;
-        state.dealer_position = 0;
-        state
     }
 }

@@ -183,6 +183,34 @@ pub fn evaluate_five(cards: &[i32; 5]) -> EvaluatedHand {
     }
 }
 
+pub fn evaluate_omaha(hole_cards: &[i32], public_cards: &[i32]) -> Option<EvaluatedHand> {
+    if hole_cards.len() < 2 || public_cards.len() < 3 {
+        return None;
+    }
+    let mut best: Option<EvaluatedHand> = None;
+    for a in 0..hole_cards.len() - 1 {
+        for b in a + 1..hole_cards.len() {
+            for c in 0..public_cards.len() - 2 {
+                for d in c + 1..public_cards.len() - 1 {
+                    for e in d + 1..public_cards.len() {
+                        let hand = evaluate_five(&[
+                            hole_cards[a],
+                            hole_cards[b],
+                            public_cards[c],
+                            public_cards[d],
+                            public_cards[e],
+                        ]);
+                        if best.as_ref().is_none_or(|current| hand > *current) {
+                            best = Some(hand);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    best
+}
+
 fn straight_high(mut ranks: Vec<i32>) -> Option<i32> {
     ranks.sort_unstable();
     ranks.dedup();

@@ -22,29 +22,13 @@ use crate::{
     poker_variant::{STANDARD_TEXAS, accepts_poker_game_id, variant_for_game_id},
 };
 
-type StateRegistry = Arc<std::sync::Mutex<HashMap<String, HoldemStateHandle>>>;
-
 pub struct HoldemGameHandler {
     states: StateRegistry,
     auto_strategies:
         Arc<std::sync::Mutex<HashMap<String, HashMap<usize, TexasHoldEmAutoStrategy>>>>,
 }
 
-async fn deliver_dispatch(dispatch: Dispatch, senders: &SessionSenders) {
-    let mut frames = Vec::with_capacity(dispatch.messages.len());
-    for message in dispatch.messages {
-        if let Ok(frame) = to_text_message(&message.payload) {
-            frames.push((message.recipient, frame));
-        }
-    }
-
-    let senders = senders.lock().await;
-    for (recipient, frame) in frames {
-        if let Some(tx) = senders.get(&recipient) {
-            let _ = tx.send(frame);
-        }
-    }
-}
+type StateRegistry = Arc<std::sync::Mutex<HashMap<String, HoldemStateHandle>>>;
 
 fn apply_action(
     s: &mut HoldemGameState,
@@ -130,6 +114,22 @@ fn apply_action(
     })
 }
 
+async fn deliver_dispatch(dispatch: Dispatch, senders: &SessionSenders) {
+    let mut frames = Vec::with_capacity(dispatch.messages.len());
+    for message in dispatch.messages {
+        if let Ok(frame) = to_text_message(&message.payload) {
+            frames.push((message.recipient, frame));
+        }
+    }
+
+    let senders = senders.lock().await;
+    for (recipient, frame) in frames {
+        if let Some(tx) = senders.get(&recipient) {
+            let _ = tx.send(frame);
+        }
+    }
+}
+
 fn settle_hand(state: &HoldemStateHandle) -> WsTexasHoldEmSettlementEvent {
     let mut s = state.lock().unwrap();
     s.phase = TexasHoldEmPhase::Settlement;
@@ -196,19 +196,6 @@ fn settle_hand(state: &HoldemStateHandle) -> WsTexasHoldEmSettlementEvent {
 }
 
 impl HoldemGameHandler {
-    fn auto_payload_for(
-        strategy: TexasHoldEmAutoStrategy,
-        call_amount: i32,
-    ) -> WsTexasHoldEmPlayRequest {
-        let action = match strategy {
-            TexasHoldEmAutoStrategy::CHECK_CALL if call_amount > 0 => TexasHoldEmAction::CALL,
-            TexasHoldEmAutoStrategy::CHECK_CALL => TexasHoldEmAction::CHECK,
-            TexasHoldEmAutoStrategy::CHECK_FOLD if call_amount > 0 => TexasHoldEmAction::FOLD,
-            TexasHoldEmAutoStrategy::CHECK_FOLD => TexasHoldEmAction::CHECK,
-        };
-        WsTexasHoldEmPlayRequest { action, amount: 0 }
-    }
-
     fn advance_after_action(
         &self,
         room_key: &str,
@@ -285,6 +272,19 @@ impl HoldemGameHandler {
         room_service.send_all(room_key, WsCode::PLAY as i32, action_event, dispatch);
         self.advance_after_action(room_key, room_service, state, dispatch);
         true
+    }
+
+    fn auto_payload_for(
+        strategy: TexasHoldEmAutoStrategy,
+        call_amount: i32,
+    ) -> WsTexasHoldEmPlayRequest {
+        let action = match strategy {
+            TexasHoldEmAutoStrategy::CHECK_CALL if call_amount > 0 => TexasHoldEmAction::CALL,
+            TexasHoldEmAutoStrategy::CHECK_CALL => TexasHoldEmAction::CHECK,
+            TexasHoldEmAutoStrategy::CHECK_FOLD if call_amount > 0 => TexasHoldEmAction::FOLD,
+            TexasHoldEmAutoStrategy::CHECK_FOLD => TexasHoldEmAction::CHECK,
+        };
+        WsTexasHoldEmPlayRequest { action, amount: 0 }
     }
 
     fn auto_tick(
@@ -632,6 +632,10 @@ impl Default for HoldemGameHandler {
 }
 
 impl GameHandler for HoldemGameHandler {
+    fn accepts_game_id(&self, game_id: GameId) -> bool {
+        accepts_poker_game_id(game_id)
+    }
+
     fn build_game_state(&self) -> Box<dyn ws_common::game_state::GameState> {
         Box::new(SharedGameState::new())
     }
@@ -642,10 +646,6 @@ impl GameHandler for HoldemGameHandler {
 
     fn game_id(&self) -> GameId {
         GameId::TEXAS_HOLD_EM
-    }
-
-    fn accepts_game_id(&self, game_id: GameId) -> bool {
-        accepts_poker_game_id(game_id)
     }
 
     fn handle_game_request(
@@ -708,150 +708,6 @@ impl GameHandler for HoldemGameHandler {
 mod tests {
     use super::*;
     use share_type_public::WsJoinRequest;
-
-    fn join_request(name: &str) -> ClientRequest {
-        join_request_for_game(name, GameId::TEXAS_HOLD_EM)
-    }
-
-    fn join_request_for_game(name: &str, game_id: GameId) -> ClientRequest {
-        ClientRequest {
-            route: Routes::JOIN as i32,
-            data: serde_json::to_value(WsJoinRequest {
-                name: name.to_string(),
-                password: "room".to_string(),
-                game_id,
-                avatar_url: String::new(),
-            })
-            .unwrap(),
-        }
-    }
-
-    fn started_deals_for(game_id: GameId) -> Vec<WsTexasHoldEmDealEvent> {
-        let handler = HoldemGameHandler::default();
-        let mut room = RoomService::default();
-        for session_id in 1..=2 {
-            room.handle_common_request_with_game_acceptance(
-                session_id,
-                &join_request_for_game(&format!("u{session_id}"), game_id),
-                accepts_poker_game_id,
-                || handler.build_room_settings(),
-            );
-        }
-        let dispatch = handler.handle_start(&mut room, 1);
-        dispatch
-            .messages
-            .iter()
-            .filter_map(|message| {
-                let OutboundPayload::Event(event) = &message.payload else {
-                    return None;
-                };
-                (event.code == WsCode::DEAL as i32)
-                    .then(|| serde_json::from_value(event.data.clone()).unwrap())
-            })
-            .collect()
-    }
-
-    #[test]
-    fn start_deals_private_cards() {
-        let handler = HoldemGameHandler::default();
-        let mut room = RoomService::default();
-        for session_id in 1..=2 {
-            room.handle_common_request(
-                session_id,
-                &join_request(&format!("u{session_id}")),
-                handler.game_id(),
-                || handler.build_room_settings(),
-            );
-        }
-        let dispatch = handler.handle_start(&mut room, 1);
-        let private_deals = dispatch
-            .messages
-            .iter()
-            .filter(|message| {
-                matches!(
-                    &message.payload,
-                    OutboundPayload::Event(event) if event.code == WsCode::DEAL as i32
-                )
-            })
-            .count();
-        assert_eq!(private_deals, 2);
-        for message in dispatch.messages.iter().filter(|message| {
-            matches!(
-                &message.payload,
-                OutboundPayload::Event(event) if event.code == WsCode::DEAL as i32
-            )
-        }) {
-            let OutboundPayload::Event(event) = &message.payload else {
-                unreachable!();
-            };
-            let deal: WsTexasHoldEmDealEvent = serde_json::from_value(event.data.clone()).unwrap();
-            assert_eq!(deal.my_cards.len(), 2);
-            assert_eq!(deal.open_cards.len(), 0);
-        }
-    }
-
-    #[test]
-    fn open_hold_em_deals_three_hole_cards_with_one_open_card() {
-        let deals = started_deals_for(GameId::OPEN_HOLD_EM);
-        assert_eq!(deals.len(), 2);
-        for deal in deals {
-            assert_eq!(deal.my_cards.len(), 3);
-            assert_eq!(deal.open_cards.len(), 1);
-            assert_eq!(deal.open_cards[0], deal.my_cards[2]);
-            assert_eq!(deal.public_hole_cards.len(), 2);
-            assert!(
-                deal.public_hole_cards
-                    .iter()
-                    .all(|item| item.cards.len() == 1)
-            );
-        }
-    }
-
-    #[test]
-    fn omaha_deals_four_hole_cards() {
-        let deals = started_deals_for(GameId::OMAHA_HOLD_EM);
-        assert_eq!(deals.len(), 2);
-        for deal in deals {
-            assert_eq!(deal.my_cards.len(), 4);
-            assert_eq!(deal.open_cards.len(), 0);
-            assert!(deal.public_hole_cards.is_empty());
-        }
-    }
-
-    #[test]
-    fn short_deck_removes_low_cards() {
-        let deals = started_deals_for(GameId::SHORT_DECK_HOLD_EM);
-        assert_eq!(deals.len(), 2);
-        for deal in deals {
-            assert_eq!(deal.my_cards.len(), 2);
-            assert!(
-                deal.my_cards
-                    .iter()
-                    .all(|card| crate::hand_evaluator::card_rank(*card) >= 6)
-            );
-        }
-    }
-
-    #[test]
-    fn holdem_room_allows_two_to_eight_players() {
-        let handler = HoldemGameHandler::default();
-        let mut room = RoomService::default();
-        for session_id in 1..=8 {
-            let dispatch = room.handle_common_request(
-                session_id,
-                &join_request(&format!("u{session_id}")),
-                handler.game_id(),
-                || handler.build_room_settings(),
-            );
-            assert!(dispatch.is_some());
-        }
-        let denied = room
-            .handle_common_request(9, &join_request("u9"), handler.game_id(), || {
-                handler.build_room_settings()
-            })
-            .unwrap();
-        assert_eq!(denied.messages.len(), 1);
-    }
 
     #[test]
     fn auto_strategy_maps_to_check_fold_or_check_call() {
@@ -921,5 +777,149 @@ mod tests {
                 .and_then(|strategies| strategies.get(&0).copied()),
             Some(TexasHoldEmAutoStrategy::CHECK_CALL)
         );
+    }
+
+    #[test]
+    fn holdem_room_allows_two_to_eight_players() {
+        let handler = HoldemGameHandler::default();
+        let mut room = RoomService::default();
+        for session_id in 1..=8 {
+            let dispatch = room.handle_common_request(
+                session_id,
+                &join_request(&format!("u{session_id}")),
+                handler.game_id(),
+                || handler.build_room_settings(),
+            );
+            assert!(dispatch.is_some());
+        }
+        let denied = room
+            .handle_common_request(9, &join_request("u9"), handler.game_id(), || {
+                handler.build_room_settings()
+            })
+            .unwrap();
+        assert_eq!(denied.messages.len(), 1);
+    }
+
+    fn join_request(name: &str) -> ClientRequest {
+        join_request_for_game(name, GameId::TEXAS_HOLD_EM)
+    }
+
+    fn join_request_for_game(name: &str, game_id: GameId) -> ClientRequest {
+        ClientRequest {
+            route: Routes::JOIN as i32,
+            data: serde_json::to_value(WsJoinRequest {
+                name: name.to_string(),
+                password: "room".to_string(),
+                game_id,
+                avatar_url: String::new(),
+            })
+            .unwrap(),
+        }
+    }
+
+    #[test]
+    fn omaha_deals_four_hole_cards() {
+        let deals = started_deals_for(GameId::OMAHA_HOLD_EM);
+        assert_eq!(deals.len(), 2);
+        for deal in deals {
+            assert_eq!(deal.my_cards.len(), 4);
+            assert_eq!(deal.open_cards.len(), 0);
+            assert!(deal.public_hole_cards.is_empty());
+        }
+    }
+
+    #[test]
+    fn open_hold_em_deals_three_hole_cards_with_one_open_card() {
+        let deals = started_deals_for(GameId::OPEN_HOLD_EM);
+        assert_eq!(deals.len(), 2);
+        for deal in deals {
+            assert_eq!(deal.my_cards.len(), 3);
+            assert_eq!(deal.open_cards.len(), 1);
+            assert_eq!(deal.open_cards[0], deal.my_cards[2]);
+            assert_eq!(deal.public_hole_cards.len(), 2);
+            assert!(
+                deal.public_hole_cards
+                    .iter()
+                    .all(|item| item.cards.len() == 1)
+            );
+        }
+    }
+
+    #[test]
+    fn short_deck_removes_low_cards() {
+        let deals = started_deals_for(GameId::SHORT_DECK_HOLD_EM);
+        assert_eq!(deals.len(), 2);
+        for deal in deals {
+            assert_eq!(deal.my_cards.len(), 2);
+            assert!(
+                deal.my_cards
+                    .iter()
+                    .all(|card| crate::hand_evaluator::card_rank(*card) >= 6)
+            );
+        }
+    }
+
+    #[test]
+    fn start_deals_private_cards() {
+        let handler = HoldemGameHandler::default();
+        let mut room = RoomService::default();
+        for session_id in 1..=2 {
+            room.handle_common_request(
+                session_id,
+                &join_request(&format!("u{session_id}")),
+                handler.game_id(),
+                || handler.build_room_settings(),
+            );
+        }
+        let dispatch = handler.handle_start(&mut room, 1);
+        let private_deals = dispatch
+            .messages
+            .iter()
+            .filter(|message| {
+                matches!(
+                    &message.payload,
+                    OutboundPayload::Event(event) if event.code == WsCode::DEAL as i32
+                )
+            })
+            .count();
+        assert_eq!(private_deals, 2);
+        for message in dispatch.messages.iter().filter(|message| {
+            matches!(
+                &message.payload,
+                OutboundPayload::Event(event) if event.code == WsCode::DEAL as i32
+            )
+        }) {
+            let OutboundPayload::Event(event) = &message.payload else {
+                unreachable!();
+            };
+            let deal: WsTexasHoldEmDealEvent = serde_json::from_value(event.data.clone()).unwrap();
+            assert_eq!(deal.my_cards.len(), 2);
+            assert_eq!(deal.open_cards.len(), 0);
+        }
+    }
+
+    fn started_deals_for(game_id: GameId) -> Vec<WsTexasHoldEmDealEvent> {
+        let handler = HoldemGameHandler::default();
+        let mut room = RoomService::default();
+        for session_id in 1..=2 {
+            room.handle_common_request_with_game_acceptance(
+                session_id,
+                &join_request_for_game(&format!("u{session_id}"), game_id),
+                accepts_poker_game_id,
+                || handler.build_room_settings(),
+            );
+        }
+        let dispatch = handler.handle_start(&mut room, 1);
+        dispatch
+            .messages
+            .iter()
+            .filter_map(|message| {
+                let OutboundPayload::Event(event) = &message.payload else {
+                    return None;
+                };
+                (event.code == WsCode::DEAL as i32)
+                    .then(|| serde_json::from_value(event.data.clone()).unwrap())
+            })
+            .collect()
     }
 }

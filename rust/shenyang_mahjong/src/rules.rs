@@ -56,12 +56,12 @@ fn can_form_sets(counts: &mut [u8; 38]) -> bool {
     false
 }
 
-pub fn can_peng(hand: &[i32], target_tile: i32) -> bool {
-    hand.iter().filter(|&&tile| tile == target_tile).count() >= 2
-}
-
 pub fn can_gang(hand: &[i32], target_tile: i32) -> bool {
     hand.iter().filter(|&&tile| tile == target_tile).count() >= 3
+}
+
+pub fn can_peng(hand: &[i32], target_tile: i32) -> bool {
+    hand.iter().filter(|&&tile| tile == target_tile).count() >= 2
 }
 
 pub fn is_standard_win(tiles: &[i32]) -> bool {
@@ -151,17 +151,17 @@ mod tests {
     }
 
     #[test]
-    fn peng_requires_two_copies() {
-        let hand = vec![31, 31, 32, 33];
-        assert!(can_peng(&hand, 31));
-        assert!(!can_peng(&hand, 32));
-    }
-
-    #[test]
     fn gang_requires_three_copies_for_discard_claim() {
         let hand = vec![31, 31, 31, 32, 33];
         assert!(can_gang(&hand, 31));
         assert!(!can_gang(&hand, 32));
+    }
+
+    #[test]
+    fn peng_requires_two_copies() {
+        let hand = vec![31, 31, 32, 33];
+        assert!(can_peng(&hand, 31));
+        assert!(!can_peng(&hand, 32));
     }
 
     #[test]
