@@ -70,12 +70,15 @@ pub trait GameState: Send {
             .has_disconnected_players()
     }
 
-    fn is_away(&self, pos: usize) -> bool {
-        self.shared_common_state().lock().unwrap().is_away(pos)
+    fn is_ai_position(&self, pos: usize) -> bool {
+        self.shared_common_state()
+            .lock()
+            .unwrap()
+            .is_ai_position(pos)
     }
 
-    fn is_ai_position(&self, pos: usize) -> bool {
-        self.shared_common_state().lock().unwrap().is_ai_position(pos)
+    fn is_away(&self, pos: usize) -> bool {
+        self.shared_common_state().lock().unwrap().is_away(pos)
     }
 
     fn is_disconnected(&self, pos: usize) -> bool {
@@ -89,15 +92,15 @@ pub trait GameState: Send {
         self.shared_common_state().lock().unwrap().paused
     }
 
-    fn mark_away(&mut self, pos: usize) {
-        self.shared_common_state().lock().unwrap().mark_away(pos);
-    }
-
     fn mark_ai_position(&mut self, pos: usize) {
         self.shared_common_state()
             .lock()
             .unwrap()
             .mark_ai_position(pos);
+    }
+
+    fn mark_away(&mut self, pos: usize) {
+        self.shared_common_state().lock().unwrap().mark_away(pos);
     }
 
     fn mark_disconnected(&mut self, pos: usize) {
@@ -199,20 +202,20 @@ impl CommonGameState {
     pub fn has_disconnected_players(&self) -> bool {
         !self.disconnected_positions.is_empty()
     }
-    pub fn is_away(&self, pos: usize) -> bool {
-        self.away_positions.contains(&pos)
-    }
     pub fn is_ai_position(&self, pos: usize) -> bool {
         self.ai_positions.contains(&pos)
+    }
+    pub fn is_away(&self, pos: usize) -> bool {
+        self.away_positions.contains(&pos)
     }
     pub fn is_disconnected(&self, pos: usize) -> bool {
         self.disconnected_positions.contains(&pos)
     }
-    pub fn mark_away(&mut self, pos: usize) -> bool {
-        self.away_positions.insert(pos)
-    }
     pub fn mark_ai_position(&mut self, pos: usize) -> bool {
         self.ai_positions.insert(pos)
+    }
+    pub fn mark_away(&mut self, pos: usize) -> bool {
+        self.away_positions.insert(pos)
     }
     pub fn mark_disconnected(&mut self, pos: usize) -> bool {
         self.disconnected_positions.insert(pos)

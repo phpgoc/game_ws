@@ -9,16 +9,6 @@ use share_type_public::{
 };
 use ws_common::game_state::{CommonGameState, GameState};
 
-#[derive(Debug, Clone)]
-pub struct TractorRules {
-    pub blood_enabled: bool,
-    pub blood_score_per_unit: i32,
-    pub blood_start_score: i32,
-    pub bottom_card_count: usize,
-    pub deck_count: usize,
-    pub target_rank: TractorRank,
-}
-
 #[derive(Debug)]
 pub struct TractorGameState {
     pub base: Arc<Mutex<CommonGameState>>,
@@ -32,39 +22,78 @@ pub struct TractorGameState {
     pub current_trick: Vec<WsTractorPlayedCards>,
 }
 
+#[derive(Debug, Clone)]
+pub struct TractorRules {
+    pub blood_enabled: bool,
+    pub blood_score_per_unit: i32,
+    pub blood_start_score: i32,
+    pub bottom_card_count: usize,
+    pub deck_count: usize,
+    pub target_rank: TractorRank,
+}
+
 pub type TractorStateHandle = Arc<Mutex<TractorGameState>>;
 
-impl TractorRules {
-    pub fn blood_units(&self, score: i32) -> i32 {
-        if !self.blood_enabled || score < self.blood_start_score {
-            return 0;
+pub fn adjusted_bottom_card_count(
+    total_cards: usize,
+    player_count: usize,
+    preferred: usize,
+    minimum: usize,
+) -> Option<usize> {
+    if player_count == 0 || minimum >= total_cards {
+        return None;
+    }
+    let max_bottom = total_cards.saturating_sub(player_count);
+    let preferred = preferred.max(minimum).min(max_bottom);
+    (preferred..=max_bottom)
+        .find(|bottom| (total_cards - bottom) % player_count == 0)
+        .or_else(|| {
+            (minimum..preferred)
+                .rev()
+                .find(|bottom| (total_cards - bottom) % player_count == 0)
+        })
+}
+
+pub fn build_tractor_deck(deck_count: usize) -> Vec<i32> {
+    let deck_count = deck_count.clamp(2, 4);
+    let mut cards = Vec::with_capacity(deck_count * 54);
+    for deck_index in 0..deck_count {
+        let offset = deck_index as i32 * 100;
+        for card in 1..=54 {
+            cards.push(offset + card);
         }
-        ((score - self.blood_start_score) / self.blood_score_per_unit.max(1)) + 1
+    }
+    cards
+}
+
+pub fn min_bottom_card_count(deck_count: usize) -> usize {
+    match deck_count {
+        3 => 10,
+        2 | 4 => 8,
+        _ => 8,
     }
 }
 
-impl TractorGameState {
-    pub fn from_common(base: Arc<Mutex<CommonGameState>>) -> Self {
-        Self {
-            base,
-            phase: TractorPhase::Start,
-            rules: TractorRules {
-                blood_enabled: true,
-                blood_score_per_unit: 40,
-                blood_start_score: 80,
-                bottom_card_count: 8,
-                deck_count: 2,
-                target_rank: TractorRank::A,
-            },
-            hands: HashMap::new(),
-            bottom_cards: Vec::new(),
-            dealer_position: 0,
-            current_position: 0,
-            trick_index: 0,
-            current_trick: Vec::new(),
-        }
+fn remove_cards_from_hand(hand: &mut Vec<i32>, cards: &[i32]) -> Result<(), &'static str> {
+    let mut indexes = Vec::with_capacity(cards.len());
+    for card in cards {
+        let Some(idx) = hand
+            .iter()
+            .enumerate()
+            .find_map(|(idx, current)| (!indexes.contains(&idx) && current == card).then_some(idx))
+        else {
+            return Err("card not in hand");
+        };
+        indexes.push(idx);
     }
+    indexes.sort_unstable_by(|a, b| b.cmp(a));
+    for idx in indexes {
+        hand.remove(idx);
+    }
+    Ok(())
+}
 
+impl TractorGameState {
     pub fn active_positions(&self) -> Vec<usize> {
         let mut positions: Vec<_> = self.base.lock().unwrap().players.keys().copied().collect();
         positions.sort_unstable();
@@ -113,6 +142,27 @@ impl TractorGameState {
         self.phase = TractorPhase::Play;
         self.base.lock().unwrap().action_received = false;
         Ok(())
+    }
+
+    pub fn from_common(base: Arc<Mutex<CommonGameState>>) -> Self {
+        Self {
+            base,
+            phase: TractorPhase::Start,
+            rules: TractorRules {
+                blood_enabled: true,
+                blood_score_per_unit: 40,
+                blood_start_score: 80,
+                bottom_card_count: 8,
+                deck_count: 2,
+                target_rank: TractorRank::A,
+            },
+            hands: HashMap::new(),
+            bottom_cards: Vec::new(),
+            dealer_position: 0,
+            current_position: 0,
+            trick_index: 0,
+            current_trick: Vec::new(),
+        }
     }
 
     pub fn hand_count(&self) -> usize {
@@ -202,63 +252,13 @@ impl GameState for TractorGameState {
     }
 }
 
-pub fn adjusted_bottom_card_count(
-    total_cards: usize,
-    player_count: usize,
-    preferred: usize,
-    minimum: usize,
-) -> Option<usize> {
-    if player_count == 0 || minimum >= total_cards {
-        return None;
-    }
-    let max_bottom = total_cards.saturating_sub(player_count);
-    let preferred = preferred.max(minimum).min(max_bottom);
-    (preferred..=max_bottom)
-        .find(|bottom| (total_cards - bottom) % player_count == 0)
-        .or_else(|| {
-            (minimum..preferred)
-                .rev()
-                .find(|bottom| (total_cards - bottom) % player_count == 0)
-        })
-}
-
-pub fn min_bottom_card_count(deck_count: usize) -> usize {
-    match deck_count {
-        3 => 10,
-        2 | 4 => 8,
-        _ => 8,
-    }
-}
-
-pub fn build_tractor_deck(deck_count: usize) -> Vec<i32> {
-    let deck_count = deck_count.clamp(2, 4);
-    let mut cards = Vec::with_capacity(deck_count * 54);
-    for deck_index in 0..deck_count {
-        let offset = deck_index as i32 * 100;
-        for card in 1..=54 {
-            cards.push(offset + card);
+impl TractorRules {
+    pub fn blood_units(&self, score: i32) -> i32 {
+        if !self.blood_enabled || score < self.blood_start_score {
+            return 0;
         }
+        ((score - self.blood_start_score) / self.blood_score_per_unit.max(1)) + 1
     }
-    cards
-}
-
-fn remove_cards_from_hand(hand: &mut Vec<i32>, cards: &[i32]) -> Result<(), &'static str> {
-    let mut indexes = Vec::with_capacity(cards.len());
-    for card in cards {
-        let Some(idx) = hand
-            .iter()
-            .enumerate()
-            .find_map(|(idx, current)| (!indexes.contains(&idx) && current == card).then_some(idx))
-        else {
-            return Err("card not in hand");
-        };
-        indexes.push(idx);
-    }
-    indexes.sort_unstable_by(|a, b| b.cmp(a));
-    for idx in indexes {
-        hand.remove(idx);
-    }
-    Ok(())
 }
 
 #[cfg(test)]

@@ -9,10 +9,6 @@ use crate::rules::is_standard_win;
 use super::decision::{AiClaimChoice, choose_claim_from_view, choose_discard_from_view};
 use super::observation::build_public_table;
 
-fn self_hand(state: &ShenyangMahjongLoopState, position: usize) -> Option<Vec<i32>> {
-    state.hands.get(&position).cloned()
-}
-
 pub fn maybe_play_ai_turn(
     room_service: &RoomService,
     room_key: &str,
@@ -114,6 +110,10 @@ pub fn maybe_resolve_ai_claims(
     false
 }
 
+fn self_hand(state: &ShenyangMahjongLoopState, position: usize) -> Option<Vec<i32>> {
+    state.hands.get(&position).cloned()
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, Mutex};
@@ -123,49 +123,6 @@ mod tests {
 
     use super::*;
     use crate::game_state::ClaimWindowState;
-
-    fn playable_state() -> ShenyangMahjongLoopState {
-        let base = Arc::new(Mutex::new(CommonGameState::default()));
-        {
-            let mut common = base.lock().unwrap();
-            for position in 0..4 {
-                common.add_player(position, position as u64 + 1, &format!("P{}", position));
-            }
-        }
-        let mut state = ShenyangMahjongLoopState::new(base);
-        state.phase = ShenyangMahjongPhase::Play;
-        state.current_position = 0;
-        state.dealer_position = 0;
-        state
-            .hands
-            .insert(0, vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35]);
-        for position in 0..4 {
-            state.discards.insert(position, Vec::new());
-            state
-                .melds
-                .insert(position, Vec::<WsShenyangMahjongMeld>::new());
-        }
-        state.wall = vec![37, 36, 35, 34, 33, 32];
-        state
-    }
-
-    #[test]
-    fn away_position_uses_ai_discard() {
-        let mut state = playable_state();
-        state.base.lock().unwrap().mark_away(0);
-        let mut dispatch = Dispatch::default();
-
-        assert!(maybe_play_ai_turn(
-            &RoomService::default(),
-            "room",
-            &mut state,
-            &HashMap::new(),
-            &mut dispatch,
-        ));
-
-        assert_eq!(state.hands.get(&0).unwrap().len(), 13);
-        assert_eq!(state.discards.get(&0).unwrap().len(), 1);
-    }
 
     #[test]
     fn away_position_uses_ai_claim_response() {
@@ -200,5 +157,48 @@ mod tests {
                 .map(|settlement| settlement.winner_positions.clone()),
             Some(vec![0]),
         );
+    }
+
+    #[test]
+    fn away_position_uses_ai_discard() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_away(0);
+        let mut dispatch = Dispatch::default();
+
+        assert!(maybe_play_ai_turn(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::new(),
+            &mut dispatch,
+        ));
+
+        assert_eq!(state.hands.get(&0).unwrap().len(), 13);
+        assert_eq!(state.discards.get(&0).unwrap().len(), 1);
+    }
+
+    fn playable_state() -> ShenyangMahjongLoopState {
+        let base = Arc::new(Mutex::new(CommonGameState::default()));
+        {
+            let mut common = base.lock().unwrap();
+            for position in 0..4 {
+                common.add_player(position, position as u64 + 1, &format!("P{}", position));
+            }
+        }
+        let mut state = ShenyangMahjongLoopState::new(base);
+        state.phase = ShenyangMahjongPhase::Play;
+        state.current_position = 0;
+        state.dealer_position = 0;
+        state
+            .hands
+            .insert(0, vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35]);
+        for position in 0..4 {
+            state.discards.insert(position, Vec::new());
+            state
+                .melds
+                .insert(position, Vec::<WsShenyangMahjongMeld>::new());
+        }
+        state.wall = vec![37, 36, 35, 34, 33, 32];
+        state
     }
 }

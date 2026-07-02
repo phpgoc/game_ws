@@ -3,13 +3,10 @@ use std::collections::HashMap;
 use crate::game_state::ShenyangMahjongLoopState;
 
 #[derive(Debug, Clone)]
-pub struct AiSeatView {
-    pub position: usize,
-    pub is_ai: bool,
-    pub is_away: bool,
-    pub hand_count: usize,
-    pub discards: Vec<i32>,
-    pub melds: Vec<share_type_public::games::shenyang_mahjong::WsShenyangMahjongMeld>,
+pub struct AiClaimView {
+    pub tile: i32,
+    pub from_position: usize,
+    pub eligible_positions: Vec<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -22,10 +19,13 @@ pub struct AiPublicTable {
 }
 
 #[derive(Debug, Clone)]
-pub struct AiClaimView {
-    pub tile: i32,
-    pub from_position: usize,
-    pub eligible_positions: Vec<usize>,
+pub struct AiSeatView {
+    pub position: usize,
+    pub is_ai: bool,
+    pub is_away: bool,
+    pub hand_count: usize,
+    pub discards: Vec<i32>,
+    pub melds: Vec<share_type_public::games::shenyang_mahjong::WsShenyangMahjongMeld>,
 }
 
 pub fn build_public_table(state: &ShenyangMahjongLoopState) -> AiPublicTable {

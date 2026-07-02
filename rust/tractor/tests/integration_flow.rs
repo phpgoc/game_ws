@@ -42,6 +42,48 @@ async fn join(client: &mut Client, name: &str, password: &str) -> Value {
     .await
 }
 
+async fn recv_json(client: &mut Client, label: &str) -> Value {
+    loop {
+        let frame = tokio::time::timeout(Duration::from_secs(5), client.next())
+            .await
+            .unwrap_or_else(|_| panic!("websocket message timeout while waiting for {label}"))
+            .expect("websocket frame")
+            .expect("websocket frame ok");
+        match frame {
+            Message::Text(text) => return serde_json::from_str(text.as_ref()).expect("json frame"),
+            Message::Ping(_) | Message::Pong(_) => continue,
+            other => panic!("unexpected frame: {other:?}"),
+        }
+    }
+}
+
+async fn recv_until<F>(client: &mut Client, label: &str, mut pred: F) -> Value
+where
+    F: FnMut(&Value) -> bool,
+{
+    let mut recent = Vec::new();
+    for _ in 0..80 {
+        let value = recv_json(client, label).await;
+        if pred(&value) {
+            return value;
+        }
+        recent.push(value);
+        if recent.len() > 8 {
+            recent.remove(0);
+        }
+    }
+    panic!("expected websocket frame not received for {label}; recent={recent:?}");
+}
+
+async fn send_request(client: &mut Client, route: i32, data: Value) {
+    client
+        .send(Message::Text(
+            json!({ "route": route, "data": data }).to_string().into(),
+        ))
+        .await
+        .expect("send request");
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn tractor_four_players_can_start_custom_three_deck_room() {
     let port = free_port();
@@ -127,46 +169,4 @@ async fn tractor_four_players_can_start_custom_three_deck_room() {
     assert_eq!(snapshot["data"]["blood_score_per_unit"], json!(40));
 
     server.abort();
-}
-
-async fn recv_json(client: &mut Client, label: &str) -> Value {
-    loop {
-        let frame = tokio::time::timeout(Duration::from_secs(5), client.next())
-            .await
-            .unwrap_or_else(|_| panic!("websocket message timeout while waiting for {label}"))
-            .expect("websocket frame")
-            .expect("websocket frame ok");
-        match frame {
-            Message::Text(text) => return serde_json::from_str(text.as_ref()).expect("json frame"),
-            Message::Ping(_) | Message::Pong(_) => continue,
-            other => panic!("unexpected frame: {other:?}"),
-        }
-    }
-}
-
-async fn recv_until<F>(client: &mut Client, label: &str, mut pred: F) -> Value
-where
-    F: FnMut(&Value) -> bool,
-{
-    let mut recent = Vec::new();
-    for _ in 0..80 {
-        let value = recv_json(client, label).await;
-        if pred(&value) {
-            return value;
-        }
-        recent.push(value);
-        if recent.len() > 8 {
-            recent.remove(0);
-        }
-    }
-    panic!("expected websocket frame not received for {label}; recent={recent:?}");
-}
-
-async fn send_request(client: &mut Client, route: i32, data: Value) {
-    client
-        .send(Message::Text(
-            json!({ "route": route, "data": data }).to_string().into(),
-        ))
-        .await
-        .expect("send request");
 }

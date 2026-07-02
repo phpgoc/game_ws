@@ -233,6 +233,106 @@ fn join_succeeded(dispatch: &Dispatch, session_id: SessionId) -> bool {
     })
 }
 
+pub(crate) fn perform_discard(
+    room_service: &RoomService,
+    room_key: &str,
+    state: &mut ShenyangMahjongLoopState,
+    configs: &HashMap<String, i32>,
+    dispatch: &mut Dispatch,
+    position: usize,
+    tile: i32,
+) -> bool {
+    if !state.remove_tiles_from_hand(position, &[tile]) {
+        return false;
+    }
+    state.discards.entry(position).or_default().push(tile);
+    state.last_drawn_tile = None;
+    push_room_event(
+        room_service,
+        room_key,
+        dispatch,
+        WsCode::PLAY as i32,
+        WsShenyangMahjongPlayEvent {
+            name: state.player_name(position),
+            position: position as i32,
+            action: ShenyangMahjongAction::DISCARD,
+            tiles: vec![tile],
+            target_tile: Some(tile),
+            from_position: None,
+            wall_count: state.wall_count() as i32,
+        },
+    );
+
+    let eligible_positions = determine_claim_eligible_positions(state, tile, position);
+    if eligible_positions.is_empty() {
+        advance_to_next_turn(room_service, room_key, state, configs, dispatch);
+    } else {
+        state.claim_window = Some(ClaimWindowState {
+            tile,
+            from_position: position,
+            eligible_positions: eligible_positions.clone(),
+            responses: HashMap::new(),
+        });
+        state.set_turn_countdown(current_claim_time(configs));
+        push_room_event(
+            room_service,
+            room_key,
+            dispatch,
+            WsCode::CLAIM_WINDOW as i32,
+            WsShenyangMahjongClaimWindowEvent {
+                tile,
+                from_position: position as i32,
+                eligible_positions: eligible_positions.iter().map(|item| *item as i32).collect(),
+                seconds: current_claim_time(configs) as i32,
+            },
+        );
+    }
+    true
+}
+
+pub(crate) fn perform_self_draw_hu(
+    room_service: &RoomService,
+    room_key: &str,
+    state: &mut ShenyangMahjongLoopState,
+    dispatch: &mut Dispatch,
+    position: usize,
+) {
+    push_room_event(
+        room_service,
+        room_key,
+        dispatch,
+        WsCode::PLAY as i32,
+        WsShenyangMahjongPlayEvent {
+            name: state.player_name(position),
+            position: position as i32,
+            action: ShenyangMahjongAction::HU,
+            tiles: Vec::new(),
+            target_tile: state.last_drawn_tile,
+            from_position: None,
+            wall_count: state.wall_count() as i32,
+        },
+    );
+    let win_tile = state.last_drawn_tile;
+    state.enter_settlement(vec![position], None, win_tile, true);
+    push_phase_change(
+        room_service,
+        room_key,
+        dispatch,
+        ShenyangMahjongPhase::Settlement,
+        state.current_position,
+        0,
+    );
+    if let Some(event) = build_settlement_event(state) {
+        push_room_event(
+            room_service,
+            room_key,
+            dispatch,
+            WsCode::GAME_OVER as i32,
+            event,
+        );
+    }
+}
+
 pub(crate) fn push_direct_event<T: serde::Serialize>(
     dispatch: &mut Dispatch,
     session_id: SessionId,
@@ -334,106 +434,6 @@ pub(crate) fn push_room_event<T: serde::Serialize>(
     payload: T,
 ) {
     room_service.send_all_connected(room_key, code, payload, dispatch);
-}
-
-pub(crate) fn perform_discard(
-    room_service: &RoomService,
-    room_key: &str,
-    state: &mut ShenyangMahjongLoopState,
-    configs: &HashMap<String, i32>,
-    dispatch: &mut Dispatch,
-    position: usize,
-    tile: i32,
-) -> bool {
-    if !state.remove_tiles_from_hand(position, &[tile]) {
-        return false;
-    }
-    state.discards.entry(position).or_default().push(tile);
-    state.last_drawn_tile = None;
-    push_room_event(
-        room_service,
-        room_key,
-        dispatch,
-        WsCode::PLAY as i32,
-        WsShenyangMahjongPlayEvent {
-            name: state.player_name(position),
-            position: position as i32,
-            action: ShenyangMahjongAction::DISCARD,
-            tiles: vec![tile],
-            target_tile: Some(tile),
-            from_position: None,
-            wall_count: state.wall_count() as i32,
-        },
-    );
-
-    let eligible_positions = determine_claim_eligible_positions(state, tile, position);
-    if eligible_positions.is_empty() {
-        advance_to_next_turn(room_service, room_key, state, configs, dispatch);
-    } else {
-        state.claim_window = Some(ClaimWindowState {
-            tile,
-            from_position: position,
-            eligible_positions: eligible_positions.clone(),
-            responses: HashMap::new(),
-        });
-        state.set_turn_countdown(current_claim_time(configs));
-        push_room_event(
-            room_service,
-            room_key,
-            dispatch,
-            WsCode::CLAIM_WINDOW as i32,
-            WsShenyangMahjongClaimWindowEvent {
-                tile,
-                from_position: position as i32,
-                eligible_positions: eligible_positions.iter().map(|item| *item as i32).collect(),
-                seconds: current_claim_time(configs) as i32,
-            },
-        );
-    }
-    true
-}
-
-pub(crate) fn perform_self_draw_hu(
-    room_service: &RoomService,
-    room_key: &str,
-    state: &mut ShenyangMahjongLoopState,
-    dispatch: &mut Dispatch,
-    position: usize,
-) {
-    push_room_event(
-        room_service,
-        room_key,
-        dispatch,
-        WsCode::PLAY as i32,
-        WsShenyangMahjongPlayEvent {
-            name: state.player_name(position),
-            position: position as i32,
-            action: ShenyangMahjongAction::HU,
-            tiles: Vec::new(),
-            target_tile: state.last_drawn_tile,
-            from_position: None,
-            wall_count: state.wall_count() as i32,
-        },
-    );
-    let win_tile = state.last_drawn_tile;
-    state.enter_settlement(vec![position], None, win_tile, true);
-    push_phase_change(
-        room_service,
-        room_key,
-        dispatch,
-        ShenyangMahjongPhase::Settlement,
-        state.current_position,
-        0,
-    );
-    if let Some(event) = build_settlement_event(state) {
-        push_room_event(
-            room_service,
-            room_key,
-            dispatch,
-            WsCode::GAME_OVER as i32,
-            event,
-        );
-    }
 }
 
 pub(crate) fn resolve_claim_window(

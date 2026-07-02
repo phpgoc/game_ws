@@ -109,6 +109,16 @@ pub struct WsShenyangMahjongPublicPlayerSnapshot {
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsShenyangMahjongSettlementEvent {
+    pub winner_positions: Vec<i32>,
+    pub from_position: Option<i32>,
+    pub win_tile: Option<i32>,
+    pub is_self_draw: bool,
+    pub players: Vec<WsShenyangMahjongPlayerSnapshot>,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsShenyangMahjongTableSnapshotEvent {
     pub my_tiles: Vec<i32>,
     pub players: Vec<WsShenyangMahjongPublicPlayerSnapshot>,
@@ -118,16 +128,6 @@ pub struct WsShenyangMahjongTableSnapshotEvent {
     pub wall_count: i32,
     pub turn_countdown: i32,
     pub claim_window: Option<WsShenyangMahjongClaimWindowEvent>,
-}
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsShenyangMahjongSettlementEvent {
-    pub winner_positions: Vec<i32>,
-    pub from_position: Option<i32>,
-    pub win_tile: Option<i32>,
-    pub is_self_draw: bool,
-    pub players: Vec<WsShenyangMahjongPlayerSnapshot>,
 }
 
 impl Display for ShenyangMahjongPhase {

@@ -4,6 +4,16 @@ use std::fmt::Display;
 use typeshare::typeshare;
 
 #[typeshare]
+#[repr(i8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
+pub enum TractorPhase {
+    Start,
+    Deal,
+    Play,
+    Settlement,
+}
+
+#[typeshare]
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
 #[allow(non_camel_case_types)]
@@ -12,16 +22,6 @@ pub enum TractorRank {
     Q = 12,
     K = 13,
     A = 14,
-}
-
-#[typeshare]
-#[repr(i8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
-pub enum TractorPhase {
-    Start,
-    Deal,
-    Play,
-    Settlement,
 }
 
 #[typeshare]
@@ -37,6 +37,17 @@ pub struct WsTractorDealEvent {
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsTractorPlayEvent {
+    pub position: i32,
+    pub name: String,
+    pub cards: Vec<i32>,
+    pub trick_index: i32,
+    pub next_position: i32,
+    pub remaining_hand_count: i32,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsTractorPlayRequest {
     pub cards: Vec<i32>,
 }
@@ -47,17 +58,6 @@ pub struct WsTractorPlayedCards {
     pub position: i32,
     pub name: String,
     pub cards: Vec<i32>,
-}
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsTractorPlayEvent {
-    pub position: i32,
-    pub name: String,
-    pub cards: Vec<i32>,
-    pub trick_index: i32,
-    pub next_position: i32,
-    pub remaining_hand_count: i32,
 }
 
 #[typeshare]

@@ -25,6 +25,10 @@ pub struct TractorGameHandler {
     states: StateRegistry,
 }
 
+struct TractorGameStateHandle {
+    inner: TractorStateHandle,
+}
+
 impl TractorGameHandler {
     fn configs_to_rules(configs: &HashMap<String, i32>) -> TractorRules {
         TractorRules {
@@ -304,10 +308,6 @@ impl GameHandler for TractorGameHandler {
             }
         }
     }
-}
-
-struct TractorGameStateHandle {
-    inner: TractorStateHandle,
 }
 
 impl ws_common::game_state::GameState for TractorGameStateHandle {

@@ -4,11 +4,14 @@ use crate::game_setting::GameSettings;
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use share_type_public::{
-    CommonEvent, GameId, GameParam, Routes, WsAddAiRequest, WsCode, WsJoinRequest, WsMessageRequest,
-    WsPositionEvent, WsRequest, WsResponseCode, WsSwapPositionPayload, WsWithoutDataResponse,
+    CommonEvent, GameId, GameParam, Routes, WsAddAiRequest, WsCode, WsJoinRequest,
+    WsMessageRequest, WsPositionEvent, WsRequest, WsResponseCode, WsSwapPositionPayload,
+    WsWithoutDataResponse,
     ws::WsResponse,
     ws::{WsMessageEvent, WsNameEvent},
 };
+
+const AI_SESSION_ID_BASE: SessionId = 9_000_000_000_000_000_000;
 
 pub type ClientRequest = WsRequest<Value>;
 
@@ -57,7 +60,6 @@ pub struct RoomService {
 }
 
 pub type SessionId = u64;
-const AI_SESSION_ID_BASE: SessionId = 9_000_000_000_000_000_000;
 
 #[derive(Debug, Default)]
 struct SessionState {
@@ -86,6 +88,24 @@ impl std::fmt::Debug for RoomEntry {
 }
 
 impl RoomService {
+    fn allocate_ai_session_id(&mut self) -> SessionId {
+        loop {
+            self.next_ai_sequence = self.next_ai_sequence.saturating_add(1);
+            let candidate = AI_SESSION_ID_BASE.saturating_add(self.next_ai_sequence);
+            let in_sessions = self.sessions.contains_key(&candidate);
+            let in_players = self.rooms.values().any(|entry| {
+                entry
+                    .state
+                    .players()
+                    .values()
+                    .any(|(sid, _)| *sid == candidate)
+            });
+            if !in_sessions && !in_players {
+                return candidate;
+            }
+        }
+    }
+
     /// 清除 game state（游戏结束时调用）。
     pub fn clear_room_game_state(&mut self, room_key: &str) {
         if let Some(entry) = self.rooms.get_mut(room_key) {
@@ -141,24 +161,6 @@ impl RoomService {
     /// 获取当前 configs JSON（用于 SETTING/JOIN 响应）。
     fn current_configs_json(&self, room_key: &str) -> Option<Value> {
         self.rooms.get(room_key).map(|e| json!(e.configs))
-    }
-
-    fn allocate_ai_session_id(&mut self) -> SessionId {
-        loop {
-            self.next_ai_sequence = self.next_ai_sequence.saturating_add(1);
-            let candidate = AI_SESSION_ID_BASE.saturating_add(self.next_ai_sequence);
-            let in_sessions = self.sessions.contains_key(&candidate);
-            let in_players = self.rooms.values().any(|entry| {
-                entry
-                    .state
-                    .players()
-                    .values()
-                    .any(|(sid, _)| *sid == candidate)
-            });
-            if !in_sessions && !in_players {
-                return candidate;
-            }
-        }
     }
 
     fn direct_response(recipient: SessionId, route: i32, code: WsResponseCode) -> Delivery {
@@ -694,8 +696,7 @@ impl RoomService {
                     name: n.clone(),
                     avatar_url: entry.state.player_avatar(*p),
                     position: *p as i32,
-                    is_active: entry.state.is_ai_position(*p)
-                        || !entry.state.is_disconnected(*p),
+                    is_active: entry.state.is_ai_position(*p) || !entry.state.is_disconnected(*p),
                     is_ai: entry.state.is_ai_position(*p),
                 })
                 .collect();
@@ -804,8 +805,7 @@ impl RoomService {
                     name: n.clone(),
                     avatar_url: entry.state.player_avatar(*p),
                     position: *p as i32,
-                    is_active: entry.state.is_ai_position(*p)
-                        || !entry.state.is_disconnected(*p),
+                    is_active: entry.state.is_ai_position(*p) || !entry.state.is_disconnected(*p),
                     is_ai: entry.state.is_ai_position(*p),
                 })
                 .collect();

@@ -30,35 +30,6 @@ fn auto_discard_tile(state: &ShenyangMahjongLoopState, position: usize) -> Optio
         .and_then(|hand| hand.last().copied())
 }
 
-#[cfg(test)]
-mod tests {
-    use std::sync::{Arc, Mutex};
-
-    use ws_common::game_state::CommonGameState;
-
-    use super::*;
-
-    #[test]
-    fn auto_discard_prefers_the_last_drawn_tile() {
-        let base = Arc::new(Mutex::new(CommonGameState::default()));
-        let mut state = ShenyangMahjongLoopState::new(base);
-        state.hands.insert(0, vec![1, 2, 9]);
-        state.last_drawn_tile = Some(2);
-
-        assert_eq!(auto_discard_tile(&state, 0), Some(2));
-    }
-
-    #[test]
-    fn auto_discard_falls_back_to_the_last_tile_in_hand() {
-        let base = Arc::new(Mutex::new(CommonGameState::default()));
-        let mut state = ShenyangMahjongLoopState::new(base);
-        state.hands.insert(0, vec![1, 2, 9]);
-        state.last_drawn_tile = Some(8);
-
-        assert_eq!(auto_discard_tile(&state, 0), Some(9));
-    }
-}
-
 async fn deliver(dispatch: ws_common::Dispatch, senders: &SessionSenders) {
     let mut frames = Vec::with_capacity(dispatch.messages.len());
     for message in dispatch.messages {
@@ -279,4 +250,33 @@ pub(crate) fn start_game_loop(
 
         loop_states.lock().unwrap().remove(&room_key);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use ws_common::game_state::CommonGameState;
+
+    use super::*;
+
+    #[test]
+    fn auto_discard_falls_back_to_the_last_tile_in_hand() {
+        let base = Arc::new(Mutex::new(CommonGameState::default()));
+        let mut state = ShenyangMahjongLoopState::new(base);
+        state.hands.insert(0, vec![1, 2, 9]);
+        state.last_drawn_tile = Some(8);
+
+        assert_eq!(auto_discard_tile(&state, 0), Some(9));
+    }
+
+    #[test]
+    fn auto_discard_prefers_the_last_drawn_tile() {
+        let base = Arc::new(Mutex::new(CommonGameState::default()));
+        let mut state = ShenyangMahjongLoopState::new(base);
+        state.hands.insert(0, vec![1, 2, 9]);
+        state.last_drawn_tile = Some(2);
+
+        assert_eq!(auto_discard_tile(&state, 0), Some(2));
+    }
 }

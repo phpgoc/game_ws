@@ -103,23 +103,6 @@ impl ShenyangMahjongLoopState {
         self.base.lock().unwrap().clear_away();
     }
 
-    pub fn is_paused(&self) -> bool {
-        self.base.lock().unwrap().paused
-    }
-
-    pub fn is_ai_position(&self, position: usize) -> bool {
-        self.base.lock().unwrap().is_ai_position(position)
-    }
-
-    pub fn is_ai_controlled_position(&self, position: usize) -> bool {
-        let state = self.base.lock().unwrap();
-        state.is_ai_position(position) || state.is_away(position)
-    }
-
-    pub fn is_away(&self, position: usize) -> bool {
-        self.base.lock().unwrap().is_away(position)
-    }
-
     pub fn deal_new_round(&mut self) {
         self.phase = ShenyangMahjongPhase::Play;
         self.claim_window = None;
@@ -186,6 +169,23 @@ impl ShenyangMahjongLoopState {
             is_self_draw,
         });
         self.set_action_received(false);
+    }
+
+    pub fn is_ai_controlled_position(&self, position: usize) -> bool {
+        let state = self.base.lock().unwrap();
+        state.is_ai_position(position) || state.is_away(position)
+    }
+
+    pub fn is_ai_position(&self, position: usize) -> bool {
+        self.base.lock().unwrap().is_ai_position(position)
+    }
+
+    pub fn is_away(&self, position: usize) -> bool {
+        self.base.lock().unwrap().is_away(position)
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.base.lock().unwrap().paused
     }
 
     pub fn new(base: Arc<Mutex<CommonGameState>>) -> Self {
