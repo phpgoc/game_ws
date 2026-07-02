@@ -39,6 +39,34 @@ pub fn evaluate_best(cards: &[i32]) -> Option<EvaluatedHand> {
     best
 }
 
+pub fn evaluate_omaha(hole_cards: &[i32], public_cards: &[i32]) -> Option<EvaluatedHand> {
+    if hole_cards.len() < 2 || public_cards.len() < 3 {
+        return None;
+    }
+    let mut best: Option<EvaluatedHand> = None;
+    for a in 0..hole_cards.len() - 1 {
+        for b in a + 1..hole_cards.len() {
+            for c in 0..public_cards.len() - 2 {
+                for d in c + 1..public_cards.len() - 1 {
+                    for e in d + 1..public_cards.len() {
+                        let hand = evaluate_five(&[
+                            hole_cards[a],
+                            hole_cards[b],
+                            public_cards[c],
+                            public_cards[d],
+                            public_cards[e],
+                        ]);
+                        if best.as_ref().is_none_or(|current| hand > *current) {
+                            best = Some(hand);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    best
+}
+
 pub fn evaluate_five(cards: &[i32; 5]) -> EvaluatedHand {
     let mut ranks: Vec<i32> = cards.iter().map(|card| card_rank(*card)).collect();
     ranks.sort_unstable_by(|a, b| b.cmp(a));
@@ -220,5 +248,12 @@ mod tests {
         let hand = evaluate_five(&[1, 2, 3, 4, 26]);
         assert_eq!(hand.category, 4);
         assert_eq!(hand.ranks, vec![5]);
+    }
+
+    #[test]
+    fn omaha_requires_two_hole_cards() {
+        let hand = evaluate_omaha(&[12, 11, 10, 9], &[13, 26, 39, 52, 1]).unwrap();
+        assert_eq!(hand.category, 3);
+        assert_eq!(hand.ranks, vec![14, 13, 12]);
     }
 }

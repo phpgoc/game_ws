@@ -45,6 +45,7 @@ pub enum RequestResponse {
 /// `param_descriptions` — 参数描述（GameParam），创建时由游戏提供。
 /// `state` — 游戏状态，始终存在（首个 JOIN 时创建），玩家列表在 CommonGameState.players 里。
 struct RoomEntry {
+    game_id: GameId,
     configs: HashMap<String, i32>,
     param_descriptions: HashMap<String, GameParam>,
     min_players: usize,
@@ -78,6 +79,7 @@ fn config_value(configs: &HashMap<String, i32>, key: &str, default: i32) -> i32 
 impl std::fmt::Debug for RoomEntry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RoomEntry")
+            .field("game_id", &self.game_id)
             .field("configs", &self.configs)
             .field("param_descriptions", &self.param_descriptions.len())
             .field("min_players", &self.min_players)
@@ -481,12 +483,31 @@ impl RoomService {
     where
         F: Fn() -> SettingsBuilderResult,
     {
+        self.handle_common_request_with_game_acceptance(
+            session_id,
+            request,
+            |requested| requested == game_id,
+            room_settings_builder,
+        )
+    }
+
+    pub fn handle_common_request_with_game_acceptance<F, A>(
+        &mut self,
+        session_id: SessionId,
+        request: &ClientRequest,
+        accepts_game_id: A,
+        room_settings_builder: F,
+    ) -> Option<Dispatch>
+    where
+        F: Fn() -> SettingsBuilderResult,
+        A: Fn(GameId) -> bool,
+    {
         self.sessions.entry(session_id).or_default();
         match request.route {
             r if r == Routes::JOIN as i32 => Some(self.handle_join_request(
                 session_id,
                 request.data.clone(),
-                game_id,
+                accepts_game_id,
                 room_settings_builder,
             )),
             r if r == Routes::QUIT as i32 => Some(self.handle_quit_request(session_id)),
@@ -532,7 +553,7 @@ impl RoomService {
         &mut self,
         session_id: SessionId,
         data: Value,
-        game_id: GameId,
+        accepts_game_id: impl Fn(GameId) -> bool,
         room_settings_builder: F,
     ) -> Dispatch
     where
@@ -548,7 +569,7 @@ impl RoomService {
         let password = payload.password;
         let name = payload.name;
         let avatar_url = payload.avatar_url;
-        if payload.game_id != game_id {
+        if !accepts_game_id(payload.game_id) {
             return self.error_response(
                 session_id,
                 Routes::JOIN as i32,
@@ -623,12 +644,24 @@ impl RoomService {
             self.rooms.insert(
                 password.clone(),
                 RoomEntry {
+                    game_id: payload.game_id,
                     configs: settings.values,
                     param_descriptions,
                     min_players: settings.min_players,
                     max_players: settings.max_players,
                     state: Box::new(crate::game_state::SharedGameState::new()),
                 },
+            );
+        } else if self
+            .rooms
+            .get(&password)
+            .map(|entry| entry.game_id != payload.game_id)
+            .unwrap_or(false)
+        {
+            return self.error_response(
+                session_id,
+                Routes::JOIN as i32,
+                WsResponseCode::WRONG_GAME,
             );
         }
 
@@ -815,6 +848,10 @@ impl RoomService {
             );
         }
         dispatch
+    }
+
+    pub fn room_game_id(&self, room_key: &str) -> Option<GameId> {
+        self.rooms.get(room_key).map(|entry| entry.game_id)
     }
 
     fn handle_message_request(&mut self, session_id: SessionId, data: Value) -> Dispatch {
@@ -1933,6 +1970,95 @@ mod tests {
         });
         assert!(wrong_game);
         assert!(service.room_key_of(1).is_none());
+    }
+
+    #[test]
+    fn join_accepts_multiple_game_ids_but_room_keeps_created_game() {
+        let mut service = RoomService::default();
+        service.connect(1);
+        service.connect(2);
+        service.connect(3);
+
+        let accepted = |game_id| {
+            matches!(
+                game_id,
+                GameId::TEXAS_HOLD_EM | GameId::OPEN_HOLD_EM | GameId::OMAHA_HOLD_EM
+            )
+        };
+
+        let texas_join = service
+            .handle_common_request_with_game_acceptance(
+                1,
+                &WsRequest {
+                    route: Routes::JOIN as i32,
+                    data: serde_json::json!({
+                        "name": "u1",
+                        "password": "poker-room",
+                        "game_id": GameId::TEXAS_HOLD_EM as i32
+                    }),
+                },
+                accepted,
+                settings,
+            )
+            .expect("join common");
+        assert!(texas_join.messages.iter().any(|item| match &item.payload {
+            OutboundPayload::Response(RequestResponse::WithData(resp)) => {
+                item.recipient == 1 && resp.code as i32 == WsResponseCode::JOINED as i32
+            }
+            _ => false,
+        }));
+        assert_eq!(
+            service.room_game_id("poker-room"),
+            Some(GameId::TEXAS_HOLD_EM)
+        );
+
+        let mixed_game = service
+            .handle_common_request_with_game_acceptance(
+                2,
+                &WsRequest {
+                    route: Routes::JOIN as i32,
+                    data: serde_json::json!({
+                        "name": "u2",
+                        "password": "poker-room",
+                        "game_id": GameId::OMAHA_HOLD_EM as i32
+                    }),
+                },
+                accepted,
+                settings,
+            )
+            .expect("join common");
+        assert!(mixed_game.messages.iter().any(|item| match &item.payload {
+            OutboundPayload::Response(RequestResponse::WithoutData(resp)) => {
+                item.recipient == 2 && resp.code as i32 == WsResponseCode::WRONG_GAME as i32
+            }
+            _ => false,
+        }));
+
+        let open_join = service
+            .handle_common_request_with_game_acceptance(
+                3,
+                &WsRequest {
+                    route: Routes::JOIN as i32,
+                    data: serde_json::json!({
+                        "name": "u3",
+                        "password": "open-room",
+                        "game_id": GameId::OPEN_HOLD_EM as i32
+                    }),
+                },
+                accepted,
+                settings,
+            )
+            .expect("join common");
+        assert!(open_join.messages.iter().any(|item| match &item.payload {
+            OutboundPayload::Response(RequestResponse::WithData(resp)) => {
+                item.recipient == 3 && resp.code as i32 == WsResponseCode::JOINED as i32
+            }
+            _ => false,
+        }));
+        assert_eq!(
+            service.room_game_id("open-room"),
+            Some(GameId::OPEN_HOLD_EM)
+        );
     }
 
     #[test]

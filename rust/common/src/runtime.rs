@@ -39,6 +39,10 @@ pub trait GameHandler: Send + 'static {
 
     fn build_room_settings(&self) -> SettingsBuilderResult;
 
+    fn accepts_game_id(&self, game_id: share_type_public::GameId) -> bool {
+        game_id == self.game_id()
+    }
+
     fn game_id(&self) -> share_type_public::GameId;
     fn handle_game_request(
         &mut self,
@@ -175,12 +179,12 @@ where
             } else {
                 false
             };
-            let game_id = handler.game_id();
-            if let Some(mut dispatch) =
-                room.handle_common_request(session_id, &request, game_id, || {
-                    handler.build_room_settings()
-                })
-            {
+            if let Some(mut dispatch) = room.handle_common_request_with_game_acceptance(
+                session_id,
+                &request,
+                |game_id| handler.accepts_game_id(game_id),
+                || handler.build_room_settings(),
+            ) {
                 // 首个 JOIN 建房成功后，挂载游戏态，确保后续逻辑走具体游戏状态。
                 if creates_room_on_join {
                     if let Some(room_key) = room.room_key_of(session_id) {

@@ -70,6 +70,8 @@ pub struct WsTexasHoldEmAutoStrategyRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsTexasHoldEmDealEvent {
     pub my_cards: Vec<i32>,
+    pub open_cards: Vec<i32>,
+    pub public_hole_cards: Vec<WsTexasHoldEmPublicHoleCards>,
     pub dealer_position: i32,
     pub small_blind_position: i32,
     pub big_blind_position: i32,
@@ -83,6 +85,13 @@ pub struct WsTexasHoldEmPlayRequest {
     pub action: TexasHoldEmAction,
     #[serde(default)]
     pub amount: i32,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsTexasHoldEmPublicHoleCards {
+    pub position: i32,
+    pub cards: Vec<i32>,
 }
 
 #[typeshare]
@@ -108,6 +117,7 @@ pub struct WsTexasHoldEmSettlementPlayer {
     pub position: i32,
     pub name: String,
     pub cards: Vec<i32>,
+    pub open_cards: Vec<i32>,
     pub folded: bool,
     pub chips: i32,
     pub hand_rank: i32,

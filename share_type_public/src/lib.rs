@@ -43,6 +43,7 @@ pub use games::texas_hold_em::WsTexasHoldEmAutoStrategyRequest;
 pub use games::texas_hold_em::WsTexasHoldEmDealEvent;
 pub use games::texas_hold_em::WsTexasHoldEmPlayRequest;
 pub use games::texas_hold_em::WsTexasHoldEmPublicCardsEvent;
+pub use games::texas_hold_em::WsTexasHoldEmPublicHoleCards;
 pub use games::texas_hold_em::WsTexasHoldEmSettlementEvent;
 pub use games::texas_hold_em::WsTexasHoldEmSettlementPlayer;
 pub use games::texas_hold_em::WsTexasHoldEmTurnEvent;

@@ -11,6 +11,9 @@ pub enum GameId {
     SHENYANG_MAHJONG = 2,
     TEXAS_HOLD_EM = 3,
     TRACTOR = 4,
+    OPEN_HOLD_EM = 5,
+    SHORT_DECK_HOLD_EM = 6,
+    OMAHA_HOLD_EM = 7,
 }
 
 impl Default for GameId {
@@ -35,6 +38,9 @@ impl TryFrom<i32> for GameId {
             2 => Ok(Self::SHENYANG_MAHJONG),
             3 => Ok(Self::TEXAS_HOLD_EM),
             4 => Ok(Self::TRACTOR),
+            5 => Ok(Self::OPEN_HOLD_EM),
+            6 => Ok(Self::SHORT_DECK_HOLD_EM),
+            7 => Ok(Self::OMAHA_HOLD_EM),
             _ => Err(()),
         }
     }

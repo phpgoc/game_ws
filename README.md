@@ -8,7 +8,7 @@
 - `rust/common/`: Rust WS 公共库，包含房间、连接、运行时。
 - `rust/landlord/`: 斗地主 Rust 服务端。
 - `rust/shenyang_mahjong/`: 沈阳麻将 Rust 服务端。
-- `rust/texas_hold_em/`: 德州扑克 Rust 服务端。
+- `rust/holdem/`: Hold'em 系列 Rust 服务端，承载德州、明牌德州、短牌德州和奥马哈。
 - `android/`: 通用 Android 前台服务壳，当前使用 NDK 运行 `rust/landlord`。
 
 ## 依赖
@@ -37,7 +37,7 @@ rustup target add aarch64-linux-android x86_64-linux-android
 ```sh
 cargo run -p landlord -- --host 0.0.0.0 --port 9001
 cargo run -p shenyang_mahjong -- --host 0.0.0.0 --port 9002
-cargo run -p texas_hold_em -- --host 0.0.0.0 --port 9003
+cargo run -p holdem -- --host 0.0.0.0 --port 9003
 ```
 
 也可以在本目录运行：
@@ -58,7 +58,7 @@ cargo run -p landlord -- --host 0.0.0.0 --port 9001
 ```sh
 cargo check -p landlord
 cargo test -p landlord
-cargo check -p shenyang_mahjong -p texas_hold_em
+cargo check -p shenyang_mahjong -p holdem
 ```
 
 ## 运行 Android 斗地主服务

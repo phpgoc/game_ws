@@ -6,8 +6,8 @@ use share_type_public::{
     WsCode, WsResponseCode,
     games::texas_hold_em::{
         WsTexasHoldEmActionEvent, WsTexasHoldEmAutoStrategyRequest, WsTexasHoldEmDealEvent,
-        WsTexasHoldEmPlayRequest, WsTexasHoldEmPublicCardsEvent, WsTexasHoldEmSettlementEvent,
-        WsTexasHoldEmSettlementPlayer, WsTexasHoldEmTurnEvent,
+        WsTexasHoldEmPlayRequest, WsTexasHoldEmPublicCardsEvent, WsTexasHoldEmPublicHoleCards,
+        WsTexasHoldEmSettlementEvent, WsTexasHoldEmSettlementPlayer, WsTexasHoldEmTurnEvent,
     },
 };
 use tokio::sync::Mutex;
@@ -17,13 +17,14 @@ use ws_common::{
 };
 
 use crate::{
-    game_setting::build_texas_hold_em_settings,
-    game_state::{TexasHoldEmGameState, TexasHoldEmStateHandle},
+    game_setting::build_holdem_settings,
+    game_state::{HoldemGameState, HoldemStateHandle},
+    poker_variant::{STANDARD_TEXAS, accepts_poker_game_id, variant_for_game_id},
 };
 
-type StateRegistry = Arc<std::sync::Mutex<HashMap<String, TexasHoldEmStateHandle>>>;
+type StateRegistry = Arc<std::sync::Mutex<HashMap<String, HoldemStateHandle>>>;
 
-pub struct TexasHoldEmGameHandler {
+pub struct HoldemGameHandler {
     states: StateRegistry,
     auto_strategies:
         Arc<std::sync::Mutex<HashMap<String, HashMap<usize, TexasHoldEmAutoStrategy>>>>,
@@ -46,7 +47,7 @@ async fn deliver_dispatch(dispatch: Dispatch, senders: &SessionSenders) {
 }
 
 fn apply_action(
-    s: &mut TexasHoldEmGameState,
+    s: &mut HoldemGameState,
     position: usize,
     payload: WsTexasHoldEmPlayRequest,
 ) -> Option<WsTexasHoldEmActionEvent> {
@@ -129,7 +130,7 @@ fn apply_action(
     })
 }
 
-fn settle_hand(state: &TexasHoldEmStateHandle) -> WsTexasHoldEmSettlementEvent {
+fn settle_hand(state: &HoldemStateHandle) -> WsTexasHoldEmSettlementEvent {
     let mut s = state.lock().unwrap();
     s.phase = TexasHoldEmPhase::Settlement;
     let contenders = s.active_not_folded_positions();
@@ -169,6 +170,11 @@ fn settle_hand(state: &TexasHoldEmStateHandle) -> WsTexasHoldEmSettlementEvent {
             position: position as i32,
             name: s.player_name(position),
             cards: s.hands.get(&position).cloned().unwrap_or_default(),
+            open_cards: s
+                .hands
+                .get(&position)
+                .map(|cards| s.variant.public_hole_cards(cards))
+                .unwrap_or_default(),
             folded: s.folded.contains(&position),
             chips: s.chip_count(position),
             hand_rank: evaluated.as_ref().map(|hand| hand.category).unwrap_or(-1),
@@ -189,7 +195,7 @@ fn settle_hand(state: &TexasHoldEmStateHandle) -> WsTexasHoldEmSettlementEvent {
     }
 }
 
-impl TexasHoldEmGameHandler {
+impl HoldemGameHandler {
     fn auto_payload_for(
         strategy: TexasHoldEmAutoStrategy,
         call_amount: i32,
@@ -207,7 +213,7 @@ impl TexasHoldEmGameHandler {
         &self,
         room_key: &str,
         room_service: &mut RoomService,
-        state: &TexasHoldEmStateHandle,
+        state: &HoldemStateHandle,
         dispatch: &mut Dispatch,
     ) {
         let mut should_settle = false;
@@ -247,7 +253,7 @@ impl TexasHoldEmGameHandler {
         &self,
         room_key: &str,
         room_service: &mut RoomService,
-        state: &TexasHoldEmStateHandle,
+        state: &HoldemStateHandle,
         position: usize,
         payload: WsTexasHoldEmPlayRequest,
         dispatch: &mut Dispatch,
@@ -285,7 +291,7 @@ impl TexasHoldEmGameHandler {
         &self,
         room_service: &mut RoomService,
         room_key: &str,
-        state: &TexasHoldEmStateHandle,
+        state: &HoldemStateHandle,
         dispatch: &mut Dispatch,
     ) {
         if room_service.is_room_paused(room_key) {
@@ -477,6 +483,10 @@ impl TexasHoldEmGameHandler {
             );
         };
         let configs = room_service.get_room_configs(&room_key).unwrap_or_default();
+        let variant = room_service
+            .room_game_id(&room_key)
+            .and_then(variant_for_game_id)
+            .unwrap_or(STANDARD_TEXAS);
         let initial_chips = configs.get("initial_chips").copied().unwrap_or(1000);
         let small_blind = configs.get("small_blind").copied().unwrap_or(5);
         let big_blind = configs
@@ -486,7 +496,7 @@ impl TexasHoldEmGameHandler {
             .max(small_blind + 1);
         let play_time = configs.get("play_time").copied().unwrap_or(20).max(1) as u32;
 
-        let mut state = TexasHoldEmGameState::from_common(Arc::clone(&common));
+        let mut state = HoldemGameState::from_common_with_variant(Arc::clone(&common), variant);
         if state
             .deal_new_hand(initial_chips, small_blind, big_blind)
             .is_err()
@@ -519,13 +529,34 @@ impl TexasHoldEmGameHandler {
         &self,
         room_key: &str,
         room_service: &RoomService,
-        state: &TexasHoldEmStateHandle,
+        state: &HoldemStateHandle,
         dispatch: &mut Dispatch,
     ) {
         let s = state.lock().unwrap();
+        let public_hole_cards: Vec<_> = s
+            .active_positions()
+            .into_iter()
+            .filter_map(|position| {
+                let cards = s
+                    .hands
+                    .get(&position)
+                    .map(|cards| s.variant.public_hole_cards(cards))
+                    .unwrap_or_default();
+                (!cards.is_empty()).then_some(WsTexasHoldEmPublicHoleCards {
+                    position: position as i32,
+                    cards,
+                })
+            })
+            .collect();
         for (session_id, _, position, _) in room_service.get_room_members(room_key) {
             let payload = WsTexasHoldEmDealEvent {
                 my_cards: s.hands.get(&position).cloned().unwrap_or_default(),
+                open_cards: s
+                    .hands
+                    .get(&position)
+                    .map(|cards| s.variant.public_hole_cards(cards))
+                    .unwrap_or_default(),
+                public_hole_cards: public_hole_cards.clone(),
                 dealer_position: s.dealer_position as i32,
                 small_blind_position: s.small_blind_position as i32,
                 big_blind_position: s.big_blind_position as i32,
@@ -546,7 +577,7 @@ impl TexasHoldEmGameHandler {
         &self,
         room_key: &str,
         room_service: &RoomService,
-        state: &TexasHoldEmStateHandle,
+        state: &HoldemStateHandle,
         dispatch: &mut Dispatch,
     ) {
         let s = state.lock().unwrap();
@@ -566,7 +597,7 @@ impl TexasHoldEmGameHandler {
         &self,
         room_key: &str,
         room_service: &RoomService,
-        state: &TexasHoldEmStateHandle,
+        state: &HoldemStateHandle,
         dispatch: &mut Dispatch,
     ) {
         let s = state.lock().unwrap();
@@ -586,12 +617,12 @@ impl TexasHoldEmGameHandler {
         );
     }
 
-    fn state(&self, room_key: &str) -> Option<TexasHoldEmStateHandle> {
+    fn state(&self, room_key: &str) -> Option<HoldemStateHandle> {
         self.states.lock().unwrap().get(room_key).cloned()
     }
 }
 
-impl Default for TexasHoldEmGameHandler {
+impl Default for HoldemGameHandler {
     fn default() -> Self {
         Self {
             states: Arc::new(std::sync::Mutex::new(HashMap::new())),
@@ -600,17 +631,21 @@ impl Default for TexasHoldEmGameHandler {
     }
 }
 
-impl GameHandler for TexasHoldEmGameHandler {
+impl GameHandler for HoldemGameHandler {
     fn build_game_state(&self) -> Box<dyn ws_common::game_state::GameState> {
         Box::new(SharedGameState::new())
     }
 
     fn build_room_settings(&self) -> ws_common::SettingsBuilderResult {
-        build_texas_hold_em_settings()
+        build_holdem_settings()
     }
 
     fn game_id(&self) -> GameId {
         GameId::TEXAS_HOLD_EM
+    }
+
+    fn accepts_game_id(&self, game_id: GameId) -> bool {
+        accepts_poker_game_id(game_id)
     }
 
     fn handle_game_request(
@@ -637,14 +672,14 @@ impl GameHandler for TexasHoldEmGameHandler {
         let states = Arc::clone(&self.states);
         let auto_strategies = Arc::clone(&self.auto_strategies);
         tokio::spawn(async move {
-            let handler = TexasHoldEmGameHandler {
+            let handler = HoldemGameHandler {
                 states,
                 auto_strategies,
             };
             let mut ticker = tokio::time::interval(Duration::from_secs(1));
             loop {
                 ticker.tick().await;
-                let rooms: Vec<(String, TexasHoldEmStateHandle)> = handler
+                let rooms: Vec<(String, HoldemStateHandle)> = handler
                     .states
                     .lock()
                     .unwrap()
@@ -675,21 +710,50 @@ mod tests {
     use share_type_public::WsJoinRequest;
 
     fn join_request(name: &str) -> ClientRequest {
+        join_request_for_game(name, GameId::TEXAS_HOLD_EM)
+    }
+
+    fn join_request_for_game(name: &str, game_id: GameId) -> ClientRequest {
         ClientRequest {
             route: Routes::JOIN as i32,
             data: serde_json::to_value(WsJoinRequest {
                 name: name.to_string(),
                 password: "room".to_string(),
-                game_id: GameId::TEXAS_HOLD_EM,
+                game_id,
                 avatar_url: String::new(),
             })
             .unwrap(),
         }
     }
 
+    fn started_deals_for(game_id: GameId) -> Vec<WsTexasHoldEmDealEvent> {
+        let handler = HoldemGameHandler::default();
+        let mut room = RoomService::default();
+        for session_id in 1..=2 {
+            room.handle_common_request_with_game_acceptance(
+                session_id,
+                &join_request_for_game(&format!("u{session_id}"), game_id),
+                accepts_poker_game_id,
+                || handler.build_room_settings(),
+            );
+        }
+        let dispatch = handler.handle_start(&mut room, 1);
+        dispatch
+            .messages
+            .iter()
+            .filter_map(|message| {
+                let OutboundPayload::Event(event) = &message.payload else {
+                    return None;
+                };
+                (event.code == WsCode::DEAL as i32)
+                    .then(|| serde_json::from_value(event.data.clone()).unwrap())
+            })
+            .collect()
+    }
+
     #[test]
     fn start_deals_private_cards() {
-        let handler = TexasHoldEmGameHandler::default();
+        let handler = HoldemGameHandler::default();
         let mut room = RoomService::default();
         for session_id in 1..=2 {
             room.handle_common_request(
@@ -722,12 +786,55 @@ mod tests {
             };
             let deal: WsTexasHoldEmDealEvent = serde_json::from_value(event.data.clone()).unwrap();
             assert_eq!(deal.my_cards.len(), 2);
+            assert_eq!(deal.open_cards.len(), 0);
         }
     }
 
     #[test]
-    fn texas_room_allows_two_to_eight_players() {
-        let handler = TexasHoldEmGameHandler::default();
+    fn open_hold_em_deals_three_hole_cards_with_one_open_card() {
+        let deals = started_deals_for(GameId::OPEN_HOLD_EM);
+        assert_eq!(deals.len(), 2);
+        for deal in deals {
+            assert_eq!(deal.my_cards.len(), 3);
+            assert_eq!(deal.open_cards.len(), 1);
+            assert_eq!(deal.open_cards[0], deal.my_cards[2]);
+            assert_eq!(deal.public_hole_cards.len(), 2);
+            assert!(
+                deal.public_hole_cards
+                    .iter()
+                    .all(|item| item.cards.len() == 1)
+            );
+        }
+    }
+
+    #[test]
+    fn omaha_deals_four_hole_cards() {
+        let deals = started_deals_for(GameId::OMAHA_HOLD_EM);
+        assert_eq!(deals.len(), 2);
+        for deal in deals {
+            assert_eq!(deal.my_cards.len(), 4);
+            assert_eq!(deal.open_cards.len(), 0);
+            assert!(deal.public_hole_cards.is_empty());
+        }
+    }
+
+    #[test]
+    fn short_deck_removes_low_cards() {
+        let deals = started_deals_for(GameId::SHORT_DECK_HOLD_EM);
+        assert_eq!(deals.len(), 2);
+        for deal in deals {
+            assert_eq!(deal.my_cards.len(), 2);
+            assert!(
+                deal.my_cards
+                    .iter()
+                    .all(|card| crate::hand_evaluator::card_rank(*card) >= 6)
+            );
+        }
+    }
+
+    #[test]
+    fn holdem_room_allows_two_to_eight_players() {
+        let handler = HoldemGameHandler::default();
         let mut room = RoomService::default();
         for session_id in 1..=8 {
             let dispatch = room.handle_common_request(
@@ -749,28 +856,26 @@ mod tests {
     #[test]
     fn auto_strategy_maps_to_check_fold_or_check_call() {
         assert_eq!(
-            TexasHoldEmGameHandler::auto_payload_for(TexasHoldEmAutoStrategy::CHECK_FOLD, 0).action,
+            HoldemGameHandler::auto_payload_for(TexasHoldEmAutoStrategy::CHECK_FOLD, 0).action,
             TexasHoldEmAction::CHECK
         );
         assert_eq!(
-            TexasHoldEmGameHandler::auto_payload_for(TexasHoldEmAutoStrategy::CHECK_FOLD, 10)
-                .action,
+            HoldemGameHandler::auto_payload_for(TexasHoldEmAutoStrategy::CHECK_FOLD, 10).action,
             TexasHoldEmAction::FOLD
         );
         assert_eq!(
-            TexasHoldEmGameHandler::auto_payload_for(TexasHoldEmAutoStrategy::CHECK_CALL, 0).action,
+            HoldemGameHandler::auto_payload_for(TexasHoldEmAutoStrategy::CHECK_CALL, 0).action,
             TexasHoldEmAction::CHECK
         );
         assert_eq!(
-            TexasHoldEmGameHandler::auto_payload_for(TexasHoldEmAutoStrategy::CHECK_CALL, 10)
-                .action,
+            HoldemGameHandler::auto_payload_for(TexasHoldEmAutoStrategy::CHECK_CALL, 10).action,
             TexasHoldEmAction::CALL
         );
     }
 
     #[test]
     fn auto_strategy_response_is_private_to_requester() {
-        let mut handler = TexasHoldEmGameHandler::default();
+        let mut handler = HoldemGameHandler::default();
         let mut room = RoomService::default();
         for session_id in 1..=2 {
             room.handle_common_request(

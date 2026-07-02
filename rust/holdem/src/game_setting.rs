@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use share_type_public::{GameParam, GameParamRange};
 use ws_common::GameSettings;
 
-pub fn build_texas_hold_em_settings() -> (GameSettings, HashMap<String, GameParam>) {
+pub fn build_holdem_settings() -> (GameSettings, HashMap<String, GameParam>) {
     let params: HashMap<String, GameParam> = [
         (
             "initial_chips".into(),

@@ -1,6 +1,6 @@
 use std::{process, time::Duration};
 
-use texas_hold_em::game::TexasHoldEmGameHandler;
+use holdem::game::HoldemGameHandler;
 use ws_common::run_game_server_with_cli;
 
 #[tokio::main]
@@ -13,9 +13,9 @@ async fn main() {
 
 async fn run() -> anyhow::Result<()> {
     run_game_server_with_cli(
-        "texas_hold_em",
+        "holdem",
         Duration::from_secs(120),
-        TexasHoldEmGameHandler::default(),
+        HoldemGameHandler::default(),
     )
     .await
 }

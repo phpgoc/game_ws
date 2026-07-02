@@ -7,11 +7,15 @@ use rand::seq::SliceRandom;
 use share_type_public::TexasHoldEmPhase;
 use ws_common::game_state::{CommonGameState, GameState};
 
-use crate::hand_evaluator::{EvaluatedHand, evaluate_best};
+use crate::{
+    hand_evaluator::{EvaluatedHand, evaluate_best, evaluate_omaha},
+    poker_variant::{PokerHandRule, PokerVariant, STANDARD_TEXAS},
+};
 
 #[derive(Debug)]
-pub struct TexasHoldEmGameState {
+pub struct HoldemGameState {
     pub base: Arc<Mutex<CommonGameState>>,
+    pub variant: PokerVariant,
     pub phase: TexasHoldEmPhase,
     pub deck: Vec<i32>,
     pub public_cards: Vec<i32>,
@@ -33,9 +37,9 @@ pub struct TexasHoldEmGameState {
     pub big_blind: i32,
 }
 
-pub type TexasHoldEmStateHandle = Arc<Mutex<TexasHoldEmGameState>>;
+pub type HoldemStateHandle = Arc<Mutex<HoldemGameState>>;
 
-impl TexasHoldEmGameState {
+impl HoldemGameState {
     pub fn active_not_folded_positions(&self) -> Vec<usize> {
         self.active_positions()
             .into_iter()
@@ -84,10 +88,12 @@ impl TexasHoldEmGameState {
     ) -> Result<(), &'static str> {
         let positions = self.active_positions();
         if !(2..=8).contains(&positions.len()) {
-            return Err("Texas Hold'em requires 2-8 players");
+            return Err("Holdem requires 2-8 players");
         }
         self.phase = TexasHoldEmPhase::PreFlop;
-        self.deck = (1..=52).collect();
+        self.deck = (1..=52)
+            .filter(|card| crate::hand_evaluator::card_rank(*card) >= self.variant.min_card)
+            .collect();
         self.deck.shuffle(&mut rand::rng());
         self.public_cards.clear();
         self.hands.clear();
@@ -113,9 +119,11 @@ impl TexasHoldEmGameState {
         for position in &positions {
             self.chips.insert(*position, initial_chips);
             self.round_bets.insert(*position, 0);
-            let first = self.deck.pop().ok_or("deck exhausted")?;
-            let second = self.deck.pop().ok_or("deck exhausted")?;
-            self.hands.insert(*position, vec![first, second]);
+            let mut cards = Vec::with_capacity(self.variant.hole_cards);
+            for _ in 0..self.variant.hole_cards {
+                cards.push(self.deck.pop().ok_or("deck exhausted")?);
+            }
+            self.hands.insert(*position, cards);
         }
 
         self.commit(self.small_blind_position, small_blind);
@@ -127,14 +135,28 @@ impl TexasHoldEmGameState {
     }
 
     pub fn evaluated_hand(&self, position: usize) -> Option<EvaluatedHand> {
-        let mut cards = self.hands.get(&position)?.clone();
-        cards.extend(self.public_cards.iter().copied());
-        evaluate_best(&cards)
+        let hole_cards = self.hands.get(&position)?;
+        match self.variant.hand_rule {
+            PokerHandRule::BestFiveAny => {
+                let mut cards = hole_cards.clone();
+                cards.extend(self.public_cards.iter().copied());
+                evaluate_best(&cards)
+            }
+            PokerHandRule::OmahaTwoHoleThreeBoard => evaluate_omaha(hole_cards, &self.public_cards),
+        }
     }
 
     pub fn from_common(base: Arc<Mutex<CommonGameState>>) -> Self {
+        Self::from_common_with_variant(base, STANDARD_TEXAS)
+    }
+
+    pub fn from_common_with_variant(
+        base: Arc<Mutex<CommonGameState>>,
+        variant: PokerVariant,
+    ) -> Self {
         Self {
             base,
+            variant,
             phase: TexasHoldEmPhase::Start,
             deck: Vec::new(),
             public_cards: Vec::new(),
@@ -243,7 +265,7 @@ impl TexasHoldEmGameState {
     }
 }
 
-impl GameState for TexasHoldEmGameState {
+impl GameState for HoldemGameState {
     fn can_accept_players(&self) -> bool {
         false
     }
