@@ -104,13 +104,6 @@ pub struct WsTexasHoldEmPublicCardsEvent {
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsTexasHoldEmPublicHoleCards {
-    pub position: i32,
-    pub cards: Vec<i32>,
-}
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsTexasHoldEmSettlementEvent {
     pub winners: Vec<i32>,
     pub pot: i32,

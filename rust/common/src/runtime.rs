@@ -43,10 +43,6 @@ pub trait GameHandler: Send + 'static {
 
     fn build_room_settings(&self) -> SettingsBuilderResult;
 
-    fn accepts_game_id(&self, game_id: share_type_public::GameId) -> bool {
-        game_id == self.game_id()
-    }
-
     fn game_id(&self) -> share_type_public::GameId;
     fn handle_game_request(
         &mut self,
