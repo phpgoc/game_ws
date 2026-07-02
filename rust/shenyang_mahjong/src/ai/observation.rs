@@ -38,7 +38,11 @@ pub fn build_public_table(state: &ShenyangMahjongLoopState) -> AiPublicTable {
                 position,
                 is_ai: state.is_ai_position(position),
                 is_away: state.is_away(position),
-                hand_count: state.hands.get(&position).map(|hand| hand.len()).unwrap_or(0),
+                hand_count: state
+                    .hands
+                    .get(&position)
+                    .map(|hand| hand.len())
+                    .unwrap_or(0),
                 discards: state.discards.get(&position).cloned().unwrap_or_default(),
                 melds: state.melds.get(&position).cloned().unwrap_or_default(),
             },

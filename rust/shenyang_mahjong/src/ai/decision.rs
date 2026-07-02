@@ -186,7 +186,11 @@ fn estimate_pressure_for_tile(table: &AiPublicTable, position: usize, tile: i32)
 
 fn best_chi_option(hand: &[i32], tile: i32) -> Option<Vec<i32>> {
     let mut best: Option<(f64, Vec<i32>)> = None;
-    for consume_tiles in [[tile - 2, tile - 1], [tile - 1, tile + 1], [tile + 1, tile + 2]] {
+    for consume_tiles in [
+        [tile - 2, tile - 1],
+        [tile - 1, tile + 1],
+        [tile + 1, tile + 2],
+    ] {
         if !can_chi(hand, tile, &consume_tiles) {
             continue;
         }
@@ -277,7 +281,10 @@ fn next_position_after(current: usize, table: &AiPublicTable) -> usize {
     if positions.is_empty() {
         return current;
     }
-    let idx = positions.iter().position(|pos| *pos == current).unwrap_or(0);
+    let idx = positions
+        .iter()
+        .position(|pos| *pos == current)
+        .unwrap_or(0);
     positions[(idx + 1) % positions.len()]
 }
 

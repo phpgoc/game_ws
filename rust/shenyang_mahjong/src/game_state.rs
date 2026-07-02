@@ -111,6 +111,11 @@ impl ShenyangMahjongLoopState {
         self.base.lock().unwrap().is_ai_position(position)
     }
 
+    pub fn is_ai_controlled_position(&self, position: usize) -> bool {
+        let state = self.base.lock().unwrap();
+        state.is_ai_position(position) || state.is_away(position)
+    }
+
     pub fn is_away(&self, position: usize) -> bool {
         self.base.lock().unwrap().is_away(position)
     }

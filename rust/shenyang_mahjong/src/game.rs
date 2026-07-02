@@ -133,7 +133,11 @@ pub(crate) fn build_table_snapshot_event(
         snapshots.push(WsShenyangMahjongPublicPlayerSnapshot {
             position: position as i32,
             name,
-            hand_count: state.hands.get(&position).map(|hand| hand.len()).unwrap_or(0) as i32,
+            hand_count: state
+                .hands
+                .get(&position)
+                .map(|hand| hand.len())
+                .unwrap_or(0) as i32,
             discards: state.discards.get(&position).cloned().unwrap_or_default(),
             melds: state.melds.get(&position).cloned().unwrap_or_default(),
         });
@@ -151,8 +155,10 @@ pub(crate) fn build_table_snapshot_event(
         dealer_position: state.dealer_position as i32,
         wall_count: state.wall_count() as i32,
         turn_countdown: state.turn_countdown() as i32,
-        claim_window: state.claim_window.as_ref().map(|window| {
-            WsShenyangMahjongClaimWindowEvent {
+        claim_window: state
+            .claim_window
+            .as_ref()
+            .map(|window| WsShenyangMahjongClaimWindowEvent {
                 tile: window.tile,
                 from_position: window.from_position as i32,
                 eligible_positions: window
@@ -161,8 +167,7 @@ pub(crate) fn build_table_snapshot_event(
                     .map(|position| *position as i32)
                     .collect(),
                 seconds: state.turn_countdown() as i32,
-            }
-        }),
+            }),
     }
 }
 
@@ -244,15 +249,16 @@ pub(crate) fn push_direct_event<T: serde::Serialize>(
 }
 
 pub(crate) fn push_draw_events(
-    room_service: &RoomService,
-    room_key: &str,
+    _room_service: &RoomService,
+    _room_key: &str,
     state: &ShenyangMahjongLoopState,
     dispatch: &mut Dispatch,
     position: usize,
     tile: i32,
 ) {
     let name = state.player_name(position);
-    for (session_id, _, member_position, _) in room_service.get_room_members(room_key) {
+    let players = state.players_snapshot();
+    for (member_position, (session_id, _)) in players {
         let tiles = if member_position == position {
             vec![tile]
         } else {
@@ -297,12 +303,13 @@ pub(crate) fn push_phase_change(
 }
 
 pub(crate) fn push_private_deal_events(
-    room_service: &RoomService,
-    room_key: &str,
+    _room_service: &RoomService,
+    _room_key: &str,
     state: &ShenyangMahjongLoopState,
     dispatch: &mut Dispatch,
 ) {
-    for (session_id, _, position, _) in room_service.get_room_members(room_key) {
+    let players = state.players_snapshot();
+    for (position, (session_id, _)) in players {
         let my_tiles = state.hands.get(&position).cloned().unwrap_or_default();
         push_direct_event(
             dispatch,
@@ -326,7 +333,7 @@ pub(crate) fn push_room_event<T: serde::Serialize>(
     code: i32,
     payload: T,
 ) {
-    room_service.send_all(room_key, code, payload, dispatch);
+    room_service.send_all_connected(room_key, code, payload, dispatch);
 }
 
 pub(crate) fn perform_discard(
@@ -378,10 +385,7 @@ pub(crate) fn perform_discard(
             WsShenyangMahjongClaimWindowEvent {
                 tile,
                 from_position: position as i32,
-                eligible_positions: eligible_positions
-                    .iter()
-                    .map(|item| *item as i32)
-                    .collect(),
+                eligible_positions: eligible_positions.iter().map(|item| *item as i32).collect(),
                 seconds: current_claim_time(configs) as i32,
             },
         );

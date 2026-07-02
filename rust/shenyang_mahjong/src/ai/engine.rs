@@ -26,7 +26,7 @@ pub fn maybe_play_ai_turn(
         return false;
     }
     let position = state.current_position;
-    if !state.is_ai_position(position) {
+    if !state.is_ai_controlled_position(position) {
         return false;
     }
 
@@ -43,7 +43,15 @@ pub fn maybe_play_ai_turn(
 
     let table = build_public_table(state);
     if let Some(tile) = choose_discard_from_view(&hand, &table, position) {
-        return perform_discard(room_service, room_key, state, configs, dispatch, position, tile);
+        return perform_discard(
+            room_service,
+            room_key,
+            state,
+            configs,
+            dispatch,
+            position,
+            tile,
+        );
     }
     false
 }
@@ -65,7 +73,9 @@ pub fn maybe_resolve_ai_claims(
 
     let mut changed = false;
     for position in claim_window.eligible_positions {
-        if claim_window.responses.contains_key(&position) || !state.is_ai_position(position) {
+        if claim_window.responses.contains_key(&position)
+            || !state.is_ai_controlled_position(position)
+        {
             continue;
         }
         let Some(hand) = self_hand(state, position) else {
@@ -104,3 +114,91 @@ pub fn maybe_resolve_ai_claims(
     false
 }
 
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use share_type_public::games::shenyang_mahjong::{ShenyangMahjongPhase, WsShenyangMahjongMeld};
+    use ws_common::game_state::CommonGameState;
+
+    use super::*;
+    use crate::game_state::ClaimWindowState;
+
+    fn playable_state() -> ShenyangMahjongLoopState {
+        let base = Arc::new(Mutex::new(CommonGameState::default()));
+        {
+            let mut common = base.lock().unwrap();
+            for position in 0..4 {
+                common.add_player(position, position as u64 + 1, &format!("P{}", position));
+            }
+        }
+        let mut state = ShenyangMahjongLoopState::new(base);
+        state.phase = ShenyangMahjongPhase::Play;
+        state.current_position = 0;
+        state.dealer_position = 0;
+        state
+            .hands
+            .insert(0, vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35]);
+        for position in 0..4 {
+            state.discards.insert(position, Vec::new());
+            state
+                .melds
+                .insert(position, Vec::<WsShenyangMahjongMeld>::new());
+        }
+        state.wall = vec![37, 36, 35, 34, 33, 32];
+        state
+    }
+
+    #[test]
+    fn away_position_uses_ai_discard() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_away(0);
+        let mut dispatch = Dispatch::default();
+
+        assert!(maybe_play_ai_turn(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::new(),
+            &mut dispatch,
+        ));
+
+        assert_eq!(state.hands.get(&0).unwrap().len(), 13);
+        assert_eq!(state.discards.get(&0).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn away_position_uses_ai_claim_response() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_away(0);
+        state.current_position = 1;
+        state
+            .hands
+            .insert(0, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35]);
+        state.discards.insert(1, vec![35]);
+        state.claim_window = Some(ClaimWindowState {
+            tile: 35,
+            from_position: 1,
+            eligible_positions: vec![0],
+            responses: HashMap::new(),
+        });
+        let mut dispatch = Dispatch::default();
+
+        assert!(maybe_resolve_ai_claims(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::new(),
+            &mut dispatch,
+        ));
+
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert_eq!(
+            state
+                .settlement
+                .as_ref()
+                .map(|settlement| settlement.winner_positions.clone()),
+            Some(vec![0]),
+        );
+    }
+}
