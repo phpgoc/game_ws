@@ -17,6 +17,7 @@ pub enum ClaimResponse {
     Pass,
     Chi { consume_tiles: Vec<i32> },
     Peng,
+    Gang,
     Hu,
 }
 
@@ -74,6 +75,7 @@ pub fn claim_action_to_play_action(response: &ClaimResponse) -> ShenyangMahjongA
         ClaimResponse::Pass => ShenyangMahjongAction::PASS,
         ClaimResponse::Chi { .. } => ShenyangMahjongAction::CHI,
         ClaimResponse::Peng => ShenyangMahjongAction::PENG,
+        ClaimResponse::Gang => ShenyangMahjongAction::GANG,
         ClaimResponse::Hu => ShenyangMahjongAction::HU,
     }
 }

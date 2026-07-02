@@ -19,6 +19,7 @@ pub enum ShenyangMahjongAction {
     PENG = 4,
     HU = 5,
     PASS = 6,
+    GANG = 7,
 }
 
 #[typeshare]
@@ -28,6 +29,7 @@ pub enum ShenyangMahjongAction {
 pub enum ShenyangMahjongMeldKind {
     CHI = 1,
     PENG = 2,
+    GANG = 3,
 }
 
 #[typeshare]
@@ -41,11 +43,23 @@ pub enum ShenyangMahjongPhase {
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsShenyangMahjongClaimOption {
+    pub position: i32,
+    pub can_hu: bool,
+    pub can_peng: bool,
+    pub can_gang: bool,
+    pub chi_options: Vec<Vec<i32>>,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsShenyangMahjongClaimWindowEvent {
     pub tile: i32,
     pub from_position: i32,
     pub eligible_positions: Vec<i32>,
     pub seconds: i32,
+    #[serde(default)]
+    pub options: Vec<WsShenyangMahjongClaimOption>,
 }
 
 #[typeshare]

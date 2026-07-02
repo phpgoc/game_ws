@@ -60,6 +60,10 @@ pub fn can_peng(hand: &[i32], target_tile: i32) -> bool {
     hand.iter().filter(|&&tile| tile == target_tile).count() >= 2
 }
 
+pub fn can_gang(hand: &[i32], target_tile: i32) -> bool {
+    hand.iter().filter(|&&tile| tile == target_tile).count() >= 3
+}
+
 pub fn is_standard_win(tiles: &[i32]) -> bool {
     if tiles.len() % 3 != 2 {
         return false;
@@ -136,7 +140,7 @@ pub fn tiles_in_hand(hand: &[i32], tiles: &[i32]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{can_chi, can_peng, is_standard_win};
+    use super::{can_chi, can_gang, can_peng, is_standard_win};
 
     #[test]
     fn chi_requires_real_sequence() {
@@ -151,6 +155,13 @@ mod tests {
         let hand = vec![31, 31, 32, 33];
         assert!(can_peng(&hand, 31));
         assert!(!can_peng(&hand, 32));
+    }
+
+    #[test]
+    fn gang_requires_three_copies_for_discard_claim() {
+        let hand = vec![31, 31, 31, 32, 33];
+        assert!(can_gang(&hand, 31));
+        assert!(!can_gang(&hand, 32));
     }
 
     #[test]
