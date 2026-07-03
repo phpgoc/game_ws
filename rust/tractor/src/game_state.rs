@@ -57,6 +57,10 @@ pub fn adjusted_bottom_card_count(
         })
 }
 
+fn base_card(card: i32) -> i32 {
+    ((card - 1) % 100) + 1
+}
+
 pub fn build_tractor_deck(deck_count: usize) -> Vec<i32> {
     let deck_count = deck_count.clamp(2, 4);
     let mut cards = Vec::with_capacity(deck_count * 54);
@@ -69,35 +73,13 @@ pub fn build_tractor_deck(deck_count: usize) -> Vec<i32> {
     cards
 }
 
-pub fn min_bottom_card_count(deck_count: usize) -> usize {
-    match deck_count {
-        3 => 10,
-        2 | 4 => 8,
-        _ => 8,
+fn card_matches_play_suit(card: i32, suit: Option<i32>, rules: &TractorRules) -> bool {
+    match suit {
+        Some(lead_suit) => {
+            !is_trump_card(card, rules.target_rank) && card_suit(card) == Some(lead_suit)
+        }
+        None => is_trump_card(card, rules.target_rank),
     }
-}
-
-fn remove_cards_from_hand(hand: &mut Vec<i32>, cards: &[i32]) -> Result<(), &'static str> {
-    let mut indexes = Vec::with_capacity(cards.len());
-    for card in cards {
-        let Some(idx) = hand
-            .iter()
-            .enumerate()
-            .find_map(|(idx, current)| (!indexes.contains(&idx) && current == card).then_some(idx))
-        else {
-            return Err("card not in hand");
-        };
-        indexes.push(idx);
-    }
-    indexes.sort_unstable_by(|a, b| b.cmp(a));
-    for idx in indexes {
-        hand.remove(idx);
-    }
-    Ok(())
-}
-
-fn base_card(card: i32) -> i32 {
-    ((card - 1) % 100) + 1
 }
 
 fn card_rank(card: i32) -> i32 {
@@ -128,22 +110,24 @@ fn is_trump_card(card: i32, target_rank: TractorRank) -> bool {
     card_suit(card).is_none() || card_rank(card) == target_rank as i32
 }
 
-fn tractor_card_value(card: i32, rules: &TractorRules, lead_suit: Option<i32>) -> i32 {
-    let rank = card_rank(card);
-    if is_trump_card(card, rules.target_rank) {
-        return match card_suit(card) {
-            None => 1_000 + rank,
-            Some(_) => 900 + rank,
-        };
+pub fn min_bottom_card_count(deck_count: usize) -> usize {
+    match deck_count {
+        3 => 10,
+        2 | 4 => 8,
+        _ => 8,
     }
-    if card_suit(card) == lead_suit {
-        return 500 + rank;
-    }
-    rank
 }
 
-fn played_score(cards: &[i32]) -> i32 {
-    cards.iter().map(|card| card_score(*card)).sum()
+fn must_follow_play_suit(
+    hand: &[i32],
+    suit: Option<i32>,
+    count: usize,
+    rules: &TractorRules,
+) -> bool {
+    hand.iter()
+        .filter(|card| card_matches_play_suit(**card, suit, rules))
+        .count()
+        >= count
 }
 
 fn play_rank(cards: &[i32]) -> Option<i32> {
@@ -165,8 +149,49 @@ fn play_suit(cards: &[i32], rules: &TractorRules) -> Option<i32> {
     }
 }
 
+fn played_score(cards: &[i32]) -> i32 {
+    cards.iter().map(|card| card_score(*card)).sum()
+}
+
+fn remove_cards_from_hand(hand: &mut Vec<i32>, cards: &[i32]) -> Result<(), &'static str> {
+    let mut indexes = Vec::with_capacity(cards.len());
+    for card in cards {
+        let Some(idx) = hand
+            .iter()
+            .enumerate()
+            .find_map(|(idx, current)| (!indexes.contains(&idx) && current == card).then_some(idx))
+        else {
+            return Err("card not in hand");
+        };
+        indexes.push(idx);
+    }
+    indexes.sort_unstable_by(|a, b| b.cmp(a));
+    for idx in indexes {
+        hand.remove(idx);
+    }
+    Ok(())
+}
+
 fn same_play_shape(cards: &[i32]) -> bool {
     !cards.is_empty() && play_rank(cards).is_some()
+}
+
+fn team_positions(position: usize) -> [usize; 2] {
+    [position, (position + 2) % 4]
+}
+
+fn tractor_card_value(card: i32, rules: &TractorRules, lead_suit: Option<i32>) -> i32 {
+    let rank = card_rank(card);
+    if is_trump_card(card, rules.target_rank) {
+        return match card_suit(card) {
+            None => 1_000 + rank,
+            Some(_) => 900 + rank,
+        };
+    }
+    if card_suit(card) == lead_suit {
+        return 500 + rank;
+    }
+    rank
 }
 
 fn trick_winner(trick: &[WsTractorPlayedCards], rules: &TractorRules) -> Option<usize> {
@@ -187,36 +212,24 @@ fn trick_winner(trick: &[WsTractorPlayedCards], rules: &TractorRules) -> Option<
         .map(|(position, _)| position)
 }
 
-fn card_matches_play_suit(card: i32, suit: Option<i32>, rules: &TractorRules) -> bool {
-    match suit {
-        Some(lead_suit) => {
-            !is_trump_card(card, rules.target_rank) && card_suit(card) == Some(lead_suit)
-        }
-        None => is_trump_card(card, rules.target_rank),
-    }
-}
-
-fn must_follow_play_suit(
-    hand: &[i32],
-    suit: Option<i32>,
-    count: usize,
-    rules: &TractorRules,
-) -> bool {
-    hand.iter()
-        .filter(|card| card_matches_play_suit(**card, suit, rules))
-        .count()
-        >= count
-}
-
-fn team_positions(position: usize) -> [usize; 2] {
-    [position, (position + 2) % 4]
-}
-
 impl TractorGameState {
     pub fn active_positions(&self) -> Vec<usize> {
         let mut positions: Vec<_> = self.base.lock().unwrap().players.keys().copied().collect();
         positions.sort_unstable();
         positions
+    }
+
+    pub fn attacking_score(&self) -> i32 {
+        let defenders = team_positions((self.dealer_position + 1) % 4);
+        defenders
+            .iter()
+            .map(|position| {
+                self.collected_scores
+                    .get(position)
+                    .copied()
+                    .unwrap_or_default()
+            })
+            .sum()
     }
 
     pub fn deal_new_round(&mut self, mut rules: TractorRules) -> Result<(), &'static str> {
@@ -296,38 +309,6 @@ impl TractorGameState {
 
     pub fn is_finished(&self) -> bool {
         !self.hands.is_empty() && self.hands.values().all(Vec::is_empty)
-    }
-
-    pub fn attacking_score(&self) -> i32 {
-        let defenders = team_positions((self.dealer_position + 1) % 4);
-        defenders
-            .iter()
-            .map(|position| {
-                self.collected_scores
-                    .get(position)
-                    .copied()
-                    .unwrap_or_default()
-            })
-            .sum()
-    }
-
-    pub fn settlement_score(&self) -> i32 {
-        let attacking_score = self.attacking_score();
-        if attacking_score >= self.rules.blood_start_score {
-            attacking_score
-        } else {
-            (self.rules.blood_start_score - attacking_score).max(1)
-        }
-    }
-
-    pub fn winner_positions(&self) -> Vec<i32> {
-        let attacking_score = self.attacking_score();
-        let winners = if attacking_score >= self.rules.blood_start_score {
-            team_positions((self.dealer_position + 1) % 4)
-        } else {
-            team_positions(self.dealer_position)
-        };
-        winners.iter().map(|position| *position as i32).collect()
     }
 
     pub fn next_position(&self, from: usize) -> Option<usize> {
@@ -413,6 +394,15 @@ impl TractorGameState {
         self.base.lock().unwrap().turn_countdown = countdown;
     }
 
+    pub fn settlement_score(&self) -> i32 {
+        let attacking_score = self.attacking_score();
+        if attacking_score >= self.rules.blood_start_score {
+            attacking_score
+        } else {
+            (self.rules.blood_start_score - attacking_score).max(1)
+        }
+    }
+
     pub fn snapshot(&self) -> WsTractorTableSnapshotEvent {
         WsTractorTableSnapshotEvent {
             phase: self.phase,
@@ -429,6 +419,16 @@ impl TractorGameState {
             current_trick: self.current_trick.clone(),
             turn_countdown: self.base.lock().unwrap().turn_countdown as i32,
         }
+    }
+
+    pub fn winner_positions(&self) -> Vec<i32> {
+        let attacking_score = self.attacking_score();
+        let winners = if attacking_score >= self.rules.blood_start_score {
+            team_positions((self.dealer_position + 1) % 4)
+        } else {
+            team_positions(self.dealer_position)
+        };
+        winners.iter().map(|position| *position as i32).collect()
     }
 }
 
@@ -454,26 +454,6 @@ impl TractorRules {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn test_state() -> TractorGameState {
-        let mut common = CommonGameState::new();
-        for position in 0..4 {
-            common.add_player(position, position as u64 + 1, &format!("u{position}"));
-        }
-        let mut state = TractorGameState::from_common(Arc::new(Mutex::new(common)));
-        state.phase = TractorPhase::Play;
-        state.rules = TractorRules {
-            blood_enabled: true,
-            blood_score_per_unit: 40,
-            blood_start_score: 80,
-            bottom_card_count: 8,
-            deck_count: 2,
-            target_rank: TractorRank::A,
-        };
-        state.dealer_position = 0;
-        state.current_position = 0;
-        state
-    }
 
     #[test]
     fn adjusted_bottom_keeps_all_hands_equal() {
@@ -502,14 +482,6 @@ mod tests {
     }
 
     #[test]
-    fn three_decks_uses_at_least_ten_bottom_cards() {
-        let total = build_tractor_deck(3).len();
-        let bottom = adjusted_bottom_card_count(total, 4, 8, min_bottom_card_count(3)).unwrap();
-        assert_eq!(bottom, 10);
-        assert_eq!((total - bottom) % 4, 0);
-    }
-
-    #[test]
     fn play_rejects_wrong_card_count_and_must_follow_suit() {
         let mut state = test_state();
         state.hands.insert(0, vec![1, 101]);
@@ -523,6 +495,34 @@ mod tests {
         state
             .play_cards(1, "u1".to_owned(), vec![2, 102])
             .expect("follow lead suit pair");
+    }
+
+    fn test_state() -> TractorGameState {
+        let mut common = CommonGameState::new();
+        for position in 0..4 {
+            common.add_player(position, position as u64 + 1, &format!("u{position}"));
+        }
+        let mut state = TractorGameState::from_common(Arc::new(Mutex::new(common)));
+        state.phase = TractorPhase::Play;
+        state.rules = TractorRules {
+            blood_enabled: true,
+            blood_score_per_unit: 40,
+            blood_start_score: 80,
+            bottom_card_count: 8,
+            deck_count: 2,
+            target_rank: TractorRank::A,
+        };
+        state.dealer_position = 0;
+        state.current_position = 0;
+        state
+    }
+
+    #[test]
+    fn three_decks_uses_at_least_ten_bottom_cards() {
+        let total = build_tractor_deck(3).len();
+        let bottom = adjusted_bottom_card_count(total, 4, 8, min_bottom_card_count(3)).unwrap();
+        assert_eq!(bottom, 10);
+        assert_eq!((total - bottom) % 4, 0);
     }
 
     #[test]

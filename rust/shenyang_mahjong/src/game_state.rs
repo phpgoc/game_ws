@@ -349,53 +349,6 @@ impl ShenyangMahjongLoopState {
 mod tests {
     use super::*;
 
-    fn state_with_players() -> ShenyangMahjongLoopState {
-        let base = Arc::new(Mutex::new(CommonGameState::default()));
-        {
-            let mut common = base.lock().unwrap();
-            for position in 0..4 {
-                common.add_player(position, position as u64 + 1, &format!("P{}", position));
-            }
-        }
-        ShenyangMahjongLoopState::new(base)
-    }
-
-    #[test]
-    fn redeal_keeps_dealer_after_dealer_win() {
-        let mut state = state_with_players();
-        state.dealer_position = 0;
-        state.enter_settlement(vec![0], None, Some(35), true);
-
-        state.redeal();
-
-        assert_eq!(state.dealer_position, 0);
-        assert_eq!(state.current_position, 0);
-    }
-
-    #[test]
-    fn redeal_keeps_dealer_after_draw() {
-        let mut state = state_with_players();
-        state.dealer_position = 0;
-        state.enter_settlement(Vec::new(), None, None, false);
-
-        state.redeal();
-
-        assert_eq!(state.dealer_position, 0);
-        assert_eq!(state.current_position, 0);
-    }
-
-    #[test]
-    fn redeal_advances_dealer_after_non_dealer_win() {
-        let mut state = state_with_players();
-        state.dealer_position = 0;
-        state.enter_settlement(vec![2], Some(1), Some(35), false);
-
-        state.redeal();
-
-        assert_eq!(state.dealer_position, 1);
-        assert_eq!(state.current_position, 1);
-    }
-
     #[test]
     fn away_state_persists_through_new_round_deal() {
         let mut state = state_with_players();
@@ -425,5 +378,52 @@ mod tests {
         assert!(state.is_disconnected(2));
         assert!(state.is_ai_controlled_position(2));
         assert!(!state.is_ai_position(2));
+    }
+
+    #[test]
+    fn redeal_advances_dealer_after_non_dealer_win() {
+        let mut state = state_with_players();
+        state.dealer_position = 0;
+        state.enter_settlement(vec![2], Some(1), Some(35), false);
+
+        state.redeal();
+
+        assert_eq!(state.dealer_position, 1);
+        assert_eq!(state.current_position, 1);
+    }
+
+    #[test]
+    fn redeal_keeps_dealer_after_dealer_win() {
+        let mut state = state_with_players();
+        state.dealer_position = 0;
+        state.enter_settlement(vec![0], None, Some(35), true);
+
+        state.redeal();
+
+        assert_eq!(state.dealer_position, 0);
+        assert_eq!(state.current_position, 0);
+    }
+
+    #[test]
+    fn redeal_keeps_dealer_after_draw() {
+        let mut state = state_with_players();
+        state.dealer_position = 0;
+        state.enter_settlement(Vec::new(), None, None, false);
+
+        state.redeal();
+
+        assert_eq!(state.dealer_position, 0);
+        assert_eq!(state.current_position, 0);
+    }
+
+    fn state_with_players() -> ShenyangMahjongLoopState {
+        let base = Arc::new(Mutex::new(CommonGameState::default()));
+        {
+            let mut common = base.lock().unwrap();
+            for position in 0..4 {
+                common.add_player(position, position as u64 + 1, &format!("P{}", position));
+            }
+        }
+        ShenyangMahjongLoopState::new(base)
     }
 }

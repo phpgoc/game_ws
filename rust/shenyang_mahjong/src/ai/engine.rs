@@ -12,6 +12,19 @@ use crate::rules::win_rule_from_configs;
 use super::decision::{AiClaimChoice, choose_claim_from_view, choose_discard_from_view};
 use super::observation::build_public_table;
 
+fn choose_self_gang_tile(
+    state: &ShenyangMahjongLoopState,
+    position: usize,
+    hand: &[i32],
+) -> Option<i32> {
+    let mut tiles = hand.to_vec();
+    tiles.sort_unstable();
+    tiles.dedup();
+    tiles
+        .into_iter()
+        .find(|tile| can_self_gang(state, position, *tile))
+}
+
 pub fn maybe_play_ai_turn(
     room_service: &RoomService,
     room_key: &str,
@@ -142,19 +155,6 @@ fn self_hand(state: &ShenyangMahjongLoopState, position: usize) -> Option<Vec<i3
     state.hands.get(&position).cloned()
 }
 
-fn choose_self_gang_tile(
-    state: &ShenyangMahjongLoopState,
-    position: usize,
-    hand: &[i32],
-) -> Option<i32> {
-    let mut tiles = hand.to_vec();
-    tiles.sort_unstable();
-    tiles.dedup();
-    tiles
-        .into_iter()
-        .find(|tile| can_self_gang(state, position, *tile))
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, Mutex};
@@ -164,6 +164,28 @@ mod tests {
 
     use super::*;
     use crate::game_state::ClaimWindowState;
+
+    #[test]
+    fn away_position_does_not_self_draw_without_drawn_tile() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_away(0);
+        state
+            .hands
+            .insert(0, vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35, 35]);
+        let mut dispatch = Dispatch::default();
+
+        assert!(!maybe_play_ai_turn(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::new(),
+            &mut dispatch,
+        ));
+
+        assert_eq!(state.phase, ShenyangMahjongPhase::Play);
+        assert!(state.discards.get(&0).unwrap().is_empty());
+        assert!(state.settlement.is_none());
+    }
 
     #[test]
     fn away_position_uses_ai_claim_response() {
@@ -199,6 +221,24 @@ mod tests {
                 .map(|settlement| settlement.winner_positions.clone()),
             Some(vec![0]),
         );
+    }
+
+    #[test]
+    fn away_position_uses_ai_discard() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_away(0);
+        let mut dispatch = Dispatch::default();
+
+        assert!(maybe_play_ai_turn(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::new(),
+            &mut dispatch,
+        ));
+
+        assert_eq!(state.hands.get(&0).unwrap().len(), 13);
+        assert_eq!(state.discards.get(&0).unwrap().len(), 1);
     }
 
     #[test]
@@ -239,42 +279,6 @@ mod tests {
     }
 
     #[test]
-    fn away_position_uses_ai_discard() {
-        let mut state = playable_state();
-        state.base.lock().unwrap().mark_away(0);
-        let mut dispatch = Dispatch::default();
-
-        assert!(maybe_play_ai_turn(
-            &RoomService::default(),
-            "room",
-            &mut state,
-            &HashMap::new(),
-            &mut dispatch,
-        ));
-
-        assert_eq!(state.hands.get(&0).unwrap().len(), 13);
-        assert_eq!(state.discards.get(&0).unwrap().len(), 1);
-    }
-
-    #[test]
-    fn disconnected_position_uses_ai_discard() {
-        let mut state = playable_state();
-        state.base.lock().unwrap().mark_disconnected(0);
-        let mut dispatch = Dispatch::default();
-
-        assert!(maybe_play_ai_turn(
-            &RoomService::default(),
-            "room",
-            &mut state,
-            &HashMap::new(),
-            &mut dispatch,
-        ));
-
-        assert_eq!(state.hands.get(&0).unwrap().len(), 13);
-        assert_eq!(state.discards.get(&0).unwrap().len(), 1);
-    }
-
-    #[test]
     fn away_position_uses_ai_self_draw_for_seven_pairs() {
         let mut state = playable_state();
         state.base.lock().unwrap().mark_away(0);
@@ -304,28 +308,6 @@ mod tests {
     }
 
     #[test]
-    fn away_position_does_not_self_draw_without_drawn_tile() {
-        let mut state = playable_state();
-        state.base.lock().unwrap().mark_away(0);
-        state
-            .hands
-            .insert(0, vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35, 35]);
-        let mut dispatch = Dispatch::default();
-
-        assert!(!maybe_play_ai_turn(
-            &RoomService::default(),
-            "room",
-            &mut state,
-            &HashMap::new(),
-            &mut dispatch,
-        ));
-
-        assert_eq!(state.phase, ShenyangMahjongPhase::Play);
-        assert!(state.discards.get(&0).unwrap().is_empty());
-        assert!(state.settlement.is_none());
-    }
-
-    #[test]
     fn away_position_uses_ai_self_gang_before_discard() {
         let mut state = playable_state();
         state.base.lock().unwrap().mark_away(0);
@@ -352,6 +334,24 @@ mod tests {
             vec![3, 3, 3, 3]
         );
         assert!(state.discards.get(&0).unwrap().is_empty());
+    }
+
+    #[test]
+    fn disconnected_position_uses_ai_discard() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_disconnected(0);
+        let mut dispatch = Dispatch::default();
+
+        assert!(maybe_play_ai_turn(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::new(),
+            &mut dispatch,
+        ));
+
+        assert_eq!(state.hands.get(&0).unwrap().len(), 13);
+        assert_eq!(state.discards.get(&0).unwrap().len(), 1);
     }
 
     fn playable_state() -> ShenyangMahjongLoopState {

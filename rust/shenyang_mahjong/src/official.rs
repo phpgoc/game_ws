@@ -4,26 +4,6 @@ use crate::game_state::{SettlementState, ShenyangMahjongLoopState};
 #[cfg(feature = "official")]
 use crate::rules::is_seven_pairs_win;
 
-#[allow(dead_code)]
-pub(crate) fn winner_score_for_settlement(
-    settlement: &SettlementState,
-    player_count: usize,
-    winner_position: usize,
-) -> i64 {
-    if settlement.winner_positions.is_empty()
-        || !settlement.winner_positions.contains(&winner_position)
-    {
-        return 0;
-    }
-    if settlement.is_self_draw {
-        player_count
-            .saturating_sub(settlement.winner_positions.len())
-            .max(1) as i64
-    } else {
-        1
-    }
-}
-
 #[cfg(feature = "official")]
 fn block_on_official<F>(future: F) -> Option<F::Output>
 where
@@ -107,27 +87,6 @@ pub fn create_match(room_service: &mut RoomService, room_key: &str) {
 pub fn create_match(_room_service: &mut RoomService, _room_key: &str) {}
 
 #[cfg(feature = "official")]
-fn winner_pattern_for_position(
-    state: &ShenyangMahjongLoopState,
-    settlement: &SettlementState,
-    position: usize,
-) -> data::ShenyangMahjongRoundWinPattern {
-    let mut hand_tiles = state.hands.get(&position).cloned().unwrap_or_default();
-    if !settlement.is_self_draw
-        && let Some(tile) = settlement.win_tile
-    {
-        hand_tiles.push(tile);
-        hand_tiles.sort_unstable();
-    }
-    let meld_count = state.melds.get(&position).map(Vec::len).unwrap_or(0);
-    if meld_count == 0 && is_seven_pairs_win(&hand_tiles) {
-        data::ShenyangMahjongRoundWinPattern::SevenPairs
-    } else {
-        data::ShenyangMahjongRoundWinPattern::Standard
-    }
-}
-
-#[cfg(feature = "official")]
 pub fn settle_round(room_service: &RoomService, room_key: &str, state: &ShenyangMahjongLoopState) {
     let Some(settlement) = state.settlement.as_ref() else {
         return;
@@ -181,24 +140,52 @@ pub fn settle_round(
 ) {
 }
 
+#[cfg(feature = "official")]
+fn winner_pattern_for_position(
+    state: &ShenyangMahjongLoopState,
+    settlement: &SettlementState,
+    position: usize,
+) -> data::ShenyangMahjongRoundWinPattern {
+    let mut hand_tiles = state.hands.get(&position).cloned().unwrap_or_default();
+    if !settlement.is_self_draw
+        && let Some(tile) = settlement.win_tile
+    {
+        hand_tiles.push(tile);
+        hand_tiles.sort_unstable();
+    }
+    let meld_count = state.melds.get(&position).map(Vec::len).unwrap_or(0);
+    if meld_count == 0 && is_seven_pairs_win(&hand_tiles) {
+        data::ShenyangMahjongRoundWinPattern::SevenPairs
+    } else {
+        data::ShenyangMahjongRoundWinPattern::Standard
+    }
+}
+
+#[allow(dead_code)]
+pub(crate) fn winner_score_for_settlement(
+    settlement: &SettlementState,
+    player_count: usize,
+    winner_position: usize,
+) -> i64 {
+    if settlement.winner_positions.is_empty()
+        || !settlement.winner_positions.contains(&winner_position)
+    {
+        return 0;
+    }
+    if settlement.is_self_draw {
+        player_count
+            .saturating_sub(settlement.winner_positions.len())
+            .max(1) as i64
+    } else {
+        1
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::game_state::SettlementState;
 
     use super::winner_score_for_settlement;
-
-    #[test]
-    fn self_draw_score_counts_each_loser() {
-        let settlement = SettlementState {
-            winner_positions: vec![2],
-            from_position: None,
-            win_tile: Some(3),
-            is_self_draw: true,
-            is_reverse_win: false,
-        };
-
-        assert_eq!(winner_score_for_settlement(&settlement, 4, 2), 3);
-    }
 
     #[test]
     fn discard_win_scores_one_per_winner() {
@@ -212,5 +199,18 @@ mod tests {
 
         assert_eq!(winner_score_for_settlement(&settlement, 4, 0), 1);
         assert_eq!(winner_score_for_settlement(&settlement, 4, 2), 1);
+    }
+
+    #[test]
+    fn self_draw_score_counts_each_loser() {
+        let settlement = SettlementState {
+            winner_positions: vec![2],
+            from_position: None,
+            win_tile: Some(3),
+            is_self_draw: true,
+            is_reverse_win: false,
+        };
+
+        assert_eq!(winner_score_for_settlement(&settlement, 4, 2), 3);
     }
 }

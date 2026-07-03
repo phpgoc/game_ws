@@ -42,6 +42,14 @@ pub enum ShenyangMahjongPhase {
 }
 
 #[typeshare]
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
+pub enum ShenyangMahjongWinPattern {
+    Standard = 1,
+    SevenPairs = 2,
+}
+
+#[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsShenyangMahjongClaimOption {
     pub position: i32,
@@ -135,25 +143,6 @@ pub struct WsShenyangMahjongScoreChange {
 }
 
 #[typeshare]
-#[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
-pub enum ShenyangMahjongWinPattern {
-    Standard = 1,
-    SevenPairs = 2,
-}
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsShenyangMahjongWinnerDetail {
-    pub position: i32,
-    pub pattern: ShenyangMahjongWinPattern,
-    pub is_self_draw: bool,
-    #[serde(default)]
-    pub is_reverse_win: bool,
-    pub score: i32,
-}
-
-#[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsShenyangMahjongSettlementEvent {
     pub winner_positions: Vec<i32>,
@@ -183,6 +172,17 @@ pub struct WsShenyangMahjongTableSnapshotEvent {
     #[serde(default)]
     pub settlement: Option<WsShenyangMahjongSettlementEvent>,
     pub claim_window: Option<WsShenyangMahjongClaimWindowEvent>,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsShenyangMahjongWinnerDetail {
+    pub position: i32,
+    pub pattern: ShenyangMahjongWinPattern,
+    pub is_self_draw: bool,
+    #[serde(default)]
+    pub is_reverse_win: bool,
+    pub score: i32,
 }
 
 impl Display for ShenyangMahjongPhase {

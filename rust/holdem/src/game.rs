@@ -728,6 +728,67 @@ mod tests {
     use share_type_public::WsJoinRequest;
 
     #[test]
+    fn ai_positions_always_check_call_even_with_stale_check_fold_strategy() {
+        let handler = HoldemGameHandler::default();
+        let mut room = RoomService::default();
+        for session_id in 1..=2 {
+            room.handle_common_request(
+                session_id,
+                &join_request(&format!("u{session_id}")),
+                handler.game_id(),
+                || handler.build_room_settings(),
+            );
+        }
+        room.handle_common_request(
+            1,
+            &ClientRequest {
+                route: Routes::ADD_AI as i32,
+                data: serde_json::json!({"count": 1}),
+            },
+            handler.game_id(),
+            || handler.build_room_settings(),
+        );
+        let common = room
+            .get_room_common_state_handle("room")
+            .expect("room common state");
+        let state = Arc::new(std::sync::Mutex::new(
+            HoldemGameState::from_common_with_variant(common, STANDARD_TEXAS),
+        ));
+        {
+            let mut s = state.lock().unwrap();
+            s.current_position = 2;
+            s.current_bet = 20;
+            s.commit(0, 20);
+            s.set_turn_countdown(20);
+        }
+        handler
+            .auto_strategies
+            .lock()
+            .unwrap()
+            .entry("room".to_string())
+            .or_default()
+            .insert(2, TexasHoldEmAutoStrategy::CHECK_FOLD);
+
+        let mut dispatch = Dispatch::default();
+        handler.auto_tick(&mut room, "room", &state, &mut dispatch);
+
+        let action = dispatch.messages.iter().find_map(|message| {
+            let OutboundPayload::Event(event) = &message.payload else {
+                return None;
+            };
+            (event.code == WsCode::PLAY as i32)
+                .then(|| {
+                    serde_json::from_value::<WsTexasHoldEmActionEvent>(event.data.clone()).ok()
+                })
+                .flatten()
+        });
+        assert_eq!(
+            action.map(|event| event.action),
+            Some(TexasHoldEmAction::CALL)
+        );
+    }
+
+    #[test]
     fn auto_strategy_maps_to_check_fold_or_check_call() {
         assert_eq!(
             HoldemGameHandler::auto_payload_for(TexasHoldEmAutoStrategy::CHECK_FOLD, 0).action,
@@ -794,67 +855,6 @@ mod tests {
                 .get("room")
                 .and_then(|strategies| strategies.get(&0).copied()),
             Some(TexasHoldEmAutoStrategy::CHECK_CALL)
-        );
-    }
-
-    #[test]
-    fn ai_positions_always_check_call_even_with_stale_check_fold_strategy() {
-        let handler = HoldemGameHandler::default();
-        let mut room = RoomService::default();
-        for session_id in 1..=2 {
-            room.handle_common_request(
-                session_id,
-                &join_request(&format!("u{session_id}")),
-                handler.game_id(),
-                || handler.build_room_settings(),
-            );
-        }
-        room.handle_common_request(
-            1,
-            &ClientRequest {
-                route: Routes::ADD_AI as i32,
-                data: serde_json::json!({"count": 1}),
-            },
-            handler.game_id(),
-            || handler.build_room_settings(),
-        );
-        let common = room
-            .get_room_common_state_handle("room")
-            .expect("room common state");
-        let state = Arc::new(std::sync::Mutex::new(
-            HoldemGameState::from_common_with_variant(common, STANDARD_TEXAS),
-        ));
-        {
-            let mut s = state.lock().unwrap();
-            s.current_position = 2;
-            s.current_bet = 20;
-            s.commit(0, 20);
-            s.set_turn_countdown(20);
-        }
-        handler
-            .auto_strategies
-            .lock()
-            .unwrap()
-            .entry("room".to_string())
-            .or_default()
-            .insert(2, TexasHoldEmAutoStrategy::CHECK_FOLD);
-
-        let mut dispatch = Dispatch::default();
-        handler.auto_tick(&mut room, "room", &state, &mut dispatch);
-
-        let action = dispatch.messages.iter().find_map(|message| {
-            let OutboundPayload::Event(event) = &message.payload else {
-                return None;
-            };
-            (event.code == WsCode::PLAY as i32)
-                .then(|| {
-                    serde_json::from_value::<WsTexasHoldEmActionEvent>(event.data.clone()).ok()
-                })
-                .flatten()
-        });
-        assert_eq!(
-            action.map(|event| event.action),
-            Some(TexasHoldEmAction::CALL)
         );
     }
 

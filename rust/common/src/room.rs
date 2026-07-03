@@ -1700,6 +1700,88 @@ mod tests {
     }
 
     #[test]
+    fn ai_name_prefix_matches_game_family() {
+        let service = RoomService::default();
+
+        assert_eq!(
+            service.next_ai_name("texas-room", GameId::TEXAS_HOLD_EM, 1),
+            "Bot 1"
+        );
+        assert_eq!(
+            service.next_ai_name("open-room", GameId::OPEN_HOLD_EM, 2),
+            "Bot 2"
+        );
+        assert_eq!(
+            service.next_ai_name("mahjong-room", GameId::SHENYANG_MAHJONG, 1),
+            "AI 1"
+        );
+    }
+
+    #[test]
+    fn clear_game_state_if_same_restores_room_acceptance() {
+        let mut service = RoomService::default();
+        service.connect(1);
+        service.connect(2);
+        service.connect(3);
+
+        for (session_id, name) in [(1_u64, "u1"), (2, "u2")] {
+            let _ = service.handle_common_request(
+                session_id,
+                &WsRequest {
+                    route: Routes::JOIN as i32,
+                    data: serde_json::json!({
+                        "name": name,
+                        "password": "p1",
+                        "game_id": GameId::LANDLORD as i32
+                    }),
+                },
+                GameId::LANDLORD,
+                settings,
+            );
+        }
+
+        let room_key = service.room_key_of(1).expect("room key");
+        let common = service
+            .get_room_common_state_handle(&room_key)
+            .expect("common state");
+        service.set_room_game_state(
+            &room_key,
+            Box::new(NoAcceptState {
+                common: Arc::clone(&common),
+            }),
+        );
+
+        service.clear_room_game_state_if_same(&room_key, &common);
+        let join_after_clear = service
+            .handle_common_request(
+                3,
+                &WsRequest {
+                    route: Routes::JOIN as i32,
+                    data: serde_json::json!({
+                        "name": "u3",
+                        "password": "p1",
+                        "game_id": GameId::LANDLORD as i32
+                    }),
+                },
+                GameId::LANDLORD,
+                settings,
+            )
+            .expect("join common");
+        let joined = join_after_clear
+            .messages
+            .iter()
+            .any(|item| match &item.payload {
+                OutboundPayload::Response(RequestResponse::WithData(resp)) => {
+                    resp.code as i32 == WsResponseCode::JOINED as i32
+                }
+                _ => false,
+            });
+
+        assert!(joined);
+        assert_eq!(service.session_position(3), Some(2));
+    }
+
+    #[test]
     fn clearing_game_state_preserves_room_members() {
         let mut service = RoomService::default();
         service.connect(1);
@@ -1974,24 +2056,6 @@ mod tests {
         assert_eq!(
             service.room_game_id("open-room"),
             Some(GameId::OPEN_HOLD_EM)
-        );
-    }
-
-    #[test]
-    fn ai_name_prefix_matches_game_family() {
-        let service = RoomService::default();
-
-        assert_eq!(
-            service.next_ai_name("texas-room", GameId::TEXAS_HOLD_EM, 1),
-            "Bot 1"
-        );
-        assert_eq!(
-            service.next_ai_name("open-room", GameId::OPEN_HOLD_EM, 2),
-            "Bot 2"
-        );
-        assert_eq!(
-            service.next_ai_name("mahjong-room", GameId::SHENYANG_MAHJONG, 1),
-            "AI 1"
         );
     }
 
@@ -2686,70 +2750,6 @@ mod tests {
         assert!(rejected);
         assert_eq!(service.session_position(1), Some(0));
         assert_eq!(service.session_position(2), Some(1));
-    }
-
-    #[test]
-    fn clear_game_state_if_same_restores_room_acceptance() {
-        let mut service = RoomService::default();
-        service.connect(1);
-        service.connect(2);
-        service.connect(3);
-
-        for (session_id, name) in [(1_u64, "u1"), (2, "u2")] {
-            let _ = service.handle_common_request(
-                session_id,
-                &WsRequest {
-                    route: Routes::JOIN as i32,
-                    data: serde_json::json!({
-                        "name": name,
-                        "password": "p1",
-                        "game_id": GameId::LANDLORD as i32
-                    }),
-                },
-                GameId::LANDLORD,
-                settings,
-            );
-        }
-
-        let room_key = service.room_key_of(1).expect("room key");
-        let common = service
-            .get_room_common_state_handle(&room_key)
-            .expect("common state");
-        service.set_room_game_state(
-            &room_key,
-            Box::new(NoAcceptState {
-                common: Arc::clone(&common),
-            }),
-        );
-
-        service.clear_room_game_state_if_same(&room_key, &common);
-        let join_after_clear = service
-            .handle_common_request(
-                3,
-                &WsRequest {
-                    route: Routes::JOIN as i32,
-                    data: serde_json::json!({
-                        "name": "u3",
-                        "password": "p1",
-                        "game_id": GameId::LANDLORD as i32
-                    }),
-                },
-                GameId::LANDLORD,
-                settings,
-            )
-            .expect("join common");
-        let joined = join_after_clear
-            .messages
-            .iter()
-            .any(|item| match &item.payload {
-                OutboundPayload::Response(RequestResponse::WithData(resp)) => {
-                    resp.code as i32 == WsResponseCode::JOINED as i32
-                }
-                _ => false,
-            });
-
-        assert!(joined);
-        assert_eq!(service.session_position(3), Some(2));
     }
 
     impl GameState for NoAcceptState {

@@ -10,6 +10,13 @@ use ws_common::{RuntimeConfig, run_room_runtime};
 
 type Client = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
+async fn close_client(client: &mut Client) {
+    client
+        .send(Message::Close(None))
+        .await
+        .expect("send close frame");
+}
+
 async fn connect_client(url: &str) -> Client {
     let (ws, _) = connect_async(url).await.expect("connect websocket");
     ws
@@ -40,6 +47,15 @@ async fn join(client: &mut Client, name: &str, password: &str) -> Value {
             && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::JOINED as i64)
     })
     .await
+}
+
+fn my_tiles(event: &Value) -> Vec<i32> {
+    event["data"]["my_tiles"]
+        .as_array()
+        .expect("my tiles")
+        .iter()
+        .map(|tile| tile.as_i64().expect("tile number") as i32)
+        .collect()
 }
 
 async fn recv_json(client: &mut Client, label: &str) -> Value {
@@ -82,179 +98,6 @@ async fn send_request(client: &mut Client, route: i32, data: Value) {
         ))
         .await
         .expect("send request");
-}
-
-async fn close_client(client: &mut Client) {
-    client
-        .send(Message::Close(None))
-        .await
-        .expect("send close frame");
-}
-
-fn my_tiles(event: &Value) -> Vec<i32> {
-    event["data"]["my_tiles"]
-        .as_array()
-        .expect("my tiles")
-        .iter()
-        .map(|tile| tile.as_i64().expect("tile number") as i32)
-        .collect()
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn shenyang_mahjong_owner_can_start_with_ai_and_receive_ai_play() {
-    let port = free_port();
-    let listen_addr = format!("127.0.0.1:{port}");
-    let url = format!("ws://{listen_addr}");
-    let server = tokio::spawn(run_room_runtime(
-        RuntimeConfig {
-            service_name: "shenyang-mahjong-test",
-            listen_addr,
-            idle_timeout: Duration::from_secs(30),
-            heartbeat_interval: Duration::from_secs(30),
-        },
-        ShenyangMahjongGameHandler::default(),
-    ));
-
-    for _ in 0..50 {
-        if TokioTcpListener::bind(("127.0.0.1", port)).await.is_err() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
-
-    let mut owner = connect_client(&url).await;
-    let room = "shenyang-mahjong-flow-room";
-    let join_response = join(&mut owner, "owner", room).await;
-    assert_eq!(join_response["data"]["existing_members"], json!([]));
-
-    send_request(&mut owner, Routes::ADD_AI as i32, json!({ "count": 3 })).await;
-    let mut joined_ai_positions = Vec::new();
-    for _ in 0..3 {
-        let join_event = recv_until(&mut owner, "ai join event", |value| {
-            value.get("code").and_then(Value::as_i64) == Some(WsCode::JOIN as i64)
-                && value
-                    .get("data")
-                    .and_then(|data| data.get("is_ai"))
-                    .and_then(Value::as_bool)
-                    == Some(true)
-        })
-        .await;
-        joined_ai_positions.push(
-            join_event["data"]["position"]
-                .as_i64()
-                .expect("ai position") as i32,
-        );
-    }
-    joined_ai_positions.sort_unstable();
-    assert_eq!(joined_ai_positions, vec![1, 2, 3]);
-    recv_until(&mut owner, "add ai ok", |value| {
-        value.get("route").and_then(Value::as_i64) == Some(Routes::ADD_AI as i64)
-            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
-    })
-    .await;
-
-    send_request(
-        &mut owner,
-        Routes::SETTING as i32,
-        json!({
-            "current_configs": {
-                "play_time": 5,
-                "claim_time": 3,
-                "settlement_time": 2
-            }
-        }),
-    )
-    .await;
-    recv_until(&mut owner, "setting ok", |value| {
-        value.get("route").and_then(Value::as_i64) == Some(Routes::SETTING as i64)
-            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
-    })
-    .await;
-
-    send_request(&mut owner, Routes::START as i32, json!({})).await;
-    recv_until(&mut owner, "start ok", |value| {
-        value.get("route").and_then(Value::as_i64) == Some(Routes::START as i64)
-            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
-    })
-    .await;
-
-    let deal = recv_until(&mut owner, "mahjong deal", |value| {
-        value.get("code").and_then(Value::as_i64) == Some(WsCode::DEAL as i64)
-    })
-    .await;
-    let owner_tiles = my_tiles(&deal);
-    assert_eq!(owner_tiles.len(), 14);
-    assert_eq!(deal["data"]["dealer_position"], json!(0));
-    assert_eq!(deal["data"]["current_position"], json!(0));
-    assert_eq!(deal["data"]["turn_countdown"], json!(5));
-
-    close_client(&mut owner).await;
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    let mut owner = connect_client(&url).await;
-    let rejoin_response = join(&mut owner, "owner", room).await;
-    let existing_members = rejoin_response["data"]["existing_members"]
-        .as_array()
-        .expect("existing members");
-    assert_eq!(existing_members.len(), 3);
-    assert!(
-        existing_members
-            .iter()
-            .all(|member| member["is_ai"].as_bool() == Some(true))
-    );
-    let snapshot = recv_until(&mut owner, "rejoin table snapshot", |value| {
-        value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
-    })
-    .await;
-    assert_eq!(my_tiles(&snapshot), owner_tiles);
-    assert_eq!(
-        snapshot["data"]["players"]
-            .as_array()
-            .expect("snapshot players")
-            .len(),
-        4
-    );
-    assert_eq!(snapshot["data"]["current_position"], json!(0));
-    assert_eq!(snapshot["data"]["claim_window"], Value::Null);
-    let last_drawn_tile = snapshot["data"]["last_drawn_tile"]
-        .as_i64()
-        .expect("last drawn tile") as i32;
-    assert!(owner_tiles.contains(&last_drawn_tile));
-
-    let discard_tile = owner_tiles[0];
-    send_request(
-        &mut owner,
-        Routes::PLAY as i32,
-        json!({
-            "action": 2,
-            "tiles": [discard_tile],
-            "target_tile": discard_tile,
-            "from_position": null
-        }),
-    )
-    .await;
-    recv_until(&mut owner, "discard ok", |value| {
-        value.get("route").and_then(Value::as_i64) == Some(Routes::PLAY as i64)
-            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
-    })
-    .await;
-
-    let ai_play = recv_until(&mut owner, "ai play event", |value| {
-        value.get("code").and_then(Value::as_i64) == Some(WsCode::PLAY as i64)
-            && value
-                .get("data")
-                .and_then(|data| data.get("position"))
-                .and_then(Value::as_i64)
-                .is_some_and(|position| position > 0)
-            && value
-                .get("data")
-                .and_then(|data| data.get("action"))
-                .and_then(Value::as_i64)
-                .is_some()
-    })
-    .await;
-    assert!(ai_play["data"]["wall_count"].as_i64().expect("wall count") > 0);
-
-    server.abort();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -483,6 +326,163 @@ async fn shenyang_mahjong_disconnected_owner_is_played_by_ai() {
         })
         .await;
     assert_eq!(disconnected_owner_ai_play["data"]["name"], json!("owner"));
+
+    server.abort();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn shenyang_mahjong_owner_can_start_with_ai_and_receive_ai_play() {
+    let port = free_port();
+    let listen_addr = format!("127.0.0.1:{port}");
+    let url = format!("ws://{listen_addr}");
+    let server = tokio::spawn(run_room_runtime(
+        RuntimeConfig {
+            service_name: "shenyang-mahjong-test",
+            listen_addr,
+            idle_timeout: Duration::from_secs(30),
+            heartbeat_interval: Duration::from_secs(30),
+        },
+        ShenyangMahjongGameHandler::default(),
+    ));
+
+    for _ in 0..50 {
+        if TokioTcpListener::bind(("127.0.0.1", port)).await.is_err() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    let mut owner = connect_client(&url).await;
+    let room = "shenyang-mahjong-flow-room";
+    let join_response = join(&mut owner, "owner", room).await;
+    assert_eq!(join_response["data"]["existing_members"], json!([]));
+
+    send_request(&mut owner, Routes::ADD_AI as i32, json!({ "count": 3 })).await;
+    let mut joined_ai_positions = Vec::new();
+    for _ in 0..3 {
+        let join_event = recv_until(&mut owner, "ai join event", |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::JOIN as i64)
+                && value
+                    .get("data")
+                    .and_then(|data| data.get("is_ai"))
+                    .and_then(Value::as_bool)
+                    == Some(true)
+        })
+        .await;
+        joined_ai_positions.push(
+            join_event["data"]["position"]
+                .as_i64()
+                .expect("ai position") as i32,
+        );
+    }
+    joined_ai_positions.sort_unstable();
+    assert_eq!(joined_ai_positions, vec![1, 2, 3]);
+    recv_until(&mut owner, "add ai ok", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::ADD_AI as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+
+    send_request(
+        &mut owner,
+        Routes::SETTING as i32,
+        json!({
+            "current_configs": {
+                "play_time": 5,
+                "claim_time": 3,
+                "settlement_time": 2
+            }
+        }),
+    )
+    .await;
+    recv_until(&mut owner, "setting ok", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::SETTING as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+
+    send_request(&mut owner, Routes::START as i32, json!({})).await;
+    recv_until(&mut owner, "start ok", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::START as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+
+    let deal = recv_until(&mut owner, "mahjong deal", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::DEAL as i64)
+    })
+    .await;
+    let owner_tiles = my_tiles(&deal);
+    assert_eq!(owner_tiles.len(), 14);
+    assert_eq!(deal["data"]["dealer_position"], json!(0));
+    assert_eq!(deal["data"]["current_position"], json!(0));
+    assert_eq!(deal["data"]["turn_countdown"], json!(5));
+
+    close_client(&mut owner).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let mut owner = connect_client(&url).await;
+    let rejoin_response = join(&mut owner, "owner", room).await;
+    let existing_members = rejoin_response["data"]["existing_members"]
+        .as_array()
+        .expect("existing members");
+    assert_eq!(existing_members.len(), 3);
+    assert!(
+        existing_members
+            .iter()
+            .all(|member| member["is_ai"].as_bool() == Some(true))
+    );
+    let snapshot = recv_until(&mut owner, "rejoin table snapshot", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+    })
+    .await;
+    assert_eq!(my_tiles(&snapshot), owner_tiles);
+    assert_eq!(
+        snapshot["data"]["players"]
+            .as_array()
+            .expect("snapshot players")
+            .len(),
+        4
+    );
+    assert_eq!(snapshot["data"]["current_position"], json!(0));
+    assert_eq!(snapshot["data"]["claim_window"], Value::Null);
+    let last_drawn_tile = snapshot["data"]["last_drawn_tile"]
+        .as_i64()
+        .expect("last drawn tile") as i32;
+    assert!(owner_tiles.contains(&last_drawn_tile));
+
+    let discard_tile = owner_tiles[0];
+    send_request(
+        &mut owner,
+        Routes::PLAY as i32,
+        json!({
+            "action": 2,
+            "tiles": [discard_tile],
+            "target_tile": discard_tile,
+            "from_position": null
+        }),
+    )
+    .await;
+    recv_until(&mut owner, "discard ok", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::PLAY as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+
+    let ai_play = recv_until(&mut owner, "ai play event", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::PLAY as i64)
+            && value
+                .get("data")
+                .and_then(|data| data.get("position"))
+                .and_then(Value::as_i64)
+                .is_some_and(|position| position > 0)
+            && value
+                .get("data")
+                .and_then(|data| data.get("action"))
+                .and_then(Value::as_i64)
+                .is_some()
+    })
+    .await;
+    assert!(ai_play["data"]["wall_count"].as_i64().expect("wall count") > 0);
 
     server.abort();
 }

@@ -247,90 +247,6 @@ pub(crate) fn build_settlement_event(
     })
 }
 
-fn build_winner_details(
-    state: &ShenyangMahjongLoopState,
-    settlement: &crate::game_state::SettlementState,
-    score_changes: &[WsShenyangMahjongScoreChange],
-) -> Vec<WsShenyangMahjongWinnerDetail> {
-    let score_by_position = score_changes
-        .iter()
-        .map(|change| (change.position as usize, change.score))
-        .collect::<HashMap<_, _>>();
-
-    settlement
-        .winner_positions
-        .iter()
-        .map(|position| {
-            let mut hand_tiles = state.hands.get(position).cloned().unwrap_or_default();
-            if !settlement.is_self_draw
-                && let Some(tile) = settlement.win_tile
-            {
-                hand_tiles.push(tile);
-                hand_tiles.sort_unstable();
-            }
-            let meld_count = state.melds.get(position).map(Vec::len).unwrap_or(0);
-            let pattern = if meld_count == 0 && is_seven_pairs_win(&hand_tiles) {
-                ShenyangMahjongWinPattern::SevenPairs
-            } else {
-                ShenyangMahjongWinPattern::Standard
-            };
-            WsShenyangMahjongWinnerDetail {
-                position: *position as i32,
-                pattern,
-                is_self_draw: settlement.is_self_draw,
-                is_reverse_win: settlement.is_reverse_win,
-                score: score_by_position.get(position).copied().unwrap_or(0),
-            }
-        })
-        .collect()
-}
-
-pub(crate) fn settlement_score_changes_for_positions(
-    positions: &[usize],
-    winner_positions: &[usize],
-    from_position: Option<usize>,
-    is_self_draw: bool,
-) -> Vec<WsShenyangMahjongScoreChange> {
-    let mut sorted_positions = positions.to_vec();
-    sorted_positions.sort_unstable();
-
-    if winner_positions.is_empty() {
-        return sorted_positions
-            .into_iter()
-            .map(|position| WsShenyangMahjongScoreChange {
-                position: position as i32,
-                score: 0,
-            })
-            .collect();
-    }
-
-    let winner_set = winner_positions.iter().copied().collect::<HashSet<_>>();
-    let winner_count = winner_set.len() as i32;
-    let loser_count = sorted_positions
-        .iter()
-        .filter(|position| !winner_set.contains(position))
-        .count() as i32;
-
-    sorted_positions
-        .into_iter()
-        .map(|position| {
-            let score = if winner_set.contains(&position) {
-                if is_self_draw { loser_count } else { 1 }
-            } else if is_self_draw {
-                -1
-            } else if Some(position) == from_position {
-                -winner_count
-            } else {
-                0
-            };
-            WsShenyangMahjongScoreChange {
-                position: position as i32,
-                score,
-            }
-        })
-        .collect()
-}
-
 #[cfg(test)]
 pub(crate) fn build_table_snapshot_event(
     state: &ShenyangMahjongLoopState,
@@ -399,6 +315,85 @@ pub(crate) fn build_table_snapshot_event_with_configs(
     }
 }
 
+fn build_winner_details(
+    state: &ShenyangMahjongLoopState,
+    settlement: &crate::game_state::SettlementState,
+    score_changes: &[WsShenyangMahjongScoreChange],
+) -> Vec<WsShenyangMahjongWinnerDetail> {
+    let score_by_position = score_changes
+        .iter()
+        .map(|change| (change.position as usize, change.score))
+        .collect::<HashMap<_, _>>();
+
+    settlement
+        .winner_positions
+        .iter()
+        .map(|position| {
+            let mut hand_tiles = state.hands.get(position).cloned().unwrap_or_default();
+            if !settlement.is_self_draw
+                && let Some(tile) = settlement.win_tile
+            {
+                hand_tiles.push(tile);
+                hand_tiles.sort_unstable();
+            }
+            let meld_count = state.melds.get(position).map(Vec::len).unwrap_or(0);
+            let pattern = if meld_count == 0 && is_seven_pairs_win(&hand_tiles) {
+                ShenyangMahjongWinPattern::SevenPairs
+            } else {
+                ShenyangMahjongWinPattern::Standard
+            };
+            WsShenyangMahjongWinnerDetail {
+                position: *position as i32,
+                pattern,
+                is_self_draw: settlement.is_self_draw,
+                is_reverse_win: settlement.is_reverse_win,
+                score: score_by_position.get(position).copied().unwrap_or(0),
+            }
+        })
+        .collect()
+}
+
+fn can_added_gang(hand: &[i32], melds: &[WsShenyangMahjongMeld], target_tile: i32) -> bool {
+    tiles_in_hand(hand, &[target_tile])
+        && melds
+            .iter()
+            .any(|meld| peng_meld_tile(meld) == Some(target_tile))
+}
+
+#[cfg(test)]
+pub(crate) fn can_self_draw_hu(state: &ShenyangMahjongLoopState, position: usize) -> bool {
+    can_self_draw_hu_with_configs(state, position, &HashMap::new())
+}
+
+pub(crate) fn can_self_draw_hu_with_configs(
+    state: &ShenyangMahjongLoopState,
+    position: usize,
+    configs: &HashMap<String, i32>,
+) -> bool {
+    if state.current_position != position || state.last_drawn_tile.is_none() {
+        return false;
+    }
+    let hand = state.hands.get(&position).cloned().unwrap_or_default();
+    is_complete_win_with_melds(
+        &hand,
+        state.melds.get(&position).map(Vec::as_slice).unwrap_or(&[]),
+        win_rule_from_configs(configs),
+    )
+}
+
+pub(crate) fn can_self_gang(
+    state: &ShenyangMahjongLoopState,
+    position: usize,
+    target_tile: i32,
+) -> bool {
+    if state.current_position != position || state.last_drawn_tile.is_none() {
+        return false;
+    }
+    let hand = state.hands.get(&position).cloned().unwrap_or_default();
+    let melds = state.melds.get(&position).cloned().unwrap_or_default();
+    can_concealed_gang(&hand, target_tile) || can_added_gang(&hand, &melds, target_tile)
+}
+
 fn chi_options_for_hand(hand: &[i32], tile: i32) -> Vec<Vec<i32>> {
     [
         [tile - 2, tile - 1],
@@ -423,6 +418,101 @@ pub(crate) fn current_play_time(configs: &HashMap<String, i32>) -> u32 {
     config_value(configs, "play_time", 20).max(1) as u32
 }
 
+fn draw_after_gang_or_settle(
+    room_service: &RoomService,
+    room_key: &str,
+    state: &mut ShenyangMahjongLoopState,
+    configs: &HashMap<String, i32>,
+    dispatch: &mut Dispatch,
+    position: usize,
+) {
+    if let Some(tile) = state.draw_for_position(position) {
+        state.set_turn_countdown(current_play_time(configs));
+        push_draw_events(room_service, room_key, state, dispatch, position, tile);
+        push_phase_change(
+            room_service,
+            room_key,
+            dispatch,
+            state.phase,
+            state.current_position,
+            state.turn_countdown(),
+        );
+        return;
+    }
+
+    state.enter_settlement(Vec::new(), None, None, false);
+    maybe_record_settlement(room_service, room_key, state);
+    push_phase_change(
+        room_service,
+        room_key,
+        dispatch,
+        ShenyangMahjongPhase::Settlement,
+        state.current_position,
+        0,
+    );
+    if let Some(event) = build_settlement_event(state) {
+        push_room_event(
+            room_service,
+            room_key,
+            dispatch,
+            WsCode::GAME_OVER as i32,
+            event,
+        );
+    }
+}
+
+fn finish_added_gang(
+    room_service: &RoomService,
+    room_key: &str,
+    state: &mut ShenyangMahjongLoopState,
+    configs: &HashMap<String, i32>,
+    dispatch: &mut Dispatch,
+    position: usize,
+    target_tile: i32,
+) -> bool {
+    let hand = state.hands.get(&position).cloned().unwrap_or_default();
+    let melds = state.melds.get(&position).cloned().unwrap_or_default();
+    if !can_added_gang(&hand, &melds, target_tile)
+        || !state.remove_tiles_from_hand(position, &[target_tile])
+    {
+        return false;
+    }
+
+    let Some(meld) = state
+        .melds
+        .entry(position)
+        .or_default()
+        .iter_mut()
+        .find(|meld| peng_meld_tile(meld) == Some(target_tile))
+    else {
+        return false;
+    };
+    meld.kind = ShenyangMahjongMeldKind::GANG;
+    meld.tiles = vec![target_tile, target_tile, target_tile, target_tile];
+    let from_position = meld.from_position;
+
+    state.current_position = position;
+    state.last_drawn_tile = None;
+    state.claim_window = None;
+    push_room_event(
+        room_service,
+        room_key,
+        dispatch,
+        WsCode::PLAY as i32,
+        WsShenyangMahjongPlayEvent {
+            name: state.player_name(position),
+            position: position as i32,
+            action: ShenyangMahjongAction::GANG,
+            tiles: vec![target_tile],
+            target_tile: Some(target_tile),
+            from_position,
+            wall_count: state.wall_count() as i32,
+        },
+    );
+    draw_after_gang_or_settle(room_service, room_key, state, configs, dispatch, position);
+    true
+}
+
 fn join_succeeded(dispatch: &Dispatch, session_id: SessionId) -> bool {
     dispatch.messages.iter().any(|message| {
         if message.recipient != session_id {
@@ -443,6 +533,18 @@ fn maybe_record_settlement(
     state: &ShenyangMahjongLoopState,
 ) {
     crate::official::settle_round(room_service, room_key, state);
+}
+
+fn peng_meld_tile(meld: &WsShenyangMahjongMeld) -> Option<i32> {
+    if meld.kind != ShenyangMahjongMeldKind::PENG {
+        return None;
+    }
+    let tile = *meld.tiles.first()?;
+    if meld.tiles.iter().all(|item| *item == tile) {
+        Some(tile)
+    } else {
+        None
+    }
 }
 
 pub(crate) fn perform_discard(
@@ -546,154 +648,6 @@ pub(crate) fn perform_self_draw_hu(
             event,
         );
     }
-}
-
-fn peng_meld_tile(meld: &WsShenyangMahjongMeld) -> Option<i32> {
-    if meld.kind != ShenyangMahjongMeldKind::PENG {
-        return None;
-    }
-    let tile = *meld.tiles.first()?;
-    if meld.tiles.iter().all(|item| *item == tile) {
-        Some(tile)
-    } else {
-        None
-    }
-}
-
-fn can_added_gang(hand: &[i32], melds: &[WsShenyangMahjongMeld], target_tile: i32) -> bool {
-    tiles_in_hand(hand, &[target_tile])
-        && melds
-            .iter()
-            .any(|meld| peng_meld_tile(meld) == Some(target_tile))
-}
-
-pub(crate) fn can_self_gang(
-    state: &ShenyangMahjongLoopState,
-    position: usize,
-    target_tile: i32,
-) -> bool {
-    if state.current_position != position || state.last_drawn_tile.is_none() {
-        return false;
-    }
-    let hand = state.hands.get(&position).cloned().unwrap_or_default();
-    let melds = state.melds.get(&position).cloned().unwrap_or_default();
-    can_concealed_gang(&hand, target_tile) || can_added_gang(&hand, &melds, target_tile)
-}
-
-#[cfg(test)]
-pub(crate) fn can_self_draw_hu(state: &ShenyangMahjongLoopState, position: usize) -> bool {
-    can_self_draw_hu_with_configs(state, position, &HashMap::new())
-}
-
-pub(crate) fn can_self_draw_hu_with_configs(
-    state: &ShenyangMahjongLoopState,
-    position: usize,
-    configs: &HashMap<String, i32>,
-) -> bool {
-    if state.current_position != position || state.last_drawn_tile.is_none() {
-        return false;
-    }
-    let hand = state.hands.get(&position).cloned().unwrap_or_default();
-    is_complete_win_with_melds(
-        &hand,
-        state.melds.get(&position).map(Vec::as_slice).unwrap_or(&[]),
-        win_rule_from_configs(configs),
-    )
-}
-
-fn draw_after_gang_or_settle(
-    room_service: &RoomService,
-    room_key: &str,
-    state: &mut ShenyangMahjongLoopState,
-    configs: &HashMap<String, i32>,
-    dispatch: &mut Dispatch,
-    position: usize,
-) {
-    if let Some(tile) = state.draw_for_position(position) {
-        state.set_turn_countdown(current_play_time(configs));
-        push_draw_events(room_service, room_key, state, dispatch, position, tile);
-        push_phase_change(
-            room_service,
-            room_key,
-            dispatch,
-            state.phase,
-            state.current_position,
-            state.turn_countdown(),
-        );
-        return;
-    }
-
-    state.enter_settlement(Vec::new(), None, None, false);
-    maybe_record_settlement(room_service, room_key, state);
-    push_phase_change(
-        room_service,
-        room_key,
-        dispatch,
-        ShenyangMahjongPhase::Settlement,
-        state.current_position,
-        0,
-    );
-    if let Some(event) = build_settlement_event(state) {
-        push_room_event(
-            room_service,
-            room_key,
-            dispatch,
-            WsCode::GAME_OVER as i32,
-            event,
-        );
-    }
-}
-
-fn finish_added_gang(
-    room_service: &RoomService,
-    room_key: &str,
-    state: &mut ShenyangMahjongLoopState,
-    configs: &HashMap<String, i32>,
-    dispatch: &mut Dispatch,
-    position: usize,
-    target_tile: i32,
-) -> bool {
-    let hand = state.hands.get(&position).cloned().unwrap_or_default();
-    let melds = state.melds.get(&position).cloned().unwrap_or_default();
-    if !can_added_gang(&hand, &melds, target_tile)
-        || !state.remove_tiles_from_hand(position, &[target_tile])
-    {
-        return false;
-    }
-
-    let Some(meld) = state
-        .melds
-        .entry(position)
-        .or_default()
-        .iter_mut()
-        .find(|meld| peng_meld_tile(meld) == Some(target_tile))
-    else {
-        return false;
-    };
-    meld.kind = ShenyangMahjongMeldKind::GANG;
-    meld.tiles = vec![target_tile, target_tile, target_tile, target_tile];
-    let from_position = meld.from_position;
-
-    state.current_position = position;
-    state.last_drawn_tile = None;
-    state.claim_window = None;
-    push_room_event(
-        room_service,
-        room_key,
-        dispatch,
-        WsCode::PLAY as i32,
-        WsShenyangMahjongPlayEvent {
-            name: state.player_name(position),
-            position: position as i32,
-            action: ShenyangMahjongAction::GANG,
-            tiles: vec![target_tile],
-            target_tile: Some(target_tile),
-            from_position,
-            wall_count: state.wall_count() as i32,
-        },
-    );
-    draw_after_gang_or_settle(room_service, room_key, state, configs, dispatch, position);
-    true
 }
 
 pub(crate) fn perform_self_gang(
@@ -1173,6 +1127,52 @@ pub(crate) fn resolve_claim_window(
     state.claim_window = None;
     state.current_position = claim_window.from_position;
     advance_to_next_turn(room_service, room_key, state, configs, dispatch);
+}
+
+pub(crate) fn settlement_score_changes_for_positions(
+    positions: &[usize],
+    winner_positions: &[usize],
+    from_position: Option<usize>,
+    is_self_draw: bool,
+) -> Vec<WsShenyangMahjongScoreChange> {
+    let mut sorted_positions = positions.to_vec();
+    sorted_positions.sort_unstable();
+
+    if winner_positions.is_empty() {
+        return sorted_positions
+            .into_iter()
+            .map(|position| WsShenyangMahjongScoreChange {
+                position: position as i32,
+                score: 0,
+            })
+            .collect();
+    }
+
+    let winner_set = winner_positions.iter().copied().collect::<HashSet<_>>();
+    let winner_count = winner_set.len() as i32;
+    let loser_count = sorted_positions
+        .iter()
+        .filter(|position| !winner_set.contains(position))
+        .count() as i32;
+
+    sorted_positions
+        .into_iter()
+        .map(|position| {
+            let score = if winner_set.contains(&position) {
+                if is_self_draw { loser_count } else { 1 }
+            } else if is_self_draw {
+                -1
+            } else if Some(position) == from_position {
+                -winner_count
+            } else {
+                0
+            };
+            WsShenyangMahjongScoreChange {
+                position: position as i32,
+                score,
+            }
+        })
+        .collect()
 }
 
 pub(crate) fn settlement_time(configs: &HashMap<String, i32>) -> u64 {
@@ -1668,45 +1668,94 @@ mod tests {
     use super::*;
 
     #[test]
-    fn claim_options_list_concrete_actions() {
+    fn added_gang_opens_rob_gang_claim_window_before_replacement_draw() {
         let mut state = playable_state();
         state
             .hands
-            .insert(1, vec![1, 2, 2, 3, 3, 3, 4, 11, 12, 13, 21, 22, 23]);
+            .insert(0, vec![3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31]);
+        state.melds.insert(
+            0,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::PENG,
+                vec![3, 3, 3],
+                Some(2),
+            )],
+        );
         state
             .hands
-            .insert(2, vec![3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 31]);
-        state
-            .hands
-            .insert(3, vec![1, 5, 7, 9, 11, 13, 15, 17, 21, 23, 25, 31, 35]);
+            .insert(1, vec![1, 2, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+        state.wall = vec![36];
+        state.last_drawn_tile = Some(3);
+        let mut dispatch = Dispatch::default();
 
-        let options = build_claim_options(&state, 3, 0, &HashMap::new());
-        let next_player = options
-            .iter()
-            .find(|option| option.position == 1)
-            .expect("next player should have claim options");
+        assert!(perform_self_gang(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::new(),
+            &mut dispatch,
+            0,
+            3,
+        ));
 
-        assert!(next_player.can_peng);
-        assert!(next_player.can_gang);
-        assert!(next_player.chi_options.contains(&vec![1, 2]));
-        assert!(next_player.chi_options.contains(&vec![2, 4]));
-        assert!(!options.iter().any(|option| option.position == 3));
+        let claim_window = state.claim_window.as_ref().unwrap();
+        assert!(matches!(claim_window.kind, ClaimWindowKind::RobGang));
+        assert_eq!(claim_window.tile, 3);
+        assert_eq!(claim_window.from_position, 0);
+        assert_eq!(claim_window.eligible_positions, vec![1]);
+        assert_eq!(state.last_drawn_tile, Some(3));
+        assert!(state.hands.get(&0).unwrap().contains(&3));
+        assert_eq!(
+            state.melds.get(&0).unwrap().first().unwrap().kind,
+            ShenyangMahjongMeldKind::PENG
+        );
     }
 
     #[test]
-    fn claim_options_allow_seven_pairs_hu() {
+    fn added_gang_upgrades_peng_and_draws_replacement() {
         let mut state = playable_state();
         state
             .hands
-            .insert(1, vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35]);
+            .insert(0, vec![3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31]);
+        state.melds.insert(
+            0,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::PENG,
+                vec![3, 3, 3],
+                Some(2),
+            )],
+        );
+        state.wall = vec![35];
+        state.last_drawn_tile = Some(3);
+        let mut dispatch = Dispatch::default();
 
-        let options = build_claim_options(&state, 35, 0, &HashMap::new());
-        let player = options
-            .iter()
-            .find(|option| option.position == 1)
-            .expect("seven pairs player should be able to hu");
+        assert!(can_self_gang(&state, 0, 3));
+        assert!(perform_self_gang(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::new(),
+            &mut dispatch,
+            0,
+            3,
+        ));
 
-        assert!(player.can_hu);
+        assert_eq!(state.last_drawn_tile, Some(35));
+        assert_eq!(
+            state
+                .hands
+                .get(&0)
+                .unwrap()
+                .iter()
+                .filter(|&&tile| tile == 3)
+                .count(),
+            0,
+        );
+
+        let meld = state.melds.get(&0).unwrap().first().unwrap();
+        assert_eq!(meld.kind, ShenyangMahjongMeldKind::GANG);
+        assert_eq!(meld.tiles, vec![3, 3, 3, 3]);
+        assert_eq!(meld.from_position, Some(2));
     }
 
     #[test]
@@ -1734,6 +1783,48 @@ mod tests {
     }
 
     #[test]
+    fn claim_options_allow_seven_pairs_hu() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35]);
+
+        let options = build_claim_options(&state, 35, 0, &HashMap::new());
+        let player = options
+            .iter()
+            .find(|option| option.position == 1)
+            .expect("seven pairs player should be able to hu");
+
+        assert!(player.can_hu);
+    }
+
+    #[test]
+    fn claim_options_list_concrete_actions() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![1, 2, 2, 3, 3, 3, 4, 11, 12, 13, 21, 22, 23]);
+        state
+            .hands
+            .insert(2, vec![3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 31]);
+        state
+            .hands
+            .insert(3, vec![1, 5, 7, 9, 11, 13, 15, 17, 21, 23, 25, 31, 35]);
+
+        let options = build_claim_options(&state, 3, 0, &HashMap::new());
+        let next_player = options
+            .iter()
+            .find(|option| option.position == 1)
+            .expect("next player should have claim options");
+
+        assert!(next_player.can_peng);
+        assert!(next_player.can_gang);
+        assert!(next_player.chi_options.contains(&vec![1, 2]));
+        assert!(next_player.chi_options.contains(&vec![2, 4]));
+        assert!(!options.iter().any(|option| option.position == 3));
+    }
+
+    #[test]
     fn claim_options_respect_shenyang_basic_win_rule() {
         let mut state = playable_state();
         state
@@ -1744,377 +1835,6 @@ mod tests {
         let options = build_claim_options(&state, 35, 0, &configs);
 
         assert!(!options.iter().any(|option| option.position == 1));
-    }
-
-    #[test]
-    fn table_snapshot_preserves_drawn_tile_and_claim_options() {
-        let mut state = playable_state();
-        state.current_position = 0;
-        state.last_drawn_tile = Some(9);
-        state
-            .hands
-            .insert(0, vec![1, 2, 3, 4, 5, 6, 9, 11, 12, 13, 21, 22, 23, 31]);
-        state
-            .hands
-            .insert(1, vec![1, 2, 3, 3, 3, 4, 11, 12, 13, 21, 22, 23, 31]);
-        state.discards.insert(0, vec![3]);
-        state.claim_window = Some(ClaimWindowState {
-            tile: 3,
-            from_position: 0,
-            kind: ClaimWindowKind::Discard,
-            eligible_positions: vec![1],
-            responses: HashMap::new(),
-        });
-        state.set_turn_countdown(4);
-
-        let snapshot = build_table_snapshot_event(&state, 1);
-        let claim_window = snapshot.claim_window.expect("claim window");
-        let option = claim_window
-            .options
-            .iter()
-            .find(|option| option.position == 1)
-            .expect("claim option");
-
-        assert_eq!(snapshot.last_drawn_tile, Some(9));
-        assert_eq!(claim_window.tile, 3);
-        assert_eq!(claim_window.from_position, 0);
-        assert_eq!(claim_window.eligible_positions, vec![1]);
-        assert_eq!(claim_window.seconds, 4);
-        assert!(!claim_window.is_rob_gang);
-        assert!(option.can_peng);
-        assert!(option.can_gang);
-        assert!(option.chi_options.contains(&vec![1, 2]));
-        assert!(option.chi_options.contains(&vec![2, 4]));
-    }
-
-    #[test]
-    fn table_snapshot_marks_disconnected_player_as_away() {
-        let state = playable_state();
-        state.base.lock().unwrap().mark_disconnected(2);
-
-        let snapshot = build_table_snapshot_event(&state, 1);
-        let player = snapshot
-            .players
-            .iter()
-            .find(|player| player.position == 2)
-            .expect("player snapshot");
-
-        assert!(player.away);
-        assert!(!player.is_ai);
-    }
-
-    #[test]
-    fn table_snapshot_includes_settlement_for_rejoin() {
-        let mut state = playable_state();
-        state
-            .hands
-            .insert(1, vec![1, 2, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
-        state.discards.insert(0, vec![3]);
-        state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(3), false, true);
-
-        let snapshot = build_table_snapshot_event(&state, 1);
-        let settlement = snapshot.settlement.expect("settlement");
-
-        assert_eq!(snapshot.phase, ShenyangMahjongPhase::Settlement);
-        assert_eq!(settlement.winner_positions, vec![1]);
-        assert_eq!(settlement.from_position, Some(0));
-        assert_eq!(settlement.win_tile, Some(3));
-        assert!(settlement.is_reverse_win);
-        assert_eq!(settlement.winner_details.len(), 1);
-        assert_eq!(settlement.winner_details[0].position, 1);
-        assert_eq!(settlement.winner_details[0].score, 1);
-        assert_eq!(
-            settlement
-                .score_changes
-                .iter()
-                .map(|change| (change.position, change.score))
-                .collect::<Vec<_>>(),
-            vec![(0, -1), (1, 1), (2, 0), (3, 0)]
-        );
-    }
-
-    #[test]
-    fn settlement_score_changes_cover_discard_self_draw_and_draw() {
-        assert_eq!(
-            settlement_score_changes_for_positions(&[0, 1, 2, 3], &[0, 2], Some(1), false)
-                .into_iter()
-                .map(|change| (change.position, change.score))
-                .collect::<Vec<_>>(),
-            vec![(0, 1), (1, -2), (2, 1), (3, 0)]
-        );
-        assert_eq!(
-            settlement_score_changes_for_positions(&[0, 1, 2, 3], &[2], None, true)
-                .into_iter()
-                .map(|change| (change.position, change.score))
-                .collect::<Vec<_>>(),
-            vec![(0, -1), (1, -1), (2, 3), (3, -1)]
-        );
-        assert_eq!(
-            settlement_score_changes_for_positions(&[0, 1, 2, 3], &[], None, false)
-                .into_iter()
-                .map(|change| (change.position, change.score))
-                .collect::<Vec<_>>(),
-            vec![(0, 0), (1, 0), (2, 0), (3, 0)]
-        );
-    }
-
-    #[test]
-    fn settlement_winner_details_describe_seven_pairs_self_draw() {
-        let mut state = playable_state();
-        state
-            .hands
-            .insert(2, vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35, 35]);
-        state.enter_settlement(vec![2], None, Some(35), true);
-
-        let event = build_settlement_event(&state).unwrap();
-
-        assert_eq!(event.winner_details.len(), 1);
-        assert_eq!(event.winner_details[0].position, 2);
-        assert_eq!(
-            event.winner_details[0].pattern,
-            ShenyangMahjongWinPattern::SevenPairs
-        );
-        assert!(event.winner_details[0].is_self_draw);
-        assert_eq!(event.winner_details[0].score, 3);
-    }
-
-    #[test]
-    fn settlement_winner_details_include_reverse_win_and_score() {
-        let mut state = playable_state();
-        state
-            .hands
-            .insert(1, vec![1, 2, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
-        state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(3), false, true);
-
-        let event = build_settlement_event(&state).unwrap();
-
-        assert_eq!(event.winner_details.len(), 1);
-        assert_eq!(event.winner_details[0].position, 1);
-        assert_eq!(
-            event.winner_details[0].pattern,
-            ShenyangMahjongWinPattern::Standard
-        );
-        assert!(event.winner_details[0].is_reverse_win);
-        assert_eq!(event.winner_details[0].score, 1);
-    }
-
-    #[test]
-    fn self_draw_hu_requires_a_drawn_turn() {
-        let mut state = playable_state();
-        state
-            .hands
-            .insert(0, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
-
-        assert!(!can_self_draw_hu(&state, 0));
-
-        state.last_drawn_tile = Some(35);
-
-        assert!(can_self_draw_hu(&state, 0));
-    }
-
-    #[test]
-    fn self_draw_hu_rejects_complete_open_hand_without_draw() {
-        let mut state = playable_state();
-        state
-            .hands
-            .insert(0, vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
-        state.melds.insert(
-            0,
-            vec![build_meld(
-                ShenyangMahjongMeldKind::PENG,
-                vec![1, 1, 1],
-                Some(2),
-            )],
-        );
-
-        assert!(!can_self_draw_hu(&state, 0));
-    }
-
-    #[test]
-    fn self_draw_hu_requires_current_position() {
-        let mut state = playable_state();
-        state.current_position = 1;
-        state
-            .hands
-            .insert(0, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
-        state.last_drawn_tile = Some(35);
-
-        assert!(!can_self_draw_hu(&state, 0));
-    }
-
-    #[test]
-    fn self_draw_hu_respects_shenyang_basic_win_rule() {
-        let mut state = playable_state();
-        state
-            .hands
-            .insert(0, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
-        state.last_drawn_tile = Some(35);
-        let configs = HashMap::from([("win_rule".to_owned(), 1)]);
-
-        assert!(!can_self_draw_hu_with_configs(&state, 0, &configs));
-
-        state
-            .hands
-            .insert(0, vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
-        state.melds.insert(
-            0,
-            vec![build_meld(
-                ShenyangMahjongMeldKind::CHI,
-                vec![1, 2, 3],
-                Some(1),
-            )],
-        );
-
-        assert!(can_self_draw_hu_with_configs(&state, 0, &configs));
-    }
-
-    #[test]
-    fn self_gang_requires_current_position() {
-        let mut state = playable_state();
-        state.current_position = 1;
-        state
-            .hands
-            .insert(0, vec![3, 3, 3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31]);
-        state.last_drawn_tile = Some(3);
-
-        assert!(!can_self_gang(&state, 0, 3));
-    }
-
-    #[test]
-    fn pruning_stopped_loop_state_restores_room_acceptance() {
-        let mut room_service = RoomService::default();
-        for session_id in 1..=3 {
-            room_service.connect(session_id);
-        }
-        for (session_id, name) in [(1_u64, "P1"), (2, "P2")] {
-            let _ = room_service.handle_common_request(
-                session_id,
-                &ClientRequest {
-                    route: Routes::JOIN as i32,
-                    data: serde_json::json!({
-                        "name": name,
-                        "password": "room",
-                        "game_id": GameId::SHENYANG_MAHJONG as i32
-                    }),
-                },
-                GameId::SHENYANG_MAHJONG,
-                build_shenyang_mahjong_settings,
-            );
-        }
-        let room_key = room_service.room_key_of(1).expect("room key");
-        let common = room_service
-            .get_room_common_state_handle(&room_key)
-            .expect("common state");
-        let loop_state = Arc::new(StdMutex::new(ShenyangMahjongLoopState::new(Arc::clone(
-            &common,
-        ))));
-        room_service.set_room_game_state(
-            &room_key,
-            Box::new(ShenyangMahjongGameState::from_loop_state(Arc::clone(
-                &loop_state,
-            ))),
-        );
-        let handler = ShenyangMahjongGameHandler::default();
-        handler
-            .loop_states
-            .lock()
-            .unwrap()
-            .insert(room_key.clone(), Arc::clone(&loop_state));
-        loop_state.lock().unwrap().request_stop();
-
-        handler.prune_stopped_loop_states(&mut room_service);
-        let join_after_prune = room_service
-            .handle_common_request(
-                3,
-                &ClientRequest {
-                    route: Routes::JOIN as i32,
-                    data: serde_json::json!({
-                        "name": "P3",
-                        "password": "room",
-                        "game_id": GameId::SHENYANG_MAHJONG as i32
-                    }),
-                },
-                GameId::SHENYANG_MAHJONG,
-                build_shenyang_mahjong_settings,
-            )
-            .expect("join common");
-        let joined = join_after_prune
-            .messages
-            .iter()
-            .any(|item| match &item.payload {
-                OutboundPayload::Response(RequestResponse::WithData(response)) => {
-                    response.code as i32 == WsResponseCode::JOINED as i32
-                }
-                _ => false,
-            });
-
-        assert!(joined);
-        assert_eq!(room_service.session_position(3), Some(2));
-    }
-
-    fn setup_request_room() -> (
-        RoomService,
-        ShenyangMahjongGameHandler,
-        String,
-        LoopStateHandle,
-    ) {
-        let mut room_service = RoomService::default();
-        for session_id in 1..=4 {
-            room_service.connect(session_id);
-            let _ = room_service.handle_common_request(
-                session_id,
-                &ClientRequest {
-                    route: Routes::JOIN as i32,
-                    data: serde_json::json!({
-                        "name": format!("P{}", session_id),
-                        "password": "mahjong-request-room",
-                        "game_id": GameId::SHENYANG_MAHJONG as i32
-                    }),
-                },
-                GameId::SHENYANG_MAHJONG,
-                build_shenyang_mahjong_settings,
-            );
-        }
-        let room_key = room_service.room_key_of(1).expect("room key");
-        let common = room_service
-            .get_room_common_state_handle(&room_key)
-            .expect("common state");
-        let loop_state = Arc::new(StdMutex::new(ShenyangMahjongLoopState::new(Arc::clone(
-            &common,
-        ))));
-        room_service.set_room_game_state(
-            &room_key,
-            Box::new(ShenyangMahjongGameState::from_loop_state(Arc::clone(
-                &loop_state,
-            ))),
-        );
-        let handler = ShenyangMahjongGameHandler::default();
-        handler
-            .loop_states
-            .lock()
-            .unwrap()
-            .insert(room_key.clone(), Arc::clone(&loop_state));
-
-        (room_service, handler, room_key, loop_state)
-    }
-
-    fn response_code(dispatch: &Dispatch, recipient: SessionId, route: Routes) -> Option<i32> {
-        dispatch
-            .messages
-            .iter()
-            .find_map(|item| match &item.payload {
-                OutboundPayload::Response(RequestResponse::WithData(response))
-                    if item.recipient == recipient && response.route == route as i32 =>
-                {
-                    Some(response.code as i32)
-                }
-                OutboundPayload::Response(RequestResponse::WithoutData(response))
-                    if item.recipient == recipient && response.route == route as i32 =>
-                {
-                    Some(response.code as i32)
-                }
-                _ => None,
-            })
     }
 
     fn has_room_event(dispatch: &Dispatch, code: WsCode) -> bool {
@@ -2141,7 +1861,7 @@ mod tests {
     }
 
     #[test]
-    fn play_request_rejects_self_hu_without_draw_and_accepts_after_draw() {
+    fn play_request_allows_multiple_hu_by_default() {
         let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
         {
             let mut state = loop_state.lock().unwrap();
@@ -2151,76 +1871,54 @@ mod tests {
                 state.discards.insert(position, Vec::new());
                 state.melds.insert(position, Vec::new());
             }
+            state.discards.insert(0, vec![3]);
             state
                 .hands
-                .insert(0, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+                .insert(1, vec![3, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+            state
+                .hands
+                .insert(2, vec![3, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+            state.claim_window = Some(ClaimWindowState {
+                tile: 3,
+                from_position: 0,
+                kind: ClaimWindowKind::Discard,
+                eligible_positions: vec![1, 2],
+                responses: HashMap::new(),
+            });
         }
 
-        let denied = handler.handle_game_request(
+        let first_hu = handler.handle_game_request(
             &mut room_service,
-            1,
-            ClientRequest {
-                route: Routes::PLAY as i32,
-                data: serde_json::json!({
-                    "action": ShenyangMahjongAction::HU as i32,
-                    "tiles": [],
-                    "target_tile": null,
-                    "from_position": null,
-                }),
-            },
+            2,
+            play_request(ShenyangMahjongAction::HU, Vec::new(), Some(3), Some(0)),
+        );
+        let second_hu = handler.handle_game_request(
+            &mut room_service,
+            3,
+            play_request(ShenyangMahjongAction::HU, Vec::new(), Some(3), Some(0)),
         );
 
         assert_eq!(
-            response_code(&denied, 1, Routes::PLAY),
-            Some(WsResponseCode::NO_PERMISSION as i32)
-        );
-        assert!(loop_state.lock().unwrap().settlement.is_none());
-
-        {
-            loop_state.lock().unwrap().last_drawn_tile = Some(35);
-        }
-        let accepted = handler.handle_game_request(
-            &mut room_service,
-            1,
-            ClientRequest {
-                route: Routes::PLAY as i32,
-                data: serde_json::json!({
-                    "action": ShenyangMahjongAction::HU as i32,
-                    "tiles": [],
-                    "target_tile": null,
-                    "from_position": null,
-                }),
-            },
-        );
-
-        assert_eq!(
-            response_code(&accepted, 1, Routes::PLAY),
+            response_code(&first_hu, 2, Routes::PLAY),
             Some(WsResponseCode::OK as i32)
         );
-        assert!(has_room_event(&accepted, WsCode::GAME_OVER));
-        let state = loop_state.lock().unwrap();
-        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert!(!has_room_event(&first_hu, WsCode::GAME_OVER));
         assert_eq!(
-            state
-                .settlement
-                .as_ref()
-                .map(|settlement| settlement.winner_positions.clone()),
-            Some(vec![0])
+            response_code(&second_hu, 3, Routes::PLAY),
+            Some(WsResponseCode::OK as i32)
         );
+        assert!(has_room_event(&second_hu, WsCode::GAME_OVER));
+        let state = loop_state.lock().unwrap();
+        let settlement = state.settlement.as_ref().expect("settlement");
+        assert_eq!(settlement.winner_positions, vec![1, 2]);
+        assert_eq!(settlement.from_position, Some(0));
+        assert_eq!(settlement.win_tile, Some(3));
+        assert_eq!(state.discards.get(&0), Some(&Vec::<i32>::new()));
     }
 
     #[test]
-    fn play_request_respects_shenyang_basic_win_rule() {
+    fn play_request_chi_consumes_tiles_and_keeps_turn_with_chi_player() {
         let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
-        let _ = room_service.handle_common_request(
-            1,
-            &ClientRequest {
-                route: Routes::SETTING as i32,
-                data: serde_json::json!({"current_configs":{"win_rule":1}}),
-            },
-            GameId::SHENYANG_MAHJONG,
-            build_shenyang_mahjong_settings,
-        );
         {
             let mut state = loop_state.lock().unwrap();
             state.phase = ShenyangMahjongPhase::Play;
@@ -2229,12 +1927,13 @@ mod tests {
                 state.discards.insert(position, Vec::new());
                 state.melds.insert(position, Vec::new());
             }
-            state.discards.insert(0, vec![35]);
+            state.discards.insert(0, vec![3]);
             state
                 .hands
-                .insert(1, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35]);
+                .insert(1, vec![1, 2, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35]);
+            state.wall = vec![36];
             state.claim_window = Some(ClaimWindowState {
-                tile: 35,
+                tile: 3,
                 from_position: 0,
                 kind: ClaimWindowKind::Discard,
                 eligible_positions: vec![1],
@@ -2242,96 +1941,134 @@ mod tests {
             });
         }
 
-        let denied = handler.handle_game_request(
+        let response = handler.handle_game_request(
             &mut room_service,
             2,
-            play_request(ShenyangMahjongAction::HU, Vec::new(), Some(35), Some(0)),
+            ClientRequest {
+                route: Routes::PLAY as i32,
+                data: serde_json::json!({
+                    "action": ShenyangMahjongAction::CHI as i32,
+                    "tiles": [1, 2],
+                    "target_tile": 3,
+                    "from_position": 0,
+                }),
+            },
         );
 
         assert_eq!(
-            response_code(&denied, 2, Routes::PLAY),
-            Some(WsResponseCode::NO_PERMISSION as i32)
-        );
-        assert!(loop_state.lock().unwrap().settlement.is_none());
-    }
-
-    #[test]
-    fn play_request_discard_without_claim_draws_next_player() {
-        let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
-        {
-            let mut state = loop_state.lock().unwrap();
-            state.phase = ShenyangMahjongPhase::Play;
-            state.current_position = 0;
-            for position in 0..4 {
-                state.discards.insert(position, Vec::new());
-                state.melds.insert(position, Vec::new());
-                state.hands.insert(
-                    position,
-                    vec![4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 31, 32, 33],
-                );
-            }
-            state
-                .hands
-                .insert(0, vec![1, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 31, 32, 33]);
-            state.wall = vec![36];
-            state.last_drawn_tile = Some(1);
-        }
-
-        let response = handler.handle_game_request(
-            &mut room_service,
-            1,
-            play_request(ShenyangMahjongAction::DISCARD, Vec::new(), Some(1), None),
-        );
-
-        assert_eq!(
-            response_code(&response, 1, Routes::PLAY),
+            response_code(&response, 2, Routes::PLAY),
             Some(WsResponseCode::OK as i32)
         );
-        assert!(!has_room_event(&response, WsCode::CLAIM_WINDOW));
         assert!(!has_room_event(&response, WsCode::GAME_OVER));
         let state = loop_state.lock().unwrap();
+        assert_eq!(state.phase, ShenyangMahjongPhase::Play);
         assert!(state.claim_window.is_none());
         assert_eq!(state.current_position, 1);
-        assert_eq!(state.last_drawn_tile, Some(36));
-        assert_eq!(state.wall_count(), 0);
-        assert_eq!(state.discards.get(&0), Some(&vec![1]));
-        assert!(!state.hands.get(&0).unwrap().contains(&1));
-        assert!(state.hands.get(&1).unwrap().contains(&36));
+        assert_eq!(state.last_drawn_tile, None);
+        assert_eq!(state.wall, vec![36]);
+        assert!(state.discards.get(&0).unwrap().is_empty());
+        assert!(!state.hands.get(&1).unwrap().contains(&1));
+        assert!(!state.hands.get(&1).unwrap().contains(&2));
+        let meld = state.melds.get(&1).unwrap().first().unwrap();
+        assert_eq!(meld.kind, ShenyangMahjongMeldKind::CHI);
+        assert_eq!(meld.tiles, vec![1, 2, 3]);
+        assert_eq!(meld.from_position, Some(0));
     }
 
     #[test]
-    fn play_request_rejects_manual_action_while_away() {
+    fn play_request_chi_rejects_invalid_sequence() {
         let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
         {
             let mut state = loop_state.lock().unwrap();
             state.phase = ShenyangMahjongPhase::Play;
             state.current_position = 0;
-            state.base.lock().unwrap().mark_away(0);
             for position in 0..4 {
                 state.discards.insert(position, Vec::new());
                 state.melds.insert(position, Vec::new());
             }
+            state.discards.insert(0, vec![3]);
             state
                 .hands
-                .insert(0, vec![1, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 31, 32, 33]);
-            state.wall = vec![36];
-            state.last_drawn_tile = Some(1);
+                .insert(1, vec![1, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35, 36]);
+            state.claim_window = Some(ClaimWindowState {
+                tile: 3,
+                from_position: 0,
+                kind: ClaimWindowKind::Discard,
+                eligible_positions: vec![1],
+                responses: HashMap::new(),
+            });
         }
 
         let response = handler.handle_game_request(
             &mut room_service,
-            1,
-            play_request(ShenyangMahjongAction::DISCARD, Vec::new(), Some(1), None),
+            2,
+            ClientRequest {
+                route: Routes::PLAY as i32,
+                data: serde_json::json!({
+                    "action": ShenyangMahjongAction::CHI as i32,
+                    "tiles": [1, 4],
+                    "target_tile": 3,
+                    "from_position": 0,
+                }),
+            },
         );
 
         assert_eq!(
-            response_code(&response, 1, Routes::PLAY),
+            response_code(&response, 2, Routes::PLAY),
             Some(WsResponseCode::NO_PERMISSION as i32)
         );
         let state = loop_state.lock().unwrap();
-        assert_eq!(state.current_position, 0);
-        assert_eq!(state.discards.get(&0), Some(&Vec::<i32>::new()));
-        assert!(state.hands.get(&0).unwrap().contains(&1));
+        assert!(state.claim_window.is_some());
+        assert_eq!(state.discards.get(&0), Some(&vec![3]));
+        assert!(state.melds.get(&1).unwrap().is_empty());
+    }
+
+    #[test]
+    fn play_request_chi_rejects_non_next_player() {
+        let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
+        {
+            let mut state = loop_state.lock().unwrap();
+            state.phase = ShenyangMahjongPhase::Play;
+            state.current_position = 0;
+            for position in 0..4 {
+                state.discards.insert(position, Vec::new());
+                state.melds.insert(position, Vec::new());
+            }
+            state.discards.insert(0, vec![3]);
+            state
+                .hands
+                .insert(2, vec![1, 2, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35]);
+            state.claim_window = Some(ClaimWindowState {
+                tile: 3,
+                from_position: 0,
+                kind: ClaimWindowKind::Discard,
+                eligible_positions: vec![2],
+                responses: HashMap::new(),
+            });
+        }
+
+        let response = handler.handle_game_request(
+            &mut room_service,
+            3,
+            ClientRequest {
+                route: Routes::PLAY as i32,
+                data: serde_json::json!({
+                    "action": ShenyangMahjongAction::CHI as i32,
+                    "tiles": [1, 2],
+                    "target_tile": 3,
+                    "from_position": 0,
+                }),
+            },
+        );
+
+        assert_eq!(
+            response_code(&response, 3, Routes::PLAY),
+            Some(WsResponseCode::NO_PERMISSION as i32)
+        );
+        let state = loop_state.lock().unwrap();
+        assert!(state.claim_window.is_some());
+        assert_eq!(state.discards.get(&0), Some(&vec![3]));
+        assert!(state.melds.get(&2).unwrap().is_empty());
     }
 
     #[test]
@@ -2422,49 +2159,7 @@ mod tests {
     }
 
     #[test]
-    fn play_request_rejects_manual_claim_response_while_away() {
-        let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
-        {
-            let mut state = loop_state.lock().unwrap();
-            state.phase = ShenyangMahjongPhase::Play;
-            state.current_position = 0;
-            state.base.lock().unwrap().mark_away(1);
-            for position in 0..4 {
-                state.discards.insert(position, Vec::new());
-                state.melds.insert(position, Vec::new());
-            }
-            state.discards.insert(0, vec![3]);
-            state
-                .hands
-                .insert(1, vec![1, 2, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
-            state.claim_window = Some(ClaimWindowState {
-                tile: 3,
-                from_position: 0,
-                kind: ClaimWindowKind::Discard,
-                eligible_positions: vec![1],
-                responses: HashMap::new(),
-            });
-        }
-
-        let response = handler.handle_game_request(
-            &mut room_service,
-            2,
-            play_request(ShenyangMahjongAction::HU, Vec::new(), Some(3), Some(0)),
-        );
-
-        assert_eq!(
-            response_code(&response, 2, Routes::PLAY),
-            Some(WsResponseCode::NO_PERMISSION as i32)
-        );
-        let state = loop_state.lock().unwrap();
-        let claim_window = state.claim_window.as_ref().expect("claim window");
-        assert!(claim_window.responses.is_empty());
-        assert!(state.settlement.is_none());
-        assert_eq!(state.discards.get(&0), Some(&vec![3]));
-    }
-
-    #[test]
-    fn play_request_waits_for_claims_and_hu_beats_peng() {
+    fn play_request_discard_without_claim_draws_next_player() {
         let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
         {
             let mut state = loop_state.lock().unwrap();
@@ -2473,194 +2168,38 @@ mod tests {
             for position in 0..4 {
                 state.discards.insert(position, Vec::new());
                 state.melds.insert(position, Vec::new());
+                state.hands.insert(
+                    position,
+                    vec![4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 31, 32, 33],
+                );
             }
-            state.discards.insert(0, vec![3]);
             state
                 .hands
-                .insert(1, vec![1, 2, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
-            state
-                .hands
-                .insert(2, vec![3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35]);
-            state.claim_window = Some(ClaimWindowState {
-                tile: 3,
-                from_position: 0,
-                kind: ClaimWindowKind::Discard,
-                eligible_positions: vec![1, 2],
-                responses: HashMap::new(),
-            });
-        }
-
-        let peng_response = handler.handle_game_request(
-            &mut room_service,
-            3,
-            ClientRequest {
-                route: Routes::PLAY as i32,
-                data: serde_json::json!({
-                    "action": ShenyangMahjongAction::PENG as i32,
-                    "tiles": [],
-                    "target_tile": 3,
-                    "from_position": 0,
-                }),
-            },
-        );
-
-        assert_eq!(
-            response_code(&peng_response, 3, Routes::PLAY),
-            Some(WsResponseCode::OK as i32)
-        );
-        assert!(!has_room_event(&peng_response, WsCode::GAME_OVER));
-        {
-            let state = loop_state.lock().unwrap();
-            assert!(state.claim_window.is_some());
-            assert!(state.settlement.is_none());
-            assert!(state.melds.get(&2).unwrap().is_empty());
-        }
-
-        let hu_response = handler.handle_game_request(
-            &mut room_service,
-            2,
-            ClientRequest {
-                route: Routes::PLAY as i32,
-                data: serde_json::json!({
-                    "action": ShenyangMahjongAction::HU as i32,
-                    "tiles": [],
-                    "target_tile": 3,
-                    "from_position": 0,
-                }),
-            },
-        );
-
-        assert_eq!(
-            response_code(&hu_response, 2, Routes::PLAY),
-            Some(WsResponseCode::OK as i32)
-        );
-        assert!(has_room_event(&hu_response, WsCode::GAME_OVER));
-        let state = loop_state.lock().unwrap();
-        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
-        assert_eq!(
-            state
-                .settlement
-                .as_ref()
-                .map(|settlement| settlement.winner_positions.clone()),
-            Some(vec![1])
-        );
-        assert!(state.discards.get(&0).unwrap().is_empty());
-        assert!(state.melds.get(&2).unwrap().is_empty());
-    }
-
-    #[test]
-    fn play_request_peng_consumes_pair_and_keeps_turn_with_peng_player() {
-        let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
-        {
-            let mut state = loop_state.lock().unwrap();
-            state.phase = ShenyangMahjongPhase::Play;
-            state.current_position = 0;
-            for position in 0..4 {
-                state.discards.insert(position, Vec::new());
-                state.melds.insert(position, Vec::new());
-            }
-            state.discards.insert(0, vec![3]);
-            state
-                .hands
-                .insert(2, vec![3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35]);
+                .insert(0, vec![1, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 31, 32, 33]);
             state.wall = vec![36];
-            state.claim_window = Some(ClaimWindowState {
-                tile: 3,
-                from_position: 0,
-                kind: ClaimWindowKind::Discard,
-                eligible_positions: vec![2],
-                responses: HashMap::new(),
-            });
+            state.last_drawn_tile = Some(1);
         }
 
         let response = handler.handle_game_request(
             &mut room_service,
-            3,
-            ClientRequest {
-                route: Routes::PLAY as i32,
-                data: serde_json::json!({
-                    "action": ShenyangMahjongAction::PENG as i32,
-                    "tiles": [],
-                    "target_tile": 3,
-                    "from_position": 0,
-                }),
-            },
+            1,
+            play_request(ShenyangMahjongAction::DISCARD, Vec::new(), Some(1), None),
         );
 
         assert_eq!(
-            response_code(&response, 3, Routes::PLAY),
+            response_code(&response, 1, Routes::PLAY),
             Some(WsResponseCode::OK as i32)
         );
+        assert!(!has_room_event(&response, WsCode::CLAIM_WINDOW));
         assert!(!has_room_event(&response, WsCode::GAME_OVER));
         let state = loop_state.lock().unwrap();
-        assert_eq!(state.phase, ShenyangMahjongPhase::Play);
         assert!(state.claim_window.is_none());
-        assert_eq!(state.current_position, 2);
-        assert_eq!(state.last_drawn_tile, None);
-        assert_eq!(state.wall, vec![36]);
-        assert!(state.discards.get(&0).unwrap().is_empty());
-        assert_eq!(
-            state
-                .hands
-                .get(&2)
-                .unwrap()
-                .iter()
-                .filter(|&&tile| tile == 3)
-                .count(),
-            0,
-        );
-        let meld = state.melds.get(&2).unwrap().first().unwrap();
-        assert_eq!(meld.kind, ShenyangMahjongMeldKind::PENG);
-        assert_eq!(meld.tiles, vec![3, 3, 3]);
-        assert_eq!(meld.from_position, Some(0));
-    }
-
-    #[test]
-    fn play_request_peng_rejects_without_pair() {
-        let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
-        {
-            let mut state = loop_state.lock().unwrap();
-            state.phase = ShenyangMahjongPhase::Play;
-            state.current_position = 0;
-            for position in 0..4 {
-                state.discards.insert(position, Vec::new());
-                state.melds.insert(position, Vec::new());
-            }
-            state.discards.insert(0, vec![3]);
-            state
-                .hands
-                .insert(2, vec![3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35, 36]);
-            state.claim_window = Some(ClaimWindowState {
-                tile: 3,
-                from_position: 0,
-                kind: ClaimWindowKind::Discard,
-                eligible_positions: vec![2],
-                responses: HashMap::new(),
-            });
-        }
-
-        let response = handler.handle_game_request(
-            &mut room_service,
-            3,
-            ClientRequest {
-                route: Routes::PLAY as i32,
-                data: serde_json::json!({
-                    "action": ShenyangMahjongAction::PENG as i32,
-                    "tiles": [],
-                    "target_tile": 3,
-                    "from_position": 0,
-                }),
-            },
-        );
-
-        assert_eq!(
-            response_code(&response, 3, Routes::PLAY),
-            Some(WsResponseCode::NO_PERMISSION as i32)
-        );
-        let state = loop_state.lock().unwrap();
-        assert!(state.claim_window.is_some());
-        assert_eq!(state.discards.get(&0), Some(&vec![3]));
-        assert!(state.melds.get(&2).unwrap().is_empty());
+        assert_eq!(state.current_position, 1);
+        assert_eq!(state.last_drawn_tile, Some(36));
+        assert_eq!(state.wall_count(), 0);
+        assert_eq!(state.discards.get(&0), Some(&vec![1]));
+        assert!(!state.hands.get(&0).unwrap().contains(&1));
+        assert!(state.hands.get(&1).unwrap().contains(&36));
     }
 
     #[test]
@@ -2732,6 +2271,54 @@ mod tests {
     }
 
     #[test]
+    fn play_request_gang_rejects_without_triplet() {
+        let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
+        {
+            let mut state = loop_state.lock().unwrap();
+            state.phase = ShenyangMahjongPhase::Play;
+            state.current_position = 0;
+            for position in 0..4 {
+                state.discards.insert(position, Vec::new());
+                state.melds.insert(position, Vec::new());
+            }
+            state.discards.insert(0, vec![3]);
+            state
+                .hands
+                .insert(2, vec![3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35]);
+            state.claim_window = Some(ClaimWindowState {
+                tile: 3,
+                from_position: 0,
+                kind: ClaimWindowKind::Discard,
+                eligible_positions: vec![2],
+                responses: HashMap::new(),
+            });
+        }
+
+        let response = handler.handle_game_request(
+            &mut room_service,
+            3,
+            ClientRequest {
+                route: Routes::PLAY as i32,
+                data: serde_json::json!({
+                    "action": ShenyangMahjongAction::GANG as i32,
+                    "tiles": [],
+                    "target_tile": 3,
+                    "from_position": 0,
+                }),
+            },
+        );
+
+        assert_eq!(
+            response_code(&response, 3, Routes::PLAY),
+            Some(WsResponseCode::NO_PERMISSION as i32)
+        );
+        let state = loop_state.lock().unwrap();
+        assert!(state.claim_window.is_some());
+        assert_eq!(state.discards.get(&0), Some(&vec![3]));
+        assert!(state.melds.get(&2).unwrap().is_empty());
+    }
+
+    #[test]
     fn play_request_gang_settles_draw_when_replacement_tile_is_unavailable() {
         let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
         {
@@ -2784,8 +2371,17 @@ mod tests {
     }
 
     #[test]
-    fn play_request_gang_rejects_without_triplet() {
+    fn play_request_nearest_hu_mode_keeps_only_first_winner_in_turn_order() {
         let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
+        let _ = room_service.handle_common_request(
+            1,
+            &ClientRequest {
+                route: Routes::SETTING as i32,
+                data: serde_json::json!({"current_configs":{"multi_hu_mode":0}}),
+            },
+            GameId::SHENYANG_MAHJONG,
+            build_shenyang_mahjong_settings,
+        );
         {
             let mut state = loop_state.lock().unwrap();
             state.phase = ShenyangMahjongPhase::Play;
@@ -2797,208 +2393,10 @@ mod tests {
             state.discards.insert(0, vec![3]);
             state
                 .hands
-                .insert(2, vec![3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35]);
-            state.claim_window = Some(ClaimWindowState {
-                tile: 3,
-                from_position: 0,
-                kind: ClaimWindowKind::Discard,
-                eligible_positions: vec![2],
-                responses: HashMap::new(),
-            });
-        }
-
-        let response = handler.handle_game_request(
-            &mut room_service,
-            3,
-            ClientRequest {
-                route: Routes::PLAY as i32,
-                data: serde_json::json!({
-                    "action": ShenyangMahjongAction::GANG as i32,
-                    "tiles": [],
-                    "target_tile": 3,
-                    "from_position": 0,
-                }),
-            },
-        );
-
-        assert_eq!(
-            response_code(&response, 3, Routes::PLAY),
-            Some(WsResponseCode::NO_PERMISSION as i32)
-        );
-        let state = loop_state.lock().unwrap();
-        assert!(state.claim_window.is_some());
-        assert_eq!(state.discards.get(&0), Some(&vec![3]));
-        assert!(state.melds.get(&2).unwrap().is_empty());
-    }
-
-    #[test]
-    fn play_request_chi_consumes_tiles_and_keeps_turn_with_chi_player() {
-        let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
-        {
-            let mut state = loop_state.lock().unwrap();
-            state.phase = ShenyangMahjongPhase::Play;
-            state.current_position = 0;
-            for position in 0..4 {
-                state.discards.insert(position, Vec::new());
-                state.melds.insert(position, Vec::new());
-            }
-            state.discards.insert(0, vec![3]);
+                .insert(1, vec![3, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
             state
                 .hands
-                .insert(1, vec![1, 2, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35]);
-            state.wall = vec![36];
-            state.claim_window = Some(ClaimWindowState {
-                tile: 3,
-                from_position: 0,
-                kind: ClaimWindowKind::Discard,
-                eligible_positions: vec![1],
-                responses: HashMap::new(),
-            });
-        }
-
-        let response = handler.handle_game_request(
-            &mut room_service,
-            2,
-            ClientRequest {
-                route: Routes::PLAY as i32,
-                data: serde_json::json!({
-                    "action": ShenyangMahjongAction::CHI as i32,
-                    "tiles": [1, 2],
-                    "target_tile": 3,
-                    "from_position": 0,
-                }),
-            },
-        );
-
-        assert_eq!(
-            response_code(&response, 2, Routes::PLAY),
-            Some(WsResponseCode::OK as i32)
-        );
-        assert!(!has_room_event(&response, WsCode::GAME_OVER));
-        let state = loop_state.lock().unwrap();
-        assert_eq!(state.phase, ShenyangMahjongPhase::Play);
-        assert!(state.claim_window.is_none());
-        assert_eq!(state.current_position, 1);
-        assert_eq!(state.last_drawn_tile, None);
-        assert_eq!(state.wall, vec![36]);
-        assert!(state.discards.get(&0).unwrap().is_empty());
-        assert!(!state.hands.get(&1).unwrap().contains(&1));
-        assert!(!state.hands.get(&1).unwrap().contains(&2));
-        let meld = state.melds.get(&1).unwrap().first().unwrap();
-        assert_eq!(meld.kind, ShenyangMahjongMeldKind::CHI);
-        assert_eq!(meld.tiles, vec![1, 2, 3]);
-        assert_eq!(meld.from_position, Some(0));
-    }
-
-    #[test]
-    fn play_request_chi_rejects_non_next_player() {
-        let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
-        {
-            let mut state = loop_state.lock().unwrap();
-            state.phase = ShenyangMahjongPhase::Play;
-            state.current_position = 0;
-            for position in 0..4 {
-                state.discards.insert(position, Vec::new());
-                state.melds.insert(position, Vec::new());
-            }
-            state.discards.insert(0, vec![3]);
-            state
-                .hands
-                .insert(2, vec![1, 2, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35]);
-            state.claim_window = Some(ClaimWindowState {
-                tile: 3,
-                from_position: 0,
-                kind: ClaimWindowKind::Discard,
-                eligible_positions: vec![2],
-                responses: HashMap::new(),
-            });
-        }
-
-        let response = handler.handle_game_request(
-            &mut room_service,
-            3,
-            ClientRequest {
-                route: Routes::PLAY as i32,
-                data: serde_json::json!({
-                    "action": ShenyangMahjongAction::CHI as i32,
-                    "tiles": [1, 2],
-                    "target_tile": 3,
-                    "from_position": 0,
-                }),
-            },
-        );
-
-        assert_eq!(
-            response_code(&response, 3, Routes::PLAY),
-            Some(WsResponseCode::NO_PERMISSION as i32)
-        );
-        let state = loop_state.lock().unwrap();
-        assert!(state.claim_window.is_some());
-        assert_eq!(state.discards.get(&0), Some(&vec![3]));
-        assert!(state.melds.get(&2).unwrap().is_empty());
-    }
-
-    #[test]
-    fn play_request_chi_rejects_invalid_sequence() {
-        let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
-        {
-            let mut state = loop_state.lock().unwrap();
-            state.phase = ShenyangMahjongPhase::Play;
-            state.current_position = 0;
-            for position in 0..4 {
-                state.discards.insert(position, Vec::new());
-                state.melds.insert(position, Vec::new());
-            }
-            state.discards.insert(0, vec![3]);
-            state
-                .hands
-                .insert(1, vec![1, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35, 36]);
-            state.claim_window = Some(ClaimWindowState {
-                tile: 3,
-                from_position: 0,
-                kind: ClaimWindowKind::Discard,
-                eligible_positions: vec![1],
-                responses: HashMap::new(),
-            });
-        }
-
-        let response = handler.handle_game_request(
-            &mut room_service,
-            2,
-            ClientRequest {
-                route: Routes::PLAY as i32,
-                data: serde_json::json!({
-                    "action": ShenyangMahjongAction::CHI as i32,
-                    "tiles": [1, 4],
-                    "target_tile": 3,
-                    "from_position": 0,
-                }),
-            },
-        );
-
-        assert_eq!(
-            response_code(&response, 2, Routes::PLAY),
-            Some(WsResponseCode::NO_PERMISSION as i32)
-        );
-        let state = loop_state.lock().unwrap();
-        assert!(state.claim_window.is_some());
-        assert_eq!(state.discards.get(&0), Some(&vec![3]));
-        assert!(state.melds.get(&1).unwrap().is_empty());
-    }
-
-    #[test]
-    fn play_request_pass_waits_for_remaining_claim_responses() {
-        let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
-        {
-            let mut state = loop_state.lock().unwrap();
-            state.phase = ShenyangMahjongPhase::Play;
-            state.current_position = 0;
-            for position in 0..4 {
-                state.discards.insert(position, Vec::new());
-                state.melds.insert(position, Vec::new());
-            }
-            state.discards.insert(0, vec![3]);
-            state.wall = vec![36];
+                .insert(2, vec![3, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
             state.claim_window = Some(ClaimWindowState {
                 tile: 3,
                 from_position: 0,
@@ -3008,24 +2406,33 @@ mod tests {
             });
         }
 
-        let response = handler.handle_game_request(
+        let later_hu = handler.handle_game_request(
+            &mut room_service,
+            3,
+            play_request(ShenyangMahjongAction::HU, Vec::new(), Some(3), Some(0)),
+        );
+        let nearest_hu = handler.handle_game_request(
             &mut room_service,
             2,
-            play_request(ShenyangMahjongAction::PASS, Vec::new(), Some(3), Some(0)),
+            play_request(ShenyangMahjongAction::HU, Vec::new(), Some(3), Some(0)),
         );
 
         assert_eq!(
-            response_code(&response, 2, Routes::PLAY),
+            response_code(&later_hu, 3, Routes::PLAY),
             Some(WsResponseCode::OK as i32)
         );
-        assert!(!has_room_event(&response, WsCode::GAME_OVER));
+        assert!(!has_room_event(&later_hu, WsCode::GAME_OVER));
+        assert_eq!(
+            response_code(&nearest_hu, 2, Routes::PLAY),
+            Some(WsResponseCode::OK as i32)
+        );
+        assert!(has_room_event(&nearest_hu, WsCode::GAME_OVER));
         let state = loop_state.lock().unwrap();
-        let claim_window = state.claim_window.as_ref().expect("claim window");
-        assert_eq!(claim_window.responses.len(), 1);
-        assert_eq!(state.current_position, 0);
-        assert_eq!(state.wall, vec![36]);
-        assert_eq!(state.discards.get(&0), Some(&vec![3]));
-        assert!(state.settlement.is_none());
+        let settlement = state.settlement.as_ref().expect("settlement");
+        assert_eq!(settlement.winner_positions, vec![1]);
+        assert_eq!(settlement.from_position, Some(0));
+        assert_eq!(settlement.win_tile, Some(3));
+        assert_eq!(state.discards.get(&0), Some(&Vec::<i32>::new()));
     }
 
     #[test]
@@ -3170,7 +2577,49 @@ mod tests {
     }
 
     #[test]
-    fn play_request_allows_multiple_hu_by_default() {
+    fn play_request_pass_waits_for_remaining_claim_responses() {
+        let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
+        {
+            let mut state = loop_state.lock().unwrap();
+            state.phase = ShenyangMahjongPhase::Play;
+            state.current_position = 0;
+            for position in 0..4 {
+                state.discards.insert(position, Vec::new());
+                state.melds.insert(position, Vec::new());
+            }
+            state.discards.insert(0, vec![3]);
+            state.wall = vec![36];
+            state.claim_window = Some(ClaimWindowState {
+                tile: 3,
+                from_position: 0,
+                kind: ClaimWindowKind::Discard,
+                eligible_positions: vec![1, 2],
+                responses: HashMap::new(),
+            });
+        }
+
+        let response = handler.handle_game_request(
+            &mut room_service,
+            2,
+            play_request(ShenyangMahjongAction::PASS, Vec::new(), Some(3), Some(0)),
+        );
+
+        assert_eq!(
+            response_code(&response, 2, Routes::PLAY),
+            Some(WsResponseCode::OK as i32)
+        );
+        assert!(!has_room_event(&response, WsCode::GAME_OVER));
+        let state = loop_state.lock().unwrap();
+        let claim_window = state.claim_window.as_ref().expect("claim window");
+        assert_eq!(claim_window.responses.len(), 1);
+        assert_eq!(state.current_position, 0);
+        assert_eq!(state.wall, vec![36]);
+        assert_eq!(state.discards.get(&0), Some(&vec![3]));
+        assert!(state.settlement.is_none());
+    }
+
+    #[test]
+    fn play_request_peng_consumes_pair_and_keeps_turn_with_peng_player() {
         let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
         {
             let mut state = loop_state.lock().unwrap();
@@ -3183,56 +2632,261 @@ mod tests {
             state.discards.insert(0, vec![3]);
             state
                 .hands
-                .insert(1, vec![3, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
-            state
-                .hands
-                .insert(2, vec![3, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+                .insert(2, vec![3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35]);
+            state.wall = vec![36];
             state.claim_window = Some(ClaimWindowState {
                 tile: 3,
                 from_position: 0,
                 kind: ClaimWindowKind::Discard,
-                eligible_positions: vec![1, 2],
+                eligible_positions: vec![2],
                 responses: HashMap::new(),
             });
         }
 
-        let first_hu = handler.handle_game_request(
+        let response = handler.handle_game_request(
+            &mut room_service,
+            3,
+            ClientRequest {
+                route: Routes::PLAY as i32,
+                data: serde_json::json!({
+                    "action": ShenyangMahjongAction::PENG as i32,
+                    "tiles": [],
+                    "target_tile": 3,
+                    "from_position": 0,
+                }),
+            },
+        );
+
+        assert_eq!(
+            response_code(&response, 3, Routes::PLAY),
+            Some(WsResponseCode::OK as i32)
+        );
+        assert!(!has_room_event(&response, WsCode::GAME_OVER));
+        let state = loop_state.lock().unwrap();
+        assert_eq!(state.phase, ShenyangMahjongPhase::Play);
+        assert!(state.claim_window.is_none());
+        assert_eq!(state.current_position, 2);
+        assert_eq!(state.last_drawn_tile, None);
+        assert_eq!(state.wall, vec![36]);
+        assert!(state.discards.get(&0).unwrap().is_empty());
+        assert_eq!(
+            state
+                .hands
+                .get(&2)
+                .unwrap()
+                .iter()
+                .filter(|&&tile| tile == 3)
+                .count(),
+            0,
+        );
+        let meld = state.melds.get(&2).unwrap().first().unwrap();
+        assert_eq!(meld.kind, ShenyangMahjongMeldKind::PENG);
+        assert_eq!(meld.tiles, vec![3, 3, 3]);
+        assert_eq!(meld.from_position, Some(0));
+    }
+
+    #[test]
+    fn play_request_peng_rejects_without_pair() {
+        let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
+        {
+            let mut state = loop_state.lock().unwrap();
+            state.phase = ShenyangMahjongPhase::Play;
+            state.current_position = 0;
+            for position in 0..4 {
+                state.discards.insert(position, Vec::new());
+                state.melds.insert(position, Vec::new());
+            }
+            state.discards.insert(0, vec![3]);
+            state
+                .hands
+                .insert(2, vec![3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35, 36]);
+            state.claim_window = Some(ClaimWindowState {
+                tile: 3,
+                from_position: 0,
+                kind: ClaimWindowKind::Discard,
+                eligible_positions: vec![2],
+                responses: HashMap::new(),
+            });
+        }
+
+        let response = handler.handle_game_request(
+            &mut room_service,
+            3,
+            ClientRequest {
+                route: Routes::PLAY as i32,
+                data: serde_json::json!({
+                    "action": ShenyangMahjongAction::PENG as i32,
+                    "tiles": [],
+                    "target_tile": 3,
+                    "from_position": 0,
+                }),
+            },
+        );
+
+        assert_eq!(
+            response_code(&response, 3, Routes::PLAY),
+            Some(WsResponseCode::NO_PERMISSION as i32)
+        );
+        let state = loop_state.lock().unwrap();
+        assert!(state.claim_window.is_some());
+        assert_eq!(state.discards.get(&0), Some(&vec![3]));
+        assert!(state.melds.get(&2).unwrap().is_empty());
+    }
+
+    #[test]
+    fn play_request_rejects_manual_action_while_away() {
+        let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
+        {
+            let mut state = loop_state.lock().unwrap();
+            state.phase = ShenyangMahjongPhase::Play;
+            state.current_position = 0;
+            state.base.lock().unwrap().mark_away(0);
+            for position in 0..4 {
+                state.discards.insert(position, Vec::new());
+                state.melds.insert(position, Vec::new());
+            }
+            state
+                .hands
+                .insert(0, vec![1, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 31, 32, 33]);
+            state.wall = vec![36];
+            state.last_drawn_tile = Some(1);
+        }
+
+        let response = handler.handle_game_request(
+            &mut room_service,
+            1,
+            play_request(ShenyangMahjongAction::DISCARD, Vec::new(), Some(1), None),
+        );
+
+        assert_eq!(
+            response_code(&response, 1, Routes::PLAY),
+            Some(WsResponseCode::NO_PERMISSION as i32)
+        );
+        let state = loop_state.lock().unwrap();
+        assert_eq!(state.current_position, 0);
+        assert_eq!(state.discards.get(&0), Some(&Vec::<i32>::new()));
+        assert!(state.hands.get(&0).unwrap().contains(&1));
+    }
+
+    #[test]
+    fn play_request_rejects_manual_claim_response_while_away() {
+        let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
+        {
+            let mut state = loop_state.lock().unwrap();
+            state.phase = ShenyangMahjongPhase::Play;
+            state.current_position = 0;
+            state.base.lock().unwrap().mark_away(1);
+            for position in 0..4 {
+                state.discards.insert(position, Vec::new());
+                state.melds.insert(position, Vec::new());
+            }
+            state.discards.insert(0, vec![3]);
+            state
+                .hands
+                .insert(1, vec![1, 2, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+            state.claim_window = Some(ClaimWindowState {
+                tile: 3,
+                from_position: 0,
+                kind: ClaimWindowKind::Discard,
+                eligible_positions: vec![1],
+                responses: HashMap::new(),
+            });
+        }
+
+        let response = handler.handle_game_request(
             &mut room_service,
             2,
             play_request(ShenyangMahjongAction::HU, Vec::new(), Some(3), Some(0)),
         );
-        let second_hu = handler.handle_game_request(
-            &mut room_service,
-            3,
-            play_request(ShenyangMahjongAction::HU, Vec::new(), Some(3), Some(0)),
-        );
 
         assert_eq!(
-            response_code(&first_hu, 2, Routes::PLAY),
-            Some(WsResponseCode::OK as i32)
+            response_code(&response, 2, Routes::PLAY),
+            Some(WsResponseCode::NO_PERMISSION as i32)
         );
-        assert!(!has_room_event(&first_hu, WsCode::GAME_OVER));
-        assert_eq!(
-            response_code(&second_hu, 3, Routes::PLAY),
-            Some(WsResponseCode::OK as i32)
-        );
-        assert!(has_room_event(&second_hu, WsCode::GAME_OVER));
         let state = loop_state.lock().unwrap();
-        let settlement = state.settlement.as_ref().expect("settlement");
-        assert_eq!(settlement.winner_positions, vec![1, 2]);
-        assert_eq!(settlement.from_position, Some(0));
-        assert_eq!(settlement.win_tile, Some(3));
-        assert_eq!(state.discards.get(&0), Some(&Vec::<i32>::new()));
+        let claim_window = state.claim_window.as_ref().expect("claim window");
+        assert!(claim_window.responses.is_empty());
+        assert!(state.settlement.is_none());
+        assert_eq!(state.discards.get(&0), Some(&vec![3]));
     }
 
     #[test]
-    fn play_request_nearest_hu_mode_keeps_only_first_winner_in_turn_order() {
+    fn play_request_rejects_self_hu_without_draw_and_accepts_after_draw() {
+        let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
+        {
+            let mut state = loop_state.lock().unwrap();
+            state.phase = ShenyangMahjongPhase::Play;
+            state.current_position = 0;
+            for position in 0..4 {
+                state.discards.insert(position, Vec::new());
+                state.melds.insert(position, Vec::new());
+            }
+            state
+                .hands
+                .insert(0, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+        }
+
+        let denied = handler.handle_game_request(
+            &mut room_service,
+            1,
+            ClientRequest {
+                route: Routes::PLAY as i32,
+                data: serde_json::json!({
+                    "action": ShenyangMahjongAction::HU as i32,
+                    "tiles": [],
+                    "target_tile": null,
+                    "from_position": null,
+                }),
+            },
+        );
+
+        assert_eq!(
+            response_code(&denied, 1, Routes::PLAY),
+            Some(WsResponseCode::NO_PERMISSION as i32)
+        );
+        assert!(loop_state.lock().unwrap().settlement.is_none());
+
+        {
+            loop_state.lock().unwrap().last_drawn_tile = Some(35);
+        }
+        let accepted = handler.handle_game_request(
+            &mut room_service,
+            1,
+            ClientRequest {
+                route: Routes::PLAY as i32,
+                data: serde_json::json!({
+                    "action": ShenyangMahjongAction::HU as i32,
+                    "tiles": [],
+                    "target_tile": null,
+                    "from_position": null,
+                }),
+            },
+        );
+
+        assert_eq!(
+            response_code(&accepted, 1, Routes::PLAY),
+            Some(WsResponseCode::OK as i32)
+        );
+        assert!(has_room_event(&accepted, WsCode::GAME_OVER));
+        let state = loop_state.lock().unwrap();
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert_eq!(
+            state
+                .settlement
+                .as_ref()
+                .map(|settlement| settlement.winner_positions.clone()),
+            Some(vec![0])
+        );
+    }
+
+    #[test]
+    fn play_request_respects_shenyang_basic_win_rule() {
         let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
         let _ = room_service.handle_common_request(
             1,
             &ClientRequest {
                 route: Routes::SETTING as i32,
-                data: serde_json::json!({"current_configs":{"multi_hu_mode":0}}),
+                data: serde_json::json!({"current_configs":{"win_rule":1}}),
             },
             GameId::SHENYANG_MAHJONG,
             build_shenyang_mahjong_settings,
@@ -3245,49 +2899,98 @@ mod tests {
                 state.discards.insert(position, Vec::new());
                 state.melds.insert(position, Vec::new());
             }
-            state.discards.insert(0, vec![3]);
+            state.discards.insert(0, vec![35]);
             state
                 .hands
-                .insert(1, vec![3, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
-            state
-                .hands
-                .insert(2, vec![3, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+                .insert(1, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35]);
             state.claim_window = Some(ClaimWindowState {
-                tile: 3,
+                tile: 35,
                 from_position: 0,
                 kind: ClaimWindowKind::Discard,
-                eligible_positions: vec![1, 2],
+                eligible_positions: vec![1],
                 responses: HashMap::new(),
             });
         }
 
-        let later_hu = handler.handle_game_request(
-            &mut room_service,
-            3,
-            play_request(ShenyangMahjongAction::HU, Vec::new(), Some(3), Some(0)),
-        );
-        let nearest_hu = handler.handle_game_request(
+        let denied = handler.handle_game_request(
             &mut room_service,
             2,
-            play_request(ShenyangMahjongAction::HU, Vec::new(), Some(3), Some(0)),
+            play_request(ShenyangMahjongAction::HU, Vec::new(), Some(35), Some(0)),
         );
 
         assert_eq!(
-            response_code(&later_hu, 3, Routes::PLAY),
-            Some(WsResponseCode::OK as i32)
+            response_code(&denied, 2, Routes::PLAY),
+            Some(WsResponseCode::NO_PERMISSION as i32)
         );
-        assert!(!has_room_event(&later_hu, WsCode::GAME_OVER));
+        assert!(loop_state.lock().unwrap().settlement.is_none());
+    }
+
+    #[test]
+    fn play_request_rob_gang_pass_finishes_added_gang() {
+        let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
+        {
+            let mut state = loop_state.lock().unwrap();
+            state.phase = ShenyangMahjongPhase::Play;
+            state.current_position = 0;
+            for position in 0..4 {
+                state.discards.insert(position, Vec::new());
+                state.melds.insert(position, Vec::new());
+            }
+            state
+                .hands
+                .insert(0, vec![3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31]);
+            state.melds.insert(
+                0,
+                vec![build_meld(
+                    ShenyangMahjongMeldKind::PENG,
+                    vec![3, 3, 3],
+                    Some(2),
+                )],
+            );
+            state
+                .hands
+                .insert(1, vec![3, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+            state.wall = vec![36];
+            state.last_drawn_tile = Some(3);
+            state.claim_window = Some(ClaimWindowState {
+                tile: 3,
+                from_position: 0,
+                kind: ClaimWindowKind::RobGang,
+                eligible_positions: vec![1],
+                responses: HashMap::new(),
+            });
+        }
+
+        let pass_response = handler.handle_game_request(
+            &mut room_service,
+            2,
+            ClientRequest {
+                route: Routes::PLAY as i32,
+                data: serde_json::json!({
+                    "action": ShenyangMahjongAction::PASS as i32,
+                    "tiles": [],
+                    "target_tile": 3,
+                    "from_position": 0,
+                }),
+            },
+        );
+
         assert_eq!(
-            response_code(&nearest_hu, 2, Routes::PLAY),
+            response_code(&pass_response, 2, Routes::PLAY),
             Some(WsResponseCode::OK as i32)
         );
-        assert!(has_room_event(&nearest_hu, WsCode::GAME_OVER));
+        assert!(!has_room_event(&pass_response, WsCode::GAME_OVER));
         let state = loop_state.lock().unwrap();
-        let settlement = state.settlement.as_ref().expect("settlement");
-        assert_eq!(settlement.winner_positions, vec![1]);
-        assert_eq!(settlement.from_position, Some(0));
-        assert_eq!(settlement.win_tile, Some(3));
-        assert_eq!(state.discards.get(&0), Some(&Vec::<i32>::new()));
+        assert_eq!(state.phase, ShenyangMahjongPhase::Play);
+        assert!(state.claim_window.is_none());
+        assert_eq!(state.current_position, 0);
+        assert_eq!(state.last_drawn_tile, Some(36));
+        assert!(state.hands.get(&0).unwrap().contains(&36));
+        assert!(!state.hands.get(&0).unwrap().contains(&3));
+        assert!(state.settlement.is_none());
+        let meld = state.melds.get(&0).unwrap().first().unwrap();
+        assert_eq!(meld.kind, ShenyangMahjongMeldKind::GANG);
+        assert_eq!(meld.tiles, vec![3, 3, 3, 3]);
     }
 
     #[test]
@@ -3378,7 +3081,7 @@ mod tests {
     }
 
     #[test]
-    fn play_request_rob_gang_pass_finishes_added_gang() {
+    fn play_request_waits_for_claims_and_hu_beats_peng() {
         let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
         {
             let mut state = loop_state.lock().unwrap();
@@ -3388,38 +3091,29 @@ mod tests {
                 state.discards.insert(position, Vec::new());
                 state.melds.insert(position, Vec::new());
             }
+            state.discards.insert(0, vec![3]);
             state
                 .hands
-                .insert(0, vec![3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31]);
-            state.melds.insert(
-                0,
-                vec![build_meld(
-                    ShenyangMahjongMeldKind::PENG,
-                    vec![3, 3, 3],
-                    Some(2),
-                )],
-            );
+                .insert(1, vec![1, 2, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
             state
                 .hands
-                .insert(1, vec![3, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
-            state.wall = vec![36];
-            state.last_drawn_tile = Some(3);
+                .insert(2, vec![3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35]);
             state.claim_window = Some(ClaimWindowState {
                 tile: 3,
                 from_position: 0,
-                kind: ClaimWindowKind::RobGang,
-                eligible_positions: vec![1],
+                kind: ClaimWindowKind::Discard,
+                eligible_positions: vec![1, 2],
                 responses: HashMap::new(),
             });
         }
 
-        let pass_response = handler.handle_game_request(
+        let peng_response = handler.handle_game_request(
             &mut room_service,
-            2,
+            3,
             ClientRequest {
                 route: Routes::PLAY as i32,
                 data: serde_json::json!({
-                    "action": ShenyangMahjongAction::PASS as i32,
+                    "action": ShenyangMahjongAction::PENG as i32,
                     "tiles": [],
                     "target_tile": 3,
                     "from_position": 0,
@@ -3428,21 +3122,47 @@ mod tests {
         );
 
         assert_eq!(
-            response_code(&pass_response, 2, Routes::PLAY),
+            response_code(&peng_response, 3, Routes::PLAY),
             Some(WsResponseCode::OK as i32)
         );
-        assert!(!has_room_event(&pass_response, WsCode::GAME_OVER));
+        assert!(!has_room_event(&peng_response, WsCode::GAME_OVER));
+        {
+            let state = loop_state.lock().unwrap();
+            assert!(state.claim_window.is_some());
+            assert!(state.settlement.is_none());
+            assert!(state.melds.get(&2).unwrap().is_empty());
+        }
+
+        let hu_response = handler.handle_game_request(
+            &mut room_service,
+            2,
+            ClientRequest {
+                route: Routes::PLAY as i32,
+                data: serde_json::json!({
+                    "action": ShenyangMahjongAction::HU as i32,
+                    "tiles": [],
+                    "target_tile": 3,
+                    "from_position": 0,
+                }),
+            },
+        );
+
+        assert_eq!(
+            response_code(&hu_response, 2, Routes::PLAY),
+            Some(WsResponseCode::OK as i32)
+        );
+        assert!(has_room_event(&hu_response, WsCode::GAME_OVER));
         let state = loop_state.lock().unwrap();
-        assert_eq!(state.phase, ShenyangMahjongPhase::Play);
-        assert!(state.claim_window.is_none());
-        assert_eq!(state.current_position, 0);
-        assert_eq!(state.last_drawn_tile, Some(36));
-        assert!(state.hands.get(&0).unwrap().contains(&36));
-        assert!(!state.hands.get(&0).unwrap().contains(&3));
-        assert!(state.settlement.is_none());
-        let meld = state.melds.get(&0).unwrap().first().unwrap();
-        assert_eq!(meld.kind, ShenyangMahjongMeldKind::GANG);
-        assert_eq!(meld.tiles, vec![3, 3, 3, 3]);
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert_eq!(
+            state
+                .settlement
+                .as_ref()
+                .map(|settlement| settlement.winner_positions.clone()),
+            Some(vec![1])
+        );
+        assert!(state.discards.get(&0).unwrap().is_empty());
+        assert!(state.melds.get(&2).unwrap().is_empty());
     }
 
     fn playable_state() -> ShenyangMahjongLoopState {
@@ -3458,6 +3178,78 @@ mod tests {
         state.current_position = 0;
         state.dealer_position = 0;
         state
+    }
+
+    #[test]
+    fn pruning_stopped_loop_state_restores_room_acceptance() {
+        let mut room_service = RoomService::default();
+        for session_id in 1..=3 {
+            room_service.connect(session_id);
+        }
+        for (session_id, name) in [(1_u64, "P1"), (2, "P2")] {
+            let _ = room_service.handle_common_request(
+                session_id,
+                &ClientRequest {
+                    route: Routes::JOIN as i32,
+                    data: serde_json::json!({
+                        "name": name,
+                        "password": "room",
+                        "game_id": GameId::SHENYANG_MAHJONG as i32
+                    }),
+                },
+                GameId::SHENYANG_MAHJONG,
+                build_shenyang_mahjong_settings,
+            );
+        }
+        let room_key = room_service.room_key_of(1).expect("room key");
+        let common = room_service
+            .get_room_common_state_handle(&room_key)
+            .expect("common state");
+        let loop_state = Arc::new(StdMutex::new(ShenyangMahjongLoopState::new(Arc::clone(
+            &common,
+        ))));
+        room_service.set_room_game_state(
+            &room_key,
+            Box::new(ShenyangMahjongGameState::from_loop_state(Arc::clone(
+                &loop_state,
+            ))),
+        );
+        let handler = ShenyangMahjongGameHandler::default();
+        handler
+            .loop_states
+            .lock()
+            .unwrap()
+            .insert(room_key.clone(), Arc::clone(&loop_state));
+        loop_state.lock().unwrap().request_stop();
+
+        handler.prune_stopped_loop_states(&mut room_service);
+        let join_after_prune = room_service
+            .handle_common_request(
+                3,
+                &ClientRequest {
+                    route: Routes::JOIN as i32,
+                    data: serde_json::json!({
+                        "name": "P3",
+                        "password": "room",
+                        "game_id": GameId::SHENYANG_MAHJONG as i32
+                    }),
+                },
+                GameId::SHENYANG_MAHJONG,
+                build_shenyang_mahjong_settings,
+            )
+            .expect("join common");
+        let joined = join_after_prune
+            .messages
+            .iter()
+            .any(|item| match &item.payload {
+                OutboundPayload::Response(RequestResponse::WithData(response)) => {
+                    response.code as i32 == WsResponseCode::JOINED as i32
+                }
+                _ => false,
+            });
+
+        assert!(joined);
+        assert_eq!(room_service.session_position(3), Some(2));
     }
 
     #[test]
@@ -3507,50 +3299,27 @@ mod tests {
         assert_eq!(meld.tiles, vec![3, 3, 3, 3]);
     }
 
-    #[test]
-    fn self_gang_consumes_four_tiles_and_draws_replacement() {
-        let mut state = playable_state();
-        state
-            .hands
-            .insert(0, vec![3, 3, 3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31]);
-        state.wall = vec![35];
-        state.last_drawn_tile = Some(3);
-        let mut dispatch = Dispatch::default();
-
-        assert!(can_self_gang(&state, 0, 3));
-        assert!(perform_self_gang(
-            &RoomService::default(),
-            "room",
-            &mut state,
-            &HashMap::new(),
-            &mut dispatch,
-            0,
-            3,
-        ));
-
-        assert_eq!(state.current_position, 0);
-        assert_eq!(state.wall_count(), 0);
-        assert_eq!(state.last_drawn_tile, Some(35));
-        assert!(state.hands.get(&0).unwrap().contains(&35));
-        assert_eq!(
-            state
-                .hands
-                .get(&0)
-                .unwrap()
-                .iter()
-                .filter(|&&tile| tile == 3)
-                .count(),
-            0,
-        );
-
-        let meld = state.melds.get(&0).unwrap().first().unwrap();
-        assert_eq!(meld.kind, ShenyangMahjongMeldKind::GANG);
-        assert_eq!(meld.tiles, vec![3, 3, 3, 3]);
-        assert_eq!(meld.from_position, None);
+    fn response_code(dispatch: &Dispatch, recipient: SessionId, route: Routes) -> Option<i32> {
+        dispatch
+            .messages
+            .iter()
+            .find_map(|item| match &item.payload {
+                OutboundPayload::Response(RequestResponse::WithData(response))
+                    if item.recipient == recipient && response.route == route as i32 =>
+                {
+                    Some(response.code as i32)
+                }
+                OutboundPayload::Response(RequestResponse::WithoutData(response))
+                    if item.recipient == recipient && response.route == route as i32 =>
+                {
+                    Some(response.code as i32)
+                }
+                _ => None,
+            })
     }
 
     #[test]
-    fn added_gang_upgrades_peng_and_draws_replacement() {
+    fn rob_gang_claim_pass_finishes_added_gang_and_draws_replacement() {
         let mut state = playable_state();
         state
             .hands
@@ -3563,81 +3332,32 @@ mod tests {
                 Some(2),
             )],
         );
-        state.wall = vec![35];
-        state.last_drawn_tile = Some(3);
-        let mut dispatch = Dispatch::default();
-
-        assert!(can_self_gang(&state, 0, 3));
-        assert!(perform_self_gang(
-            &RoomService::default(),
-            "room",
-            &mut state,
-            &HashMap::new(),
-            &mut dispatch,
-            0,
-            3,
-        ));
-
-        assert_eq!(state.last_drawn_tile, Some(35));
-        assert_eq!(
-            state
-                .hands
-                .get(&0)
-                .unwrap()
-                .iter()
-                .filter(|&&tile| tile == 3)
-                .count(),
-            0,
-        );
-
-        let meld = state.melds.get(&0).unwrap().first().unwrap();
-        assert_eq!(meld.kind, ShenyangMahjongMeldKind::GANG);
-        assert_eq!(meld.tiles, vec![3, 3, 3, 3]);
-        assert_eq!(meld.from_position, Some(2));
-    }
-
-    #[test]
-    fn added_gang_opens_rob_gang_claim_window_before_replacement_draw() {
-        let mut state = playable_state();
-        state
-            .hands
-            .insert(0, vec![3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31]);
-        state.melds.insert(
-            0,
-            vec![build_meld(
-                ShenyangMahjongMeldKind::PENG,
-                vec![3, 3, 3],
-                Some(2),
-            )],
-        );
-        state
-            .hands
-            .insert(1, vec![1, 2, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
         state.wall = vec![36];
         state.last_drawn_tile = Some(3);
+        state.claim_window = Some(ClaimWindowState {
+            tile: 3,
+            from_position: 0,
+            kind: ClaimWindowKind::RobGang,
+            eligible_positions: vec![1],
+            responses: HashMap::from([(1, ClaimResponse::Pass)]),
+        });
         let mut dispatch = Dispatch::default();
 
-        assert!(perform_self_gang(
+        resolve_claim_window(
             &RoomService::default(),
             "room",
             &mut state,
             &HashMap::new(),
             &mut dispatch,
-            0,
-            3,
-        ));
-
-        let claim_window = state.claim_window.as_ref().unwrap();
-        assert!(matches!(claim_window.kind, ClaimWindowKind::RobGang));
-        assert_eq!(claim_window.tile, 3);
-        assert_eq!(claim_window.from_position, 0);
-        assert_eq!(claim_window.eligible_positions, vec![1]);
-        assert_eq!(state.last_drawn_tile, Some(3));
-        assert!(state.hands.get(&0).unwrap().contains(&3));
-        assert_eq!(
-            state.melds.get(&0).unwrap().first().unwrap().kind,
-            ShenyangMahjongMeldKind::PENG
         );
+
+        assert!(state.claim_window.is_none());
+        assert_eq!(state.current_position, 0);
+        assert_eq!(state.last_drawn_tile, Some(36));
+        assert!(!state.hands.get(&0).unwrap().contains(&3));
+        let meld = state.melds.get(&0).unwrap().first().unwrap();
+        assert_eq!(meld.kind, ShenyangMahjongMeldKind::GANG);
+        assert_eq!(meld.tiles, vec![3, 3, 3, 3]);
     }
 
     #[test]
@@ -3689,44 +3409,324 @@ mod tests {
     }
 
     #[test]
-    fn rob_gang_claim_pass_finishes_added_gang_and_draws_replacement() {
+    fn self_draw_hu_rejects_complete_open_hand_without_draw() {
         let mut state = playable_state();
         state
             .hands
-            .insert(0, vec![3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31]);
+            .insert(0, vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
         state.melds.insert(
             0,
             vec![build_meld(
                 ShenyangMahjongMeldKind::PENG,
-                vec![3, 3, 3],
+                vec![1, 1, 1],
                 Some(2),
             )],
         );
-        state.wall = vec![36];
+
+        assert!(!can_self_draw_hu(&state, 0));
+    }
+
+    #[test]
+    fn self_draw_hu_requires_a_drawn_turn() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(0, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+
+        assert!(!can_self_draw_hu(&state, 0));
+
+        state.last_drawn_tile = Some(35);
+
+        assert!(can_self_draw_hu(&state, 0));
+    }
+
+    #[test]
+    fn self_draw_hu_requires_current_position() {
+        let mut state = playable_state();
+        state.current_position = 1;
+        state
+            .hands
+            .insert(0, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+        state.last_drawn_tile = Some(35);
+
+        assert!(!can_self_draw_hu(&state, 0));
+    }
+
+    #[test]
+    fn self_draw_hu_respects_shenyang_basic_win_rule() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(0, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+        state.last_drawn_tile = Some(35);
+        let configs = HashMap::from([("win_rule".to_owned(), 1)]);
+
+        assert!(!can_self_draw_hu_with_configs(&state, 0, &configs));
+
+        state
+            .hands
+            .insert(0, vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+        state.melds.insert(
+            0,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::CHI,
+                vec![1, 2, 3],
+                Some(1),
+            )],
+        );
+
+        assert!(can_self_draw_hu_with_configs(&state, 0, &configs));
+    }
+
+    #[test]
+    fn self_gang_consumes_four_tiles_and_draws_replacement() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(0, vec![3, 3, 3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31]);
+        state.wall = vec![35];
         state.last_drawn_tile = Some(3);
-        state.claim_window = Some(ClaimWindowState {
-            tile: 3,
-            from_position: 0,
-            kind: ClaimWindowKind::RobGang,
-            eligible_positions: vec![1],
-            responses: HashMap::from([(1, ClaimResponse::Pass)]),
-        });
         let mut dispatch = Dispatch::default();
 
-        resolve_claim_window(
+        assert!(can_self_gang(&state, 0, 3));
+        assert!(perform_self_gang(
             &RoomService::default(),
             "room",
             &mut state,
             &HashMap::new(),
             &mut dispatch,
+            0,
+            3,
+        ));
+
+        assert_eq!(state.current_position, 0);
+        assert_eq!(state.wall_count(), 0);
+        assert_eq!(state.last_drawn_tile, Some(35));
+        assert!(state.hands.get(&0).unwrap().contains(&35));
+        assert_eq!(
+            state
+                .hands
+                .get(&0)
+                .unwrap()
+                .iter()
+                .filter(|&&tile| tile == 3)
+                .count(),
+            0,
         );
 
-        assert!(state.claim_window.is_none());
-        assert_eq!(state.current_position, 0);
-        assert_eq!(state.last_drawn_tile, Some(36));
-        assert!(!state.hands.get(&0).unwrap().contains(&3));
         let meld = state.melds.get(&0).unwrap().first().unwrap();
         assert_eq!(meld.kind, ShenyangMahjongMeldKind::GANG);
         assert_eq!(meld.tiles, vec![3, 3, 3, 3]);
+        assert_eq!(meld.from_position, None);
+    }
+
+    #[test]
+    fn self_gang_requires_current_position() {
+        let mut state = playable_state();
+        state.current_position = 1;
+        state
+            .hands
+            .insert(0, vec![3, 3, 3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31]);
+        state.last_drawn_tile = Some(3);
+
+        assert!(!can_self_gang(&state, 0, 3));
+    }
+
+    #[test]
+    fn settlement_score_changes_cover_discard_self_draw_and_draw() {
+        assert_eq!(
+            settlement_score_changes_for_positions(&[0, 1, 2, 3], &[0, 2], Some(1), false)
+                .into_iter()
+                .map(|change| (change.position, change.score))
+                .collect::<Vec<_>>(),
+            vec![(0, 1), (1, -2), (2, 1), (3, 0)]
+        );
+        assert_eq!(
+            settlement_score_changes_for_positions(&[0, 1, 2, 3], &[2], None, true)
+                .into_iter()
+                .map(|change| (change.position, change.score))
+                .collect::<Vec<_>>(),
+            vec![(0, -1), (1, -1), (2, 3), (3, -1)]
+        );
+        assert_eq!(
+            settlement_score_changes_for_positions(&[0, 1, 2, 3], &[], None, false)
+                .into_iter()
+                .map(|change| (change.position, change.score))
+                .collect::<Vec<_>>(),
+            vec![(0, 0), (1, 0), (2, 0), (3, 0)]
+        );
+    }
+
+    #[test]
+    fn settlement_winner_details_describe_seven_pairs_self_draw() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(2, vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35, 35]);
+        state.enter_settlement(vec![2], None, Some(35), true);
+
+        let event = build_settlement_event(&state).unwrap();
+
+        assert_eq!(event.winner_details.len(), 1);
+        assert_eq!(event.winner_details[0].position, 2);
+        assert_eq!(
+            event.winner_details[0].pattern,
+            ShenyangMahjongWinPattern::SevenPairs
+        );
+        assert!(event.winner_details[0].is_self_draw);
+        assert_eq!(event.winner_details[0].score, 3);
+    }
+
+    #[test]
+    fn settlement_winner_details_include_reverse_win_and_score() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![1, 2, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+        state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(3), false, true);
+
+        let event = build_settlement_event(&state).unwrap();
+
+        assert_eq!(event.winner_details.len(), 1);
+        assert_eq!(event.winner_details[0].position, 1);
+        assert_eq!(
+            event.winner_details[0].pattern,
+            ShenyangMahjongWinPattern::Standard
+        );
+        assert!(event.winner_details[0].is_reverse_win);
+        assert_eq!(event.winner_details[0].score, 1);
+    }
+
+    fn setup_request_room() -> (
+        RoomService,
+        ShenyangMahjongGameHandler,
+        String,
+        LoopStateHandle,
+    ) {
+        let mut room_service = RoomService::default();
+        for session_id in 1..=4 {
+            room_service.connect(session_id);
+            let _ = room_service.handle_common_request(
+                session_id,
+                &ClientRequest {
+                    route: Routes::JOIN as i32,
+                    data: serde_json::json!({
+                        "name": format!("P{}", session_id),
+                        "password": "mahjong-request-room",
+                        "game_id": GameId::SHENYANG_MAHJONG as i32
+                    }),
+                },
+                GameId::SHENYANG_MAHJONG,
+                build_shenyang_mahjong_settings,
+            );
+        }
+        let room_key = room_service.room_key_of(1).expect("room key");
+        let common = room_service
+            .get_room_common_state_handle(&room_key)
+            .expect("common state");
+        let loop_state = Arc::new(StdMutex::new(ShenyangMahjongLoopState::new(Arc::clone(
+            &common,
+        ))));
+        room_service.set_room_game_state(
+            &room_key,
+            Box::new(ShenyangMahjongGameState::from_loop_state(Arc::clone(
+                &loop_state,
+            ))),
+        );
+        let handler = ShenyangMahjongGameHandler::default();
+        handler
+            .loop_states
+            .lock()
+            .unwrap()
+            .insert(room_key.clone(), Arc::clone(&loop_state));
+
+        (room_service, handler, room_key, loop_state)
+    }
+
+    #[test]
+    fn table_snapshot_includes_settlement_for_rejoin() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![1, 2, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+        state.discards.insert(0, vec![3]);
+        state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(3), false, true);
+
+        let snapshot = build_table_snapshot_event(&state, 1);
+        let settlement = snapshot.settlement.expect("settlement");
+
+        assert_eq!(snapshot.phase, ShenyangMahjongPhase::Settlement);
+        assert_eq!(settlement.winner_positions, vec![1]);
+        assert_eq!(settlement.from_position, Some(0));
+        assert_eq!(settlement.win_tile, Some(3));
+        assert!(settlement.is_reverse_win);
+        assert_eq!(settlement.winner_details.len(), 1);
+        assert_eq!(settlement.winner_details[0].position, 1);
+        assert_eq!(settlement.winner_details[0].score, 1);
+        assert_eq!(
+            settlement
+                .score_changes
+                .iter()
+                .map(|change| (change.position, change.score))
+                .collect::<Vec<_>>(),
+            vec![(0, -1), (1, 1), (2, 0), (3, 0)]
+        );
+    }
+
+    #[test]
+    fn table_snapshot_marks_disconnected_player_as_away() {
+        let state = playable_state();
+        state.base.lock().unwrap().mark_disconnected(2);
+
+        let snapshot = build_table_snapshot_event(&state, 1);
+        let player = snapshot
+            .players
+            .iter()
+            .find(|player| player.position == 2)
+            .expect("player snapshot");
+
+        assert!(player.away);
+        assert!(!player.is_ai);
+    }
+
+    #[test]
+    fn table_snapshot_preserves_drawn_tile_and_claim_options() {
+        let mut state = playable_state();
+        state.current_position = 0;
+        state.last_drawn_tile = Some(9);
+        state
+            .hands
+            .insert(0, vec![1, 2, 3, 4, 5, 6, 9, 11, 12, 13, 21, 22, 23, 31]);
+        state
+            .hands
+            .insert(1, vec![1, 2, 3, 3, 3, 4, 11, 12, 13, 21, 22, 23, 31]);
+        state.discards.insert(0, vec![3]);
+        state.claim_window = Some(ClaimWindowState {
+            tile: 3,
+            from_position: 0,
+            kind: ClaimWindowKind::Discard,
+            eligible_positions: vec![1],
+            responses: HashMap::new(),
+        });
+        state.set_turn_countdown(4);
+
+        let snapshot = build_table_snapshot_event(&state, 1);
+        let claim_window = snapshot.claim_window.expect("claim window");
+        let option = claim_window
+            .options
+            .iter()
+            .find(|option| option.position == 1)
+            .expect("claim option");
+
+        assert_eq!(snapshot.last_drawn_tile, Some(9));
+        assert_eq!(claim_window.tile, 3);
+        assert_eq!(claim_window.from_position, 0);
+        assert_eq!(claim_window.eligible_positions, vec![1]);
+        assert_eq!(claim_window.seconds, 4);
+        assert!(!claim_window.is_rob_gang);
+        assert!(option.can_peng);
+        assert!(option.can_gang);
+        assert!(option.chi_options.contains(&vec![1, 2]));
+        assert!(option.chi_options.contains(&vec![2, 4]));
     }
 }
