@@ -8,15 +8,6 @@ use ws_common::GameSettings;
 pub fn build_landlord_settings() -> (GameSettings, HashMap<String, GameParam>) {
     let params: HashMap<String, GameParam> = [
         (
-            //出牌动画时间 毫秒
-            "animation_time".into(),
-            GameParam::Range(GameParamRange {
-                default: 200,
-                min: 50,
-                max: 2000,
-            }),
-        ),
-        (
             //离开状态等待时间 秒
             "away_time".into(),
             GameParam::Range(GameParamRange {
@@ -41,15 +32,6 @@ pub fn build_landlord_settings() -> (GameSettings, HashMap<String, GameParam>) {
                 default: 3000,
                 min: 500,
                 max: 4000,
-            }),
-        ),
-        (
-            // 开始阶段等待时间 秒
-            "start_time".into(),
-            GameParam::Range(GameParamRange {
-                default: 1,
-                min: 0,
-                max: 5,
             }),
         ),
         (

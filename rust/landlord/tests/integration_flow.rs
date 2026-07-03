@@ -95,7 +95,6 @@ async fn landlord_three_players_can_start_call_and_play_over_ws() {
         Routes::SETTING as i32,
         json!({
             "current_configs": {
-                "start_time": 0,
                 "settlement_time": 2
             }
         }),

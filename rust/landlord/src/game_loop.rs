@@ -558,7 +558,7 @@ async fn handle_settlement_phase(
 
 // ─── Phase Handlers ───────────────────────────────────────────────────
 
-/// Start → deal cards, wait fixed start_time, then advance to CallLandlord.
+/// Start → deal cards, then immediately advance to CallLandlord.
 async fn handle_start_phase(
     room_key: &str,
     state: &Arc<std::sync::Mutex<LandlordLoopState>>,
@@ -606,15 +606,6 @@ async fn handle_start_phase(
     }
     drop(rs);
     send_dispatch(dispatch, senders).await;
-
-    if sleep_or_stop(
-        state,
-        Duration::from_secs(fixed_wait_seconds(configs, "start_time", 1)),
-    )
-    .await
-    {
-        return true;
-    }
 
     let (first_call_position, phase_payload) = {
         let mut s = state.lock().unwrap();
