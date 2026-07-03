@@ -22,9 +22,16 @@ pub enum ClaimResponse {
 }
 
 #[derive(Debug, Clone)]
+pub enum ClaimWindowKind {
+    Discard,
+    RobGang,
+}
+
+#[derive(Debug, Clone)]
 pub struct ClaimWindowState {
     pub tile: i32,
     pub from_position: usize,
+    pub kind: ClaimWindowKind,
     pub eligible_positions: Vec<usize>,
     pub responses: HashMap<usize, ClaimResponse>,
 }
@@ -35,6 +42,7 @@ pub struct SettlementState {
     pub from_position: Option<usize>,
     pub win_tile: Option<i32>,
     pub is_self_draw: bool,
+    pub is_reverse_win: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -101,10 +109,6 @@ impl ShenyangMahjongLoopState {
         self.base.lock().unwrap().action_received
     }
 
-    pub fn clear_away(&self) {
-        self.base.lock().unwrap().clear_away();
-    }
-
     pub fn deal_new_round(&mut self) {
         self.phase = ShenyangMahjongPhase::Play;
         self.claim_window = None;
@@ -141,7 +145,6 @@ impl ShenyangMahjongLoopState {
         }
         self.current_position = self.dealer_position;
         self.set_action_received(false);
-        self.clear_away();
     }
 
     pub fn draw_for_position(&mut self, position: usize) -> Option<i32> {
@@ -161,6 +164,23 @@ impl ShenyangMahjongLoopState {
         win_tile: Option<i32>,
         is_self_draw: bool,
     ) {
+        self.enter_settlement_with_reverse_win(
+            winner_positions,
+            from_position,
+            win_tile,
+            is_self_draw,
+            false,
+        );
+    }
+
+    pub fn enter_settlement_with_reverse_win(
+        &mut self,
+        winner_positions: Vec<usize>,
+        from_position: Option<usize>,
+        win_tile: Option<i32>,
+        is_self_draw: bool,
+        is_reverse_win: bool,
+    ) {
         self.phase = ShenyangMahjongPhase::Settlement;
         self.claim_window = None;
         self.last_drawn_tile = None;
@@ -169,13 +189,14 @@ impl ShenyangMahjongLoopState {
             from_position,
             win_tile,
             is_self_draw,
+            is_reverse_win,
         });
         self.set_action_received(false);
     }
 
     pub fn is_ai_controlled_position(&self, position: usize) -> bool {
         let state = self.base.lock().unwrap();
-        state.is_ai_position(position) || state.is_away(position)
+        state.is_ai_position(position) || state.is_away(position) || state.is_disconnected(position)
     }
 
     pub fn is_ai_position(&self, position: usize) -> bool {
@@ -184,6 +205,10 @@ impl ShenyangMahjongLoopState {
 
     pub fn is_away(&self, position: usize) -> bool {
         self.base.lock().unwrap().is_away(position)
+    }
+
+    pub fn is_disconnected(&self, position: usize) -> bool {
+        self.base.lock().unwrap().is_disconnected(position)
     }
 
     pub fn is_paused(&self) -> bool {
@@ -236,7 +261,17 @@ impl ShenyangMahjongLoopState {
     }
 
     pub fn redeal(&mut self) {
-        self.dealer_position = self.next_position(self.dealer_position);
+        let dealer_should_continue = self
+            .settlement
+            .as_ref()
+            .map(|settlement| {
+                settlement.winner_positions.is_empty()
+                    || settlement.winner_positions.contains(&self.dealer_position)
+            })
+            .unwrap_or(false);
+        if !dealer_should_continue {
+            self.dealer_position = self.next_position(self.dealer_position);
+        }
         self.current_position = self.dealer_position;
         self.phase = ShenyangMahjongPhase::Start;
         self.wall.clear();
@@ -248,7 +283,6 @@ impl ShenyangMahjongLoopState {
         self.settlement = None;
         self.set_action_received(false);
         self.set_turn_countdown(0);
-        self.clear_away();
     }
 
     pub fn remove_last_discard(&mut self, position: usize) {
@@ -308,5 +342,88 @@ impl ShenyangMahjongLoopState {
 
     pub fn wall_count(&self) -> usize {
         self.wall.len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn state_with_players() -> ShenyangMahjongLoopState {
+        let base = Arc::new(Mutex::new(CommonGameState::default()));
+        {
+            let mut common = base.lock().unwrap();
+            for position in 0..4 {
+                common.add_player(position, position as u64 + 1, &format!("P{}", position));
+            }
+        }
+        ShenyangMahjongLoopState::new(base)
+    }
+
+    #[test]
+    fn redeal_keeps_dealer_after_dealer_win() {
+        let mut state = state_with_players();
+        state.dealer_position = 0;
+        state.enter_settlement(vec![0], None, Some(35), true);
+
+        state.redeal();
+
+        assert_eq!(state.dealer_position, 0);
+        assert_eq!(state.current_position, 0);
+    }
+
+    #[test]
+    fn redeal_keeps_dealer_after_draw() {
+        let mut state = state_with_players();
+        state.dealer_position = 0;
+        state.enter_settlement(Vec::new(), None, None, false);
+
+        state.redeal();
+
+        assert_eq!(state.dealer_position, 0);
+        assert_eq!(state.current_position, 0);
+    }
+
+    #[test]
+    fn redeal_advances_dealer_after_non_dealer_win() {
+        let mut state = state_with_players();
+        state.dealer_position = 0;
+        state.enter_settlement(vec![2], Some(1), Some(35), false);
+
+        state.redeal();
+
+        assert_eq!(state.dealer_position, 1);
+        assert_eq!(state.current_position, 1);
+    }
+
+    #[test]
+    fn away_state_persists_through_new_round_deal() {
+        let mut state = state_with_players();
+        state.base.lock().unwrap().mark_away(2);
+
+        state.deal_new_round();
+
+        assert!(state.is_away(2));
+    }
+
+    #[test]
+    fn away_state_persists_through_redeal() {
+        let mut state = state_with_players();
+        state.base.lock().unwrap().mark_away(2);
+        state.enter_settlement(vec![0], None, Some(35), true);
+
+        state.redeal();
+
+        assert!(state.is_away(2));
+    }
+
+    #[test]
+    fn disconnected_position_is_ai_controlled_until_rejoin() {
+        let state = state_with_players();
+        state.base.lock().unwrap().mark_disconnected(2);
+
+        assert!(state.is_disconnected(2));
+        assert!(state.is_ai_controlled_position(2));
+        assert!(!state.is_ai_position(2));
     }
 }

@@ -59,6 +59,8 @@ pub struct WsShenyangMahjongClaimWindowEvent {
     pub eligible_positions: Vec<i32>,
     pub seconds: i32,
     #[serde(default)]
+    pub is_rob_gang: bool,
+    #[serde(default)]
     pub options: Vec<WsShenyangMahjongClaimOption>,
 }
 
@@ -116,9 +118,39 @@ pub struct WsShenyangMahjongPlayerSnapshot {
 pub struct WsShenyangMahjongPublicPlayerSnapshot {
     pub position: i32,
     pub name: String,
+    #[serde(default)]
+    pub away: bool,
+    #[serde(default)]
+    pub is_ai: bool,
     pub hand_count: i32,
     pub discards: Vec<i32>,
     pub melds: Vec<WsShenyangMahjongMeld>,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsShenyangMahjongScoreChange {
+    pub position: i32,
+    pub score: i32,
+}
+
+#[typeshare]
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
+pub enum ShenyangMahjongWinPattern {
+    Standard = 1,
+    SevenPairs = 2,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsShenyangMahjongWinnerDetail {
+    pub position: i32,
+    pub pattern: ShenyangMahjongWinPattern,
+    pub is_self_draw: bool,
+    #[serde(default)]
+    pub is_reverse_win: bool,
+    pub score: i32,
 }
 
 #[typeshare]
@@ -128,6 +160,11 @@ pub struct WsShenyangMahjongSettlementEvent {
     pub from_position: Option<i32>,
     pub win_tile: Option<i32>,
     pub is_self_draw: bool,
+    #[serde(default)]
+    pub is_reverse_win: bool,
+    pub score_changes: Vec<WsShenyangMahjongScoreChange>,
+    #[serde(default)]
+    pub winner_details: Vec<WsShenyangMahjongWinnerDetail>,
     pub players: Vec<WsShenyangMahjongPlayerSnapshot>,
 }
 
@@ -141,6 +178,10 @@ pub struct WsShenyangMahjongTableSnapshotEvent {
     pub dealer_position: i32,
     pub wall_count: i32,
     pub turn_countdown: i32,
+    #[serde(default)]
+    pub last_drawn_tile: Option<i32>,
+    #[serde(default)]
+    pub settlement: Option<WsShenyangMahjongSettlementEvent>,
     pub claim_window: Option<WsShenyangMahjongClaimWindowEvent>,
 }
 

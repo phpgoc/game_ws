@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
-use crate::rules::{can_chi, can_peng, is_standard_win, sort_tiles};
+use crate::rules::{can_chi, can_gang, can_peng, is_complete_win_with_melds, sort_tiles};
 
 use super::observation::{AiClaimView, AiPublicTable};
 
@@ -9,6 +9,7 @@ use super::observation::{AiClaimView, AiPublicTable};
 pub enum AiClaimChoice {
     Pass,
     Peng,
+    Gang,
     Chi { consume_tiles: Vec<i32> },
     Hu,
 }
@@ -51,6 +52,7 @@ pub fn choose_claim_from_view(
     claim: &AiClaimView,
     table: &AiPublicTable,
     position: usize,
+    win_rule: i32,
 ) -> Option<AiClaimChoice> {
     if !claim.eligible_positions.contains(&position) {
         return None;
@@ -59,8 +61,17 @@ pub fn choose_claim_from_view(
     let mut win_hand = hand.to_vec();
     win_hand.push(tile);
     win_hand.sort_unstable();
-    if is_standard_win(&win_hand) {
+    let melds = table
+        .seats
+        .get(&position)
+        .map(|seat| seat.melds.as_slice())
+        .unwrap_or(&[]);
+    if is_complete_win_with_melds(&win_hand, melds, win_rule) {
         return Some(AiClaimChoice::Hu);
+    }
+
+    if can_gang(hand, tile) {
+        return Some(AiClaimChoice::Gang);
     }
 
     if can_peng(hand, tile) {
@@ -108,11 +119,17 @@ pub fn choose_discard_from_view(
     hand: &[i32],
     table: &AiPublicTable,
     position: usize,
+    win_rule: i32,
 ) -> Option<i32> {
     if hand.len() % 3 != 2 {
         return None;
     }
-    if is_standard_win(hand) {
+    let melds = table
+        .seats
+        .get(&position)
+        .map(|seat| seat.melds.as_slice())
+        .unwrap_or(&[]);
+    if is_complete_win_with_melds(hand, melds, win_rule) {
         return None;
     }
 
@@ -294,6 +311,7 @@ mod tests {
 
     use super::*;
     use crate::ai::observation::{AiClaimView, AiSeatView};
+    use crate::rules::WIN_RULE_RELAXED;
 
     #[test]
     fn claim_hu_beats_other_claims() {
@@ -307,8 +325,66 @@ mod tests {
         let hand = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35];
 
         assert_eq!(
-            choose_claim_from_view(&hand, &claim, &table, 0),
+            choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
             Some(AiClaimChoice::Hu)
+        );
+    }
+
+    #[test]
+    fn claim_hu_accepts_seven_pairs() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.claim_window = Some(AiClaimView {
+            tile: 35,
+            from_position: 1,
+            eligible_positions: vec![0],
+        });
+        let claim = table.claim_window.clone().unwrap();
+        let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35];
+
+        assert_eq!(
+            choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+            Some(AiClaimChoice::Hu)
+        );
+    }
+
+    #[test]
+    fn claim_hu_accepts_open_meld_remainder() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.claim_window = Some(AiClaimView {
+            tile: 35,
+            from_position: 1,
+            eligible_positions: vec![0],
+        });
+        table.seats.get_mut(&0).unwrap().melds = vec![
+            share_type_public::games::shenyang_mahjong::WsShenyangMahjongMeld {
+                kind: share_type_public::games::shenyang_mahjong::ShenyangMahjongMeldKind::PENG,
+                tiles: vec![1, 1, 1],
+                from_position: Some(2),
+            },
+        ];
+        let claim = table.claim_window.clone().unwrap();
+        let hand = vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35];
+
+        assert_eq!(
+            choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+            Some(AiClaimChoice::Hu)
+        );
+    }
+
+    #[test]
+    fn claim_gang_beats_peng_when_not_winning() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.claim_window = Some(AiClaimView {
+            tile: 35,
+            from_position: 1,
+            eligible_positions: vec![0],
+        });
+        let claim = table.claim_window.clone().unwrap();
+        let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 35, 35, 35];
+
+        assert_eq!(
+            choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+            Some(AiClaimChoice::Gang)
         );
     }
 
@@ -317,7 +393,21 @@ mod tests {
         let table = table_with_discards(1, Vec::new());
         let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35];
 
-        assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(31));
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+            Some(31)
+        );
+    }
+
+    #[test]
+    fn discard_returns_none_for_seven_pairs_win() {
+        let table = table_with_discards(1, Vec::new());
+        let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35, 35];
+
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+            None
+        );
     }
 
     #[test]
@@ -325,7 +415,10 @@ mod tests {
         let table = table_with_discards(1, vec![31]);
         let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 32];
 
-        assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(31));
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+            Some(31)
+        );
     }
 
     fn table_with_discards(position: usize, discards: Vec<i32>) -> AiPublicTable {

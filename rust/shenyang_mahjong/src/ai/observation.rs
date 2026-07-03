@@ -37,7 +37,7 @@ pub fn build_public_table(state: &ShenyangMahjongLoopState) -> AiPublicTable {
             AiSeatView {
                 position,
                 is_ai: state.is_ai_position(position),
-                is_away: state.is_away(position),
+                is_away: state.is_away(position) || state.is_disconnected(position),
                 hand_count: state
                     .hands
                     .get(&position)

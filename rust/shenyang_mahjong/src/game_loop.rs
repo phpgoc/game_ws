@@ -247,7 +247,25 @@ pub(crate) fn start_game_loop(
             }
         }
 
-        loop_states.lock().unwrap().remove(&room_key);
+        let should_cleanup = {
+            let mut states = loop_states.lock().unwrap();
+            if states
+                .get(&room_key)
+                .is_some_and(|current| Arc::ptr_eq(current, &state))
+            {
+                states.remove(&room_key);
+                true
+            } else {
+                false
+            }
+        };
+        if should_cleanup {
+            let common = { Arc::clone(&state.lock().unwrap().base) };
+            room_service
+                .lock()
+                .await
+                .clear_room_game_state_if_same(&room_key, &common);
+        }
     });
 }
 
