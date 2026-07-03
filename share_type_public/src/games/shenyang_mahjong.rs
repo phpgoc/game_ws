@@ -47,6 +47,8 @@ pub enum ShenyangMahjongPhase {
 pub enum ShenyangMahjongWinPattern {
     Standard = 1,
     SevenPairs = 2,
+    PiaoHu = 3,
+    PureOneSuit = 4,
 }
 
 #[typeshare]

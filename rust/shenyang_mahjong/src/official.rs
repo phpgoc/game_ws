@@ -195,6 +195,8 @@ mod tests {
             win_tile: Some(3),
             is_self_draw: false,
             is_reverse_win: false,
+            is_gang_draw: false,
+            is_haidilao: false,
         };
 
         assert_eq!(winner_score_for_settlement(&settlement, 4, 0), 1);
@@ -209,6 +211,8 @@ mod tests {
             win_tile: Some(3),
             is_self_draw: true,
             is_reverse_win: false,
+            is_gang_draw: false,
+            is_haidilao: false,
         };
 
         assert_eq!(winner_score_for_settlement(&settlement, 4, 2), 3);

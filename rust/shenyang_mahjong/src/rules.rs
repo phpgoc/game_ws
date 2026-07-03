@@ -134,6 +134,22 @@ fn has_triplet_or_quad(tiles: &[i32]) -> bool {
         .any(|tile| counts[tile as usize] >= 3)
 }
 
+fn is_pure_one_suit_tiles(tiles: &[i32]) -> bool {
+    let mut suit = None;
+    for tile in tiles.iter().copied() {
+        if !is_suited_tile(tile) {
+            return false;
+        }
+        let tile_suit = tile / 10;
+        match suit {
+            Some(suit) if suit != tile_suit => return false,
+            None => suit = Some(tile_suit),
+            _ => {}
+        }
+    }
+    suit.is_some()
+}
+
 pub fn is_complete_win(tiles: &[i32], meld_count: usize) -> bool {
     if meld_count == 0 {
         return tiles.len() == 14 && is_win(tiles);
@@ -176,6 +192,29 @@ pub fn is_seven_pairs_win(tiles: &[i32]) -> bool {
     })
 }
 
+pub fn is_pure_one_suit_win(tiles: &[i32], melds: &[WsShenyangMahjongMeld]) -> bool {
+    is_complete_win(tiles, melds.len())
+        && is_pure_one_suit_tiles(&all_tiles_with_melds(tiles, melds))
+}
+
+pub fn is_piao_hu_win(tiles: &[i32], melds: &[WsShenyangMahjongMeld]) -> bool {
+    if !is_complete_win(tiles, melds.len()) || melds.iter().any(|meld| !is_triplet_meld(meld)) {
+        return false;
+    }
+    can_form_triplets_with_pair(tiles)
+}
+
+pub fn is_single_wait_shape(tiles: &[i32], melds: &[WsShenyangMahjongMeld], win_tile: i32) -> bool {
+    if !is_complete_win(tiles, melds.len()) || !tiles.contains(&win_tile) {
+        return false;
+    }
+    is_pair_single_wait(tiles, win_tile)
+        || is_closed_middle_wait(tiles, win_tile)
+        || is_edge_wait(tiles, win_tile)
+        || ((is_terminal_tile(win_tile) || is_honor_tile(win_tile))
+            && is_unique_complete_wait(tiles, melds, win_tile))
+}
+
 pub fn is_standard_win(tiles: &[i32]) -> bool {
     if tiles.len() % 3 != 2 {
         return false;
@@ -206,6 +245,14 @@ fn is_suited_tile(tile: i32) -> bool {
     matches!(tile, 1..=9 | 11..=19 | 21..=29)
 }
 
+fn is_honor_tile(tile: i32) -> bool {
+    matches!(tile, 31..=37)
+}
+
+fn is_terminal_tile(tile: i32) -> bool {
+    matches!(tile, 1 | 9 | 11 | 19 | 21 | 29)
+}
+
 fn is_valid_sequence(sequence: &[i32]) -> bool {
     if sequence.len() != 3 {
         return false;
@@ -216,6 +263,10 @@ fn is_valid_sequence(sequence: &[i32]) -> bool {
 
 fn is_valid_tile(tile: i32) -> bool {
     SHENYANG_MAHJONG_TILE_KINDS.contains(&tile)
+}
+
+fn is_triplet_meld(meld: &WsShenyangMahjongMeld) -> bool {
+    meld.tiles.len() >= 3 && meld.tiles.iter().all(|tile| *tile == meld.tiles[0])
 }
 
 pub fn is_win(tiles: &[i32]) -> bool {
@@ -239,12 +290,104 @@ fn same_suit(a: i32, b: i32) -> bool {
     a / 10 == b / 10
 }
 
+fn can_form_triplets_with_pair(tiles: &[i32]) -> bool {
+    if tiles.len() % 3 != 2 {
+        return false;
+    }
+    let counts = tile_counts(tiles);
+    SHENYANG_MAHJONG_TILE_KINDS.into_iter().any(|pair_tile| {
+        let pair_count = counts[pair_tile as usize];
+        pair_count >= 2
+            && SHENYANG_MAHJONG_TILE_KINDS.into_iter().all(|tile| {
+                let mut count = counts[tile as usize];
+                if tile == pair_tile {
+                    count -= 2;
+                }
+                count % 3 == 0
+            })
+    })
+}
+
+fn can_form_sets_with_one_pair(counts: &[u8; 38]) -> bool {
+    for tile in SHENYANG_MAHJONG_TILE_KINDS {
+        let index = tile as usize;
+        if counts[index] < 2 {
+            continue;
+        }
+        let mut working = *counts;
+        working[index] -= 2;
+        if can_form_sets(&mut working) {
+            return true;
+        }
+    }
+    false
+}
+
+fn counts_after_removing(tiles: &[i32], remove_tiles: &[i32]) -> Option<[u8; 38]> {
+    let mut counts = tile_counts(tiles);
+    for tile in remove_tiles {
+        let index = *tile as usize;
+        if counts[index] == 0 {
+            return None;
+        }
+        counts[index] -= 1;
+    }
+    Some(counts)
+}
+
+fn is_pair_single_wait(tiles: &[i32], win_tile: i32) -> bool {
+    let Some(mut counts) = counts_after_removing(tiles, &[win_tile, win_tile]) else {
+        return false;
+    };
+    can_form_sets(&mut counts)
+}
+
+fn is_closed_middle_wait(tiles: &[i32], win_tile: i32) -> bool {
+    is_suited_tile(win_tile)
+        && same_suit(win_tile - 1, win_tile)
+        && same_suit(win_tile + 1, win_tile)
+        && counts_after_removing(tiles, &[win_tile - 1, win_tile, win_tile + 1])
+            .is_some_and(|counts| can_form_sets_with_one_pair(&counts))
+}
+
+fn is_edge_wait(tiles: &[i32], win_tile: i32) -> bool {
+    if !is_suited_tile(win_tile) {
+        return false;
+    }
+    let rank = win_tile % 10;
+    let sequence = match rank {
+        3 => [win_tile - 2, win_tile - 1, win_tile],
+        7 => [win_tile, win_tile + 1, win_tile + 2],
+        _ => return false,
+    };
+    counts_after_removing(tiles, &sequence)
+        .is_some_and(|counts| can_form_sets_with_one_pair(&counts))
+}
+
+fn is_unique_complete_wait(tiles: &[i32], melds: &[WsShenyangMahjongMeld], win_tile: i32) -> bool {
+    let Some(index) = tiles.iter().position(|tile| *tile == win_tile) else {
+        return false;
+    };
+    let mut base = tiles.to_vec();
+    base.remove(index);
+    let waits = SHENYANG_MAHJONG_TILE_KINDS
+        .into_iter()
+        .filter(|tile| {
+            let mut test = base.clone();
+            test.push(*tile);
+            test.sort_unstable();
+            is_complete_win(&test, melds.len())
+        })
+        .collect::<Vec<_>>();
+    waits.len() == 1 && waits[0] == win_tile
+}
+
 pub fn satisfies_shenyang_basic_win(tiles: &[i32], melds: &[WsShenyangMahjongMeld]) -> bool {
-    if melds.is_empty() {
-        return is_seven_pairs_win(tiles) && has_three_suits(tiles) && has_terminal_or_honor(tiles);
+    if is_seven_pairs_win(tiles) {
+        return true;
     }
     let all_tiles = all_tiles_with_melds(tiles, melds);
-    has_three_suits(&all_tiles)
+    (has_three_suits(&all_tiles) || is_pure_one_suit_tiles(&all_tiles))
         && has_open_meld(melds)
         && has_terminal_or_honor(&all_tiles)
         && (has_triplet_or_quad(&all_tiles) || has_dragon_pair_as_standard_pair(tiles))
@@ -289,8 +432,9 @@ mod tests {
     };
 
     use super::{
-        can_chi, can_concealed_gang, can_gang, can_peng, is_complete_win, is_seven_pairs_win,
-        is_standard_win, is_win, satisfies_shenyang_basic_win,
+        can_chi, can_concealed_gang, can_gang, can_peng, is_complete_win, is_pure_one_suit_win,
+        is_seven_pairs_win, is_single_wait_shape, is_standard_win, is_win,
+        satisfies_shenyang_basic_win,
     };
 
     #[test]
@@ -368,6 +512,14 @@ mod tests {
     }
 
     #[test]
+    fn pure_one_suit_rejects_honor_tiles() {
+        let tiles = vec![1, 2, 3, 4, 5, 6, 7, 7, 7, 31, 31];
+        let melds = vec![meld(ShenyangMahjongMeldKind::CHI, vec![2, 3, 4], Some(1))];
+
+        assert!(!is_pure_one_suit_win(&tiles, &melds));
+    }
+
+    #[test]
     fn shenyang_basic_accepts_dragon_pair_without_triplet() {
         let tiles = vec![11, 12, 13, 21, 22, 23, 4, 5, 6, 35, 35];
         let melds = vec![meld(ShenyangMahjongMeldKind::CHI, vec![1, 2, 3], Some(1))];
@@ -380,6 +532,15 @@ mod tests {
         let tiles = vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35];
         let melds = vec![meld(ShenyangMahjongMeldKind::CHI, vec![1, 2, 3], Some(1))];
 
+        assert!(satisfies_shenyang_basic_win(&tiles, &melds));
+    }
+
+    #[test]
+    fn shenyang_basic_accepts_pure_one_suit_without_three_suits() {
+        let tiles = vec![1, 2, 3, 4, 5, 6, 7, 7, 7, 9, 9];
+        let melds = vec![meld(ShenyangMahjongMeldKind::CHI, vec![2, 3, 4], Some(1))];
+
+        assert!(is_pure_one_suit_win(&tiles, &melds));
         assert!(satisfies_shenyang_basic_win(&tiles, &melds));
     }
 
@@ -400,10 +561,54 @@ mod tests {
     }
 
     #[test]
+    fn shenyang_basic_rejects_pure_one_suit_without_open_meld() {
+        let tiles = vec![1, 2, 3, 2, 3, 4, 4, 5, 6, 7, 7, 7, 9, 9];
+
+        assert!(is_pure_one_suit_win(&tiles, &[]));
+        assert!(!satisfies_shenyang_basic_win(&tiles, &[]));
+    }
+
+    #[test]
     fn shenyang_basic_rejects_standard_win_without_open_meld() {
         let tiles = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35];
 
         assert!(!satisfies_shenyang_basic_win(&tiles, &[]));
+    }
+
+    #[test]
+    fn shenyang_basic_seven_pairs_ignores_basic_requirements() {
+        let tiles = vec![2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8];
+
+        assert!(is_seven_pairs_win(&tiles));
+        assert!(satisfies_shenyang_basic_win(&tiles, &[]));
+    }
+
+    #[test]
+    fn single_wait_shape_accepts_closed_middle_wait() {
+        let tiles = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 21, 21];
+
+        assert!(is_single_wait_shape(&tiles, &[], 5));
+    }
+
+    #[test]
+    fn single_wait_shape_accepts_edge_wait() {
+        let tiles = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 35, 35];
+
+        assert!(is_single_wait_shape(&tiles, &[], 3));
+    }
+
+    #[test]
+    fn single_wait_shape_accepts_pair_wait() {
+        let tiles = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 35, 35];
+
+        assert!(is_single_wait_shape(&tiles, &[], 35));
+    }
+
+    #[test]
+    fn single_wait_shape_rejects_open_two_sided_wait() {
+        let tiles = vec![2, 3, 4, 5, 6, 7, 11, 12, 13, 21, 22, 23, 31, 31];
+
+        assert!(!is_single_wait_shape(&tiles, &[], 4));
     }
 
     #[test]

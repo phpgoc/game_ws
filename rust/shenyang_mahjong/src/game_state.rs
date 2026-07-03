@@ -43,6 +43,8 @@ pub struct SettlementState {
     pub win_tile: Option<i32>,
     pub is_self_draw: bool,
     pub is_reverse_win: bool,
+    pub is_gang_draw: bool,
+    pub is_haidilao: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -62,6 +64,7 @@ pub struct ShenyangMahjongLoopState {
     pub melds: HashMap<usize, Vec<WsShenyangMahjongMeld>>,
     pub claim_window: Option<ClaimWindowState>,
     pub last_drawn_tile: Option<i32>,
+    pub pending_gang_draw: bool,
     pub settlement: Option<SettlementState>,
 }
 
@@ -113,6 +116,7 @@ impl ShenyangMahjongLoopState {
         self.phase = ShenyangMahjongPhase::Play;
         self.claim_window = None;
         self.last_drawn_tile = None;
+        self.pending_gang_draw = false;
         self.settlement = None;
         self.wall = Self::shuffle_wall();
         self.hands.clear();
@@ -154,6 +158,7 @@ impl ShenyangMahjongLoopState {
         sort_tiles(hand);
         self.current_position = position;
         self.last_drawn_tile = Some(tile);
+        self.pending_gang_draw = false;
         Some(tile)
     }
 
@@ -170,6 +175,8 @@ impl ShenyangMahjongLoopState {
             win_tile,
             is_self_draw,
             false,
+            false,
+            false,
         );
     }
 
@@ -180,16 +187,21 @@ impl ShenyangMahjongLoopState {
         win_tile: Option<i32>,
         is_self_draw: bool,
         is_reverse_win: bool,
+        is_gang_draw: bool,
+        is_haidilao: bool,
     ) {
         self.phase = ShenyangMahjongPhase::Settlement;
         self.claim_window = None;
         self.last_drawn_tile = None;
+        self.pending_gang_draw = false;
         self.settlement = Some(SettlementState {
             winner_positions,
             from_position,
             win_tile,
             is_self_draw,
             is_reverse_win,
+            is_gang_draw,
+            is_haidilao,
         });
         self.set_action_received(false);
     }
@@ -231,6 +243,7 @@ impl ShenyangMahjongLoopState {
             melds: HashMap::new(),
             claim_window: None,
             last_drawn_tile: None,
+            pending_gang_draw: false,
             settlement: None,
         }
     }
@@ -280,6 +293,7 @@ impl ShenyangMahjongLoopState {
         self.melds.clear();
         self.claim_window = None;
         self.last_drawn_tile = None;
+        self.pending_gang_draw = false;
         self.settlement = None;
         self.set_action_received(false);
         self.set_turn_countdown(0);
