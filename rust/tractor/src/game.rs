@@ -135,11 +135,11 @@ impl TractorGameHandler {
         if finished {
             let settlement = {
                 let s = state.lock().unwrap();
-                let partner_position = (s.dealer_position + 2) % 4;
+                let score = s.settlement_score();
                 WsTractorSettlementEvent {
-                    winner_positions: vec![s.dealer_position as i32, partner_position as i32],
-                    score: 1,
-                    blood_units: s.rules.blood_units(1),
+                    winner_positions: s.winner_positions(),
+                    score,
+                    blood_units: s.rules.blood_units(score),
                     target_rank: s.rules.target_rank,
                 }
             };
@@ -377,5 +377,59 @@ mod tests {
                 .iter()
                 .all(|deal| deal.hand_count == deals[0].hand_count)
         );
+    }
+
+    #[test]
+    fn play_to_finish_settles_by_collected_scores() {
+        let handler = TractorGameHandler::default();
+        let mut room = RoomService::default();
+        for session_id in 1..=4 {
+            room.handle_common_request(
+                session_id,
+                &join_request(&format!("u{session_id}")),
+                handler.game_id(),
+                || handler.build_room_settings(),
+            );
+        }
+        let _ = handler.handle_start(&mut room, 1);
+        let state = handler.state("room").expect("tractor state");
+        {
+            let mut s = state.lock().unwrap();
+            s.hands.insert(0, vec![4]);
+            s.hands.insert(1, vec![13]);
+            s.hands.insert(2, vec![5]);
+            s.hands.insert(3, vec![6]);
+            s.bottom_cards = vec![4, 9, 12, 109, 112, 209, 212, 309];
+            s.current_position = 0;
+        }
+
+        for (session_id, card) in [(1_u64, 4), (2, 13), (3, 5), (4, 6)] {
+            let dispatch = handler.handle_play(
+                &mut room,
+                session_id,
+                serde_json::json!({ "cards": [card] }),
+            );
+            if session_id == 4 {
+                let settlement =
+                    dispatch
+                        .messages
+                        .iter()
+                        .find_map(|message| match &message.payload {
+                            OutboundPayload::Event(event)
+                                if event.code == WsCode::GAME_OVER as i32 =>
+                            {
+                                serde_json::from_value::<WsTractorSettlementEvent>(
+                                    event.data.clone(),
+                                )
+                                .ok()
+                            }
+                            _ => None,
+                        });
+                let settlement = settlement.expect("settlement event");
+                assert_eq!(settlement.winner_positions, vec![1, 3]);
+                assert_eq!(settlement.score, 80);
+                assert_eq!(settlement.blood_units, 1);
+            }
+        }
     }
 }

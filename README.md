@@ -70,11 +70,13 @@ cargo check -p shenyang_mahjong -p holdem
 
 ## 发布 Rust WS 服务端
 
-公版自建 WS 服务端不包含 official 统计和 SQLite；官方服需要统计时再使用带 `data`/SQLite 的构建或独立服务。面向普通 Linux 用户发布时，优先使用 musl 目标构建静态单文件。
+公版自建 WS 服务端不包含 official 统计和 SQLite；官方服需要统计时再使用带 `data`/SQLite 的构建或独立服务。
 
-推荐在 Linux、WSL 或 Linux CI 上构建 Linux musl release。`rustup target add` 只安装目标标准库，不会自动安装跨平台 linker；Windows/macOS 原生交叉编译路径不作为维护重点，优先使用发布产物或 Linux/WSL/CI 构建。
+推荐下载 Linux x86_64 musl release 产物。该产物是静态单文件，适合大多数 x86_64 Linux 服务器直接运行。
 
-Linux / WSL 准备发布环境：
+### Linux x86_64 musl
+
+从源码构建 Linux x86_64 musl release：
 
 ```sh
 sudo apt install -y musl-tools
@@ -87,7 +89,7 @@ rustup target add x86_64-unknown-linux-musl
 cargo build --release --target x86_64-unknown-linux-musl \
   -p landlord \
   -p shenyang_mahjong \
-  -p texas_hold_em \
+  -p holdem \
   -p tractor
 ```
 
@@ -96,13 +98,81 @@ cargo build --release --target x86_64-unknown-linux-musl \
 ```sh
 target/x86_64-unknown-linux-musl/release/landlord
 target/x86_64-unknown-linux-musl/release/shenyang_mahjong
-target/x86_64-unknown-linux-musl/release/texas_hold_em
+target/x86_64-unknown-linux-musl/release/holdem
 target/x86_64-unknown-linux-musl/release/tractor
 ```
 
-WSL Ubuntu 26.04 已验证这些产物为 `static-pie linked`，`ldd` 显示 `statically linked`。当前 musl 构建只有一个已知提示：`landlord` 的 lib 目标同时声明了 `cdylib`，musl 目标会提示 `dropping unsupported crate type cdylib`。这不影响服务端二进制发布；如果以后想消除提示，可以把 Android/JNI 用的 `cdylib` 和 Linux server bin 的 crate-type 做 feature 或包边界拆分。
+构建时如果看到 `dropping unsupported crate type cdylib`，可以忽略。服务端二进制仍会正常生成。
 
-除了 musl，也可以发布 glibc 动态链接二进制，或者在 Docker/OCI 镜像里发布服务端。glibc 方案体积和调试体验更接近普通 Linux，但会受发行版 glibc 版本影响；Docker 方案部署一致性好，但不满足“直接下载一个文件运行”的目标。
+### macOS 交叉编译 Linux musl
+
+macOS 上交叉编译到 Linux musl 需要额外安装 linker。可以用 Homebrew 安装 [`FiloSottile/musl-cross`](https://github.com/FiloSottile/homebrew-musl-cross)：
+
+```sh
+brew install FiloSottile/musl-cross/musl-cross
+rustup target add x86_64-unknown-linux-musl
+```
+
+确认 linker 已经在 PATH 中：
+
+```sh
+which x86_64-linux-musl-gcc
+which x86_64-linux-musl-cc
+```
+
+临时指定 linker 构建：
+
+```sh
+CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=x86_64-linux-musl-gcc \
+cargo build --release --target x86_64-unknown-linux-musl \
+  -p landlord \
+  -p shenyang_mahjong \
+  -p holdem \
+  -p tractor
+```
+
+也可以写进本机 `~/.cargo/config.toml`，这样以后不用每次传环境变量：
+
+```toml
+[target.x86_64-unknown-linux-musl]
+linker = "x86_64-linux-musl-gcc"
+```
+
+### Windows 静态 release（不推荐运行环境）
+
+Windows 不是推荐运行环境。WS 服务端即使能运行，也要额外考虑 Windows 防火墙、局域网发现、杀毒软件、端口开放和执行策略等问题。Windows release 仅用于验证或自行构建；公开发布页优先提供 Linux musl 静态产物。
+
+如需验证 Windows release，可以在 Windows PowerShell 中静态链接 MSVC CRT：
+
+```powershell
+rustup target add x86_64-pc-windows-msvc
+$env:RUSTFLAGS="-C target-feature=+crt-static"
+cargo build --release --target x86_64-pc-windows-msvc `
+  -p landlord `
+  -p shenyang_mahjong `
+  -p holdem `
+  -p tractor
+Remove-Item Env:RUSTFLAGS
+```
+
+产物位置：
+
+```powershell
+target\x86_64-pc-windows-msvc\release\landlord.exe
+target\x86_64-pc-windows-msvc\release\shenyang_mahjong.exe
+target\x86_64-pc-windows-msvc\release\holdem.exe
+target\x86_64-pc-windows-msvc\release\tractor.exe
+```
+
+### 维护约束
+
+维护 release 脚本、CI 或自动生成的构建说明时，保持以下约束：
+
+```text
+推荐 release 产物：Linux x86_64 musl 静态单文件。
+release 包范围：landlord、shenyang_mahjong、holdem、tractor。
+Windows 不作为推荐运行环境；如需 Windows 构建说明，只保留 x86_64-pc-windows-msvc + crt-static 的验证命令，并提醒防火墙、杀毒软件、端口开放和执行策略需要额外处理。
+```
 
 ## 运行 Android 斗地主服务
 
