@@ -45,6 +45,7 @@ rustup target add aarch64-linux-android x86_64-linux-android
 cargo run -p landlord -- --host 0.0.0.0 --port 9001
 cargo run -p shenyang_mahjong -- --host 0.0.0.0 --port 9002
 cargo run -p holdem -- --host 0.0.0.0 --port 9003
+cargo run -p tractor -- --host 0.0.0.0 --port 9004
 ```
 
 也可以在本目录运行：
@@ -65,8 +66,11 @@ cargo run -p landlord -- --host 0.0.0.0 --port 9001
 ```sh
 cargo check -p landlord
 cargo test -p landlord
-cargo check -p shenyang_mahjong -p holdem
+cargo check -p shenyang_mahjong -p holdem -p tractor
+cargo test -p tractor
 ```
+
+拖拉机房间开始后会锁定设置。当前主要设置包括：`deck_count`（几副牌）、`removed_rank_mask`（移除级牌 bitmask，例如测试可移除 3/4/6/7 来缩短 match）、`target_rank`（最终目标 rank）、`blood_enabled` / `blood_start_score` / `blood_score_per_unit`（喝血相关）。
 
 ## 发布 Rust WS 服务端
 

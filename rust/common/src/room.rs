@@ -1643,6 +1643,9 @@ impl RoomService {
             .rooms
             .get_mut(&room_key)
             .ok_or_else(|| "Room not found".to_string())?;
+        if !entry.state.can_accept_players() {
+            return Err("Room settings are locked after the game starts".to_string());
+        }
         for (key, val) in &payload.current_configs {
             let Some(param) = entry.param_descriptions.get(key) else {
                 return Err(format!("Unknown setting: {}", key));

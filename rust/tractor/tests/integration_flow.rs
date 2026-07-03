@@ -126,7 +126,7 @@ async fn tractor_four_players_can_start_custom_three_deck_room() {
                 "blood_enabled": 1,
                 "blood_start_score": 80,
                 "blood_score_per_unit": 40,
-                "target_rank": 0,
+                "target_rank": 12,
                 "play_time": 10
             }
         }),
@@ -156,13 +156,15 @@ async fn tractor_four_players_can_start_custom_three_deck_room() {
     assert!(hand_counts[0] > 0);
     assert_eq!(deals[0]["data"]["deck_count"], json!(3));
     assert_eq!(deals[0]["data"]["bottom_card_count"], json!(10));
-    assert_eq!(deals[0]["data"]["target_rank"], json!(11));
+    assert_eq!(deals[0]["data"]["target_rank"], json!(2));
 
     let snapshot = recv_until(&mut a, "table snapshot", |value| {
         value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
     })
     .await;
     assert_eq!(snapshot["data"]["deck_count"], json!(3));
+    assert_eq!(snapshot["data"]["target_rank"], json!(2));
+    assert_eq!(snapshot["data"]["final_target_rank"], json!(14));
     assert_eq!(snapshot["data"]["blood_enabled"], json!(true));
     assert_eq!(snapshot["data"]["bottom_card_count"], json!(10));
     assert_eq!(snapshot["data"]["blood_start_score"], json!(80));

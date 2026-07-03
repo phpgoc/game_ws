@@ -10,6 +10,7 @@ pub const KEY_BLOOD_START_SCORE: &str = "blood_start_score";
 pub const KEY_BOTTOM_CARD_COUNT: &str = "bottom_card_count";
 pub const KEY_DECK_COUNT: &str = "deck_count";
 pub const KEY_PLAY_TIME: &str = "play_time";
+pub const KEY_REMOVED_RANK_MASK: &str = "removed_rank_mask";
 pub const KEY_SETTLEMENT_TIME: &str = "settlement_time";
 pub const KEY_TARGET_RANK: &str = "target_rank";
 
@@ -49,8 +50,30 @@ pub fn build_tractor_settings() -> (GameSettings, HashMap<String, GameParam>) {
         (
             KEY_TARGET_RANK.into(),
             GameParam::Enum(GameParamEnum {
-                default: 3,
-                options: vec!["J".into(), "Q".into(), "K".into(), "A".into()],
+                default: 12,
+                options: vec![
+                    "2".into(),
+                    "3".into(),
+                    "4".into(),
+                    "5".into(),
+                    "6".into(),
+                    "7".into(),
+                    "8".into(),
+                    "9".into(),
+                    "10".into(),
+                    "J".into(),
+                    "Q".into(),
+                    "K".into(),
+                    "A".into(),
+                ],
+            }),
+        ),
+        (
+            KEY_REMOVED_RANK_MASK.into(),
+            GameParam::Range(GameParamRange {
+                default: 0,
+                min: 0,
+                max: 8191,
             }),
         ),
         (
