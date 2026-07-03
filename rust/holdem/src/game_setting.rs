@@ -38,14 +38,6 @@ pub fn build_holdem_settings() -> (GameSettings, HashMap<String, GameParam>) {
             }),
         ),
         (
-            "start_time".into(),
-            GameParam::Range(GameParamRange {
-                default: 1,
-                min: 0,
-                max: 5,
-            }),
-        ),
-        (
             "settlement_time".into(),
             GameParam::Range(GameParamRange {
                 default: 5,

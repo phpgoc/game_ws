@@ -747,10 +747,6 @@ pub(crate) fn settlement_time(configs: &HashMap<String, i32>) -> u64 {
     config_value(configs, "settlement_time", 5).max(1) as u64
 }
 
-pub(crate) fn start_time(configs: &HashMap<String, i32>) -> u64 {
-    config_value(configs, "start_time", 1).max(0) as u64
-}
-
 impl ShenyangMahjongGameHandler {
     fn handle_play(
         &self,

@@ -19,7 +19,6 @@ pub struct WsAddAiRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsCreateResponse {
     pub param_descriptions: std::collections::HashMap<String, crate::settings::GameParam>,
-    pub start_time: i32,
     pub settlement_time: i32,
 }
 

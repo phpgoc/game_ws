@@ -300,22 +300,35 @@ impl HoldemGameHandler {
         }
 
         let mut should_push_turn = false;
-        let Some((position, call_amount, should_auto)) = ({
+        let Some((position, call_amount, is_ai_position, should_auto)) = ({
             let mut s = state.lock().unwrap();
             if s.phase == TexasHoldEmPhase::Settlement {
                 None
             } else {
                 let position = s.current_position;
-                let should_auto = s.base.lock().unwrap().is_away(position);
+                let base = s.base.lock().unwrap();
+                let is_ai_position = base.is_ai_position(position);
+                let should_auto = is_ai_position || base.is_away(position);
+                drop(base);
                 if should_auto {
-                    Some((position, s.call_amount(position), should_auto))
+                    Some((
+                        position,
+                        s.call_amount(position),
+                        is_ai_position,
+                        should_auto,
+                    ))
                 } else if s.turn_countdown() > 0 {
                     let countdown = s.turn_countdown();
                     s.set_turn_countdown(countdown - 1);
                     should_push_turn = true;
                     None
                 } else {
-                    Some((position, s.call_amount(position), should_auto))
+                    Some((
+                        position,
+                        s.call_amount(position),
+                        is_ai_position,
+                        should_auto,
+                    ))
                 }
             }
         }) else {
@@ -325,13 +338,16 @@ impl HoldemGameHandler {
             return;
         };
 
-        let strategy = self
-            .auto_strategies
-            .lock()
-            .unwrap()
-            .get(room_key)
-            .and_then(|strategies| strategies.get(&position).copied())
-            .unwrap_or(TexasHoldEmAutoStrategy::CHECK_FOLD);
+        let strategy = if is_ai_position {
+            TexasHoldEmAutoStrategy::CHECK_CALL
+        } else {
+            self.auto_strategies
+                .lock()
+                .unwrap()
+                .get(room_key)
+                .and_then(|strategies| strategies.get(&position).copied())
+                .unwrap_or(TexasHoldEmAutoStrategy::CHECK_FOLD)
+        };
         if !should_auto {
             let base = state.lock().unwrap().base.clone();
             base.lock().unwrap().mark_away(position);
@@ -495,8 +511,6 @@ impl HoldemGameHandler {
             .copied()
             .unwrap_or(10)
             .max(small_blind + 1);
-        let play_time = configs.get("play_time").copied().unwrap_or(20).max(1) as u32;
-
         let mut state = HoldemGameState::from_common_with_variant(Arc::clone(&common), variant);
         if state
             .deal_new_hand(initial_chips, small_blind, big_blind)
@@ -508,7 +522,7 @@ impl HoldemGameHandler {
                 WsResponseCode::NOT_IN_RANGE,
             );
         }
-        state.set_turn_countdown(play_time);
+        state.set_turn_countdown(1);
         let state = Arc::new(std::sync::Mutex::new(state));
         room_service.set_room_game_state(
             &room_key,
@@ -780,6 +794,67 @@ mod tests {
                 .get("room")
                 .and_then(|strategies| strategies.get(&0).copied()),
             Some(TexasHoldEmAutoStrategy::CHECK_CALL)
+        );
+    }
+
+    #[test]
+    fn ai_positions_always_check_call_even_with_stale_check_fold_strategy() {
+        let handler = HoldemGameHandler::default();
+        let mut room = RoomService::default();
+        for session_id in 1..=2 {
+            room.handle_common_request(
+                session_id,
+                &join_request(&format!("u{session_id}")),
+                handler.game_id(),
+                || handler.build_room_settings(),
+            );
+        }
+        room.handle_common_request(
+            1,
+            &ClientRequest {
+                route: Routes::ADD_AI as i32,
+                data: serde_json::json!({"count": 1}),
+            },
+            handler.game_id(),
+            || handler.build_room_settings(),
+        );
+        let common = room
+            .get_room_common_state_handle("room")
+            .expect("room common state");
+        let state = Arc::new(std::sync::Mutex::new(
+            HoldemGameState::from_common_with_variant(common, STANDARD_TEXAS),
+        ));
+        {
+            let mut s = state.lock().unwrap();
+            s.current_position = 2;
+            s.current_bet = 20;
+            s.commit(0, 20);
+            s.set_turn_countdown(20);
+        }
+        handler
+            .auto_strategies
+            .lock()
+            .unwrap()
+            .entry("room".to_string())
+            .or_default()
+            .insert(2, TexasHoldEmAutoStrategy::CHECK_FOLD);
+
+        let mut dispatch = Dispatch::default();
+        handler.auto_tick(&mut room, "room", &state, &mut dispatch);
+
+        let action = dispatch.messages.iter().find_map(|message| {
+            let OutboundPayload::Event(event) = &message.payload else {
+                return None;
+            };
+            (event.code == WsCode::PLAY as i32)
+                .then(|| {
+                    serde_json::from_value::<WsTexasHoldEmActionEvent>(event.data.clone()).ok()
+                })
+                .flatten()
+        });
+        assert_eq!(
+            action.map(|event| event.action),
+            Some(TexasHoldEmAction::CALL)
         );
     }
 

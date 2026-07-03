@@ -9,7 +9,7 @@ use ws_common::{RoomService, SessionSenders};
 use crate::ai::{maybe_play_ai_turn, maybe_resolve_ai_claims};
 use crate::game::{
     LoopStateRegistry, current_play_time, perform_discard, push_phase_change,
-    push_private_deal_events, push_room_event, resolve_claim_window, settlement_time, start_time,
+    push_private_deal_events, push_room_event, resolve_claim_window, settlement_time,
 };
 use crate::game_state::{ClaimResponse, ShenyangMahjongLoopState};
 use share_type_public::games::shenyang_mahjong::ShenyangMahjongPhase;
@@ -72,7 +72,6 @@ pub(crate) fn start_game_loop(
             let phase = { state.lock().unwrap().phase };
             match phase {
                 ShenyangMahjongPhase::Start => {
-                    tokio::time::sleep(Duration::from_secs(start_time(&configs))).await;
                     if state.lock().unwrap().stop_requested() {
                         break;
                     }

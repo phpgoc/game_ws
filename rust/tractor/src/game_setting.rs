@@ -11,7 +11,6 @@ pub const KEY_BOTTOM_CARD_COUNT: &str = "bottom_card_count";
 pub const KEY_DECK_COUNT: &str = "deck_count";
 pub const KEY_PLAY_TIME: &str = "play_time";
 pub const KEY_SETTLEMENT_TIME: &str = "settlement_time";
-pub const KEY_START_TIME: &str = "start_time";
 pub const KEY_TARGET_RANK: &str = "target_rank";
 
 pub fn build_tractor_settings() -> (GameSettings, HashMap<String, GameParam>) {
@@ -76,14 +75,6 @@ pub fn build_tractor_settings() -> (GameSettings, HashMap<String, GameParam>) {
                 default: 30,
                 min: 5,
                 max: 120,
-            }),
-        ),
-        (
-            KEY_START_TIME.into(),
-            GameParam::Range(GameParamRange {
-                default: 1,
-                min: 0,
-                max: 5,
             }),
         ),
         (

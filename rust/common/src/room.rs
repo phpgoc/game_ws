@@ -335,7 +335,7 @@ impl RoomService {
             payload.count.min(8) as usize
         };
 
-        let (max_players, can_accept_players, existing_players, existing_ai_count) = {
+        let (game_id, max_players, can_accept_players, existing_players, existing_ai_count) = {
             let Some(entry) = self.rooms.get(&room_key) else {
                 return self.error_response(
                     session_id,
@@ -344,6 +344,7 @@ impl RoomService {
                 );
             };
             (
+                entry.game_id,
                 entry.max_players,
                 entry.state.can_accept_players(),
                 entry.state.players(),
@@ -375,7 +376,7 @@ impl RoomService {
             }
 
             let ai_session_id = self.allocate_ai_session_id();
-            let ai_name = self.next_ai_name(&room_key, existing_ai_count + added + 1);
+            let ai_name = self.next_ai_name(&room_key, game_id, existing_ai_count + added + 1);
             {
                 let Some(entry) = self.rooms.get_mut(&room_key) else {
                     break;
@@ -1160,7 +1161,6 @@ impl RoomService {
                 WsResponseCode::OK,
                 share_type_public::WsCreateResponse {
                     param_descriptions: entry.param_descriptions.clone(),
-                    start_time: config_value(&entry.configs, "start_time", 1),
                     settlement_time: config_value(&entry.configs, "settlement_time", 5),
                 },
                 &mut dispatch,
@@ -1253,10 +1253,17 @@ impl RoomService {
         })
     }
 
-    fn next_ai_name(&self, room_key: &str, preferred_index: usize) -> String {
+    fn next_ai_name(&self, room_key: &str, game_id: GameId, preferred_index: usize) -> String {
         let mut index = preferred_index.max(1);
+        let prefix = match game_id {
+            GameId::TEXAS_HOLD_EM
+            | GameId::OPEN_HOLD_EM
+            | GameId::SHORT_DECK_HOLD_EM
+            | GameId::OMAHA_HOLD_EM => "Bot",
+            _ => "AI",
+        };
         loop {
-            let name = format!("AI {}", index);
+            let name = format!("{} {}", prefix, index);
             if !self.name_taken_in_room(room_key, &name, None) {
                 return name;
             }
@@ -1967,6 +1974,24 @@ mod tests {
         assert_eq!(
             service.room_game_id("open-room"),
             Some(GameId::OPEN_HOLD_EM)
+        );
+    }
+
+    #[test]
+    fn ai_name_prefix_matches_game_family() {
+        let service = RoomService::default();
+
+        assert_eq!(
+            service.next_ai_name("texas-room", GameId::TEXAS_HOLD_EM, 1),
+            "Bot 1"
+        );
+        assert_eq!(
+            service.next_ai_name("open-room", GameId::OPEN_HOLD_EM, 2),
+            "Bot 2"
+        );
+        assert_eq!(
+            service.next_ai_name("mahjong-room", GameId::SHENYANG_MAHJONG, 1),
+            "AI 1"
         );
     }
 
