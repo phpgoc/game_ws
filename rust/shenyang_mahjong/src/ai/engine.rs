@@ -176,6 +176,11 @@ mod tests {
 
     use super::*;
     use crate::game_state::ClaimWindowState;
+    use crate::rules::WIN_RULE_RELAXED;
+
+    fn relaxed_configs() -> HashMap<String, i32> {
+        HashMap::from([("win_rule".to_owned(), WIN_RULE_RELAXED)])
+    }
 
     #[test]
     fn away_position_does_not_self_draw_without_drawn_tile() {
@@ -221,7 +226,7 @@ mod tests {
             &RoomService::default(),
             "room",
             &mut state,
-            &HashMap::new(),
+            &relaxed_configs(),
             &mut dispatch,
         ));
 
@@ -245,7 +250,7 @@ mod tests {
             &RoomService::default(),
             "room",
             &mut state,
-            &HashMap::new(),
+            &relaxed_configs(),
             &mut dispatch,
         ));
 
@@ -304,7 +309,7 @@ mod tests {
             &RoomService::default(),
             "room",
             &mut state,
-            &HashMap::new(),
+            &relaxed_configs(),
             &mut dispatch,
         ));
 
@@ -334,7 +339,7 @@ mod tests {
             &RoomService::default(),
             "room",
             &mut state,
-            &HashMap::new(),
+            &relaxed_configs(),
             &mut dispatch,
         ));
 
@@ -366,6 +371,50 @@ mod tests {
         assert_eq!(state.discards.get(&0).unwrap().len(), 1);
     }
 
+    #[test]
+    fn four_ai_positions_can_finish_seeded_round_with_win() {
+        let mut state = seeded_ai_round_state(2026070401);
+        let room_service = RoomService::default();
+        let configs = HashMap::new();
+        let mut dispatch = Dispatch::default();
+
+        for step in 0..220 {
+            if state.phase == ShenyangMahjongPhase::Settlement {
+                break;
+            }
+
+            let acted =
+                maybe_resolve_ai_claims(&room_service, "room", &mut state, &configs, &mut dispatch)
+                    || maybe_play_ai_turn(
+                        &room_service,
+                        "room",
+                        &mut state,
+                        &configs,
+                        &mut dispatch,
+                    );
+
+            assert!(
+                acted,
+                "AI round stalled at step {step}, phase={:?}, current_position={}, wall={}, claim_window={:?}",
+                state.phase,
+                state.current_position,
+                state.wall_count(),
+                state.claim_window
+            );
+        }
+
+        let settlement = state.settlement.as_ref().expect("AI round settlement");
+        let total_discards = state.discards.values().map(Vec::len).sum::<usize>();
+
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert!(
+            !settlement.winner_positions.is_empty(),
+            "seeded AI round should end with a winning hand"
+        );
+        assert!(settlement.win_tile.is_some());
+        assert!(total_discards > 0);
+    }
+
     fn playable_state() -> ShenyangMahjongLoopState {
         let base = Arc::new(Mutex::new(CommonGameState::default()));
         {
@@ -388,6 +437,21 @@ mod tests {
                 .insert(position, Vec::<WsShenyangMahjongMeld>::new());
         }
         state.wall = vec![37, 36, 35, 34, 33, 32];
+        state
+    }
+
+    fn seeded_ai_round_state(seed: u64) -> ShenyangMahjongLoopState {
+        let base = Arc::new(Mutex::new(CommonGameState::default()));
+        {
+            let mut common = base.lock().unwrap();
+            for position in 0..4 {
+                common.add_player(position, position as u64 + 1, &format!("AI {position}"));
+                common.mark_ai_position(position);
+            }
+        }
+        let mut state = ShenyangMahjongLoopState::new(base);
+        state.set_wall_seed_base_for_test(Some(seed));
+        state.deal_new_round();
         state
     }
 }

@@ -256,14 +256,6 @@ pub(crate) fn build_settlement_event_with_configs(
     })
 }
 
-#[cfg(test)]
-pub(crate) fn build_table_snapshot_event(
-    state: &ShenyangMahjongLoopState,
-    viewer_position: usize,
-) -> WsShenyangMahjongTableSnapshotEvent {
-    build_table_snapshot_event_with_configs(state, viewer_position, &HashMap::new())
-}
-
 pub(crate) fn build_table_snapshot_event_with_configs(
     state: &ShenyangMahjongLoopState,
     viewer_position: usize,
@@ -1939,6 +1931,10 @@ mod tests {
 
     use super::*;
 
+    fn relaxed_configs() -> HashMap<String, i32> {
+        HashMap::from([("win_rule".to_owned(), WIN_RULE_RELAXED)])
+    }
+
     #[test]
     fn added_gang_opens_rob_gang_claim_window_before_replacement_draw() {
         let mut state = playable_state();
@@ -1964,7 +1960,7 @@ mod tests {
             &RoomService::default(),
             "room",
             &mut state,
-            &HashMap::new(),
+            &relaxed_configs(),
             &mut dispatch,
             0,
             3,
@@ -2117,7 +2113,7 @@ mod tests {
             .hands
             .insert(3, vec![1, 5, 7, 9, 11, 13, 15, 17, 21, 23, 25, 31, 35]);
 
-        let options = build_claim_options(&state, 3, 0, &HashMap::new());
+        let options = build_claim_options(&state, 3, 0, &relaxed_configs());
         let next_player = options
             .iter()
             .find(|option| option.position == 1)
@@ -3811,7 +3807,7 @@ mod tests {
                 None,
             )],
         );
-        let relaxed = build_rob_gang_claim_window_event(&state, 3, 0, 5, &HashMap::new());
+        let relaxed = build_rob_gang_claim_window_event(&state, 3, 0, 5, &relaxed_configs());
         let basic_configs = HashMap::from([("win_rule".to_owned(), 1)]);
         let basic = build_rob_gang_claim_window_event(&state, 3, 0, 5, &basic_configs);
 
@@ -3836,7 +3832,7 @@ mod tests {
         state.last_drawn_tile = Some(35);
         let configs = HashMap::from([("win_rule".to_owned(), 1)]);
 
-        assert!(can_self_draw_hu(&state, 0));
+        assert!(can_self_draw_hu_with_configs(&state, 0, &relaxed_configs()));
         assert!(!can_self_draw_hu_with_configs(&state, 0, &configs));
     }
 
@@ -3865,11 +3861,15 @@ mod tests {
             .hands
             .insert(0, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
 
-        assert!(!can_self_draw_hu(&state, 0));
+        assert!(!can_self_draw_hu_with_configs(
+            &state,
+            0,
+            &relaxed_configs()
+        ));
 
         state.last_drawn_tile = Some(35);
 
-        assert!(can_self_draw_hu(&state, 0));
+        assert!(can_self_draw_hu_with_configs(&state, 0, &relaxed_configs()));
     }
 
     #[test]
@@ -3929,14 +3929,14 @@ mod tests {
         assert_eq!(state.wall_count(), 0);
         assert_eq!(state.last_drawn_tile, Some(35));
         assert!(!state.pending_gang_draw);
-        assert!(can_self_draw_hu(&state, 0));
+        assert!(can_self_draw_hu_with_configs(&state, 0, &relaxed_configs()));
 
         let mut dispatch = Dispatch::default();
         perform_self_draw_hu(
             &RoomService::default(),
             "room",
             &mut state,
-            &HashMap::new(),
+            &relaxed_configs(),
             &mut dispatch,
             0,
         );
@@ -3964,7 +3964,7 @@ mod tests {
             &RoomService::default(),
             "room",
             &mut state,
-            &HashMap::new(),
+            &relaxed_configs(),
             &mut dispatch,
             0,
             3,
@@ -4013,13 +4013,13 @@ mod tests {
         assert_eq!(state.wall_count(), 0);
         assert_eq!(state.last_drawn_tile, Some(31));
         assert!(state.pending_gang_draw);
-        assert!(can_self_draw_hu(&state, 0));
+        assert!(can_self_draw_hu_with_configs(&state, 0, &relaxed_configs()));
 
         perform_self_draw_hu(
             &RoomService::default(),
             "room",
             &mut state,
-            &HashMap::new(),
+            &relaxed_configs(),
             &mut dispatch,
             0,
         );
@@ -4699,7 +4699,7 @@ mod tests {
             false,
         );
 
-        let event = build_settlement_event(&state).unwrap();
+        let event = build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
 
         assert_eq!(event.winner_details.len(), 1);
         assert_eq!(
@@ -4730,7 +4730,7 @@ mod tests {
             false,
         );
 
-        let event = build_settlement_event(&state).unwrap();
+        let event = build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
 
         assert_eq!(event.winner_details.len(), 1);
         assert_eq!(
@@ -4784,7 +4784,7 @@ mod tests {
             false,
         );
 
-        let event = build_settlement_event(&state).unwrap();
+        let event = build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
 
         assert_eq!(event.winner_details.len(), 1);
         assert_eq!(event.winner_details[0].position, 1);
@@ -4881,7 +4881,7 @@ mod tests {
             false,
         );
 
-        let snapshot = build_table_snapshot_event(&state, 1);
+        let snapshot = build_table_snapshot_event_with_configs(&state, 1, &relaxed_configs());
         let settlement = snapshot.settlement.expect("settlement");
 
         assert_eq!(snapshot.phase, ShenyangMahjongPhase::Settlement);
@@ -4907,7 +4907,7 @@ mod tests {
         let state = playable_state();
         state.base.lock().unwrap().mark_disconnected(2);
 
-        let snapshot = build_table_snapshot_event(&state, 1);
+        let snapshot = build_table_snapshot_event_with_configs(&state, 1, &relaxed_configs());
         let player = snapshot
             .players
             .iter()
@@ -4939,7 +4939,7 @@ mod tests {
         });
         state.set_turn_countdown(4);
 
-        let snapshot = build_table_snapshot_event(&state, 1);
+        let snapshot = build_table_snapshot_event_with_configs(&state, 1, &relaxed_configs());
         let claim_window = snapshot.claim_window.expect("claim window");
         let option = claim_window
             .options

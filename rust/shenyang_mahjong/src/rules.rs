@@ -562,7 +562,11 @@ pub fn tiles_in_hand(hand: &[i32], tiles: &[i32]) -> bool {
 }
 
 pub fn win_rule_from_configs(configs: &HashMap<String, i32>) -> i32 {
-    match configs.get("win_rule").copied().unwrap_or(WIN_RULE_RELAXED) {
+    match configs
+        .get("win_rule")
+        .copied()
+        .unwrap_or(WIN_RULE_SHENYANG_BASIC)
+    {
         WIN_RULE_SHENYANG_BASIC => WIN_RULE_SHENYANG_BASIC,
         _ => WIN_RULE_RELAXED,
     }
@@ -579,7 +583,7 @@ mod tests {
         has_triplet_in_standard_decomposition, is_complete_win, is_complete_win_with_melds,
         is_piao_hu_win, is_pure_one_suit_win, is_seven_pairs_win, is_single_wait_shape,
         is_single_wait_shape_with_rule, is_standard_win, is_unique_complete_wait, is_win,
-        satisfies_shenyang_basic_win,
+        satisfies_shenyang_basic_win, win_rule_from_configs,
     };
 
     #[test]
@@ -633,6 +637,14 @@ mod tests {
         let hand = vec![31, 31, 32, 33];
         assert!(can_peng(&hand, 31));
         assert!(!can_peng(&hand, 32));
+    }
+
+    #[test]
+    fn missing_config_uses_shenyang_basic_win_rule() {
+        assert_eq!(
+            win_rule_from_configs(&std::collections::HashMap::new()),
+            WIN_RULE_SHENYANG_BASIC
+        );
     }
 
     #[test]
