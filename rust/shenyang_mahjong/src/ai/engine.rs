@@ -9,20 +9,32 @@ use crate::game::{
 use crate::game_state::{ClaimResponse, ClaimWindowKind, ShenyangMahjongLoopState};
 use crate::rules::win_rule_from_configs;
 
-use super::decision::{AiClaimChoice, choose_claim_from_view, choose_discard_from_view};
-use super::observation::build_public_table;
+use super::decision::{
+    AiClaimChoice, choose_claim_from_view, choose_discard_from_view, choose_self_gang_from_view,
+};
+use super::observation::build_public_table_with_configs;
 
 fn choose_self_gang_tile(
     state: &ShenyangMahjongLoopState,
+    configs: &HashMap<String, i32>,
     position: usize,
     hand: &[i32],
 ) -> Option<i32> {
     let mut tiles = hand.to_vec();
     tiles.sort_unstable();
     tiles.dedup();
-    tiles
+    let candidate_tiles = tiles
         .into_iter()
-        .find(|tile| can_self_gang(state, position, *tile))
+        .filter(|tile| can_self_gang(state, position, *tile))
+        .collect::<Vec<_>>();
+    let table = build_public_table_with_configs(state, configs);
+    choose_self_gang_from_view(
+        hand,
+        &candidate_tiles,
+        &table,
+        position,
+        win_rule_from_configs(configs),
+    )
 }
 
 pub fn maybe_play_ai_turn(
@@ -49,11 +61,11 @@ pub fn maybe_play_ai_turn(
         return false;
     }
     if can_self_draw_hu_with_configs(state, position, configs) {
-        perform_self_draw_hu(room_service, room_key, state, dispatch, position);
+        perform_self_draw_hu(room_service, room_key, state, configs, dispatch, position);
         return true;
     }
 
-    if let Some(tile) = choose_self_gang_tile(state, position, &hand) {
+    if let Some(tile) = choose_self_gang_tile(state, configs, position, &hand) {
         return perform_self_gang(
             room_service,
             room_key,
@@ -65,7 +77,7 @@ pub fn maybe_play_ai_turn(
         );
     }
 
-    let table = build_public_table(state);
+    let table = build_public_table_with_configs(state, configs);
     if let Some(tile) =
         choose_discard_from_view(&hand, &table, position, win_rule_from_configs(configs))
     {
@@ -93,7 +105,7 @@ pub fn maybe_resolve_ai_claims(
         return false;
     };
     let is_rob_gang = matches!(claim_window.kind, ClaimWindowKind::RobGang);
-    let table = build_public_table(state);
+    let table = build_public_table_with_configs(state, configs);
     let Some(claim) = table.claim_window.as_ref() else {
         return false;
     };
@@ -313,8 +325,8 @@ mod tests {
         state.base.lock().unwrap().mark_away(0);
         state
             .hands
-            .insert(0, vec![3, 3, 3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31]);
-        state.last_drawn_tile = Some(3);
+            .insert(0, vec![4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35, 35, 35, 35]);
+        state.last_drawn_tile = Some(35);
         state.wall = vec![37];
         let mut dispatch = Dispatch::default();
 
@@ -331,7 +343,7 @@ mod tests {
         assert!(state.hands.get(&0).unwrap().contains(&37));
         assert_eq!(
             state.melds.get(&0).unwrap().first().unwrap().tiles,
-            vec![3, 3, 3, 3]
+            vec![35, 35, 35, 35]
         );
         assert!(state.discards.get(&0).unwrap().is_empty());
     }

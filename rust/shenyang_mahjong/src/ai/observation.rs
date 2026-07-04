@@ -14,6 +14,7 @@ pub struct AiPublicTable {
     pub current_position: usize,
     pub dealer_position: usize,
     pub wall_count: usize,
+    pub max_fan: Option<i32>,
     pub claim_window: Option<AiClaimView>,
     pub seats: HashMap<usize, AiSeatView>,
 }
@@ -28,7 +29,10 @@ pub struct AiSeatView {
     pub melds: Vec<share_type_public::games::shenyang_mahjong::WsShenyangMahjongMeld>,
 }
 
-pub fn build_public_table(state: &ShenyangMahjongLoopState) -> AiPublicTable {
+pub fn build_public_table_with_configs(
+    state: &ShenyangMahjongLoopState,
+    configs: &HashMap<String, i32>,
+) -> AiPublicTable {
     let players = state.players_snapshot();
     let mut seats = HashMap::new();
     for (position, _) in players {
@@ -59,6 +63,7 @@ pub fn build_public_table(state: &ShenyangMahjongLoopState) -> AiPublicTable {
         current_position: state.current_position,
         dealer_position: state.dealer_position,
         wall_count: state.wall_count(),
+        max_fan: configs.get("max_fan").copied().filter(|fan| *fan > 0),
         claim_window,
         seats,
     }

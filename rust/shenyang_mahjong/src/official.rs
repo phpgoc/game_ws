@@ -1,8 +1,12 @@
+use std::collections::HashMap;
+
 use ws_common::RoomService;
 
+#[cfg(feature = "official")]
+use crate::game::settlement_score_changes_for_state;
 use crate::game_state::{SettlementState, ShenyangMahjongLoopState};
 #[cfg(feature = "official")]
-use crate::rules::is_seven_pairs_win;
+use crate::rules::{is_piao_hu_win, is_pure_one_suit_win, is_seven_pairs_win};
 
 #[cfg(feature = "official")]
 fn block_on_official<F>(future: F) -> Option<F::Output>
@@ -87,7 +91,12 @@ pub fn create_match(room_service: &mut RoomService, room_key: &str) {
 pub fn create_match(_room_service: &mut RoomService, _room_key: &str) {}
 
 #[cfg(feature = "official")]
-pub fn settle_round(room_service: &RoomService, room_key: &str, state: &ShenyangMahjongLoopState) {
+pub fn settle_round(
+    room_service: &RoomService,
+    room_key: &str,
+    state: &ShenyangMahjongLoopState,
+    configs: &HashMap<String, i32>,
+) {
     let Some(settlement) = state.settlement.as_ref() else {
         return;
     };
@@ -99,13 +108,15 @@ pub fn settle_round(room_service: &RoomService, room_key: &str, state: &Shenyang
         .from_position
         .and_then(|position| room_service.room_official_user_id(room_key, position));
     let is_reverse_win = settlement.is_reverse_win;
-    let player_count = room_service.room_official_player_sessions(room_key).len();
+    let players = state.players_snapshot();
+    let positions = players.keys().copied().collect::<Vec<_>>();
+    let score_changes = settlement_score_changes_for_state(state, &positions, settlement, configs);
     let mut winner_scores = Vec::new();
     for position in &settlement.winner_positions {
         if let Some(winner_user_id) = room_service.room_official_user_id(room_key, *position) {
             winner_scores.push(data::GameRoundShenyangMahjongWinnerScoreInput {
                 winner_user_id,
-                score: winner_score_for_settlement(settlement, player_count, *position),
+                score: winner_score_from_changes(&score_changes, *position),
                 pattern: winner_pattern_for_position(state, settlement, *position),
             });
         }
@@ -137,6 +148,7 @@ pub fn settle_round(
     _room_service: &RoomService,
     _room_key: &str,
     _state: &ShenyangMahjongLoopState,
+    _configs: &HashMap<String, i32>,
 ) {
 }
 
@@ -154,8 +166,13 @@ fn winner_pattern_for_position(
         hand_tiles.sort_unstable();
     }
     let meld_count = state.melds.get(&position).map(Vec::len).unwrap_or(0);
+    let melds = state.melds.get(&position).map(Vec::as_slice).unwrap_or(&[]);
     if meld_count == 0 && is_seven_pairs_win(&hand_tiles) {
         data::ShenyangMahjongRoundWinPattern::SevenPairs
+    } else if is_pure_one_suit_win(&hand_tiles, melds) {
+        data::ShenyangMahjongRoundWinPattern::PureOneSuit
+    } else if is_piao_hu_win(&hand_tiles, melds) {
+        data::ShenyangMahjongRoundWinPattern::PiaoHu
     } else {
         data::ShenyangMahjongRoundWinPattern::Standard
     }
@@ -181,11 +198,25 @@ pub(crate) fn winner_score_for_settlement(
     }
 }
 
+#[allow(dead_code)]
+fn winner_score_from_changes(
+    score_changes: &[share_type_public::games::shenyang_mahjong::WsShenyangMahjongScoreChange],
+    winner_position: usize,
+) -> i64 {
+    score_changes
+        .iter()
+        .find(|change| change.position == winner_position as i32)
+        .map(|change| i64::from(change.score.max(0)))
+        .unwrap_or(0)
+}
+
 #[cfg(test)]
 mod tests {
     use crate::game_state::SettlementState;
 
-    use super::winner_score_for_settlement;
+    use share_type_public::games::shenyang_mahjong::WsShenyangMahjongScoreChange;
+
+    use super::{winner_score_for_settlement, winner_score_from_changes};
 
     #[test]
     fn discard_win_scores_one_per_winner() {
@@ -216,5 +247,25 @@ mod tests {
         };
 
         assert_eq!(winner_score_for_settlement(&settlement, 4, 2), 3);
+    }
+
+    #[test]
+    fn winner_score_uses_actual_positive_score_change() {
+        let score_changes = vec![
+            WsShenyangMahjongScoreChange {
+                position: 0,
+                score: 0,
+            },
+            WsShenyangMahjongScoreChange {
+                position: 1,
+                score: 5,
+            },
+            WsShenyangMahjongScoreChange {
+                position: 2,
+                score: -5,
+            },
+        ];
+
+        assert_eq!(winner_score_from_changes(&score_changes, 1), 5);
     }
 }

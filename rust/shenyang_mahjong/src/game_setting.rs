@@ -30,6 +30,14 @@ pub fn build_shenyang_mahjong_settings() -> (GameSettings, HashMap<String, GameP
             }),
         ),
         (
+            "max_fan".into(),
+            GameParam::Range(GameParamRange {
+                default: 4,
+                min: 1,
+                max: 20,
+            }),
+        ),
+        (
             "multi_hu_mode".into(),
             GameParam::Enum(GameParamEnum {
                 default: 1,
@@ -39,7 +47,7 @@ pub fn build_shenyang_mahjong_settings() -> (GameSettings, HashMap<String, GameP
         (
             "win_rule".into(),
             GameParam::Enum(GameParamEnum {
-                default: 0,
+                default: 1,
                 options: vec!["relaxed".into(), "shenyang_basic".into()],
             }),
         ),
@@ -78,7 +86,9 @@ mod tests {
         assert!(!descriptions.contains_key("away_time"));
         assert!(settings.values.contains_key("play_time"));
         assert!(settings.values.contains_key("claim_time"));
-        assert_eq!(settings.values.get("win_rule"), Some(&0));
+        assert_eq!(settings.values.get("max_fan"), Some(&4));
+        assert!(descriptions.contains_key("max_fan"));
+        assert_eq!(settings.values.get("win_rule"), Some(&1));
         assert!(descriptions.contains_key("win_rule"));
     }
 }
