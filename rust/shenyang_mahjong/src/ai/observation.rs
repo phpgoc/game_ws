@@ -22,8 +22,6 @@ pub struct AiPublicTable {
 #[derive(Debug, Clone)]
 pub struct AiSeatView {
     pub position: usize,
-    pub is_ai: bool,
-    pub is_away: bool,
     pub hand_count: usize,
     pub discards: Vec<i32>,
     pub melds: Vec<share_type_public::games::shenyang_mahjong::WsShenyangMahjongMeld>,
@@ -40,8 +38,6 @@ pub fn build_public_table_with_configs(
             position,
             AiSeatView {
                 position,
-                is_ai: state.is_ai_position(position),
-                is_away: state.is_away(position) || state.is_disconnected(position),
                 hand_count: state
                     .hands
                     .get(&position)
