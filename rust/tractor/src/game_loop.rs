@@ -20,97 +20,6 @@ use crate::{
 
 type StateRegistry = Arc<std::sync::Mutex<HashMap<String, TractorStateHandle>>>;
 
-async fn deliver(dispatch: Dispatch, senders: &SessionSenders) {
-    let mut frames = Vec::with_capacity(dispatch.messages.len());
-    for message in dispatch.messages {
-        if let Ok(frame) = ws_common::to_text_message(&message.payload) {
-            frames.push((message.recipient, frame));
-        }
-    }
-    let senders = senders.lock().await;
-    for (session_id, frame) in frames {
-        if let Some(tx) = senders.get(&session_id) {
-            let _ = tx.send(frame);
-        }
-    }
-}
-
-fn current_play_time(configs: &HashMap<String, i32>, state: &TractorGameState) -> u32 {
-    let key = if state.is_ai_controlled_position(state.current_position) {
-        KEY_AWAY_TIME
-    } else {
-        KEY_PLAY_TIME
-    };
-    configs.get(key).copied().unwrap_or(30).max(1) as u32
-}
-
-fn settlement_time(configs: &HashMap<String, i32>) -> u64 {
-    configs
-        .get(KEY_SETTLEMENT_TIME)
-        .copied()
-        .unwrap_or(5)
-        .max(1) as u64
-}
-
-fn push_direct_event<T: serde::Serialize>(
-    dispatch: &mut Dispatch,
-    recipient: SessionId,
-    code: i32,
-    payload: T,
-) {
-    dispatch.messages.push(Delivery {
-        recipient,
-        payload: OutboundPayload::Event(CommonEvent {
-            code,
-            data: serde_json::to_value(payload).unwrap_or(Value::Null),
-        }),
-    });
-}
-
-fn push_private_deals(
-    room_key: &str,
-    room_service: &RoomService,
-    state: &TractorGameState,
-    dispatch: &mut Dispatch,
-) {
-    for (session_id, _, position, _) in room_service.get_room_members(room_key) {
-        push_direct_event(
-            dispatch,
-            session_id,
-            WsCode::DEAL as i32,
-            WsTractorDealEvent {
-                position: position as i32,
-                cards: state.hands.get(&position).cloned().unwrap_or_default(),
-                deck_count: state.rules.deck_count as i32,
-                hand_count: state.hand_count() as i32,
-                bottom_card_count: state.bottom_cards.len() as i32,
-                target_rank: state.rules.target_rank,
-            },
-        );
-    }
-}
-
-fn settlement_event(state: &TractorGameState) -> WsTractorSettlementEvent {
-    let score = state.settlement_score();
-    WsTractorSettlementEvent {
-        winner_positions: state.winner_positions(),
-        score,
-        blood_units: state.rules.blood_units(score),
-        target_rank: state.rules.target_rank,
-        match_finished: state.match_finished(),
-        next_target_rank: state.next_target_rank(),
-    }
-}
-
-fn push_table_snapshot(
-    room_key: &str,
-    room_service: &RoomService,
-    snapshot: WsTractorTableSnapshotEvent,
-    dispatch: &mut Dispatch,
-) {
-    room_service.send_all(room_key, WsCode::TABLE_SNAPSHOT as i32, snapshot, dispatch);
-}
-
 fn build_auto_dispatch(
     room_key: &str,
     room_service: &RoomService,
@@ -193,6 +102,97 @@ fn build_auto_dispatch(
         );
     }
     dispatch
+}
+
+fn current_play_time(configs: &HashMap<String, i32>, state: &TractorGameState) -> u32 {
+    let key = if state.is_ai_controlled_position(state.current_position) {
+        KEY_AWAY_TIME
+    } else {
+        KEY_PLAY_TIME
+    };
+    configs.get(key).copied().unwrap_or(30).max(1) as u32
+}
+
+async fn deliver(dispatch: Dispatch, senders: &SessionSenders) {
+    let mut frames = Vec::with_capacity(dispatch.messages.len());
+    for message in dispatch.messages {
+        if let Ok(frame) = ws_common::to_text_message(&message.payload) {
+            frames.push((message.recipient, frame));
+        }
+    }
+    let senders = senders.lock().await;
+    for (session_id, frame) in frames {
+        if let Some(tx) = senders.get(&session_id) {
+            let _ = tx.send(frame);
+        }
+    }
+}
+
+fn push_direct_event<T: serde::Serialize>(
+    dispatch: &mut Dispatch,
+    recipient: SessionId,
+    code: i32,
+    payload: T,
+) {
+    dispatch.messages.push(Delivery {
+        recipient,
+        payload: OutboundPayload::Event(CommonEvent {
+            code,
+            data: serde_json::to_value(payload).unwrap_or(Value::Null),
+        }),
+    });
+}
+
+fn push_private_deals(
+    room_key: &str,
+    room_service: &RoomService,
+    state: &TractorGameState,
+    dispatch: &mut Dispatch,
+) {
+    for (session_id, _, position, _) in room_service.get_room_members(room_key) {
+        push_direct_event(
+            dispatch,
+            session_id,
+            WsCode::DEAL as i32,
+            WsTractorDealEvent {
+                position: position as i32,
+                cards: state.hands.get(&position).cloned().unwrap_or_default(),
+                deck_count: state.rules.deck_count as i32,
+                hand_count: state.hand_count() as i32,
+                bottom_card_count: state.bottom_cards.len() as i32,
+                target_rank: state.rules.target_rank,
+            },
+        );
+    }
+}
+
+fn push_table_snapshot(
+    room_key: &str,
+    room_service: &RoomService,
+    snapshot: WsTractorTableSnapshotEvent,
+    dispatch: &mut Dispatch,
+) {
+    room_service.send_all(room_key, WsCode::TABLE_SNAPSHOT as i32, snapshot, dispatch);
+}
+
+fn settlement_event(state: &TractorGameState) -> WsTractorSettlementEvent {
+    let score = state.settlement_score();
+    WsTractorSettlementEvent {
+        winner_positions: state.winner_positions(),
+        score,
+        blood_units: state.rules.blood_units(score),
+        target_rank: state.rules.target_rank,
+        match_finished: state.match_finished(),
+        next_target_rank: state.next_target_rank(),
+    }
+}
+
+fn settlement_time(configs: &HashMap<String, i32>) -> u64 {
+    configs
+        .get(KEY_SETTLEMENT_TIME)
+        .copied()
+        .unwrap_or(5)
+        .max(1) as u64
 }
 
 pub(crate) fn start_game_loop(

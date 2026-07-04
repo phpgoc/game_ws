@@ -434,37 +434,6 @@ mod tests {
     }
 
     #[test]
-    fn start_deals_equal_private_hands() {
-        let handler = TractorGameHandler::default();
-        let mut room = RoomService::default();
-        for session_id in 1..=4 {
-            room.handle_common_request(
-                session_id,
-                &join_request(&format!("u{session_id}")),
-                handler.game_id(),
-                || handler.build_room_settings(),
-            );
-        }
-        let dispatch = handler.handle_start(&mut room, 1);
-        let deals: Vec<_> = dispatch
-            .messages
-            .iter()
-            .filter_map(|message| match &message.payload {
-                OutboundPayload::Event(event) if event.code == WsCode::DEAL as i32 => {
-                    serde_json::from_value::<WsTractorDealEvent>(event.data.clone()).ok()
-                }
-                _ => None,
-            })
-            .collect();
-        assert_eq!(deals.len(), 4);
-        assert!(
-            deals
-                .iter()
-                .all(|deal| deal.hand_count == deals[0].hand_count)
-        );
-    }
-
-    #[test]
     fn setting_is_locked_after_start() {
         let handler = TractorGameHandler::default();
         let mut room = RoomService::default();
@@ -501,6 +470,37 @@ mod tests {
             )
         });
         assert!(locked);
+    }
+
+    #[test]
+    fn start_deals_equal_private_hands() {
+        let handler = TractorGameHandler::default();
+        let mut room = RoomService::default();
+        for session_id in 1..=4 {
+            room.handle_common_request(
+                session_id,
+                &join_request(&format!("u{session_id}")),
+                handler.game_id(),
+                || handler.build_room_settings(),
+            );
+        }
+        let dispatch = handler.handle_start(&mut room, 1);
+        let deals: Vec<_> = dispatch
+            .messages
+            .iter()
+            .filter_map(|message| match &message.payload {
+                OutboundPayload::Event(event) if event.code == WsCode::DEAL as i32 => {
+                    serde_json::from_value::<WsTractorDealEvent>(event.data.clone()).ok()
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(deals.len(), 4);
+        assert!(
+            deals
+                .iter()
+                .all(|deal| deal.hand_count == deals[0].hand_count)
+        );
     }
 
     #[test]
