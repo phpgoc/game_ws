@@ -434,12 +434,51 @@ mod tests {
 
     #[test]
     fn four_ai_positions_can_finish_seeded_round_with_win() {
-        let mut state = seeded_ai_round_state(2026070402);
+        let state = run_seeded_ai_round(2026070402, 220);
+        let settlement = state.settlement.as_ref().expect("AI round settlement");
+        let total_discards = state.discards.values().map(Vec::len).sum::<usize>();
+
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert!(
+            !settlement.winner_positions.is_empty(),
+            "seeded AI round should end with a winning hand"
+        );
+        assert!(settlement.win_tile.is_some());
+        assert!(total_discards > 0);
+    }
+
+    #[test]
+    fn four_ai_positions_settle_multiple_seeded_rounds() {
+        for seed in [2026070403, 2026070404, 2026070405] {
+            let state = run_seeded_ai_round(seed, 260);
+            let settlement = state.settlement.as_ref().expect("AI round settlement");
+            let total_discards = state.discards.values().map(Vec::len).sum::<usize>();
+
+            assert_eq!(
+                state.phase,
+                ShenyangMahjongPhase::Settlement,
+                "seed {seed} should settle"
+            );
+            assert!(
+                settlement.is_self_draw
+                    || settlement.from_position.is_some()
+                    || settlement.winner_positions.is_empty(),
+                "seed {seed} settlement should be a self draw, discard win, or legal draw"
+            );
+            assert!(
+                total_discards > 0,
+                "seed {seed} should play at least one discard"
+            );
+        }
+    }
+
+    fn run_seeded_ai_round(seed: u64, max_steps: usize) -> ShenyangMahjongLoopState {
+        let mut state = seeded_ai_round_state(seed);
         let room_service = RoomService::default();
         let configs = HashMap::new();
         let mut dispatch = Dispatch::default();
 
-        for step in 0..220 {
+        for step in 0..max_steps {
             if state.phase == ShenyangMahjongPhase::Settlement {
                 break;
             }
@@ -456,7 +495,7 @@ mod tests {
 
             assert!(
                 acted,
-                "AI round stalled at step {step}, phase={:?}, current_position={}, wall={}, claim_window={:?}",
+                "AI round stalled for seed {seed} at step {step}, phase={:?}, current_position={}, wall={}, claim_window={:?}",
                 state.phase,
                 state.current_position,
                 state.wall_count(),
@@ -464,16 +503,7 @@ mod tests {
             );
         }
 
-        let settlement = state.settlement.as_ref().expect("AI round settlement");
-        let total_discards = state.discards.values().map(Vec::len).sum::<usize>();
-
-        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
-        assert!(
-            !settlement.winner_positions.is_empty(),
-            "seeded AI round should end with a winning hand"
-        );
-        assert!(settlement.win_tile.is_some());
-        assert!(total_discards > 0);
+        state
     }
 
     fn playable_state() -> ShenyangMahjongLoopState {
