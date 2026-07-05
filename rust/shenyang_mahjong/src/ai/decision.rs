@@ -2192,7 +2192,8 @@ fn seven_pairs_wait_tile_score(
     let public_discards = public_discard_count(table, wait_tile) as f64;
     let remaining = remaining_tile_count(hand_after_discard, table, position, wait_tile) as f64;
     if seven_pairs_regular_wait_reaches_cap(table) {
-        return remaining * 6.0 - public_discards * 12.0;
+        return remaining * 6.0 + seven_pairs_wait_shape_tiebreaker(wait_tile)
+            - public_discards * 12.0;
     }
     let shape = if is_wind(wait_tile) {
         10.0
@@ -2204,6 +2205,18 @@ fn seven_pairs_wait_tile_score(
         -4.0
     };
     shape + remaining * 3.0 - public_discards * 9.0
+}
+
+fn seven_pairs_wait_shape_tiebreaker(wait_tile: i32) -> f64 {
+    if is_wind(wait_tile) {
+        2.0
+    } else if tile_is_terminal(wait_tile) {
+        1.5
+    } else if is_dragon(wait_tile) {
+        1.0
+    } else {
+        0.0
+    }
 }
 
 fn seven_pairs_regular_wait_reaches_cap(table: &AiPublicTable) -> bool {
@@ -5072,26 +5085,40 @@ mod tests {
     }
 
     #[test]
-    fn capped_ready_score_flattens_wind_shape_for_seven_pairs() {
+    fn capped_ready_score_keeps_wind_shape_as_seven_pairs_tiebreaker() {
         let mut table = table_with_discards(1, Vec::new());
         table.max_fan = Some(4);
         let wind_wait = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 31];
         let middle_wait = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 21, 21, 22, 22];
 
-        let wind_score = ready_tile_score(&wind_wait, &[], &table, 0, WIN_RULE_SHENYANG_BASIC);
-        let middle_score = ready_tile_score(&middle_wait, &[], &table, 0, WIN_RULE_SHENYANG_BASIC);
-        assert!((wind_score - middle_score).abs() < f64::EPSILON);
+        assert!(
+            ready_tile_score(&wind_wait, &[], &table, 0, WIN_RULE_SHENYANG_BASIC)
+                > ready_tile_score(&middle_wait, &[], &table, 0, WIN_RULE_SHENYANG_BASIC)
+        );
     }
 
     #[test]
-    fn capped_discard_stops_setting_seven_pairs_wait_on_wind_shape() {
+    fn capped_ready_score_prefers_live_middle_over_public_wind_wait() {
+        let mut table = table_with_discards(1, vec![31]);
+        table.max_fan = Some(4);
+        let wind_wait = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 31];
+        let middle_wait = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 21, 21, 22, 22];
+
+        assert!(
+            ready_tile_score(&middle_wait, &[], &table, 0, WIN_RULE_SHENYANG_BASIC)
+                > ready_tile_score(&wind_wait, &[], &table, 0, WIN_RULE_SHENYANG_BASIC)
+        );
+    }
+
+    #[test]
+    fn capped_discard_sets_seven_pairs_wait_on_live_wind_tiebreaker() {
         let mut table = table_with_discards(1, Vec::new());
         table.max_fan = Some(4);
         let hand = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 21, 21, 22, 22, 31];
 
         assert_eq!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-            Some(31)
+            Some(5)
         );
     }
 
