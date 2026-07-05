@@ -1619,9 +1619,9 @@ fn piao_discard_bias(
         && suited_tile_count_for_suit(hand, melds, tile_suit(tile)) == 1
         && pure_one_suit_score <= 0.0;
     if count >= 3 {
-        -16.0
+        -20.0
     } else if count == 2 {
-        -9.0
+        -16.0
     } else if only_terminal_or_honor || only_suit_tile {
         -40.0
     } else if is_honor(tile) || tile_is_terminal(tile) {
@@ -4880,6 +4880,19 @@ mod tests {
         assert!(!matches!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(1 | 11 | 21 | 31)
+        ));
+    }
+
+    #[test]
+    fn discard_preserves_open_piao_pairs_over_public_pair_tile() {
+        let mut table = table_with_discards(1, vec![11, 11]);
+        table.wall_count = 36;
+        table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
+        let hand = vec![11, 11, 12, 21, 21, 22, 23, 24, 31, 35, 36];
+
+        assert!(!matches!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(11 | 21)
         ));
     }
 
