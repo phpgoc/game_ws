@@ -176,6 +176,17 @@ pub fn choose_claim_from_view(
         ) {
             return Some(AiClaimChoice::Pass);
         }
+        if should_peng_to_preserve_four_gui_yi_from_discard(
+            hand,
+            &current_melds,
+            table,
+            position,
+            win_rule,
+            tile,
+            claim.from_position,
+        ) {
+            return Some(AiClaimChoice::Peng);
+        }
         if should_claim_gang_from_discard(
             hand,
             &current_melds,
@@ -2330,6 +2341,64 @@ fn should_claim_gang_from_discard(
     reaches_ready
 }
 
+fn should_peng_to_preserve_four_gui_yi_from_discard(
+    hand: &[i32],
+    current_melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+    tile: i32,
+    from_position: usize,
+) -> bool {
+    if !should_preserve_four_gui_yi(tile)
+        || !can_gang(hand, tile)
+        || pure_one_suit_plan_score_for_context(hand, current_melds, table, position) > 0.0
+    {
+        return false;
+    }
+
+    let mut gang_hand = remove_n_tiles(hand, tile, 3);
+    if gang_hand.len() + 3 != hand.len() {
+        return false;
+    }
+    sort_tiles(&mut gang_hand);
+    let mut gang_melds = current_melds.to_vec();
+    gang_melds.push(claim_meld(
+        ShenyangMahjongMeldKind::GANG,
+        tile,
+        from_position,
+    ));
+    let gang_ready_score = ready_tile_score(&gang_hand, &gang_melds, table, position, win_rule);
+    if gang_ready_score <= 0.0 {
+        return false;
+    }
+    let gang_visible_fan = estimated_meld_and_four_gui_yi_fan(&gang_hand, &gang_melds);
+    let gang_four_gui_yi = estimated_four_gui_yi_fan(&gang_hand, &gang_melds);
+
+    let mut peng_hand = remove_n_tiles(hand, tile, 2);
+    if peng_hand.len() + 2 != hand.len() {
+        return false;
+    }
+    sort_tiles(&mut peng_hand);
+    let mut peng_melds = current_melds.to_vec();
+    peng_melds.push(claim_meld(
+        ShenyangMahjongMeldKind::PENG,
+        tile,
+        from_position,
+    ));
+
+    unique_tiles(&peng_hand).into_iter().any(|discard| {
+        if discard == tile {
+            return false;
+        }
+        let after_discard = remove_n_tiles(&peng_hand, discard, 1);
+        estimated_four_gui_yi_fan(&after_discard, &peng_melds) > gang_four_gui_yi
+            && estimated_meld_and_four_gui_yi_fan(&after_discard, &peng_melds) >= gang_visible_fan
+            && ready_tile_score(&after_discard, &peng_melds, table, position, win_rule)
+                >= gang_ready_score
+    })
+}
+
 fn claim_gang_from_discard_reaches_ready(
     hand: &[i32],
     current_melds: &[WsShenyangMahjongMeld],
@@ -3792,6 +3861,25 @@ mod tests {
         assert_eq!(
             choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(AiClaimChoice::Gang)
+        );
+    }
+
+    #[test]
+    fn claim_gang_penges_to_preserve_four_gui_yi_when_peng_stays_ready() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.dealer_position = 0;
+        table.seats.get_mut(&0).unwrap().melds = vec![test_chi_meld(11)];
+        table.claim_window = Some(AiClaimView {
+            tile: 4,
+            from_position: 1,
+            eligible_positions: vec![0],
+        });
+        let claim = table.claim_window.clone().unwrap();
+        let hand = vec![2, 2, 2, 4, 4, 4, 5, 21, 21, 21];
+
+        assert_eq!(
+            choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(AiClaimChoice::Peng)
         );
     }
 
