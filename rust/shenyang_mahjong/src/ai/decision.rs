@@ -822,7 +822,11 @@ fn estimated_fan_with_wait(
 }
 
 fn single_wait_fan(win_tile: i32) -> i32 {
-    1 + if tile_is_terminal(win_tile) { 1 } else { 0 }
+    1 + if tile_is_terminal(win_tile) || is_honor(win_tile) {
+        1
+    } else {
+        0
+    }
 }
 
 fn pressured_open_wait_scale(

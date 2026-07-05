@@ -557,7 +557,11 @@ fn is_single_wait_win(
     is_single_wait_shape_with_rule(hand_tiles, melds, win_tile, win_rule)
 }
 
-fn is_single_terminal_wait_win(
+fn is_yaojiu_tile(tile: i32) -> bool {
+    matches!(tile, 1 | 9 | 11 | 19 | 21 | 29 | 31..=37)
+}
+
+fn is_single_yaojiu_wait_win(
     hand_tiles: &[i32],
     melds: &[WsShenyangMahjongMeld],
     win_tile: Option<i32>,
@@ -566,8 +570,7 @@ fn is_single_terminal_wait_win(
     let Some(win_tile) = win_tile else {
         return false;
     };
-    matches!(win_tile, 1 | 9 | 11 | 19 | 21 | 29)
-        && is_single_wait_win(hand_tiles, melds, Some(win_tile), win_rule)
+    is_yaojiu_tile(win_tile) && is_single_wait_win(hand_tiles, melds, Some(win_tile), win_rule)
 }
 
 fn join_succeeded(dispatch: &Dispatch, session_id: SessionId) -> bool {
@@ -1432,7 +1435,7 @@ fn winner_hand_fan_with_rule(
     if is_single_wait_win(&hand_tiles, melds, settlement.win_tile, win_rule) {
         fan += 1;
     }
-    if is_single_terminal_wait_win(&hand_tiles, melds, settlement.win_tile, win_rule) {
+    if is_single_yaojiu_wait_win(&hand_tiles, melds, settlement.win_tile, win_rule) {
         fan += 1;
     }
     if is_shou_ba_yi(pattern, &hand_tiles, melds) {
@@ -4379,7 +4382,7 @@ mod tests {
     }
 
     #[test]
-    fn settlement_fan_counts_single_terminal_wait_extra() {
+    fn settlement_fan_counts_single_yaojiu_terminal_wait_extra() {
         let mut state = playable_state();
         state
             .hands
@@ -4402,13 +4405,46 @@ mod tests {
             settlement.win_tile,
             WIN_RULE_RELAXED
         ));
-        assert!(is_single_terminal_wait_win(
+        assert!(is_single_yaojiu_wait_win(
             &hand_tiles,
             &[],
             settlement.win_tile,
             WIN_RULE_RELAXED
         ));
         assert_eq!(winner_hand_fan(&state, settlement, 1), 7);
+    }
+
+    #[test]
+    fn settlement_fan_counts_single_yaojiu_honor_wait_extra() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35]);
+        state.enter_settlement_with_reverse_win(
+            vec![1],
+            Some(0),
+            Some(35),
+            false,
+            false,
+            false,
+            false,
+        );
+        let settlement = state.settlement.as_ref().expect("settlement");
+        let hand_tiles = winner_final_hand_tiles(&state, settlement, 1);
+
+        assert!(is_single_wait_win(
+            &hand_tiles,
+            &[],
+            settlement.win_tile,
+            WIN_RULE_RELAXED
+        ));
+        assert!(is_single_yaojiu_wait_win(
+            &hand_tiles,
+            &[],
+            settlement.win_tile,
+            WIN_RULE_RELAXED
+        ));
+        assert_eq!(winner_hand_fan(&state, settlement, 1), 3);
     }
 
     #[test]
