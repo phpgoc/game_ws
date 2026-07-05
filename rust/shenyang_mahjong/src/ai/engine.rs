@@ -171,7 +171,9 @@ fn self_hand(state: &ShenyangMahjongLoopState, position: usize) -> Option<Vec<i3
 mod tests {
     use std::sync::{Arc, Mutex};
 
-    use share_type_public::games::shenyang_mahjong::{ShenyangMahjongPhase, WsShenyangMahjongMeld};
+    use share_type_public::games::shenyang_mahjong::{
+        ShenyangMahjongMeldKind, ShenyangMahjongPhase, WsShenyangMahjongMeld,
+    };
     use ws_common::game_state::CommonGameState;
 
     use super::*;
@@ -325,6 +327,65 @@ mod tests {
     }
 
     #[test]
+    fn away_position_uses_ai_self_draw_for_open_basic_pure_one_suit() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_away(0);
+        state.hands.insert(0, vec![3, 4, 5, 4, 5, 6, 5, 6, 7, 8, 8]);
+        state.melds.insert(
+            0,
+            vec![WsShenyangMahjongMeld {
+                kind: ShenyangMahjongMeldKind::CHI,
+                tiles: vec![2, 3, 4],
+                from_position: Some(1),
+            }],
+        );
+        state.last_drawn_tile = Some(8);
+        let mut dispatch = Dispatch::default();
+
+        assert!(maybe_play_ai_turn(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::new(),
+            &mut dispatch,
+        ));
+
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert_eq!(
+            state
+                .settlement
+                .as_ref()
+                .map(|settlement| settlement.winner_positions.clone()),
+            Some(vec![0]),
+        );
+        assert!(state.discards.get(&0).unwrap().is_empty());
+    }
+
+    #[test]
+    fn away_position_does_not_self_draw_closed_basic_pure_one_suit() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_away(0);
+        state
+            .hands
+            .insert(0, vec![1, 2, 3, 2, 3, 4, 4, 5, 6, 7, 7, 7, 9, 9]);
+        state.last_drawn_tile = Some(9);
+        let mut dispatch = Dispatch::default();
+
+        assert!(maybe_play_ai_turn(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::new(),
+            &mut dispatch,
+        ));
+
+        assert_eq!(state.phase, ShenyangMahjongPhase::Play);
+        assert!(state.settlement.is_none());
+        assert_eq!(state.hands.get(&0).unwrap().len(), 13);
+        assert_eq!(state.discards.get(&0).unwrap().len(), 1);
+    }
+
+    #[test]
     fn away_position_uses_ai_self_gang_before_discard() {
         let mut state = playable_state();
         state.base.lock().unwrap().mark_away(0);
@@ -373,7 +434,7 @@ mod tests {
 
     #[test]
     fn four_ai_positions_can_finish_seeded_round_with_win() {
-        let mut state = seeded_ai_round_state(2026070401);
+        let mut state = seeded_ai_round_state(2026070402);
         let room_service = RoomService::default();
         let configs = HashMap::new();
         let mut dispatch = Dispatch::default();

@@ -523,17 +523,16 @@ pub fn satisfies_shenyang_basic_win(tiles: &[i32], melds: &[WsShenyangMahjongMel
         return true;
     }
     let all_tiles = all_tiles_with_melds(tiles, melds);
-    let is_pure_one_suit = is_pure_one_suit_tiles(&all_tiles);
-    if is_pure_one_suit {
+    if !has_open_meld(melds) {
+        return false;
+    }
+    if is_pure_one_suit_tiles(&all_tiles) {
         return true;
     }
     let has_triplet_or_dragon_pair = melds.iter().any(is_triplet_meld)
         || has_triplet_in_standard_decomposition(tiles)
         || has_dragon_pair_as_standard_pair(tiles);
-    has_open_meld(melds)
-        && has_three_suits(&all_tiles)
-        && has_terminal_or_honor(&all_tiles)
-        && has_triplet_or_dragon_pair
+    has_three_suits(&all_tiles) && has_terminal_or_honor(&all_tiles) && has_triplet_or_dragon_pair
 }
 
 pub fn sort_tiles(hand: &mut [i32]) {
@@ -866,11 +865,11 @@ mod tests {
     }
 
     #[test]
-    fn shenyang_basic_accepts_closed_pure_one_suit_without_open_meld() {
+    fn shenyang_basic_rejects_closed_pure_one_suit_without_open_meld() {
         let tiles = vec![1, 2, 3, 2, 3, 4, 4, 5, 6, 7, 7, 7, 9, 9];
 
         assert!(is_pure_one_suit_win(&tiles, &[]));
-        assert!(satisfies_shenyang_basic_win(&tiles, &[]));
+        assert!(!satisfies_shenyang_basic_win(&tiles, &[]));
     }
 
     #[test]

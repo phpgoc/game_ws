@@ -6,7 +6,10 @@ use ws_common::RoomService;
 use crate::game::settlement_score_changes_for_state;
 use crate::game_state::{SettlementState, ShenyangMahjongLoopState};
 #[cfg(feature = "official")]
-use crate::rules::{is_piao_hu_win, is_pure_one_suit_win, is_seven_pairs_win};
+use crate::rules::{
+    WIN_RULE_SHENYANG_BASIC, is_complete_win_with_melds, is_piao_hu_win, is_pure_one_suit_win,
+    is_seven_pairs_win, win_rule_from_configs,
+};
 
 #[cfg(feature = "official")]
 fn block_on_official<F>(future: F) -> Option<F::Output>
@@ -111,13 +114,14 @@ pub fn settle_round(
     let players = state.players_snapshot();
     let positions = players.keys().copied().collect::<Vec<_>>();
     let score_changes = settlement_score_changes_for_state(state, &positions, settlement, configs);
+    let win_rule = win_rule_from_configs(configs);
     let mut winner_scores = Vec::new();
     for position in &settlement.winner_positions {
         if let Some(winner_user_id) = room_service.room_official_user_id(room_key, *position) {
             winner_scores.push(data::GameRoundShenyangMahjongWinnerScoreInput {
                 winner_user_id,
                 score: winner_score_from_changes(&score_changes, *position),
-                pattern: winner_pattern_for_position(state, settlement, *position),
+                pattern: winner_pattern_for_position(state, settlement, *position, win_rule),
             });
         }
     }
@@ -157,6 +161,7 @@ fn winner_pattern_for_position(
     state: &ShenyangMahjongLoopState,
     settlement: &SettlementState,
     position: usize,
+    win_rule: i32,
 ) -> data::ShenyangMahjongRoundWinPattern {
     let mut hand_tiles = state.hands.get(&position).cloned().unwrap_or_default();
     if !settlement.is_self_draw
@@ -167,6 +172,11 @@ fn winner_pattern_for_position(
     }
     let meld_count = state.melds.get(&position).map(Vec::len).unwrap_or(0);
     let melds = state.melds.get(&position).map(Vec::as_slice).unwrap_or(&[]);
+    if win_rule == WIN_RULE_SHENYANG_BASIC
+        && !is_complete_win_with_melds(&hand_tiles, melds, win_rule)
+    {
+        return data::ShenyangMahjongRoundWinPattern::Standard;
+    }
     if meld_count == 0 && is_seven_pairs_win(&hand_tiles) {
         data::ShenyangMahjongRoundWinPattern::SevenPairs
     } else if is_pure_one_suit_win(&hand_tiles, melds) {
@@ -212,10 +222,19 @@ fn winner_score_from_changes(
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "official")]
+    use std::sync::{Arc, Mutex};
+
     use crate::game_state::SettlementState;
+    #[cfg(feature = "official")]
+    use crate::game_state::ShenyangMahjongLoopState;
 
     use share_type_public::games::shenyang_mahjong::WsShenyangMahjongScoreChange;
+    #[cfg(feature = "official")]
+    use ws_common::game_state::CommonGameState;
 
+    #[cfg(feature = "official")]
+    use super::winner_pattern_for_position;
     use super::{winner_score_for_settlement, winner_score_from_changes};
 
     #[test]
@@ -267,5 +286,50 @@ mod tests {
         ];
 
         assert_eq!(winner_score_from_changes(&score_changes, 1), 5);
+    }
+
+    #[cfg(feature = "official")]
+    #[test]
+    fn winner_pattern_uses_win_rule_for_closed_pure_one_suit() {
+        let mut state = state_with_players();
+        state
+            .hands
+            .insert(1, vec![1, 2, 3, 2, 3, 4, 4, 5, 6, 7, 7, 7, 9]);
+        state.enter_settlement_with_reverse_win(
+            vec![1],
+            Some(0),
+            Some(9),
+            false,
+            false,
+            false,
+            false,
+        );
+        let settlement = state.settlement.as_ref().expect("settlement");
+
+        assert_eq!(
+            winner_pattern_for_position(&state, settlement, 1, crate::rules::WIN_RULE_RELAXED),
+            data::ShenyangMahjongRoundWinPattern::PureOneSuit
+        );
+        assert_eq!(
+            winner_pattern_for_position(
+                &state,
+                settlement,
+                1,
+                crate::rules::WIN_RULE_SHENYANG_BASIC
+            ),
+            data::ShenyangMahjongRoundWinPattern::Standard
+        );
+    }
+
+    #[cfg(feature = "official")]
+    fn state_with_players() -> ShenyangMahjongLoopState {
+        let base = Arc::new(Mutex::new(CommonGameState::default()));
+        {
+            let mut common = base.lock().unwrap();
+            for position in 0..4 {
+                common.add_player(position, position as u64 + 1, &format!("P{}", position));
+            }
+        }
+        ShenyangMahjongLoopState::new(base)
     }
 }
