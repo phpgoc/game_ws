@@ -159,6 +159,7 @@ pub fn maybe_resolve_ai_claims(
             resolve_claim_window(room_service, room_key, state, configs, dispatch);
             return true;
         }
+        return true;
     }
     false
 }
@@ -240,6 +241,44 @@ mod tests {
                 .map(|settlement| settlement.winner_positions.clone()),
             Some(vec![0]),
         );
+    }
+
+    #[test]
+    fn ai_claim_response_reports_progress_while_waiting_for_human() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_ai_position(0);
+        state.current_position = 2;
+        state
+            .hands
+            .insert(0, vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31]);
+        state
+            .hands
+            .insert(1, vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31]);
+        state.discards.insert(2, vec![35]);
+        state.claim_window = Some(ClaimWindowState {
+            tile: 35,
+            from_position: 2,
+            kind: ClaimWindowKind::Discard,
+            eligible_positions: vec![0, 1],
+            responses: HashMap::new(),
+        });
+        let mut dispatch = Dispatch::default();
+
+        assert!(maybe_resolve_ai_claims(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+        ));
+
+        let claim_window = state.claim_window.as_ref().expect("claim window");
+        assert!(matches!(
+            claim_window.responses.get(&0),
+            Some(ClaimResponse::Pass)
+        ));
+        assert!(!claim_window.responses.contains_key(&1));
+        assert_eq!(state.phase, ShenyangMahjongPhase::Play);
     }
 
     #[test]
