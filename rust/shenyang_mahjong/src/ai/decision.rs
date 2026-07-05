@@ -2759,9 +2759,6 @@ fn violates_basic_terminal_or_honor_discard(
     if !before || after {
         return false;
     }
-    if table.max_fan.is_some_and(|max_fan| max_fan <= 1) {
-        return true;
-    }
     if should_preserve_seven_pairs_plan_for_context(
         hand_after_discard,
         melds,
@@ -2775,6 +2772,9 @@ fn violates_basic_terminal_or_honor_discard(
         && (is_honor(tile) || !is_main_pure_suit_tile(hand_after_discard, melds, tile))
     {
         return false;
+    }
+    if table.max_fan.is_some_and(|max_fan| max_fan <= 1) {
+        return true;
     }
     true
 }
@@ -2825,9 +2825,6 @@ fn violates_basic_three_suits_discard(
     {
         return false;
     }
-    if table.max_fan.is_some_and(|max_fan| max_fan <= 1) {
-        return true;
-    }
     if should_preserve_seven_pairs_plan_for_context(
         hand_after_discard,
         melds,
@@ -2836,6 +2833,9 @@ fn violates_basic_three_suits_discard(
         win_rule,
     ) {
         return false;
+    }
+    if table.max_fan.is_some_and(|max_fan| max_fan <= 1) {
+        return true;
     }
     pure_one_suit_plan_score_for_context(hand_after_discard, melds, table, position) <= 0.0
 }
@@ -2961,6 +2961,65 @@ mod tests {
         assert!(!matches!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(11 | 21)
+        ));
+    }
+
+    #[test]
+    fn capped_pure_one_suit_route_can_discard_last_honor_when_suits_are_missing() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.max_fan = Some(1);
+        let hand = vec![2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 8, 8, 12, 31];
+
+        assert!(
+            pure_one_suit_plan_score_for_context(&remove_n_tiles(&hand, 31, 1), &[], &table, 0)
+                > 0.0
+        );
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(31)
+        );
+    }
+
+    #[test]
+    fn capped_locked_seven_pairs_route_can_discard_last_honor() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.max_fan = Some(1);
+        let hand = vec![2, 2, 3, 3, 4, 4, 12, 12, 13, 13, 14, 14, 5, 31];
+        let after_discard = remove_n_tiles(&hand, 31, 1);
+
+        assert!(should_preserve_seven_pairs_plan_for_context(
+            &after_discard,
+            &[],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC
+        ));
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(31)
+        );
+    }
+
+    #[test]
+    fn capped_locked_seven_pairs_route_can_break_three_suits_requirement() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.max_fan = Some(1);
+        let hand_after_discard = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 12, 13, 13, 5];
+
+        assert!(should_preserve_seven_pairs_plan_for_context(
+            &hand_after_discard,
+            &[],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC
+        ));
+        assert!(!violates_basic_three_suits_discard(
+            &hand_after_discard,
+            &[],
+            &table,
+            0,
+            21,
+            WIN_RULE_SHENYANG_BASIC
         ));
     }
 
