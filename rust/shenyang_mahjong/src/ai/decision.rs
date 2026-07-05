@@ -673,7 +673,7 @@ fn dragon_value_bias(hand: &[i32], tile: i32) -> f64 {
         return 0.0;
     }
     let pairs = pair_count(hand);
-    if pairs >= 4 { 0.4 } else { -3.0 }
+    if pairs >= 4 { 10.4 } else { -3.0 }
 }
 
 fn early_piao_candidate_discard_bias(
@@ -1169,7 +1169,7 @@ fn mid_round_public_discard_bias(table: &AiPublicTable, _position: usize, tile: 
         return 0.0;
     }
     let shape_bonus = if is_honor(tile) {
-        3.0
+        16.0
     } else if tile_is_terminal(tile) {
         1.5
     } else {
@@ -4116,6 +4116,17 @@ mod tests {
     }
 
     #[test]
+    fn discard_clears_honor_before_off_suit_singleton_for_pure_one_suit_plan() {
+        let table = table_with_discards(1, Vec::new());
+        let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 8, 9, 11, 31, 35, 36];
+
+        assert!(matches!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(31 | 35 | 36)
+        ));
+    }
+
+    #[test]
     fn discard_clears_last_honor_for_pure_one_suit_without_terminal_need() {
         let table = table_with_discards(1, Vec::new());
         let hand = vec![2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 8, 8, 12, 31];
@@ -4235,6 +4246,17 @@ mod tests {
         assert_eq!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
             Some(31)
+        );
+    }
+
+    #[test]
+    fn discard_can_clear_single_dragon_when_pairs_are_many() {
+        let table = table_with_discards(1, Vec::new());
+        let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 23, 24, 26, 35];
+
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+            Some(35)
         );
     }
 
@@ -4428,6 +4450,17 @@ mod tests {
     }
 
     #[test]
+    fn discard_sets_seven_pairs_wait_on_live_terminal_before_middle_tile() {
+        let table = table_with_discards(1, Vec::new());
+        let hand = vec![1, 1, 2, 2, 5, 9, 11, 11, 12, 12, 21, 21, 22, 22];
+
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(5)
+        );
+    }
+
+    #[test]
     fn ready_score_values_live_wind_over_middle_for_dealer_seven_pairs() {
         let mut table = table_with_discards(1, Vec::new());
         table.dealer_position = 0;
@@ -4471,6 +4504,18 @@ mod tests {
         assert_eq!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
             Some(31)
+        );
+    }
+
+    #[test]
+    fn mid_round_discard_follows_public_dragon_over_multiple_public_terminal() {
+        let mut table = table_with_discards(1, vec![9, 9, 35]);
+        table.wall_count = 46;
+        let hand = vec![1, 2, 3, 9, 11, 12, 14, 16, 18, 21, 22, 24, 26, 35];
+
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+            Some(35)
         );
     }
 
@@ -4911,6 +4956,17 @@ mod tests {
     }
 
     #[test]
+    fn late_defense_prefers_public_middle_tile_over_live_wind() {
+        let mut table = table_with_discards(1, vec![5]);
+        table.wall_count = 16;
+
+        assert!(
+            late_defense_tile_safety_score(&table, 0, 5, 1)
+                > late_defense_tile_safety_score(&table, 0, 31, 1)
+        );
+    }
+
+    #[test]
     fn late_defense_prefers_live_wind_then_terminal_then_middle() {
         let mut table = table_with_discards(1, Vec::new());
         table.wall_count = 16;
@@ -5231,6 +5287,17 @@ mod tests {
         assert_eq!(
             choose_self_gang_from_view(&hand, &[3], &table, 0, WIN_RULE_SHENYANG_BASIC),
             None
+        );
+    }
+
+    #[test]
+    fn self_gang_allows_same_closed_plain_gang_when_opening_is_not_required() {
+        let table = table_with_discards(1, Vec::new());
+        let hand = vec![3, 3, 3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31];
+
+        assert_eq!(
+            choose_self_gang_from_view(&hand, &[3], &table, 0, WIN_RULE_RELAXED),
+            Some(3)
         );
     }
 
