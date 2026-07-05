@@ -557,6 +557,19 @@ fn is_single_wait_win(
     is_single_wait_shape_with_rule(hand_tiles, melds, win_tile, win_rule)
 }
 
+fn is_single_terminal_wait_win(
+    hand_tiles: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    win_tile: Option<i32>,
+    win_rule: i32,
+) -> bool {
+    let Some(win_tile) = win_tile else {
+        return false;
+    };
+    matches!(win_tile, 1 | 9 | 11 | 19 | 21 | 29)
+        && is_single_wait_win(hand_tiles, melds, Some(win_tile), win_rule)
+}
+
 fn join_succeeded(dispatch: &Dispatch, session_id: SessionId) -> bool {
     dispatch.messages.iter().any(|message| {
         if message.recipient != session_id {
@@ -1417,6 +1430,9 @@ fn winner_hand_fan_with_rule(
         fan += 1;
     }
     if is_single_wait_win(&hand_tiles, melds, settlement.win_tile, win_rule) {
+        fan += 1;
+    }
+    if is_single_terminal_wait_win(&hand_tiles, melds, settlement.win_tile, win_rule) {
         fan += 1;
     }
     if is_shou_ba_yi(pattern, &hand_tiles, melds) {
@@ -4125,6 +4141,26 @@ mod tests {
     }
 
     #[test]
+    fn settlement_fan_counts_four_gui_yi_across_chi_meld_and_hand() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![2, 2, 2, 11, 12, 13, 21, 22, 23, 35, 35]);
+        state.melds.insert(
+            1,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::CHI,
+                vec![2, 3, 4],
+                Some(0),
+            )],
+        );
+        state.enter_settlement(vec![1], None, None, true);
+        let settlement = state.settlement.as_ref().expect("settlement");
+
+        assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
+    }
+
+    #[test]
     fn settlement_fan_counts_four_gui_yi_and_single_wait_on_seven_pairs() {
         let mut state = playable_state();
         state
@@ -4232,6 +4268,25 @@ mod tests {
     }
 
     #[test]
+    fn settlement_fan_counts_piao_hu_with_concealed_gang() {
+        let mut state = playable_state();
+        state.hands.insert(1, vec![35, 35]);
+        state.melds.insert(
+            1,
+            vec![
+                build_meld(ShenyangMahjongMeldKind::GANG, vec![1, 1, 1, 1], None),
+                build_meld(ShenyangMahjongMeldKind::PENG, vec![11, 11, 11], Some(2)),
+                build_meld(ShenyangMahjongMeldKind::PENG, vec![21, 21, 21], Some(3)),
+                build_meld(ShenyangMahjongMeldKind::PENG, vec![31, 31, 31], Some(0)),
+            ],
+        );
+        state.enter_settlement(vec![1], None, None, true);
+        let settlement = state.settlement.as_ref().expect("settlement");
+
+        assert_eq!(winner_hand_fan(&state, settlement, 1), 6);
+    }
+
+    #[test]
     fn settlement_fan_counts_pure_one_suit_with_concealed_gang_and_single_wait() {
         let mut state = playable_state();
         state.hands.insert(1, vec![5, 5, 6, 6, 6, 7, 7, 8, 8, 9, 9]);
@@ -4321,6 +4376,39 @@ mod tests {
             WIN_RULE_RELAXED
         ));
         assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
+    }
+
+    #[test]
+    fn settlement_fan_counts_single_terminal_wait_extra() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![11, 11, 13, 14, 15, 16, 17, 17, 17, 17, 18, 18, 19]);
+        state.enter_settlement_with_reverse_win(
+            vec![1],
+            Some(0),
+            Some(11),
+            false,
+            false,
+            false,
+            false,
+        );
+        let settlement = state.settlement.as_ref().expect("settlement");
+        let hand_tiles = winner_final_hand_tiles(&state, settlement, 1);
+
+        assert!(is_single_wait_win(
+            &hand_tiles,
+            &[],
+            settlement.win_tile,
+            WIN_RULE_RELAXED
+        ));
+        assert!(is_single_terminal_wait_win(
+            &hand_tiles,
+            &[],
+            settlement.win_tile,
+            WIN_RULE_RELAXED
+        ));
+        assert_eq!(winner_hand_fan(&state, settlement, 1), 7);
     }
 
     #[test]
@@ -4475,6 +4563,25 @@ mod tests {
     }
 
     #[test]
+    fn settlement_score_adds_dealer_fan_when_dealer_self_draws() {
+        let mut state = playable_state();
+        state.dealer_position = 2;
+        state
+            .hands
+            .insert(2, vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35, 35]);
+        state.enter_settlement(vec![2], None, Some(35), true);
+        let settlement = state.settlement.as_ref().expect("settlement");
+
+        assert_eq!(
+            settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &HashMap::new())
+                .into_iter()
+                .map(|change| (change.position, change.score))
+                .collect::<Vec<_>>(),
+            vec![(0, -8), (1, -8), (2, 24), (3, -8)]
+        );
+    }
+
+    #[test]
     fn settlement_score_adds_dealer_fan_when_payer_is_open_dealer() {
         let mut state = playable_state();
         state.dealer_position = 0;
@@ -4487,6 +4594,116 @@ mod tests {
                 ShenyangMahjongMeldKind::PENG,
                 vec![9, 9, 9],
                 Some(1),
+            )],
+        );
+        state.enter_settlement_with_reverse_win(
+            vec![1],
+            Some(0),
+            Some(4),
+            false,
+            false,
+            false,
+            false,
+        );
+        let settlement = state.settlement.as_ref().expect("settlement");
+
+        assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
+        assert_eq!(
+            settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &HashMap::new())
+                .into_iter()
+                .map(|change| (change.position, change.score))
+                .collect::<Vec<_>>(),
+            vec![(0, -2), (1, 2), (2, 0), (3, 0)]
+        );
+    }
+
+    #[test]
+    fn settlement_score_adds_closed_fan_when_discard_payer_has_not_opened() {
+        let mut closed_payer_state = playable_state();
+        closed_payer_state.dealer_position = 2;
+        closed_payer_state
+            .hands
+            .insert(1, vec![2, 3, 5, 6, 7, 11, 12, 13, 21, 22, 23, 31, 31]);
+        closed_payer_state.enter_settlement_with_reverse_win(
+            vec![1],
+            Some(0),
+            Some(4),
+            false,
+            false,
+            false,
+            false,
+        );
+        let closed_settlement = closed_payer_state.settlement.as_ref().expect("settlement");
+
+        assert_eq!(
+            winner_hand_fan(&closed_payer_state, closed_settlement, 1),
+            1
+        );
+        assert_eq!(
+            settlement_score_changes_for_state(
+                &closed_payer_state,
+                &[0, 1, 2, 3],
+                closed_settlement,
+                &HashMap::new()
+            )
+            .into_iter()
+            .map(|change| (change.position, change.score))
+            .collect::<Vec<_>>(),
+            vec![(0, -2), (1, 2), (2, 0), (3, 0)]
+        );
+
+        let mut open_payer_state = playable_state();
+        open_payer_state.dealer_position = 2;
+        open_payer_state
+            .hands
+            .insert(1, vec![2, 3, 5, 6, 7, 11, 12, 13, 21, 22, 23, 31, 31]);
+        open_payer_state.melds.insert(
+            0,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::CHI,
+                vec![1, 2, 3],
+                Some(1),
+            )],
+        );
+        open_payer_state.enter_settlement_with_reverse_win(
+            vec![1],
+            Some(0),
+            Some(4),
+            false,
+            false,
+            false,
+            false,
+        );
+        let open_settlement = open_payer_state.settlement.as_ref().expect("settlement");
+
+        assert_eq!(winner_hand_fan(&open_payer_state, open_settlement, 1), 1);
+        assert_eq!(
+            settlement_score_changes_for_state(
+                &open_payer_state,
+                &[0, 1, 2, 3],
+                open_settlement,
+                &HashMap::new()
+            )
+            .into_iter()
+            .map(|change| (change.position, change.score))
+            .collect::<Vec<_>>(),
+            vec![(0, -1), (1, 1), (2, 0), (3, 0)]
+        );
+    }
+
+    #[test]
+    fn settlement_score_counts_concealed_gang_discard_payer_as_closed() {
+        let mut state = playable_state();
+        state.dealer_position = 2;
+        state
+            .hands
+            .insert(1, vec![2, 3, 5, 6, 7, 11, 12, 13, 21, 22, 23, 31, 31]);
+        state.melds.insert(
+            0,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::GANG,
+                vec![31, 31, 31, 31],
+                None,
             )],
         );
         state.enter_settlement_with_reverse_win(
@@ -4707,6 +4924,40 @@ mod tests {
             ShenyangMahjongWinPattern::PiaoHu
         );
         assert_eq!(event.winner_details[0].score, 5);
+    }
+
+    #[test]
+    fn settlement_winner_details_do_not_describe_sequence_remainder_as_piao_hu() {
+        let mut state = playable_state();
+        state.dealer_position = 2;
+        state.hands.insert(1, vec![1, 1, 2, 3, 35, 35, 35]);
+        state.melds.insert(
+            1,
+            vec![
+                build_meld(ShenyangMahjongMeldKind::PENG, vec![11, 11, 11], Some(0)),
+                build_meld(ShenyangMahjongMeldKind::PENG, vec![21, 21, 21], Some(2)),
+            ],
+        );
+        state.enter_settlement_with_reverse_win(
+            vec![1],
+            Some(0),
+            Some(4),
+            false,
+            false,
+            false,
+            false,
+        );
+
+        let settlement = state.settlement.as_ref().expect("settlement");
+        let event = build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
+
+        assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
+        assert_eq!(event.winner_details.len(), 1);
+        assert_eq!(
+            event.winner_details[0].pattern,
+            ShenyangMahjongWinPattern::Standard
+        );
+        assert_eq!(event.winner_details[0].score, 2);
     }
 
     #[test]

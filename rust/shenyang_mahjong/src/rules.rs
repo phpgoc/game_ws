@@ -660,6 +660,18 @@ mod tests {
     }
 
     #[test]
+    fn piao_hu_accepts_concealed_gang_as_triplet_group() {
+        let tiles = vec![1, 1, 35, 35, 35];
+        let melds = vec![
+            meld(ShenyangMahjongMeldKind::GANG, vec![11, 11, 11, 11], None),
+            meld(ShenyangMahjongMeldKind::PENG, vec![21, 21, 21], Some(2)),
+            meld(ShenyangMahjongMeldKind::PENG, vec![31, 31, 31], Some(3)),
+        ];
+
+        assert!(is_piao_hu_win(&tiles, &melds));
+    }
+
+    #[test]
     fn piao_hu_rejects_missing_suit_triplet_hand() {
         let tiles = vec![1, 1, 35, 35, 35];
         let melds = vec![
@@ -692,6 +704,18 @@ mod tests {
             meld(ShenyangMahjongMeldKind::PENG, vec![31, 31, 31], Some(3)),
         ];
 
+        assert!(!is_piao_hu_win(&tiles, &melds));
+    }
+
+    #[test]
+    fn piao_hu_rejects_concealed_sequence_remainder() {
+        let tiles = vec![1, 1, 2, 3, 4, 35, 35, 35];
+        let melds = vec![
+            meld(ShenyangMahjongMeldKind::PENG, vec![11, 11, 11], Some(0)),
+            meld(ShenyangMahjongMeldKind::PENG, vec![21, 21, 21], Some(2)),
+        ];
+
+        assert!(is_complete_win(&tiles, melds.len()));
         assert!(!is_piao_hu_win(&tiles, &melds));
     }
 
@@ -802,6 +826,18 @@ mod tests {
 
         assert!(is_complete_win_with_melds(&tiles, &melds, WIN_RULE_RELAXED));
         assert!(!satisfies_shenyang_basic_win(&tiles, &melds));
+    }
+
+    #[test]
+    fn shenyang_basic_accepts_concealed_gang_as_heng_after_open_meld() {
+        let tiles = vec![4, 5, 6, 8, 8, 21, 22, 23];
+        let melds = vec![
+            meld(ShenyangMahjongMeldKind::GANG, vec![1, 1, 1, 1], None),
+            meld(ShenyangMahjongMeldKind::CHI, vec![11, 12, 13], Some(1)),
+        ];
+
+        assert!(!has_triplet_in_standard_decomposition(&tiles));
+        assert!(satisfies_shenyang_basic_win(&tiles, &melds));
     }
 
     #[test]

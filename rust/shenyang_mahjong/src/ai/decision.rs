@@ -6,9 +6,9 @@ use share_type_public::games::shenyang_mahjong::{
 };
 
 use crate::rules::{
-    WIN_RULE_RELAXED, WIN_RULE_SHENYANG_BASIC, can_chi, can_gang, can_peng,
-    is_complete_win_with_melds, is_piao_hu_win, is_pure_one_suit_win, is_seven_pairs_win,
-    is_single_wait_shape_with_rule, sort_tiles,
+    WIN_RULE_SHENYANG_BASIC, can_chi, can_gang, can_peng, is_complete_win_with_melds,
+    is_piao_hu_win, is_pure_one_suit_win, is_seven_pairs_win, is_single_wait_shape_with_rule,
+    sort_tiles,
 };
 
 use super::observation::{AiClaimView, AiPublicTable};
@@ -310,7 +310,7 @@ pub fn choose_claim_from_view(
         if is_late_round(table) && current_ready_score > 0.0 {
             return Some(AiClaimChoice::Pass);
         }
-        if !is_late_round(table) {
+        if !is_mid_broken_hand_defense_round(table) {
             return Some(AiClaimChoice::Pass);
         }
         let defensive_open = should_claim_chi_to_open_broken_hand_for_defense(
@@ -402,6 +402,9 @@ pub fn choose_discard_from_view(
     if is_late_defense_round(table)
         && best_ready_score_after_discard(hand, melds, table, position, win_rule) <= 0.0
     {
+        if should_keep_pairs_for_seven_pairs_discard(hand, melds, table, position, win_rule) {
+            return choose_late_defense_discard_preserving_pairs(hand, table, position);
+        }
         return choose_late_defense_discard(hand, table, position);
     }
 
@@ -443,6 +446,7 @@ pub fn choose_discard_from_view(
             + mid_round_live_suited_risk_bias(hand, melds, table, position, tile, count, win_rule)
             + own_open_public_safety_bias(melds, table, position, tile)
             + opponent_threat_discard_bias(table, position, tile, count)
+            + closed_opponent_threat_discard_bias(table, position, tile)
             + late_defense_discard_bias(table, position, tile);
         let combined = score + discard_bias + pressure;
         match best_any {
@@ -475,8 +479,32 @@ fn choose_late_defense_discard(
     table: &AiPublicTable,
     position: usize,
 ) -> Option<i32> {
+    choose_late_defense_discard_from_candidates(hand, table, position, unique_tiles(hand))
+}
+
+fn choose_late_defense_discard_preserving_pairs(
+    hand: &[i32],
+    table: &AiPublicTable,
+    position: usize,
+) -> Option<i32> {
+    let singletons = unique_tiles(hand)
+        .into_iter()
+        .filter(|tile| hand.iter().filter(|item| **item == *tile).count() == 1)
+        .collect::<Vec<_>>();
+    if singletons.is_empty() {
+        choose_late_defense_discard(hand, table, position)
+    } else {
+        choose_late_defense_discard_from_candidates(hand, table, position, singletons)
+    }
+}
+
+fn choose_late_defense_discard_from_candidates(
+    hand: &[i32],
+    table: &AiPublicTable,
+    position: usize,
+    candidates: Vec<i32>,
+) -> Option<i32> {
     let mut best: Option<(f64, i32)> = None;
-    let candidates = unique_tiles(hand);
     let public_candidates = candidates
         .iter()
         .copied()
@@ -592,9 +620,14 @@ fn claim_meld(
 }
 
 fn closed_opponent_threat_discard_bias(table: &AiPublicTable, position: usize, tile: i32) -> f64 {
-    if !is_late_defense_round(table) || public_discard_count(table, tile) > 0 {
+    if table.wall_count > 42 || public_discard_count(table, tile) > 0 {
         return 0.0;
     }
+    let pressure_scale = if is_late_defense_round(table) {
+        1.0
+    } else {
+        0.45
+    };
 
     table
         .seats
@@ -603,7 +636,7 @@ fn closed_opponent_threat_discard_bias(table: &AiPublicTable, position: usize, t
             **seat_position != position && seat.melds.is_empty() && seat.hand_count >= 10
         })
         .map(|(_, _)| {
-            if is_dragon(tile) {
+            let base = if is_dragon(tile) {
                 -13.0
             } else if is_wind(tile) {
                 -12.0
@@ -611,7 +644,8 @@ fn closed_opponent_threat_discard_bias(table: &AiPublicTable, position: usize, t
                 -9.0
             } else {
                 -5.0
-            }
+            };
+            base * pressure_scale
         })
         .sum()
 }
@@ -780,11 +814,15 @@ fn estimated_fan_with_wait(
     win_rule: i32,
 ) -> i32 {
     let wait_fan = if is_single_wait_shape_with_rule(win_hand, melds, win_tile, win_rule) {
-        1
+        single_wait_fan(win_tile)
     } else {
         0
     };
     estimated_visible_fan_without_wait(win_hand, melds) + wait_fan
+}
+
+fn single_wait_fan(win_tile: i32) -> i32 {
+    1 + if tile_is_terminal(win_tile) { 1 } else { 0 }
 }
 
 fn pressured_open_wait_scale(
@@ -828,12 +866,13 @@ fn fan_wait_bias(
     if remaining <= 1 {
         return 0.0;
     }
+    let wait_fan = single_wait_fan(win_tile);
     if let Some(max_fan) = table.max_fan {
         let visible_fan = estimated_visible_fan_without_wait(win_hand, melds);
         if visible_fan >= max_fan {
             return 0.0;
         }
-        if visible_fan + 1 >= max_fan {
+        if visible_fan + wait_fan >= max_fan {
             return if remaining >= 3 { 14.0 } else { 0.0 };
         }
     }
@@ -1012,6 +1051,14 @@ fn is_late_round(table: &AiPublicTable) -> bool {
     table.wall_count <= 42
 }
 
+fn is_mid_round(table: &AiPublicTable) -> bool {
+    table.wall_count <= 60
+}
+
+fn is_mid_broken_hand_defense_round(table: &AiPublicTable) -> bool {
+    table.wall_count <= 52
+}
+
 fn is_main_pure_suit_tile(hand: &[i32], melds: &[WsShenyangMahjongMeld], tile: i32) -> bool {
     dominant_pure_suit(hand, melds).is_some_and(|suit| is_suited(tile) && tile_suit(tile) == suit)
 }
@@ -1114,7 +1161,7 @@ fn meld_primary_tile(meld: &WsShenyangMahjongMeld) -> Option<i32> {
 }
 
 fn mid_round_public_discard_bias(table: &AiPublicTable, _position: usize, tile: i32) -> f64 {
-    if !is_late_round(table) || is_late_defense_round(table) {
+    if !is_mid_round(table) || is_late_defense_round(table) {
         return 0.0;
     }
     let public_discards = public_discard_count(table, tile);
@@ -1406,13 +1453,13 @@ fn opponent_threat_discard_bias(
             continue;
         }
         if threat_level >= 4 && seat.hand_count <= 2 {
-            let public_discount = (public_discard_count(table, tile) as f64 * 3.5).min(8.0);
+            let public_discount = (public_discard_count(table, tile) as f64 * 10.0).min(30.0);
             let single_wait_penalty = if is_dragon(tile) {
-                28.0
+                86.0
             } else if is_honor(tile) || tile_is_terminal(tile) {
-                24.0
+                80.0
             } else {
-                22.0
+                72.0
             };
             let pair_penalty = if own_tile_count >= 2 { 4.0 } else { 0.0 };
             let late_multiplier = if is_late_round(table) { 1.25 } else { 1.0 };
@@ -1695,6 +1742,9 @@ fn ready_tile_score(
             wait_kinds += 1;
             score += 28.0 + remaining as f64 * 5.0;
             score += fan_wait_bias(&next, melds, table, position, win_rule, tile, remaining);
+            if melds.is_empty() && is_seven_pairs_wait_shape(hand) && is_seven_pairs_win(&next) {
+                score += seven_pairs_wait_tile_score(tile, hand, table, position);
+            }
         }
     }
     if wait_kinds >= 2 {
@@ -1892,15 +1942,14 @@ fn seven_pairs_plan_discard_bias(
 fn should_keep_pairs_for_seven_pairs_discard(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
-    _table: &AiPublicTable,
-    _position: usize,
+    table: &AiPublicTable,
+    position: usize,
     win_rule: i32,
 ) -> bool {
     if !melds.is_empty() || hand.len() != 14 {
         return false;
     }
-    let pairs = pair_count(hand);
-    pairs >= 5 || should_chase_basic_missing_suit_four_pairs(hand, melds, win_rule)
+    should_lock_seven_pairs_plan(hand, melds, table, position, win_rule)
 }
 
 fn should_chase_basic_missing_suit_four_pairs(
@@ -1912,6 +1961,59 @@ fn should_chase_basic_missing_suit_four_pairs(
         && pair_count(hand) == 4
         && melds.is_empty()
         && !missing_suits(hand, melds).is_empty()
+}
+
+fn should_chase_basic_missing_suit_pairs(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    win_rule: i32,
+    pairs: usize,
+) -> bool {
+    win_rule == WIN_RULE_SHENYANG_BASIC
+        && pairs >= 4
+        && melds.is_empty()
+        && !missing_suits(hand, melds).is_empty()
+}
+
+fn has_basic_normal_route_foundation(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    win_rule: i32,
+) -> bool {
+    win_rule == WIN_RULE_SHENYANG_BASIC
+        && missing_suits(hand, melds).is_empty()
+        && has_terminal_or_honor_with_extra(hand, melds, None)
+        && has_triplet_or_dragon_pair(hand, melds)
+}
+
+fn should_lock_seven_pairs_plan(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+) -> bool {
+    if !melds.is_empty() || !(hand.len() == 13 || hand.len() == 14) {
+        return false;
+    }
+    if is_seven_pairs_wait_shape(hand) {
+        return true;
+    }
+    let pairs = pair_count(hand);
+    if pairs >= 6 {
+        return true;
+    }
+    if should_chase_basic_missing_suit_pairs(hand, melds, win_rule, pairs) {
+        return true;
+    }
+    if pairs < 5 {
+        return false;
+    }
+    if table.dealer_position == position && has_basic_normal_route_foundation(hand, melds, win_rule)
+    {
+        return false;
+    }
+    true
 }
 
 fn seven_pairs_plan_score(
@@ -1995,7 +2097,9 @@ fn shenyang_rule_progress_score(
     position: usize,
     win_rule: i32,
 ) -> f64 {
-    if win_rule != WIN_RULE_SHENYANG_BASIC || should_preserve_seven_pairs_plan(hand) {
+    if win_rule != WIN_RULE_SHENYANG_BASIC
+        || should_lock_seven_pairs_plan(hand, melds, table, position, win_rule)
+    {
         return 0.0;
     }
     let pure_score = pure_one_suit_plan_score_for_context(hand, melds, table, position);
@@ -2039,7 +2143,7 @@ fn should_claim_chi_to_open_broken_hand_for_defense(
     if win_rule == WIN_RULE_SHENYANG_BASIC
         || has_open_meld(melds)
         || table.dealer_position == position
-        || !is_late_round(table)
+        || !is_mid_broken_hand_defense_round(table)
         || should_preserve_seven_pairs_plan_for_context(hand, melds, table, position, win_rule)
         || pure_one_suit_plan_score_for_context(hand, melds, table, position) > 0.0
         || piao_plan_score_for_context(hand, melds, table, position) >= 22.0
@@ -2152,7 +2256,7 @@ fn should_open_broken_closed_hand_for_defense(
     if win_rule != WIN_RULE_SHENYANG_BASIC
         || has_open_meld(melds)
         || table.dealer_position == position
-        || !is_late_round(table)
+        || !is_mid_broken_hand_defense_round(table)
     {
         return false;
     }
@@ -2162,8 +2266,8 @@ fn should_open_broken_closed_hand_for_defense(
     {
         return false;
     }
-    if ready_tile_score(hand, melds, table, position, WIN_RULE_RELAXED) > 0.0
-        || one_step_wait_potential(hand, melds, table, position, WIN_RULE_RELAXED) > 0.0
+    if ready_tile_score(hand, melds, table, position, win_rule) > 0.0
+        || one_step_wait_potential(hand, melds, table, position, win_rule) > 0.0
     {
         return false;
     }
@@ -2176,7 +2280,11 @@ fn should_open_broken_closed_hand_for_defense(
     .into_iter()
     .filter(|missing| *missing)
     .count();
-    missing_rule_requirements >= 1 || hand_power(hand) < 18.0
+    let power = hand_power(hand);
+    if !is_late_round(table) {
+        return missing_rule_requirements >= 2 || power < 14.0;
+    }
+    missing_rule_requirements >= 1 || power < 18.0
 }
 
 fn should_preserve_four_gui_yi(tile: i32) -> bool {
@@ -2257,22 +2365,11 @@ fn should_preserve_pinghu_sequence_over_peng(
 fn should_preserve_seven_pairs_for_self_gang(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
-    _table: &AiPublicTable,
-    _position: usize,
+    table: &AiPublicTable,
+    position: usize,
     win_rule: i32,
 ) -> bool {
-    if !melds.is_empty() {
-        return false;
-    }
-    let pairs = pair_count(hand);
-    if pairs >= 5 {
-        return true;
-    }
-    should_chase_basic_missing_suit_four_pairs(hand, melds, win_rule)
-}
-
-fn should_preserve_seven_pairs_plan(hand: &[i32]) -> bool {
-    is_seven_pairs_wait_shape(hand) || (hand.len() == 13 && pair_count(hand) >= 5)
+    should_lock_seven_pairs_plan(hand, melds, table, position, win_rule)
 }
 
 fn should_preserve_seven_pairs_plan_for_context(
@@ -2282,26 +2379,7 @@ fn should_preserve_seven_pairs_plan_for_context(
     position: usize,
     win_rule: i32,
 ) -> bool {
-    if !melds.is_empty() || hand.len() != 13 {
-        return false;
-    }
-    if is_seven_pairs_wait_shape(hand) {
-        return true;
-    }
-    let pairs = pair_count(hand);
-    if pairs >= 5 {
-        return true;
-    }
-    if pairs < 4 {
-        return false;
-    }
-    if should_chase_basic_missing_suit_four_pairs(hand, melds, win_rule) {
-        return true;
-    }
-    if table.dealer_position == position {
-        return false;
-    }
-    false
+    hand.len() == 13 && should_lock_seven_pairs_plan(hand, melds, table, position, win_rule)
 }
 
 fn single_tile(hand: &[i32]) -> Option<i32> {
@@ -2425,7 +2503,7 @@ fn tile_is_middle_of_sequence(hand: &[i32], tile: i32) -> bool {
 }
 
 fn tile_is_terminal(tile: i32) -> bool {
-    matches!(tile_rank(tile), 1 | 9)
+    is_suited(tile) && matches!(tile_rank(tile), 1 | 9)
 }
 
 fn tile_rank(tile: i32) -> i32 {
@@ -2581,12 +2659,24 @@ mod tests {
     }
 
     #[test]
-    fn broken_closed_defense_does_not_override_near_ready_hand() {
+    fn broken_closed_defense_uses_basic_rule_instead_of_relaxed_near_ready_shape() {
         let mut table = table_with_discards(1, Vec::new());
         table.wall_count = 40;
         let hand = vec![2, 2, 3, 4, 5, 11, 12, 13, 21, 22, 23, 31, 35];
 
-        assert!(!should_open_broken_closed_hand_for_defense(
+        assert!(
+            ready_tile_score(&hand, &[], &table, 0, WIN_RULE_RELAXED) > 0.0
+                || one_step_wait_potential(&hand, &[], &table, 0, WIN_RULE_RELAXED) > 0.0
+        );
+        assert_eq!(
+            ready_tile_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
+            0.0
+        );
+        assert_eq!(
+            one_step_wait_potential(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
+            0.0
+        );
+        assert!(should_open_broken_closed_hand_for_defense(
             &hand,
             &[],
             &table,
@@ -2600,6 +2690,36 @@ mod tests {
         let mut table = table_with_discards(1, Vec::new());
         table.wall_count = 40;
         let hand = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 12, 31, 35, 36];
+
+        assert!(!should_open_broken_closed_hand_for_defense(
+            &hand,
+            &[],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC
+        ));
+    }
+
+    #[test]
+    fn broken_closed_defense_opens_mid_severely_broken_hand() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 52;
+        let hand = vec![2, 5, 8, 11, 14, 17, 19, 31, 31, 33, 35, 36, 37];
+
+        assert!(should_open_broken_closed_hand_for_defense(
+            &hand,
+            &[],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC
+        ));
+    }
+
+    #[test]
+    fn broken_closed_defense_waits_mid_when_basic_requirements_are_intact() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 52;
+        let hand = vec![1, 1, 1, 2, 3, 4, 11, 12, 13, 21, 22, 23, 35];
 
         assert!(!should_open_broken_closed_hand_for_defense(
             &hand,
@@ -2697,6 +2817,33 @@ mod tests {
     fn claim_chi_opens_late_broken_hand_for_defense() {
         let mut table = table_with_discards(3, Vec::new());
         table.wall_count = 40;
+        table.claim_window = Some(AiClaimView {
+            tile: 3,
+            from_position: 3,
+            eligible_positions: vec![0],
+        });
+        let claim = table.claim_window.clone().unwrap();
+        let hand = vec![1, 1, 2, 5, 8, 11, 14, 17, 21, 24, 31, 32, 33];
+
+        assert!(should_claim_chi_to_open_broken_hand_for_defense(
+            &hand,
+            &[],
+            &table,
+            0,
+            WIN_RULE_RELAXED
+        ));
+        assert_eq!(
+            choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+            Some(AiClaimChoice::Chi {
+                consume_tiles: vec![1, 2]
+            })
+        );
+    }
+
+    #[test]
+    fn claim_chi_opens_mid_broken_hand_for_defense() {
+        let mut table = table_with_discards(3, Vec::new());
+        table.wall_count = 52;
         table.claim_window = Some(AiClaimView {
             tile: 3,
             from_position: 3,
@@ -2883,6 +3030,23 @@ mod tests {
     }
 
     #[test]
+    fn claim_gang_takes_dragon_gang_to_open_basic_hand_before_ready() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.claim_window = Some(AiClaimView {
+            tile: 35,
+            from_position: 1,
+            eligible_positions: vec![0],
+        });
+        let claim = table.claim_window.clone().unwrap();
+        let hand = vec![1, 2, 3, 4, 5, 7, 11, 12, 14, 21, 35, 35, 35];
+
+        assert_eq!(
+            choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(AiClaimChoice::Gang)
+        );
+    }
+
+    #[test]
     fn claim_gang_delays_open_piao_plain_gang_until_ready_and_pengs() {
         let mut table = table_with_discards(1, Vec::new());
         table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
@@ -2947,6 +3111,31 @@ mod tests {
         let claim = table.claim_window.clone().unwrap();
         let hand = vec![2, 2, 2, 4, 7, 12, 14, 17, 31, 32, 33, 34, 35];
 
+        assert_eq!(
+            choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(AiClaimChoice::Gang)
+        );
+    }
+
+    #[test]
+    fn claim_gang_opens_mid_missing_suit_no_terminal_hand_for_defense() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 52;
+        table.claim_window = Some(AiClaimView {
+            tile: 5,
+            from_position: 1,
+            eligible_positions: vec![0],
+        });
+        let claim = table.claim_window.clone().unwrap();
+        let hand = vec![2, 3, 5, 5, 5, 7, 8, 12, 14, 15, 16, 17, 18];
+
+        assert!(should_open_broken_closed_hand_for_defense(
+            &hand,
+            &[],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC
+        ));
         assert_eq!(
             choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(AiClaimChoice::Gang)
@@ -3251,6 +3440,46 @@ mod tests {
         let claim = table.claim_window.clone().unwrap();
         let hand = vec![2, 2, 4, 7, 12, 14, 17, 31, 32, 33, 34, 35, 36];
 
+        assert_eq!(
+            choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(AiClaimChoice::Peng)
+        );
+    }
+
+    #[test]
+    fn claim_peng_opens_mid_severely_broken_closed_hand_for_defense() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 52;
+        table.claim_window = Some(AiClaimView {
+            tile: 31,
+            from_position: 1,
+            eligible_positions: vec![0],
+        });
+        let claim = table.claim_window.clone().unwrap();
+        let hand = vec![2, 5, 8, 11, 14, 17, 19, 31, 31, 33, 35, 36, 37];
+
+        assert_eq!(
+            choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(AiClaimChoice::Peng)
+        );
+    }
+
+    #[test]
+    fn claim_peng_opens_missing_suit_basic_hand_despite_relaxed_near_ready_shape() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 52;
+        table.claim_window = Some(AiClaimView {
+            tile: 1,
+            from_position: 1,
+            eligible_positions: vec![0],
+        });
+        let claim = table.claim_window.clone().unwrap();
+        let hand = vec![1, 1, 2, 3, 4, 5, 6, 11, 12, 13, 14, 15, 31];
+
+        assert!(
+            one_step_wait_potential(&hand, &[], &table, 0, WIN_RULE_RELAXED) > 0.0,
+            "the relaxed shape is close enough that it used to block defensive opening"
+        );
         assert_eq!(
             choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(AiClaimChoice::Peng)
@@ -3619,6 +3848,19 @@ mod tests {
     }
 
     #[test]
+    fn closed_opponent_threat_starts_before_final_defense() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 37;
+        table.seats.get_mut(&1).unwrap().hand_count = 13;
+        let mid_round_bias = closed_opponent_threat_discard_bias(&table, 0, 32);
+        table.wall_count = 16;
+        let late_defense_bias = closed_opponent_threat_discard_bias(&table, 0, 32);
+
+        assert!(mid_round_bias < 0.0);
+        assert!(mid_round_bias > late_defense_bias);
+    }
+
+    #[test]
     fn dealer_claim_chi_passes_for_shenyang_basic_rule() {
         let mut table = table_with_discards(3, Vec::new());
         table.dealer_position = 0;
@@ -3655,7 +3897,7 @@ mod tests {
     }
 
     #[test]
-    fn dealer_claim_peng_preserves_five_pairs_seven_pairs_plan() {
+    fn dealer_claim_peng_preserves_five_pairs_when_basic_hand_is_missing_suit() {
         let mut table = table_with_discards(1, Vec::new());
         table.dealer_position = 0;
         table.claim_window = Some(AiClaimView {
@@ -3665,6 +3907,57 @@ mod tests {
         });
         let claim = table.claim_window.clone().unwrap();
         let hand = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 12, 31, 32, 33];
+
+        assert_eq!(
+            choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(AiClaimChoice::Pass)
+        );
+    }
+
+    #[test]
+    fn dealer_claim_peng_uses_dragon_pair_for_speed_when_basic_route_is_viable() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.dealer_position = 0;
+        table.claim_window = Some(AiClaimView {
+            tile: 35,
+            from_position: 1,
+            eligible_positions: vec![0],
+        });
+        let claim = table.claim_window.clone().unwrap();
+        let hand = vec![1, 1, 2, 2, 11, 11, 12, 21, 21, 22, 31, 35, 35];
+
+        assert_eq!(
+            choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(AiClaimChoice::Peng)
+        );
+    }
+
+    #[test]
+    fn dealer_does_not_lock_five_pairs_when_basic_route_is_viable() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.dealer_position = 0;
+        let hand = vec![1, 1, 2, 2, 11, 11, 12, 21, 21, 22, 31, 35, 35, 36];
+
+        assert!(!should_lock_seven_pairs_plan(
+            &hand,
+            &[],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC
+        ));
+    }
+
+    #[test]
+    fn dealer_claim_peng_preserves_six_pairs_seven_pairs_plan() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.dealer_position = 0;
+        table.claim_window = Some(AiClaimView {
+            tile: 35,
+            from_position: 1,
+            eligible_positions: vec![0],
+        });
+        let claim = table.claim_window.clone().unwrap();
+        let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 31, 35, 35];
 
         assert_eq!(
             choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
@@ -3711,6 +4004,18 @@ mod tests {
         assert!(!matches!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(11 | 12 | 21 | 22)
+        ));
+    }
+
+    #[test]
+    fn dealer_can_chase_overwhelming_pure_one_suit_shape() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.dealer_position = 0;
+        let hand = vec![1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 11, 35];
+
+        assert!(matches!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(11 | 35)
         ));
     }
 
@@ -3771,6 +4076,24 @@ mod tests {
     }
 
     #[test]
+    fn discard_follows_public_tile_over_live_pair_against_piao_threat() {
+        let mut table = table_with_discards(1, vec![14]);
+        table.wall_count = 32;
+        table.seats.get_mut(&1).unwrap().melds =
+            vec![test_peng_meld(1), test_peng_meld(11), test_peng_meld(21)];
+        let hand = vec![2, 3, 4, 5, 5, 6, 7, 11, 12, 13, 14, 21, 22, 23];
+
+        assert!(
+            opponent_threat_discard_bias(&table, 0, 5, 2)
+                < opponent_threat_discard_bias(&table, 0, 14, 1)
+        );
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+            Some(14)
+        );
+    }
+
+    #[test]
     fn discard_can_pursue_pure_one_suit_when_shape_is_strong() {
         let table = table_with_discards(1, Vec::new());
         let hand = vec![1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 7, 8, 9, 11];
@@ -3788,7 +4111,7 @@ mod tests {
 
         assert!(matches!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-            Some(31 | 35 | 11 | 12)
+            Some(31 | 35)
         ));
     }
 
@@ -3867,6 +4190,30 @@ mod tests {
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(5 | 14)
         ));
+    }
+
+    #[test]
+    fn late_defense_preserves_locked_five_pairs_over_public_pair_tile() {
+        let mut table = table_with_discards(1, vec![1]);
+        table.wall_count = 20;
+        let hand = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 14, 21, 21, 31, 35];
+
+        assert!(!matches!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(1 | 2 | 11 | 12 | 21)
+        ));
+    }
+
+    #[test]
+    fn late_defense_locked_five_pairs_follows_public_singleton_without_breaking_pairs() {
+        let mut table = table_with_discards(1, vec![5]);
+        table.wall_count = 20;
+        let hand = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 14, 21, 21, 31, 35];
+
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(5)
+        );
     }
 
     #[test]
@@ -4081,6 +4428,19 @@ mod tests {
     }
 
     #[test]
+    fn ready_score_values_live_wind_over_middle_for_dealer_seven_pairs() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.dealer_position = 0;
+        let wind_wait = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 31];
+        let middle_wait = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 21, 21, 22, 22];
+
+        assert!(
+            ready_tile_score(&wind_wait, &[], &table, 0, WIN_RULE_SHENYANG_BASIC)
+                > ready_tile_score(&middle_wait, &[], &table, 0, WIN_RULE_SHENYANG_BASIC)
+        );
+    }
+
+    #[test]
     fn discard_starts_pure_one_suit_plan_at_eight_main_suit_tiles() {
         let table = table_with_discards(1, Vec::new());
         let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 21, 22, 31, 35];
@@ -4111,6 +4471,18 @@ mod tests {
         assert_eq!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
             Some(31)
+        );
+    }
+
+    #[test]
+    fn mid_round_discard_follows_public_middle_before_late_round() {
+        let mut table = table_with_discards(1, vec![14]);
+        table.wall_count = 55;
+        let hand = vec![1, 2, 3, 9, 11, 12, 14, 16, 18, 21, 22, 24, 26, 35];
+
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+            Some(14)
         );
     }
 
@@ -4151,6 +4523,19 @@ mod tests {
         let mut table = table_with_discards(1, vec![14]);
         table.wall_count = 37;
         let hand = vec![1, 2, 3, 9, 11, 12, 14, 16, 18, 21, 22, 24, 26, 31];
+
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+            Some(14)
+        );
+    }
+
+    #[test]
+    fn mid_round_discard_follows_public_middle_over_cold_wind_against_closed_opponent() {
+        let mut table = table_with_discards(1, vec![14]);
+        table.wall_count = 37;
+        table.seats.get_mut(&1).unwrap().hand_count = 13;
+        let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 14, 21, 22, 23, 31];
 
         assert_eq!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
@@ -4232,7 +4617,7 @@ mod tests {
             current_position: 3,
             dealer_position: 0,
             wall_count: 37,
-            max_fan: None,
+            max_fan: Some(4),
             claim_window: None,
             seats,
         };
@@ -4292,7 +4677,7 @@ mod tests {
             current_position: 1,
             dealer_position: 0,
             wall_count: 31,
-            max_fan: None,
+            max_fan: Some(4),
             claim_window: None,
             seats,
         };
@@ -4300,7 +4685,7 @@ mod tests {
 
         assert_ne!(
             choose_discard_from_view(&hand, &table, 1, WIN_RULE_SHENYANG_BASIC),
-            Some(23)
+            Some(13)
         );
     }
 
@@ -4339,6 +4724,26 @@ mod tests {
     }
 
     #[test]
+    fn estimated_fan_counts_single_terminal_wait_extra() {
+        let win_hand = vec![11, 11, 11, 13, 14, 15, 16, 17, 17, 17, 17, 18, 18, 19];
+
+        assert_eq!(
+            estimated_fan_with_wait(&win_hand, &[], 11, WIN_RULE_SHENYANG_BASIC),
+            7
+        );
+    }
+
+    #[test]
+    fn estimated_fan_does_not_count_honor_as_terminal_wait_extra() {
+        let win_hand = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35];
+
+        assert_eq!(
+            estimated_fan_with_wait(&win_hand, &[], 35, WIN_RULE_RELAXED),
+            2
+        );
+    }
+
+    #[test]
     fn fan_wait_bias_uses_win_rule_for_closed_basic_hand() {
         let table = table_with_discards(1, Vec::new());
         let win_hand = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35];
@@ -4362,6 +4767,27 @@ mod tests {
         assert_eq!(
             fan_wait_bias(&win_hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC, 5, 3),
             0.0
+        );
+    }
+
+    #[test]
+    fn fan_wait_bias_counts_single_terminal_wait_extra_for_cap() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.max_fan = Some(7);
+        let win_hand = vec![11, 11, 11, 13, 14, 15, 16, 17, 17, 17, 17, 18, 18, 19];
+
+        assert_eq!(estimated_visible_fan_without_wait(&win_hand, &[]), 5);
+        assert_eq!(
+            estimated_fan_with_wait(&win_hand, &[], 11, WIN_RULE_SHENYANG_BASIC),
+            7
+        );
+        assert_eq!(
+            fan_wait_bias(&win_hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC, 11, 2),
+            0.0
+        );
+        assert_eq!(
+            fan_wait_bias(&win_hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC, 11, 3),
+            14.0
         );
     }
 
@@ -4626,6 +5052,24 @@ mod tests {
 
         table.seats.get_mut(&1).unwrap().melds.pop();
         assert_eq!(opponent_threat_discard_bias(&table, 0, 5, 2), 0.0);
+    }
+
+    #[test]
+    fn opponent_four_piao_threat_penalizes_live_pair_more_than_singleton() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 16;
+        table.seats.get_mut(&1).unwrap().hand_count = 2;
+        table.seats.get_mut(&1).unwrap().melds = vec![
+            test_peng_meld(1),
+            test_peng_meld(11),
+            test_peng_meld(21),
+            test_peng_meld(31),
+        ];
+
+        assert!(
+            opponent_threat_discard_bias(&table, 0, 5, 2)
+                < opponent_threat_discard_bias(&table, 0, 6, 1)
+        );
     }
 
     #[test]
