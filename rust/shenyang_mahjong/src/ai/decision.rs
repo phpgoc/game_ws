@@ -2329,6 +2329,9 @@ fn should_claim_gang_from_discard(
         return reaches_ready;
     }
     if is_dragon(tile) {
+        if table.max_fan.is_some_and(|max_fan| max_fan <= 1) {
+            return reaches_ready;
+        }
         return true;
     }
     if should_open_broken_closed_hand_for_defense(hand, current_melds, table, position, win_rule) {
@@ -3564,6 +3567,24 @@ mod tests {
         assert_eq!(
             choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(AiClaimChoice::Gang)
+        );
+    }
+
+    #[test]
+    fn one_fan_capped_claim_gang_penges_dragon_for_speed_before_ready() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.max_fan = Some(1);
+        table.claim_window = Some(AiClaimView {
+            tile: 35,
+            from_position: 1,
+            eligible_positions: vec![0],
+        });
+        let claim = table.claim_window.clone().unwrap();
+        let hand = vec![1, 2, 3, 4, 5, 7, 11, 12, 14, 21, 35, 35, 35];
+
+        assert_eq!(
+            choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(AiClaimChoice::Peng)
         );
     }
 
