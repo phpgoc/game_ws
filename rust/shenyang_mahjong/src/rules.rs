@@ -176,7 +176,7 @@ fn dragon_pair_tiles() -> [i32; 3] {
     [35, 36, 37]
 }
 
-fn has_dragon_pair_as_standard_pair(tiles: &[i32]) -> bool {
+pub(crate) fn has_dragon_pair_as_standard_pair(tiles: &[i32]) -> bool {
     for pair_tile in dragon_pair_tiles() {
         let mut counts = tile_counts(tiles);
         let index = pair_tile as usize;
@@ -217,7 +217,7 @@ fn has_three_suits(tiles: &[i32]) -> bool {
     suits.into_iter().all(|present| present)
 }
 
-fn has_triplet_in_standard_decomposition(tiles: &[i32]) -> bool {
+pub(crate) fn has_triplet_in_standard_decomposition(tiles: &[i32]) -> bool {
     if tiles.len() % 3 != 2 {
         return false;
     }

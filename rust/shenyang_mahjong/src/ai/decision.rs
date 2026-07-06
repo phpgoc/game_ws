@@ -6,7 +6,8 @@ use share_type_public::games::shenyang_mahjong::{
 };
 
 use crate::rules::{
-    WIN_RULE_SHENYANG_BASIC, can_chi, can_gang, can_peng, is_complete_win_with_melds,
+    WIN_RULE_SHENYANG_BASIC, can_chi, can_gang, can_peng, has_dragon_pair_as_standard_pair,
+    has_triplet_in_standard_decomposition, is_complete_win, is_complete_win_with_melds,
     is_piao_hu_win, is_pure_one_suit_win, is_seven_pairs_win, is_single_wait_shape_with_rule,
     sort_tiles,
 };
@@ -1227,8 +1228,15 @@ fn has_triplet_or_dragon_pair_with_extra(
     melds: &[WsShenyangMahjongMeld],
     extra: Option<i32>,
 ) -> bool {
+    let tiles = hand.iter().copied().chain(extra).collect::<Vec<_>>();
+    if is_complete_win(&tiles, melds.len()) {
+        return melds.iter().any(is_triplet_like_meld)
+            || has_triplet_in_standard_decomposition(&tiles)
+            || has_dragon_pair_as_standard_pair(&tiles);
+    }
+
     let mut counts = HashMap::<i32, usize>::new();
-    for tile in hand.iter().copied().chain(extra) {
+    for tile in tiles {
         *counts.entry(tile).or_default() += 1;
     }
     melds.iter().any(is_triplet_like_meld)
@@ -3387,6 +3395,17 @@ mod tests {
         assert!(!is_triplet_like_meld(&melds[0]));
         assert!(!has_triplet_or_dragon_pair(&hand, &melds));
         assert_eq!(piao_threat_level(&melds), 0);
+    }
+
+    #[test]
+    fn basic_heng_heuristic_uses_complete_decomposition_for_fake_triplet() {
+        let melds = vec![test_chi_meld(11)];
+        let hand = vec![1, 2, 2, 3, 3, 3, 4, 4, 5, 26, 26];
+
+        assert!(is_complete_win(&hand, melds.len()));
+        assert!(hand.iter().filter(|tile| **tile == 3).count() >= 3);
+        assert!(!has_triplet_in_standard_decomposition(&hand));
+        assert!(!has_triplet_or_dragon_pair(&hand, &melds));
     }
 
     #[test]
