@@ -1397,7 +1397,9 @@ fn open_opponent_live_dragon_risk(table: &AiPublicTable, position: usize, tile: 
         .seats
         .iter()
         .filter(|(seat_position, seat)| {
-            **seat_position != position && !seat.melds.is_empty() && !seat.discards.contains(&tile)
+            **seat_position != position
+                && has_open_meld(&seat.melds)
+                && !seat.discards.contains(&tile)
         })
         .count();
     if open_opponents == 0 {
@@ -1440,7 +1442,9 @@ fn open_opponent_live_suited_risk(table: &AiPublicTable, position: usize, tile: 
         .seats
         .iter()
         .filter(|(seat_position, seat)| {
-            **seat_position != position && !seat.melds.is_empty() && !seat.discards.contains(&tile)
+            **seat_position != position
+                && has_open_meld(&seat.melds)
+                && !seat.discards.contains(&tile)
         })
         .count();
     if open_opponents == 0 {
@@ -5596,6 +5600,19 @@ mod tests {
     }
 
     #[test]
+    fn mid_round_live_dragon_risk_ignores_concealed_gang_opponent() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 42;
+        let base = mid_round_live_honor_risk_bias(&table, 0, 35, 1);
+
+        table.seats.get_mut(&1).unwrap().melds = vec![test_concealed_gang_meld(9)];
+        assert_eq!(mid_round_live_honor_risk_bias(&table, 0, 35, 1), base);
+
+        table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(9)];
+        assert!(mid_round_live_honor_risk_bias(&table, 0, 35, 1) < base);
+    }
+
+    #[test]
     fn mid_round_discard_avoids_live_dragon_against_open_opponent() {
         let mut table = table_with_discards(1, vec![14]);
         table.wall_count = 42;
@@ -5641,6 +5658,25 @@ mod tests {
         let base = mid_round_live_suited_risk_bias(&hand, &[], &table, 0, 9, 1, WIN_RULE_RELAXED);
         table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(16)];
 
+        assert!(
+            mid_round_live_suited_risk_bias(&hand, &[], &table, 0, 9, 1, WIN_RULE_RELAXED) < base
+        );
+    }
+
+    #[test]
+    fn mid_round_live_suited_risk_ignores_concealed_gang_opponent() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 37;
+        let hand = vec![1, 2, 3, 9, 11, 12, 14, 16, 18, 21, 22, 24, 26, 31];
+        let base = mid_round_live_suited_risk_bias(&hand, &[], &table, 0, 9, 1, WIN_RULE_RELAXED);
+
+        table.seats.get_mut(&1).unwrap().melds = vec![test_concealed_gang_meld(16)];
+        assert_eq!(
+            mid_round_live_suited_risk_bias(&hand, &[], &table, 0, 9, 1, WIN_RULE_RELAXED),
+            base
+        );
+
+        table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(16)];
         assert!(
             mid_round_live_suited_risk_bias(&hand, &[], &table, 0, 9, 1, WIN_RULE_RELAXED) < base
         );
