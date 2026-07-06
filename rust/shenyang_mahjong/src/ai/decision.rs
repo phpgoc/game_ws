@@ -770,13 +770,7 @@ fn closed_opponent_threat_discard_bias(
 }
 
 fn closed_threat_exposure_scale(table: &AiPublicTable, tile: i32) -> f64 {
-    let exposed_meld_count = table
-        .seats
-        .values()
-        .flat_map(|seat| seat.melds.iter())
-        .flat_map(|meld| meld.tiles.iter())
-        .filter(|meld_tile| **meld_tile == tile)
-        .count();
+    let exposed_meld_count = exposed_meld_tile_count(table, tile);
     match exposed_meld_count {
         0 => 1.0,
         1 => 0.7,
@@ -874,6 +868,16 @@ fn estimate_pressure_for_tile(table: &AiPublicTable, position: usize, tile: i32)
         pressure += 0.1;
     }
     pressure
+}
+
+fn exposed_meld_tile_count(table: &AiPublicTable, tile: i32) -> usize {
+    table
+        .seats
+        .values()
+        .flat_map(|seat| seat.melds.iter())
+        .flat_map(|meld| meld.tiles.iter())
+        .filter(|meld_tile| **meld_tile == tile)
+        .count()
 }
 
 fn estimated_four_gui_yi_fan(hand: &[i32], melds: &[WsShenyangMahjongMeld]) -> i32 {
@@ -1624,8 +1628,11 @@ fn opponent_threat_discard_bias(
             bias += 4.5;
             continue;
         }
+        let exposure_scale = piao_threat_exposure_scale(table, tile);
         if threat_level >= 4 && seat.hand_count <= 2 {
-            let public_discount = (public_discard_count(table, tile) as f64 * 10.0).min(30.0);
+            let public_discount = (public_discard_count(table, tile) as f64 * 10.0
+                + exposed_meld_tile_count(table, tile) as f64 * 8.0)
+                .min(48.0);
             let single_wait_penalty = if is_dragon(tile) {
                 86.0
             } else if is_honor(tile) || tile_is_terminal(tile) {
@@ -1657,9 +1664,20 @@ fn opponent_threat_discard_bias(
         };
         let pair_penalty = piao_threat_pair_penalty(tile, own_tile_count);
         let late_multiplier = if is_late_round(table) { 1.35 } else { 1.0 };
-        bias -= (live_tile_penalty + pair_penalty + piao_wait_suit_penalty) * late_multiplier;
+        bias -= (live_tile_penalty + pair_penalty + piao_wait_suit_penalty)
+            * late_multiplier
+            * exposure_scale;
     }
     bias
+}
+
+fn piao_threat_exposure_scale(table: &AiPublicTable, tile: i32) -> f64 {
+    match exposed_meld_tile_count(table, tile) {
+        0 => 1.0,
+        1 => 0.8,
+        2 => 0.55,
+        _ => 0.25,
+    }
 }
 
 fn piao_threat_pair_penalty(tile: i32, own_tile_count: usize) -> f64 {
@@ -6246,6 +6264,51 @@ mod tests {
         assert!(
             opponent_threat_discard_bias(&table, 0, 31, 2)
                 < opponent_threat_discard_bias(&table, 0, 9, 1)
+        );
+    }
+
+    #[test]
+    fn piao_threat_discounts_exposed_meld_tiles() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 16;
+        table.seats.get_mut(&1).unwrap().melds =
+            vec![test_peng_meld(1), test_peng_meld(11), test_peng_meld(21)];
+        table.seats.insert(
+            2,
+            AiSeatView {
+                position: 2,
+                hand_count: 10,
+                discards: Vec::new(),
+                melds: vec![test_peng_meld(6)],
+            },
+        );
+
+        assert!(
+            opponent_threat_discard_bias(&table, 0, 6, 1)
+                > opponent_threat_discard_bias(&table, 0, 5, 1)
+        );
+    }
+
+    #[test]
+    fn late_defense_can_follow_exposed_middle_against_piao_threat() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 16;
+        table.seats.get_mut(&1).unwrap().melds =
+            vec![test_peng_meld(1), test_peng_meld(11), test_peng_meld(21)];
+        table.seats.insert(
+            2,
+            AiSeatView {
+                position: 2,
+                hand_count: 10,
+                discards: Vec::new(),
+                melds: vec![test_peng_meld(6)],
+            },
+        );
+        let hand = vec![2, 3, 4, 5, 6, 7, 8, 12, 14, 16, 18, 22, 24, 26];
+
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+            Some(6)
         );
     }
 
