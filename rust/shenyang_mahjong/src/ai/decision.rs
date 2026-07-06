@@ -274,6 +274,17 @@ pub fn choose_claim_from_view(
         if is_dragon(tile) {
             return Some(AiClaimChoice::Peng);
         }
+        if should_claim_peng_for_basic_heng_and_opening(
+            hand,
+            &current_melds,
+            table,
+            position,
+            win_rule,
+            tile,
+            claim.from_position,
+        ) {
+            return Some(AiClaimChoice::Peng);
+        }
         if win_rule == WIN_RULE_SHENYANG_BASIC
             && !has_open_meld(&current_melds)
             && can_gang(hand, tile)
@@ -2455,6 +2466,53 @@ fn should_claim_gang_from_discard(
         return reaches_ready;
     }
     reaches_ready
+}
+
+fn should_claim_peng_for_basic_heng_and_opening(
+    hand: &[i32],
+    current_melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+    tile: i32,
+    from_position: usize,
+) -> bool {
+    if win_rule != WIN_RULE_SHENYANG_BASIC
+        || has_open_meld(current_melds)
+        || has_triplet_or_dragon_pair(hand, current_melds)
+        || !can_peng(hand, tile)
+        || !missing_suits(hand, current_melds).is_empty()
+        || !has_terminal_or_honor_with_extra(hand, current_melds, Some(tile))
+        || should_preserve_seven_pairs_plan_for_context(
+            hand,
+            current_melds,
+            table,
+            position,
+            win_rule,
+        )
+        || pure_one_suit_plan_score_for_context(hand, current_melds, table, position) > 0.0
+    {
+        return false;
+    }
+
+    let mut next = remove_n_tiles(hand, tile, 2);
+    if next.len() + 2 != hand.len() {
+        return false;
+    }
+    sort_tiles(&mut next);
+    let mut melds = current_melds.to_vec();
+    melds.push(claim_meld(
+        ShenyangMahjongMeldKind::PENG,
+        tile,
+        from_position,
+    ));
+
+    unique_tiles(&next).into_iter().any(|discard| {
+        let after_discard = remove_n_tiles(&next, discard, 1);
+        missing_suits(&after_discard, &melds).is_empty()
+            && has_terminal_or_honor_with_extra(&after_discard, &melds, None)
+            && has_triplet_or_dragon_pair(&after_discard, &melds)
+    })
 }
 
 fn should_peng_to_preserve_four_gui_yi_from_discard(
@@ -4715,6 +4773,31 @@ mod tests {
         let claim = table.claim_window.clone().unwrap();
         let hand = vec![1, 1, 4, 5, 6, 11, 11, 12, 13, 21, 21, 22, 23];
 
+        assert_eq!(
+            choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(AiClaimChoice::Peng)
+        );
+    }
+
+    #[test]
+    fn claim_peng_takes_basic_heng_and_opening_when_no_heng() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.claim_window = Some(AiClaimView {
+            tile: 5,
+            from_position: 1,
+            eligible_positions: vec![0],
+        });
+        let claim = table.claim_window.clone().unwrap();
+        let hand = vec![1, 2, 4, 5, 5, 7, 8, 11, 13, 15, 21, 24, 31];
+
+        assert!(!has_open_meld(
+            table.seats.get(&0).unwrap().melds.as_slice()
+        ));
+        assert!(!has_triplet_or_dragon_pair(&hand, &[]));
+        assert_eq!(
+            ready_tile_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
+            0.0
+        );
         assert_eq!(
             choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(AiClaimChoice::Peng)
