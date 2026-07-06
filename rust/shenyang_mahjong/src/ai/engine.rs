@@ -312,7 +312,7 @@ mod tests {
             .hands
             .insert(0, vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 35, 35, 35]);
         state.discards.insert(1, vec![35]);
-        state.wall = vec![37];
+        state.wall = vec![37; 24];
         state.claim_window = Some(ClaimWindowState {
             tile: 35,
             from_position: 1,

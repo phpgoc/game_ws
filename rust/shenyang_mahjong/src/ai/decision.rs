@@ -130,10 +130,13 @@ pub fn choose_claim_from_view(
         .get(&position)
         .map(|seat| seat.melds.clone())
         .unwrap_or_default();
+    let current_ready_score = ready_tile_score(hand, &current_melds, table, position, win_rule);
+    if should_pass_late_unready_claim_for_defense(table, current_ready_score) {
+        return Some(AiClaimChoice::Pass);
+    }
     if ready_visible_fan_reaches_cap(hand, &current_melds, table, position, win_rule) {
         return Some(AiClaimChoice::Pass);
     }
-    let current_ready_score = ready_tile_score(hand, &current_melds, table, position, win_rule);
 
     if can_gang(hand, tile) {
         if pure_one_suit_plan_score_for_context(hand, &current_melds, table, position) > 0.0
@@ -2554,6 +2557,13 @@ fn should_open_broken_closed_hand_for_defense(
     missing_rule_requirements >= 1 || power < 18.0
 }
 
+fn should_pass_late_unready_claim_for_defense(
+    table: &AiPublicTable,
+    current_ready_score: f64,
+) -> bool {
+    is_late_defense_round(table) && current_ready_score <= 0.0
+}
+
 fn should_use_broken_hand_public_defense_discard(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -3663,6 +3673,24 @@ mod tests {
     }
 
     #[test]
+    fn claim_gang_passes_final_unready_broken_hand_for_defense() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 16;
+        table.claim_window = Some(AiClaimView {
+            tile: 2,
+            from_position: 1,
+            eligible_positions: vec![0],
+        });
+        let claim = table.claim_window.clone().unwrap();
+        let hand = vec![2, 2, 2, 4, 7, 12, 14, 17, 31, 32, 33, 34, 35];
+
+        assert_eq!(
+            choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(AiClaimChoice::Pass)
+        );
+    }
+
+    #[test]
     fn claim_gang_opens_broken_closed_hand_for_defense_in_relaxed_rule() {
         let mut table = table_with_discards(1, Vec::new());
         table.wall_count = 40;
@@ -4003,6 +4031,24 @@ mod tests {
     }
 
     #[test]
+    fn claim_hu_still_wins_during_final_defense() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 16;
+        table.claim_window = Some(AiClaimView {
+            tile: 35,
+            from_position: 1,
+            eligible_positions: vec![0],
+        });
+        let claim = table.claim_window.clone().unwrap();
+        let hand = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35];
+
+        assert_eq!(
+            choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+            Some(AiClaimChoice::Hu)
+        );
+    }
+
+    #[test]
     fn claim_peng_allows_dragon_when_missing_suit_can_still_be_recovered() {
         let mut table = table_with_discards(1, Vec::new());
         table.claim_window = Some(AiClaimView {
@@ -4102,6 +4148,24 @@ mod tests {
         assert_eq!(
             choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(AiClaimChoice::Peng)
+        );
+    }
+
+    #[test]
+    fn claim_peng_passes_final_unready_broken_hand_for_defense() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 16;
+        table.claim_window = Some(AiClaimView {
+            tile: 2,
+            from_position: 1,
+            eligible_positions: vec![0],
+        });
+        let claim = table.claim_window.clone().unwrap();
+        let hand = vec![2, 2, 4, 7, 12, 14, 17, 31, 32, 33, 34, 35, 36];
+
+        assert_eq!(
+            choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(AiClaimChoice::Pass)
         );
     }
 
