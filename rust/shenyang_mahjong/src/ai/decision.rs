@@ -1212,7 +1212,7 @@ fn late_defense_discard_bias(table: &AiPublicTable, _position: usize, tile: i32)
     }
     let public_discards = public_discard_count(table, tile);
     if public_discards > 0 {
-        let honor_bonus = if is_honor(tile) { 18.0 } else { 0.0 };
+        let honor_bonus = if is_honor(tile) { 26.0 } else { 0.0 };
         let suited_shape_bonus = if is_suited(tile) {
             if tile_is_terminal(tile) { -1.0 } else { 2.0 }
         } else {
@@ -5845,8 +5845,8 @@ mod tests {
     }
 
     #[test]
-    fn late_defense_bias_keeps_public_honor_above_three_public_middle_tiles() {
-        let mut table = table_with_discards(1, vec![5, 5, 5, 31]);
+    fn late_defense_bias_keeps_public_honor_above_four_public_middle_tiles() {
+        let mut table = table_with_discards(1, vec![5, 5, 5, 5, 31]);
         table.wall_count = 16;
 
         assert!(late_defense_discard_bias(&table, 0, 31) > late_defense_discard_bias(&table, 0, 5));
