@@ -1325,10 +1325,15 @@ fn late_defense_own_tile_shape_bias(
     if !is_late_defense_round(table) || public_discard_count(table, tile) > 0 {
         return 0.0;
     }
-    if is_wind(tile) && own_tile_count > 1 {
-        -3.0
+    if own_tile_count <= 1 {
+        return 0.0;
+    }
+    if is_dragon(tile) {
+        -8.0
+    } else if is_wind(tile) || tile_is_terminal(tile) {
+        -5.0
     } else {
-        0.0
+        -2.0
     }
 }
 
@@ -6496,6 +6501,29 @@ mod tests {
         assert_eq!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
             Some(32)
+        );
+    }
+
+    #[test]
+    fn late_defense_prefers_live_middle_before_breaking_terminal_pair() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 16;
+
+        assert!(
+            late_defense_tile_safety_score(&table, 0, 5, 1)
+                > late_defense_tile_safety_score(&table, 0, 9, 2)
+        );
+    }
+
+    #[test]
+    fn late_defense_discards_live_middle_before_breaking_terminal_pair() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 16;
+        let hand = vec![2, 4, 5, 6, 8, 9, 9, 12, 14, 16, 18, 22, 24, 26];
+
+        assert_ne!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+            Some(9)
         );
     }
 
