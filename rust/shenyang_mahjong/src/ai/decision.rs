@@ -1389,10 +1389,7 @@ fn mid_round_public_discard_bias(table: &AiPublicTable, _position: usize, tile: 
 }
 
 fn mid_round_open_meld_safety_bias(table: &AiPublicTable, tile: i32) -> f64 {
-    if !is_mid_round(table)
-        || is_late_defense_round(table)
-        || !is_suited(tile)
-        || public_discard_count(table, tile) > 0
+    if !is_mid_round(table) || is_late_defense_round(table) || public_discard_count(table, tile) > 0
     {
         return 0.0;
     }
@@ -5815,6 +5812,24 @@ mod tests {
         table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(9)];
         assert!(open_opponent_live_dragon_risk(&table, 0, 35) > 0.0);
         assert!(mid_round_live_honor_risk_bias(&table, 0, 35, 1) < base);
+    }
+
+    #[test]
+    fn mid_round_open_honor_meld_tile_is_safer_than_live_dragon() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 42;
+        table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(35)];
+
+        let exposed_dragon_safety = mid_round_open_meld_safety_bias(&table, 35);
+        let live_dragon_safety = mid_round_open_meld_safety_bias(&table, 36);
+        assert!(exposed_dragon_safety > 0.0);
+        assert_eq!(live_dragon_safety, 0.0);
+
+        let exposed_dragon_score =
+            exposed_dragon_safety + mid_round_live_honor_risk_bias(&table, 0, 35, 1);
+        let live_dragon_score =
+            live_dragon_safety + mid_round_live_honor_risk_bias(&table, 0, 36, 1);
+        assert!(exposed_dragon_score > live_dragon_score);
     }
 
     #[test]
