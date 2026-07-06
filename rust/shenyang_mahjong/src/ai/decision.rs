@@ -1172,15 +1172,11 @@ fn has_triplet_or_dragon_pair_with_extra(
     extra: Option<i32>,
 ) -> bool {
     let mut counts = HashMap::<i32, usize>::new();
-    for tile in hand
-        .iter()
-        .copied()
-        .chain(extra)
-        .chain(melds.iter().flat_map(|meld| meld.tiles.iter().copied()))
-    {
+    for tile in hand.iter().copied().chain(extra) {
         *counts.entry(tile).or_default() += 1;
     }
-    counts.values().any(|count| *count >= 3)
+    melds.iter().any(is_triplet_like_meld)
+        || counts.values().any(|count| *count >= 3)
         || [35, 36, 37]
             .into_iter()
             .any(|tile| counts.get(&tile).copied().unwrap_or(0) >= 2)
@@ -3146,6 +3142,22 @@ mod tests {
             &table,
             0,
             21,
+            WIN_RULE_SHENYANG_BASIC
+        ));
+    }
+
+    #[test]
+    fn basic_heng_filter_ignores_chi_tile_plus_hand_pair() {
+        let table = table_with_discards(1, Vec::new());
+        let melds = vec![test_chi_meld(1)];
+        let hand_after_discard = vec![1, 1, 11, 12, 13, 21, 22, 23, 31, 35];
+
+        assert!(violates_basic_heng_discard(
+            &hand_after_discard,
+            &melds,
+            &table,
+            0,
+            35,
             WIN_RULE_SHENYANG_BASIC
         ));
     }
