@@ -743,7 +743,7 @@ fn closed_opponent_threat_discard_bias(
         .seats
         .iter()
         .filter(|(seat_position, seat)| {
-            **seat_position != position && seat.melds.is_empty() && seat.hand_count >= 10
+            **seat_position != position && !has_open_meld(&seat.melds) && seat.hand_count >= 10
         })
         .map(|(_, _)| {
             let base = if is_dragon(tile) {
@@ -4756,6 +4756,20 @@ mod tests {
     }
 
     #[test]
+    fn closed_opponent_threat_counts_concealed_gang_as_closed() {
+        let mut concealed = table_with_discards(1, Vec::new());
+        concealed.wall_count = 16;
+        concealed.seats.get_mut(&1).unwrap().melds = vec![test_concealed_gang_meld(9)];
+
+        let mut open = table_with_discards(1, Vec::new());
+        open.wall_count = 16;
+        open.seats.get_mut(&1).unwrap().melds = vec![test_gang_meld(9)];
+
+        assert!(closed_opponent_threat_discard_bias(&concealed, 0, 32, 1) < 0.0);
+        assert_eq!(closed_opponent_threat_discard_bias(&open, 0, 32, 1), 0.0);
+    }
+
+    #[test]
     fn closed_opponent_threat_penalizes_cold_pair_more_than_singleton() {
         let mut table = table_with_discards(1, Vec::new());
         table.wall_count = 16;
@@ -6881,6 +6895,14 @@ mod tests {
             kind: ShenyangMahjongMeldKind::GANG,
             tiles: vec![tile, tile, tile, tile],
             from_position: Some(1),
+        }
+    }
+
+    fn test_concealed_gang_meld(tile: i32) -> WsShenyangMahjongMeld {
+        WsShenyangMahjongMeld {
+            kind: ShenyangMahjongMeldKind::GANG,
+            tiles: vec![tile, tile, tile, tile],
+            from_position: None,
         }
     }
 
