@@ -2962,7 +2962,6 @@ fn should_use_broken_hand_public_defense_discard(
 ) -> bool {
     if is_late_defense_round(table)
         || !is_mid_broken_hand_defense_round(table)
-        || table.dealer_position == position
         || !unique_tiles(hand)
             .into_iter()
             .any(|tile| public_discard_count(table, tile) > 0)
@@ -2998,6 +2997,9 @@ fn should_use_broken_hand_public_defense_discard(
     } else {
         0
     };
+    if table.dealer_position == position && unrecoverable_rule_requirements == 0 {
+        return false;
+    }
     unrecoverable_rule_requirements >= 1
         || missing_rule_requirements >= 2
         || hand_power(hand) < 16.0
@@ -6880,6 +6882,32 @@ mod tests {
         ));
         assert_eq!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+            Some(5)
+        );
+    }
+
+    #[test]
+    fn dealer_mid_unrecoverable_basic_hand_uses_public_defense_discard() {
+        let mut discards = dead_terminal_or_honor_discards();
+        discards.push(5);
+        let mut table = table_with_discards(1, discards);
+        table.dealer_position = 0;
+        table.wall_count = 52;
+        let hand = vec![2, 3, 4, 5, 5, 6, 7, 12, 13, 14, 22, 23, 24, 25];
+
+        assert_eq!(
+            unrecoverable_basic_rule_requirement_count(&hand, &[], &table),
+            1
+        );
+        assert!(should_use_broken_hand_public_defense_discard(
+            &hand,
+            &[],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC
+        ));
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(5)
         );
     }
