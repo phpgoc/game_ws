@@ -1323,7 +1323,7 @@ fn is_wind(tile: i32) -> bool {
     matches!(tile, 31..=34)
 }
 
-fn late_defense_discard_bias(table: &AiPublicTable, _position: usize, tile: i32) -> f64 {
+fn late_defense_discard_bias(table: &AiPublicTable, position: usize, tile: i32) -> f64 {
     if !is_late_defense_round(table) {
         return 0.0;
     }
@@ -1335,7 +1335,11 @@ fn late_defense_discard_bias(table: &AiPublicTable, _position: usize, tile: i32)
         } else {
             0.0
         };
-        return 28.0 + public_discards as f64 * 6.0 + honor_bonus + suited_shape_bonus;
+        return 28.0
+            + public_discards as f64 * 6.0
+            + honor_bonus
+            + suited_shape_bonus
+            + own_previous_discard_safety_bias(table, position, tile);
     }
     if is_wind(tile) {
         -4.0
@@ -2049,6 +2053,26 @@ fn public_discard_count(table: &AiPublicTable, tile: i32) -> usize {
                 .count()
         })
         .sum()
+}
+
+fn own_previous_discard_count(table: &AiPublicTable, position: usize, tile: i32) -> usize {
+    table
+        .seats
+        .get(&position)
+        .map(|seat| {
+            seat.discards
+                .iter()
+                .filter(|discard| **discard == tile)
+                .count()
+        })
+        .unwrap_or(0)
+}
+
+fn own_previous_discard_safety_bias(table: &AiPublicTable, position: usize, tile: i32) -> f64 {
+    if !is_late_defense_round(table) {
+        return 0.0;
+    }
+    own_previous_discard_count(table, position, tile) as f64 * 4.0
 }
 
 fn pure_one_suit_discard_bias(
@@ -6764,6 +6788,23 @@ mod tests {
         assert!(
             late_defense_tile_safety_score(&table, 0, 5, 1)
                 > late_defense_tile_safety_score(&table, 0, 9, 1)
+        );
+    }
+
+    #[test]
+    fn late_defense_prefers_own_previous_middle_discard_over_other_public_middle() {
+        let mut table = table_with_discards(1, vec![5]);
+        table.wall_count = 16;
+        table.seats.get_mut(&0).unwrap().discards = vec![8];
+        let hand = vec![2, 3, 5, 7, 8, 12, 14, 16, 18, 21, 23, 25, 31, 35];
+
+        assert!(
+            late_defense_tile_safety_score(&table, 0, 8, 1)
+                > late_defense_tile_safety_score(&table, 0, 5, 1)
+        );
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+            Some(8)
         );
     }
 
