@@ -172,7 +172,7 @@ pub fn choose_claim_from_view(
         ) {
             return Some(AiClaimChoice::Pass);
         }
-        if claim_leaves_unrecoverable_missing_suit(
+        if claim_leaves_unrecoverable_basic_requirement(
             hand,
             &current_melds,
             table,
@@ -240,7 +240,7 @@ pub fn choose_claim_from_view(
         ) {
             return Some(AiClaimChoice::Pass);
         }
-        if claim_leaves_unrecoverable_missing_suit(
+        if claim_leaves_unrecoverable_basic_requirement(
             hand,
             &current_melds,
             table,
@@ -678,11 +678,40 @@ pub fn choose_self_gang_from_view(
     best.and_then(|(score, tile)| (score >= 0.0).then_some(tile))
 }
 
+fn claim_leaves_unrecoverable_basic_requirement(
+    hand: &[i32],
+    current_melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+    kind: ShenyangMahjongMeldKind,
+    tile: i32,
+    from_position: usize,
+) -> bool {
+    claim_leaves_unrecoverable_missing_suit(
+        hand,
+        current_melds,
+        table,
+        win_rule,
+        kind,
+        tile,
+        from_position,
+    ) || claim_leaves_unrecoverable_terminal_or_honor(
+        hand,
+        current_melds,
+        table,
+        position,
+        win_rule,
+        kind,
+        tile,
+        from_position,
+    )
+}
+
 fn claim_leaves_unrecoverable_missing_suit(
     hand: &[i32],
     current_melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
-    _position: usize,
     win_rule: i32,
     kind: ShenyangMahjongMeldKind,
     tile: i32,
@@ -712,6 +741,41 @@ fn claim_leaves_unrecoverable_missing_suit(
             || missing.iter().all(|suit| {
                 live_tile_count_for_suit_after_discard(&after_discard, table, *suit, discard) > 0
             })
+    })
+}
+
+fn claim_leaves_unrecoverable_terminal_or_honor(
+    hand: &[i32],
+    current_melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+    kind: ShenyangMahjongMeldKind,
+    tile: i32,
+    from_position: usize,
+) -> bool {
+    if win_rule != WIN_RULE_SHENYANG_BASIC {
+        return false;
+    }
+
+    let remove_count = match kind {
+        ShenyangMahjongMeldKind::PENG => 2,
+        ShenyangMahjongMeldKind::GANG => 3,
+        ShenyangMahjongMeldKind::CHI => return false,
+    };
+    let mut next = remove_n_tiles(hand, tile, remove_count);
+    if next.len() + remove_count != hand.len() || next.is_empty() {
+        return false;
+    }
+    sort_tiles(&mut next);
+    let mut melds = current_melds.to_vec();
+    melds.push(claim_meld(kind, tile, from_position));
+
+    !unique_tiles(&next).into_iter().any(|discard| {
+        let after_discard = remove_n_tiles(&next, discard, 1);
+        has_terminal_or_honor_with_extra(&after_discard, &melds, None)
+            || live_terminal_or_honor_count_after_discard(&after_discard, table, discard) > 0
+            || pure_one_suit_plan_score_for_context(&after_discard, &melds, table, position) > 0.0
     })
 }
 
@@ -1356,6 +1420,26 @@ fn live_tile_count_for_suit_after_discard(
     (1..=9)
         .map(|rank| {
             let tile = suit * 10 + rank;
+            let visible = visible_tile_count(table, tile);
+            let own_hand = hand_after_discard
+                .iter()
+                .filter(|item| **item == tile)
+                .count() as i32;
+            let own_discard = i32::from(discarded_tile == tile);
+            (4 - visible - own_hand - own_discard).max(0)
+        })
+        .sum()
+}
+
+fn live_terminal_or_honor_count_after_discard(
+    hand_after_discard: &[i32],
+    table: &AiPublicTable,
+    discarded_tile: i32,
+) -> i32 {
+    SHENYANG_MAHJONG_TILE_KINDS
+        .into_iter()
+        .filter(|tile| is_honor(*tile) || tile_is_terminal(*tile))
+        .map(|tile| {
             let visible = visible_tile_count(table, tile);
             let own_hand = hand_after_discard
                 .iter()
@@ -4735,6 +4819,75 @@ mod tests {
     }
 
     #[test]
+    fn claim_peng_passes_when_terminal_or_honor_is_unrecoverable_for_basic() {
+        let mut table = table_with_discards(1, dead_terminal_or_honor_discards());
+        table.claim_window = Some(AiClaimView {
+            tile: 5,
+            from_position: 1,
+            eligible_positions: vec![0],
+        });
+        let claim = table.claim_window.clone().unwrap();
+        let hand = vec![2, 4, 5, 5, 12, 13, 14, 15, 16, 22, 23, 24, 25];
+
+        assert!(claim_leaves_unrecoverable_terminal_or_honor(
+            &hand,
+            &[],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+            ShenyangMahjongMeldKind::PENG,
+            5,
+            1
+        ));
+        assert_eq!(
+            choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(AiClaimChoice::Pass)
+        );
+    }
+
+    #[test]
+    fn claim_gang_passes_when_terminal_or_honor_is_unrecoverable_for_basic() {
+        let mut table = table_with_discards(1, dead_terminal_or_honor_discards());
+        table.claim_window = Some(AiClaimView {
+            tile: 5,
+            from_position: 1,
+            eligible_positions: vec![0],
+        });
+        let claim = table.claim_window.clone().unwrap();
+        let hand = vec![2, 4, 5, 5, 5, 12, 13, 14, 15, 16, 22, 23, 24];
+
+        assert_eq!(
+            choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(AiClaimChoice::Pass)
+        );
+    }
+
+    #[test]
+    fn claim_peng_opens_late_broken_no_terminal_hand_for_defense() {
+        let mut table = table_with_discards(1, dead_terminal_or_honor_discards());
+        table.wall_count = 40;
+        table.claim_window = Some(AiClaimView {
+            tile: 5,
+            from_position: 1,
+            eligible_positions: vec![0],
+        });
+        let claim = table.claim_window.clone().unwrap();
+        let hand = vec![2, 4, 5, 5, 7, 12, 14, 16, 18, 22, 24, 26, 28];
+
+        assert!(should_open_broken_closed_hand_for_defense(
+            &hand,
+            &[],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC
+        ));
+        assert_eq!(
+            choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(AiClaimChoice::Peng)
+        );
+    }
+
+    #[test]
     fn claim_peng_passes_late_ready_hand_even_for_dragon() {
         let mut table = table_with_discards(1, Vec::new());
         table.wall_count = 36;
@@ -7374,6 +7527,14 @@ mod tests {
             claim_window: None,
             seats,
         }
+    }
+
+    fn dead_terminal_or_honor_discards() -> Vec<i32> {
+        SHENYANG_MAHJONG_TILE_KINDS
+            .into_iter()
+            .filter(|tile| is_honor(*tile) || tile_is_terminal(*tile))
+            .flat_map(|tile| std::iter::repeat_n(tile, 4))
+            .collect()
     }
 
     fn test_chi_meld(start_tile: i32) -> WsShenyangMahjongMeld {
