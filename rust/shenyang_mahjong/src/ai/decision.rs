@@ -2699,6 +2699,7 @@ fn should_claim_opening_gang_for_basic_hand(
         && !has_open_meld(current_melds)
         && can_gang(hand, tile)
         && !table.max_fan.is_some_and(|max_fan| max_fan <= 1)
+        && !is_closed_early_piao_candidate(hand, current_melds, table, position)
         && !should_preserve_seven_pairs_plan_for_context(
             hand,
             current_melds,
@@ -2708,6 +2709,19 @@ fn should_claim_opening_gang_for_basic_hand(
         )
         && pure_one_suit_plan_score_for_context(hand, current_melds, table, position) <= 0.0
         && piao_plan_score_for_context(hand, current_melds, table, position) < 22.0
+}
+
+fn is_closed_early_piao_candidate(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+) -> bool {
+    melds.is_empty()
+        && pair_count(hand) >= 3
+        && table.dealer_position != position
+        && !piao_plan_is_capped(table)
+        && has_piao_route_basics(hand, melds)
 }
 
 fn should_claim_peng_for_basic_heng_and_opening(
@@ -4119,6 +4133,24 @@ mod tests {
         assert_eq!(
             choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(AiClaimChoice::Gang)
+        );
+    }
+
+    #[test]
+    fn claim_gang_penges_closed_early_piao_candidate() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.claim_window = Some(AiClaimView {
+            tile: 1,
+            from_position: 1,
+            eligible_positions: vec![0],
+        });
+        let claim = table.claim_window.clone().unwrap();
+        let hand = vec![1, 1, 1, 4, 5, 6, 11, 11, 12, 13, 21, 21, 22];
+
+        assert!(is_closed_early_piao_candidate(&hand, &[], &table, 0));
+        assert_eq!(
+            choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(AiClaimChoice::Peng)
         );
     }
 
