@@ -1815,6 +1815,7 @@ fn piao_discard_bias(
     }
     let count = hand.iter().filter(|item| **item == tile).count();
     let pure_one_suit_score = pure_one_suit_plan_score_for_context(hand, melds, table, position);
+    let committed_groups = piao_committed_group_count(hand, melds);
     let only_terminal_or_honor = (is_honor(tile) || tile_is_terminal(tile))
         && count == 1
         && terminal_or_honor_count(hand, melds) == 1
@@ -1823,9 +1824,9 @@ fn piao_discard_bias(
         && suited_tile_count_for_suit(hand, melds, tile_suit(tile)) == 1
         && pure_one_suit_score <= 0.0;
     if count >= 3 {
-        -20.0
+        if committed_groups >= 2 { -28.0 } else { -20.0 }
     } else if count == 2 {
-        -16.0
+        if committed_groups >= 2 { -24.0 } else { -16.0 }
     } else if only_terminal_or_honor || only_suit_tile {
         -40.0
     } else if is_honor(tile) || tile_is_terminal(tile) {
@@ -1835,6 +1836,18 @@ fn piao_discard_bias(
     } else {
         0.0
     }
+}
+
+fn piao_committed_group_count(hand: &[i32], melds: &[WsShenyangMahjongMeld]) -> usize {
+    let open_triplets = melds
+        .iter()
+        .filter(|meld| is_triplet_like_meld(meld))
+        .count();
+    let mut counts: HashMap<i32, usize> = HashMap::new();
+    for &tile in hand {
+        *counts.entry(tile).or_default() += 1;
+    }
+    open_triplets + counts.values().filter(|count| **count >= 3).count()
 }
 
 fn piao_plan_score(hand: &[i32], melds: &[WsShenyangMahjongMeld]) -> f64 {
@@ -5515,6 +5528,37 @@ mod tests {
         assert!(!matches!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(11 | 21)
+        ));
+    }
+
+    #[test]
+    fn piao_discard_bias_locks_pairs_after_two_triplet_groups() {
+        let table = table_with_discards(1, Vec::new());
+        let one_group_melds = vec![test_peng_meld(1)];
+        let one_group_hand = vec![11, 11, 21, 21, 22, 23, 31, 35, 36, 37];
+        let two_group_melds = vec![test_peng_meld(1), test_peng_meld(11)];
+        let two_group_hand = vec![21, 21, 22, 23, 31, 35, 36, 37];
+
+        assert_eq!(
+            piao_discard_bias(&one_group_hand, 21, &one_group_melds, &table, 0),
+            -16.0
+        );
+        assert_eq!(
+            piao_discard_bias(&two_group_hand, 21, &two_group_melds, &table, 0),
+            -24.0
+        );
+    }
+
+    #[test]
+    fn discard_preserves_committed_piao_pair_over_public_pair_tile() {
+        let mut table = table_with_discards(1, vec![21, 21]);
+        table.wall_count = 36;
+        table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1), test_peng_meld(11)];
+        let hand = vec![21, 21, 22, 23, 24, 31, 35, 36];
+
+        assert!(!matches!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(21)
         ));
     }
 
