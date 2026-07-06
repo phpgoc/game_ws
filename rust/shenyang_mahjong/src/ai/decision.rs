@@ -11,7 +11,7 @@ use crate::rules::{
     sort_tiles,
 };
 
-use super::observation::{AiClaimView, AiPublicTable};
+use super::observation::{AiClaimView, AiPublicTable, AiSeatView};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AiClaimChoice {
@@ -515,6 +515,7 @@ pub fn choose_discard_from_view(
             + seven_pairs_wait_discard_bias(hand, tile, melds, table, position)
             + pure_one_suit_discard_bias(hand, tile, melds, table, position)
             + mid_round_public_discard_bias(table, position, tile)
+            + mid_round_open_meld_safety_bias(table, tile)
             + mid_round_live_honor_risk_bias(table, position, tile, count)
             + mid_round_live_suited_risk_bias(hand, melds, table, position, tile, count, win_rule)
             + own_open_public_safety_bias(melds, table, position, tile)
@@ -886,6 +887,17 @@ fn exposed_meld_tile_count(table: &AiPublicTable, tile: i32) -> usize {
         .seats
         .values()
         .flat_map(|seat| seat.melds.iter())
+        .flat_map(|meld| meld.tiles.iter())
+        .filter(|meld_tile| **meld_tile == tile)
+        .count()
+}
+
+fn open_meld_tile_count(table: &AiPublicTable, tile: i32) -> usize {
+    table
+        .seats
+        .values()
+        .flat_map(|seat| seat.melds.iter())
+        .filter(|meld| meld.from_position.is_some())
         .flat_map(|meld| meld.tiles.iter())
         .filter(|meld_tile| **meld_tile == tile)
         .count()
@@ -1375,6 +1387,21 @@ fn mid_round_public_discard_bias(table: &AiPublicTable, _position: usize, tile: 
     9.0 + public_discards as f64 * 4.0 + shape_bonus
 }
 
+fn mid_round_open_meld_safety_bias(table: &AiPublicTable, tile: i32) -> f64 {
+    if !is_mid_round(table)
+        || is_late_defense_round(table)
+        || !is_suited(tile)
+        || public_discard_count(table, tile) > 0
+    {
+        return 0.0;
+    }
+    match open_meld_tile_count(table, tile) {
+        0 | 1 => 0.0,
+        2 => 6.0,
+        _ => 20.0,
+    }
+}
+
 fn mid_round_live_honor_risk_bias(
     table: &AiPublicTable,
     position: usize,
@@ -1453,6 +1480,7 @@ fn open_opponent_live_suited_risk(table: &AiPublicTable, position: usize, tile: 
             **seat_position != position
                 && has_open_meld(&seat.melds)
                 && !seat.discards.contains(&tile)
+                && !seat_has_open_meld_tile(seat, tile)
         })
         .count();
     if open_opponents == 0 {
@@ -1463,6 +1491,12 @@ fn open_opponent_live_suited_risk(table: &AiPublicTable, position: usize, tile: 
     let open_risk = (open_opponents as f64 * per_open).min(cap);
     let late_round_risk = if is_late_round(table) { 2.5 } else { 0.0 };
     open_risk + late_round_risk
+}
+
+fn seat_has_open_meld_tile(seat: &AiSeatView, tile: i32) -> bool {
+    seat.melds.iter().any(|meld| {
+        meld.from_position.is_some() && meld.tiles.iter().any(|meld_tile| *meld_tile == tile)
+    })
 }
 
 fn open_opponent_exists_for_tile(table: &AiPublicTable, position: usize, tile: i32) -> bool {
@@ -5789,6 +5823,29 @@ mod tests {
         table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(16)];
         assert!(
             mid_round_live_suited_risk_bias(&hand, &[], &table, 0, 9, 1, WIN_RULE_RELAXED) < base
+        );
+    }
+
+    #[test]
+    fn mid_round_open_meld_tile_is_safer_than_live_suited_tile() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 37;
+        table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(14)];
+        let hand = vec![1, 2, 3, 9, 11, 12, 14, 16, 18, 21, 22, 24, 26, 28];
+
+        assert!(mid_round_open_meld_safety_bias(&table, 14) > 0.0);
+        assert_eq!(
+            open_opponent_live_suited_risk(&table, 0, 14),
+            0.0,
+            "an opponent who already opened this tile should not add live-tile pressure for it"
+        );
+        assert!(
+            mid_round_open_meld_safety_bias(&table, 14)
+                > mid_round_open_meld_safety_bias(&table, 9)
+        );
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+            Some(14)
         );
     }
 
