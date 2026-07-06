@@ -724,6 +724,10 @@ fn closed_opponent_threat_discard_bias(table: &AiPublicTable, position: usize, t
     if table.wall_count > 42 || public_discard_count(table, tile) > 0 {
         return 0.0;
     }
+    let exposure_scale = closed_threat_exposure_scale(table, tile);
+    if exposure_scale == 0.0 {
+        return 0.0;
+    }
     let pressure_scale = if is_late_defense_round(table) {
         1.0
     } else {
@@ -746,9 +750,25 @@ fn closed_opponent_threat_discard_bias(table: &AiPublicTable, position: usize, t
             } else {
                 -5.0
             };
-            base * pressure_scale
+            base * pressure_scale * exposure_scale
         })
         .sum()
+}
+
+fn closed_threat_exposure_scale(table: &AiPublicTable, tile: i32) -> f64 {
+    let exposed_meld_count = table
+        .seats
+        .values()
+        .flat_map(|seat| seat.melds.iter())
+        .flat_map(|meld| meld.tiles.iter())
+        .filter(|meld_tile| **meld_tile == tile)
+        .count();
+    match exposed_meld_count {
+        0 => 1.0,
+        1 => 0.7,
+        2 => 0.45,
+        _ => 0.0,
+    }
 }
 
 fn dominant_pure_suit(hand: &[i32], melds: &[WsShenyangMahjongMeld]) -> Option<i32> {
@@ -4652,6 +4672,25 @@ mod tests {
     }
 
     #[test]
+    fn closed_opponent_threat_discounts_exposed_meld_tiles() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 16;
+        table.seats.get_mut(&1).unwrap().hand_count = 13;
+        table.seats.insert(
+            2,
+            AiSeatView {
+                position: 2,
+                hand_count: 10,
+                discards: Vec::new(),
+                melds: vec![test_peng_meld(9)],
+            },
+        );
+
+        assert_eq!(closed_opponent_threat_discard_bias(&table, 0, 9), 0.0);
+        assert!(closed_opponent_threat_discard_bias(&table, 0, 31) < 0.0);
+    }
+
+    #[test]
     fn closed_opponent_threat_counts_ai_controlled_table_seat() {
         let mut table = table_with_discards(1, Vec::new());
         table.wall_count = 16;
@@ -4671,6 +4710,28 @@ mod tests {
 
         assert!(mid_round_bias < 0.0);
         assert!(mid_round_bias > late_defense_bias);
+    }
+
+    #[test]
+    fn late_defense_can_follow_exposed_terminal_over_live_wind() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 16;
+        table.seats.get_mut(&1).unwrap().hand_count = 13;
+        table.seats.insert(
+            2,
+            AiSeatView {
+                position: 2,
+                hand_count: 10,
+                discards: Vec::new(),
+                melds: vec![test_peng_meld(9)],
+            },
+        );
+        let hand = vec![2, 4, 6, 8, 9, 12, 14, 16, 18, 22, 24, 26, 28, 31];
+
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+            Some(9)
+        );
     }
 
     #[test]
