@@ -368,9 +368,21 @@ pub fn choose_claim_from_view(
             position,
             win_rule,
         );
+        let pure_chi_suit =
+            (pure_one_suit_plan_score_for_context(hand, &current_melds, table, position) > 0.0)
+                .then(|| dominant_pure_suit(hand, &current_melds))
+                .flatten();
         let mut best_ready_chi: Option<(f64, f64, Vec<i32>)> = None;
         let mut best_progress_chi: Option<(f64, Vec<i32>)> = None;
         for consume_tiles in chi_options(hand, tile) {
+            if let Some(main_suit) = pure_chi_suit {
+                let preserves_pure_suit = std::iter::once(tile)
+                    .chain(consume_tiles.iter().copied())
+                    .all(|meld_tile| is_suited(meld_tile) && tile_suit(meld_tile) == main_suit);
+                if !preserves_pure_suit {
+                    continue;
+                }
+            }
             let mut next = hand.to_vec();
             for consume in &consume_tiles {
                 if let Some(index) = next.iter().position(|item| item == consume) {
@@ -3723,6 +3735,25 @@ mod tests {
         let claim = table.claim_window.clone().unwrap();
         let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 31, 31];
 
+        assert_eq!(
+            choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+            Some(AiClaimChoice::Pass)
+        );
+    }
+
+    #[test]
+    fn claim_chi_preserves_pure_one_suit_plan_from_off_suit_chi() {
+        let mut table = table_with_discards(3, Vec::new());
+        table.wall_count = 40;
+        table.claim_window = Some(AiClaimView {
+            tile: 13,
+            from_position: 3,
+            eligible_positions: vec![0],
+        });
+        let claim = table.claim_window.clone().unwrap();
+        let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 8, 9, 11, 12, 35];
+
+        assert!(pure_one_suit_plan_score_for_context(&hand, &[], &table, 0) > 0.0);
         assert_eq!(
             choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
             Some(AiClaimChoice::Pass)
