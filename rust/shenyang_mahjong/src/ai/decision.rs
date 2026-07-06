@@ -2721,10 +2721,7 @@ fn should_open_broken_closed_hand_for_defense(
     position: usize,
     win_rule: i32,
 ) -> bool {
-    if has_open_meld(melds)
-        || table.dealer_position == position
-        || !is_mid_broken_hand_defense_round(table)
-    {
+    if has_open_meld(melds) || !is_mid_broken_hand_defense_round(table) {
         return false;
     }
     if should_preserve_seven_pairs_plan_for_context(hand, melds, table, position, win_rule)
@@ -3900,6 +3897,32 @@ mod tests {
         let claim = table.claim_window.clone().unwrap();
         let hand = vec![2, 2, 2, 4, 7, 12, 14, 17, 31, 32, 33, 34, 35];
 
+        assert_eq!(
+            choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(AiClaimChoice::Gang)
+        );
+    }
+
+    #[test]
+    fn dealer_claim_gang_opens_broken_closed_hand_for_speed() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.dealer_position = 0;
+        table.wall_count = 40;
+        table.claim_window = Some(AiClaimView {
+            tile: 2,
+            from_position: 1,
+            eligible_positions: vec![0],
+        });
+        let claim = table.claim_window.clone().unwrap();
+        let hand = vec![2, 2, 2, 4, 7, 12, 14, 17, 31, 32, 33, 34, 35];
+
+        assert!(should_open_broken_closed_hand_for_defense(
+            &hand,
+            &[],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC
+        ));
         assert_eq!(
             choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(AiClaimChoice::Gang)
