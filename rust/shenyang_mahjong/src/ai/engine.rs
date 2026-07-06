@@ -179,7 +179,7 @@ mod tests {
 
     use super::*;
     use crate::game_state::ClaimWindowState;
-    use crate::rules::WIN_RULE_RELAXED;
+    use crate::rules::{WIN_RULE_RELAXED, is_complete_win_with_melds, win_rule_from_configs};
 
     fn relaxed_configs() -> HashMap<String, i32> {
         HashMap::from([("win_rule".to_owned(), WIN_RULE_RELAXED)])
@@ -492,6 +492,7 @@ mod tests {
         );
         assert!(settlement.win_tile.is_some());
         assert!(total_discards > 0);
+        assert_seeded_settlement_winners_are_legal(&state, &HashMap::new(), 2026070402);
     }
 
     #[test]
@@ -516,6 +517,7 @@ mod tests {
                 total_discards > 0,
                 "seed {seed} should play at least one discard"
             );
+            assert_seeded_settlement_winners_are_legal(&state, &HashMap::new(), seed);
         }
     }
 
@@ -533,6 +535,32 @@ mod tests {
             "capped seeded AI round should settle as a self draw, discard win, or legal draw"
         );
         assert!(total_discards > 0);
+        assert_seeded_settlement_winners_are_legal(&state, &one_fan_capped_configs(), 2026070402);
+    }
+
+    fn assert_seeded_settlement_winners_are_legal(
+        state: &ShenyangMahjongLoopState,
+        configs: &HashMap<String, i32>,
+        seed: u64,
+    ) {
+        let settlement = state.settlement.as_ref().expect("AI round settlement");
+        let win_rule = win_rule_from_configs(configs);
+
+        for winner in &settlement.winner_positions {
+            let mut hand = state.hands.get(winner).cloned().unwrap_or_default();
+            if !settlement.is_self_draw
+                && let Some(tile) = settlement.win_tile
+            {
+                hand.push(tile);
+                hand.sort_unstable();
+            }
+            let melds = state.melds.get(winner).map(Vec::as_slice).unwrap_or(&[]);
+
+            assert!(
+                is_complete_win_with_melds(&hand, melds, win_rule),
+                "seed {seed} winner {winner} should have a legal Shenyang Mahjong hand: hand={hand:?}, melds={melds:?}, settlement={settlement:?}"
+            );
+        }
     }
 
     fn run_seeded_ai_round(seed: u64, max_steps: usize) -> ShenyangMahjongLoopState {
