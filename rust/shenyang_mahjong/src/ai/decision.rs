@@ -2667,6 +2667,16 @@ fn should_claim_gang_from_discard(
         }
         return true;
     }
+    if should_claim_opening_gang_for_basic_hand(
+        hand,
+        current_melds,
+        table,
+        position,
+        win_rule,
+        tile,
+    ) {
+        return true;
+    }
     if should_open_broken_closed_hand_for_defense(hand, current_melds, table, position, win_rule) {
         return true;
     }
@@ -2675,6 +2685,29 @@ fn should_claim_gang_from_discard(
         return reaches_ready;
     }
     reaches_ready
+}
+
+fn should_claim_opening_gang_for_basic_hand(
+    hand: &[i32],
+    current_melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+    tile: i32,
+) -> bool {
+    win_rule == WIN_RULE_SHENYANG_BASIC
+        && !has_open_meld(current_melds)
+        && can_gang(hand, tile)
+        && !table.max_fan.is_some_and(|max_fan| max_fan <= 1)
+        && !should_preserve_seven_pairs_plan_for_context(
+            hand,
+            current_melds,
+            table,
+            position,
+            win_rule,
+        )
+        && pure_one_suit_plan_score_for_context(hand, current_melds, table, position) <= 0.0
+        && piao_plan_score_for_context(hand, current_melds, table, position) < 22.0
 }
 
 fn should_claim_peng_for_basic_heng_and_opening(
@@ -4073,7 +4106,7 @@ mod tests {
     }
 
     #[test]
-    fn claim_gang_closed_plain_hand_penges_before_ready() {
+    fn claim_gang_opens_closed_plain_basic_hand_before_ready() {
         let mut table = table_with_discards(1, Vec::new());
         table.claim_window = Some(AiClaimView {
             tile: 3,
@@ -4085,7 +4118,7 @@ mod tests {
 
         assert_eq!(
             choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
-            Some(AiClaimChoice::Peng)
+            Some(AiClaimChoice::Gang)
         );
     }
 
