@@ -1846,6 +1846,12 @@ fn has_piao_route_basics(hand: &[i32], melds: &[WsShenyangMahjongMeld]) -> bool 
 }
 
 fn piao_threat_level(melds: &[WsShenyangMahjongMeld]) -> usize {
+    if melds
+        .iter()
+        .any(|meld| meld.kind == ShenyangMahjongMeldKind::CHI)
+    {
+        return 0;
+    }
     melds
         .iter()
         .filter(|meld| is_triplet_like_meld(meld))
@@ -6590,6 +6596,20 @@ mod tests {
         assert!(opponent_threat_discard_bias(&table, 0, 5, 2) < -9.0);
 
         table.seats.get_mut(&1).unwrap().melds.pop();
+        assert_eq!(opponent_threat_discard_bias(&table, 0, 5, 2), 0.0);
+    }
+
+    #[test]
+    fn opponent_piao_threat_ignores_player_after_chi_meld() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.seats.get_mut(&1).unwrap().melds = vec![
+            test_chi_meld(2),
+            test_peng_meld(1),
+            test_peng_meld(11),
+            test_peng_meld(21),
+        ];
+
+        assert_eq!(piao_threat_level(&table.seats.get(&1).unwrap().melds), 0);
         assert_eq!(opponent_threat_discard_bias(&table, 0, 5, 2), 0.0);
     }
 
