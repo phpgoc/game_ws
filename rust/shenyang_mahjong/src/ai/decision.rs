@@ -858,6 +858,13 @@ fn estimated_four_gui_yi_fan(hand: &[i32], melds: &[WsShenyangMahjongMeld]) -> i
     counts.into_values().filter(|count| *count == 4).count() as i32
 }
 
+fn estimated_concealed_dragon_triplet_fan(hand: &[i32]) -> i32 {
+    [35, 36, 37]
+        .into_iter()
+        .filter(|dragon| hand.iter().filter(|tile| **tile == *dragon).count() == 3)
+        .count() as i32
+}
+
 fn estimated_meld_and_four_gui_yi_fan(hand: &[i32], melds: &[WsShenyangMahjongMeld]) -> i32 {
     let meld_fan = melds
         .iter()
@@ -917,7 +924,10 @@ fn estimated_visible_fan_without_wait(
     } else {
         0
     };
-    base + meld_fan + shou_ba_yi_fan + estimated_four_gui_yi_fan(win_hand, melds)
+    base + meld_fan
+        + estimated_concealed_dragon_triplet_fan(win_hand)
+        + shou_ba_yi_fan
+        + estimated_four_gui_yi_fan(win_hand, melds)
 }
 
 fn estimated_fan_with_wait(
@@ -5632,6 +5642,16 @@ mod tests {
 
         assert_eq!(
             estimated_visible_fan_without_wait(&win_hand, &melds, WIN_RULE_SHENYANG_BASIC),
+            2
+        );
+    }
+
+    #[test]
+    fn estimated_visible_fan_counts_concealed_dragon_triplet() {
+        let win_hand = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 35, 35, 35];
+
+        assert_eq!(
+            estimated_visible_fan_without_wait(&win_hand, &[], WIN_RULE_RELAXED),
             2
         );
     }

@@ -543,6 +543,13 @@ fn is_dragon_tile(tile: i32) -> bool {
     matches!(tile, 35..=37)
 }
 
+fn concealed_dragon_triplet_fan(hand_tiles: &[i32]) -> i32 {
+    [35, 36, 37]
+        .into_iter()
+        .filter(|dragon| hand_tiles.iter().filter(|tile| **tile == *dragon).count() == 3)
+        .count() as i32
+}
+
 fn is_shou_ba_yi(
     pattern: ShenyangMahjongWinPattern,
     hand_tiles: &[i32],
@@ -1429,6 +1436,7 @@ fn winner_hand_fan_with_rule(
     let pattern = winner_pattern_with_rule(&hand_tiles, melds, win_rule);
     let mut fan = win_pattern_base_fan(pattern);
     fan += meld_fan(melds);
+    fan += concealed_dragon_triplet_fan(&hand_tiles);
     if settlement.is_reverse_win {
         fan += 1;
     }
@@ -4175,6 +4183,18 @@ mod tests {
     }
 
     #[test]
+    fn settlement_fan_counts_concealed_dragon_triplet() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 35, 35, 35, 31, 31]);
+        state.enter_settlement(vec![1], None, None, true);
+        let settlement = state.settlement.as_ref().expect("settlement");
+
+        assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
+    }
+
+    #[test]
     fn settlement_fan_counts_four_gui_yi_across_peng_meld_and_hand() {
         let mut state = playable_state();
         state
@@ -4593,7 +4613,7 @@ mod tests {
         );
         let settlement = state.settlement.as_ref().expect("settlement");
 
-        assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
+        assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
     }
 
     #[test]
@@ -5037,13 +5057,13 @@ mod tests {
         let settlement = state.settlement.as_ref().expect("settlement");
         let event = build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
 
-        assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
+        assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
         assert_eq!(event.winner_details.len(), 1);
         assert_eq!(
             event.winner_details[0].pattern,
             ShenyangMahjongWinPattern::Standard
         );
-        assert_eq!(event.winner_details[0].score, 2);
+        assert_eq!(event.winner_details[0].score, 3);
     }
 
     #[test]
