@@ -1238,10 +1238,26 @@ fn late_defense_tile_safety_score(
     own_tile_count: usize,
 ) -> f64 {
     late_defense_discard_bias(table, position, tile)
+        + late_defense_own_tile_shape_bias(table, tile, own_tile_count)
         + opponent_threat_discard_bias(table, position, tile, own_tile_count)
         + opponent_missing_suit_safety_bias(table, position, tile)
         + closed_opponent_threat_discard_bias(table, position, tile)
         + estimate_pressure_for_tile(table, position, tile)
+}
+
+fn late_defense_own_tile_shape_bias(
+    table: &AiPublicTable,
+    tile: i32,
+    own_tile_count: usize,
+) -> f64 {
+    if !is_late_defense_round(table) || public_discard_count(table, tile) > 0 {
+        return 0.0;
+    }
+    if is_wind(tile) && own_tile_count > 1 {
+        -3.0
+    } else {
+        0.0
+    }
 }
 
 fn public_defense_tile_safety_score(
@@ -5886,6 +5902,22 @@ mod tests {
         assert!(
             late_defense_tile_safety_score(&table, 0, 9, 1)
                 > late_defense_tile_safety_score(&table, 0, 5, 1)
+        );
+    }
+
+    #[test]
+    fn late_defense_prefers_lone_wind_before_breaking_wind_pair() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 16;
+        let hand = vec![1, 2, 4, 6, 8, 11, 13, 15, 17, 21, 23, 31, 31, 32];
+
+        assert!(
+            late_defense_tile_safety_score(&table, 0, 32, 1)
+                > late_defense_tile_safety_score(&table, 0, 31, 2)
+        );
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+            Some(32)
         );
     }
 
