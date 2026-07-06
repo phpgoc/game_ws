@@ -1241,10 +1241,11 @@ fn is_triplet_like_meld(meld: &WsShenyangMahjongMeld) -> bool {
     matches!(
         meld.kind,
         ShenyangMahjongMeldKind::PENG | ShenyangMahjongMeldKind::GANG
-    ) && meld
-        .tiles
-        .first()
-        .is_some_and(|tile| meld.tiles.iter().all(|item| item == tile))
+    ) && meld.tiles.len() >= 3
+        && meld
+            .tiles
+            .first()
+            .is_some_and(|tile| meld.tiles.iter().all(|item| item == tile))
 }
 
 fn is_wind(tile: i32) -> bool {
@@ -3160,6 +3161,20 @@ mod tests {
             35,
             WIN_RULE_SHENYANG_BASIC
         ));
+    }
+
+    #[test]
+    fn basic_heng_filter_ignores_short_triplet_like_meld() {
+        let melds = vec![WsShenyangMahjongMeld {
+            kind: ShenyangMahjongMeldKind::PENG,
+            tiles: vec![1, 1],
+            from_position: Some(1),
+        }];
+        let hand = vec![11, 12, 13, 21, 22, 23, 31, 35];
+
+        assert!(!is_triplet_like_meld(&melds[0]));
+        assert!(!has_triplet_or_dragon_pair(&hand, &melds));
+        assert_eq!(piao_threat_level(&melds), 0);
     }
 
     #[test]
