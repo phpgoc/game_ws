@@ -2504,7 +2504,7 @@ fn should_claim_pure_one_suit_peng_to_open_basic_rule(
     let Some((_, main_count, blockers)) = pure_one_suit_shape(hand, current_melds) else {
         return false;
     };
-    if main_count < 10 || blockers > 3 {
+    if main_count < 9 || blockers > 4 {
         return false;
     }
 
@@ -4098,6 +4098,23 @@ mod tests {
         });
         let claim = table.claim_window.clone().unwrap();
         let hand = vec![1, 1, 2, 3, 4, 5, 6, 7, 8, 8, 9, 11, 12];
+
+        assert_eq!(
+            choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(AiClaimChoice::Peng)
+        );
+    }
+
+    #[test]
+    fn claim_peng_opens_nine_tile_pure_one_suit_plan_when_peng_improves_it() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.claim_window = Some(AiClaimView {
+            tile: 1,
+            from_position: 1,
+            eligible_positions: vec![0],
+        });
+        let claim = table.claim_window.clone().unwrap();
+        let hand = vec![1, 1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 31, 35];
 
         assert_eq!(
             choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
