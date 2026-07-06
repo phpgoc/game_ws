@@ -2637,7 +2637,9 @@ fn incomplete_sequence_discard_bias(
     }
     if tile_is_weak_edge_wait_terminal(hand, tile) {
         3.2
-    } else if tile_is_core_two_sided_wait_member(hand, tile) {
+    } else if tile_is_core_two_sided_wait_member(hand, tile)
+        || tile_is_core_closed_middle_wait_member(hand, tile)
+    {
         -3.0
     } else {
         0.0
@@ -3308,6 +3310,23 @@ fn tile_is_core_two_sided_wait_member(hand: &[i32], tile: i32) -> bool {
                 let low_rank = tile_rank(tile).min(tile_rank(other));
                 let high_rank = tile_rank(tile).max(tile_rank(other));
                 matches!((low_rank, high_rank), (3, 4) | (4, 5) | (5, 6) | (6, 7))
+            }
+    })
+}
+
+fn tile_is_core_closed_middle_wait_member(hand: &[i32], tile: i32) -> bool {
+    if !is_suited(tile) {
+        return false;
+    }
+    [-2, 2].into_iter().any(|offset| {
+        let other = tile + offset;
+        is_suited(other)
+            && tile_suit(other) == tile_suit(tile)
+            && hand.iter().any(|item| *item == other)
+            && {
+                let low_rank = tile_rank(tile).min(tile_rank(other));
+                let high_rank = tile_rank(tile).max(tile_rank(other));
+                matches!((low_rank, high_rank), (3, 5) | (4, 6) | (5, 7))
             }
     })
 }
@@ -5958,6 +5977,29 @@ mod tests {
         let table = table_with_discards(1, Vec::new());
         let hand = vec![1, 2, 4, 5, 11, 12, 13, 21, 22, 23, 24, 25, 35, 35];
 
+        assert!(
+            incomplete_sequence_discard_bias(&hand, 1, &[], &table, 0, WIN_RULE_SHENYANG_BASIC)
+                > incomplete_sequence_discard_bias(
+                    &hand,
+                    4,
+                    &[],
+                    &table,
+                    0,
+                    WIN_RULE_SHENYANG_BASIC
+                )
+        );
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn discard_breaks_weak_edge_wait_before_core_closed_middle_wait() {
+        let table = table_with_discards(1, Vec::new());
+        let hand = vec![1, 2, 4, 6, 11, 12, 13, 21, 22, 23, 24, 25, 35, 35];
+
+        assert!(tile_is_core_closed_middle_wait_member(&hand, 4));
         assert!(
             incomplete_sequence_discard_bias(&hand, 1, &[], &table, 0, WIN_RULE_SHENYANG_BASIC)
                 > incomplete_sequence_discard_bias(
