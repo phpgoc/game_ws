@@ -1633,7 +1633,7 @@ fn opponent_threat_discard_bias(
             } else {
                 72.0
             };
-            let pair_penalty = if own_tile_count >= 2 { 4.0 } else { 0.0 };
+            let pair_penalty = piao_threat_pair_penalty(tile, own_tile_count);
             let late_multiplier = if is_late_round(table) { 1.25 } else { 1.0 };
             bias -= ((single_wait_penalty + pair_penalty) - public_discount).max(10.0)
                 * late_multiplier;
@@ -1655,11 +1655,22 @@ fn opponent_threat_discard_bias(
         } else {
             5.5
         };
-        let pair_penalty = if own_tile_count >= 2 { 4.0 } else { 0.0 };
+        let pair_penalty = piao_threat_pair_penalty(tile, own_tile_count);
         let late_multiplier = if is_late_round(table) { 1.35 } else { 1.0 };
         bias -= (live_tile_penalty + pair_penalty + piao_wait_suit_penalty) * late_multiplier;
     }
     bias
+}
+
+fn piao_threat_pair_penalty(tile: i32, own_tile_count: usize) -> f64 {
+    if own_tile_count < 2 {
+        return 0.0;
+    }
+    if is_honor(tile) || tile_is_terminal(tile) {
+        6.0
+    } else {
+        4.0
+    }
 }
 
 fn pair_count(hand: &[i32]) -> usize {
@@ -6222,6 +6233,33 @@ mod tests {
         assert!(
             opponent_threat_discard_bias(&table, 0, 5, 2)
                 < opponent_threat_discard_bias(&table, 0, 6, 1)
+        );
+    }
+
+    #[test]
+    fn piao_threat_penalizes_live_wind_pair_more_than_terminal_singleton() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 16;
+        table.seats.get_mut(&1).unwrap().melds =
+            vec![test_peng_meld(1), test_peng_meld(11), test_peng_meld(21)];
+
+        assert!(
+            opponent_threat_discard_bias(&table, 0, 31, 2)
+                < opponent_threat_discard_bias(&table, 0, 9, 1)
+        );
+    }
+
+    #[test]
+    fn late_defense_avoids_breaking_wind_pair_against_piao_threat() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 16;
+        table.seats.get_mut(&1).unwrap().melds =
+            vec![test_peng_meld(1), test_peng_meld(11), test_peng_meld(21)];
+        let hand = vec![2, 4, 6, 8, 9, 12, 14, 16, 18, 22, 24, 26, 31, 31];
+
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+            Some(9)
         );
     }
 
