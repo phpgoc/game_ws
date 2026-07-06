@@ -503,6 +503,7 @@ pub fn choose_discard_from_view(
             + seven_pairs_wait_discard_bias(hand, tile, melds, table, position)
             + pure_one_suit_discard_bias(hand, tile, melds, table, position)
             + complete_sequence_discard_bias(hand, tile, melds, table, position)
+            + incomplete_sequence_discard_bias(hand, tile, melds, table, position, win_rule)
             + mid_round_public_discard_bias(table, position, tile)
             + mid_round_open_meld_safety_bias(table, tile)
             + mid_round_live_honor_risk_bias(table, position, tile, count)
@@ -2616,6 +2617,33 @@ fn complete_sequence_discard_bias(
     }
 }
 
+fn incomplete_sequence_discard_bias(
+    hand: &[i32],
+    tile: i32,
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+) -> f64 {
+    if hand.iter().filter(|item| **item == tile).count() != 1
+        || !is_suited(tile)
+        || tile_is_part_of_complete_sequence(hand, tile)
+        || should_lock_seven_pairs_plan(hand, melds, table, position, win_rule)
+        || is_closed_early_piao_candidate(hand, melds, table, position)
+        || piao_plan_score_for_context(hand, melds, table, position) >= 20.0
+        || pure_one_suit_plan_score_for_context(hand, melds, table, position) > 0.0
+    {
+        return 0.0;
+    }
+    if tile_is_weak_edge_wait_terminal(hand, tile) {
+        3.2
+    } else if tile_is_core_two_sided_wait_member(hand, tile) {
+        -3.0
+    } else {
+        0.0
+    }
+}
+
 fn seven_pairs_regular_wait_reaches_cap(table: &AiPublicTable) -> bool {
     const SEVEN_PAIRS_VISIBLE_FAN: i32 = 4;
     const REGULAR_SINGLE_WAIT_FAN: i32 = 1;
@@ -3265,6 +3293,34 @@ fn tile_is_part_of_complete_sequence(hand: &[i32], tile: i32) -> bool {
             hand.iter().any(|item| *item == sequence_tile)
         })
     })
+}
+
+fn tile_is_core_two_sided_wait_member(hand: &[i32], tile: i32) -> bool {
+    if !is_suited(tile) {
+        return false;
+    }
+    [-1, 1].into_iter().any(|offset| {
+        let other = tile + offset;
+        is_suited(other)
+            && tile_suit(other) == tile_suit(tile)
+            && hand.iter().any(|item| *item == other)
+            && {
+                let low_rank = tile_rank(tile).min(tile_rank(other));
+                let high_rank = tile_rank(tile).max(tile_rank(other));
+                matches!((low_rank, high_rank), (3, 4) | (4, 5) | (5, 6) | (6, 7))
+            }
+    })
+}
+
+fn tile_is_weak_edge_wait_terminal(hand: &[i32], tile: i32) -> bool {
+    if !is_suited(tile) {
+        return false;
+    }
+    match tile_rank(tile) {
+        1 => hand.iter().any(|item| *item == tile + 1),
+        9 => hand.iter().any(|item| *item == tile - 1),
+        _ => false,
+    }
 }
 
 fn tile_is_terminal(tile: i32) -> bool {
@@ -5895,6 +5951,43 @@ mod tests {
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
             Some(8)
         );
+    }
+
+    #[test]
+    fn discard_breaks_weak_edge_wait_before_core_two_sided_wait() {
+        let table = table_with_discards(1, Vec::new());
+        let hand = vec![1, 2, 4, 5, 11, 12, 13, 21, 22, 23, 24, 25, 35, 35];
+
+        assert!(
+            incomplete_sequence_discard_bias(&hand, 1, &[], &table, 0, WIN_RULE_SHENYANG_BASIC)
+                > incomplete_sequence_discard_bias(
+                    &hand,
+                    4,
+                    &[],
+                    &table,
+                    0,
+                    WIN_RULE_SHENYANG_BASIC
+                )
+        );
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn incomplete_sequence_bias_does_not_override_piao_pair_plan() {
+        let table = table_with_discards(1, Vec::new());
+        let hand = vec![1, 2, 4, 5, 11, 11, 12, 13, 21, 21, 22, 23, 35, 35];
+
+        assert_eq!(
+            incomplete_sequence_discard_bias(&hand, 1, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
+            0.0
+        );
+        assert!(!matches!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(11 | 21 | 35)
+        ));
     }
 
     #[test]
