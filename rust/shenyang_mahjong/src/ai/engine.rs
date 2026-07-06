@@ -185,6 +185,10 @@ mod tests {
         HashMap::from([("win_rule".to_owned(), WIN_RULE_RELAXED)])
     }
 
+    fn one_fan_capped_configs() -> HashMap<String, i32> {
+        HashMap::from([("max_fan".to_owned(), 1)])
+    }
+
     #[test]
     fn away_position_does_not_self_draw_without_drawn_tile() {
         let mut state = playable_state();
@@ -511,10 +515,33 @@ mod tests {
         }
     }
 
+    #[test]
+    fn four_ai_positions_settle_one_fan_capped_seeded_round() {
+        let state = run_seeded_ai_round_with_configs(2026070402, 220, &one_fan_capped_configs());
+        let settlement = state.settlement.as_ref().expect("AI capped settlement");
+        let total_discards = state.discards.values().map(Vec::len).sum::<usize>();
+
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert!(
+            settlement.is_self_draw
+                || settlement.from_position.is_some()
+                || settlement.winner_positions.is_empty(),
+            "capped seeded AI round should settle as a self draw, discard win, or legal draw"
+        );
+        assert!(total_discards > 0);
+    }
+
     fn run_seeded_ai_round(seed: u64, max_steps: usize) -> ShenyangMahjongLoopState {
+        run_seeded_ai_round_with_configs(seed, max_steps, &HashMap::new())
+    }
+
+    fn run_seeded_ai_round_with_configs(
+        seed: u64,
+        max_steps: usize,
+        configs: &HashMap<String, i32>,
+    ) -> ShenyangMahjongLoopState {
         let mut state = seeded_ai_round_state(seed);
         let room_service = RoomService::default();
-        let configs = HashMap::new();
         let mut dispatch = Dispatch::default();
 
         for step in 0..max_steps {
@@ -523,12 +550,12 @@ mod tests {
             }
 
             let acted =
-                maybe_resolve_ai_claims(&room_service, "room", &mut state, &configs, &mut dispatch)
+                maybe_resolve_ai_claims(&room_service, "room", &mut state, configs, &mut dispatch)
                     || maybe_play_ai_turn(
                         &room_service,
                         "room",
                         &mut state,
-                        &configs,
+                        configs,
                         &mut dispatch,
                     );
 
