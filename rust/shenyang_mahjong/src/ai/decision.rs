@@ -787,6 +787,7 @@ fn closed_threat_exposure_scale(table: &AiPublicTable, tile: i32) -> f64 {
         0 => 1.0,
         1 => 0.7,
         2 => 0.45,
+        3 => 0.15,
         _ => 0.0,
     }
 }
@@ -4890,8 +4891,29 @@ mod tests {
             },
         );
 
+        let exposed_terminal_bias = closed_opponent_threat_discard_bias(&table, 0, 9, 1);
+        let cold_honor_bias = closed_opponent_threat_discard_bias(&table, 0, 31, 1);
+
+        assert!(exposed_terminal_bias < 0.0);
+        assert!(exposed_terminal_bias > cold_honor_bias);
+    }
+
+    #[test]
+    fn closed_opponent_threat_ignores_fully_exposed_tile() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 16;
+        table.seats.get_mut(&1).unwrap().hand_count = 13;
+        table.seats.insert(
+            2,
+            AiSeatView {
+                position: 2,
+                hand_count: 10,
+                discards: Vec::new(),
+                melds: vec![test_gang_meld(9)],
+            },
+        );
+
         assert_eq!(closed_opponent_threat_discard_bias(&table, 0, 9, 1), 0.0);
-        assert!(closed_opponent_threat_discard_bias(&table, 0, 31, 1) < 0.0);
     }
 
     #[test]
