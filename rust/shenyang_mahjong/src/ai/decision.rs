@@ -6497,6 +6497,21 @@ mod tests {
     }
 
     #[test]
+    fn estimated_visible_fan_does_not_add_closed_winner_fan() {
+        let closed_pure_one_suit = vec![1, 2, 3, 2, 3, 4, 4, 5, 6, 7, 7, 7, 9, 9];
+        let closed_seven_pairs = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35, 35];
+
+        assert_eq!(
+            estimated_visible_fan_without_wait(&closed_pure_one_suit, &[], WIN_RULE_SHENYANG_BASIC),
+            4
+        );
+        assert_eq!(
+            estimated_visible_fan_without_wait(&closed_seven_pairs, &[], WIN_RULE_SHENYANG_BASIC),
+            4
+        );
+    }
+
+    #[test]
     fn estimated_fan_counts_single_yaojiu_terminal_wait_extra() {
         let win_hand = vec![11, 11, 14, 15, 15, 16, 16, 17, 17, 17, 17];
         let melds = vec![test_chi_meld(12)];

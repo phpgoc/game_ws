@@ -5163,6 +5163,16 @@ mod tests {
             basic_event.winner_details[0].pattern,
             ShenyangMahjongWinPattern::PureOneSuit
         );
+        assert_eq!(
+            winner_hand_fan_with_rule(
+                &state,
+                state.settlement.as_ref().expect("settlement"),
+                1,
+                WIN_RULE_SHENYANG_BASIC
+            ),
+            4
+        );
+        assert_eq!(basic_event.winner_details[0].score, 6);
     }
 
     #[test]
