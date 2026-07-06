@@ -1431,6 +1431,17 @@ fn live_tile_count_for_suit_after_discard(
         .sum()
 }
 
+fn live_tile_count_for_suit(hand: &[i32], table: &AiPublicTable, suit: i32) -> i32 {
+    (1..=9)
+        .map(|rank| {
+            let tile = suit * 10 + rank;
+            let visible = visible_tile_count(table, tile);
+            let own_hand = hand.iter().filter(|item| **item == tile).count() as i32;
+            (4 - visible - own_hand).max(0)
+        })
+        .sum()
+}
+
 fn live_terminal_or_honor_count_after_discard(
     hand_after_discard: &[i32],
     table: &AiPublicTable,
@@ -1447,6 +1458,18 @@ fn live_terminal_or_honor_count_after_discard(
                 .count() as i32;
             let own_discard = i32::from(discarded_tile == tile);
             (4 - visible - own_hand - own_discard).max(0)
+        })
+        .sum()
+}
+
+fn live_terminal_or_honor_count(hand: &[i32], table: &AiPublicTable) -> i32 {
+    SHENYANG_MAHJONG_TILE_KINDS
+        .into_iter()
+        .filter(|tile| is_honor(*tile) || tile_is_terminal(*tile))
+        .map(|tile| {
+            let visible = visible_tile_count(table, tile);
+            let own_hand = hand.iter().filter(|item| **item == tile).count() as i32;
+            (4 - visible - own_hand).max(0)
         })
         .sum()
 }
@@ -2898,11 +2921,29 @@ fn should_open_broken_closed_hand_for_defense(
     .into_iter()
     .filter(|missing| *missing)
     .count();
+    let unrecoverable_rule_requirements =
+        unrecoverable_basic_rule_requirement_count(hand, melds, table);
     let power = hand_power(hand);
     if !is_late_round(table) {
-        return missing_rule_requirements >= 2 || power < 14.0;
+        return unrecoverable_rule_requirements >= 1
+            || missing_rule_requirements >= 2
+            || power < 14.0;
     }
-    missing_rule_requirements >= 1 || power < 18.0
+    unrecoverable_rule_requirements >= 1 || missing_rule_requirements >= 1 || power < 18.0
+}
+
+fn unrecoverable_basic_rule_requirement_count(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+) -> usize {
+    let missing_suits = missing_suits(hand, melds)
+        .into_iter()
+        .filter(|suit| live_tile_count_for_suit(hand, table, *suit) <= 0)
+        .count();
+    let missing_terminal_or_honor = !has_terminal_or_honor_with_extra(hand, melds, None)
+        && live_terminal_or_honor_count(hand, table) <= 0;
+    missing_suits + usize::from(missing_terminal_or_honor)
 }
 
 fn should_pass_late_unready_claim_for_defense(
@@ -2952,7 +2993,14 @@ fn should_use_broken_hand_public_defense_discard(
     } else {
         0
     };
-    missing_rule_requirements >= 2 || hand_power(hand) < 16.0
+    let unrecoverable_rule_requirements = if win_rule == WIN_RULE_SHENYANG_BASIC {
+        unrecoverable_basic_rule_requirement_count(hand, melds, table)
+    } else {
+        0
+    };
+    unrecoverable_rule_requirements >= 1
+        || missing_rule_requirements >= 2
+        || hand_power(hand) < 16.0
 }
 
 fn should_preserve_four_gui_yi(tile: i32) -> bool {
@@ -4885,6 +4933,54 @@ mod tests {
             choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(AiClaimChoice::Peng)
         );
+    }
+
+    #[test]
+    fn claim_peng_opens_mid_unrecoverable_no_terminal_hand_for_defense() {
+        let mut table = table_with_discards(1, dead_terminal_or_honor_discards());
+        table.wall_count = 52;
+        table.claim_window = Some(AiClaimView {
+            tile: 5,
+            from_position: 1,
+            eligible_positions: vec![0],
+        });
+        let claim = table.claim_window.clone().unwrap();
+        let hand = vec![2, 3, 4, 5, 5, 6, 7, 12, 13, 14, 22, 23, 24];
+
+        assert_eq!(
+            unrecoverable_basic_rule_requirement_count(&hand, &[], &table),
+            1
+        );
+        assert!(should_open_broken_closed_hand_for_defense(
+            &hand,
+            &[],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC
+        ));
+        assert_eq!(
+            choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(AiClaimChoice::Peng)
+        );
+    }
+
+    #[test]
+    fn broken_closed_defense_waits_mid_recoverable_no_terminal_hand() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 52;
+        let hand = vec![2, 2, 2, 5, 5, 6, 7, 12, 13, 14, 22, 23, 24];
+
+        assert_eq!(
+            unrecoverable_basic_rule_requirement_count(&hand, &[], &table),
+            0
+        );
+        assert!(!should_open_broken_closed_hand_for_defense(
+            &hand,
+            &[],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC
+        ));
     }
 
     #[test]
