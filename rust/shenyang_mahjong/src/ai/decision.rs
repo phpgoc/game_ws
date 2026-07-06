@@ -279,11 +279,7 @@ pub fn choose_claim_from_view(
         }
         let mut next = remove_n_tiles(hand, tile, 2);
         let mut melds = current_melds.clone();
-        melds.push(claim_meld(
-            ShenyangMahjongMeldKind::PENG,
-            tile,
-            claim.from_position,
-        ));
+        melds.push(claim_peng_meld(tile, claim.from_position));
         sort_tiles(&mut next);
         let after = best_score_after_forced_discard(&next, &melds, table, position, win_rule);
         if should_open_broken_closed_hand_for_defense(
@@ -713,9 +709,9 @@ fn claim_leaves_unrecoverable_missing_suit(
         return false;
     }
 
-    let remove_count = match kind {
-        ShenyangMahjongMeldKind::PENG => 2,
-        ShenyangMahjongMeldKind::GANG => 3,
+    let (remove_count, claimed_meld) = match kind {
+        ShenyangMahjongMeldKind::PENG => (2, claim_peng_meld(tile, from_position)),
+        ShenyangMahjongMeldKind::GANG => (3, claim_gang_meld(tile, from_position)),
         ShenyangMahjongMeldKind::CHI => return false,
     };
     let mut next = remove_n_tiles(hand, tile, remove_count);
@@ -724,7 +720,7 @@ fn claim_leaves_unrecoverable_missing_suit(
     }
     sort_tiles(&mut next);
     let mut melds = current_melds.to_vec();
-    melds.push(claim_meld(kind, tile, from_position));
+    melds.push(claimed_meld);
 
     !unique_tiles(&next).into_iter().any(|discard| {
         let after_discard = remove_n_tiles(&next, discard, 1);
@@ -750,9 +746,9 @@ fn claim_leaves_unrecoverable_terminal_or_honor(
         return false;
     }
 
-    let remove_count = match kind {
-        ShenyangMahjongMeldKind::PENG => 2,
-        ShenyangMahjongMeldKind::GANG => 3,
+    let (remove_count, claimed_meld) = match kind {
+        ShenyangMahjongMeldKind::PENG => (2, claim_peng_meld(tile, from_position)),
+        ShenyangMahjongMeldKind::GANG => (3, claim_gang_meld(tile, from_position)),
         ShenyangMahjongMeldKind::CHI => return false,
     };
     let mut next = remove_n_tiles(hand, tile, remove_count);
@@ -761,7 +757,7 @@ fn claim_leaves_unrecoverable_terminal_or_honor(
     }
     sort_tiles(&mut next);
     let mut melds = current_melds.to_vec();
-    melds.push(claim_meld(kind, tile, from_position));
+    melds.push(claimed_meld);
 
     !unique_tiles(&next).into_iter().any(|discard| {
         let after_discard = remove_n_tiles(&next, discard, 1);
@@ -771,19 +767,18 @@ fn claim_leaves_unrecoverable_terminal_or_honor(
     })
 }
 
-fn claim_meld(
-    kind: ShenyangMahjongMeldKind,
-    tile: i32,
-    from_position: usize,
-) -> WsShenyangMahjongMeld {
-    let tiles = match kind {
-        ShenyangMahjongMeldKind::CHI => vec![tile - 1, tile, tile + 1],
-        ShenyangMahjongMeldKind::PENG => vec![tile, tile, tile],
-        ShenyangMahjongMeldKind::GANG => vec![tile, tile, tile, tile],
-    };
+fn claim_gang_meld(tile: i32, from_position: usize) -> WsShenyangMahjongMeld {
     WsShenyangMahjongMeld {
-        kind,
-        tiles,
+        kind: ShenyangMahjongMeldKind::GANG,
+        tiles: vec![tile, tile, tile, tile],
+        from_position: Some(from_position as i32),
+    }
+}
+
+fn claim_peng_meld(tile: i32, from_position: usize) -> WsShenyangMahjongMeld {
+    WsShenyangMahjongMeld {
+        kind: ShenyangMahjongMeldKind::PENG,
+        tiles: vec![tile, tile, tile],
         from_position: Some(from_position as i32),
     }
 }
@@ -2756,11 +2751,7 @@ fn should_claim_peng_for_basic_heng_and_opening(
     }
     sort_tiles(&mut next);
     let mut melds = current_melds.to_vec();
-    melds.push(claim_meld(
-        ShenyangMahjongMeldKind::PENG,
-        tile,
-        from_position,
-    ));
+    melds.push(claim_peng_meld(tile, from_position));
 
     unique_tiles(&next).into_iter().any(|discard| {
         let after_discard = remove_n_tiles(&next, discard, 1);
@@ -2792,11 +2783,7 @@ fn should_peng_to_preserve_four_gui_yi_from_discard(
     }
     sort_tiles(&mut gang_hand);
     let mut gang_melds = current_melds.to_vec();
-    gang_melds.push(claim_meld(
-        ShenyangMahjongMeldKind::GANG,
-        tile,
-        from_position,
-    ));
+    gang_melds.push(claim_gang_meld(tile, from_position));
     let gang_ready_score = ready_tile_score(&gang_hand, &gang_melds, table, position, win_rule);
     if gang_ready_score <= 0.0 {
         return false;
@@ -2810,11 +2797,7 @@ fn should_peng_to_preserve_four_gui_yi_from_discard(
     }
     sort_tiles(&mut peng_hand);
     let mut peng_melds = current_melds.to_vec();
-    peng_melds.push(claim_meld(
-        ShenyangMahjongMeldKind::PENG,
-        tile,
-        from_position,
-    ));
+    peng_melds.push(claim_peng_meld(tile, from_position));
 
     unique_tiles(&peng_hand).into_iter().any(|discard| {
         if discard == tile {
@@ -2843,11 +2826,7 @@ fn claim_gang_from_discard_reaches_ready(
     }
     sort_tiles(&mut next);
     let mut melds = current_melds.to_vec();
-    melds.push(claim_meld(
-        ShenyangMahjongMeldKind::GANG,
-        tile,
-        from_position,
-    ));
+    melds.push(claim_gang_meld(tile, from_position));
     ready_tile_score(&next, &melds, table, position, win_rule) > 0.0
 }
 
@@ -2873,11 +2852,7 @@ fn should_claim_ready_pure_one_suit_gang_from_discard(
     }
     sort_tiles(&mut next);
     let mut melds = current_melds.to_vec();
-    melds.push(claim_meld(
-        ShenyangMahjongMeldKind::GANG,
-        tile,
-        from_position,
-    ));
+    melds.push(claim_gang_meld(tile, from_position));
     ready_tile_score(&next, &melds, table, position, win_rule) > 0.0
 }
 
@@ -3719,6 +3694,33 @@ mod tests {
             choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
             Some(AiClaimChoice::Chi {
                 consume_tiles: vec![1, 2]
+            })
+        );
+    }
+
+    #[test]
+    fn claim_chi_can_use_claim_tile_as_low_edge() {
+        let mut table = table_with_discards(3, Vec::new());
+        table.wall_count = 40;
+        table.claim_window = Some(AiClaimView {
+            tile: 1,
+            from_position: 3,
+            eligible_positions: vec![0],
+        });
+        let claim = table.claim_window.clone().unwrap();
+        let hand = vec![2, 2, 3, 5, 8, 11, 14, 17, 21, 24, 31, 32, 33];
+
+        assert!(should_claim_chi_to_open_broken_hand_for_defense(
+            &hand,
+            &[],
+            &table,
+            0,
+            WIN_RULE_RELAXED
+        ));
+        assert_eq!(
+            choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+            Some(AiClaimChoice::Chi {
+                consume_tiles: vec![2, 3]
             })
         );
     }
