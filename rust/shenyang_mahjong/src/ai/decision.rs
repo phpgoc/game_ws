@@ -502,7 +502,7 @@ pub fn choose_discard_from_view(
             + seven_pairs_plan_discard_bias(hand, tile, melds, table, position, win_rule)
             + seven_pairs_wait_discard_bias(hand, tile, melds, table, position)
             + pure_one_suit_discard_bias(hand, tile, melds, table, position)
-            + sequence_middle_discard_bias(hand, tile)
+            + complete_sequence_discard_bias(hand, tile, melds, table, position)
             + mid_round_public_discard_bias(table, position, tile)
             + mid_round_open_meld_safety_bias(table, tile)
             + mid_round_live_honor_risk_bias(table, position, tile, count)
@@ -2595,11 +2595,22 @@ fn seven_pairs_wait_shape_tiebreaker(wait_tile: i32) -> f64 {
     }
 }
 
-fn sequence_middle_discard_bias(hand: &[i32], tile: i32) -> f64 {
-    if hand.iter().filter(|item| **item == tile).count() == 1
-        && tile_is_middle_of_sequence(hand, tile)
-    {
+fn complete_sequence_discard_bias(
+    hand: &[i32],
+    tile: i32,
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+) -> f64 {
+    if hand.iter().filter(|item| **item == tile).count() != 1 {
+        return 0.0;
+    }
+    if tile_is_middle_of_sequence(hand, tile) {
         -6.0
+    } else if is_closed_early_piao_candidate(hand, melds, table, position) {
+        0.0
+    } else if tile_is_part_of_complete_sequence(hand, tile) {
+        -4.0
     } else {
         0.0
     }
@@ -3238,6 +3249,22 @@ fn tile_is_middle_of_sequence(hand: &[i32], tile: i32) -> bool {
     let left = tile - 1;
     let right = tile + 1;
     hand.iter().any(|item| *item == left) && hand.iter().any(|item| *item == right)
+}
+
+fn tile_is_part_of_complete_sequence(hand: &[i32], tile: i32) -> bool {
+    if !is_suited(tile) {
+        return false;
+    }
+    let rank = tile_rank(tile);
+    let suit = tile_suit(tile);
+    let min_start = (rank - 2).max(1);
+    let max_start = rank.min(7);
+    (min_start..=max_start).any(|start| {
+        (start..start + 3).all(|sequence_rank| {
+            let sequence_tile = suit * 10 + sequence_rank;
+            hand.iter().any(|item| *item == sequence_tile)
+        })
+    })
 }
 
 fn tile_is_terminal(tile: i32) -> bool {
@@ -5875,7 +5902,27 @@ mod tests {
         let table = table_with_discards(1, Vec::new());
         let hand = vec![4, 5, 6, 8, 11, 11, 11, 19, 19, 19, 21, 21, 22, 22];
 
-        assert!(sequence_middle_discard_bias(&hand, 5) < sequence_middle_discard_bias(&hand, 8));
+        assert!(
+            complete_sequence_discard_bias(&hand, 5, &[], &table, 0)
+                < complete_sequence_discard_bias(&hand, 8, &[], &table, 0)
+        );
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+            Some(8)
+        );
+    }
+
+    #[test]
+    fn discard_preserves_edge_of_complete_sequence() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.dealer_position = 0;
+        let hand = vec![4, 5, 6, 8, 11, 11, 11, 19, 19, 19, 21, 21, 22, 22];
+
+        assert!(tile_is_part_of_complete_sequence(&hand, 4));
+        assert!(
+            complete_sequence_discard_bias(&hand, 4, &[], &table, 0)
+                < complete_sequence_discard_bias(&hand, 8, &[], &table, 0)
+        );
         assert_eq!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
             Some(8)
