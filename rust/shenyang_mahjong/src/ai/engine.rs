@@ -174,10 +174,12 @@ mod tests {
 
     use share_type_public::games::shenyang_mahjong::{
         ShenyangMahjongMeldKind, ShenyangMahjongPhase, WsShenyangMahjongMeld,
+        WsShenyangMahjongScoreChange,
     };
     use ws_common::game_state::CommonGameState;
 
     use super::*;
+    use crate::game::build_settlement_event_with_configs;
     use crate::game_state::ClaimWindowState;
     use crate::rules::{WIN_RULE_RELAXED, is_complete_win_with_melds, win_rule_from_configs};
 
@@ -493,6 +495,7 @@ mod tests {
         assert!(settlement.win_tile.is_some());
         assert!(total_discards > 0);
         assert_seeded_settlement_winners_are_legal(&state, &HashMap::new(), 2026070402);
+        assert_seeded_settlement_event_is_consistent(&state, &HashMap::new(), 2026070402);
     }
 
     #[test]
@@ -518,6 +521,7 @@ mod tests {
                 "seed {seed} should play at least one discard"
             );
             assert_seeded_settlement_winners_are_legal(&state, &HashMap::new(), seed);
+            assert_seeded_settlement_event_is_consistent(&state, &HashMap::new(), seed);
         }
     }
 
@@ -536,6 +540,7 @@ mod tests {
         );
         assert!(total_discards > 0);
         assert_seeded_settlement_winners_are_legal(&state, &one_fan_capped_configs(), 2026070402);
+        assert_seeded_settlement_event_is_consistent(&state, &one_fan_capped_configs(), 2026070402);
     }
 
     fn assert_seeded_settlement_winners_are_legal(
@@ -561,6 +566,146 @@ mod tests {
                 "seed {seed} winner {winner} should have a legal Shenyang Mahjong hand: hand={hand:?}, melds={melds:?}, settlement={settlement:?}"
             );
         }
+    }
+
+    fn assert_seeded_settlement_event_is_consistent(
+        state: &ShenyangMahjongLoopState,
+        configs: &HashMap<String, i32>,
+        seed: u64,
+    ) {
+        let settlement = state.settlement.as_ref().expect("AI round settlement");
+        let event = build_settlement_event_with_configs(state, configs)
+            .expect("AI round settlement event should be buildable");
+        let winner_positions = settlement
+            .winner_positions
+            .iter()
+            .map(|position| *position as i32)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            event.winner_positions, winner_positions,
+            "seed {seed} settlement event should report the same winners as state"
+        );
+        assert_eq!(
+            event.from_position,
+            settlement.from_position.map(|position| position as i32),
+            "seed {seed} settlement event should report the same payer as state"
+        );
+        assert_eq!(
+            event.win_tile, settlement.win_tile,
+            "seed {seed} settlement event should report the same win tile as state"
+        );
+        assert_eq!(
+            event.is_self_draw, settlement.is_self_draw,
+            "seed {seed} settlement event should report the same self-draw flag as state"
+        );
+        assert_eq!(
+            event.players.len(),
+            event.score_changes.len(),
+            "seed {seed} settlement event should score every player snapshot"
+        );
+        assert_eq!(
+            event
+                .score_changes
+                .iter()
+                .map(|change| change.score)
+                .sum::<i32>(),
+            0,
+            "seed {seed} settlement scores should be zero-sum: {:?}",
+            event.score_changes
+        );
+
+        if settlement.winner_positions.is_empty() {
+            assert!(
+                event.winner_details.is_empty(),
+                "seed {seed} draw settlement should not include winner details"
+            );
+            assert!(
+                event.score_changes.iter().all(|change| change.score == 0),
+                "seed {seed} draw settlement should score everyone as zero: {:?}",
+                event.score_changes
+            );
+            return;
+        }
+
+        assert_eq!(
+            event.winner_details.len(),
+            settlement.winner_positions.len(),
+            "seed {seed} should have one winner detail per winner"
+        );
+        for winner in &settlement.winner_positions {
+            let winner_score = settlement_score_for_position(&event.score_changes, *winner);
+            assert!(
+                winner_score > 0,
+                "seed {seed} winner {winner} should gain score: {:?}",
+                event.score_changes
+            );
+            let detail = event
+                .winner_details
+                .iter()
+                .find(|detail| detail.position == *winner as i32)
+                .expect("winner detail should exist");
+            assert_eq!(
+                detail.score, winner_score,
+                "seed {seed} winner detail score should match score_changes"
+            );
+            assert_eq!(detail.is_self_draw, settlement.is_self_draw);
+            assert_eq!(detail.is_reverse_win, settlement.is_reverse_win);
+            assert_eq!(detail.is_gang_draw, settlement.is_gang_draw);
+            assert_eq!(detail.is_haidilao, settlement.is_haidilao);
+        }
+
+        if settlement.is_self_draw {
+            assert!(
+                settlement.from_position.is_none(),
+                "seed {seed} self-draw settlement should not have a discard payer"
+            );
+            for change in &event.score_changes {
+                let position = change.position as usize;
+                if settlement.winner_positions.contains(&position) {
+                    continue;
+                }
+                assert!(
+                    change.score < 0,
+                    "seed {seed} self-draw loser {position} should pay: {:?}",
+                    event.score_changes
+                );
+            }
+        } else {
+            let from_position = settlement
+                .from_position
+                .expect("discard win settlement should have a payer");
+            assert!(
+                !settlement.winner_positions.contains(&from_position),
+                "seed {seed} discard payer should not also be a winner"
+            );
+            assert!(
+                settlement_score_for_position(&event.score_changes, from_position) < 0,
+                "seed {seed} discard payer should lose score: {:?}",
+                event.score_changes
+            );
+            for change in &event.score_changes {
+                let position = change.position as usize;
+                if settlement.winner_positions.contains(&position) || position == from_position {
+                    continue;
+                }
+                assert_eq!(
+                    change.score, 0,
+                    "seed {seed} non-payer loser {position} should not pay on discard win"
+                );
+            }
+        }
+    }
+
+    fn settlement_score_for_position(
+        score_changes: &[WsShenyangMahjongScoreChange],
+        position: usize,
+    ) -> i32 {
+        score_changes
+            .iter()
+            .find(|change| change.position == position as i32)
+            .map(|change| change.score)
+            .unwrap_or(0)
     }
 
     fn run_seeded_ai_round(seed: u64, max_steps: usize) -> ShenyangMahjongLoopState {
