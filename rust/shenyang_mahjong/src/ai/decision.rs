@@ -2267,7 +2267,13 @@ fn seven_pairs_plan_discard_bias(
     }
     let count = hand.iter().filter(|item| **item == tile).count();
     if count >= 2 {
-        return -12.0;
+        return if is_honor(tile) {
+            -18.0
+        } else if tile_is_terminal(tile) {
+            -15.0
+        } else {
+            -12.0
+        };
     }
     if is_honor(tile) {
         5.0
@@ -5430,6 +5436,22 @@ mod tests {
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
             Some(31)
         );
+    }
+
+    #[test]
+    fn seven_pairs_plan_protects_honor_and_terminal_pairs_more() {
+        let table = table_with_discards(1, Vec::new());
+        let hand = vec![1, 1, 5, 5, 11, 11, 12, 12, 21, 21, 31, 31, 35, 36];
+
+        let middle_pair =
+            seven_pairs_plan_discard_bias(&hand, 5, &[], &table, 0, WIN_RULE_SHENYANG_BASIC);
+        let terminal_pair =
+            seven_pairs_plan_discard_bias(&hand, 1, &[], &table, 0, WIN_RULE_SHENYANG_BASIC);
+        let honor_pair =
+            seven_pairs_plan_discard_bias(&hand, 31, &[], &table, 0, WIN_RULE_SHENYANG_BASIC);
+
+        assert!(honor_pair < terminal_pair);
+        assert!(terminal_pair < middle_pair);
     }
 
     #[test]
