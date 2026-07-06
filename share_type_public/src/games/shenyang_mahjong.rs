@@ -153,6 +153,10 @@ pub struct WsShenyangMahjongSettlementEvent {
     pub is_self_draw: bool,
     #[serde(default)]
     pub is_reverse_win: bool,
+    #[serde(default)]
+    pub is_gang_draw: bool,
+    #[serde(default)]
+    pub is_haidilao: bool,
     pub score_changes: Vec<WsShenyangMahjongScoreChange>,
     #[serde(default)]
     pub winner_details: Vec<WsShenyangMahjongWinnerDetail>,
@@ -184,6 +188,10 @@ pub struct WsShenyangMahjongWinnerDetail {
     pub is_self_draw: bool,
     #[serde(default)]
     pub is_reverse_win: bool,
+    #[serde(default)]
+    pub is_gang_draw: bool,
+    #[serde(default)]
+    pub is_haidilao: bool,
     pub score: i32,
 }
 

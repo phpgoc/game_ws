@@ -255,6 +255,8 @@ pub(crate) fn build_settlement_event_with_configs(
         win_tile: settlement.win_tile,
         is_self_draw: settlement.is_self_draw,
         is_reverse_win: settlement.is_reverse_win,
+        is_gang_draw: settlement.is_gang_draw,
+        is_haidilao: settlement.is_haidilao,
         score_changes,
         winner_details,
         players: snapshots,
@@ -344,6 +346,8 @@ fn build_winner_details(
                 pattern,
                 is_self_draw: settlement.is_self_draw,
                 is_reverse_win: settlement.is_reverse_win,
+                is_gang_draw: settlement.is_gang_draw,
+                is_haidilao: settlement.is_haidilao,
                 score: score_by_position.get(position).copied().unwrap_or(0),
             }
         })
@@ -4025,6 +4029,13 @@ mod tests {
         assert!(settlement.is_haidilao);
         assert_eq!(settlement.win_tile, Some(35));
         assert_eq!(winner_hand_fan(&state, settlement, 0), 4);
+
+        let event = build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
+        assert!(!event.is_gang_draw);
+        assert!(event.is_haidilao);
+        assert_eq!(event.winner_details.len(), 1);
+        assert!(!event.winner_details[0].is_gang_draw);
+        assert!(event.winner_details[0].is_haidilao);
     }
 
     #[test]
@@ -4108,6 +4119,13 @@ mod tests {
         assert!(settlement.is_haidilao);
         assert_eq!(settlement.win_tile, Some(31));
         assert_eq!(winner_hand_fan(&state, settlement, 0), 7);
+
+        let event = build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
+        assert!(event.is_gang_draw);
+        assert!(event.is_haidilao);
+        assert_eq!(event.winner_details.len(), 1);
+        assert!(event.winner_details[0].is_gang_draw);
+        assert!(event.winner_details[0].is_haidilao);
     }
 
     #[test]
