@@ -1953,6 +1953,13 @@ fn self_gang_score(
     }
     if !is_added_gang
         && !is_ready
+        && is_dragon(tile)
+        && table.max_fan.is_some_and(|max_fan| max_fan <= 1)
+    {
+        return f64::NEG_INFINITY;
+    }
+    if !is_added_gang
+        && !is_ready
         && !is_dragon(tile)
         && piao_plan_score_for_context(hand, melds, table, position) >= 22.0
     {
@@ -6082,6 +6089,19 @@ mod tests {
         assert_eq!(
             choose_self_gang_from_view(&hand, &[35], &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(35)
+        );
+    }
+
+    #[test]
+    fn one_fan_capped_self_gang_delays_dragon_before_ready() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.max_fan = Some(1);
+        table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
+        let hand = vec![2, 5, 8, 11, 14, 17, 21, 35, 35, 35, 35];
+
+        assert_eq!(
+            choose_self_gang_from_view(&hand, &[35], &table, 0, WIN_RULE_SHENYANG_BASIC),
+            None
         );
     }
 
