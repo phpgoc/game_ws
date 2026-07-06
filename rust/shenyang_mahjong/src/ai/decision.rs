@@ -1687,6 +1687,7 @@ fn opponent_threat_discard_bias(
             continue;
         }
         let exposure_scale = piao_threat_exposure_scale(table, tile);
+        let terminal_or_honor_need_penalty = piao_terminal_or_honor_need_penalty(&seat.melds, tile);
         if threat_level >= 4 && seat.hand_count <= 2 {
             let public_discount = (public_discard_count(table, tile) as f64 * 10.0
                 + exposed_meld_tile_count(table, tile) as f64 * 8.0)
@@ -1700,7 +1701,9 @@ fn opponent_threat_discard_bias(
             };
             let pair_penalty = piao_threat_pair_penalty(tile, own_tile_count);
             let late_multiplier = if is_late_round(table) { 1.25 } else { 1.0 };
-            bias -= ((single_wait_penalty + pair_penalty) - public_discount).max(10.0)
+            bias -= ((single_wait_penalty + pair_penalty + terminal_or_honor_need_penalty)
+                - public_discount)
+                .max(10.0)
                 * late_multiplier;
             continue;
         }
@@ -1722,11 +1725,38 @@ fn opponent_threat_discard_bias(
         };
         let pair_penalty = piao_threat_pair_penalty(tile, own_tile_count);
         let late_multiplier = if is_late_round(table) { 1.35 } else { 1.0 };
-        bias -= (live_tile_penalty + pair_penalty + piao_wait_suit_penalty)
+        bias -= (live_tile_penalty
+            + pair_penalty
+            + piao_wait_suit_penalty
+            + terminal_or_honor_need_penalty)
             * late_multiplier
             * exposure_scale;
     }
     bias
+}
+
+fn piao_terminal_or_honor_need_penalty(melds: &[WsShenyangMahjongMeld], tile: i32) -> f64 {
+    if !(is_honor(tile) || tile_is_terminal(tile))
+        || !piao_needs_terminal_or_honor_from_melds(melds)
+    {
+        return 0.0;
+    }
+    if is_dragon(tile) {
+        8.0
+    } else if is_wind(tile) {
+        7.0
+    } else {
+        6.0
+    }
+}
+
+fn piao_needs_terminal_or_honor_from_melds(melds: &[WsShenyangMahjongMeld]) -> bool {
+    piao_threat_level(melds) >= 3
+        && !melds
+            .iter()
+            .filter(|meld| is_triplet_like_meld(meld))
+            .flat_map(|meld| meld.tiles.iter().copied())
+            .any(|tile| is_honor(tile) || tile_is_terminal(tile))
 }
 
 fn piao_threat_exposure_scale(table: &AiPublicTable, tile: i32) -> f64 {
@@ -6641,6 +6671,26 @@ mod tests {
         assert!(
             opponent_threat_discard_bias(&table, 0, 31, 2)
                 < opponent_threat_discard_bias(&table, 0, 9, 1)
+        );
+    }
+
+    #[test]
+    fn piao_threat_needing_yaojiu_penalizes_live_terminal_over_middle() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 32;
+        table.seats.get_mut(&1).unwrap().melds =
+            vec![test_peng_meld(2), test_peng_meld(12), test_peng_meld(22)];
+
+        assert!(piao_needs_terminal_or_honor_from_melds(
+            &table.seats.get(&1).unwrap().melds
+        ));
+        assert!(
+            opponent_threat_discard_bias(&table, 0, 9, 1)
+                < opponent_threat_discard_bias(&table, 0, 5, 1)
+        );
+        assert!(
+            opponent_threat_discard_bias(&table, 0, 31, 1)
+                < opponent_threat_discard_bias(&table, 0, 5, 1)
         );
     }
 
