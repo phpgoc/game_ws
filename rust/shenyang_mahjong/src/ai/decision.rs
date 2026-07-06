@@ -502,6 +502,7 @@ pub fn choose_discard_from_view(
             + seven_pairs_plan_discard_bias(hand, tile, melds, table, position, win_rule)
             + seven_pairs_wait_discard_bias(hand, tile, melds, table, position)
             + pure_one_suit_discard_bias(hand, tile, melds, table, position)
+            + sequence_middle_discard_bias(hand, tile)
             + mid_round_public_discard_bias(table, position, tile)
             + mid_round_open_meld_safety_bias(table, tile)
             + mid_round_live_honor_risk_bias(table, position, tile, count)
@@ -2589,6 +2590,16 @@ fn seven_pairs_wait_shape_tiebreaker(wait_tile: i32) -> f64 {
         1.5
     } else if is_dragon(wait_tile) {
         1.0
+    } else {
+        0.0
+    }
+}
+
+fn sequence_middle_discard_bias(hand: &[i32], tile: i32) -> f64 {
+    if hand.iter().filter(|item| **item == tile).count() == 1
+        && tile_is_middle_of_sequence(hand, tile)
+    {
+        -6.0
     } else {
         0.0
     }
@@ -5853,6 +5864,18 @@ mod tests {
         assert!(
             isolated_suited_singleton_discard_bias(8) > isolated_suited_singleton_discard_bias(5)
         );
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+            Some(8)
+        );
+    }
+
+    #[test]
+    fn discard_preserves_middle_of_complete_sequence() {
+        let table = table_with_discards(1, Vec::new());
+        let hand = vec![4, 5, 6, 8, 11, 11, 11, 19, 19, 19, 21, 21, 22, 22];
+
+        assert!(sequence_middle_discard_bias(&hand, 5) < sequence_middle_discard_bias(&hand, 8));
         assert_eq!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
             Some(8)
