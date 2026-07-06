@@ -2547,7 +2547,7 @@ fn seven_pairs_wait_tile_score(
     } else {
         -4.0
     };
-    shape + remaining * 3.0 - public_discards * 9.0
+    shape + remaining * 3.0 - public_discards * 12.0
 }
 
 fn seven_pairs_wait_shape_tiebreaker(wait_tile: i32) -> f64 {
@@ -6108,6 +6108,18 @@ mod tests {
         assert!(
             ready_tile_score(&middle_wait, &[], &table, 0, WIN_RULE_SHENYANG_BASIC)
                 > ready_tile_score(&wind_wait, &[], &table, 0, WIN_RULE_SHENYANG_BASIC)
+        );
+    }
+
+    #[test]
+    fn seven_pairs_wait_score_prefers_live_middle_over_public_wind() {
+        let table = table_with_discards(1, vec![31]);
+        let wind_wait = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 31];
+        let middle_wait = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 21, 21, 22, 22];
+
+        assert!(
+            seven_pairs_wait_tile_score(5, &middle_wait, &table, 0)
+                > seven_pairs_wait_tile_score(31, &wind_wait, &table, 0)
         );
     }
 
