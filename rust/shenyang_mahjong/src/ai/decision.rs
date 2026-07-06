@@ -7485,6 +7485,25 @@ mod tests {
     }
 
     #[test]
+    fn self_gang_skips_ready_pure_one_suit_when_visible_fan_capped() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.max_fan = Some(4);
+        let hand = vec![1, 1, 1, 1, 2, 3, 4, 5, 6, 7, 8, 8, 9, 9];
+
+        assert!(ready_visible_fan_reaches_cap(
+            &hand,
+            &[],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC
+        ));
+        assert_eq!(
+            choose_self_gang_from_view(&hand, &[1], &table, 0, WIN_RULE_SHENYANG_BASIC),
+            None
+        );
+    }
+
+    #[test]
     fn self_gang_allows_same_closed_plain_gang_when_opening_is_not_required() {
         let table = table_with_discards(1, Vec::new());
         let hand = vec![3, 3, 3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31];
