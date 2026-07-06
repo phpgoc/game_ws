@@ -546,7 +546,7 @@ fn is_dragon_tile(tile: i32) -> bool {
 fn concealed_dragon_triplet_fan(hand_tiles: &[i32]) -> i32 {
     [35, 36, 37]
         .into_iter()
-        .filter(|dragon| hand_tiles.iter().filter(|tile| **tile == *dragon).count() == 3)
+        .filter(|dragon| hand_tiles.iter().filter(|tile| **tile == *dragon).count() >= 3)
         .count() as i32
 }
 
@@ -4192,6 +4192,18 @@ mod tests {
         let settlement = state.settlement.as_ref().expect("settlement");
 
         assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
+    }
+
+    #[test]
+    fn settlement_fan_counts_four_concealed_dragons_as_triplet_and_four_gui_yi() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 35, 35, 35, 35]);
+        state.enter_settlement(vec![1], None, None, true);
+        let settlement = state.settlement.as_ref().expect("settlement");
+
+        assert_eq!(winner_hand_fan(&state, settlement, 1), 6);
     }
 
     #[test]
