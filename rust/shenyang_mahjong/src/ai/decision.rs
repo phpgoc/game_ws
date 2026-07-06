@@ -508,7 +508,7 @@ pub fn choose_discard_from_view(
             + mid_round_live_suited_risk_bias(hand, melds, table, position, tile, count, win_rule)
             + own_open_public_safety_bias(melds, table, position, tile)
             + opponent_threat_discard_bias(table, position, tile, count)
-            + closed_opponent_threat_discard_bias(table, position, tile)
+            + closed_opponent_threat_discard_bias(table, position, tile, count)
             + late_defense_discard_bias(table, position, tile);
         let combined = score + discard_bias + pressure;
         match best_any {
@@ -720,7 +720,12 @@ fn claim_meld(
     }
 }
 
-fn closed_opponent_threat_discard_bias(table: &AiPublicTable, position: usize, tile: i32) -> f64 {
+fn closed_opponent_threat_discard_bias(
+    table: &AiPublicTable,
+    position: usize,
+    tile: i32,
+    own_tile_count: usize,
+) -> f64 {
     if table.wall_count > 42 || public_discard_count(table, tile) > 0 {
         return 0.0;
     }
@@ -750,7 +755,16 @@ fn closed_opponent_threat_discard_bias(table: &AiPublicTable, position: usize, t
             } else {
                 -5.0
             };
-            base * pressure_scale * exposure_scale
+            let pair_penalty = if own_tile_count >= 2 {
+                if is_honor(tile) || tile_is_terminal(tile) {
+                    4.0
+                } else {
+                    3.0
+                }
+            } else {
+                0.0
+            };
+            (base - pair_penalty) * pressure_scale * exposure_scale
         })
         .sum()
 }
@@ -1261,7 +1275,7 @@ fn late_defense_tile_safety_score(
         + late_defense_own_tile_shape_bias(table, tile, own_tile_count)
         + opponent_threat_discard_bias(table, position, tile, own_tile_count)
         + opponent_missing_suit_safety_bias(table, position, tile)
-        + closed_opponent_threat_discard_bias(table, position, tile)
+        + closed_opponent_threat_discard_bias(table, position, tile, own_tile_count)
         + estimate_pressure_for_tile(table, position, tile)
 }
 
@@ -4667,8 +4681,8 @@ mod tests {
         table.wall_count = 16;
         table.seats.get_mut(&1).unwrap().hand_count = 13;
 
-        assert_eq!(closed_opponent_threat_discard_bias(&table, 0, 31), 0.0);
-        assert!(closed_opponent_threat_discard_bias(&table, 0, 32) < 0.0);
+        assert_eq!(closed_opponent_threat_discard_bias(&table, 0, 31, 1), 0.0);
+        assert!(closed_opponent_threat_discard_bias(&table, 0, 32, 1) < 0.0);
     }
 
     #[test]
@@ -4686,8 +4700,8 @@ mod tests {
             },
         );
 
-        assert_eq!(closed_opponent_threat_discard_bias(&table, 0, 9), 0.0);
-        assert!(closed_opponent_threat_discard_bias(&table, 0, 31) < 0.0);
+        assert_eq!(closed_opponent_threat_discard_bias(&table, 0, 9, 1), 0.0);
+        assert!(closed_opponent_threat_discard_bias(&table, 0, 31, 1) < 0.0);
     }
 
     #[test]
@@ -4696,7 +4710,19 @@ mod tests {
         table.wall_count = 16;
         table.seats.get_mut(&1).unwrap().hand_count = 13;
 
-        assert!(closed_opponent_threat_discard_bias(&table, 0, 32) < 0.0);
+        assert!(closed_opponent_threat_discard_bias(&table, 0, 32, 1) < 0.0);
+    }
+
+    #[test]
+    fn closed_opponent_threat_penalizes_cold_pair_more_than_singleton() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 16;
+        table.seats.get_mut(&1).unwrap().hand_count = 13;
+
+        assert!(
+            closed_opponent_threat_discard_bias(&table, 0, 9, 2)
+                < closed_opponent_threat_discard_bias(&table, 0, 19, 1)
+        );
     }
 
     #[test]
@@ -4704,9 +4730,9 @@ mod tests {
         let mut table = table_with_discards(1, Vec::new());
         table.wall_count = 37;
         table.seats.get_mut(&1).unwrap().hand_count = 13;
-        let mid_round_bias = closed_opponent_threat_discard_bias(&table, 0, 32);
+        let mid_round_bias = closed_opponent_threat_discard_bias(&table, 0, 32, 1);
         table.wall_count = 16;
-        let late_defense_bias = closed_opponent_threat_discard_bias(&table, 0, 32);
+        let late_defense_bias = closed_opponent_threat_discard_bias(&table, 0, 32, 1);
 
         assert!(mid_round_bias < 0.0);
         assert!(mid_round_bias > late_defense_bias);
@@ -4731,6 +4757,19 @@ mod tests {
         assert_eq!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
             Some(9)
+        );
+    }
+
+    #[test]
+    fn late_defense_avoids_breaking_cold_terminal_pair_against_closed_opponent() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 16;
+        table.seats.get_mut(&1).unwrap().hand_count = 13;
+        let hand = vec![2, 4, 6, 8, 9, 9, 12, 14, 16, 18, 19, 22, 24, 26];
+
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+            Some(19)
         );
     }
 
