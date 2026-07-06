@@ -150,6 +150,17 @@ pub fn choose_claim_from_view(
                 claim.from_position,
             )
         {
+            if should_claim_pure_one_suit_peng_to_open_basic_rule(
+                hand,
+                &current_melds,
+                table,
+                position,
+                win_rule,
+                tile,
+                claim.from_position,
+            ) {
+                return Some(AiClaimChoice::Peng);
+            }
             return Some(AiClaimChoice::Pass);
         }
         if should_preserve_seven_pairs_plan_for_context(
@@ -3787,7 +3798,7 @@ mod tests {
     }
 
     #[test]
-    fn claim_gang_passes_main_suit_when_pure_one_suit_plan_is_strong() {
+    fn claim_gang_penges_main_suit_to_open_closed_pure_one_suit_plan() {
         let mut table = table_with_discards(1, Vec::new());
         table.claim_window = Some(AiClaimView {
             tile: 1,
@@ -3799,7 +3810,7 @@ mod tests {
 
         assert_eq!(
             choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
-            Some(AiClaimChoice::Pass)
+            Some(AiClaimChoice::Peng)
         );
     }
 
