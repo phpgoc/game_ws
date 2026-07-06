@@ -1276,11 +1276,24 @@ fn late_defense_tile_safety_score(
     own_tile_count: usize,
 ) -> f64 {
     late_defense_discard_bias(table, position, tile)
+        + late_defense_exposed_meld_bias(table, tile)
         + late_defense_own_tile_shape_bias(table, tile, own_tile_count)
         + opponent_threat_discard_bias(table, position, tile, own_tile_count)
         + opponent_missing_suit_safety_bias(table, position, tile)
         + closed_opponent_threat_discard_bias(table, position, tile, own_tile_count)
         + estimate_pressure_for_tile(table, position, tile)
+}
+
+fn late_defense_exposed_meld_bias(table: &AiPublicTable, tile: i32) -> f64 {
+    if !is_late_defense_round(table) || public_discard_count(table, tile) > 0 {
+        return 0.0;
+    }
+    match exposed_meld_tile_count(table, tile) {
+        0 => 0.0,
+        1 => 5.0,
+        2 => 14.0,
+        _ => 28.0,
+    }
 }
 
 fn late_defense_own_tile_shape_bias(
@@ -6031,6 +6044,47 @@ mod tests {
         assert!(
             late_defense_tile_safety_score(&table, 0, 9, 1)
                 > late_defense_tile_safety_score(&table, 0, 5, 1)
+        );
+    }
+
+    #[test]
+    fn late_defense_values_three_exposed_meld_tiles_over_live_wind() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 16;
+        table.seats.insert(
+            2,
+            AiSeatView {
+                position: 2,
+                hand_count: 10,
+                discards: Vec::new(),
+                melds: vec![test_peng_meld(6)],
+            },
+        );
+
+        assert!(
+            late_defense_tile_safety_score(&table, 0, 6, 1)
+                > late_defense_tile_safety_score(&table, 0, 31, 1)
+        );
+    }
+
+    #[test]
+    fn late_defense_discards_three_exposed_meld_tile_before_live_wind() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 16;
+        table.seats.insert(
+            2,
+            AiSeatView {
+                position: 2,
+                hand_count: 10,
+                discards: Vec::new(),
+                melds: vec![test_peng_meld(6)],
+            },
+        );
+        let hand = vec![2, 4, 6, 8, 12, 14, 16, 18, 22, 24, 26, 28, 31, 35];
+
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+            Some(6)
         );
     }
 
