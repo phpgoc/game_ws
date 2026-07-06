@@ -317,7 +317,7 @@ mod tests {
                 1,
                 crate::rules::WIN_RULE_SHENYANG_BASIC
             ),
-            data::ShenyangMahjongRoundWinPattern::Standard
+            data::ShenyangMahjongRoundWinPattern::PureOneSuit
         );
     }
 

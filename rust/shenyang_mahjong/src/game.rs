@@ -2190,7 +2190,7 @@ mod tests {
     }
 
     #[test]
-    fn claim_options_reject_closed_pure_one_suit_for_basic_rule() {
+    fn claim_options_allow_closed_pure_one_suit_for_basic_rule() {
         let mut state = playable_state();
         state
             .hands
@@ -2199,7 +2199,11 @@ mod tests {
 
         let options = build_claim_options(&state, 9, 0, &configs);
 
-        assert!(!options.iter().any(|option| option.position == 1));
+        let player = options
+            .iter()
+            .find(|option| option.position == 1)
+            .expect("closed pure one suit should be allowed");
+        assert!(player.can_hu);
     }
 
     #[test]
@@ -3969,7 +3973,7 @@ mod tests {
             .insert(0, vec![1, 2, 3, 2, 3, 4, 4, 5, 6, 7, 7, 7, 9, 9]);
         state.melds.insert(0, Vec::new());
 
-        assert!(!can_self_draw_hu_with_configs(&state, 0, &configs));
+        assert!(can_self_draw_hu_with_configs(&state, 0, &configs));
 
         state.hands.insert(0, vec![3, 4, 5, 4, 5, 6, 5, 6, 7, 8, 8]);
         state.melds.insert(
@@ -5157,7 +5161,7 @@ mod tests {
         );
         assert_eq!(
             basic_event.winner_details[0].pattern,
-            ShenyangMahjongWinPattern::Standard
+            ShenyangMahjongWinPattern::PureOneSuit
         );
     }
 

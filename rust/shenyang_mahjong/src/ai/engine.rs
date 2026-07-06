@@ -405,7 +405,7 @@ mod tests {
     }
 
     #[test]
-    fn away_position_does_not_self_draw_closed_basic_pure_one_suit() {
+    fn away_position_self_draws_closed_basic_pure_one_suit() {
         let mut state = playable_state();
         state.base.lock().unwrap().mark_away(0);
         state
@@ -422,10 +422,14 @@ mod tests {
             &mut dispatch,
         ));
 
-        assert_eq!(state.phase, ShenyangMahjongPhase::Play);
-        assert!(state.settlement.is_none());
-        assert_eq!(state.hands.get(&0).unwrap().len(), 13);
-        assert_eq!(state.discards.get(&0).unwrap().len(), 1);
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert_eq!(
+            state
+                .settlement
+                .as_ref()
+                .map(|settlement| settlement.winner_positions.clone()),
+            Some(vec![0])
+        );
     }
 
     #[test]
