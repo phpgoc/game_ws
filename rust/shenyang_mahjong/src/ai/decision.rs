@@ -1436,6 +1436,7 @@ fn open_opponent_live_dragon_risk(table: &AiPublicTable, position: usize, tile: 
             **seat_position != position
                 && has_open_meld(&seat.melds)
                 && !seat.discards.contains(&tile)
+                && !seat_has_open_meld_tile(seat, tile)
         })
         .count();
     if open_opponents == 0 {
@@ -5798,6 +5799,21 @@ mod tests {
         assert_eq!(mid_round_live_honor_risk_bias(&table, 0, 35, 1), base);
 
         table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(9)];
+        assert!(mid_round_live_honor_risk_bias(&table, 0, 35, 1) < base);
+    }
+
+    #[test]
+    fn mid_round_open_dragon_meld_does_not_add_live_dragon_pressure() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 42;
+        let base = mid_round_live_honor_risk_bias(&table, 0, 35, 1);
+
+        table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(35)];
+        assert_eq!(open_opponent_live_dragon_risk(&table, 0, 35), 0.0);
+        assert_eq!(mid_round_live_honor_risk_bias(&table, 0, 35, 1), base);
+
+        table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(9)];
+        assert!(open_opponent_live_dragon_risk(&table, 0, 35) > 0.0);
         assert!(mid_round_live_honor_risk_bias(&table, 0, 35, 1) < base);
     }
 
