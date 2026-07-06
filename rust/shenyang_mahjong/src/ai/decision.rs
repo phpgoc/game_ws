@@ -865,8 +865,8 @@ fn estimated_concealed_dragon_triplet_fan(hand: &[i32]) -> i32 {
         .count() as i32
 }
 
-fn estimated_meld_and_four_gui_yi_fan(hand: &[i32], melds: &[WsShenyangMahjongMeld]) -> i32 {
-    let meld_fan = melds
+fn estimated_meld_fan(melds: &[WsShenyangMahjongMeld]) -> i32 {
+    melds
         .iter()
         .map(|meld| match meld.kind {
             ShenyangMahjongMeldKind::PENG if meld_primary_tile(meld).is_some_and(is_dragon) => 1,
@@ -882,8 +882,13 @@ fn estimated_meld_and_four_gui_yi_fan(hand: &[i32], melds: &[WsShenyangMahjongMe
             }
             _ => 0,
         })
-        .sum::<i32>();
-    meld_fan + estimated_four_gui_yi_fan(hand, melds)
+        .sum()
+}
+
+fn estimated_visible_bonus_fan(hand: &[i32], melds: &[WsShenyangMahjongMeld]) -> i32 {
+    estimated_meld_fan(melds)
+        + estimated_concealed_dragon_triplet_fan(hand)
+        + estimated_four_gui_yi_fan(hand, melds)
 }
 
 fn estimated_visible_fan_without_wait(
@@ -902,32 +907,12 @@ fn estimated_visible_fan_without_wait(
     } else {
         1
     };
-    let meld_fan = melds
-        .iter()
-        .map(|meld| match meld.kind {
-            ShenyangMahjongMeldKind::PENG if meld_primary_tile(meld).is_some_and(is_dragon) => 1,
-            ShenyangMahjongMeldKind::GANG => {
-                let concealed = meld.from_position.is_none();
-                match meld_primary_tile(meld) {
-                    Some(tile) if is_dragon(tile) && concealed => 4,
-                    Some(tile) if is_dragon(tile) => 2,
-                    Some(_) if concealed => 2,
-                    Some(_) => 1,
-                    None => 0,
-                }
-            }
-            _ => 0,
-        })
-        .sum::<i32>();
     let shou_ba_yi_fan = if is_piao && melds.len() == 4 && win_hand.len() == 2 {
         1
     } else {
         0
     };
-    base + meld_fan
-        + estimated_concealed_dragon_triplet_fan(win_hand)
-        + shou_ba_yi_fan
-        + estimated_four_gui_yi_fan(win_hand, melds)
+    base + estimated_visible_bonus_fan(win_hand, melds) + shou_ba_yi_fan
 }
 
 fn estimated_fan_with_wait(
@@ -2022,8 +2007,8 @@ fn self_gang_score(
     if is_added_gang && should_preserve_four_gui_yi(tile) {
         let loses_four_gui_yi =
             estimated_four_gui_yi_fan(hand, melds) > estimated_four_gui_yi_fan(&next, &next_melds);
-        let visible_fan_gain = estimated_meld_and_four_gui_yi_fan(&next, &next_melds)
-            - estimated_meld_and_four_gui_yi_fan(hand, melds);
+        let visible_fan_gain = estimated_visible_bonus_fan(&next, &next_melds)
+            - estimated_visible_bonus_fan(hand, melds);
         let keeps_pure_one_suit_ready = pure_one_suit_score > 0.0
             && ready_has_pure_one_suit_win(&next, &next_melds, table, position, win_rule);
         if loses_four_gui_yi && visible_fan_gain <= 0 && !keeps_pure_one_suit_ready {
@@ -2407,7 +2392,7 @@ fn should_peng_to_preserve_four_gui_yi_from_discard(
     if gang_ready_score <= 0.0 {
         return false;
     }
-    let gang_visible_fan = estimated_meld_and_four_gui_yi_fan(&gang_hand, &gang_melds);
+    let gang_visible_fan = estimated_visible_bonus_fan(&gang_hand, &gang_melds);
     let gang_four_gui_yi = estimated_four_gui_yi_fan(&gang_hand, &gang_melds);
 
     let mut peng_hand = remove_n_tiles(hand, tile, 2);
@@ -2428,7 +2413,7 @@ fn should_peng_to_preserve_four_gui_yi_from_discard(
         }
         let after_discard = remove_n_tiles(&peng_hand, discard, 1);
         estimated_four_gui_yi_fan(&after_discard, &peng_melds) > gang_four_gui_yi
-            && estimated_meld_and_four_gui_yi_fan(&after_discard, &peng_melds) >= gang_visible_fan
+            && estimated_visible_bonus_fan(&after_discard, &peng_melds) >= gang_visible_fan
             && ready_tile_score(&after_discard, &peng_melds, table, position, win_rule)
                 >= gang_ready_score
     })
@@ -6155,6 +6140,21 @@ mod tests {
     }
 
     #[test]
+    fn ready_visible_cap_counts_concealed_dragon_triplet() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.max_fan = Some(2);
+        let hand = vec![1, 2, 3, 11, 12, 13, 22, 23, 31, 31, 35, 35, 35];
+
+        assert!(ready_visible_fan_reaches_cap(
+            &hand,
+            &[],
+            &table,
+            0,
+            WIN_RULE_RELAXED
+        ));
+    }
+
+    #[test]
     fn ready_cap_counts_single_wait_fan() {
         let mut table = table_with_discards(1, Vec::new());
         table.max_fan = Some(2);
@@ -6337,6 +6337,26 @@ mod tests {
         assert_eq!(
             choose_self_gang_from_view(&hand, &[3], &table, 0, WIN_RULE_RELAXED),
             Some(3)
+        );
+    }
+
+    #[test]
+    fn self_gang_skips_plain_gang_when_concealed_dragon_triplet_caps_ready_hand() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.max_fan = Some(2);
+        table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(11)];
+        let hand = vec![9, 9, 9, 9, 22, 23, 31, 31, 35, 35, 35];
+
+        assert!(ready_visible_fan_reaches_cap(
+            &remove_n_tiles(&hand, 9, 1),
+            table.seats.get(&0).unwrap().melds.as_slice(),
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC
+        ));
+        assert_eq!(
+            choose_self_gang_from_view(&hand, &[9], &table, 0, WIN_RULE_SHENYANG_BASIC),
+            None
         );
     }
 
