@@ -1682,6 +1682,9 @@ fn opponent_threat_discard_bias(
         if threat_level < 3 {
             continue;
         }
+        if piao_threat_cannot_satisfy_three_suits(&seat.melds, seat.hand_count) {
+            continue;
+        }
         if seat.discards.contains(&tile) {
             bias += 4.5;
             continue;
@@ -1757,6 +1760,15 @@ fn piao_needs_terminal_or_honor_from_melds(melds: &[WsShenyangMahjongMeld]) -> b
             .filter(|meld| is_triplet_like_meld(meld))
             .flat_map(|meld| meld.tiles.iter().copied())
             .any(|tile| is_honor(tile) || tile_is_terminal(tile))
+}
+
+fn piao_threat_cannot_satisfy_three_suits(
+    melds: &[WsShenyangMahjongMeld],
+    hand_count: usize,
+) -> bool {
+    piao_threat_level(melds) >= 4
+        && hand_count <= 2
+        && piao_missing_suits_from_melds(melds).len() >= 2
 }
 
 fn piao_threat_exposure_scale(table: &AiPublicTable, tile: i32) -> f64 {
@@ -6659,6 +6671,45 @@ mod tests {
             opponent_threat_discard_bias(&table, 0, 5, 2)
                 < opponent_threat_discard_bias(&table, 0, 6, 1)
         );
+    }
+
+    #[test]
+    fn opponent_four_piao_threat_ignores_impossible_two_missing_suits() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 16;
+        table.seats.get_mut(&1).unwrap().hand_count = 2;
+        table.seats.get_mut(&1).unwrap().melds = vec![
+            test_peng_meld(2),
+            test_peng_meld(3),
+            test_peng_meld(4),
+            test_peng_meld(5),
+        ];
+
+        assert_eq!(
+            piao_missing_suits_from_melds(&table.seats.get(&1).unwrap().melds),
+            vec![1, 2]
+        );
+        assert!(piao_threat_cannot_satisfy_three_suits(
+            &table.seats.get(&1).unwrap().melds,
+            table.seats.get(&1).unwrap().hand_count
+        ));
+        assert_eq!(opponent_threat_discard_bias(&table, 0, 31, 1), 0.0);
+
+        table.seats.get_mut(&1).unwrap().melds = vec![
+            test_peng_meld(2),
+            test_peng_meld(3),
+            test_peng_meld(12),
+            test_peng_meld(13),
+        ];
+        assert_eq!(
+            piao_missing_suits_from_melds(&table.seats.get(&1).unwrap().melds),
+            vec![2]
+        );
+        assert!(!piao_threat_cannot_satisfy_three_suits(
+            &table.seats.get(&1).unwrap().melds,
+            table.seats.get(&1).unwrap().hand_count
+        ));
+        assert!(opponent_threat_discard_bias(&table, 0, 21, 1) < 0.0);
     }
 
     #[test]
