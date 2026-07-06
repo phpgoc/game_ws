@@ -436,7 +436,7 @@ mod tests {
             .hands
             .insert(0, vec![4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35, 35, 35, 35]);
         state.last_drawn_tile = Some(35);
-        state.wall = vec![37];
+        state.wall = vec![37; 24];
         let mut dispatch = Dispatch::default();
 
         assert!(maybe_play_ai_turn(

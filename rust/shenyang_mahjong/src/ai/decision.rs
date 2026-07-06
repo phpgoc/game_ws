@@ -634,6 +634,11 @@ pub fn choose_self_gang_from_view(
         return None;
     }
 
+    let current_ready_score =
+        best_ready_score_after_discard(hand, melds, table, position, win_rule);
+    if should_pass_late_unready_self_gang_for_defense(table, current_ready_score) {
+        return None;
+    }
     let current_score = best_score_after_forced_discard(hand, melds, table, position, win_rule);
     let mut best: Option<(f64, i32)> = None;
     for tile in candidate_tiles.iter().copied() {
@@ -2690,6 +2695,13 @@ fn should_preserve_seven_pairs_for_self_gang(
     win_rule: i32,
 ) -> bool {
     should_lock_seven_pairs_plan(hand, melds, table, position, win_rule)
+}
+
+fn should_pass_late_unready_self_gang_for_defense(
+    table: &AiPublicTable,
+    current_ready_score: f64,
+) -> bool {
+    is_late_defense_round(table) && current_ready_score <= 0.0
 }
 
 fn should_preserve_seven_pairs_plan_for_context(
@@ -6191,6 +6203,28 @@ mod tests {
     }
 
     #[test]
+    fn self_gang_allows_final_ready_hand_when_gang_keeps_ready() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 16;
+        table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(31)];
+        let hand = vec![1, 2, 3, 9, 9, 9, 9, 11, 12, 13, 21];
+
+        assert!(
+            best_ready_score_after_discard(
+                &hand,
+                table.seats.get(&0).unwrap().melds.as_slice(),
+                &table,
+                0,
+                WIN_RULE_SHENYANG_BASIC
+            ) > 0.0
+        );
+        assert_eq!(
+            choose_self_gang_from_view(&hand, &[9], &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(9)
+        );
+    }
+
+    #[test]
     fn self_gang_allows_ready_main_suit_added_gang_for_pure_one_suit_plan() {
         let mut table = table_with_discards(1, Vec::new());
         table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
@@ -6302,6 +6336,22 @@ mod tests {
         assert_eq!(
             choose_self_gang_from_view(&hand, &[3, 35], &table, 0, WIN_RULE_RELAXED),
             Some(35)
+        );
+    }
+
+    #[test]
+    fn self_gang_passes_final_unready_hand_for_defense() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 16;
+        let hand = vec![1, 2, 3, 3, 3, 3, 11, 12, 21, 22, 35, 35, 35, 35];
+
+        assert_eq!(
+            best_ready_score_after_discard(&hand, &[], &table, 0, WIN_RULE_RELAXED),
+            0.0
+        );
+        assert_eq!(
+            choose_self_gang_from_view(&hand, &[3, 35], &table, 0, WIN_RULE_RELAXED),
+            None
         );
     }
 
