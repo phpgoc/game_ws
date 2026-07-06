@@ -1480,7 +1480,7 @@ fn meld_primary_tile(meld: &WsShenyangMahjongMeld) -> Option<i32> {
         .then_some(first)
 }
 
-fn mid_round_public_discard_bias(table: &AiPublicTable, _position: usize, tile: i32) -> f64 {
+fn mid_round_public_discard_bias(table: &AiPublicTable, position: usize, tile: i32) -> f64 {
     if !is_mid_round(table) || is_late_defense_round(table) {
         return 0.0;
     }
@@ -1495,7 +1495,9 @@ fn mid_round_public_discard_bias(table: &AiPublicTable, _position: usize, tile: 
     } else {
         2.0
     };
-    9.0 + public_discards as f64 * 4.0 + shape_bonus
+    9.0 + public_discards as f64 * 4.0
+        + shape_bonus
+        + own_previous_discard_count(table, position, tile) as f64 * 4.0
 }
 
 fn mid_round_open_meld_safety_bias(table: &AiPublicTable, tile: i32) -> f64 {
@@ -6959,6 +6961,23 @@ mod tests {
         assert_eq!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
             Some(9)
+        );
+    }
+
+    #[test]
+    fn mid_round_public_discard_prefers_own_previous_middle_over_other_public_middle() {
+        let mut table = table_with_discards(1, vec![5]);
+        table.wall_count = 36;
+        table.seats.get_mut(&0).unwrap().discards = vec![8];
+        let hand = vec![2, 3, 5, 7, 8, 12, 14, 16, 18, 21, 23, 25, 31, 35];
+
+        assert!(
+            mid_round_public_discard_bias(&table, 0, 8)
+                > mid_round_public_discard_bias(&table, 0, 5)
+        );
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+            Some(8)
         );
     }
 
