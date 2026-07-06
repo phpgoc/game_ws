@@ -489,7 +489,7 @@ pub fn choose_discard_from_view(
         let discard_bias = match (count, is_honor(tile), tile_is_terminal(tile), neigh) {
             (c, true, _, _) if c == 1 => honor_discard_bias(hand, tile),
             (1, _, true, 0) => 4.8,
-            (1, _, _, 0) => 4.0,
+            (1, _, _, 0) => isolated_suited_singleton_discard_bias(tile),
             (2, _, _, _) => pair_discard_bias(hand),
             (c, _, _, neigh) if c >= 3 => -4.5 - neigh as f64,
             _ => 0.0,
@@ -1306,6 +1306,17 @@ fn is_seven_pairs_wait_shape(hand: &[i32]) -> bool {
 
 fn is_suited(tile: i32) -> bool {
     matches!(tile, 1..=9 | 11..=19 | 21..=29)
+}
+
+fn isolated_suited_singleton_discard_bias(tile: i32) -> f64 {
+    if !is_suited(tile) {
+        return 4.0;
+    }
+    match tile_rank(tile) {
+        2 | 8 => 4.6,
+        3 | 7 => 4.25,
+        _ => 4.0,
+    }
 }
 
 fn is_triplet_like_meld(meld: &WsShenyangMahjongMeld) -> bool {
@@ -5831,6 +5842,20 @@ mod tests {
         assert_eq!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
             Some(31)
+        );
+    }
+
+    #[test]
+    fn discard_clears_isolated_edge_before_core_middle() {
+        let table = table_with_discards(1, Vec::new());
+        let hand = vec![5, 8, 11, 11, 11, 19, 19, 19, 21, 21, 21, 22, 22, 22];
+
+        assert!(
+            isolated_suited_singleton_discard_bias(8) > isolated_suited_singleton_discard_bias(5)
+        );
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+            Some(8)
         );
     }
 
