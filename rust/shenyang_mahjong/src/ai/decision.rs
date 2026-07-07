@@ -1840,6 +1840,11 @@ fn opponent_missing_suit_safety_bias(table: &AiPublicTable, position: usize, til
         return 0.0;
     }
     let suit = tile_suit(tile);
+    if table.seats.iter().any(|(seat_position, seat)| {
+        *seat_position != position && piao_threat_needs_suit(seat, suit)
+    }) {
+        return 0.0;
+    }
     table
         .seats
         .iter()
@@ -1855,7 +1860,7 @@ fn opponent_missing_suit_safety_bias(table: &AiPublicTable, position: usize, til
                     .iter()
                     .any(|meld_tile| is_suited(*meld_tile) && tile_suit(*meld_tile) == suit)
             });
-            if exposed_in_suit || piao_threat_needs_suit(seat, suit) {
+            if exposed_in_suit {
                 0.0
             } else if discarded_in_suit >= 3 {
                 12.0 + (discarded_in_suit - 3) as f64 * 2.0
@@ -7407,6 +7412,30 @@ mod tests {
             piao_missing_suits_from_melds(&table.seats.get(&1).unwrap().melds),
             vec![0]
         );
+        assert_eq!(opponent_missing_suit_safety_bias(&table, 0, 5), 0.0);
+    }
+
+    #[test]
+    fn late_defense_piao_needed_suit_blocks_other_missing_suit_reads() {
+        let mut table = table_with_discards(1, vec![1, 4, 9]);
+        table.wall_count = 16;
+        table.seats.get_mut(&1).unwrap().melds =
+            vec![test_peng_meld(11), test_peng_meld(21), test_peng_meld(31)];
+        for position in [2, 3] {
+            table.seats.insert(
+                position,
+                AiSeatView {
+                    position,
+                    hand_count: 10,
+                    discards: vec![1, 4, 9],
+                    melds: Vec::new(),
+                },
+            );
+        }
+        let mut no_piao_table = table.clone();
+        no_piao_table.seats.get_mut(&1).unwrap().melds.clear();
+
+        assert!(opponent_missing_suit_safety_bias(&no_piao_table, 0, 5) > 0.0);
         assert_eq!(opponent_missing_suit_safety_bias(&table, 0, 5), 0.0);
     }
 
