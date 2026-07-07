@@ -2318,12 +2318,12 @@ fn pure_one_suit_discard_bias(
         return 0.0;
     }
     if is_honor(tile) {
-        return 18.0;
+        return 72.0;
     }
     if is_main_pure_suit_tile(hand, melds, tile) {
-        -5.0
+        -26.0
     } else {
-        16.0
+        64.0
     }
 }
 
@@ -3670,8 +3670,7 @@ fn three_suits_discard_bias(
     }
     let capped_three_suit_hand =
         table.max_fan.is_some_and(|max_fan| max_fan <= 1) && !was_missing_suit;
-    if win_rule == WIN_RULE_SHENYANG_BASIC
-        && !capped_three_suit_hand
+    if !capped_three_suit_hand
         && pure_one_suit_plan_score_for_context(hand_after_discard, melds, table, position) > 0.0
     {
         return 0.0;
@@ -6526,6 +6525,24 @@ mod tests {
         assert_eq!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(31)
+        );
+    }
+
+    #[test]
+    fn non_dealer_relaxed_pure_one_suit_plan_can_break_three_suits() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.dealer_position = 1;
+        let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 8, 9, 11, 12, 13, 21];
+        let after_discard = remove_n_tiles(&hand, 21, 1);
+
+        assert!(pure_one_suit_plan_score_for_context(&after_discard, &[], &table, 0) > 0.0);
+        assert_eq!(
+            three_suits_discard_bias(&after_discard, &[], &table, 0, 21, WIN_RULE_RELAXED),
+            0.0
+        );
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+            Some(21)
         );
     }
 
