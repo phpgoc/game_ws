@@ -2401,8 +2401,10 @@ fn choose_piao_single_wait_discard(
             {
                 return None;
             }
+            let own_tile_count = hand.iter().filter(|item| **item == tile).count();
             Some((
-                piao_single_wait_tile_score(wait_tile, &next, melds, table, position, win_rule),
+                piao_single_wait_tile_score(wait_tile, &next, melds, table, position, win_rule)
+                    + wait_setting_discard_safety_adjustment(table, position, tile, own_tile_count),
                 tile,
             ))
         })
@@ -2990,7 +2992,7 @@ fn seven_pairs_wait_discard_bias(
     };
     let own_tile_count = hand.iter().filter(|item| **item == tile).count();
     18.0 + seven_pairs_wait_tile_score(wait_tile, &next, table, position)
-        + seven_pairs_wait_discard_safety_adjustment(table, position, tile, own_tile_count)
+        + wait_setting_discard_safety_adjustment(table, position, tile, own_tile_count)
 }
 
 fn choose_seven_pairs_wait_discard(
@@ -3026,12 +3028,7 @@ fn choose_seven_pairs_wait_discard(
             let own_tile_count = hand.iter().filter(|item| **item == tile).count();
             Some((
                 seven_pairs_wait_tile_score(wait_tile, &next, table, position)
-                    + seven_pairs_wait_discard_safety_adjustment(
-                        table,
-                        position,
-                        tile,
-                        own_tile_count,
-                    ),
+                    + wait_setting_discard_safety_adjustment(table, position, tile, own_tile_count),
                 tile,
             ))
         })
@@ -3044,7 +3041,7 @@ fn choose_seven_pairs_wait_discard(
         .map(|(_, tile)| tile)
 }
 
-fn seven_pairs_wait_discard_safety_adjustment(
+fn wait_setting_discard_safety_adjustment(
     table: &AiPublicTable,
     position: usize,
     discard_tile: i32,
@@ -6706,6 +6703,34 @@ mod tests {
         assert!(
             piao_single_wait_tile_score(5, &[5], melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
                 > piao_single_wait_tile_score(31, &[31], melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
+        );
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(31)
+        );
+    }
+
+    #[test]
+    fn piao_single_wait_discard_avoids_pure_one_suit_threat_tile() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 32;
+        table.seats.get_mut(&0).unwrap().melds = vec![
+            test_peng_meld(1),
+            test_peng_meld(11),
+            test_peng_meld(21),
+            test_peng_meld(32),
+        ];
+        table.seats.get_mut(&1).unwrap().melds = vec![test_chi_meld(2), test_peng_meld(7)];
+        let melds = table.seats.get(&0).unwrap().melds.as_slice();
+        let hand = vec![5, 31];
+
+        assert!(
+            piao_single_wait_tile_score(31, &[31], melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
+                > piao_single_wait_tile_score(5, &[5], melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
+        );
+        assert!(
+            pure_one_suit_threat_discard_bias(&table, 0, 5, 1)
+                < pure_one_suit_threat_discard_bias(&table, 0, 31, 1)
         );
         assert_eq!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
