@@ -518,9 +518,14 @@ pub fn choose_discard_from_view(
         }
     }
 
+    let preserve_early_piao_pairs = has_early_piao_singleton_discard(hand, melds, table, position);
     let mut best_allowed: Option<(f64, i32)> = None;
     let mut best_any: Option<(f64, i32)> = None;
     for tile in hand.iter().copied() {
+        let count = hand.iter().filter(|&&item| item == tile).count();
+        if preserve_early_piao_pairs && count >= 2 {
+            continue;
+        }
         let mut next = hand.to_vec();
         if let Some(index) = next.iter().position(|item| *item == tile) {
             next.remove(index);
@@ -533,7 +538,6 @@ pub fn choose_discard_from_view(
                 || violates_basic_heng_discard(&next, melds, table, position, tile, win_rule);
         let score = hand_progress_score(&next, melds, table, position, win_rule);
         let pressure = estimate_pressure_for_tile(table, position, tile);
-        let count = hand.iter().filter(|&&item| item == tile).count();
         let neigh = neighbor_count(hand, tile);
         let discard_bias = match (count, is_honor(tile), tile_is_terminal(tile), neigh) {
             (c, true, _, _) if c == 1 => honor_discard_bias(hand, tile),
@@ -1038,6 +1042,21 @@ fn early_piao_candidate_discard_bias(
     } else {
         0.0
     }
+}
+
+fn has_early_piao_singleton_discard(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+) -> bool {
+    is_closed_early_piao_candidate(hand, melds, table, position)
+        && unique_tiles(hand).into_iter().any(|tile| {
+            hand.iter().filter(|item| **item == tile).count() == 1 && {
+                let next = remove_n_tiles(hand, tile, 1);
+                next.len() + 1 == hand.len() && has_piao_route_basics(&next, melds)
+            }
+        })
 }
 
 fn estimate_pressure_for_tile(table: &AiPublicTable, position: usize, tile: i32) -> f64 {
@@ -7508,6 +7527,20 @@ mod tests {
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(1 | 11 | 21)
         ));
+    }
+
+    #[test]
+    fn discard_preserves_three_pair_piao_candidate_over_public_pair_tile() {
+        let mut table = table_with_discards(1, vec![11, 11]);
+        table.wall_count = 36;
+        let hand = vec![1, 1, 4, 5, 6, 11, 11, 12, 13, 14, 21, 21, 22, 23];
+
+        assert!(is_closed_early_piao_candidate(&hand, &[], &table, 0));
+        let chosen = choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC);
+        assert!(
+            !matches!(chosen, Some(1 | 11 | 21)),
+            "unexpected pair discard: {chosen:?}"
+        );
     }
 
     #[test]
