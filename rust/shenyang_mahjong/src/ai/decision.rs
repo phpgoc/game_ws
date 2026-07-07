@@ -5417,6 +5417,31 @@ mod tests {
     }
 
     #[test]
+    fn claim_peng_preserves_quad_as_two_pairs_seven_pairs_route() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.claim_window = Some(AiClaimView {
+            tile: 2,
+            from_position: 1,
+            eligible_positions: vec![0],
+        });
+        let claim = table.claim_window.clone().unwrap();
+        let hand = vec![1, 1, 1, 1, 2, 2, 3, 3, 11, 11, 12, 31, 35];
+
+        assert_eq!(pair_count(&hand), 5);
+        assert!(should_lock_seven_pairs_plan(
+            &hand,
+            &[],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC
+        ));
+        assert_eq!(
+            choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(AiClaimChoice::Pass)
+        );
+    }
+
+    #[test]
     fn claim_peng_passes_when_it_breaks_locked_pure_one_suit_plan() {
         let mut table = table_with_discards(1, Vec::new());
         table.claim_window = Some(AiClaimView {
@@ -6439,6 +6464,25 @@ mod tests {
         let table = table_with_discards(1, Vec::new());
         let hand = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 13, 14, 15, 31, 35];
 
+        assert!(!matches!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(1 | 2 | 3 | 11)
+        ));
+    }
+
+    #[test]
+    fn discard_keeps_quad_pairs_for_basic_seven_pairs_when_missing_suit() {
+        let table = table_with_discards(1, Vec::new());
+        let hand = vec![1, 1, 1, 1, 2, 2, 3, 3, 11, 11, 12, 31, 35, 36];
+
+        assert_eq!(pair_count(&hand), 5);
+        assert!(should_lock_seven_pairs_plan(
+            &hand,
+            &[],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC
+        ));
         assert!(!matches!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(1 | 2 | 3 | 11)
