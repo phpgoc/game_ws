@@ -3884,6 +3884,49 @@ mod tests {
     }
 
     #[test]
+    fn resolve_claim_window_ignores_illegal_peng_response() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35, 35]);
+        state.discards.insert(0, vec![3]);
+        state.wall = vec![36];
+        state.current_position = 0;
+        state.claim_window = Some(ClaimWindowState {
+            tile: 3,
+            from_position: 0,
+            kind: ClaimWindowKind::Discard,
+            eligible_positions: vec![1],
+            responses: HashMap::from([(1, ClaimResponse::Peng)]),
+        });
+        let mut dispatch = Dispatch::default();
+
+        resolve_claim_window(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+        );
+
+        assert!(state.claim_window.is_none());
+        assert_eq!(state.current_position, 1);
+        assert_eq!(state.discards.get(&0), Some(&vec![3]));
+        assert!(state.melds.get(&1).map(Vec::is_empty).unwrap_or(true));
+        assert_eq!(
+            state
+                .hands
+                .get(&1)
+                .unwrap()
+                .iter()
+                .filter(|&&tile| tile == 3)
+                .count(),
+            1,
+        );
+        assert!(state.hands.get(&1).unwrap().contains(&36));
+    }
+
+    #[test]
     fn resolve_claim_window_ignores_invalid_chi_sequence() {
         let mut state = playable_state();
         state
