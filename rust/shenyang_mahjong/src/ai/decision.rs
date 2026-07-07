@@ -1461,10 +1461,12 @@ fn late_defense_discard_bias(table: &AiPublicTable, position: usize, tile: i32) 
         } else {
             0.0
         };
+        let multi_seat_bonus = public_discard_seat_count(table, tile) as f64 * 3.0;
         return 28.0
             + public_discards as f64 * 6.0
             + honor_bonus
             + suited_shape_bonus
+            + multi_seat_bonus
             + own_previous_discard_safety_bias(table, position, tile);
     }
     if is_wind(tile) {
@@ -1634,8 +1636,10 @@ fn mid_round_public_discard_bias(table: &AiPublicTable, position: usize, tile: i
     } else {
         2.0
     };
+    let multi_seat_bonus = public_discard_seat_count(table, tile) as f64 * 2.0;
     9.0 + public_discards as f64 * 4.0
         + shape_bonus
+        + multi_seat_bonus
         + own_previous_discard_count(table, position, tile) as f64 * 4.0
 }
 
@@ -2325,6 +2329,14 @@ fn public_discard_count(table: &AiPublicTable, tile: i32) -> usize {
                 .count()
         })
         .sum()
+}
+
+fn public_discard_seat_count(table: &AiPublicTable, tile: i32) -> usize {
+    table
+        .seats
+        .values()
+        .filter(|seat| seat.discards.iter().any(|discard| *discard == tile))
+        .count()
 }
 
 fn own_previous_discard_count(table: &AiPublicTable, position: usize, tile: i32) -> usize {
@@ -8134,6 +8146,37 @@ mod tests {
     }
 
     #[test]
+    fn late_defense_prefers_public_tile_seen_from_multiple_seats() {
+        let mut table = table_with_discards(1, vec![5, 5]);
+        table.wall_count = 16;
+        table.seats.insert(
+            2,
+            AiSeatView {
+                position: 2,
+                hand_count: 10,
+                discards: vec![6],
+                melds: Vec::new(),
+            },
+        );
+        table.seats.insert(
+            3,
+            AiSeatView {
+                position: 3,
+                hand_count: 10,
+                discards: vec![6],
+                melds: Vec::new(),
+            },
+        );
+
+        assert_eq!(
+            public_discard_count(&table, 5),
+            public_discard_count(&table, 6)
+        );
+        assert!(public_discard_seat_count(&table, 6) > public_discard_seat_count(&table, 5));
+        assert!(late_defense_discard_bias(&table, 0, 6) > late_defense_discard_bias(&table, 0, 5));
+    }
+
+    #[test]
     fn late_defense_prefers_own_previous_middle_discard_over_other_public_middle() {
         let mut table = table_with_discards(1, vec![5]);
         table.wall_count = 16;
@@ -8349,6 +8392,40 @@ mod tests {
         assert_eq!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
             Some(8)
+        );
+    }
+
+    #[test]
+    fn mid_round_public_discard_prefers_tile_seen_from_multiple_seats() {
+        let mut table = table_with_discards(1, vec![5, 5]);
+        table.wall_count = 36;
+        table.seats.insert(
+            2,
+            AiSeatView {
+                position: 2,
+                hand_count: 10,
+                discards: vec![6],
+                melds: Vec::new(),
+            },
+        );
+        table.seats.insert(
+            3,
+            AiSeatView {
+                position: 3,
+                hand_count: 10,
+                discards: vec![6],
+                melds: Vec::new(),
+            },
+        );
+
+        assert_eq!(
+            public_discard_count(&table, 5),
+            public_discard_count(&table, 6)
+        );
+        assert!(public_discard_seat_count(&table, 6) > public_discard_seat_count(&table, 5));
+        assert!(
+            mid_round_public_discard_bias(&table, 0, 6)
+                > mid_round_public_discard_bias(&table, 0, 5)
         );
     }
 
