@@ -548,6 +548,7 @@ pub fn choose_discard_from_view(
             &next, melds, table, position, tile, win_rule,
         ) + piao_discard_bias(hand, tile, melds, table, position, win_rule)
             + early_piao_candidate_discard_bias(hand, tile, melds, table, position)
+            + basic_heng_seed_discard_bias(hand, tile, melds, win_rule)
             + seven_pairs_plan_discard_bias(hand, tile, melds, table, position, win_rule)
             + seven_pairs_wait_discard_bias(hand, tile, melds, table, position)
             + four_gui_yi_discard_bias(hand, tile, melds, table, position, win_rule)
@@ -2062,6 +2063,25 @@ fn pair_count(hand: &[i32]) -> usize {
 
 fn pair_discard_bias(hand: &[i32]) -> f64 {
     if pair_count(hand) >= 4 { -4.4 } else { -1.8 }
+}
+
+fn basic_heng_seed_discard_bias(
+    hand: &[i32],
+    tile: i32,
+    melds: &[WsShenyangMahjongMeld],
+    win_rule: i32,
+) -> f64 {
+    if win_rule != WIN_RULE_SHENYANG_BASIC || has_triplet_or_dragon_pair(hand, melds) {
+        return 0.0;
+    }
+    let count = hand.iter().filter(|item| **item == tile).count();
+    if is_dragon(tile) && count == 1 {
+        -7.0
+    } else if count == 2 {
+        -4.0
+    } else {
+        0.0
+    }
 }
 
 fn piao_discard_bias(
@@ -6996,6 +7016,23 @@ mod tests {
         assert_ne!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(5)
+        );
+    }
+
+    #[test]
+    fn discard_preserves_single_dragon_as_basic_heng_seed() {
+        let table = table_with_discards(1, Vec::new());
+        let hand = vec![1, 2, 3, 4, 5, 6, 8, 11, 12, 13, 21, 22, 24, 35];
+
+        assert!(!has_triplet_or_dragon_pair(&hand, &[]));
+        assert!(basic_heng_seed_discard_bias(&hand, 35, &[], WIN_RULE_SHENYANG_BASIC) < 0.0);
+        assert_eq!(
+            basic_heng_seed_discard_bias(&hand, 35, &[], WIN_RULE_RELAXED),
+            0.0
+        );
+        assert_ne!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(35)
         );
     }
 
