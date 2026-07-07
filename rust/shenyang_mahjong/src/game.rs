@@ -677,6 +677,9 @@ pub(crate) fn perform_discard(
     position: usize,
     tile: i32,
 ) -> bool {
+    if state.current_position != position || state.claim_window.is_some() {
+        return false;
+    }
     if !state.remove_tiles_from_hand(position, &[tile]) {
         return false;
     }
@@ -2593,6 +2596,67 @@ mod tests {
         assert_eq!(state.wall, vec![36]);
         assert!(state.discards.get(&0).unwrap().is_empty());
         assert_eq!(state.hands.get(&0).unwrap().len(), 14);
+    }
+
+    #[test]
+    fn perform_discard_requires_current_position() {
+        let mut state = playable_state();
+        state.current_position = 1;
+        state.discards.insert(0, Vec::new());
+        state
+            .hands
+            .insert(0, vec![3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 31, 32, 33]);
+        let original_hand = state.hands.get(&0).cloned().unwrap();
+        let mut dispatch = Dispatch::default();
+
+        assert!(!perform_discard(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+            0,
+            3,
+        ));
+
+        assert_eq!(state.hands.get(&0), Some(&original_hand));
+        assert!(state.discards.get(&0).unwrap().is_empty());
+        assert!(dispatch.messages.is_empty());
+    }
+
+    #[test]
+    fn perform_discard_rejects_during_claim_window() {
+        let mut state = playable_state();
+        state.current_position = 0;
+        state.discards.insert(0, Vec::new());
+        state
+            .hands
+            .insert(0, vec![3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 31, 32, 33]);
+        state.discards.insert(1, vec![35]);
+        state.claim_window = Some(ClaimWindowState {
+            tile: 35,
+            from_position: 1,
+            kind: ClaimWindowKind::Discard,
+            eligible_positions: vec![0],
+            responses: HashMap::new(),
+        });
+        let original_hand = state.hands.get(&0).cloned().unwrap();
+        let mut dispatch = Dispatch::default();
+
+        assert!(!perform_discard(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+            0,
+            3,
+        ));
+
+        assert_eq!(state.hands.get(&0), Some(&original_hand));
+        assert!(state.discards.get(&0).unwrap().is_empty());
+        assert!(state.claim_window.is_some());
+        assert!(dispatch.messages.is_empty());
     }
 
     #[test]
