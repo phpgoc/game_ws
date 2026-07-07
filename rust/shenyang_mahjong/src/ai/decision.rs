@@ -546,7 +546,7 @@ pub fn choose_discard_from_view(
             &next, melds, table, position, tile, win_rule,
         ) + terminal_or_honor_discard_bias(
             &next, melds, table, position, tile, win_rule,
-        ) + piao_discard_bias(hand, tile, melds, table, position)
+        ) + piao_discard_bias(hand, tile, melds, table, position, win_rule)
             + early_piao_candidate_discard_bias(hand, tile, melds, table, position)
             + seven_pairs_plan_discard_bias(hand, tile, melds, table, position, win_rule)
             + seven_pairs_wait_discard_bias(hand, tile, melds, table, position)
@@ -2070,6 +2070,7 @@ fn piao_discard_bias(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
+    win_rule: i32,
 ) -> f64 {
     if piao_plan_score_for_context(hand, melds, table, position) < 20.0 {
         return 0.0;
@@ -2090,6 +2091,8 @@ fn piao_discard_bias(
         if committed_groups >= 2 { -24.0 } else { -16.0 }
     } else if only_terminal_or_honor || only_suit_tile {
         -40.0
+    } else if win_rule == WIN_RULE_SHENYANG_BASIC && is_dragon(tile) && pair_count(hand) >= 4 {
+        16.0
     } else if is_honor(tile) || tile_is_terminal(tile) {
         1.0
     } else if neighbor_count(hand, tile) >= 2 {
@@ -4099,7 +4102,7 @@ mod tests {
         let hand = vec![1, 1, 2, 2, 11, 11, 12, 13, 21, 21, 22, 31, 32];
 
         assert!(piao_plan_score_for_context(&hand, &[], &table, 0) >= 20.0);
-        assert!(piao_discard_bias(&hand, 1, &[], &table, 0) < 0.0);
+        assert!(piao_discard_bias(&hand, 1, &[], &table, 0, WIN_RULE_SHENYANG_BASIC) < 0.0);
         assert!(early_piao_candidate_discard_bias(&hand, 1, &[], &table, 0) < 0.0);
     }
 
@@ -4111,7 +4114,10 @@ mod tests {
 
         assert!(piao_plan_score(&hand, &[]) >= 20.0);
         assert!(piao_plan_score_for_context(&hand, &[], &table, 0) < 20.0);
-        assert_eq!(piao_discard_bias(&hand, 1, &[], &table, 0), 0.0);
+        assert_eq!(
+            piao_discard_bias(&hand, 1, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
+            0.0
+        );
         assert_eq!(
             early_piao_candidate_discard_bias(&hand, 1, &[], &table, 0),
             0.0
@@ -4126,7 +4132,10 @@ mod tests {
 
         assert!(piao_plan_score(&hand, &[]) >= 20.0);
         assert_eq!(piao_plan_score_for_context(&hand, &[], &table, 0), 0.0);
-        assert_eq!(piao_discard_bias(&hand, 1, &[], &table, 0), 0.0);
+        assert_eq!(
+            piao_discard_bias(&hand, 1, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
+            0.0
+        );
         assert_eq!(
             early_piao_candidate_discard_bias(&hand, 1, &[], &table, 0),
             0.0
@@ -6734,6 +6743,32 @@ mod tests {
     }
 
     #[test]
+    fn discard_three_pair_piao_candidate_still_prefers_wind_before_single_dragon() {
+        let table = table_with_discards(1, Vec::new());
+        let hand = vec![1, 1, 4, 5, 11, 11, 12, 13, 21, 21, 22, 23, 31, 35];
+
+        assert_eq!(pair_count(&hand), 3);
+        assert!(is_closed_early_piao_candidate(&hand, &[], &table, 0));
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(31)
+        );
+    }
+
+    #[test]
+    fn discard_four_pair_piao_candidate_clears_single_dragon_before_wind() {
+        let table = table_with_discards(1, Vec::new());
+        let hand = vec![1, 1, 4, 4, 11, 11, 12, 13, 21, 21, 22, 23, 31, 35];
+
+        assert_eq!(pair_count(&hand), 4);
+        assert!(piao_plan_score_for_context(&hand, &[], &table, 0) > 0.0);
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(35)
+        );
+    }
+
+    #[test]
     fn discard_preserves_four_pair_piao_candidate_over_public_pair_tile() {
         let mut table = table_with_discards(1, vec![11, 11]);
         table.wall_count = 36;
@@ -6767,11 +6802,25 @@ mod tests {
         let two_group_hand = vec![21, 21, 22, 23, 31, 35, 36, 37];
 
         assert_eq!(
-            piao_discard_bias(&one_group_hand, 21, &one_group_melds, &table, 0),
+            piao_discard_bias(
+                &one_group_hand,
+                21,
+                &one_group_melds,
+                &table,
+                0,
+                WIN_RULE_SHENYANG_BASIC
+            ),
             -16.0
         );
         assert_eq!(
-            piao_discard_bias(&two_group_hand, 21, &two_group_melds, &table, 0),
+            piao_discard_bias(
+                &two_group_hand,
+                21,
+                &two_group_melds,
+                &table,
+                0,
+                WIN_RULE_SHENYANG_BASIC
+            ),
             -24.0
         );
     }
