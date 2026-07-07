@@ -2988,7 +2988,9 @@ fn seven_pairs_wait_discard_bias(
     let Some(wait_tile) = single_tile(&next) else {
         return 0.0;
     };
+    let own_tile_count = hand.iter().filter(|item| **item == tile).count();
     18.0 + seven_pairs_wait_tile_score(wait_tile, &next, table, position)
+        + seven_pairs_wait_discard_safety_adjustment(table, position, tile, own_tile_count)
 }
 
 fn choose_seven_pairs_wait_discard(
@@ -3021,8 +3023,15 @@ fn choose_seven_pairs_wait_discard(
                 return None;
             }
             let wait_tile = single_tile(&next)?;
+            let own_tile_count = hand.iter().filter(|item| **item == tile).count();
             Some((
-                seven_pairs_wait_tile_score(wait_tile, &next, table, position),
+                seven_pairs_wait_tile_score(wait_tile, &next, table, position)
+                    + seven_pairs_wait_discard_safety_adjustment(
+                        table,
+                        position,
+                        tile,
+                        own_tile_count,
+                    ),
                 tile,
             ))
         })
@@ -3033,6 +3042,19 @@ fn choose_seven_pairs_wait_discard(
                 .then_with(|| right_tile.cmp(left_tile))
         })
         .map(|(_, tile)| tile)
+}
+
+fn seven_pairs_wait_discard_safety_adjustment(
+    table: &AiPublicTable,
+    position: usize,
+    discard_tile: i32,
+    own_tile_count: usize,
+) -> f64 {
+    let safety = late_defense_tile_safety_score(table, position, discard_tile, own_tile_count)
+        + mid_round_public_discard_bias(table, position, discard_tile)
+        + mid_round_open_meld_safety_bias(table, discard_tile)
+        + mid_broken_opponent_missing_suit_safety_bias(table, position, discard_tile);
+    safety.clamp(-36.0, 36.0) * 0.6
 }
 
 fn seven_pairs_wait_tile_score(
@@ -7421,6 +7443,24 @@ mod tests {
         assert_eq!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(5)
+        );
+    }
+
+    #[test]
+    fn seven_pairs_wait_discard_avoids_pure_one_suit_threat_tile() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 32;
+        table.seats.get_mut(&1).unwrap().melds = vec![test_chi_meld(2), test_peng_meld(7)];
+        let hand = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 18, 21, 21, 22, 22];
+
+        assert_eq!(pair_count(&hand), 6);
+        assert!(
+            pure_one_suit_threat_discard_bias(&table, 0, 5, 1)
+                < pure_one_suit_threat_discard_bias(&table, 0, 18, 1)
+        );
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(18)
         );
     }
 
