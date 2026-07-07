@@ -2208,10 +2208,16 @@ fn piao_single_wait_tile_score(
     let speed_first = table.dealer_position == position || is_late_round(table);
     let remaining_weight = if speed_first { 14.0 } else { 9.0 };
     let fan_weight = if speed_first { 2.0 } else { 7.0 };
+    let wait_shape_bias = if table
+        .max_fan
+        .is_some_and(|max_fan| max_fan > 0 && estimated_fan >= max_fan)
+    {
+        0.0
+    } else {
+        seven_pairs_wait_shape_tiebreaker(wait_tile)
+    };
 
-    remaining as f64 * remaining_weight
-        + capped_fan as f64 * fan_weight
-        + seven_pairs_wait_shape_tiebreaker(wait_tile)
+    remaining as f64 * remaining_weight + capped_fan as f64 * fan_weight + wait_shape_bias
 }
 
 fn piao_missing_suits_from_melds(melds: &[WsShenyangMahjongMeld]) -> Vec<i32> {
@@ -6131,6 +6137,29 @@ mod tests {
     fn dealer_four_piao_melds_prefers_live_middle_over_low_live_wind_wait() {
         let mut table = table_with_discards(1, vec![31, 31]);
         table.dealer_position = 0;
+        table.seats.get_mut(&0).unwrap().melds = vec![
+            test_peng_meld(1),
+            test_peng_meld(11),
+            test_peng_meld(21),
+            test_peng_meld(32),
+        ];
+        let hand = vec![5, 31];
+        let melds = table.seats.get(&0).unwrap().melds.as_slice();
+
+        assert!(
+            piao_single_wait_tile_score(5, &[5], melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
+                > piao_single_wait_tile_score(31, &[31], melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
+        );
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(31)
+        );
+    }
+
+    #[test]
+    fn capped_four_piao_melds_prefers_wider_wait_over_honor_shape() {
+        let mut table = table_with_discards(1, vec![31]);
+        table.max_fan = Some(4);
         table.seats.get_mut(&0).unwrap().melds = vec![
             test_peng_meld(1),
             test_peng_meld(11),
