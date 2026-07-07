@@ -1419,7 +1419,21 @@ fn public_defense_tile_safety_score(
     own_tile_count: usize,
 ) -> f64 {
     late_defense_tile_safety_score(table, position, tile, own_tile_count)
+        + public_defense_own_tile_shape_bias(tile, own_tile_count)
         + mid_round_public_discard_bias(table, position, tile)
+}
+
+fn public_defense_own_tile_shape_bias(tile: i32, own_tile_count: usize) -> f64 {
+    if own_tile_count <= 1 {
+        return 0.0;
+    }
+    if is_dragon(tile) {
+        -18.0
+    } else if is_wind(tile) || tile_is_terminal(tile) {
+        -12.0
+    } else {
+        -8.0
+    }
 }
 
 fn live_tile_count_for_suit_after_discard(
@@ -7243,6 +7257,29 @@ mod tests {
             0,
             WIN_RULE_RELAXED
         ));
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+            Some(5)
+        );
+    }
+
+    #[test]
+    fn mid_broken_public_defense_preserves_dragon_pair_over_public_singleton() {
+        let mut table = table_with_discards(1, vec![5, 35]);
+        table.wall_count = 40;
+        let hand = vec![2, 5, 8, 12, 14, 17, 22, 24, 27, 31, 32, 33, 35, 35];
+
+        assert!(should_use_broken_hand_public_defense_discard(
+            &hand,
+            &[],
+            &table,
+            0,
+            WIN_RULE_RELAXED
+        ));
+        assert!(
+            public_defense_tile_safety_score(&table, 0, 5, 1)
+                > public_defense_tile_safety_score(&table, 0, 35, 2)
+        );
         assert_eq!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
             Some(5)
