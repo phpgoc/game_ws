@@ -2453,7 +2453,7 @@ fn self_gang_score(
     if is_ready && ready_visible_fan_reaches_cap(hand, melds, table, position, win_rule) {
         return f64::NEG_INFINITY;
     }
-    if !is_ready && is_dragon(tile) && table.max_fan.is_some_and(|max_fan| max_fan <= 1) {
+    if !is_ready && table.max_fan.is_some_and(|max_fan| max_fan <= 1) {
         return f64::NEG_INFINITY;
     }
     if !is_added_gang
@@ -8159,6 +8159,19 @@ mod tests {
     }
 
     #[test]
+    fn one_fan_capped_self_gang_delays_added_plain_before_ready() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.max_fan = Some(1);
+        table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(9)];
+        let hand = vec![1, 2, 4, 6, 8, 9, 11, 13, 16, 21, 24];
+
+        assert_eq!(
+            choose_self_gang_from_view(&hand, &[9], &table, 0, WIN_RULE_SHENYANG_BASIC),
+            None
+        );
+    }
+
+    #[test]
     fn self_gang_allows_open_plain_gang_when_ready() {
         let mut table = table_with_discards(1, Vec::new());
         table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(31)];
@@ -8276,6 +8289,18 @@ mod tests {
         assert_eq!(
             choose_self_gang_from_view(&hand, &[3], &table, 0, WIN_RULE_RELAXED),
             Some(3)
+        );
+    }
+
+    #[test]
+    fn one_fan_capped_self_gang_delays_closed_plain_before_ready() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.max_fan = Some(1);
+        let hand = vec![3, 3, 3, 3, 4, 6, 8, 11, 13, 15, 21, 24, 27, 31];
+
+        assert_eq!(
+            choose_self_gang_from_view(&hand, &[3], &table, 0, WIN_RULE_RELAXED),
+            None
         );
     }
 
