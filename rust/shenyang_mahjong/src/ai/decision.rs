@@ -529,6 +529,7 @@ pub fn choose_discard_from_view(
             + early_piao_candidate_discard_bias(hand, tile, melds, table, position)
             + seven_pairs_plan_discard_bias(hand, tile, melds, table, position, win_rule)
             + seven_pairs_wait_discard_bias(hand, tile, melds, table, position)
+            + four_gui_yi_discard_bias(hand, tile, melds, table, position, win_rule)
             + pure_one_suit_discard_bias(hand, tile, melds, table, position)
             + complete_sequence_discard_bias(hand, tile, melds, table, position)
             + incomplete_sequence_discard_bias(hand, tile, melds, table, position, win_rule)
@@ -1032,6 +1033,37 @@ fn estimated_visible_bonus_fan(hand: &[i32], melds: &[WsShenyangMahjongMeld]) ->
     estimated_meld_fan(melds)
         + estimated_concealed_dragon_triplet_fan(hand)
         + estimated_four_gui_yi_fan(hand, melds)
+}
+
+fn four_gui_yi_discard_bias(
+    hand: &[i32],
+    tile: i32,
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+) -> f64 {
+    let current_four_gui_yi = estimated_four_gui_yi_fan(hand, melds);
+    if current_four_gui_yi <= 0 {
+        return 0.0;
+    }
+    let next = remove_n_tiles(hand, tile, 1);
+    if next.len() + 1 != hand.len() {
+        return 0.0;
+    }
+    let after_four_gui_yi = estimated_four_gui_yi_fan(&next, melds);
+    if after_four_gui_yi >= current_four_gui_yi {
+        return 0.0;
+    }
+
+    let fan_loss = (current_four_gui_yi - after_four_gui_yi) as f64;
+    if ready_tile_score(&next, melds, table, position, win_rule) > 0.0 {
+        return -28.0 * fan_loss;
+    }
+    if best_ready_score_after_discard(hand, melds, table, position, win_rule) > 0.0 {
+        return -18.0 * fan_loss;
+    }
+    -6.0 * fan_loss
 }
 
 fn estimated_visible_fan_without_wait(
@@ -6505,6 +6537,51 @@ mod tests {
         assert_ne!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(35)
+        );
+    }
+
+    #[test]
+    fn discard_preserves_only_pair_as_basic_heng_seed() {
+        let table = table_with_discards(1, Vec::new());
+        let hand = vec![1, 2, 3, 5, 5, 6, 7, 8, 11, 12, 13, 21, 22, 23];
+
+        assert!(!has_triplet_or_dragon_pair(&hand, &[]));
+        assert_ne!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(5)
+        );
+    }
+
+    #[test]
+    fn discard_preserves_ready_four_gui_yi_route() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(2)];
+        let melds = table.seats.get(&0).unwrap().melds.as_slice();
+        let hand = vec![2, 3, 4, 11, 12, 13, 21, 22, 23, 35, 36];
+        let after_safe_discard = remove_n_tiles(&hand, 36, 1);
+        let after_four_gui_yi_discard = remove_n_tiles(&hand, 2, 1);
+
+        assert_eq!(estimated_four_gui_yi_fan(&hand, melds), 1);
+        assert_eq!(
+            estimated_four_gui_yi_fan(&after_four_gui_yi_discard, melds),
+            0
+        );
+        assert!(
+            ready_tile_score(
+                &after_safe_discard,
+                melds,
+                &table,
+                0,
+                WIN_RULE_SHENYANG_BASIC
+            ) > 0.0
+        );
+        assert!(
+            four_gui_yi_discard_bias(&hand, 2, melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
+                < four_gui_yi_discard_bias(&hand, 36, melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
+        );
+        assert_ne!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(2)
         );
     }
 
