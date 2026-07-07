@@ -2787,8 +2787,12 @@ fn choose_seven_pairs_wait_discard(
     win_rule: i32,
 ) -> Option<i32> {
     if !should_keep_pairs_for_seven_pairs_discard(hand, melds, table, position, win_rule)
-        || table.max_fan.is_some_and(|max_fan| max_fan <= 1)
         || pair_count(hand) != 6
+    {
+        return None;
+    }
+    if table.max_fan.is_some_and(|max_fan| max_fan <= 1)
+        && terminal_or_honor_count(hand, melds) == 1
     {
         return None;
     }
@@ -7204,6 +7208,19 @@ mod tests {
         table.max_fan = Some(4);
         let hand = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 21, 21, 22, 22, 31];
 
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(5)
+        );
+    }
+
+    #[test]
+    fn one_fan_capped_six_pairs_still_sets_better_seven_pairs_wait() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.max_fan = Some(1);
+        let hand = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 21, 21, 22, 22, 31];
+
+        assert_eq!(pair_count(&hand), 6);
         assert_eq!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(5)
