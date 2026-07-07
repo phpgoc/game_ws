@@ -3379,16 +3379,22 @@ fn should_open_broken_closed_hand_for_defense(
         return false;
     }
 
-    let missing_rule_requirements = [
-        !missing_suits(hand, melds).is_empty(),
-        !has_terminal_or_honor_with_extra(hand, melds, None),
-        !has_triplet_or_dragon_pair(hand, melds),
-    ]
-    .into_iter()
-    .filter(|missing| *missing)
-    .count();
-    let unrecoverable_rule_requirements =
-        unrecoverable_basic_rule_requirement_count(hand, melds, table);
+    let (missing_rule_requirements, unrecoverable_rule_requirements) =
+        if win_rule == WIN_RULE_SHENYANG_BASIC {
+            let missing_rule_requirements = [
+                !missing_suits(hand, melds).is_empty(),
+                !has_terminal_or_honor_with_extra(hand, melds, None),
+                !has_triplet_or_dragon_pair(hand, melds),
+            ]
+            .into_iter()
+            .filter(|missing| *missing)
+            .count();
+            let unrecoverable_rule_requirements =
+                unrecoverable_basic_rule_requirement_count(hand, melds, table);
+            (missing_rule_requirements, unrecoverable_rule_requirements)
+        } else {
+            (0, 0)
+        };
     let power = hand_power(hand);
     if !is_late_round(table) {
         return unrecoverable_rule_requirements >= 1
@@ -4026,6 +4032,37 @@ mod tests {
             &table,
             0,
             WIN_RULE_SHENYANG_BASIC
+        ));
+    }
+
+    #[test]
+    fn relaxed_closed_defense_ignores_basic_terminal_requirement() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 40;
+        let hand = vec![2, 2, 2, 5, 5, 5, 12, 12, 12, 14, 17, 23, 27];
+
+        assert_eq!(
+            ready_tile_score(&hand, &[], &table, 0, WIN_RULE_RELAXED),
+            0.0
+        );
+        assert_eq!(
+            one_step_wait_potential(&hand, &[], &table, 0, WIN_RULE_RELAXED),
+            0.0
+        );
+        assert!(hand_power(&hand) >= 18.0);
+        assert!(should_open_broken_closed_hand_for_defense(
+            &hand,
+            &[],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC
+        ));
+        assert!(!should_open_broken_closed_hand_for_defense(
+            &hand,
+            &[],
+            &table,
+            0,
+            WIN_RULE_RELAXED
         ));
     }
 
