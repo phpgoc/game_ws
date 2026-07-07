@@ -2152,7 +2152,7 @@ fn pure_one_suit_threat_discard_bias(
             } else {
                 0.0
             };
-            let meld_pressure = (open_melds as f64 - 1.0).min(2.0);
+            let meld_pressure = pure_one_suit_threat_meld_pressure(open_melds);
             let late_pressure = if table.wall_count <= 20 {
                 1.35
             } else if table.wall_count <= 42 {
@@ -2203,6 +2203,14 @@ fn pure_one_suit_threat_discard_scale(seat: &AiSeatView, threat_suit: i32) -> f6
     }
 }
 
+fn pure_one_suit_threat_meld_pressure(open_melds: usize) -> f64 {
+    if open_melds <= 1 {
+        0.55
+    } else {
+        (open_melds as f64 - 1.0).min(2.0)
+    }
+}
+
 fn pure_one_suit_threat_suit(seat: &AiSeatView) -> Option<(i32, usize)> {
     let mut open_meld_count = 0usize;
     let mut threat_suit = None;
@@ -2224,10 +2232,27 @@ fn pure_one_suit_threat_suit(seat: &AiSeatView) -> Option<(i32, usize)> {
             }
         }
     }
-    if open_meld_count < 2 {
+    if open_meld_count == 0 {
         return None;
     }
-    threat_suit.map(|suit| (suit, open_meld_count))
+    threat_suit.and_then(|suit| {
+        (open_meld_count >= 2 || pure_one_suit_single_meld_discard_evidence(seat, suit))
+            .then_some((suit, open_meld_count))
+    })
+}
+
+fn pure_one_suit_single_meld_discard_evidence(seat: &AiSeatView, threat_suit: i32) -> bool {
+    let same_suit_discards = seat
+        .discards
+        .iter()
+        .filter(|discard| is_suited(**discard) && tile_suit(**discard) == threat_suit)
+        .count();
+    let off_suit_discards = seat
+        .discards
+        .iter()
+        .filter(|discard| !is_suited(**discard) || tile_suit(**discard) != threat_suit)
+        .count();
+    same_suit_discards == 0 && off_suit_discards >= 4
 }
 
 fn pair_count(hand: &[i32]) -> usize {
@@ -8954,6 +8979,43 @@ mod tests {
         assert!(
             off_suit_bias < base_bias,
             "clearing other suits should make the pure-one-suit route more credible"
+        );
+    }
+
+    #[test]
+    fn pure_one_suit_threat_reads_single_meld_with_strong_off_suit_discards() {
+        let mut table = table_with_discards(1, vec![2, 22, 31, 35]);
+        table.wall_count = 32;
+        table.seats.get_mut(&1).unwrap().melds = vec![test_chi_meld(11)];
+
+        assert_eq!(
+            pure_one_suit_threat_suit(table.seats.get(&1).unwrap()),
+            Some((1, 1))
+        );
+        assert!(
+            pure_one_suit_threat_discard_bias(&table, 0, 18, 1)
+                < pure_one_suit_threat_discard_bias(&table, 0, 24, 1)
+        );
+    }
+
+    #[test]
+    fn pure_one_suit_threat_ignores_weak_single_meld_evidence() {
+        let mut weak_table = table_with_discards(1, vec![2, 22, 31]);
+        weak_table.wall_count = 32;
+        weak_table.seats.get_mut(&1).unwrap().melds = vec![test_chi_meld(11)];
+
+        assert_eq!(
+            pure_one_suit_threat_suit(weak_table.seats.get(&1).unwrap()),
+            None
+        );
+
+        let mut same_suit_table = table_with_discards(1, vec![2, 22, 31, 35, 15]);
+        same_suit_table.wall_count = 32;
+        same_suit_table.seats.get_mut(&1).unwrap().melds = vec![test_chi_meld(11)];
+
+        assert_eq!(
+            pure_one_suit_threat_suit(same_suit_table.seats.get(&1).unwrap()),
+            None
         );
     }
 
