@@ -736,6 +736,10 @@ pub(crate) fn perform_self_draw_hu(
     dispatch: &mut Dispatch,
     position: usize,
 ) {
+    if state.current_position != position || state.last_drawn_tile.is_none() {
+        return;
+    }
+
     push_room_event(
         room_service,
         room_key,
@@ -792,7 +796,7 @@ pub(crate) fn perform_self_gang(
     position: usize,
     target_tile: i32,
 ) -> bool {
-    if state.last_drawn_tile.is_none() {
+    if state.current_position != position || state.last_drawn_tile.is_none() {
         return false;
     }
 
@@ -3958,6 +3962,29 @@ mod tests {
     }
 
     #[test]
+    fn perform_self_draw_hu_requires_current_position() {
+        let mut state = playable_state();
+        state.current_position = 1;
+        state
+            .hands
+            .insert(0, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+        state.last_drawn_tile = Some(35);
+        let mut dispatch = Dispatch::default();
+
+        perform_self_draw_hu(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+            0,
+        );
+
+        assert!(state.settlement.is_none());
+        assert!(dispatch.messages.is_empty());
+    }
+
+    #[test]
     fn self_draw_hu_respects_shenyang_basic_win_rule() {
         let mut state = playable_state();
         state
@@ -4142,6 +4169,32 @@ mod tests {
         state.last_drawn_tile = Some(3);
 
         assert!(!can_self_gang(&state, 0, 3));
+    }
+
+    #[test]
+    fn perform_self_gang_requires_current_position() {
+        let mut state = playable_state();
+        state.current_position = 1;
+        state
+            .hands
+            .insert(0, vec![3, 3, 3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31]);
+        state.wall = vec![35];
+        state.last_drawn_tile = Some(3);
+        let original_hand = state.hands.get(&0).cloned().unwrap();
+        let mut dispatch = Dispatch::default();
+
+        assert!(!perform_self_gang(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+            0,
+            3,
+        ));
+        assert_eq!(state.hands.get(&0), Some(&original_hand));
+        assert!(state.melds.get(&0).is_none_or(Vec::is_empty));
+        assert!(dispatch.messages.is_empty());
     }
 
     #[test]
