@@ -739,7 +739,7 @@ pub(crate) fn perform_self_draw_hu(
     dispatch: &mut Dispatch,
     position: usize,
 ) {
-    if state.current_position != position || state.last_drawn_tile.is_none() {
+    if !can_self_draw_hu_with_configs(state, position, configs) {
         return;
     }
 
@@ -4040,6 +4040,60 @@ mod tests {
             "room",
             &mut state,
             &relaxed_configs(),
+            &mut dispatch,
+            0,
+        );
+
+        assert!(state.settlement.is_none());
+        assert!(dispatch.messages.is_empty());
+    }
+
+    #[test]
+    fn perform_self_draw_hu_requires_legal_win() {
+        let mut state = playable_state();
+        state.current_position = 0;
+        state
+            .hands
+            .insert(0, vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35]);
+        state.last_drawn_tile = Some(35);
+        let mut dispatch = Dispatch::default();
+
+        assert!(!can_self_draw_hu_with_configs(
+            &state,
+            0,
+            &relaxed_configs()
+        ));
+        perform_self_draw_hu(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+            0,
+        );
+
+        assert!(state.settlement.is_none());
+        assert!(dispatch.messages.is_empty());
+    }
+
+    #[test]
+    fn perform_self_draw_hu_respects_win_rule_configs() {
+        let mut state = playable_state();
+        state.current_position = 0;
+        state
+            .hands
+            .insert(0, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+        state.last_drawn_tile = Some(35);
+        let configs = HashMap::from([("win_rule".to_owned(), 1)]);
+        let mut dispatch = Dispatch::default();
+
+        assert!(can_self_draw_hu_with_configs(&state, 0, &relaxed_configs()));
+        assert!(!can_self_draw_hu_with_configs(&state, 0, &configs));
+        perform_self_draw_hu(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &configs,
             &mut dispatch,
             0,
         );
