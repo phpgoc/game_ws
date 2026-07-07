@@ -2109,10 +2109,13 @@ fn pure_one_suit_threat_discard_bias(
         .filter(|(seat_position, _)| **seat_position != position)
         .filter_map(|(_, seat)| {
             let (threat_suit, open_melds) = pure_one_suit_threat_suit(seat)?;
-            (threat_suit == suit && !seat_has_open_meld_tile(seat, tile))
-                .then_some((seat, open_melds))
+            (threat_suit == suit && !seat_has_open_meld_tile(seat, tile)).then_some((
+                seat,
+                open_melds,
+                threat_suit,
+            ))
         })
-        .map(|(seat, open_melds)| {
+        .map(|(seat, open_melds, threat_suit)| {
             let base = if tile_is_terminal(tile) { 7.0 } else { 10.0 };
             let pair_penalty = if own_tile_count >= 2 {
                 if tile_is_terminal(tile) { 5.0 } else { 7.0 }
@@ -2135,11 +2138,39 @@ fn pure_one_suit_threat_discard_bias(
                 1.0
             };
             let exposed_discount = (exposed_meld_tile_count(table, tile) as f64 * 4.0).min(8.0);
-            -((base + pair_penalty) * meld_pressure * late_pressure * hand_pressure
+            let discard_scale = pure_one_suit_threat_discard_scale(seat, threat_suit);
+            -((base + pair_penalty) * meld_pressure * late_pressure * hand_pressure * discard_scale
                 - exposed_discount)
                 .max(2.0)
         })
         .sum()
+}
+
+fn pure_one_suit_threat_discard_scale(seat: &AiSeatView, threat_suit: i32) -> f64 {
+    let same_suit_discards = seat
+        .discards
+        .iter()
+        .filter(|discard| is_suited(**discard) && tile_suit(**discard) == threat_suit)
+        .count();
+    match same_suit_discards {
+        0 => {
+            let off_suit_discards = seat
+                .discards
+                .iter()
+                .filter(|discard| !is_suited(**discard) || tile_suit(**discard) != threat_suit)
+                .count();
+            if off_suit_discards >= 4 {
+                1.25
+            } else if off_suit_discards >= 2 {
+                1.1
+            } else {
+                1.0
+            }
+        }
+        1 => 0.7,
+        2 => 0.45,
+        _ => 0.25,
+    }
 }
 
 fn pure_one_suit_threat_suit(seat: &AiSeatView) -> Option<(i32, usize)> {
@@ -8779,6 +8810,32 @@ mod tests {
             pure_one_suit_threat_discard_bias(&table, 0, 14, 1),
             0.0,
             "a tile already exposed by that opponent should not be treated as live"
+        );
+    }
+
+    #[test]
+    fn pure_one_suit_threat_uses_opponent_discards_as_route_evidence() {
+        let mut base_table = table_with_discards(1, Vec::new());
+        base_table.wall_count = 32;
+        base_table.seats.get_mut(&1).unwrap().melds = vec![test_chi_meld(11), test_peng_meld(14)];
+
+        let mut same_suit_discards = base_table.clone();
+        same_suit_discards.seats.get_mut(&1).unwrap().discards = vec![15, 16];
+
+        let mut off_suit_discards = base_table.clone();
+        off_suit_discards.seats.get_mut(&1).unwrap().discards = vec![2, 22, 31, 35];
+
+        let base_bias = pure_one_suit_threat_discard_bias(&base_table, 0, 18, 1);
+        let same_suit_bias = pure_one_suit_threat_discard_bias(&same_suit_discards, 0, 18, 1);
+        let off_suit_bias = pure_one_suit_threat_discard_bias(&off_suit_discards, 0, 18, 1);
+
+        assert!(
+            same_suit_bias > base_bias,
+            "discarding the same suit should make the pure-one-suit route less credible"
+        );
+        assert!(
+            off_suit_bias < base_bias,
+            "clearing other suits should make the pure-one-suit route more credible"
         );
     }
 
