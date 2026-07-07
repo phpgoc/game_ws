@@ -1479,7 +1479,7 @@ fn late_defense_exposed_meld_bias(table: &AiPublicTable, tile: i32) -> f64 {
     match exposed_meld_tile_count(table, tile) {
         0 => 0.0,
         1 => 5.0,
-        2 => 14.0,
+        2 => 20.0,
         _ => 28.0,
     }
 }
@@ -8018,6 +8018,37 @@ mod tests {
             },
         );
 
+        assert!(
+            late_defense_tile_safety_score(&table, 0, 6, 1)
+                > late_defense_tile_safety_score(&table, 0, 31, 1)
+        );
+    }
+
+    #[test]
+    fn late_defense_values_two_exposed_meld_tiles_over_live_wind() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 16;
+        table.seats.get_mut(&1).unwrap().melds = vec![test_chi_meld(4)];
+        table.seats.insert(
+            2,
+            AiSeatView {
+                position: 2,
+                hand_count: 10,
+                discards: Vec::new(),
+                melds: vec![test_chi_meld(6)],
+            },
+        );
+        table.seats.insert(
+            3,
+            AiSeatView {
+                position: 3,
+                hand_count: 10,
+                discards: Vec::new(),
+                melds: vec![test_chi_meld(11)],
+            },
+        );
+
+        assert_eq!(exposed_meld_tile_count(&table, 6), 2);
         assert!(
             late_defense_tile_safety_score(&table, 0, 6, 1)
                 > late_defense_tile_safety_score(&table, 0, 31, 1)
