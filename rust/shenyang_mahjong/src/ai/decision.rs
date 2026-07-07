@@ -1845,6 +1845,9 @@ fn opponent_missing_suit_safety_bias(table: &AiPublicTable, position: usize, til
     }) {
         return 0.0;
     }
+    if closed_opponent_may_need_suit(table, position, suit) {
+        return 0.0;
+    }
     table
         .seats
         .iter()
@@ -1871,6 +1874,20 @@ fn opponent_missing_suit_safety_bias(table: &AiPublicTable, position: usize, til
             }
         })
         .sum()
+}
+
+fn closed_opponent_may_need_suit(table: &AiPublicTable, position: usize, suit: i32) -> bool {
+    table.seats.iter().any(|(seat_position, seat)| {
+        *seat_position != position
+            && !has_open_meld(&seat.melds)
+            && seat.hand_count >= 13
+            && seat
+                .discards
+                .iter()
+                .filter(|discard| is_suited(**discard) && tile_suit(**discard) == suit)
+                .count()
+                < 2
+    })
 }
 
 fn piao_threat_needs_suit(seat: &AiSeatView, suit: i32) -> bool {
@@ -7437,6 +7454,37 @@ mod tests {
 
         assert!(opponent_missing_suit_safety_bias(&no_piao_table, 0, 5) > 0.0);
         assert_eq!(opponent_missing_suit_safety_bias(&table, 0, 5), 0.0);
+    }
+
+    #[test]
+    fn late_defense_closed_opponent_blocks_other_missing_suit_reads() {
+        let mut table = table_with_discards(1, vec![1, 4, 9]);
+        table.wall_count = 16;
+        table.seats.insert(
+            2,
+            AiSeatView {
+                position: 2,
+                hand_count: 10,
+                discards: vec![1, 4, 9],
+                melds: Vec::new(),
+            },
+        );
+        let mut closed_threat_table = table.clone();
+        closed_threat_table.seats.insert(
+            3,
+            AiSeatView {
+                position: 3,
+                hand_count: 13,
+                discards: Vec::new(),
+                melds: Vec::new(),
+            },
+        );
+
+        assert!(opponent_missing_suit_safety_bias(&table, 0, 5) > 0.0);
+        assert_eq!(
+            opponent_missing_suit_safety_bias(&closed_threat_table, 0, 5),
+            0.0
+        );
     }
 
     #[test]
