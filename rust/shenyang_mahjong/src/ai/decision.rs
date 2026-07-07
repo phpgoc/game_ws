@@ -263,6 +263,16 @@ pub fn choose_claim_from_view(
         if current_ready_score > 0.0 {
             return Some(AiClaimChoice::Pass);
         }
+        if should_claim_peng_for_closed_early_piao_candidate(
+            hand,
+            &current_melds,
+            table,
+            position,
+            tile,
+            claim.from_position,
+        ) {
+            return Some(AiClaimChoice::Peng);
+        }
         if is_dragon(tile) {
             return Some(AiClaimChoice::Peng);
         }
@@ -2996,6 +3006,41 @@ fn should_claim_peng_for_basic_heng_and_opening(
     })
 }
 
+fn should_claim_peng_for_closed_early_piao_candidate(
+    hand: &[i32],
+    current_melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    tile: i32,
+    from_position: usize,
+) -> bool {
+    let pairs = pair_count(hand);
+    if !current_melds.is_empty()
+        || table.dealer_position == position
+        || piao_plan_is_capped(table)
+        || !(3..=4).contains(&pairs)
+        || !can_peng(hand, tile)
+        || !missing_suits(hand, current_melds).is_empty()
+        || !has_terminal_or_honor_with_extra(hand, current_melds, None)
+    {
+        return false;
+    }
+
+    let mut next = remove_n_tiles(hand, tile, 2);
+    if next.len() + 2 != hand.len() {
+        return false;
+    }
+    sort_tiles(&mut next);
+    let mut melds = current_melds.to_vec();
+    melds.push(claim_peng_meld(tile, from_position));
+
+    unique_tiles(&next).into_iter().any(|discard| {
+        let after_discard = remove_n_tiles(&next, discard, 1);
+        has_piao_route_basics(&after_discard, &melds)
+            && piao_plan_score(&after_discard, &melds) > 0.0
+    })
+}
+
 fn should_peng_to_preserve_four_gui_yi_from_discard(
     hand: &[i32],
     current_melds: &[WsShenyangMahjongMeld],
@@ -5551,6 +5596,32 @@ mod tests {
 
         assert_eq!(
             choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(AiClaimChoice::Peng)
+        );
+    }
+
+    #[test]
+    fn relaxed_claim_peng_takes_closed_early_piao_candidate_over_sequence_shape() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.claim_window = Some(AiClaimView {
+            tile: 5,
+            from_position: 1,
+            eligible_positions: vec![0],
+        });
+        let claim = table.claim_window.clone().unwrap();
+        let hand = vec![1, 1, 4, 5, 5, 6, 11, 12, 13, 21, 21, 35, 35];
+
+        assert!(tile_is_middle_of_sequence(&hand, 5));
+        assert!(should_claim_peng_for_closed_early_piao_candidate(
+            &hand,
+            &[],
+            &table,
+            0,
+            5,
+            1
+        ));
+        assert_eq!(
+            choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
             Some(AiClaimChoice::Peng)
         );
     }
