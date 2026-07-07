@@ -209,6 +209,18 @@ pub fn choose_claim_from_view(
 
     if can_peng(hand, tile) {
         if pure_one_suit_plan_score_for_context(hand, &current_melds, table, position) > 0.0 {
+            if should_claim_ready_open_pure_one_suit_peng_from_discard(
+                hand,
+                &current_melds,
+                table,
+                position,
+                win_rule,
+                tile,
+                claim.from_position,
+                current_ready_score,
+            ) {
+                return Some(AiClaimChoice::Peng);
+            }
             return Some(AiClaimChoice::Pass);
         }
         if should_preserve_seven_pairs_plan_for_context(
@@ -3079,6 +3091,46 @@ fn should_claim_ready_pure_one_suit_gang_from_discard(
     ready_tile_score(&next, &melds, table, position, win_rule) > 0.0
 }
 
+fn should_claim_ready_open_pure_one_suit_peng_from_discard(
+    hand: &[i32],
+    current_melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+    tile: i32,
+    from_position: usize,
+    current_ready_score: f64,
+) -> bool {
+    if current_ready_score > 0.0
+        || !has_open_meld(current_melds)
+        || !can_peng(hand, tile)
+        || !is_main_pure_suit_tile(hand, current_melds, tile)
+        || should_preserve_seven_pairs_plan_for_context(
+            hand,
+            current_melds,
+            table,
+            position,
+            win_rule,
+        )
+    {
+        return false;
+    }
+
+    let mut next = remove_n_tiles(hand, tile, 2);
+    if next.len() + 2 != hand.len() {
+        return false;
+    }
+    sort_tiles(&mut next);
+    let mut melds = current_melds.to_vec();
+    melds.push(claim_peng_meld(tile, from_position));
+
+    unique_tiles(&next).into_iter().any(|discard| {
+        let mut after_discard = remove_n_tiles(&next, discard, 1);
+        sort_tiles(&mut after_discard);
+        ready_has_pure_one_suit_win(&after_discard, &melds, table, position, win_rule)
+    })
+}
+
 fn should_open_broken_closed_hand_for_defense(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -4904,6 +4956,30 @@ mod tests {
         assert_eq!(
             choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
             Some(AiClaimChoice::Pass)
+        );
+    }
+
+    #[test]
+    fn claim_peng_takes_open_main_suit_pure_one_suit_when_it_reaches_ready() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
+        table.claim_window = Some(AiClaimView {
+            tile: 2,
+            from_position: 1,
+            eligible_positions: vec![0],
+        });
+        let claim = table.claim_window.clone().unwrap();
+        let hand = vec![1, 2, 2, 3, 3, 3, 3, 4, 4, 7];
+        let melds = table.seats.get(&0).unwrap().melds.as_slice();
+
+        assert!(pure_one_suit_plan_score_for_context(&hand, melds, &table, 0) > 0.0);
+        assert_eq!(
+            ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            0.0
+        );
+        assert_eq!(
+            choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(AiClaimChoice::Peng)
         );
     }
 
