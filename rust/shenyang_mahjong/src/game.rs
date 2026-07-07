@@ -371,7 +371,10 @@ pub(crate) fn can_self_draw_hu_with_configs(
     position: usize,
     configs: &HashMap<String, i32>,
 ) -> bool {
-    if state.current_position != position || state.last_drawn_tile.is_none() {
+    if state.current_position != position
+        || state.last_drawn_tile.is_none()
+        || state.claim_window.is_some()
+    {
         return false;
     }
     let hand = state.hands.get(&position).cloned().unwrap_or_default();
@@ -387,7 +390,10 @@ pub(crate) fn can_self_gang(
     position: usize,
     target_tile: i32,
 ) -> bool {
-    if state.current_position != position || state.last_drawn_tile.is_none() {
+    if state.current_position != position
+        || state.last_drawn_tile.is_none()
+        || state.claim_window.is_some()
+    {
         return false;
     }
     let hand = state.hands.get(&position).cloned().unwrap_or_default();
@@ -799,7 +805,10 @@ pub(crate) fn perform_self_gang(
     position: usize,
     target_tile: i32,
 ) -> bool {
-    if state.current_position != position || state.last_drawn_tile.is_none() {
+    if state.current_position != position
+        || state.last_drawn_tile.is_none()
+        || state.claim_window.is_some()
+    {
         return false;
     }
 
@@ -4049,6 +4058,42 @@ mod tests {
     }
 
     #[test]
+    fn perform_self_draw_hu_rejects_during_claim_window() {
+        let mut state = playable_state();
+        state.current_position = 0;
+        state
+            .hands
+            .insert(0, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+        state.last_drawn_tile = Some(35);
+        state.claim_window = Some(ClaimWindowState {
+            tile: 35,
+            from_position: 0,
+            kind: ClaimWindowKind::RobGang,
+            eligible_positions: vec![1],
+            responses: HashMap::new(),
+        });
+        let mut dispatch = Dispatch::default();
+
+        assert!(!can_self_draw_hu_with_configs(
+            &state,
+            0,
+            &relaxed_configs()
+        ));
+        perform_self_draw_hu(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+            0,
+        );
+
+        assert!(state.settlement.is_none());
+        assert!(state.claim_window.is_some());
+        assert!(dispatch.messages.is_empty());
+    }
+
+    #[test]
     fn perform_self_draw_hu_requires_legal_win() {
         let mut state = playable_state();
         state.current_position = 0;
@@ -4287,6 +4332,42 @@ mod tests {
         state.last_drawn_tile = Some(3);
 
         assert!(!can_self_gang(&state, 0, 3));
+    }
+
+    #[test]
+    fn perform_self_gang_rejects_during_claim_window() {
+        let mut state = playable_state();
+        state.current_position = 0;
+        state
+            .hands
+            .insert(0, vec![3, 3, 3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31]);
+        state.wall = vec![35];
+        state.last_drawn_tile = Some(3);
+        state.claim_window = Some(ClaimWindowState {
+            tile: 3,
+            from_position: 0,
+            kind: ClaimWindowKind::RobGang,
+            eligible_positions: vec![1],
+            responses: HashMap::new(),
+        });
+        let original_hand = state.hands.get(&0).cloned().unwrap();
+        let mut dispatch = Dispatch::default();
+
+        assert!(!can_self_gang(&state, 0, 3));
+        assert!(!perform_self_gang(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+            0,
+            3,
+        ));
+
+        assert_eq!(state.hands.get(&0), Some(&original_hand));
+        assert!(state.melds.get(&0).is_none_or(Vec::is_empty));
+        assert!(state.claim_window.is_some());
+        assert!(dispatch.messages.is_empty());
     }
 
     #[test]
