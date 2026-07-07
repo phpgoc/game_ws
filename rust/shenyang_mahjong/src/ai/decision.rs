@@ -3731,9 +3731,10 @@ fn should_use_broken_hand_public_defense_discard(
     if table.dealer_position == position && unrecoverable_rule_requirements == 0 {
         return false;
     }
+    let power_threshold = if is_late_round(table) { 18.0 } else { 16.0 };
     unrecoverable_rule_requirements >= 1
         || missing_rule_requirements >= 2
-        || hand_power(hand) < 16.0
+        || hand_power(hand) < power_threshold
 }
 
 fn should_preserve_four_gui_yi(tile: i32) -> bool {
@@ -8783,6 +8784,57 @@ mod tests {
         assert_eq!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
             Some(5)
+        );
+    }
+
+    #[test]
+    fn late_broken_basic_discard_follows_public_tile_for_weak_recoverable_hand() {
+        let mut table = table_with_discards(1, vec![31]);
+        table.wall_count = 40;
+        let hand = vec![1, 2, 3, 4, 5, 6, 7, 11, 14, 19, 21, 31, 32, 33];
+
+        assert_eq!(
+            unrecoverable_basic_rule_requirement_count(&hand, &[], &table),
+            0
+        );
+        assert!(hand_power(&hand) >= 16.0);
+        assert!(hand_power(&hand) < 18.0);
+        assert!(!should_lock_seven_pairs_plan(
+            &hand,
+            &[],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC
+        ));
+        assert_eq!(
+            pure_one_suit_plan_score_for_context(&hand, &[], &table, 0),
+            0.0
+        );
+        assert_eq!(piao_plan_score_for_context(&hand, &[], &table, 0), 0.0);
+        assert_eq!(
+            best_ready_score_after_discard(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
+            0.0
+        );
+        assert_eq!(
+            best_one_step_wait_potential_after_discard(
+                &hand,
+                &[],
+                &table,
+                0,
+                WIN_RULE_SHENYANG_BASIC
+            ),
+            0.0
+        );
+        assert!(should_use_broken_hand_public_defense_discard(
+            &hand,
+            &[],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC
+        ));
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(31)
         );
     }
 
