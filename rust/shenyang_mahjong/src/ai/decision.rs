@@ -7444,6 +7444,35 @@ mod tests {
     }
 
     #[test]
+    fn mid_round_values_two_open_meld_tiles_over_live_dragon() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 37;
+        table.seats.get_mut(&1).unwrap().melds = vec![test_chi_meld(4)];
+        table.seats.insert(
+            2,
+            AiSeatView {
+                position: 2,
+                hand_count: 10,
+                discards: Vec::new(),
+                melds: vec![test_chi_meld(6)],
+            },
+        );
+        let hand = vec![1, 2, 3, 6, 9, 11, 12, 14, 16, 18, 21, 22, 24, 35];
+
+        assert_eq!(open_meld_tile_count(&table, 6), 2);
+        assert!(
+            mid_round_open_meld_safety_bias(&table, 6)
+                + mid_round_live_honor_risk_bias(&table, 0, 6, 1)
+                > mid_round_open_meld_safety_bias(&table, 35)
+                    + mid_round_live_honor_risk_bias(&table, 0, 35, 1)
+        );
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+            Some(6)
+        );
+    }
+
+    #[test]
     fn open_opponent_exists_ignores_tile_from_its_open_meld() {
         let mut table = table_with_discards(1, Vec::new());
         table.wall_count = 37;
