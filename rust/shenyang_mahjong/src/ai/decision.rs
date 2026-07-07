@@ -964,7 +964,7 @@ fn closed_suit_shedding_scale(seat: &AiSeatView, tile: i32) -> f64 {
                 .count();
             if off_suit_discards >= 4 { 1.25 } else { 1.0 }
         }
-        1 => 1.0,
+        1 => 0.78,
         2 => 0.55,
         3 => 0.25,
         _ => 0.15,
@@ -6415,6 +6415,23 @@ mod tests {
 
         assert!(shed_suit_bias < 0.0);
         assert!(shed_suit_bias > untouched_suit_bias);
+    }
+
+    #[test]
+    fn closed_opponent_threat_lightly_discounts_suit_after_one_shed() {
+        let mut neutral = table_with_discards(1, Vec::new());
+        neutral.wall_count = 16;
+        neutral.seats.get_mut(&1).unwrap().hand_count = 13;
+
+        let mut one_shed = table_with_discards(1, vec![11]);
+        one_shed.wall_count = 16;
+        one_shed.seats.get_mut(&1).unwrap().hand_count = 13;
+
+        let neutral_bias = closed_opponent_threat_discard_bias(&neutral, 0, 12, 1);
+        let one_shed_bias = closed_opponent_threat_discard_bias(&one_shed, 0, 12, 1);
+
+        assert!(one_shed_bias < 0.0);
+        assert!(one_shed_bias > neutral_bias);
     }
 
     #[test]
