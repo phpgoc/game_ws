@@ -861,7 +861,7 @@ fn closed_opponent_threat_discard_bias(
         .filter(|(seat_position, seat)| {
             **seat_position != position && !has_open_meld(&seat.melds) && seat.hand_count >= 10
         })
-        .map(|(_, _)| {
+        .map(|(_, seat)| {
             let base = if is_dragon(tile) {
                 -13.0
             } else if is_wind(tile) {
@@ -880,9 +880,29 @@ fn closed_opponent_threat_discard_bias(
             } else {
                 0.0
             };
-            (base - pair_penalty) * pressure_scale * exposure_scale
+            (base - pair_penalty)
+                * pressure_scale
+                * exposure_scale
+                * closed_suit_shedding_scale(seat, tile)
         })
         .sum()
+}
+
+fn closed_suit_shedding_scale(seat: &AiSeatView, tile: i32) -> f64 {
+    if !is_suited(tile) {
+        return 1.0;
+    }
+    let discarded_in_suit = seat
+        .discards
+        .iter()
+        .filter(|discard| is_suited(**discard) && tile_suit(**discard) == tile_suit(tile))
+        .count();
+    match discarded_in_suit {
+        0 | 1 => 1.0,
+        2 => 0.55,
+        3 => 0.25,
+        _ => 0.15,
+    }
 }
 
 fn closed_threat_exposure_scale(table: &AiPublicTable, tile: i32) -> f64 {
@@ -6086,6 +6106,19 @@ mod tests {
 
         assert!(exposed_terminal_bias < 0.0);
         assert!(exposed_terminal_bias > cold_honor_bias);
+    }
+
+    #[test]
+    fn closed_opponent_threat_discounts_suit_after_shedding_it() {
+        let mut table = table_with_discards(1, vec![11, 14, 19]);
+        table.wall_count = 16;
+        table.seats.get_mut(&1).unwrap().hand_count = 13;
+
+        let shed_suit_bias = closed_opponent_threat_discard_bias(&table, 0, 12, 1);
+        let untouched_suit_bias = closed_opponent_threat_discard_bias(&table, 0, 5, 1);
+
+        assert!(shed_suit_bias < 0.0);
+        assert!(shed_suit_bias > untouched_suit_bias);
     }
 
     #[test]
