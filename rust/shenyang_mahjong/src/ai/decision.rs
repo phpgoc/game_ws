@@ -1424,15 +1424,14 @@ fn public_defense_tile_safety_score(
 }
 
 fn public_defense_own_tile_shape_bias(tile: i32, own_tile_count: usize) -> f64 {
-    if own_tile_count <= 1 {
-        return 0.0;
-    }
-    if is_dragon(tile) {
-        -18.0
-    } else if is_wind(tile) || tile_is_terminal(tile) {
-        -12.0
-    } else {
-        -8.0
+    match own_tile_count {
+        0 | 1 => 0.0,
+        2 if is_dragon(tile) => -18.0,
+        2 if is_wind(tile) || tile_is_terminal(tile) => -12.0,
+        2 => -8.0,
+        _ if is_dragon(tile) => -28.0,
+        _ if is_wind(tile) || tile_is_terminal(tile) => -20.0,
+        _ => -14.0,
     }
 }
 
@@ -7283,6 +7282,22 @@ mod tests {
         assert_eq!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
             Some(5)
+        );
+    }
+
+    #[test]
+    fn mid_broken_public_defense_preserves_triplet_over_public_pair() {
+        let mut table = table_with_discards(1, vec![5, 7]);
+        table.wall_count = 40;
+        let hand = vec![2, 5, 5, 5, 7, 7, 12, 14, 17, 22, 24, 27, 31, 33];
+
+        assert!(
+            public_defense_tile_safety_score(&table, 0, 7, 2)
+                > public_defense_tile_safety_score(&table, 0, 5, 3)
+        );
+        assert_eq!(
+            choose_public_defense_discard_from_candidates(&hand, &table, 0, vec![5, 7]),
+            Some(7)
         );
     }
 
