@@ -397,7 +397,7 @@ pub fn choose_claim_from_view(
         if current_ready_score > 0.0 {
             return Some(AiClaimChoice::Pass);
         }
-        if !is_mid_broken_hand_defense_round(table) {
+        if !is_mid_opening_round(table) {
             return Some(AiClaimChoice::Pass);
         }
         let defensive_open = should_claim_chi_to_open_broken_hand_for_defense(
@@ -4254,6 +4254,34 @@ mod tests {
         let claim = table.claim_window.clone().unwrap();
         let hand = vec![1, 2, 4, 5, 6, 7, 8, 9, 11, 12, 13, 31, 35];
 
+        assert_eq!(
+            choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+            Some(AiClaimChoice::Chi {
+                consume_tiles: vec![1, 2]
+            })
+        );
+    }
+
+    #[test]
+    fn claim_chi_takes_mid_round_ready_without_defensive_open() {
+        let mut table = table_with_discards(3, Vec::new());
+        table.wall_count = 52;
+        table.claim_window = Some(AiClaimView {
+            tile: 3,
+            from_position: 3,
+            eligible_positions: vec![0],
+        });
+        let claim = table.claim_window.clone().unwrap();
+        let hand = vec![1, 2, 4, 5, 6, 7, 8, 9, 11, 12, 13, 31, 35];
+
+        assert!(is_mid_opening_round(&table));
+        assert!(!should_claim_chi_to_open_broken_hand_for_defense(
+            &hand,
+            &[],
+            &table,
+            0,
+            WIN_RULE_RELAXED
+        ));
         assert_eq!(
             choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
             Some(AiClaimChoice::Chi {
