@@ -1852,7 +1852,7 @@ fn opponent_missing_suit_safety_bias(table: &AiPublicTable, position: usize, til
                     .iter()
                     .any(|meld_tile| is_suited(*meld_tile) && tile_suit(*meld_tile) == suit)
             });
-            if exposed_in_suit {
+            if exposed_in_suit || piao_threat_needs_suit(seat, suit) {
                 0.0
             } else if discarded_in_suit >= 3 {
                 12.0 + (discarded_in_suit - 3) as f64 * 2.0
@@ -1863,6 +1863,12 @@ fn opponent_missing_suit_safety_bias(table: &AiPublicTable, position: usize, til
             }
         })
         .sum()
+}
+
+fn piao_threat_needs_suit(seat: &AiSeatView, suit: i32) -> bool {
+    piao_threat_level(&seat.melds) >= 3
+        && !piao_threat_cannot_satisfy_three_suits(&seat.melds, seat.hand_count)
+        && piao_missing_suits_from_melds(&seat.melds).contains(&suit)
 }
 
 fn opponent_threat_discard_bias(
@@ -7364,6 +7370,34 @@ mod tests {
         }];
 
         assert_eq!(opponent_missing_suit_safety_bias(&table, 0, 12), 0.0);
+    }
+
+    #[test]
+    fn late_defense_does_not_mark_piao_needed_suit_as_missing() {
+        let mut table = table_with_discards(1, vec![1, 4, 9]);
+        table.wall_count = 16;
+        table.seats.get_mut(&1).unwrap().melds =
+            vec![test_peng_meld(11), test_peng_meld(21), test_peng_meld(31)];
+
+        assert_eq!(
+            piao_missing_suits_from_melds(&table.seats.get(&1).unwrap().melds),
+            vec![0]
+        );
+        assert_eq!(opponent_missing_suit_safety_bias(&table, 0, 5), 0.0);
+    }
+
+    #[test]
+    fn late_defense_candidates_avoid_piao_needed_suit_over_missing_suit_read() {
+        let mut table = table_with_discards(1, vec![1, 4, 9]);
+        table.wall_count = 16;
+        table.seats.get_mut(&1).unwrap().melds =
+            vec![test_peng_meld(11), test_peng_meld(21), test_peng_meld(31)];
+        let hand = vec![5, 12];
+
+        assert_eq!(
+            choose_late_defense_discard_from_candidates(&hand, &table, 0, vec![5, 12]),
+            Some(12)
+        );
     }
 
     #[test]
