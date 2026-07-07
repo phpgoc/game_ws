@@ -561,6 +561,7 @@ pub fn choose_discard_from_view(
             + mid_round_live_suited_risk_bias(hand, melds, table, position, tile, count, win_rule)
             + own_open_public_safety_bias(melds, table, position, tile)
             + opponent_threat_discard_bias(table, position, tile, count)
+            + pure_one_suit_threat_discard_bias(table, position, tile, count)
             + closed_opponent_threat_discard_bias(table, position, tile, count)
             + late_defense_discard_bias(table, position, tile);
         let combined = score + discard_bias + pressure;
@@ -1503,6 +1504,7 @@ fn late_defense_tile_safety_score(
         + late_defense_exposed_meld_bias(table, tile)
         + late_defense_own_tile_shape_bias(table, tile, own_tile_count)
         + opponent_threat_discard_bias(table, position, tile, own_tile_count)
+        + pure_one_suit_threat_discard_bias(table, position, tile, own_tile_count)
         + opponent_missing_suit_safety_bias(table, position, tile)
         + closed_opponent_threat_discard_bias(table, position, tile, own_tile_count)
         + estimate_pressure_for_tile(table, position, tile)
@@ -2089,6 +2091,82 @@ fn piao_threat_pair_penalty(tile: i32, own_tile_count: usize) -> f64 {
     } else {
         4.0
     }
+}
+
+fn pure_one_suit_threat_discard_bias(
+    table: &AiPublicTable,
+    position: usize,
+    tile: i32,
+    own_tile_count: usize,
+) -> f64 {
+    if table.wall_count > 52 || !is_suited(tile) || public_discard_count(table, tile) > 0 {
+        return 0.0;
+    }
+    let suit = tile_suit(tile);
+    table
+        .seats
+        .iter()
+        .filter(|(seat_position, _)| **seat_position != position)
+        .filter_map(|(_, seat)| {
+            let (threat_suit, open_melds) = pure_one_suit_threat_suit(seat)?;
+            (threat_suit == suit && !seat_has_open_meld_tile(seat, tile))
+                .then_some((seat, open_melds))
+        })
+        .map(|(seat, open_melds)| {
+            let base = if tile_is_terminal(tile) { 7.0 } else { 10.0 };
+            let pair_penalty = if own_tile_count >= 2 {
+                if tile_is_terminal(tile) { 5.0 } else { 7.0 }
+            } else {
+                0.0
+            };
+            let meld_pressure = (open_melds as f64 - 1.0).min(2.0);
+            let late_pressure = if table.wall_count <= 20 {
+                1.35
+            } else if table.wall_count <= 42 {
+                1.15
+            } else {
+                1.0
+            };
+            let hand_pressure = if seat.hand_count <= 4 {
+                1.3
+            } else if seat.hand_count <= 7 {
+                1.15
+            } else {
+                1.0
+            };
+            let exposed_discount = (exposed_meld_tile_count(table, tile) as f64 * 4.0).min(8.0);
+            -((base + pair_penalty) * meld_pressure * late_pressure * hand_pressure
+                - exposed_discount)
+                .max(2.0)
+        })
+        .sum()
+}
+
+fn pure_one_suit_threat_suit(seat: &AiSeatView) -> Option<(i32, usize)> {
+    let mut open_meld_count = 0usize;
+    let mut threat_suit = None;
+    for meld in seat
+        .melds
+        .iter()
+        .filter(|meld| meld.from_position.is_some())
+    {
+        open_meld_count += 1;
+        for tile in meld.tiles.iter().copied() {
+            if !is_suited(tile) {
+                return None;
+            }
+            let suit = tile_suit(tile);
+            match threat_suit {
+                Some(current) if current != suit => return None,
+                Some(_) => {}
+                None => threat_suit = Some(suit),
+            }
+        }
+    }
+    if open_meld_count < 2 {
+        return None;
+    }
+    threat_suit.map(|suit| (suit, open_meld_count))
 }
 
 fn pair_count(hand: &[i32]) -> usize {
@@ -8681,6 +8759,44 @@ mod tests {
 
         assert_eq!(piao_threat_level(&table.seats.get(&1).unwrap().melds), 0);
         assert_eq!(opponent_threat_discard_bias(&table, 0, 5, 2), 0.0);
+    }
+
+    #[test]
+    fn pure_one_suit_threat_penalizes_live_main_suit_tile() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 32;
+        table.seats.get_mut(&1).unwrap().melds = vec![test_chi_meld(11), test_peng_meld(14)];
+
+        assert_eq!(
+            pure_one_suit_threat_suit(table.seats.get(&1).unwrap()),
+            Some((1, 2))
+        );
+        assert!(
+            pure_one_suit_threat_discard_bias(&table, 0, 18, 1)
+                < pure_one_suit_threat_discard_bias(&table, 0, 22, 1)
+        );
+        assert_eq!(
+            pure_one_suit_threat_discard_bias(&table, 0, 14, 1),
+            0.0,
+            "a tile already exposed by that opponent should not be treated as live"
+        );
+    }
+
+    #[test]
+    fn mid_round_discard_avoids_pure_one_suit_threat_suit() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 32;
+        table.seats.get_mut(&1).unwrap().melds = vec![test_chi_meld(11), test_peng_meld(14)];
+        let hand = vec![2, 3, 4, 6, 7, 8, 12, 16, 18, 22, 24, 26, 31, 35];
+
+        assert!(
+            pure_one_suit_threat_discard_bias(&table, 0, 18, 1)
+                < pure_one_suit_threat_discard_bias(&table, 0, 22, 1)
+        );
+        assert_ne!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+            Some(18)
+        );
     }
 
     #[test]
