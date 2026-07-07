@@ -669,7 +669,20 @@ fn choose_broken_hand_public_defense_discard(
         .into_iter()
         .filter(|tile| mid_round_open_meld_safety_bias(table, *tile) > 0.0)
         .collect::<Vec<_>>();
-    choose_public_defense_discard_from_candidates(hand, table, position, open_meld_candidates)
+    if !open_meld_candidates.is_empty() {
+        return choose_public_defense_discard_from_candidates(
+            hand,
+            table,
+            position,
+            open_meld_candidates,
+        );
+    }
+
+    let missing_suit_candidates = unique_tiles(hand)
+        .into_iter()
+        .filter(|tile| mid_broken_opponent_missing_suit_safety_bias(table, position, *tile) > 0.0)
+        .collect::<Vec<_>>();
+    choose_public_defense_discard_from_candidates(hand, table, position, missing_suit_candidates)
 }
 
 fn choose_public_defense_discard_from_candidates(
@@ -1552,6 +1565,7 @@ fn public_defense_tile_safety_score(
         + public_defense_own_tile_shape_bias(tile, own_tile_count)
         + mid_round_public_discard_bias(table, position, tile)
         + mid_round_open_meld_safety_bias(table, tile)
+        + mid_broken_opponent_missing_suit_safety_bias(table, position, tile)
 }
 
 fn public_defense_own_tile_shape_bias(tile: i32, own_tile_count: usize) -> f64 {
@@ -1912,6 +1926,22 @@ fn opponent_missing_suit_safety_bias(table: &AiPublicTable, position: usize, til
     if !is_late_defense_round(table) || !is_suited(tile) {
         return 0.0;
     }
+    opponent_missing_suit_safety_read(table, position, tile)
+}
+
+fn mid_broken_opponent_missing_suit_safety_bias(
+    table: &AiPublicTable,
+    position: usize,
+    tile: i32,
+) -> f64 {
+    if !is_mid_broken_hand_defense_round(table) || is_late_defense_round(table) || !is_suited(tile)
+    {
+        return 0.0;
+    }
+    opponent_missing_suit_safety_read(table, position, tile) * 0.7
+}
+
+fn opponent_missing_suit_safety_read(table: &AiPublicTable, position: usize, tile: i32) -> f64 {
     let suit = tile_suit(tile);
     if table.seats.iter().any(|(seat_position, seat)| {
         *seat_position != position && piao_threat_needs_suit(seat, suit)
@@ -3619,6 +3649,7 @@ fn should_use_broken_hand_public_defense_discard(
         || !unique_tiles(hand).into_iter().any(|tile| {
             public_discard_count(table, tile) > 0
                 || mid_round_open_meld_safety_bias(table, tile) > 0.0
+                || mid_broken_opponent_missing_suit_safety_bias(table, position, tile) > 0.0
         })
     {
         return false;
@@ -8591,6 +8622,28 @@ mod tests {
         assert_eq!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(14)
+        );
+    }
+
+    #[test]
+    fn mid_broken_discard_uses_opponent_missing_suit_read_without_public_tile() {
+        let mut table = table_with_discards(1, vec![11, 13, 15, 18]);
+        table.wall_count = 40;
+        let hand = vec![2, 5, 8, 12, 14, 17, 22, 24, 27, 31, 32, 33, 35, 37];
+
+        assert_eq!(public_discard_count(&table, 12), 0);
+        assert_eq!(mid_round_open_meld_safety_bias(&table, 12), 0.0);
+        assert!(mid_broken_opponent_missing_suit_safety_bias(&table, 0, 12) > 0.0);
+        assert!(should_use_broken_hand_public_defense_discard(
+            &hand,
+            &[],
+            &table,
+            0,
+            WIN_RULE_RELAXED
+        ));
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+            Some(12)
         );
     }
 
