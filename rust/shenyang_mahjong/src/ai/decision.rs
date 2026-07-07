@@ -455,6 +455,9 @@ pub fn choose_discard_from_view(
     if is_complete_win_with_melds(hand, melds, win_rule) {
         return None;
     }
+    if let Some(tile) = choose_seven_pairs_wait_discard(hand, melds, table, position, win_rule) {
+        return Some(tile);
+    }
     if is_late_defense_round(table)
         && best_ready_score_after_discard(hand, melds, table, position, win_rule) <= 0.0
     {
@@ -2573,6 +2576,46 @@ fn seven_pairs_wait_discard_bias(
     18.0 + seven_pairs_wait_tile_score(wait_tile, &next, table, position)
 }
 
+fn choose_seven_pairs_wait_discard(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+) -> Option<i32> {
+    if !should_keep_pairs_for_seven_pairs_discard(hand, melds, table, position, win_rule)
+        || table.max_fan.is_some_and(|max_fan| max_fan <= 1)
+        || pair_count(hand) != 6
+    {
+        return None;
+    }
+
+    unique_tiles(hand)
+        .into_iter()
+        .filter(|tile| hand.iter().filter(|item| **item == *tile).count() == 1)
+        .filter_map(|tile| {
+            let mut next = hand.to_vec();
+            if let Some(index) = next.iter().position(|item| *item == tile) {
+                next.remove(index);
+            }
+            if !is_seven_pairs_wait_shape(&next) {
+                return None;
+            }
+            let wait_tile = single_tile(&next)?;
+            Some((
+                seven_pairs_wait_tile_score(wait_tile, &next, table, position),
+                tile,
+            ))
+        })
+        .max_by(|(left_score, left_tile), (right_score, right_tile)| {
+            left_score
+                .partial_cmp(right_score)
+                .unwrap_or(Ordering::Equal)
+                .then_with(|| right_tile.cmp(left_tile))
+        })
+        .map(|(_, tile)| tile)
+}
+
 fn seven_pairs_wait_tile_score(
     wait_tile: i32,
     hand_after_discard: &[i32],
@@ -2581,6 +2624,9 @@ fn seven_pairs_wait_tile_score(
 ) -> f64 {
     let public_discards = public_discard_count(table, wait_tile) as f64;
     let remaining = remaining_tile_count(hand_after_discard, table, position, wait_tile) as f64;
+    if remaining <= 0.0 {
+        return -240.0 - public_discards * 12.0;
+    }
     if seven_pairs_regular_wait_reaches_cap(table) {
         return remaining * 6.0 + seven_pairs_wait_shape_tiebreaker(wait_tile)
             - public_discards * 12.0;
@@ -2594,7 +2640,7 @@ fn seven_pairs_wait_tile_score(
     } else {
         -4.0
     };
-    shape + remaining * 3.0 - public_discards * 12.0
+    shape + remaining * 5.0 - public_discards * 12.0
 }
 
 fn seven_pairs_wait_shape_tiebreaker(wait_tile: i32) -> f64 {
@@ -6391,6 +6437,25 @@ mod tests {
         assert!(
             seven_pairs_wait_tile_score(5, &middle_wait, &table, 0)
                 > seven_pairs_wait_tile_score(31, &wind_wait, &table, 0)
+        );
+    }
+
+    #[test]
+    fn seven_pairs_wait_score_rejects_dead_exposed_wind_wait() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(31)];
+        let wind_wait = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 31];
+        let middle_wait = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 21, 21, 22, 22];
+        let hand = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 21, 21, 22, 22, 31];
+
+        assert_eq!(remaining_tile_count(&wind_wait, &table, 0, 31), 0);
+        assert!(
+            seven_pairs_wait_tile_score(5, &middle_wait, &table, 0)
+                > seven_pairs_wait_tile_score(31, &wind_wait, &table, 0)
+        );
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(31)
         );
     }
 
