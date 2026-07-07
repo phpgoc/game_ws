@@ -458,6 +458,9 @@ pub fn choose_discard_from_view(
     if let Some(tile) = choose_seven_pairs_wait_discard(hand, melds, table, position, win_rule) {
         return Some(tile);
     }
+    if let Some(tile) = choose_piao_single_wait_discard(hand, melds, table, position, win_rule) {
+        return Some(tile);
+    }
     if is_late_defense_round(table)
         && best_ready_score_after_discard(hand, melds, table, position, win_rule) <= 0.0
     {
@@ -2052,6 +2055,78 @@ fn piao_threat_level(melds: &[WsShenyangMahjongMeld]) -> usize {
         .iter()
         .filter(|meld| is_triplet_like_meld(meld))
         .count()
+}
+
+fn choose_piao_single_wait_discard(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+) -> Option<i32> {
+    if hand.len() != 2 || melds.len() != 4 || piao_threat_level(melds) != 4 {
+        return None;
+    }
+
+    unique_tiles(hand)
+        .into_iter()
+        .filter_map(|tile| {
+            let next = remove_n_tiles(hand, tile, 1);
+            if next.len() + 1 != hand.len() || next.len() != 1 {
+                return None;
+            }
+            let wait_tile = next[0];
+            let mut win_hand = next.clone();
+            win_hand.push(wait_tile);
+            win_hand.sort_unstable();
+            if !is_piao_hu_win(&win_hand, melds)
+                || !is_complete_win_with_melds(&win_hand, melds, win_rule)
+            {
+                return None;
+            }
+            Some((
+                piao_single_wait_tile_score(wait_tile, &next, melds, table, position, win_rule),
+                tile,
+            ))
+        })
+        .max_by(|(left_score, left_tile), (right_score, right_tile)| {
+            left_score
+                .partial_cmp(right_score)
+                .unwrap_or(Ordering::Equal)
+                .then_with(|| right_tile.cmp(left_tile))
+        })
+        .map(|(_, tile)| tile)
+}
+
+fn piao_single_wait_tile_score(
+    wait_tile: i32,
+    hand_after_discard: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+) -> f64 {
+    let remaining = remaining_tile_count(hand_after_discard, table, position, wait_tile);
+    if remaining <= 0 {
+        return -240.0;
+    }
+
+    let mut win_hand = hand_after_discard.to_vec();
+    win_hand.push(wait_tile);
+    win_hand.sort_unstable();
+    let estimated_fan = estimated_fan_with_wait(&win_hand, melds, wait_tile, win_rule);
+    let capped_fan = table
+        .max_fan
+        .filter(|max_fan| *max_fan > 0)
+        .map(|max_fan| estimated_fan.min(max_fan))
+        .unwrap_or(estimated_fan);
+    let speed_first = table.dealer_position == position || is_late_round(table);
+    let remaining_weight = if speed_first { 14.0 } else { 9.0 };
+    let fan_weight = if speed_first { 2.0 } else { 7.0 };
+
+    remaining as f64 * remaining_weight
+        + capped_fan as f64 * fan_weight
+        + seven_pairs_wait_shape_tiebreaker(wait_tile)
 }
 
 fn piao_missing_suits_from_melds(melds: &[WsShenyangMahjongMeld]) -> Vec<i32> {
@@ -5821,6 +5896,47 @@ mod tests {
         assert_eq!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(36)
+        );
+    }
+
+    #[test]
+    fn discard_after_four_piao_melds_rejects_dead_exposed_wind_wait() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.seats.get_mut(&0).unwrap().melds = vec![
+            test_peng_meld(1),
+            test_peng_meld(11),
+            test_peng_meld(21),
+            test_peng_meld(31),
+        ];
+        let hand = vec![5, 31];
+
+        assert_eq!(remaining_tile_count(&[31], &table, 0, 31), 0);
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(31)
+        );
+    }
+
+    #[test]
+    fn dealer_four_piao_melds_prefers_live_middle_over_low_live_wind_wait() {
+        let mut table = table_with_discards(1, vec![31, 31]);
+        table.dealer_position = 0;
+        table.seats.get_mut(&0).unwrap().melds = vec![
+            test_peng_meld(1),
+            test_peng_meld(11),
+            test_peng_meld(21),
+            test_peng_meld(32),
+        ];
+        let hand = vec![5, 31];
+        let melds = table.seats.get(&0).unwrap().melds.as_slice();
+
+        assert!(
+            piao_single_wait_tile_score(5, &[5], melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
+                > piao_single_wait_tile_score(31, &[31], melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
+        );
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(31)
         );
     }
 
