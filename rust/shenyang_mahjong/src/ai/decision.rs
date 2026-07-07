@@ -2314,7 +2314,14 @@ fn pure_one_suit_discard_bias(
     table: &AiPublicTable,
     position: usize,
 ) -> f64 {
-    if pure_one_suit_plan_score_for_context(hand, melds, table, position) <= 0.0 {
+    let current_score = pure_one_suit_plan_score_for_context(hand, melds, table, position);
+    let after_discard = remove_n_tiles(hand, tile, 1);
+    let after_score = if after_discard.len() + 1 == hand.len() {
+        pure_one_suit_plan_score_for_context(&after_discard, melds, table, position)
+    } else {
+        0.0
+    };
+    if current_score <= 0.0 && after_score <= 0.0 {
         return 0.0;
     }
     if is_honor(tile) {
@@ -6343,6 +6350,18 @@ mod tests {
         assert!(matches!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(11 | 35)
+        ));
+    }
+
+    #[test]
+    fn dealer_can_start_overwhelming_pure_one_suit_by_clearing_third_blocker() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.dealer_position = 0;
+        let hand = vec![1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 7, 11, 12, 13];
+
+        assert!(matches!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(11 | 12 | 13)
         ));
     }
 
