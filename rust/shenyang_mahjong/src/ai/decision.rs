@@ -287,6 +287,16 @@ pub fn choose_claim_from_view(
         ) {
             return Some(AiClaimChoice::Peng);
         }
+        if should_pass_closed_basic_peng_to_preserve_sequence(
+            hand,
+            &current_melds,
+            table,
+            position,
+            win_rule,
+            tile,
+        ) {
+            return Some(AiClaimChoice::Pass);
+        }
         if should_claim_peng_to_open_mid_basic_hand(
             hand,
             &current_melds,
@@ -1301,6 +1311,13 @@ fn has_terminal_or_honor_with_extra(
 
 fn has_triplet_or_dragon_pair(hand: &[i32], melds: &[WsShenyangMahjongMeld]) -> bool {
     has_triplet_or_dragon_pair_with_extra(hand, melds, None)
+}
+
+fn has_triplet_like_group(hand: &[i32], melds: &[WsShenyangMahjongMeld]) -> bool {
+    melds.iter().any(is_triplet_like_meld)
+        || unique_tiles(hand)
+            .into_iter()
+            .any(|tile| hand.iter().filter(|item| **item == tile).count() >= 3)
 }
 
 fn has_triplet_or_dragon_pair_with_extra(
@@ -3132,6 +3149,33 @@ fn should_claim_peng_to_open_mid_basic_hand(
             && has_terminal_or_honor_with_extra(&after_discard, &melds, None)
             && has_triplet_or_dragon_pair(&after_discard, &melds)
     })
+}
+
+fn should_pass_closed_basic_peng_to_preserve_sequence(
+    hand: &[i32],
+    current_melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+    tile: i32,
+) -> bool {
+    win_rule == WIN_RULE_SHENYANG_BASIC
+        && !has_open_meld(current_melds)
+        && table.dealer_position != position
+        && !table.max_fan.is_some_and(|max_fan| max_fan <= 1)
+        && can_peng(hand, tile)
+        && is_suited(tile)
+        && has_triplet_like_group(hand, current_melds)
+        && tile_is_middle_of_sequence(hand, tile)
+        && piao_plan_score_for_context(hand, current_melds, table, position) < 22.0
+        && pure_one_suit_plan_score_for_context(hand, current_melds, table, position) <= 0.0
+        && !should_open_broken_closed_hand_for_defense(
+            hand,
+            current_melds,
+            table,
+            position,
+            win_rule,
+        )
 }
 
 fn should_claim_peng_for_closed_early_piao_candidate(
@@ -5857,6 +5901,27 @@ mod tests {
         assert_eq!(
             choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(AiClaimChoice::Peng)
+        );
+    }
+
+    #[test]
+    fn claim_peng_preserves_closed_mid_basic_sequence_when_heng_exists() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 52;
+        table.claim_window = Some(AiClaimView {
+            tile: 5,
+            from_position: 1,
+            eligible_positions: vec![0],
+        });
+        let claim = table.claim_window.clone().unwrap();
+        let hand = vec![1, 1, 1, 4, 5, 5, 6, 11, 12, 13, 21, 22, 23];
+
+        assert!(has_triplet_or_dragon_pair(&hand, &[]));
+        assert!(has_triplet_like_group(&hand, &[]));
+        assert!(tile_is_middle_of_sequence(&hand, 5));
+        assert_eq!(
+            choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(AiClaimChoice::Pass)
         );
     }
 
