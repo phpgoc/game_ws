@@ -1698,7 +1698,10 @@ fn seat_has_open_meld_tile(seat: &AiSeatView, tile: i32) -> bool {
 
 fn open_opponent_exists_for_tile(table: &AiPublicTable, position: usize, tile: i32) -> bool {
     table.seats.iter().any(|(seat_position, seat)| {
-        *seat_position != position && has_open_meld(&seat.melds) && !seat.discards.contains(&tile)
+        *seat_position != position
+            && has_open_meld(&seat.melds)
+            && !seat.discards.contains(&tile)
+            && !seat_has_open_meld_tile(seat, tile)
     })
 }
 
@@ -7049,6 +7052,27 @@ mod tests {
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
             Some(14)
         );
+    }
+
+    #[test]
+    fn open_opponent_exists_ignores_tile_from_its_open_meld() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 37;
+        table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(14)];
+
+        assert!(!open_opponent_exists_for_tile(&table, 0, 14));
+        assert!(open_opponent_exists_for_tile(&table, 0, 15));
+    }
+
+    #[test]
+    fn own_open_live_suited_pressure_ignores_opponent_open_meld_tile() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 37;
+        table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(14)];
+        let melds = vec![test_peng_meld(1), test_peng_meld(11)];
+
+        assert_eq!(own_open_live_suited_pressure(&melds, &table, 0, 14), 0.0);
+        assert!(own_open_live_suited_pressure(&melds, &table, 0, 15) > 0.0);
     }
 
     #[test]
