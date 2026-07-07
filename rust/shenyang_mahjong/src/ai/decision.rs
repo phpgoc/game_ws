@@ -8297,6 +8297,28 @@ mod tests {
     }
 
     #[test]
+    fn self_gang_allows_added_dragon_after_opening_before_ready() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(35)];
+        let hand = vec![2, 5, 8, 11, 14, 17, 21, 31, 32, 33, 35];
+
+        assert_eq!(
+            ready_tile_score(
+                &hand,
+                table.seats.get(&0).unwrap().melds.as_slice(),
+                &table,
+                0,
+                WIN_RULE_SHENYANG_BASIC
+            ),
+            0.0
+        );
+        assert_eq!(
+            choose_self_gang_from_view(&hand, &[35], &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(35)
+        );
+    }
+
+    #[test]
     fn one_fan_capped_self_gang_delays_dragon_before_ready() {
         let mut table = table_with_discards(1, Vec::new());
         table.max_fan = Some(1);
