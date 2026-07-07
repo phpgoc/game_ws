@@ -2629,7 +2629,9 @@ fn seven_pairs_plan_discard_bias(
             -12.0
         };
     }
-    if is_honor(tile) {
+    if is_dragon(tile) {
+        18.0
+    } else if is_honor(tile) {
         5.0
     } else if tile_is_terminal(tile) {
         0.0
@@ -6456,7 +6458,7 @@ mod tests {
 
         let discard = choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC);
 
-        assert!(matches!(discard, Some(31 | 36 | 37)));
+        assert!(matches!(discard, Some(31 | 35 | 36 | 37)));
     }
 
     #[test]
@@ -6536,6 +6538,24 @@ mod tests {
         assert_eq!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(31)
+        );
+    }
+
+    #[test]
+    fn discard_locked_five_pairs_prefers_single_dragon_before_wind() {
+        let table = table_with_discards(1, Vec::new());
+        let hand = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 14, 21, 21, 31, 35];
+
+        assert!(should_lock_seven_pairs_plan(
+            &hand,
+            &[],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC
+        ));
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(35)
         );
     }
 
@@ -6988,6 +7008,17 @@ mod tests {
         assert_eq!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(5)
+        );
+    }
+
+    #[test]
+    fn discard_sets_seven_pairs_wait_on_wind_before_dragon() {
+        let table = table_with_discards(1, Vec::new());
+        let hand = vec![1, 1, 2, 2, 3, 3, 4, 4, 11, 11, 21, 21, 31, 35];
+
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(35)
         );
     }
 
