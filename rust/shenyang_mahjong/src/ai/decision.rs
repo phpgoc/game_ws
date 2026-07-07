@@ -2635,7 +2635,7 @@ fn seven_pairs_wait_discard_bias(
     if !melds.is_empty() || hand.len() != 14 || pair_count(hand) != 6 {
         return 0.0;
     }
-    if hand.iter().filter(|item| **item == tile).count() != 1 {
+    if hand.iter().filter(|item| **item == tile).count() % 2 != 1 {
         return 0.0;
     }
     let mut next = hand.to_vec();
@@ -2667,7 +2667,7 @@ fn choose_seven_pairs_wait_discard(
 
     unique_tiles(hand)
         .into_iter()
-        .filter(|tile| hand.iter().filter(|item| **item == *tile).count() == 1)
+        .filter(|tile| hand.iter().filter(|item| **item == *tile).count() % 2 == 1)
         .filter_map(|tile| {
             let mut next = hand.to_vec();
             if let Some(index) = next.iter().position(|item| *item == tile) {
@@ -6502,6 +6502,24 @@ mod tests {
         assert_eq!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(5)
+        );
+    }
+
+    #[test]
+    fn discard_sets_seven_pairs_wait_by_breaking_dead_triplet_wait() {
+        let table = table_with_discards(1, vec![31]);
+        let hand = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 21, 21, 31, 31, 31];
+        let dead_wind_wait = remove_n_tiles(&hand, 5, 1);
+        let live_middle_wait = remove_n_tiles(&hand, 31, 1);
+
+        assert_eq!(remaining_tile_count(&dead_wind_wait, &table, 0, 31), 0);
+        assert!(
+            seven_pairs_wait_tile_score(5, &live_middle_wait, &table, 0)
+                > seven_pairs_wait_tile_score(31, &dead_wind_wait, &table, 0)
+        );
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(31)
         );
     }
 
