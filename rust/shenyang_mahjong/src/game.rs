@@ -1024,15 +1024,29 @@ pub(crate) fn resolve_claim_window(
     };
 
     for position in &claim_window.eligible_positions {
+        let hand = state.hands.get(position).cloned().unwrap_or_default();
+        let melds = state.melds.get(position).map(Vec::as_slice).unwrap_or(&[]);
         match claim_window.responses.get(position) {
-            Some(ClaimResponse::Hu) => hu_positions.push(*position),
-            Some(ClaimResponse::Peng) if !is_rob_gang => {
+            Some(ClaimResponse::Hu) => {
+                let mut tiles = hand.clone();
+                tiles.push(claim_window.tile);
+                tiles.sort_unstable();
+                if is_complete_win_with_melds(&tiles, melds, win_rule_from_configs(configs)) {
+                    hu_positions.push(*position);
+                }
+            }
+            Some(ClaimResponse::Peng) if !is_rob_gang && can_peng(&hand, claim_window.tile) => {
                 meld_claims.push((*position, ClaimResponse::Peng));
             }
-            Some(ClaimResponse::Gang) if !is_rob_gang => {
+            Some(ClaimResponse::Gang) if !is_rob_gang && can_gang(&hand, claim_window.tile) => {
                 meld_claims.push((*position, ClaimResponse::Gang));
             }
-            Some(ClaimResponse::Chi { consume_tiles }) if !is_rob_gang && allow_chi(configs) => {
+            Some(ClaimResponse::Chi { consume_tiles })
+                if !is_rob_gang
+                    && allow_chi(configs)
+                    && *position == state.next_position(claim_window.from_position)
+                    && can_chi(&hand, claim_window.tile, consume_tiles) =>
+            {
                 chi_positions.push((*position, consume_tiles.clone()));
             }
             _ => {}
@@ -3794,6 +3808,122 @@ mod tests {
     }
 
     #[test]
+    fn resolve_claim_window_ignores_illegal_hu_response() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31]);
+        state.discards.insert(0, vec![35]);
+        state.wall = vec![36];
+        state.current_position = 0;
+        state.claim_window = Some(ClaimWindowState {
+            tile: 35,
+            from_position: 0,
+            kind: ClaimWindowKind::Discard,
+            eligible_positions: vec![1],
+            responses: HashMap::from([(1, ClaimResponse::Hu)]),
+        });
+        let mut dispatch = Dispatch::default();
+
+        resolve_claim_window(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+        );
+
+        assert!(state.settlement.is_none());
+        assert!(state.claim_window.is_none());
+        assert_eq!(state.current_position, 1);
+        assert_eq!(state.discards.get(&0), Some(&vec![35]));
+        assert!(state.hands.get(&1).unwrap().contains(&36));
+    }
+
+    #[test]
+    fn resolve_claim_window_ignores_illegal_gang_response() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35]);
+        state.discards.insert(0, vec![3]);
+        state.wall = vec![36];
+        state.current_position = 0;
+        state.claim_window = Some(ClaimWindowState {
+            tile: 3,
+            from_position: 0,
+            kind: ClaimWindowKind::Discard,
+            eligible_positions: vec![1],
+            responses: HashMap::from([(1, ClaimResponse::Gang)]),
+        });
+        let mut dispatch = Dispatch::default();
+
+        resolve_claim_window(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+        );
+
+        assert!(state.claim_window.is_none());
+        assert_eq!(state.current_position, 1);
+        assert_eq!(state.discards.get(&0), Some(&vec![3]));
+        assert!(state.melds.get(&1).map(Vec::is_empty).unwrap_or(true));
+        assert_eq!(
+            state
+                .hands
+                .get(&1)
+                .unwrap()
+                .iter()
+                .filter(|&&tile| tile == 3)
+                .count(),
+            2,
+        );
+        assert!(state.hands.get(&1).unwrap().contains(&36));
+    }
+
+    #[test]
+    fn resolve_claim_window_ignores_invalid_chi_sequence() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![1, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35, 35]);
+        state.discards.insert(0, vec![3]);
+        state.wall = vec![36];
+        state.current_position = 0;
+        state.claim_window = Some(ClaimWindowState {
+            tile: 3,
+            from_position: 0,
+            kind: ClaimWindowKind::Discard,
+            eligible_positions: vec![1],
+            responses: HashMap::from([(
+                1,
+                ClaimResponse::Chi {
+                    consume_tiles: vec![1, 4],
+                },
+            )]),
+        });
+        let mut dispatch = Dispatch::default();
+
+        resolve_claim_window(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+        );
+
+        assert!(state.claim_window.is_none());
+        assert_eq!(state.current_position, 1);
+        assert_eq!(state.discards.get(&0), Some(&vec![3]));
+        assert!(state.melds.get(&1).map(Vec::is_empty).unwrap_or(true));
+        assert!(state.hands.get(&1).unwrap().contains(&1));
+        assert!(state.hands.get(&1).unwrap().contains(&4));
+        assert!(state.hands.get(&1).unwrap().contains(&36));
+    }
+
+    #[test]
     fn resolve_claim_window_ignores_chi_for_shenyang_basic_rule() {
         let mut state = playable_state();
         state
@@ -3927,7 +4057,7 @@ mod tests {
             &RoomService::default(),
             "room",
             &mut state,
-            &HashMap::new(),
+            &relaxed_configs(),
             &mut dispatch,
         );
 
@@ -3940,6 +4070,52 @@ mod tests {
         assert_eq!(
             state.melds.get(&0).unwrap().first().unwrap().kind,
             ShenyangMahjongMeldKind::PENG
+        );
+    }
+
+    #[test]
+    fn rob_gang_hu_respects_basic_open_requirement() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(0, vec![3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31]);
+        state.melds.insert(
+            0,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::PENG,
+                vec![3, 3, 3],
+                Some(2),
+            )],
+        );
+        state
+            .hands
+            .insert(1, vec![1, 2, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+        state.wall = vec![36];
+        state.last_drawn_tile = Some(3);
+        state.claim_window = Some(ClaimWindowState {
+            tile: 3,
+            from_position: 0,
+            kind: ClaimWindowKind::RobGang,
+            eligible_positions: vec![1],
+            responses: HashMap::from([(1, ClaimResponse::Hu)]),
+        });
+        let mut dispatch = Dispatch::default();
+
+        resolve_claim_window(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::new(),
+            &mut dispatch,
+        );
+
+        assert!(state.settlement.is_none());
+        assert!(state.claim_window.is_none());
+        assert_eq!(state.current_position, 0);
+        assert_eq!(state.last_drawn_tile, Some(36));
+        assert_eq!(
+            state.melds.get(&0).unwrap().first().unwrap().kind,
+            ShenyangMahjongMeldKind::GANG
         );
     }
 
