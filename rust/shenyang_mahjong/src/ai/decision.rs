@@ -651,11 +651,24 @@ fn choose_broken_hand_public_defense_discard(
     table: &AiPublicTable,
     position: usize,
 ) -> Option<i32> {
-    let candidates = unique_tiles(hand)
+    let public_candidates = unique_tiles(hand)
         .into_iter()
         .filter(|tile| public_discard_count(table, *tile) > 0)
         .collect::<Vec<_>>();
-    choose_public_defense_discard_from_candidates(hand, table, position, candidates)
+    if !public_candidates.is_empty() {
+        return choose_public_defense_discard_from_candidates(
+            hand,
+            table,
+            position,
+            public_candidates,
+        );
+    }
+
+    let open_meld_candidates = unique_tiles(hand)
+        .into_iter()
+        .filter(|tile| mid_round_open_meld_safety_bias(table, *tile) > 0.0)
+        .collect::<Vec<_>>();
+    choose_public_defense_discard_from_candidates(hand, table, position, open_meld_candidates)
 }
 
 fn choose_public_defense_discard_from_candidates(
@@ -1536,6 +1549,7 @@ fn public_defense_tile_safety_score(
     late_defense_tile_safety_score(table, position, tile, own_tile_count)
         + public_defense_own_tile_shape_bias(tile, own_tile_count)
         + mid_round_public_discard_bias(table, position, tile)
+        + mid_round_open_meld_safety_bias(table, tile)
 }
 
 fn public_defense_own_tile_shape_bias(tile: i32, own_tile_count: usize) -> f64 {
@@ -3493,9 +3507,10 @@ fn should_use_broken_hand_public_defense_discard(
 ) -> bool {
     if is_late_defense_round(table)
         || !is_mid_broken_hand_defense_round(table)
-        || !unique_tiles(hand)
-            .into_iter()
-            .any(|tile| public_discard_count(table, tile) > 0)
+        || !unique_tiles(hand).into_iter().any(|tile| {
+            public_discard_count(table, tile) > 0
+                || mid_round_open_meld_safety_bias(table, tile) > 0.0
+        })
     {
         return false;
     }
@@ -8445,6 +8460,28 @@ mod tests {
         assert_eq!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(5)
+        );
+    }
+
+    #[test]
+    fn mid_broken_basic_discard_follows_open_meld_tile_without_public_discards() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 40;
+        table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(14)];
+        let hand = vec![2, 5, 8, 12, 14, 17, 22, 24, 27, 31, 32, 33, 35, 37];
+
+        assert_eq!(public_discard_count(&table, 14), 0);
+        assert!(mid_round_open_meld_safety_bias(&table, 14) > 0.0);
+        assert!(should_use_broken_hand_public_defense_discard(
+            &hand,
+            &[],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC
+        ));
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(14)
         );
     }
 
