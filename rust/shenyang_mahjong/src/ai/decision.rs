@@ -910,9 +910,36 @@ fn closed_opponent_threat_discard_bias(
             (base - pair_penalty)
                 * pressure_scale
                 * exposure_scale
+                * closed_hand_count_pressure_scale(seat)
                 * closed_suit_shedding_scale(seat, tile)
         })
         .sum()
+}
+
+fn closed_hand_count_pressure_scale(seat: &AiSeatView) -> f64 {
+    let concealed_gangs = seat
+        .melds
+        .iter()
+        .filter(|meld| meld.kind == ShenyangMahjongMeldKind::GANG && meld.from_position.is_none())
+        .count();
+    if concealed_gangs == 0 {
+        return 1.0;
+    }
+
+    let gang_scale = match concealed_gangs {
+        1 => 1.18,
+        2 => 1.35,
+        _ => 1.55,
+    };
+    let hand_count_scale = match seat.hand_count {
+        0 => 0.0,
+        1..=5 => 1.55,
+        6..=9 => 1.35,
+        10 => 1.18,
+        11..=12 => 1.08,
+        _ => 1.0,
+    };
+    f64::max(gang_scale, hand_count_scale)
 }
 
 fn closed_suit_shedding_scale(seat: &AiSeatView, tile: i32) -> f64 {
@@ -6430,6 +6457,23 @@ mod tests {
 
         assert!(closed_opponent_threat_discard_bias(&concealed, 0, 32, 1) < 0.0);
         assert_eq!(closed_opponent_threat_discard_bias(&open, 0, 32, 1), 0.0);
+    }
+
+    #[test]
+    fn closed_opponent_threat_grows_after_concealed_gang() {
+        let mut closed = table_with_discards(1, Vec::new());
+        closed.wall_count = 16;
+        closed.seats.get_mut(&1).unwrap().hand_count = 13;
+
+        let mut concealed_gang = closed.clone();
+        let seat = concealed_gang.seats.get_mut(&1).unwrap();
+        seat.hand_count = 10;
+        seat.melds = vec![test_concealed_gang_meld(9)];
+
+        assert!(
+            closed_opponent_threat_discard_bias(&concealed_gang, 0, 32, 1)
+                < closed_opponent_threat_discard_bias(&closed, 0, 32, 1)
+        );
     }
 
     #[test]
