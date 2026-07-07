@@ -925,7 +925,15 @@ fn closed_suit_shedding_scale(seat: &AiSeatView, tile: i32) -> f64 {
         .filter(|discard| is_suited(**discard) && tile_suit(**discard) == tile_suit(tile))
         .count();
     match discarded_in_suit {
-        0 | 1 => 1.0,
+        0 => {
+            let off_suit_discards = seat
+                .discards
+                .iter()
+                .filter(|discard| !is_suited(**discard) || tile_suit(**discard) != tile_suit(tile))
+                .count();
+            if off_suit_discards >= 4 { 1.25 } else { 1.0 }
+        }
+        1 => 1.0,
         2 => 0.55,
         3 => 0.25,
         _ => 0.15,
@@ -6361,6 +6369,26 @@ mod tests {
 
         assert!(shed_suit_bias < 0.0);
         assert!(shed_suit_bias > untouched_suit_bias);
+    }
+
+    #[test]
+    fn closed_opponent_threat_grows_for_unshed_suit_after_off_suit_discards() {
+        let mut neutral = table_with_discards(1, Vec::new());
+        neutral.wall_count = 16;
+        neutral.seats.get_mut(&1).unwrap().hand_count = 13;
+
+        let mut committed = table_with_discards(1, vec![11, 14, 19, 31]);
+        committed.wall_count = 16;
+        committed.seats.get_mut(&1).unwrap().hand_count = 13;
+
+        assert!(
+            closed_opponent_threat_discard_bias(&committed, 0, 5, 1)
+                < closed_opponent_threat_discard_bias(&neutral, 0, 5, 1)
+        );
+        assert!(
+            closed_opponent_threat_discard_bias(&committed, 0, 12, 1)
+                > closed_opponent_threat_discard_bias(&neutral, 0, 12, 1)
+        );
     }
 
     #[test]
