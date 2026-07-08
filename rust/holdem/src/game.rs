@@ -730,7 +730,7 @@ mod tests {
     use share_type_public::WsJoinRequest;
 
     #[test]
-    fn ai_positions_use_smart_ai_instead_of_stale_strategy() {
+    fn ai_positions_raise_premium_hand_instead_of_stale_strategy() {
         let handler = HoldemGameHandler::default();
         let mut room = RoomService::default();
         for session_id in 1..=2 {
@@ -758,8 +758,15 @@ mod tests {
         ));
         {
             let mut s = state.lock().unwrap();
+            s.phase = TexasHoldEmPhase::PreFlop;
             s.current_position = 2;
             s.current_bet = 20;
+            s.min_raise = 10;
+            s.big_blind = 10;
+            s.pot = 50;
+            s.chips.insert(2, 1000);
+            s.round_bets.insert(2, 0);
+            s.hands.insert(2, vec![13, 26]);
             s.commit(0, 20);
             s.set_turn_countdown(20);
         }
@@ -784,10 +791,9 @@ mod tests {
                 })
                 .flatten()
         });
-        assert!(
-            action.is_some(),
-            "AI position should produce a PLAY event via smart AI module"
-        );
+        let action = action.expect("AI position should produce a PLAY event via smart AI module");
+        assert_eq!(action.action, TexasHoldEmAction::RAISE);
+        assert!(action.committed >= 30);
     }
 
     #[test]

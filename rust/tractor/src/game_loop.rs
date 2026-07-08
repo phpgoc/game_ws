@@ -291,3 +291,56 @@ pub(crate) fn start_game_loop(
         states.lock().unwrap().remove(&room_key);
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use share_type_public::{TractorPhase, TractorRank};
+    use std::sync::{Arc, Mutex as StdMutex};
+    use ws_common::game_state::CommonGameState;
+
+    use crate::game_state::{TractorGameState, TractorRules};
+
+    fn test_state_with_ai_leader() -> TractorStateHandle {
+        let mut common = CommonGameState::new();
+        for position in 0..4 {
+            common.add_player(position, position as u64 + 1, &format!("u{position}"));
+        }
+        common.mark_ai_position(0);
+
+        let mut state = TractorGameState::from_common(Arc::new(StdMutex::new(common)));
+        state.phase = TractorPhase::Play;
+        state.rules = TractorRules {
+            blood_enabled: true,
+            blood_score_per_unit: 40,
+            blood_start_score: 80,
+            bottom_card_count: 8,
+            deck_count: 2,
+            final_target_rank: TractorRank::A,
+            removed_rank_mask: 0,
+            target_rank: TractorRank::A,
+        };
+        state.current_position = 0;
+        state.hands.insert(0, vec![13, 26, 39, 53, 1, 14]);
+        state.hands.insert(1, vec![2]);
+        state.hands.insert(2, vec![3]);
+        state.hands.insert(3, vec![4]);
+        Arc::new(StdMutex::new(state))
+    }
+
+    #[test]
+    fn auto_dispatch_uses_smart_ai_for_ai_position_lead() {
+        let state = test_state_with_ai_leader();
+        let room = RoomService::default();
+        let configs = HashMap::new();
+
+        let _ = build_auto_dispatch("room", &room, &state, &configs);
+
+        let guard = state.lock().unwrap();
+        assert_eq!(guard.current_trick.len(), 1);
+        assert_eq!(guard.current_trick[0].position, 0);
+        assert_eq!(guard.current_trick[0].cards, vec![13]);
+        assert!(!guard.hands.get(&0).unwrap().contains(&13));
+        assert!(guard.hands.get(&0).unwrap().contains(&53));
+    }
+}

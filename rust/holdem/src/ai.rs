@@ -60,11 +60,7 @@ fn preflop_decision(
 
     if strength > 0.85 {
         if call_amount == 0 {
-            let amount = (big_blind * 3).max(pot / 2).min(chips);
-            return WsTexasHoldEmPlayRequest {
-                action: TexasHoldEmAction::BET,
-                amount,
-            };
+            return aggressive_action(state, position, (big_blind * 3).max(pot / 2));
         }
         let min_raise = (pot).max(big_blind * 3).max(call_amount * 2);
         if call_amount + min_raise < chips && min_raise > 0 {
@@ -87,11 +83,7 @@ fn preflop_decision(
 
     if strength > 0.65 {
         if call_amount == 0 {
-            let amount = (big_blind * 3).min(chips);
-            return WsTexasHoldEmPlayRequest {
-                action: TexasHoldEmAction::BET,
-                amount,
-            };
+            return aggressive_action(state, position, big_blind * 3);
         }
         if call_amount <= big_blind * 3 {
             return WsTexasHoldEmPlayRequest {
@@ -106,7 +98,13 @@ fn preflop_decision(
     }
 
     if strength > 0.45 {
-        if call_amount == 0 || call_amount <= big_blind {
+        if call_amount == 0 {
+            return WsTexasHoldEmPlayRequest {
+                action: TexasHoldEmAction::CHECK,
+                amount: 0,
+            };
+        }
+        if call_amount <= big_blind {
             return WsTexasHoldEmPlayRequest {
                 action: TexasHoldEmAction::CALL,
                 amount: 0,
@@ -286,5 +284,144 @@ fn default_action(state: &HoldemGameState, position: usize) -> WsTexasHoldEmPlay
             TexasHoldEmAction::FOLD
         },
         amount: 0,
+    }
+}
+
+fn aggressive_action(
+    state: &HoldemGameState,
+    position: usize,
+    desired_amount: i32,
+) -> WsTexasHoldEmPlayRequest {
+    let call_amount = state.call_amount(position);
+    let chips = state.chip_count(position);
+    if chips <= call_amount {
+        return WsTexasHoldEmPlayRequest {
+            action: TexasHoldEmAction::ALL_IN,
+            amount: 0,
+        };
+    }
+
+    let wager = desired_amount.max(state.min_raise).min(chips - call_amount);
+    if call_amount == 0 && state.current_bet == 0 {
+        return WsTexasHoldEmPlayRequest {
+            action: TexasHoldEmAction::BET,
+            amount: wager,
+        };
+    }
+    if wager >= state.min_raise {
+        return WsTexasHoldEmPlayRequest {
+            action: TexasHoldEmAction::RAISE,
+            amount: wager,
+        };
+    }
+    WsTexasHoldEmPlayRequest {
+        action: TexasHoldEmAction::CALL,
+        amount: 0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use share_type_public::{TexasHoldEmAction, TexasHoldEmPhase};
+    use ws_common::game_state::CommonGameState;
+
+    use super::*;
+    use crate::poker_variant::STANDARD_TEXAS;
+
+    fn test_state() -> HoldemGameState {
+        let mut common = CommonGameState::new();
+        for position in 0..4 {
+            common.add_player(position, position as u64 + 1, &format!("u{position}"));
+        }
+        let mut state =
+            HoldemGameState::from_common_with_variant(Arc::new(Mutex::new(common)), STANDARD_TEXAS);
+        state.phase = TexasHoldEmPhase::PreFlop;
+        state.big_blind = 10;
+        state.small_blind = 5;
+        state.min_raise = 10;
+        state.current_bet = 20;
+        state.pot = 30;
+        for position in 0..4 {
+            state.chips.insert(position, 1000);
+            state.round_bets.insert(position, 0);
+        }
+        state
+    }
+
+    #[test]
+    fn preflop_premium_pair_raises_when_facing_bet() {
+        let mut state = test_state();
+        state.hands.insert(0, vec![13, 26]);
+
+        let payload = decide(&state, 0);
+
+        assert_eq!(payload.action, TexasHoldEmAction::RAISE);
+        assert!(payload.amount >= state.min_raise);
+    }
+
+    #[test]
+    fn preflop_strong_hand_raises_in_big_blind_option() {
+        let mut state = test_state();
+        state.current_bet = 10;
+        state.round_bets.insert(0, 10);
+        state.hands.insert(0, vec![13, 12]);
+
+        let payload = decide(&state, 0);
+
+        assert_eq!(payload.action, TexasHoldEmAction::RAISE);
+        assert!(payload.amount >= state.min_raise);
+    }
+
+    #[test]
+    fn preflop_marginal_hand_checks_when_call_is_free() {
+        let mut state = test_state();
+        state.current_bet = 10;
+        state.round_bets.insert(0, 10);
+        state.hands.insert(0, vec![10, 24]);
+
+        let payload = decide(&state, 0);
+
+        assert_eq!(payload.action, TexasHoldEmAction::CHECK);
+    }
+
+    #[test]
+    fn preflop_weak_hand_folds_to_raise() {
+        let mut state = test_state();
+        state.hands.insert(0, vec![1, 8]);
+
+        let payload = decide(&state, 0);
+
+        assert_eq!(payload.action, TexasHoldEmAction::FOLD);
+    }
+
+    #[test]
+    fn postflop_made_flush_bets_when_unopened() {
+        let mut state = test_state();
+        state.phase = TexasHoldEmPhase::Flop;
+        state.current_bet = 0;
+        state.pot = 90;
+        state.hands.insert(0, vec![1, 3]);
+        state.public_cards = vec![5, 7, 9, 14, 27];
+
+        let payload = decide(&state, 0);
+
+        assert_eq!(payload.action, TexasHoldEmAction::BET);
+        assert!(payload.amount > 0);
+    }
+
+    #[test]
+    fn postflop_top_pair_folds_to_bad_pot_odds() {
+        let mut state = test_state();
+        state.phase = TexasHoldEmPhase::Turn;
+        state.current_bet = 200;
+        state.pot = 50;
+        state.hands.insert(0, vec![13, 2]);
+        state.public_cards = vec![26, 5, 7, 22, 35];
+
+        let payload = decide(&state, 0);
+
+        assert_eq!(payload.action, TexasHoldEmAction::FOLD);
     }
 }

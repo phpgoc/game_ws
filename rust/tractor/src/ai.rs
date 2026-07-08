@@ -88,3 +88,80 @@ fn find_pairs(cards: &[i32]) -> Vec<Vec<i32>> {
         .map(|v| v[..2].to_vec())
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use share_type_public::{TractorPhase, TractorRank, WsTractorPlayedCards};
+    use ws_common::game_state::CommonGameState;
+
+    use super::*;
+    use crate::game_state::{TractorGameState, TractorRules};
+
+    fn test_state() -> TractorGameState {
+        let mut common = CommonGameState::new();
+        for position in 0..4 {
+            common.add_player(position, position as u64 + 1, &format!("u{position}"));
+        }
+        let mut state = TractorGameState::from_common(Arc::new(Mutex::new(common)));
+        state.phase = TractorPhase::Play;
+        state.rules = TractorRules {
+            blood_enabled: true,
+            blood_score_per_unit: 40,
+            blood_start_score: 80,
+            bottom_card_count: 8,
+            deck_count: 2,
+            final_target_rank: TractorRank::A,
+            removed_rank_mask: 0,
+            target_rank: TractorRank::A,
+        };
+        state.current_position = 0;
+        state
+    }
+
+    #[test]
+    fn ai_leads_lowest_trump_when_holding_many_trumps() {
+        let mut state = test_state();
+        state.hands.insert(0, vec![13, 26, 39, 53, 1, 14]);
+
+        assert_eq!(decide(&state, 0), Some(vec![13]));
+    }
+
+    #[test]
+    fn ai_leads_singleton_short_suit_before_long_suits() {
+        let mut state = test_state();
+        state.hands.insert(0, vec![1, 14, 15, 16, 27, 28, 29]);
+
+        assert_eq!(decide(&state, 0), Some(vec![1]));
+    }
+
+    #[test]
+    fn ai_leads_low_pair_when_no_short_suit_or_trump_plan() {
+        let mut state = test_state();
+        state.hands.insert(0, vec![1, 101, 2, 14, 15, 16, 27, 28, 29]);
+
+        assert_eq!(decide(&state, 0), Some(vec![1, 101]));
+    }
+
+    #[test]
+    fn ai_following_uses_smallest_winning_card() {
+        let mut state = test_state();
+        state.current_position = 1;
+        state.current_trick.push(WsTractorPlayedCards {
+            position: 0,
+            name: "u0".to_owned(),
+            cards: vec![4],
+        });
+        state.hands.insert(1, vec![5, 6, 13]);
+
+        assert_eq!(decide(&state, 1), Some(vec![5]));
+    }
+
+    #[test]
+    fn ai_returns_none_without_cards() {
+        let state = test_state();
+
+        assert_eq!(decide(&state, 0), None);
+    }
+}
