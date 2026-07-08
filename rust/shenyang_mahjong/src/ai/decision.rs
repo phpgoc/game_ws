@@ -1892,7 +1892,7 @@ fn open_opponent_live_dragon_risk(table: &AiPublicTable, position: usize, tile: 
     }
     let open_risk = (open_opponents as f64 * 4.0).min(12.0);
     let late_round_risk = if is_late_round(table) { 4.0 } else { 0.0 };
-    open_risk + late_round_risk
+    (open_risk + late_round_risk) * live_risk_exposure_scale(table, tile)
 }
 
 fn mid_round_live_suited_risk_bias(
@@ -1940,7 +1940,17 @@ fn open_opponent_live_suited_risk(table: &AiPublicTable, position: usize, tile: 
     let cap = if tile_is_terminal(tile) { 7.5 } else { 10.5 };
     let open_risk = (open_opponents as f64 * per_open).min(cap);
     let late_round_risk = if is_late_round(table) { 2.5 } else { 0.0 };
-    open_risk + late_round_risk
+    (open_risk + late_round_risk) * live_risk_exposure_scale(table, tile)
+}
+
+fn live_risk_exposure_scale(table: &AiPublicTable, tile: i32) -> f64 {
+    match exposed_meld_tile_count(table, tile) {
+        0 => 1.0,
+        1 => 0.8,
+        2 => 0.55,
+        3 => 0.25,
+        _ => 0.0,
+    }
 }
 
 fn seat_has_open_meld_tile(seat: &AiSeatView, tile: i32) -> bool {
@@ -8694,6 +8704,31 @@ mod tests {
     }
 
     #[test]
+    fn mid_round_live_dragon_risk_discounts_exposed_meld_tiles() {
+        let mut exposed_table = table_with_discards(1, Vec::new());
+        exposed_table.wall_count = 42;
+        exposed_table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(9)];
+        exposed_table.seats.insert(
+            2,
+            AiSeatView {
+                position: 2,
+                hand_count: 10,
+                discards: Vec::new(),
+                melds: vec![test_peng_meld(35)],
+            },
+        );
+
+        let mut live_table = exposed_table.clone();
+        live_table.seats.get_mut(&2).unwrap().melds = vec![test_peng_meld(16)];
+
+        assert!(live_risk_exposure_scale(&exposed_table, 35) < 1.0);
+        assert!(
+            open_opponent_live_dragon_risk(&exposed_table, 0, 35)
+                < open_opponent_live_dragon_risk(&live_table, 0, 35)
+        );
+    }
+
+    #[test]
     fn mid_round_open_honor_meld_tile_is_safer_than_live_dragon() {
         let mut table = table_with_discards(1, Vec::new());
         table.wall_count = 42;
@@ -8801,6 +8836,40 @@ mod tests {
         assert_eq!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
             Some(14)
+        );
+    }
+
+    #[test]
+    fn mid_round_live_suited_risk_discounts_exposed_meld_tiles() {
+        let mut exposed_table = table_with_discards(1, Vec::new());
+        exposed_table.wall_count = 37;
+        exposed_table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(16)];
+        exposed_table.seats.insert(
+            2,
+            AiSeatView {
+                position: 2,
+                hand_count: 10,
+                discards: Vec::new(),
+                melds: vec![test_peng_meld(9)],
+            },
+        );
+        let hand = vec![1, 2, 3, 9, 11, 12, 14, 16, 18, 21, 22, 24, 26, 31];
+
+        let mut live_table = exposed_table.clone();
+        live_table.seats.get_mut(&2).unwrap().melds = vec![test_peng_meld(35)];
+
+        assert!(live_risk_exposure_scale(&exposed_table, 9) < 1.0);
+        assert!(
+            mid_round_live_suited_risk_bias(&hand, &[], &exposed_table, 0, 9, 1, WIN_RULE_RELAXED)
+                > mid_round_live_suited_risk_bias(
+                    &hand,
+                    &[],
+                    &live_table,
+                    0,
+                    9,
+                    1,
+                    WIN_RULE_RELAXED
+                )
         );
     }
 
