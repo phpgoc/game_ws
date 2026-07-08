@@ -608,7 +608,11 @@ fn finish_added_gang(
 
 fn four_gui_yi_fan(hand_tiles: &[i32], melds: &[WsShenyangMahjongMeld]) -> i32 {
     let mut counts = HashMap::<i32, i32>::new();
-    for tile in hand_tiles.iter().copied() {
+    for tile in hand_tiles
+        .iter()
+        .copied()
+        .filter(|tile| is_valid_tile(*tile))
+    {
         *counts.entry(tile).or_default() += 1;
     }
     for meld in melds.iter().filter(|meld| is_four_gui_yi_meld(meld)) {
@@ -5036,6 +5040,7 @@ mod tests {
             ),
             0
         );
+        assert_eq!(four_gui_yi_fan(&[99, 99, 99, 99], &[]), 0);
     }
 
     #[test]

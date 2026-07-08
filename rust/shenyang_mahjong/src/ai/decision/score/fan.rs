@@ -5,7 +5,7 @@ pub(in crate::ai::decision) fn estimated_four_gui_yi_fan(
     melds: &[WsShenyangMahjongMeld],
 ) -> i32 {
     let mut counts = HashMap::<i32, i32>::new();
-    for tile in hand.iter().copied() {
+    for tile in hand.iter().copied().filter(|tile| is_valid_tile(*tile)) {
         *counts.entry(tile).or_default() += 1;
     }
     for meld in melds.iter().filter(|meld| is_four_gui_yi_meld(meld)) {

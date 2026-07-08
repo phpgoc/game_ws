@@ -72,6 +72,7 @@ fn estimated_four_gui_yi_ignores_malformed_melds() {
     assert_eq!(estimated_four_gui_yi_fan(&[2], &[test_peng_meld(2)]), 1);
     assert_eq!(estimated_four_gui_yi_fan(&[2], &[invalid_chi]), 0);
     assert_eq!(estimated_four_gui_yi_fan(&[99], &[invalid_tile_peng]), 0);
+    assert_eq!(estimated_four_gui_yi_fan(&[99, 99, 99, 99], &[]), 0);
     assert_eq!(
         estimated_four_gui_yi_fan(&[2, 2, 2], &[test_chi_meld(2)]),
         1
