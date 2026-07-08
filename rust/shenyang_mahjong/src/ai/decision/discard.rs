@@ -81,6 +81,7 @@ pub fn choose_discard_from_view(
             + pure_one_suit_discard_bias(hand, tile, melds, table, position)
             + complete_sequence_discard_bias(hand, tile, melds, table, position)
             + incomplete_sequence_discard_bias(hand, tile, melds, table, position, win_rule)
+            + pinghu_sequence_route_discard_bias(hand, tile, melds, table, position, win_rule)
             + mid_round_public_discard_bias(table, position, tile)
             + mid_round_open_meld_safety_bias(table, tile)
             + mid_round_live_honor_risk_bias(table, position, tile, count)
@@ -360,4 +361,49 @@ pub(super) fn incomplete_sequence_discard_bias(
     } else {
         0.0
     }
+}
+
+pub(super) fn pinghu_sequence_route_discard_bias(
+    hand: &[i32],
+    tile: i32,
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+) -> f64 {
+    if table.wall_count <= 55
+        || hand.iter().filter(|item| **item == tile).count() != 1
+        || pair_count(hand) > 3
+        || should_lock_seven_pairs_plan(hand, melds, table, position, win_rule)
+        || is_closed_early_piao_candidate(hand, melds, table, position)
+        || piao_plan_score_for_context(hand, melds, table, position) >= 20.0
+        || pure_one_suit_plan_score_for_context(hand, melds, table, position) > 0.0
+        || best_ready_score_after_discard(hand, melds, table, position, win_rule) > 0.0
+        || pinghu_sequence_route_tile_count(hand) < 5
+    {
+        return 0.0;
+    }
+
+    if tile_is_middle_of_sequence(hand, tile) {
+        -24.0
+    } else if tile_is_part_of_complete_sequence(hand, tile) {
+        -20.0
+    } else if tile_is_core_two_sided_wait_member(hand, tile)
+        || tile_is_core_closed_middle_wait_member(hand, tile)
+    {
+        -24.0
+    } else {
+        0.0
+    }
+}
+
+pub(super) fn pinghu_sequence_route_tile_count(hand: &[i32]) -> usize {
+    unique_tiles(hand)
+        .into_iter()
+        .filter(|tile| {
+            tile_is_part_of_complete_sequence(hand, *tile)
+                || tile_is_core_two_sided_wait_member(hand, *tile)
+                || tile_is_core_closed_middle_wait_member(hand, *tile)
+        })
+        .count()
 }

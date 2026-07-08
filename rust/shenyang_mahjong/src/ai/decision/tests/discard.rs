@@ -72,6 +72,44 @@ fn discard_breaks_weak_edge_closed_wait_before_core_closed_middle_wait() {
 }
 
 #[test]
+fn early_pinghu_route_preserves_core_sequence_over_public_middle() {
+    let mut table = table_with_discards(1, vec![14, 14]);
+    table.wall_count = 60;
+    let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 14, 15, 16, 21, 22, 31];
+
+    assert!(pair_count(&hand) <= 3);
+    assert!(pinghu_sequence_route_tile_count(&hand) >= 5);
+    assert!(tile_is_part_of_complete_sequence(&hand, 14));
+    assert!(
+        pinghu_sequence_route_discard_bias(&hand, 14, &[], &table, 0, WIN_RULE_SHENYANG_BASIC)
+            < pinghu_sequence_route_discard_bias(
+                &hand,
+                31,
+                &[],
+                &table,
+                0,
+                WIN_RULE_SHENYANG_BASIC
+            )
+    );
+    assert_eq!(
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(31)
+    );
+}
+
+#[test]
+fn mid_pinghu_route_sequence_bias_turns_off_after_shape_period() {
+    let mut table = table_with_discards(1, vec![14, 14]);
+    table.wall_count = 55;
+    let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 14, 15, 16, 21, 22, 31];
+
+    assert_eq!(
+        pinghu_sequence_route_discard_bias(&hand, 14, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        0.0
+    );
+}
+
+#[test]
 fn discard_preserves_middle_of_complete_sequence() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![4, 5, 6, 8, 11, 11, 11, 19, 19, 19, 21, 21, 22, 22];
