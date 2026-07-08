@@ -2405,7 +2405,8 @@ fn piao_discard_bias(
     if count >= 3 {
         if committed_groups >= 2 { -28.0 } else { -20.0 }
     } else if count == 2 {
-        if committed_groups >= 2 { -24.0 } else { -16.0 }
+        let base = if committed_groups >= 2 { -24.0 } else { -16.0 };
+        base + piao_dragon_pair_discard_bias(hand, table, position, tile, count)
     } else if only_terminal_or_honor || only_suit_tile {
         -40.0
     } else if win_rule == WIN_RULE_SHENYANG_BASIC && is_dragon(tile) && pair_count(hand) >= 4 {
@@ -2416,6 +2417,23 @@ fn piao_discard_bias(
         3.0
     } else {
         0.0
+    }
+}
+
+fn piao_dragon_pair_discard_bias(
+    hand: &[i32],
+    table: &AiPublicTable,
+    position: usize,
+    tile: i32,
+    count: usize,
+) -> f64 {
+    if count != 2 || !is_dragon(tile) {
+        return 0.0;
+    }
+    match remaining_tile_count(hand, table, position, tile) {
+        0 => -1.5,
+        1 => -3.0,
+        _ => -5.0,
     }
 }
 
@@ -7640,6 +7658,19 @@ mod tests {
             ),
             -24.0
         );
+    }
+
+    #[test]
+    fn piao_discard_bias_protects_live_dragon_pair() {
+        let table = table_with_discards(1, Vec::new());
+        let hand = vec![1, 1, 4, 5, 11, 11, 12, 13, 21, 21, 22, 23, 35, 35];
+
+        let middle_pair = piao_discard_bias(&hand, 11, &[], &table, 0, WIN_RULE_SHENYANG_BASIC);
+        let dragon_pair = piao_discard_bias(&hand, 35, &[], &table, 0, WIN_RULE_SHENYANG_BASIC);
+
+        assert_eq!(pair_count(&hand), 4);
+        assert!(remaining_tile_count(&hand, &table, 0, 35) > 0);
+        assert!(dragon_pair < middle_pair);
     }
 
     #[test]
