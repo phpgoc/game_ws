@@ -2096,7 +2096,8 @@ fn closed_opponent_may_need_suit(table: &AiPublicTable, position: usize, suit: i
     table.seats.iter().any(|(seat_position, seat)| {
         *seat_position != position
             && !has_open_meld(&seat.melds)
-            && seat.hand_count >= 13
+            && (seat.hand_count >= 13
+                || (seat.hand_count > 0 && has_concealed_gang_meld(&seat.melds)))
             && seat
                 .discards
                 .iter()
@@ -8937,6 +8938,45 @@ mod tests {
         assert!(opponent_missing_suit_safety_bias(&table, 0, 5) > 0.0);
         assert_eq!(
             opponent_missing_suit_safety_bias(&closed_threat_table, 0, 5),
+            0.0
+        );
+    }
+
+    #[test]
+    fn late_defense_concealed_gang_opponent_blocks_other_missing_suit_reads() {
+        let mut table = table_with_discards(1, vec![1, 4, 9]);
+        table.wall_count = 16;
+        table.seats.insert(
+            2,
+            AiSeatView {
+                position: 2,
+                hand_count: 10,
+                discards: vec![1, 4, 9],
+                melds: Vec::new(),
+            },
+        );
+
+        let mut short_closed_table = table.clone();
+        short_closed_table.seats.insert(
+            3,
+            AiSeatView {
+                position: 3,
+                hand_count: 9,
+                discards: Vec::new(),
+                melds: Vec::new(),
+            },
+        );
+
+        let mut concealed_gang_table = short_closed_table.clone();
+        concealed_gang_table
+            .seats
+            .get_mut(&3)
+            .unwrap()
+            .melds = vec![test_concealed_gang_meld(9)];
+
+        assert!(opponent_missing_suit_safety_bias(&short_closed_table, 0, 5) > 0.0);
+        assert_eq!(
+            opponent_missing_suit_safety_bias(&concealed_gang_table, 0, 5),
             0.0
         );
     }
