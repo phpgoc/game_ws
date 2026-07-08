@@ -338,16 +338,6 @@ impl HoldemGameHandler {
             return;
         };
 
-        let strategy = if is_ai_position {
-            TexasHoldEmAutoStrategy::CHECK_CALL
-        } else {
-            self.auto_strategies
-                .lock()
-                .unwrap()
-                .get(room_key)
-                .and_then(|strategies| strategies.get(&position).copied())
-                .unwrap_or(TexasHoldEmAutoStrategy::CHECK_FOLD)
-        };
         if !should_auto {
             let base = state.lock().unwrap().base.clone();
             base.lock().unwrap().mark_away(position);
@@ -360,7 +350,19 @@ impl HoldemGameHandler {
                 dispatch,
             );
         }
-        let payload = Self::auto_payload_for(strategy, call_amount);
+        let payload = if is_ai_position {
+            let s = state.lock().unwrap();
+            crate::ai::decide(&s, position)
+        } else {
+            let strategy = self
+                .auto_strategies
+                .lock()
+                .unwrap()
+                .get(room_key)
+                .and_then(|strategies| strategies.get(&position).copied())
+                .unwrap_or(TexasHoldEmAutoStrategy::CHECK_FOLD);
+            Self::auto_payload_for(strategy, call_amount)
+        };
         let _ =
             self.apply_position_action(room_key, room_service, state, position, payload, dispatch);
     }
@@ -728,7 +730,7 @@ mod tests {
     use share_type_public::WsJoinRequest;
 
     #[test]
-    fn ai_positions_always_check_call_even_with_stale_check_fold_strategy() {
+    fn ai_positions_use_smart_ai_instead_of_stale_strategy() {
         let handler = HoldemGameHandler::default();
         let mut room = RoomService::default();
         for session_id in 1..=2 {
@@ -782,9 +784,9 @@ mod tests {
                 })
                 .flatten()
         });
-        assert_eq!(
-            action.map(|event| event.action),
-            Some(TexasHoldEmAction::CALL)
+        assert!(
+            action.is_some(),
+            "AI position should produce a PLAY event via smart AI module"
         );
     }
 

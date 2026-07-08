@@ -12,7 +12,7 @@ pub fn card_rank(card: i32) -> i32 {
     ((card - 1) % 13) + 2
 }
 
-fn card_suit(card: i32) -> i32 {
+pub fn card_suit(card: i32) -> i32 {
     (card - 1) / 13
 }
 
