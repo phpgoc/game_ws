@@ -5356,6 +5356,48 @@ mod tests {
     }
 
     #[test]
+    fn settlement_fan_counts_single_yaojiu_wait_when_other_wait_is_exhausted() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![2, 3, 11, 12, 13, 21, 22, 23, 35, 35]);
+        state.melds.insert(
+            1,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::GANG,
+                vec![4, 4, 4, 4],
+                Some(0),
+            )],
+        );
+        state.enter_settlement_with_reverse_win(
+            vec![1],
+            Some(0),
+            Some(1),
+            false,
+            false,
+            false,
+            false,
+        );
+        let settlement = state.settlement.as_ref().expect("settlement");
+        let hand_tiles = winner_final_hand_tiles(&state, settlement, 1);
+        let melds = state.melds.get(&1).map(Vec::as_slice).unwrap_or(&[]);
+
+        assert!(is_single_wait_win(
+            &hand_tiles,
+            melds,
+            settlement.win_tile,
+            WIN_RULE_RELAXED
+        ));
+        assert!(is_single_yaojiu_wait_win(
+            &hand_tiles,
+            melds,
+            settlement.win_tile,
+            WIN_RULE_RELAXED
+        ));
+        assert_eq!(winner_hand_fan(&state, settlement, 1), 4);
+    }
+
+    #[test]
     fn settlement_fan_counts_single_yaojiu_honor_wait_extra() {
         let mut state = playable_state();
         state

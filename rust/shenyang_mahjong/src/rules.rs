@@ -520,7 +520,7 @@ fn is_unique_complete_wait(tiles: &[i32], melds: &[WsShenyangMahjongMeld], win_t
             let mut test = base.clone();
             test.push(*tile);
             test.sort_unstable();
-            is_complete_win(&test, melds.len())
+            is_complete_win_with_melds(&test, melds, WIN_RULE_RELAXED)
         })
         .collect::<Vec<_>>();
     waits.len() == 1 && waits[0] == win_tile
@@ -1275,6 +1275,20 @@ mod tests {
         assert!(is_standard_win(&tiles));
         assert!(is_unique_complete_wait(&tiles, &[], 1));
         assert!(is_single_wait_shape(&tiles, &[], 1));
+    }
+
+    #[test]
+    fn single_wait_shape_ignores_waits_blocked_by_exposed_four_copies() {
+        let tiles = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 35, 35];
+        let melds = vec![meld(
+            ShenyangMahjongMeldKind::GANG,
+            vec![4, 4, 4, 4],
+            Some(2),
+        )];
+
+        assert!(is_complete_win_with_melds(&tiles, &melds, WIN_RULE_RELAXED));
+        assert!(is_unique_complete_wait(&tiles, &melds, 1));
+        assert!(is_single_wait_shape(&tiles, &melds, 1));
     }
 
     #[test]
