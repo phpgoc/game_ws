@@ -1613,7 +1613,7 @@ fn winner_pattern(
     }
 }
 
-fn winner_pattern_with_rule(
+pub(crate) fn winner_pattern_with_rule(
     hand_tiles: &[i32],
     melds: &[WsShenyangMahjongMeld],
     win_rule: i32,

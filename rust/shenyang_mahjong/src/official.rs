@@ -7,13 +7,11 @@ use ws_common::RoomService;
 #[cfg(feature = "official")]
 use crate::game::{
     settlement_from_position, settlement_is_reverse_win, settlement_score_changes_for_state,
+    winner_pattern_with_rule,
 };
 use crate::game_state::{SettlementState, ShenyangMahjongLoopState};
 #[cfg(feature = "official")]
-use crate::rules::{
-    WIN_RULE_SHENYANG_BASIC, is_complete_win_with_melds, is_piao_hu_win, is_pure_one_suit_win,
-    is_seven_pairs_win, win_rule_from_configs,
-};
+use crate::rules::win_rule_from_configs;
 
 #[cfg(feature = "official")]
 fn block_on_official<F>(future: F) -> Option<F::Output>
@@ -205,21 +203,20 @@ fn winner_pattern_for_position(
         hand_tiles.push(tile);
         hand_tiles.sort_unstable();
     }
-    let meld_count = state.melds.get(&position).map(Vec::len).unwrap_or(0);
     let melds = state.melds.get(&position).map(Vec::as_slice).unwrap_or(&[]);
-    if win_rule == WIN_RULE_SHENYANG_BASIC
-        && !is_complete_win_with_melds(&hand_tiles, melds, win_rule)
-    {
-        return data::ShenyangMahjongRoundWinPattern::Standard;
-    }
-    if meld_count == 0 && is_seven_pairs_win(&hand_tiles) {
-        data::ShenyangMahjongRoundWinPattern::SevenPairs
-    } else if is_pure_one_suit_win(&hand_tiles, melds) {
-        data::ShenyangMahjongRoundWinPattern::PureOneSuit
-    } else if is_piao_hu_win(&hand_tiles, melds) {
-        data::ShenyangMahjongRoundWinPattern::PiaoHu
-    } else {
-        data::ShenyangMahjongRoundWinPattern::Standard
+    match winner_pattern_with_rule(&hand_tiles, melds, win_rule) {
+        share_type_public::games::shenyang_mahjong::ShenyangMahjongWinPattern::Standard => {
+            data::ShenyangMahjongRoundWinPattern::Standard
+        }
+        share_type_public::games::shenyang_mahjong::ShenyangMahjongWinPattern::PiaoHu => {
+            data::ShenyangMahjongRoundWinPattern::PiaoHu
+        }
+        share_type_public::games::shenyang_mahjong::ShenyangMahjongWinPattern::SevenPairs => {
+            data::ShenyangMahjongRoundWinPattern::SevenPairs
+        }
+        share_type_public::games::shenyang_mahjong::ShenyangMahjongWinPattern::PureOneSuit => {
+            data::ShenyangMahjongRoundWinPattern::PureOneSuit
+        }
     }
 }
 
@@ -262,8 +259,10 @@ mod tests {
 
     use crate::game_state::SettlementState;
     #[cfg(feature = "official")]
-    use crate::game_state::ShenyangMahjongLoopState;
+    use crate::game_state::{ShenyangMahjongLoopState, build_meld};
 
+    #[cfg(feature = "official")]
+    use share_type_public::games::shenyang_mahjong::ShenyangMahjongMeldKind;
     use share_type_public::games::shenyang_mahjong::WsShenyangMahjongScoreChange;
     #[cfg(feature = "official")]
     use ws_common::game_state::CommonGameState;
@@ -451,6 +450,67 @@ mod tests {
                 crate::rules::WIN_RULE_SHENYANG_BASIC
             ),
             data::ShenyangMahjongRoundWinPattern::PureOneSuit
+        );
+    }
+
+    #[cfg(feature = "official")]
+    #[test]
+    fn winner_pattern_reuses_settlement_patterns_for_official_stats() {
+        let mut seven_pairs_state = state_with_players();
+        seven_pairs_state
+            .hands
+            .insert(1, vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35]);
+        seven_pairs_state.enter_settlement_with_reverse_win(
+            vec![1],
+            Some(0),
+            Some(35),
+            false,
+            false,
+            false,
+            false,
+        );
+        let seven_pairs_settlement = seven_pairs_state.settlement.as_ref().expect("settlement");
+
+        assert_eq!(
+            winner_pattern_for_position(
+                &seven_pairs_state,
+                seven_pairs_settlement,
+                1,
+                crate::rules::WIN_RULE_SHENYANG_BASIC
+            ),
+            data::ShenyangMahjongRoundWinPattern::SevenPairs
+        );
+
+        let mut piao_state = state_with_players();
+        piao_state.hands.insert(2, vec![35, 35]);
+        piao_state.melds.insert(
+            2,
+            vec![
+                build_meld(ShenyangMahjongMeldKind::PENG, vec![1, 1, 1], Some(0)),
+                build_meld(ShenyangMahjongMeldKind::PENG, vec![11, 11, 11], Some(1)),
+                build_meld(ShenyangMahjongMeldKind::PENG, vec![21, 21, 21], Some(3)),
+                build_meld(ShenyangMahjongMeldKind::PENG, vec![31, 31, 31], Some(0)),
+            ],
+        );
+        piao_state.enter_settlement_with_reverse_win(
+            vec![2],
+            None,
+            Some(35),
+            true,
+            false,
+            false,
+            false,
+        );
+        let piao_settlement = piao_state.settlement.as_ref().expect("settlement");
+
+        assert_eq!(
+            winner_pattern_for_position(
+                &piao_state,
+                piao_settlement,
+                2,
+                crate::rules::WIN_RULE_SHENYANG_BASIC
+            ),
+            data::ShenyangMahjongRoundWinPattern::PiaoHu
         );
     }
 
