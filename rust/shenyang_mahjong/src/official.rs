@@ -5,7 +5,7 @@ use share_type_public::games::shenyang_mahjong::WsShenyangMahjongScoreChange;
 use ws_common::RoomService;
 
 #[cfg(feature = "official")]
-use crate::game::settlement_score_changes_for_state;
+use crate::game::{settlement_is_reverse_win, settlement_score_changes_for_state};
 use crate::game_state::{SettlementState, ShenyangMahjongLoopState};
 #[cfg(feature = "official")]
 use crate::rules::{
@@ -112,7 +112,7 @@ pub fn settle_round(
     let discarder_user_id = settlement
         .from_position
         .and_then(|position| room_service.room_official_user_id(room_key, position));
-    let is_reverse_win = settlement.is_reverse_win;
+    let is_reverse_win = official_reverse_win_for_settlement(settlement);
     let players = state.players_snapshot();
     let positions = players.keys().copied().collect::<Vec<_>>();
     let score_changes = settlement_score_changes_for_state(state, &positions, settlement, configs);
@@ -150,6 +150,11 @@ pub fn settle_round(
     _state: &ShenyangMahjongLoopState,
     _configs: &HashMap<String, i32>,
 ) {
+}
+
+#[cfg(feature = "official")]
+fn official_reverse_win_for_settlement(settlement: &SettlementState) -> bool {
+    settlement_is_reverse_win(settlement)
 }
 
 #[cfg(feature = "official")]
@@ -258,7 +263,10 @@ mod tests {
     use ws_common::game_state::CommonGameState;
 
     #[cfg(feature = "official")]
-    use super::{winner_pattern_for_position, winner_scores_for_settlement};
+    use super::{
+        official_reverse_win_for_settlement, winner_pattern_for_position,
+        winner_scores_for_settlement,
+    };
     use super::{winner_score_for_settlement, winner_score_from_changes};
 
     #[test]
@@ -328,6 +336,34 @@ mod tests {
         assert_eq!(winner_score_from_changes(&score_changes, 0), 0);
         assert_eq!(winner_score_from_changes(&score_changes, 1), 0);
         assert_eq!(winner_score_from_changes(&score_changes, 2), 0);
+    }
+
+    #[cfg(feature = "official")]
+    #[test]
+    fn official_reverse_win_requires_discard_context() {
+        let valid_reverse_win = SettlementState {
+            winner_positions: vec![1],
+            from_position: Some(0),
+            win_tile: Some(5),
+            is_self_draw: false,
+            is_reverse_win: true,
+            is_gang_draw: false,
+            is_haidilao: false,
+        };
+        let invalid_self_draw_flag = SettlementState {
+            winner_positions: vec![1],
+            from_position: None,
+            win_tile: Some(5),
+            is_self_draw: true,
+            is_reverse_win: true,
+            is_gang_draw: false,
+            is_haidilao: false,
+        };
+
+        assert!(official_reverse_win_for_settlement(&valid_reverse_win));
+        assert!(!official_reverse_win_for_settlement(
+            &invalid_self_draw_flag
+        ));
     }
 
     #[cfg(feature = "official")]

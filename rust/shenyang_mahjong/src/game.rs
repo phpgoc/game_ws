@@ -386,7 +386,7 @@ fn build_winner_details(
         .collect()
 }
 
-fn settlement_is_reverse_win(settlement: &crate::game_state::SettlementState) -> bool {
+pub(crate) fn settlement_is_reverse_win(settlement: &crate::game_state::SettlementState) -> bool {
     !settlement.is_self_draw && settlement.from_position.is_some() && settlement.is_reverse_win
 }
 
