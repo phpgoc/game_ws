@@ -1,6 +1,8 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
+mod tile;
+
 use share_type_public::games::shenyang_mahjong::{
     SHENYANG_MAHJONG_TILE_KINDS, ShenyangMahjongMeldKind, WsShenyangMahjongMeld,
 };
@@ -13,6 +15,10 @@ use crate::rules::{
 };
 
 use super::observation::{AiClaimView, AiPublicTable, AiSeatView};
+use tile::{
+    is_dragon, is_honor, is_suited, is_valid_tile, is_wind, tile_is_terminal, tile_rank, tile_suit,
+    unique_tiles,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AiClaimChoice {
@@ -1518,14 +1524,6 @@ fn honor_discard_bias(hand: &[i32], tile: i32) -> f64 {
     }
 }
 
-fn is_dragon(tile: i32) -> bool {
-    matches!(tile, 35..=37)
-}
-
-fn is_honor(tile: i32) -> bool {
-    matches!(tile, 31..=37)
-}
-
 fn is_late_defense_round(table: &AiPublicTable) -> bool {
     table.wall_count <= 20
 }
@@ -1561,10 +1559,6 @@ fn is_seven_pairs_wait_shape(hand: &[i32]) -> bool {
     let pairs = counts.values().map(|count| count / 2).sum::<usize>();
     let singles = counts.values().filter(|&&count| count % 2 == 1).count();
     pairs == 6 && singles == 1
-}
-
-fn is_suited(tile: i32) -> bool {
-    matches!(tile, 1..=9 | 11..=19 | 21..=29)
 }
 
 fn is_sequence_meld(meld: &WsShenyangMahjongMeld) -> bool {
@@ -1609,10 +1603,6 @@ fn valid_meld_tiles(melds: &[WsShenyangMahjongMeld]) -> impl Iterator<Item = i32
 
 fn is_open_meld(meld: &WsShenyangMahjongMeld) -> bool {
     meld.from_position.is_some() && is_valid_meld(meld)
-}
-
-fn is_wind(tile: i32) -> bool {
-    matches!(tile, 31..=34)
 }
 
 fn late_defense_discard_bias(table: &AiPublicTable, position: usize, tile: i32) -> f64 {
@@ -1811,10 +1801,6 @@ fn meld_primary_tile(meld: &WsShenyangMahjongMeld) -> Option<i32> {
         .all(|tile| *tile == first)
         .then_some(first)
         .filter(|tile| is_valid_tile(*tile))
-}
-
-fn is_valid_tile(tile: i32) -> bool {
-    SHENYANG_MAHJONG_TILE_KINDS.contains(&tile)
 }
 
 fn mid_round_public_discard_bias(table: &AiPublicTable, position: usize, tile: i32) -> f64 {
@@ -4412,25 +4398,6 @@ fn tile_is_weak_edge_wait_terminal(hand: &[i32], tile: i32) -> bool {
             .any(|item| *item == tile - 1 || *item == tile - 2),
         _ => false,
     }
-}
-
-fn tile_is_terminal(tile: i32) -> bool {
-    is_suited(tile) && matches!(tile_rank(tile), 1 | 9)
-}
-
-fn tile_rank(tile: i32) -> i32 {
-    tile % 10
-}
-
-fn tile_suit(tile: i32) -> i32 {
-    tile / 10
-}
-
-fn unique_tiles(hand: &[i32]) -> Vec<i32> {
-    let mut tiles = hand.to_vec();
-    tiles.sort_unstable();
-    tiles.dedup();
-    tiles
 }
 
 fn violates_basic_terminal_or_honor_discard(
