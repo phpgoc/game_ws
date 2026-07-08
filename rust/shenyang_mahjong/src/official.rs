@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+#[cfg(feature = "official")]
+use share_type_public::games::shenyang_mahjong::WsShenyangMahjongScoreChange;
 use ws_common::RoomService;
 
 #[cfg(feature = "official")]
@@ -115,16 +117,10 @@ pub fn settle_round(
     let positions = players.keys().copied().collect::<Vec<_>>();
     let score_changes = settlement_score_changes_for_state(state, &positions, settlement, configs);
     let win_rule = win_rule_from_configs(configs);
-    let mut winner_scores = Vec::new();
-    for position in &settlement.winner_positions {
-        if let Some(winner_user_id) = room_service.room_official_user_id(room_key, *position) {
-            winner_scores.push(data::GameRoundShenyangMahjongWinnerScoreInput {
-                winner_user_id,
-                score: winner_score_from_changes(&score_changes, *position),
-                pattern: winner_pattern_for_position(state, settlement, *position, win_rule),
-            });
-        }
-    }
+    let winner_scores =
+        winner_scores_for_settlement(state, settlement, &score_changes, win_rule, |position| {
+            room_service.room_official_user_id(room_key, position)
+        });
 
     tokio::spawn(async move {
         if let Err(err) = data::game_round_shenyang_mahjong_settlement(
@@ -154,6 +150,34 @@ pub fn settle_round(
     _state: &ShenyangMahjongLoopState,
     _configs: &HashMap<String, i32>,
 ) {
+}
+
+#[cfg(feature = "official")]
+fn winner_scores_for_settlement<F>(
+    state: &ShenyangMahjongLoopState,
+    settlement: &SettlementState,
+    score_changes: &[WsShenyangMahjongScoreChange],
+    win_rule: i32,
+    mut user_id_for_position: F,
+) -> Vec<data::GameRoundShenyangMahjongWinnerScoreInput>
+where
+    F: FnMut(usize) -> Option<i64>,
+{
+    let mut winner_scores = Vec::new();
+    for position in &settlement.winner_positions {
+        let score = winner_score_from_changes(score_changes, *position);
+        if score <= 0 {
+            continue;
+        }
+        if let Some(winner_user_id) = user_id_for_position(*position) {
+            winner_scores.push(data::GameRoundShenyangMahjongWinnerScoreInput {
+                winner_user_id,
+                score,
+                pattern: winner_pattern_for_position(state, settlement, *position, win_rule),
+            });
+        }
+    }
+    winner_scores
 }
 
 #[cfg(feature = "official")]
@@ -234,7 +258,7 @@ mod tests {
     use ws_common::game_state::CommonGameState;
 
     #[cfg(feature = "official")]
-    use super::winner_pattern_for_position;
+    use super::{winner_pattern_for_position, winner_scores_for_settlement};
     use super::{winner_score_for_settlement, winner_score_from_changes};
 
     #[test]
@@ -286,6 +310,65 @@ mod tests {
         ];
 
         assert_eq!(winner_score_from_changes(&score_changes, 1), 5);
+    }
+
+    #[test]
+    fn winner_score_clamps_non_positive_changes_to_zero() {
+        let score_changes = vec![
+            WsShenyangMahjongScoreChange {
+                position: 0,
+                score: -3,
+            },
+            WsShenyangMahjongScoreChange {
+                position: 1,
+                score: 0,
+            },
+        ];
+
+        assert_eq!(winner_score_from_changes(&score_changes, 0), 0);
+        assert_eq!(winner_score_from_changes(&score_changes, 1), 0);
+        assert_eq!(winner_score_from_changes(&score_changes, 2), 0);
+    }
+
+    #[cfg(feature = "official")]
+    #[test]
+    fn official_winner_scores_skip_zero_score_winners() {
+        let state = state_with_players();
+        let settlement = SettlementState {
+            winner_positions: vec![0, 1],
+            from_position: Some(2),
+            win_tile: Some(9),
+            is_self_draw: false,
+            is_reverse_win: false,
+            is_gang_draw: false,
+            is_haidilao: false,
+        };
+        let score_changes = vec![
+            WsShenyangMahjongScoreChange {
+                position: 0,
+                score: 0,
+            },
+            WsShenyangMahjongScoreChange {
+                position: 1,
+                score: 5,
+            },
+            WsShenyangMahjongScoreChange {
+                position: 2,
+                score: -5,
+            },
+        ];
+
+        let winner_scores = winner_scores_for_settlement(
+            &state,
+            &settlement,
+            &score_changes,
+            crate::rules::WIN_RULE_SHENYANG_BASIC,
+            |position| Some(position as i64 + 10),
+        );
+
+        assert_eq!(winner_scores.len(), 1);
+        assert_eq!(winner_scores[0].winner_user_id, 11);
+        assert_eq!(winner_scores[0].score, 5);
     }
 
     #[cfg(feature = "official")]
