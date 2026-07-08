@@ -217,12 +217,16 @@ pub(crate) fn build_settlement_event_with_configs(
     let mut snapshots = Vec::new();
     let mut positions: Vec<usize> = players.keys().copied().collect();
     positions.sort_unstable();
+    let score_changes = settlement_score_changes_for_state(state, &positions, settlement, configs);
+    let winner_positions =
+        positive_winner_positions_from_scores(settlement, &score_changes).collect::<Vec<_>>();
+    let winner_position_set = winner_positions.iter().copied().collect::<HashSet<_>>();
 
     for position in &positions {
         let (_, name) = players.get(position).cloned().unwrap_or_default();
         let mut hand_tiles = state.hands.get(position).cloned().unwrap_or_default();
         if !settlement.is_self_draw
-            && settlement.winner_positions.contains(position)
+            && winner_position_set.contains(position)
             && let Some(tile) = settlement.win_tile
         {
             hand_tiles.push(tile);
@@ -237,7 +241,6 @@ pub(crate) fn build_settlement_event_with_configs(
         });
     }
 
-    let score_changes = settlement_score_changes_for_state(state, &positions, settlement, configs);
     let winner_details = build_winner_details(
         state,
         settlement,
@@ -246,8 +249,7 @@ pub(crate) fn build_settlement_event_with_configs(
     );
 
     Some(WsShenyangMahjongSettlementEvent {
-        winner_positions: settlement
-            .winner_positions
+        winner_positions: winner_positions
             .iter()
             .map(|position| *position as i32)
             .collect(),
@@ -337,21 +339,41 @@ fn build_winner_details(
     settlement
         .winner_positions
         .iter()
-        .map(|position| {
+        .filter_map(|position| {
+            let score = score_by_position.get(position).copied().unwrap_or(0);
+            if score <= 0 {
+                return None;
+            }
             let hand_tiles = winner_final_hand_tiles(state, settlement, *position);
             let melds = state.melds.get(position).map(Vec::as_slice).unwrap_or(&[]);
             let pattern = winner_pattern_with_rule(&hand_tiles, melds, win_rule);
-            WsShenyangMahjongWinnerDetail {
+            Some(WsShenyangMahjongWinnerDetail {
                 position: *position as i32,
                 pattern,
                 is_self_draw: settlement.is_self_draw,
                 is_reverse_win: settlement.is_reverse_win,
                 is_gang_draw: settlement.is_gang_draw,
                 is_haidilao: settlement.is_haidilao,
-                score: score_by_position.get(position).copied().unwrap_or(0),
-            }
+                score,
+            })
         })
         .collect()
+}
+
+fn positive_winner_positions_from_scores<'a>(
+    settlement: &'a crate::game_state::SettlementState,
+    score_changes: &'a [WsShenyangMahjongScoreChange],
+) -> impl Iterator<Item = usize> + 'a {
+    let score_by_position = score_changes
+        .iter()
+        .map(|change| (change.position as usize, change.score))
+        .collect::<HashMap<_, _>>();
+
+    settlement
+        .winner_positions
+        .iter()
+        .copied()
+        .filter(move |position| score_by_position.get(position).copied().unwrap_or(0) > 0)
 }
 
 fn can_added_gang(hand: &[i32], melds: &[WsShenyangMahjongMeld], target_tile: i32) -> bool {
@@ -5651,6 +5673,83 @@ mod tests {
                 .map(|change| (change.position, change.score))
                 .collect::<Vec<_>>(),
             vec![(0, 0), (1, 0), (2, 0), (3, 0)]
+        );
+    }
+
+    #[test]
+    fn settlement_event_skips_zero_score_winners() {
+        let mut state = playable_state();
+        state.hands.insert(1, vec![1, 1, 35, 35]);
+        state.melds.insert(
+            1,
+            vec![
+                build_meld(ShenyangMahjongMeldKind::PENG, vec![11, 11, 11], Some(0)),
+                build_meld(ShenyangMahjongMeldKind::PENG, vec![21, 21, 21], Some(2)),
+                build_meld(ShenyangMahjongMeldKind::PENG, vec![31, 31, 31], Some(3)),
+            ],
+        );
+        state
+            .hands
+            .insert(2, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 35]);
+        state.melds.insert(
+            2,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::PENG,
+                vec![99, 99, 99],
+                Some(0),
+            )],
+        );
+        state.enter_settlement_with_reverse_win(
+            vec![1, 2],
+            Some(0),
+            Some(1),
+            false,
+            false,
+            false,
+            false,
+        );
+
+        let event = build_settlement_event(&state).expect("settlement event");
+
+        assert_eq!(event.winner_positions, vec![1]);
+        assert_eq!(event.winner_details.len(), 1);
+        assert_eq!(event.winner_details[0].position, 1);
+        assert!(event.winner_details[0].score > 0);
+        assert_eq!(
+            event
+                .score_changes
+                .iter()
+                .map(|change| (change.position, change.score))
+                .collect::<Vec<_>>(),
+            vec![(0, -5), (1, 5), (2, 0), (3, 0)]
+        );
+
+        let valid_winner_snapshot = event
+            .players
+            .iter()
+            .find(|player| player.position == 1)
+            .expect("valid winner snapshot");
+        assert_eq!(
+            valid_winner_snapshot
+                .hand_tiles
+                .iter()
+                .filter(|tile| **tile == 1)
+                .count(),
+            3
+        );
+
+        let invalid_winner_snapshot = event
+            .players
+            .iter()
+            .find(|player| player.position == 2)
+            .expect("invalid winner snapshot");
+        assert_eq!(
+            invalid_winner_snapshot
+                .hand_tiles
+                .iter()
+                .filter(|tile| **tile == 1)
+                .count(),
+            1
         );
     }
 
