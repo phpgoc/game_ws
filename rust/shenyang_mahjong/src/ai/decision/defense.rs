@@ -462,7 +462,7 @@ pub(super) fn opponent_missing_suit_safety_read(
 ) -> f64 {
     let suit = tile_suit(tile);
     if table.seats.iter().any(|(seat_position, seat)| {
-        *seat_position != position && piao_threat_needs_suit(seat, suit)
+        *seat_position != position && piao_threat_blocks_missing_suit_safety(seat, tile)
     }) {
         return 0.0;
     }
@@ -523,6 +523,20 @@ pub(super) fn piao_threat_needs_suit(seat: &AiSeatView, suit: i32) -> bool {
     piao_threat_level(&seat.melds) >= 3
         && !piao_threat_cannot_satisfy_three_suits(&seat.melds, seat.hand_count)
         && piao_missing_suits_from_melds(&seat.melds).contains(&suit)
+}
+
+pub(super) fn piao_threat_blocks_missing_suit_safety(seat: &AiSeatView, tile: i32) -> bool {
+    if !is_suited(tile) {
+        return false;
+    }
+    let threat_level = piao_threat_level(&seat.melds);
+    if threat_level < 3 || piao_threat_cannot_satisfy_three_suits(&seat.melds, seat.hand_count) {
+        return false;
+    }
+    if threat_level >= 4 && seat.hand_count <= 2 {
+        return piao_final_pair_wait_satisfies_exposed_requirements(&seat.melds, tile);
+    }
+    piao_threat_needs_suit(seat, tile_suit(tile))
 }
 
 pub(super) fn opponent_threat_discard_bias(

@@ -720,6 +720,40 @@ fn late_defense_piao_needed_suit_blocks_other_missing_suit_reads() {
 }
 
 #[test]
+fn late_defense_final_piao_wait_only_blocks_missing_suit_tiles_that_can_complete_requirements() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 16;
+    table.seats.get_mut(&1).unwrap().hand_count = 2;
+    table.seats.get_mut(&1).unwrap().melds = vec![
+        test_peng_meld(2),
+        test_peng_meld(3),
+        test_peng_meld(12),
+        test_peng_meld(13),
+    ];
+    for position in [2, 3] {
+        table.seats.insert(
+            position,
+            AiSeatView {
+                position,
+                hand_count: 10,
+                discards: vec![22, 25, 28],
+                melds: Vec::new(),
+            },
+        );
+    }
+
+    assert_eq!(
+        piao_missing_suits_from_melds(&table.seats.get(&1).unwrap().melds),
+        vec![2]
+    );
+    assert!(piao_needs_terminal_or_honor_from_melds(
+        &table.seats.get(&1).unwrap().melds
+    ));
+    assert_eq!(opponent_missing_suit_safety_bias(&table, 0, 21), 0.0);
+    assert!(opponent_missing_suit_safety_bias(&table, 0, 25) > 0.0);
+}
+
+#[test]
 fn late_defense_closed_opponent_blocks_other_missing_suit_reads() {
     let mut table = table_with_discards(1, vec![1, 4, 9]);
     table.wall_count = 16;
