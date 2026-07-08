@@ -3442,7 +3442,7 @@ fn shenyang_rule_progress_score(
     }
     let pure_score = pure_one_suit_plan_score_for_context(hand, melds, table, position);
     if pure_score > 0.0 {
-        return pure_score + if has_open_meld(melds) { 9.0 } else { -8.0 };
+        return pure_score;
     }
     let mut score = 0.0;
     let suits = suit_presence(hand, melds);
@@ -4908,6 +4908,20 @@ mod tests {
         assert_eq!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(31)
+        );
+    }
+
+    #[test]
+    fn pure_one_suit_rule_progress_does_not_require_opening() {
+        let table = table_with_discards(1, Vec::new());
+        let hand = vec![1, 1, 1, 2, 2, 3, 3, 4, 5, 6, 7, 8, 9];
+        let pure_score = pure_one_suit_plan_score_for_context(&hand, &[], &table, 0);
+
+        assert!(pure_score > 0.0);
+        assert!(!has_open_meld(&[]));
+        assert_eq!(
+            shenyang_rule_progress_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
+            pure_score
         );
     }
 
