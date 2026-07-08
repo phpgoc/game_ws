@@ -903,7 +903,7 @@ fn closed_opponent_threat_discard_bias(
         .seats
         .iter()
         .filter(|(seat_position, seat)| {
-            **seat_position != position && !has_open_meld(&seat.melds) && seat.hand_count >= 10
+            **seat_position != position && is_closed_opponent_threat_candidate(seat)
         })
         .map(|(_, seat)| {
             let base = if is_dragon(tile) {
@@ -931,6 +931,20 @@ fn closed_opponent_threat_discard_bias(
                 * closed_suit_shedding_scale(seat, tile)
         })
         .sum()
+}
+
+fn has_concealed_gang_meld(melds: &[WsShenyangMahjongMeld]) -> bool {
+    melds.iter().any(|meld| {
+        meld.kind == ShenyangMahjongMeldKind::GANG
+            && meld.from_position.is_none()
+            && is_triplet_like_meld(meld)
+    })
+}
+
+fn is_closed_opponent_threat_candidate(seat: &AiSeatView) -> bool {
+    !has_open_meld(&seat.melds)
+        && (seat.hand_count >= 10
+            || (seat.hand_count > 0 && has_concealed_gang_meld(&seat.melds)))
 }
 
 fn closed_hand_count_pressure_scale(seat: &AiSeatView) -> f64 {
@@ -6761,6 +6775,28 @@ mod tests {
 
         assert!(closed_opponent_threat_discard_bias(&concealed, 0, 32, 1) < 0.0);
         assert_eq!(closed_opponent_threat_discard_bias(&open, 0, 32, 1), 0.0);
+    }
+
+    #[test]
+    fn closed_opponent_threat_counts_short_hand_after_concealed_gang() {
+        let mut short_closed = table_with_discards(1, Vec::new());
+        short_closed.wall_count = 16;
+        short_closed.seats.get_mut(&1).unwrap().hand_count = 9;
+
+        let mut short_concealed_gang = short_closed.clone();
+        short_concealed_gang.seats.get_mut(&1).unwrap().melds = vec![test_concealed_gang_meld(9)];
+
+        let mut longer_concealed_gang = short_concealed_gang.clone();
+        longer_concealed_gang.seats.get_mut(&1).unwrap().hand_count = 10;
+
+        assert_eq!(
+            closed_opponent_threat_discard_bias(&short_closed, 0, 32, 1),
+            0.0
+        );
+        assert!(
+            closed_opponent_threat_discard_bias(&short_concealed_gang, 0, 32, 1)
+                < closed_opponent_threat_discard_bias(&longer_concealed_gang, 0, 32, 1)
+        );
     }
 
     #[test]
