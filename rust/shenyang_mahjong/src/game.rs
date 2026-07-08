@@ -1497,6 +1497,9 @@ fn winner_hand_fan_with_rule(
 ) -> i32 {
     let hand_tiles = winner_final_hand_tiles(state, settlement, winner);
     let melds = state.melds.get(&winner).map(Vec::as_slice).unwrap_or(&[]);
+    if !is_complete_win_with_melds(&hand_tiles, melds, win_rule) {
+        return 0;
+    }
     let pattern = winner_pattern_with_rule(&hand_tiles, melds, win_rule);
     let mut fan = win_pattern_base_fan(pattern);
     fan += meld_fan(melds);
@@ -4706,7 +4709,7 @@ mod tests {
     }
 
     #[test]
-    fn settlement_fan_ignores_short_dragon_melds() {
+    fn settlement_fan_rejects_short_dragon_melds() {
         let mut short_gang_state = playable_state();
         short_gang_state
             .hands
@@ -4724,7 +4727,7 @@ mod tests {
 
         assert_eq!(
             winner_hand_fan(&short_gang_state, short_gang_settlement, 1),
-            1
+            0
         );
 
         let mut short_peng_state = playable_state();
@@ -4744,12 +4747,12 @@ mod tests {
 
         assert_eq!(
             winner_hand_fan(&short_peng_state, short_peng_settlement, 1),
-            1
+            0
         );
     }
 
     #[test]
-    fn settlement_fan_ignores_invalid_tile_melds() {
+    fn settlement_fan_rejects_invalid_tile_melds() {
         let mut invalid_gang_state = playable_state();
         invalid_gang_state
             .hands
@@ -4767,7 +4770,7 @@ mod tests {
 
         assert_eq!(
             winner_hand_fan(&invalid_gang_state, invalid_gang_settlement, 1),
-            1
+            0
         );
     }
 
@@ -5178,7 +5181,7 @@ mod tests {
     }
 
     #[test]
-    fn settlement_fan_ignores_invalid_meld_for_single_wait() {
+    fn settlement_fan_rejects_invalid_meld_for_single_wait() {
         let mut state = playable_state();
         state
             .hands
@@ -5210,7 +5213,7 @@ mod tests {
             settlement.win_tile,
             WIN_RULE_RELAXED
         ));
-        assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
+        assert_eq!(winner_hand_fan(&state, settlement, 1), 0);
     }
 
     #[test]
@@ -5332,7 +5335,7 @@ mod tests {
         assert_eq!(winner_hand_fan(&state, settlement, 1), 3);
         assert_eq!(
             winner_hand_fan_with_rule(&state, settlement, 1, WIN_RULE_SHENYANG_BASIC),
-            1
+            0
         );
     }
 
@@ -5389,13 +5392,21 @@ mod tests {
         state.dealer_position = 0;
         state
             .hands
-            .insert(1, vec![2, 3, 5, 6, 7, 11, 12, 13, 21, 22, 23, 31, 31]);
+            .insert(1, vec![2, 3, 5, 6, 7, 11, 12, 13, 35, 35]);
         state.melds.insert(
             0,
             vec![build_meld(
                 ShenyangMahjongMeldKind::PENG,
                 vec![9, 9, 9],
                 Some(1),
+            )],
+        );
+        state.melds.insert(
+            1,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::CHI,
+                vec![21, 22, 23],
+                Some(2),
             )],
         );
         state.enter_settlement_with_reverse_win(
@@ -5425,7 +5436,15 @@ mod tests {
         closed_payer_state.dealer_position = 2;
         closed_payer_state
             .hands
-            .insert(1, vec![2, 3, 5, 6, 7, 11, 12, 13, 21, 22, 23, 31, 31]);
+            .insert(1, vec![2, 3, 5, 6, 7, 11, 12, 13, 35, 35]);
+        closed_payer_state.melds.insert(
+            1,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::CHI,
+                vec![21, 22, 23],
+                Some(2),
+            )],
+        );
         closed_payer_state.enter_settlement_with_reverse_win(
             vec![1],
             Some(0),
@@ -5458,13 +5477,21 @@ mod tests {
         malformed_open_payer_state.dealer_position = 2;
         malformed_open_payer_state
             .hands
-            .insert(1, vec![2, 3, 5, 6, 7, 11, 12, 13, 21, 22, 23, 31, 31]);
+            .insert(1, vec![2, 3, 5, 6, 7, 11, 12, 13, 35, 35]);
         malformed_open_payer_state.melds.insert(
             0,
             vec![build_meld(
                 ShenyangMahjongMeldKind::PENG,
                 vec![1, 1],
                 Some(1),
+            )],
+        );
+        malformed_open_payer_state.melds.insert(
+            1,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::CHI,
+                vec![21, 22, 23],
+                Some(2),
             )],
         );
         malformed_open_payer_state.enter_settlement_with_reverse_win(
@@ -5498,13 +5525,21 @@ mod tests {
         invalid_tile_open_payer_state.dealer_position = 2;
         invalid_tile_open_payer_state
             .hands
-            .insert(1, vec![2, 3, 5, 6, 7, 11, 12, 13, 21, 22, 23, 31, 31]);
+            .insert(1, vec![2, 3, 5, 6, 7, 11, 12, 13, 35, 35]);
         invalid_tile_open_payer_state.melds.insert(
             0,
             vec![build_meld(
                 ShenyangMahjongMeldKind::PENG,
                 vec![99, 99, 99],
                 Some(1),
+            )],
+        );
+        invalid_tile_open_payer_state.melds.insert(
+            1,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::CHI,
+                vec![21, 22, 23],
+                Some(2),
             )],
         );
         invalid_tile_open_payer_state.enter_settlement_with_reverse_win(
@@ -5538,13 +5573,21 @@ mod tests {
         open_payer_state.dealer_position = 2;
         open_payer_state
             .hands
-            .insert(1, vec![2, 3, 5, 6, 7, 11, 12, 13, 21, 22, 23, 31, 31]);
+            .insert(1, vec![2, 3, 5, 6, 7, 11, 12, 13, 35, 35]);
         open_payer_state.melds.insert(
             0,
             vec![build_meld(
                 ShenyangMahjongMeldKind::CHI,
                 vec![1, 2, 3],
                 Some(1),
+            )],
+        );
+        open_payer_state.melds.insert(
+            1,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::CHI,
+                vec![21, 22, 23],
+                Some(2),
             )],
         );
         open_payer_state.enter_settlement_with_reverse_win(
@@ -5579,13 +5622,21 @@ mod tests {
         state.dealer_position = 2;
         state
             .hands
-            .insert(1, vec![2, 3, 5, 6, 7, 11, 12, 13, 21, 22, 23, 31, 31]);
+            .insert(1, vec![2, 3, 5, 6, 7, 11, 12, 13, 35, 35]);
         state.melds.insert(
             0,
             vec![build_meld(
                 ShenyangMahjongMeldKind::GANG,
                 vec![31, 31, 31, 31],
                 None,
+            )],
+        );
+        state.melds.insert(
+            1,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::CHI,
+                vec![21, 22, 23],
+                Some(2),
             )],
         );
         state.enter_settlement_with_reverse_win(
