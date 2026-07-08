@@ -186,6 +186,9 @@ fn dragon_pair_tiles() -> [i32; 3] {
 }
 
 pub(crate) fn has_dragon_pair_as_standard_pair(tiles: &[i32]) -> bool {
+    if !has_valid_tile_multiplicity(tiles) {
+        return false;
+    }
     for pair_tile in dragon_pair_tiles() {
         let mut counts = tile_counts(tiles);
         let index = pair_tile as usize;
@@ -230,6 +233,9 @@ pub(crate) fn has_triplet_in_standard_decomposition(tiles: &[i32]) -> bool {
     if tiles.len() % 3 != 2 {
         return false;
     }
+    if !has_valid_tile_multiplicity(tiles) {
+        return false;
+    }
     let mut counts = [0u8; 38];
     for &tile in tiles {
         if !is_valid_tile(tile) {
@@ -261,6 +267,9 @@ fn is_closed_middle_wait(tiles: &[i32], win_tile: i32) -> bool {
 }
 
 pub fn is_complete_win(tiles: &[i32], meld_count: usize) -> bool {
+    if !has_valid_tile_multiplicity(tiles) {
+        return false;
+    }
     if meld_count == 0 {
         return tiles.len() == 14 && is_win(tiles);
     }
@@ -275,7 +284,10 @@ pub fn is_complete_win_with_melds(
     melds: &[WsShenyangMahjongMeld],
     win_rule: i32,
 ) -> bool {
-    if !is_complete_win(tiles, melds.len()) || melds.iter().any(|meld| !is_valid_meld(meld)) {
+    if melds.iter().any(|meld| !is_valid_meld(meld)) || !is_complete_win(tiles, melds.len()) {
+        return false;
+    }
+    if !has_valid_tile_multiplicity(&all_tiles_with_melds(tiles, melds)) {
         return false;
     }
     if win_rule != WIN_RULE_SHENYANG_BASIC {
@@ -330,6 +342,9 @@ pub fn is_piao_hu_win(tiles: &[i32], melds: &[WsShenyangMahjongMeld]) -> bool {
         return false;
     }
     let all_tiles = all_tiles_with_melds(tiles, melds);
+    if !has_valid_tile_multiplicity(&all_tiles) {
+        return false;
+    }
     has_three_suits(&all_tiles)
         && has_terminal_or_honor(&all_tiles)
         && can_form_triplets_with_pair(tiles)
@@ -352,9 +367,11 @@ fn is_pure_one_suit_tiles(tiles: &[i32]) -> bool {
 }
 
 pub fn is_pure_one_suit_win(tiles: &[i32], melds: &[WsShenyangMahjongMeld]) -> bool {
-    melds.iter().all(is_valid_meld)
-        && is_complete_win(tiles, melds.len())
-        && is_pure_one_suit_tiles(&all_tiles_with_melds(tiles, melds))
+    if !melds.iter().all(is_valid_meld) || !is_complete_win(tiles, melds.len()) {
+        return false;
+    }
+    let all_tiles = all_tiles_with_melds(tiles, melds);
+    has_valid_tile_multiplicity(&all_tiles) && is_pure_one_suit_tiles(&all_tiles)
 }
 
 pub fn is_seven_pairs_win(tiles: &[i32]) -> bool {
@@ -377,6 +394,7 @@ pub fn is_seven_pairs_win(tiles: &[i32]) -> bool {
 
 pub fn is_single_wait_shape(tiles: &[i32], melds: &[WsShenyangMahjongMeld], win_tile: i32) -> bool {
     if melds.iter().any(|meld| !is_valid_meld(meld))
+        || !has_valid_tile_multiplicity(&all_tiles_with_melds(tiles, melds))
         || !is_complete_win(tiles, melds.len())
         || !tiles.contains(&win_tile)
     {
@@ -418,6 +436,9 @@ pub fn is_single_wait_shape_with_rule(
 
 pub fn is_standard_win(tiles: &[i32]) -> bool {
     if tiles.len() % 3 != 2 {
+        return false;
+    }
+    if !has_valid_tile_multiplicity(tiles) {
         return false;
     }
     let mut counts = [0u8; 38];
@@ -533,6 +554,20 @@ fn is_valid_tile(tile: i32) -> bool {
     SHENYANG_MAHJONG_TILE_KINDS.contains(&tile)
 }
 
+fn has_valid_tile_multiplicity(tiles: &[i32]) -> bool {
+    let mut counts = [0u8; 38];
+    for &tile in tiles {
+        if !is_valid_tile(tile) {
+            return false;
+        }
+        counts[tile as usize] += 1;
+        if counts[tile as usize] > 4 {
+            return false;
+        }
+    }
+    true
+}
+
 pub fn is_win(tiles: &[i32]) -> bool {
     is_standard_win(tiles) || is_seven_pairs_win(tiles)
 }
@@ -565,6 +600,9 @@ pub fn satisfies_shenyang_basic_win(tiles: &[i32], melds: &[WsShenyangMahjongMel
         return true;
     }
     let all_tiles = all_tiles_with_melds(tiles, melds);
+    if !has_valid_tile_multiplicity(&all_tiles) {
+        return false;
+    }
     if is_pure_one_suit_tiles(&all_tiles) {
         return true;
     }
@@ -684,6 +722,29 @@ mod tests {
     }
 
     #[test]
+    fn standard_win_rejects_more_than_four_copies() {
+        let tiles = vec![1, 1, 1, 1, 1, 11, 12, 13, 21, 22, 23, 31, 31, 31];
+
+        assert!(!is_standard_win(&tiles));
+        assert!(!is_complete_win(&tiles, 0));
+        assert!(!is_win(&tiles));
+    }
+
+    #[test]
+    fn complete_win_with_melds_rejects_more_than_four_visible_copies() {
+        let tiles = vec![1, 1, 11, 12, 13, 21, 22, 23, 31, 31, 31];
+        let melds = vec![meld(ShenyangMahjongMeldKind::PENG, vec![1, 1, 1], Some(2))];
+
+        assert!(is_complete_win(&tiles, melds.len()));
+        assert!(!is_complete_win_with_melds(
+            &tiles,
+            &melds,
+            WIN_RULE_RELAXED
+        ));
+        assert!(!satisfies_shenyang_basic_win(&tiles, &melds));
+    }
+
+    #[test]
     fn complete_win_rejects_short_hand_without_melds() {
         assert!(is_standard_win(&[35, 35]));
         assert!(!is_complete_win(&[35, 35], 0));
@@ -743,6 +804,24 @@ mod tests {
         ];
 
         assert!(is_piao_hu_win(&tiles, &melds));
+    }
+
+    #[test]
+    fn piao_hu_rejects_more_than_four_visible_copies() {
+        let tiles = vec![1, 1, 35, 35, 35];
+        let melds = vec![
+            meld(ShenyangMahjongMeldKind::PENG, vec![1, 1, 1], Some(0)),
+            meld(ShenyangMahjongMeldKind::PENG, vec![11, 11, 11], Some(2)),
+            meld(ShenyangMahjongMeldKind::PENG, vec![21, 21, 21], Some(3)),
+        ];
+
+        assert!(is_complete_win(&tiles, melds.len()));
+        assert!(!is_complete_win_with_melds(
+            &tiles,
+            &melds,
+            WIN_RULE_RELAXED
+        ));
+        assert!(!is_piao_hu_win(&tiles, &melds));
     }
 
     #[test]
@@ -872,6 +951,20 @@ mod tests {
         assert!(is_complete_win(&tiles, melds.len()));
         assert!(!is_pure_one_suit_win(&tiles, &melds));
         assert!(!satisfies_shenyang_basic_win(&tiles, &melds));
+    }
+
+    #[test]
+    fn pure_one_suit_rejects_more_than_four_visible_copies() {
+        let tiles = vec![1, 1, 2, 3, 4, 4, 5, 6, 7, 7, 7];
+        let melds = vec![meld(ShenyangMahjongMeldKind::PENG, vec![1, 1, 1], Some(2))];
+
+        assert!(is_complete_win(&tiles, melds.len()));
+        assert!(!is_complete_win_with_melds(
+            &tiles,
+            &melds,
+            WIN_RULE_RELAXED
+        ));
+        assert!(!is_pure_one_suit_win(&tiles, &melds));
     }
 
     #[test]
