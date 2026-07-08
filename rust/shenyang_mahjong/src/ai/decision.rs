@@ -3866,7 +3866,30 @@ fn unrecoverable_basic_rule_requirement_count(
         .count();
     let missing_terminal_or_honor = !has_terminal_or_honor_with_extra(hand, melds, None)
         && live_terminal_or_honor_count(hand, table) <= 0;
-    missing_suits + usize::from(missing_terminal_or_honor)
+    let missing_heng = !can_recover_basic_heng(hand, melds, table);
+    missing_suits + usize::from(missing_terminal_or_honor) + usize::from(missing_heng)
+}
+
+fn can_recover_basic_heng(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+) -> bool {
+    if has_triplet_or_dragon_pair(hand, melds) {
+        return true;
+    }
+
+    let mut counts = HashMap::<i32, usize>::new();
+    for tile in hand.iter().copied() {
+        *counts.entry(tile).or_default() += 1;
+    }
+
+    counts.into_iter().any(|(tile, count)| {
+        let remaining = remaining_tile_count(hand, table, 0, tile) as usize;
+        let can_draw_triplet = count < 3 && remaining >= 3 - count;
+        let can_draw_dragon_pair = is_dragon(tile) && count < 2 && remaining >= 2 - count;
+        can_draw_triplet || can_draw_dragon_pair
+    })
 }
 
 fn should_pass_late_unready_claim_for_defense(
@@ -4607,6 +4630,59 @@ mod tests {
         table.wall_count = 52;
         let hand = vec![2, 5, 8, 11, 14, 17, 19, 31, 31, 33, 35, 36, 37];
 
+        assert!(should_open_broken_closed_hand_for_defense(
+            &hand,
+            &[],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC
+        ));
+    }
+
+    #[test]
+    fn unrecoverable_basic_rule_counts_dead_heng_requirement() {
+        let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 14, 15, 21, 22];
+        let dead_heng_seed_discards = hand
+            .iter()
+            .copied()
+            .flat_map(|tile| std::iter::repeat_n(tile, 3))
+            .collect::<Vec<_>>();
+        let table = table_with_discards(1, dead_heng_seed_discards);
+
+        assert!(missing_suits(&hand, &[]).is_empty());
+        assert!(has_terminal_or_honor_with_extra(&hand, &[], None));
+        assert!(!has_triplet_or_dragon_pair(&hand, &[]));
+        assert!(!can_recover_basic_heng(&hand, &[], &table));
+        assert_eq!(
+            unrecoverable_basic_rule_requirement_count(&hand, &[], &table),
+            1
+        );
+    }
+
+    #[test]
+    fn broken_closed_defense_opens_mid_when_heng_is_unrecoverable() {
+        let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 14, 15, 21, 22];
+        let dead_heng_seed_discards = hand
+            .iter()
+            .copied()
+            .flat_map(|tile| std::iter::repeat_n(tile, 3))
+            .collect::<Vec<_>>();
+        let mut table = table_with_discards(1, dead_heng_seed_discards);
+        table.wall_count = 52;
+
+        assert!(hand_power(&hand) >= 14.0);
+        assert_eq!(
+            ready_tile_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
+            0.0
+        );
+        assert_eq!(
+            one_step_wait_potential(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
+            0.0
+        );
+        assert_eq!(
+            unrecoverable_basic_rule_requirement_count(&hand, &[], &table),
+            1
+        );
         assert!(should_open_broken_closed_hand_for_defense(
             &hand,
             &[],
