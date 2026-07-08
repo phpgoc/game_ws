@@ -270,7 +270,12 @@ pub(super) fn fan_wait_bias(
             return 0.0;
         }
         if visible_fan + wait_fan >= max_fan {
-            return if remaining >= 3 { 14.0 } else { 0.0 };
+            let fan_gap = max_fan - visible_fan;
+            return if fan_gap == 1 && remaining >= 3 {
+                14.0
+            } else {
+                0.0
+            };
         }
     }
 

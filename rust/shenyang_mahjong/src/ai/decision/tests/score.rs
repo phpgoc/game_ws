@@ -264,6 +264,12 @@ fn fan_wait_bias_counts_single_yaojiu_terminal_wait_extra_for_cap() {
     );
     assert_eq!(
         fan_wait_bias(&win_hand, &melds, &table, 0, WIN_RULE_SHENYANG_BASIC, 11, 3),
+        0.0
+    );
+
+    table.max_fan = Some(6);
+    assert_eq!(
+        fan_wait_bias(&win_hand, &melds, &table, 0, WIN_RULE_SHENYANG_BASIC, 11, 3),
         14.0
     );
 }
