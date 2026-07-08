@@ -3346,13 +3346,16 @@ fn wait_setting_discard_safety_adjustment(
     discard_tile: i32,
     own_tile_count: usize,
 ) -> f64 {
+    let piao_threat = opponent_threat_discard_bias(table, position, discard_tile, own_tile_count);
     let pure_one_suit_threat =
         pure_one_suit_threat_discard_bias(table, position, discard_tile, own_tile_count);
     let safety = late_defense_tile_safety_score(table, position, discard_tile, own_tile_count)
         + mid_round_public_discard_bias(table, position, discard_tile)
         + mid_round_open_meld_safety_bias(table, discard_tile)
         + mid_broken_opponent_missing_suit_safety_bias(table, position, discard_tile);
-    safety.clamp(-36.0, 36.0) * 0.6 + pure_one_suit_threat.min(0.0) * 1.0
+    safety.clamp(-36.0, 36.0) * 0.6
+        + piao_threat.min(0.0) * 1.5
+        + pure_one_suit_threat.min(0.0) * 1.0
 }
 
 fn seven_pairs_wait_tile_score(
@@ -8523,6 +8526,31 @@ mod tests {
         assert_eq!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(18)
+        );
+    }
+
+    #[test]
+    fn seven_pairs_wait_discard_avoids_piao_missing_suit_threat_tile() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.wall_count = 32;
+        table.seats.get_mut(&1).unwrap().melds =
+            vec![test_peng_meld(11), test_peng_meld(21), test_peng_meld(35)];
+        let hand = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 21, 21, 22, 22, 31];
+        let wind_wait = remove_n_tiles(&hand, 5, 1);
+        let middle_wait = remove_n_tiles(&hand, 31, 1);
+
+        assert_eq!(pair_count(&hand), 6);
+        assert!(
+            seven_pairs_wait_tile_score(31, &wind_wait, &table, 0)
+                > seven_pairs_wait_tile_score(5, &middle_wait, &table, 0)
+        );
+        assert!(
+            opponent_threat_discard_bias(&table, 0, 5, 1)
+                < opponent_threat_discard_bias(&table, 0, 31, 1)
+        );
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(31)
         );
     }
 
