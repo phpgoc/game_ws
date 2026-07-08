@@ -43,7 +43,13 @@ fn build_auto_dispatch(
         if !controlled && s.base.lock().unwrap().mark_away(position) {
             away_position = Some(position);
         }
-        let Some(cards) = s.choose_auto_play(position) else {
+        let is_ai = { s.base.lock().unwrap().is_ai_position(position) };
+        let cards = if is_ai {
+            crate::ai::decide(&s, position)
+        } else {
+            s.choose_auto_play(position)
+        };
+        let Some(cards) = cards else {
             dlog!(
                 ws_common::tracing::Level::WARN,
                 "[tractor][ai] no legal auto play room={} position={}",

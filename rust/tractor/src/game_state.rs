@@ -116,7 +116,7 @@ fn card_matches_play_suit(card: i32, suit: Option<i32>, rules: &TractorRules) ->
     }
 }
 
-fn card_rank(card: i32) -> i32 {
+pub(crate) fn card_rank(card: i32) -> i32 {
     let base = base_card(card);
     if base <= 52 {
         ((base - 1) % 13) + 2
@@ -135,7 +135,7 @@ fn card_score(card: i32) -> i32 {
     }
 }
 
-fn card_suit(card: i32) -> Option<i32> {
+pub(crate) fn card_suit(card: i32) -> Option<i32> {
     let base = base_card(card);
     (base <= 52).then_some((base - 1) / 13)
 }
@@ -147,7 +147,7 @@ fn first_match_rank(removed_rank_mask: i32, final_target_rank: TractorRank) -> T
         .unwrap_or(final_target_rank)
 }
 
-fn hand_candidates_for_count(hand: &[i32], count: usize) -> Vec<Vec<i32>> {
+pub(crate) fn hand_candidates_for_count(hand: &[i32], count: usize) -> Vec<Vec<i32>> {
     if count == 0 {
         return Vec::new();
     }
@@ -168,7 +168,7 @@ fn hand_candidates_for_count(hand: &[i32], count: usize) -> Vec<Vec<i32>> {
     out
 }
 
-fn is_trump_card(card: i32, target_rank: TractorRank) -> bool {
+pub(crate) fn is_trump_card(card: i32, target_rank: TractorRank) -> bool {
     card_suit(card).is_none() || card_rank(card) == target_rank as i32
 }
 
@@ -268,7 +268,7 @@ fn team_positions(position: usize) -> [usize; 2] {
     [position, (position + 2) % 4]
 }
 
-fn tractor_card_value(card: i32, rules: &TractorRules, lead_suit: Option<i32>) -> i32 {
+pub(crate) fn tractor_card_value(card: i32, rules: &TractorRules, lead_suit: Option<i32>) -> i32 {
     let rank = card_rank(card);
     if is_trump_card(card, rules.target_rank) {
         return match card_suit(card) {
