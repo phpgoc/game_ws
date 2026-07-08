@@ -314,7 +314,10 @@ fn is_seven_pairs_single_wait(tiles: &[i32], win_tile: i32) -> bool {
 }
 
 pub fn is_piao_hu_win(tiles: &[i32], melds: &[WsShenyangMahjongMeld]) -> bool {
-    if !is_complete_win(tiles, melds.len()) || melds.iter().any(|meld| !is_triplet_meld(meld)) {
+    if !has_open_meld(melds)
+        || !is_complete_win(tiles, melds.len())
+        || melds.iter().any(|meld| !is_triplet_meld(meld))
+    {
         return false;
     }
     let all_tiles = all_tiles_with_melds(tiles, melds);
@@ -706,6 +709,20 @@ mod tests {
         ];
 
         assert!(is_piao_hu_win(&tiles, &melds));
+    }
+
+    #[test]
+    fn piao_hu_rejects_closed_triplet_hand_without_open_meld() {
+        let tiles = vec![1, 1, 1, 11, 11, 11, 21, 21, 21, 35, 35];
+        let melds = vec![meld(
+            ShenyangMahjongMeldKind::GANG,
+            vec![31, 31, 31, 31],
+            None,
+        )];
+
+        assert!(is_complete_win(&tiles, melds.len()));
+        assert!(!is_piao_hu_win(&tiles, &melds));
+        assert!(!satisfies_shenyang_basic_win(&tiles, &melds));
     }
 
     #[test]

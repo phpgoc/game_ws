@@ -8400,6 +8400,20 @@ mod tests {
     }
 
     #[test]
+    fn estimated_visible_fan_requires_open_meld_for_piao() {
+        let closed_triplet_hand = vec![1, 1, 1, 11, 11, 11, 21, 21, 21, 31, 31, 31, 35, 35];
+
+        assert_eq!(
+            estimated_visible_fan_without_wait(&closed_triplet_hand, &[], WIN_RULE_RELAXED),
+            1
+        );
+        assert_eq!(
+            estimated_visible_fan_without_wait(&closed_triplet_hand, &[], WIN_RULE_SHENYANG_BASIC),
+            0
+        );
+    }
+
+    #[test]
     fn estimated_visible_fan_uses_win_rule_for_closed_pure_one_suit() {
         let win_hand = vec![1, 2, 3, 2, 3, 4, 4, 5, 6, 7, 7, 7, 9, 9];
 
