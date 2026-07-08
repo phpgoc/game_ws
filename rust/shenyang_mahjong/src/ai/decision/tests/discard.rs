@@ -126,6 +126,32 @@ fn discard_can_clear_single_dragon_when_pairs_are_many() {
 }
 
 #[test]
+fn capped_discard_clears_spare_single_dragon_when_basic_route_is_ready() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.max_fan = Some(1);
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(31)];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![1, 2, 3, 4, 5, 6, 8, 21, 22, 23, 35];
+    let after_dragon = remove_n_tiles(&hand, 35, 1);
+    let after_middle = remove_n_tiles(&hand, 8, 1);
+
+    assert!(has_triplet_or_dragon_pair(&hand, melds));
+    assert!(terminal_or_honor_count(&hand, melds) > 1);
+    assert_eq!(
+        ready_tile_score(&after_dragon, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        ready_tile_score(&after_middle, melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
+    );
+    assert!(
+        capped_spare_dragon_discard_bias(&hand, 35, melds, &table)
+            > capped_spare_dragon_discard_bias(&hand, 8, melds, &table)
+    );
+    assert_eq!(
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(35)
+    );
+}
+
+#[test]
 fn discard_preserves_last_honor_for_basic_rule() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![2, 3, 4, 5, 6, 7, 12, 13, 14, 22, 23, 24, 31, 5];

@@ -74,6 +74,7 @@ pub fn choose_discard_from_view(
         ) + piao_discard_bias(hand, tile, melds, table, position, win_rule)
             + early_piao_candidate_discard_bias(hand, tile, melds, table, position)
             + basic_heng_seed_discard_bias(hand, tile, melds, win_rule)
+            + capped_spare_dragon_discard_bias(hand, tile, melds, table)
             + seven_pairs_plan_discard_bias(hand, tile, melds, table, position, win_rule)
             + seven_pairs_wait_discard_bias(hand, tile, melds, table, position)
             + four_gui_yi_discard_bias(hand, tile, melds, table, position, win_rule)
@@ -292,6 +293,23 @@ pub(super) fn isolated_suited_singleton_discard_bias(tile: i32) -> f64 {
 
 pub(super) fn pair_discard_bias(hand: &[i32]) -> f64 {
     if pair_count(hand) >= 4 { -4.4 } else { -1.8 }
+}
+
+pub(super) fn capped_spare_dragon_discard_bias(
+    hand: &[i32],
+    tile: i32,
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+) -> f64 {
+    if !table.max_fan.is_some_and(|max_fan| max_fan <= 1)
+        || !is_dragon(tile)
+        || hand.iter().filter(|item| **item == tile).count() != 1
+        || !has_triplet_or_dragon_pair(hand, melds)
+        || terminal_or_honor_count(hand, melds) <= 1
+    {
+        return 0.0;
+    }
+    5.0
 }
 
 pub(super) fn complete_sequence_discard_bias(
