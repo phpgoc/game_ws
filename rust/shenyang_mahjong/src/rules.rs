@@ -266,7 +266,7 @@ pub fn is_complete_win_with_melds(
     melds: &[WsShenyangMahjongMeld],
     win_rule: i32,
 ) -> bool {
-    if !is_complete_win(tiles, melds.len()) {
+    if !is_complete_win(tiles, melds.len()) || melds.iter().any(|meld| !is_valid_meld(meld)) {
         return false;
     }
     if win_rule != WIN_RULE_SHENYANG_BASIC {
@@ -631,6 +631,47 @@ mod tests {
     }
 
     #[test]
+    fn complete_win_with_melds_accepts_valid_relaxed_melds() {
+        let tiles = vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35];
+        let chi_meld = vec![meld(ShenyangMahjongMeldKind::CHI, vec![1, 2, 3], Some(1))];
+        let gang_meld = vec![meld(ShenyangMahjongMeldKind::GANG, vec![1, 1, 1, 1], None)];
+
+        assert!(is_complete_win_with_melds(
+            &tiles,
+            &chi_meld,
+            WIN_RULE_RELAXED
+        ));
+        assert!(is_complete_win_with_melds(
+            &tiles,
+            &gang_meld,
+            WIN_RULE_RELAXED
+        ));
+    }
+
+    #[test]
+    fn complete_win_with_melds_rejects_malformed_melds_for_relaxed_rule() {
+        let tiles = vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35];
+        let malformed_melds = [
+            vec![meld(ShenyangMahjongMeldKind::PENG, vec![1, 1], Some(1))],
+            vec![meld(ShenyangMahjongMeldKind::CHI, vec![1, 1, 1], Some(1))],
+            vec![meld(
+                ShenyangMahjongMeldKind::PENG,
+                vec![99, 99, 99],
+                Some(1),
+            )],
+            vec![meld(ShenyangMahjongMeldKind::GANG, vec![1, 1, 1], None)],
+        ];
+
+        for melds in malformed_melds {
+            assert!(!is_complete_win_with_melds(
+                &tiles,
+                &melds,
+                WIN_RULE_RELAXED
+            ));
+        }
+    }
+
+    #[test]
     fn complete_win_rejects_short_hand_without_melds() {
         assert!(is_standard_win(&[35, 35]));
         assert!(!is_complete_win(&[35, 35], 0));
@@ -927,7 +968,11 @@ mod tests {
             meld(ShenyangMahjongMeldKind::CHI, vec![21, 22, 24], Some(2)),
         ];
 
-        assert!(is_complete_win_with_melds(&tiles, &melds, WIN_RULE_RELAXED));
+        assert!(!is_complete_win_with_melds(
+            &tiles,
+            &melds,
+            WIN_RULE_RELAXED
+        ));
         assert!(!satisfies_shenyang_basic_win(&tiles, &melds));
     }
 
@@ -951,7 +996,11 @@ mod tests {
             meld(ShenyangMahjongMeldKind::CHI, vec![11, 12, 13], Some(1)),
         ];
 
-        assert!(is_complete_win_with_melds(&tiles, &melds, WIN_RULE_RELAXED));
+        assert!(!is_complete_win_with_melds(
+            &tiles,
+            &melds,
+            WIN_RULE_RELAXED
+        ));
         assert!(!has_triplet_in_standard_decomposition(&tiles));
         assert!(!satisfies_shenyang_basic_win(&tiles, &melds));
     }

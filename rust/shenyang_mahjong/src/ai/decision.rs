@@ -8582,7 +8582,7 @@ mod tests {
     }
 
     #[test]
-    fn estimated_fan_ignores_invalid_meld_for_single_wait() {
+    fn estimated_fan_rejects_invalid_meld_for_single_wait() {
         let win_hand = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 35, 35];
         let invalid_meld = WsShenyangMahjongMeld {
             kind: ShenyangMahjongMeldKind::PENG,
@@ -8592,7 +8592,7 @@ mod tests {
 
         assert_eq!(
             estimated_fan_with_wait(&win_hand, &[invalid_meld], 35, WIN_RULE_RELAXED),
-            1
+            0
         );
     }
 
