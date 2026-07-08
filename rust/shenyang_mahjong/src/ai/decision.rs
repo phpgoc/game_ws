@@ -261,6 +261,18 @@ pub fn choose_claim_from_view(
             return Some(AiClaimChoice::Pass);
         }
         if current_ready_score > 0.0 {
+            if should_claim_ready_dragon_peng_from_discard(
+                hand,
+                &current_melds,
+                table,
+                position,
+                win_rule,
+                tile,
+                claim.from_position,
+                current_ready_score,
+            ) {
+                return Some(AiClaimChoice::Peng);
+            }
             return Some(AiClaimChoice::Pass);
         }
         if should_claim_peng_for_closed_early_piao_candidate(
@@ -3866,6 +3878,52 @@ fn should_claim_ready_open_pure_one_suit_peng_from_discard(
     })
 }
 
+fn should_claim_ready_dragon_peng_from_discard(
+    hand: &[i32],
+    current_melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+    tile: i32,
+    from_position: usize,
+    current_ready_score: f64,
+) -> bool {
+    if !is_dragon(tile)
+        || !can_peng(hand, tile)
+        || should_preserve_seven_pairs_plan_for_context(
+            hand,
+            current_melds,
+            table,
+            position,
+            win_rule,
+        )
+        || pure_one_suit_plan_score_for_context(hand, current_melds, table, position) > 0.0
+        || ready_visible_fan_reaches_cap(hand, current_melds, table, position, win_rule)
+    {
+        return false;
+    }
+
+    let mut next = remove_n_tiles(hand, tile, 2);
+    if next.len() + 2 != hand.len() {
+        return false;
+    }
+    sort_tiles(&mut next);
+    let mut melds = current_melds.to_vec();
+    melds.push(claim_peng_meld(tile, from_position));
+
+    let after_ready_score =
+        best_ready_score_after_discard(&next, &melds, table, position, win_rule);
+    if after_ready_score <= 0.0 {
+        return false;
+    }
+    let keep_ratio = if table.dealer_position == position || is_late_round(table) {
+        0.75
+    } else {
+        0.45
+    };
+    after_ready_score >= current_ready_score * keep_ratio
+}
+
 fn should_open_broken_closed_hand_for_defense(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -5057,6 +5115,62 @@ mod tests {
         assert_eq!(piao_plan_score_for_context(&hand, melds, &table, 0), 0.0);
         assert_eq!(
             choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+            Some(AiClaimChoice::Pass)
+        );
+    }
+
+    #[test]
+    fn claim_ready_hand_pengs_dragon_when_it_keeps_ready() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
+        table.claim_window = Some(AiClaimView {
+            tile: 35,
+            from_position: 1,
+            eligible_positions: vec![0],
+        });
+        let claim = table.claim_window.clone().unwrap();
+        let hand = vec![11, 12, 13, 21, 22, 23, 24, 25, 35, 35];
+        let melds = table.seats.get(&0).unwrap().melds.as_slice();
+        let current_ready_score =
+            ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC);
+
+        assert!(current_ready_score > 0.0);
+        assert!(!is_complete_win_with_melds(
+            &[11, 12, 13, 21, 22, 23, 24, 25, 35, 35, 35],
+            melds,
+            WIN_RULE_SHENYANG_BASIC
+        ));
+        assert!(should_claim_ready_dragon_peng_from_discard(
+            &hand,
+            melds,
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+            35,
+            1,
+            current_ready_score
+        ));
+        assert_eq!(
+            choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(AiClaimChoice::Peng)
+        );
+    }
+
+    #[test]
+    fn claim_ready_hand_passes_dragon_peng_when_visible_fan_is_capped() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.max_fan = Some(1);
+        table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
+        table.claim_window = Some(AiClaimView {
+            tile: 35,
+            from_position: 1,
+            eligible_positions: vec![0],
+        });
+        let claim = table.claim_window.clone().unwrap();
+        let hand = vec![11, 12, 13, 21, 22, 23, 24, 25, 35, 35];
+
+        assert_eq!(
+            choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(AiClaimChoice::Pass)
         );
     }
@@ -6545,7 +6659,7 @@ mod tests {
     }
 
     #[test]
-    fn claim_peng_passes_late_ready_hand_even_for_dragon() {
+    fn claim_peng_takes_late_ready_dragon_when_it_keeps_ready() {
         let mut table = table_with_discards(1, Vec::new());
         table.wall_count = 36;
         table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(31)];
@@ -6559,12 +6673,12 @@ mod tests {
 
         assert_eq!(
             choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
-            Some(AiClaimChoice::Pass)
+            Some(AiClaimChoice::Peng)
         );
     }
 
     #[test]
-    fn claim_peng_passes_ready_hand_even_for_dragon_before_late_round() {
+    fn claim_peng_takes_ready_dragon_before_late_round_when_it_keeps_ready() {
         let mut table = table_with_discards(1, Vec::new());
         table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(31)];
         table.claim_window = Some(AiClaimView {
@@ -6579,7 +6693,7 @@ mod tests {
         assert!(ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0);
         assert_eq!(
             choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
-            Some(AiClaimChoice::Pass)
+            Some(AiClaimChoice::Peng)
         );
     }
 
