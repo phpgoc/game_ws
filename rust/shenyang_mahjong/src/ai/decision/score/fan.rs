@@ -82,7 +82,7 @@ pub(in crate::ai::decision) fn four_gui_yi_discard_bias(
     }
 
     let fan_loss = (current_four_gui_yi - after_four_gui_yi) as f64;
-    if ready_tile_score(&next, melds, table, position, win_rule) > 0.0 {
+    if ready_tile_score_after_discard(&next, melds, table, position, win_rule, tile) > 0.0 {
         return -28.0 * fan_loss;
     }
     if best_ready_score_after_discard(hand, melds, table, position, win_rule) > 0.0 {

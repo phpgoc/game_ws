@@ -40,6 +40,52 @@ fn capped_ready_score_prefers_live_middle_over_public_wind_wait() {
 }
 
 #[test]
+fn ready_score_counts_projected_meld_tiles_as_dead() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.dealer_position = 0;
+    let melds = vec![test_chi_meld(2)];
+    let hand = vec![1, 2, 4, 5, 6, 11, 12, 13, 21, 21];
+
+    assert_eq!(remaining_tile_count(&hand, &table, 0, 3), 4);
+    assert_eq!(
+        remaining_tile_count_with_melds(&hand, &melds, &table, 0, 3),
+        3
+    );
+    assert_eq!(
+        ready_tile_score(&hand, &melds, &table, 0, WIN_RULE_RELAXED),
+        43.0
+    );
+}
+
+#[test]
+fn ready_score_counts_simulated_discarded_wait_tile_as_dead() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.dealer_position = 0;
+    let hand_after_discard = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31];
+
+    assert_eq!(remaining_tile_count(&hand_after_discard, &table, 0, 31), 3);
+    assert_eq!(
+        remaining_tile_count_with_melds_after_discards(
+            &hand_after_discard,
+            &[],
+            &table,
+            0,
+            31,
+            &[31]
+        ),
+        2
+    );
+    assert_eq!(
+        ready_tile_score(&hand_after_discard, &[], &table, 0, WIN_RULE_RELAXED),
+        43.0
+    );
+    assert_eq!(
+        ready_tile_score_after_discard(&hand_after_discard, &[], &table, 0, WIN_RULE_RELAXED, 31),
+        38.0
+    );
+}
+
+#[test]
 fn estimated_visible_fan_counts_four_gui_yi_before_wait_fan() {
     let win_hand = vec![2, 3, 4, 11, 12, 13, 21, 22, 23, 35, 35];
     let melds = vec![test_peng_meld(2)];

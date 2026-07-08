@@ -1,4 +1,6 @@
-use share_type_public::games::shenyang_mahjong::SHENYANG_MAHJONG_TILE_KINDS;
+use share_type_public::games::shenyang_mahjong::{
+    SHENYANG_MAHJONG_TILE_KINDS, WsShenyangMahjongMeld,
+};
 
 use crate::ai::observation::{AiPublicTable, AiSeatView};
 
@@ -165,6 +167,35 @@ pub(super) fn remaining_tile_count(
     (4 - visible - own).max(0)
 }
 
+#[cfg(test)]
+pub(super) fn remaining_tile_count_with_melds(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    tile: i32,
+) -> i32 {
+    remaining_tile_count_with_melds_after_discards(hand, melds, table, position, tile, &[])
+}
+
+pub(super) fn remaining_tile_count_with_melds_after_discards(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    tile: i32,
+    discarded_tiles: &[i32],
+) -> i32 {
+    let visible = visible_tile_count(table, tile);
+    let own = hand.iter().filter(|&&item| item == tile).count() as i32;
+    let simulated_melds = simulated_meld_tile_count(table, position, melds, tile);
+    let simulated_discards = discarded_tiles
+        .iter()
+        .filter(|discarded_tile| **discarded_tile == tile)
+        .count() as i32;
+    (4 - visible - own - simulated_melds - simulated_discards).max(0)
+}
+
 pub(super) fn remaining_tile_count_after_discard(
     hand_after_discard: &[i32],
     table: &AiPublicTable,
@@ -202,4 +233,28 @@ pub(super) fn visible_tile_count(table: &AiPublicTable, tile: i32) -> i32 {
             discard_count + meld_count
         })
         .sum::<usize>() as i32
+}
+
+fn simulated_meld_tile_count(
+    table: &AiPublicTable,
+    position: usize,
+    melds: &[WsShenyangMahjongMeld],
+    tile: i32,
+) -> i32 {
+    let current_table_melds = table
+        .seats
+        .get(&position)
+        .map(|seat| valid_meld_tile_count(&seat.melds, tile))
+        .unwrap_or(0);
+    let projected_melds = valid_meld_tile_count(melds, tile);
+    (projected_melds - current_table_melds).max(0)
+}
+
+fn valid_meld_tile_count(melds: &[WsShenyangMahjongMeld], tile: i32) -> i32 {
+    melds
+        .iter()
+        .filter(|meld| is_valid_meld(meld))
+        .flat_map(|meld| meld.tiles.iter().copied())
+        .filter(|meld_tile| *meld_tile == tile)
+        .count() as i32
 }

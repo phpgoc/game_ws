@@ -29,8 +29,9 @@ pub(in crate::ai::decision) fn choose_piao_single_wait_discard(
             }
             let own_tile_count = hand.iter().filter(|item| **item == tile).count();
             Some((
-                piao_single_wait_tile_score(wait_tile, &next, melds, table, position, win_rule)
-                    + wait_setting_discard_safety_adjustment(table, position, tile, own_tile_count),
+                piao_single_wait_tile_score_after_discard(
+                    wait_tile, &next, melds, table, position, win_rule, tile,
+                ) + wait_setting_discard_safety_adjustment(table, position, tile, own_tile_count),
                 tile,
             ))
         })
@@ -43,6 +44,7 @@ pub(in crate::ai::decision) fn choose_piao_single_wait_discard(
         .map(|(_, tile)| tile)
 }
 
+#[cfg(test)]
 pub(in crate::ai::decision) fn piao_single_wait_tile_score(
     wait_tile: i32,
     hand_after_discard: &[i32],
@@ -51,7 +53,54 @@ pub(in crate::ai::decision) fn piao_single_wait_tile_score(
     position: usize,
     win_rule: i32,
 ) -> f64 {
-    let remaining = remaining_tile_count(hand_after_discard, table, position, wait_tile);
+    piao_single_wait_tile_score_with_simulated_discards(
+        wait_tile,
+        hand_after_discard,
+        melds,
+        table,
+        position,
+        win_rule,
+        &[],
+    )
+}
+
+pub(in crate::ai::decision) fn piao_single_wait_tile_score_after_discard(
+    wait_tile: i32,
+    hand_after_discard: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+    discarded_tile: i32,
+) -> f64 {
+    piao_single_wait_tile_score_with_simulated_discards(
+        wait_tile,
+        hand_after_discard,
+        melds,
+        table,
+        position,
+        win_rule,
+        &[discarded_tile],
+    )
+}
+
+fn piao_single_wait_tile_score_with_simulated_discards(
+    wait_tile: i32,
+    hand_after_discard: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+    simulated_discards: &[i32],
+) -> f64 {
+    let remaining = remaining_tile_count_with_melds_after_discards(
+        hand_after_discard,
+        melds,
+        table,
+        position,
+        wait_tile,
+        simulated_discards,
+    );
     if remaining <= 0 {
         return -240.0;
     }

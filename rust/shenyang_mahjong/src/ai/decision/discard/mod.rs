@@ -65,7 +65,8 @@ pub fn choose_discard_from_view(
                     &next, melds, table, position, tile, win_rule,
                 )
                 || violates_basic_heng_discard(&next, melds, table, position, tile, win_rule);
-        let score = hand_progress_score(&next, melds, table, position, win_rule);
+        let score =
+            hand_progress_score_after_discard(&next, melds, table, position, win_rule, tile);
         let pressure = estimate_pressure_for_tile(table, position, tile);
         let neigh = neighbor_count(hand, tile);
         let discard_bias = match (count, is_honor(tile), tile_is_terminal(tile), neigh) {

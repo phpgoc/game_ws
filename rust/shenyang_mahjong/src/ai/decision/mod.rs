@@ -61,6 +61,8 @@ use self_gang::*;
 use seven_pairs::*;
 use shenyang_rule::*;
 #[cfg(test)]
+use table::remaining_tile_count_with_melds;
+#[cfg(test)]
 use table::visible_tile_count;
 use table::{
     exposed_meld_tile_count, live_terminal_or_honor_count,
@@ -68,7 +70,7 @@ use table::{
     live_tile_count_for_suit_after_discard, next_position_after, open_meld_tile_count,
     open_opponent_exists_for_tile, own_previous_discard_count, public_discard_count,
     public_discard_seat_count, remaining_tile_count, remaining_tile_count_after_discard,
-    seat_has_open_meld_tile,
+    remaining_tile_count_with_melds_after_discards, seat_has_open_meld_tile,
 };
 use tile::{
     is_dragon, is_honor, is_suited, is_valid_tile, is_wind, tile_is_terminal, tile_rank, tile_suit,

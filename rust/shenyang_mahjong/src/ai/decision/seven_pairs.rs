@@ -220,7 +220,7 @@ pub(super) fn choose_seven_pairs_wait_discard(
             let wait_tile = single_tile(&next)?;
             let own_tile_count = hand.iter().filter(|item| **item == tile).count();
             Some((
-                seven_pairs_wait_tile_score(wait_tile, &next, table, position)
+                seven_pairs_wait_tile_score_after_discard(wait_tile, &next, table, position, tile)
                     + wait_setting_discard_safety_adjustment(table, position, tile, own_tile_count),
                 tile,
             ))
@@ -240,8 +240,47 @@ pub(super) fn seven_pairs_wait_tile_score(
     table: &AiPublicTable,
     position: usize,
 ) -> f64 {
+    seven_pairs_wait_tile_score_with_simulated_discards(
+        wait_tile,
+        hand_after_discard,
+        table,
+        position,
+        &[],
+    )
+}
+
+pub(super) fn seven_pairs_wait_tile_score_after_discard(
+    wait_tile: i32,
+    hand_after_discard: &[i32],
+    table: &AiPublicTable,
+    position: usize,
+    discarded_tile: i32,
+) -> f64 {
+    seven_pairs_wait_tile_score_with_simulated_discards(
+        wait_tile,
+        hand_after_discard,
+        table,
+        position,
+        &[discarded_tile],
+    )
+}
+
+fn seven_pairs_wait_tile_score_with_simulated_discards(
+    wait_tile: i32,
+    hand_after_discard: &[i32],
+    table: &AiPublicTable,
+    position: usize,
+    simulated_discards: &[i32],
+) -> f64 {
     let public_discards = public_discard_count(table, wait_tile) as f64;
-    let remaining = remaining_tile_count(hand_after_discard, table, position, wait_tile) as f64;
+    let remaining = remaining_tile_count_with_melds_after_discards(
+        hand_after_discard,
+        &[],
+        table,
+        position,
+        wait_tile,
+        simulated_discards,
+    ) as f64;
     if remaining <= 0.0 {
         return -240.0 - public_discards * 12.0;
     }

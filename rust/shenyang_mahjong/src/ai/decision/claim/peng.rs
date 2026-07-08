@@ -195,8 +195,14 @@ pub(in crate::ai::decision) fn should_peng_to_preserve_four_gui_yi_from_discard(
         let after_discard = remove_n_tiles(&peng_hand, discard, 1);
         estimated_four_gui_yi_fan(&after_discard, &peng_melds) > gang_four_gui_yi
             && estimated_visible_bonus_fan(&after_discard, &peng_melds) >= gang_visible_fan
-            && ready_tile_score(&after_discard, &peng_melds, table, position, win_rule)
-                >= gang_ready_score
+            && ready_tile_score_after_discard(
+                &after_discard,
+                &peng_melds,
+                table,
+                position,
+                win_rule,
+                discard,
+            ) >= gang_ready_score
     })
 }
 
@@ -281,7 +287,14 @@ pub(in crate::ai::decision) fn should_claim_ready_open_pure_one_suit_peng_from_d
     unique_tiles(&next).into_iter().any(|discard| {
         let mut after_discard = remove_n_tiles(&next, discard, 1);
         sort_tiles(&mut after_discard);
-        ready_has_pure_one_suit_win(&after_discard, &melds, table, position, win_rule)
+        ready_has_pure_one_suit_win_after_discard(
+            &after_discard,
+            &melds,
+            table,
+            position,
+            win_rule,
+            discard,
+        )
     })
 }
 
@@ -374,7 +387,14 @@ pub(in crate::ai::decision) fn should_claim_ready_piao_peng_for_shou_ba_yi(
     unique_tiles(&next).into_iter().any(|discard| {
         let after_discard = remove_n_tiles(&next, discard, 1);
         after_discard.len() == 1
-            && ready_tile_score(&after_discard, &melds, table, position, win_rule) > 0.0
+            && ready_tile_score_after_discard(
+                &after_discard,
+                &melds,
+                table,
+                position,
+                win_rule,
+                discard,
+            ) > 0.0
     })
 }
 
