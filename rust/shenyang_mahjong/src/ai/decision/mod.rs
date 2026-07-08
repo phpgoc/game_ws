@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
 mod meld;
+mod table;
 mod tile;
 
 use share_type_public::games::shenyang_mahjong::{
@@ -20,6 +21,16 @@ use meld::{
     claim_gang_meld, claim_peng_meld, has_concealed_gang_meld, has_open_meld, has_peng_meld,
     is_open_meld, is_sequence_meld, is_triplet_like_meld, is_valid_meld, meld_primary_tile,
     promoted_added_gang_melds, valid_meld_tiles,
+};
+#[cfg(test)]
+use table::visible_tile_count;
+use table::{
+    exposed_meld_tile_count, live_terminal_or_honor_count,
+    live_terminal_or_honor_count_after_discard, live_tile_count_for_suit,
+    live_tile_count_for_suit_after_discard, next_position_after, open_meld_tile_count,
+    open_opponent_exists_for_tile, own_previous_discard_count, public_discard_count,
+    public_discard_seat_count, remaining_tile_count, remaining_tile_count_after_discard,
+    seat_has_open_meld_tile,
 };
 use tile::{
     is_dragon, is_honor, is_suited, is_valid_tile, is_wind, tile_is_terminal, tile_rank, tile_suit,
@@ -1137,28 +1148,6 @@ fn estimate_pressure_for_tile(table: &AiPublicTable, position: usize, tile: i32)
     pressure
 }
 
-fn exposed_meld_tile_count(table: &AiPublicTable, tile: i32) -> usize {
-    table
-        .seats
-        .values()
-        .flat_map(|seat| seat.melds.iter())
-        .filter(|meld| is_valid_meld(meld))
-        .flat_map(|meld| meld.tiles.iter().copied())
-        .filter(|meld_tile| *meld_tile == tile)
-        .count()
-}
-
-fn open_meld_tile_count(table: &AiPublicTable, tile: i32) -> usize {
-    table
-        .seats
-        .values()
-        .flat_map(|seat| seat.melds.iter())
-        .filter(|meld| is_open_meld(meld))
-        .flat_map(|meld| meld.tiles.iter().copied())
-        .filter(|meld_tile| *meld_tile == tile)
-        .count()
-}
-
 fn estimated_four_gui_yi_fan(hand: &[i32], melds: &[WsShenyangMahjongMeld]) -> i32 {
     let mut counts = HashMap::<i32, i32>::new();
     for tile in hand.iter().copied() {
@@ -1647,69 +1636,6 @@ fn public_defense_own_tile_shape_bias(tile: i32, own_tile_count: usize) -> f64 {
     }
 }
 
-fn live_tile_count_for_suit_after_discard(
-    hand_after_discard: &[i32],
-    table: &AiPublicTable,
-    suit: i32,
-    discarded_tile: i32,
-) -> i32 {
-    (1..=9)
-        .map(|rank| {
-            let tile = suit * 10 + rank;
-            let visible = visible_tile_count(table, tile);
-            let own_hand = hand_after_discard
-                .iter()
-                .filter(|item| **item == tile)
-                .count() as i32;
-            let own_discard = i32::from(discarded_tile == tile);
-            (4 - visible - own_hand - own_discard).max(0)
-        })
-        .sum()
-}
-
-fn live_tile_count_for_suit(hand: &[i32], table: &AiPublicTable, suit: i32) -> i32 {
-    (1..=9)
-        .map(|rank| {
-            let tile = suit * 10 + rank;
-            let visible = visible_tile_count(table, tile);
-            let own_hand = hand.iter().filter(|item| **item == tile).count() as i32;
-            (4 - visible - own_hand).max(0)
-        })
-        .sum()
-}
-
-fn live_terminal_or_honor_count_after_discard(
-    hand_after_discard: &[i32],
-    table: &AiPublicTable,
-    discarded_tile: i32,
-) -> i32 {
-    SHENYANG_MAHJONG_TILE_KINDS
-        .into_iter()
-        .filter(|tile| is_honor(*tile) || tile_is_terminal(*tile))
-        .map(|tile| {
-            let visible = visible_tile_count(table, tile);
-            let own_hand = hand_after_discard
-                .iter()
-                .filter(|item| **item == tile)
-                .count() as i32;
-            let own_discard = i32::from(discarded_tile == tile);
-            (4 - visible - own_hand - own_discard).max(0)
-        })
-        .sum()
-}
-
-fn live_terminal_or_honor_count(hand: &[i32], table: &AiPublicTable) -> i32 {
-    SHENYANG_MAHJONG_TILE_KINDS
-        .into_iter()
-        .filter(|tile| is_honor(*tile) || tile_is_terminal(*tile))
-        .map(|tile| {
-            let visible = visible_tile_count(table, tile);
-            let own_hand = hand.iter().filter(|item| **item == tile).count() as i32;
-            (4 - visible - own_hand).max(0)
-        })
-        .sum()
-}
-
 fn mid_round_public_discard_bias(table: &AiPublicTable, position: usize, tile: i32) -> f64 {
     if !is_mid_round(table) || is_late_defense_round(table) {
         return 0.0;
@@ -1846,21 +1772,6 @@ fn live_risk_exposure_scale(table: &AiPublicTable, tile: i32) -> f64 {
     }
 }
 
-fn seat_has_open_meld_tile(seat: &AiSeatView, tile: i32) -> bool {
-    seat.melds
-        .iter()
-        .any(|meld| is_open_meld(meld) && meld.tiles.contains(&tile))
-}
-
-fn open_opponent_exists_for_tile(table: &AiPublicTable, position: usize, tile: i32) -> bool {
-    table.seats.iter().any(|(seat_position, seat)| {
-        *seat_position != position
-            && has_open_meld(&seat.melds)
-            && !seat.discards.contains(&tile)
-            && !seat_has_open_meld_tile(seat, tile)
-    })
-}
-
 fn own_open_live_suited_pressure(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
@@ -1929,19 +1840,6 @@ fn neighbor_count(hand: &[i32], tile: i32) -> i32 {
         }
     }
     count
-}
-
-fn next_position_after(current: usize, table: &AiPublicTable) -> usize {
-    let mut positions: Vec<usize> = table.seats.keys().copied().collect();
-    positions.sort_unstable();
-    if positions.is_empty() {
-        return current;
-    }
-    let idx = positions
-        .iter()
-        .position(|pos| *pos == current)
-        .unwrap_or(0);
-    positions[(idx + 1) % positions.len()]
 }
 
 fn one_step_wait_potential(
@@ -2626,40 +2524,6 @@ fn piao_missing_suits_from_melds(melds: &[WsShenyangMahjongMeld]) -> Vec<i32> {
         .collect()
 }
 
-fn public_discard_count(table: &AiPublicTable, tile: i32) -> usize {
-    table
-        .seats
-        .values()
-        .map(|seat| {
-            seat.discards
-                .iter()
-                .filter(|discard| **discard == tile)
-                .count()
-        })
-        .sum()
-}
-
-fn public_discard_seat_count(table: &AiPublicTable, tile: i32) -> usize {
-    table
-        .seats
-        .values()
-        .filter(|seat| seat.discards.iter().any(|discard| *discard == tile))
-        .count()
-}
-
-fn own_previous_discard_count(table: &AiPublicTable, position: usize, tile: i32) -> usize {
-    table
-        .seats
-        .get(&position)
-        .map(|seat| {
-            seat.discards
-                .iter()
-                .filter(|discard| **discard == tile)
-                .count()
-        })
-        .unwrap_or(0)
-}
-
 fn own_previous_discard_safety_bias(table: &AiPublicTable, position: usize, tile: i32) -> f64 {
     if !is_late_defense_round(table) {
         return 0.0;
@@ -2854,27 +2718,6 @@ fn ready_visible_fan_reaches_cap(
         });
     }
     ready_hand_visible_fan_reaches_cap(hand, melds, table, position, win_rule, max_fan)
-}
-
-fn remaining_tile_count(hand: &[i32], table: &AiPublicTable, _position: usize, tile: i32) -> i32 {
-    let visible = visible_tile_count(table, tile);
-    let own = hand.iter().filter(|&&item| item == tile).count() as i32;
-    (4 - visible - own).max(0)
-}
-
-fn remaining_tile_count_after_discard(
-    hand_after_discard: &[i32],
-    table: &AiPublicTable,
-    discarded_tile: i32,
-    tile: i32,
-) -> i32 {
-    let visible = visible_tile_count(table, tile);
-    let own = hand_after_discard
-        .iter()
-        .filter(|&&item| item == tile)
-        .count() as i32;
-    let own_discard = i32::from(discarded_tile == tile);
-    (4 - visible - own - own_discard).max(0)
 }
 
 fn remove_n_tiles(hand: &[i32], tile: i32, count: usize) -> Vec<i32> {
@@ -4419,24 +4262,6 @@ fn violates_basic_three_suits_discard(
         return true;
     }
     pure_one_suit_plan_score_for_context(hand_after_discard, melds, table, position) <= 0.0
-}
-
-fn visible_tile_count(table: &AiPublicTable, tile: i32) -> i32 {
-    table
-        .seats
-        .values()
-        .map(|seat| {
-            let discard_count = seat.discards.iter().filter(|&&item| item == tile).count();
-            let meld_count = seat
-                .melds
-                .iter()
-                .filter(|meld| is_valid_meld(meld))
-                .flat_map(|meld| meld.tiles.iter().copied())
-                .filter(|item| *item == tile)
-                .count();
-            discard_count + meld_count
-        })
-        .sum::<usize>() as i32
 }
 
 #[cfg(test)]
