@@ -997,11 +997,7 @@ fn closed_threat_exposure_scale(table: &AiPublicTable, tile: i32) -> f64 {
 
 fn dominant_pure_suit(hand: &[i32], melds: &[WsShenyangMahjongMeld]) -> Option<i32> {
     let mut suit_counts = [0usize; 3];
-    for tile in hand
-        .iter()
-        .copied()
-        .chain(melds.iter().flat_map(|meld| meld.tiles.iter().copied()))
-    {
+    for tile in hand.iter().copied().chain(valid_meld_tiles(melds)) {
         if is_suited(tile) {
             suit_counts[tile_suit(tile) as usize] += 1;
         }
@@ -1031,9 +1027,7 @@ fn early_piao_candidate_discard_bias(
     if piao_plan_is_capped(table) || table.dealer_position == position {
         return 0.0;
     }
-    if melds
-        .iter()
-        .any(|meld| meld.kind == ShenyangMahjongMeldKind::CHI)
+    if melds.iter().any(is_sequence_meld)
         || pair_count(hand) < 3
         || !missing_suits(hand, melds).is_empty()
         || !has_terminal_or_honor_with_extra(hand, melds, None)
@@ -1106,8 +1100,9 @@ fn exposed_meld_tile_count(table: &AiPublicTable, tile: i32) -> usize {
         .seats
         .values()
         .flat_map(|seat| seat.melds.iter())
-        .flat_map(|meld| meld.tiles.iter())
-        .filter(|meld_tile| **meld_tile == tile)
+        .filter(|meld| is_valid_meld(meld))
+        .flat_map(|meld| meld.tiles.iter().copied())
+        .filter(|meld_tile| *meld_tile == tile)
         .count()
 }
 
@@ -1117,8 +1112,8 @@ fn open_meld_tile_count(table: &AiPublicTable, tile: i32) -> usize {
         .values()
         .flat_map(|seat| seat.melds.iter())
         .filter(|meld| is_open_meld(meld))
-        .flat_map(|meld| meld.tiles.iter())
-        .filter(|meld_tile| **meld_tile == tile)
+        .flat_map(|meld| meld.tiles.iter().copied())
+        .filter(|meld_tile| *meld_tile == tile)
         .count()
 }
 
@@ -1420,7 +1415,7 @@ fn has_terminal_or_honor_with_extra(
     hand.iter()
         .copied()
         .chain(extra)
-        .chain(melds.iter().flat_map(|meld| meld.tiles.iter().copied()))
+        .chain(valid_meld_tiles(melds))
         .any(|tile| is_honor(tile) || tile_is_terminal(tile))
 }
 
@@ -1546,8 +1541,19 @@ fn is_triplet_like_meld(meld: &WsShenyangMahjongMeld) -> bool {
     meld_primary_tile(meld).is_some()
 }
 
+fn is_valid_meld(meld: &WsShenyangMahjongMeld) -> bool {
+    is_triplet_like_meld(meld) || is_sequence_meld(meld)
+}
+
+fn valid_meld_tiles(melds: &[WsShenyangMahjongMeld]) -> impl Iterator<Item = i32> + '_ {
+    melds
+        .iter()
+        .filter(|meld| is_valid_meld(meld))
+        .flat_map(|meld| meld.tiles.iter().copied())
+}
+
 fn is_open_meld(meld: &WsShenyangMahjongMeld) -> bool {
-    meld.from_position.is_some() && (is_triplet_like_meld(meld) || is_sequence_meld(meld))
+    meld.from_position.is_some() && is_valid_meld(meld)
 }
 
 fn is_wind(tile: i32) -> bool {
@@ -1871,7 +1877,7 @@ fn open_opponent_live_suited_risk(table: &AiPublicTable, position: usize, tile: 
 fn seat_has_open_meld_tile(seat: &AiSeatView, tile: i32) -> bool {
     seat.melds
         .iter()
-        .any(|meld| is_open_meld(meld) && meld.tiles.iter().any(|meld_tile| *meld_tile == tile))
+        .any(|meld| is_open_meld(meld) && meld.tiles.contains(&tile))
 }
 
 fn open_opponent_exists_for_tile(table: &AiPublicTable, position: usize, tile: i32) -> bool {
@@ -2047,6 +2053,9 @@ fn opponent_missing_suit_safety_read(table: &AiPublicTable, position: usize, til
                 .filter(|discard| is_suited(**discard) && tile_suit(**discard) == suit)
                 .count();
             let exposed_in_suit = seat.melds.iter().any(|meld| {
+                if !is_valid_meld(meld) {
+                    return false;
+                }
                 meld.tiles
                     .iter()
                     .any(|meld_tile| is_suited(*meld_tile) && tile_suit(*meld_tile) == suit)
@@ -2418,10 +2427,7 @@ fn piao_committed_group_count(hand: &[i32], melds: &[WsShenyangMahjongMeld]) -> 
 }
 
 fn piao_plan_score(hand: &[i32], melds: &[WsShenyangMahjongMeld]) -> f64 {
-    if melds
-        .iter()
-        .any(|meld| meld.kind == ShenyangMahjongMeldKind::CHI)
-    {
+    if melds.iter().any(is_sequence_meld) {
         return 0.0;
     }
     let open_triplets = melds
@@ -2468,10 +2474,7 @@ fn has_piao_route_basics(hand: &[i32], melds: &[WsShenyangMahjongMeld]) -> bool 
 }
 
 fn piao_threat_level(melds: &[WsShenyangMahjongMeld]) -> usize {
-    if melds
-        .iter()
-        .any(|meld| meld.kind == ShenyangMahjongMeldKind::CHI)
-    {
+    if melds.iter().any(is_sequence_meld) {
         return 0;
     }
     melds
@@ -2652,6 +2655,9 @@ fn pure_one_suit_plan_score(hand: &[i32], melds: &[WsShenyangMahjongMeld]) -> f6
         return 0.0;
     };
     if melds.iter().any(|meld| {
+        if !is_valid_meld(meld) {
+            return false;
+        }
         meld.tiles
             .iter()
             .any(|tile| !is_suited(*tile) || tile_suit(*tile) != main_suit)
@@ -2697,7 +2703,7 @@ fn pure_one_suit_shape(
     let all_tiles = hand
         .iter()
         .copied()
-        .chain(melds.iter().flat_map(|meld| meld.tiles.iter().copied()))
+        .chain(valid_meld_tiles(melds))
         .collect::<Vec<_>>();
     let main_suit = dominant_pure_suit(hand, melds)?;
     let main_count = all_tiles
@@ -3853,10 +3859,7 @@ fn should_preserve_piao_plan_for_chi(
     table: &AiPublicTable,
     position: usize,
 ) -> bool {
-    if melds
-        .iter()
-        .any(|meld| meld.kind == ShenyangMahjongMeldKind::CHI)
-    {
+    if melds.iter().any(is_sequence_meld) {
         return false;
     }
     let score = piao_plan_score_for_context(hand, melds, table, position);
@@ -3945,7 +3948,7 @@ fn suit_presence_with_extra(
             suits[tile_suit(tile) as usize] = true;
         }
     }
-    for tile in melds.iter().flat_map(|meld| meld.tiles.iter().copied()) {
+    for tile in valid_meld_tiles(melds) {
         if is_suited(tile) {
             suits[tile_suit(tile) as usize] = true;
         }
@@ -3978,7 +3981,7 @@ fn terminal_or_honor_discard_bias(
 fn terminal_or_honor_count(hand: &[i32], melds: &[WsShenyangMahjongMeld]) -> usize {
     hand.iter()
         .copied()
-        .chain(melds.iter().flat_map(|meld| meld.tiles.iter().copied()))
+        .chain(valid_meld_tiles(melds))
         .filter(|tile| is_honor(*tile) || tile_is_terminal(*tile))
         .count()
 }
@@ -3986,7 +3989,7 @@ fn terminal_or_honor_count(hand: &[i32], melds: &[WsShenyangMahjongMeld]) -> usi
 fn suited_tile_count_for_suit(hand: &[i32], melds: &[WsShenyangMahjongMeld], suit: i32) -> usize {
     hand.iter()
         .copied()
-        .chain(melds.iter().flat_map(|meld| meld.tiles.iter().copied()))
+        .chain(valid_meld_tiles(melds))
         .filter(|tile| is_suited(*tile) && tile_suit(*tile) == suit)
         .count()
 }
@@ -4235,8 +4238,9 @@ fn visible_tile_count(table: &AiPublicTable, tile: i32) -> i32 {
             let meld_count = seat
                 .melds
                 .iter()
-                .flat_map(|meld| meld.tiles.iter())
-                .filter(|&&item| item == tile)
+                .filter(|meld| is_valid_meld(meld))
+                .flat_map(|meld| meld.tiles.iter().copied())
+                .filter(|item| *item == tile)
                 .count();
             discard_count + meld_count
         })
@@ -4337,6 +4341,104 @@ mod tests {
         assert!(!is_triplet_like_meld(&invalid_tile_peng));
         assert_eq!(piao_threat_level(&[invalid_tile_peng]), 0);
         assert!(has_open_meld(&[test_chi_meld(1)]));
+    }
+
+    #[test]
+    fn route_requirement_scans_ignore_malformed_meld_tiles() {
+        let malformed_terminal = WsShenyangMahjongMeld {
+            kind: ShenyangMahjongMeldKind::PENG,
+            tiles: vec![1, 1],
+            from_position: Some(1),
+        };
+        let malformed_third_suit = WsShenyangMahjongMeld {
+            kind: ShenyangMahjongMeldKind::PENG,
+            tiles: vec![21, 21],
+            from_position: Some(1),
+        };
+        let hand = vec![2, 3, 4, 5, 6, 7, 12, 13, 14, 15, 16, 17, 18, 18];
+
+        assert!(!has_terminal_or_honor_with_extra(
+            &hand,
+            &[malformed_terminal.clone()],
+            None
+        ));
+        assert_eq!(terminal_or_honor_count(&hand, &[malformed_terminal]), 0);
+        assert_eq!(
+            missing_suits(&hand, &[malformed_third_suit.clone()]),
+            vec![2]
+        );
+        assert_eq!(
+            suited_tile_count_for_suit(&hand, &[malformed_third_suit], 2),
+            0
+        );
+    }
+
+    #[test]
+    fn visible_tile_counts_ignore_malformed_meld_tiles() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.seats.get_mut(&1).unwrap().melds = vec![
+            WsShenyangMahjongMeld {
+                kind: ShenyangMahjongMeldKind::PENG,
+                tiles: vec![14, 14],
+                from_position: Some(0),
+            },
+            WsShenyangMahjongMeld {
+                kind: ShenyangMahjongMeldKind::PENG,
+                tiles: vec![99, 99, 99],
+                from_position: Some(0),
+            },
+            test_peng_meld(14),
+        ];
+
+        assert_eq!(visible_tile_count(&table, 14), 3);
+        assert_eq!(exposed_meld_tile_count(&table, 14), 3);
+        assert_eq!(open_meld_tile_count(&table, 14), 3);
+        assert_eq!(remaining_tile_count(&[14], &table, 0, 14), 0);
+    }
+
+    #[test]
+    fn pure_one_suit_plan_ignores_malformed_off_suit_meld() {
+        let hand = vec![1, 1, 2, 2, 3, 3, 4, 5, 6, 7, 8, 9, 9];
+        let malformed_off_suit = WsShenyangMahjongMeld {
+            kind: ShenyangMahjongMeldKind::PENG,
+            tiles: vec![11, 11],
+            from_position: Some(1),
+        };
+        let valid_off_suit = test_peng_meld(11);
+
+        assert!(pure_one_suit_plan_score(&hand, &[]) > 0.0);
+        assert_eq!(
+            pure_one_suit_plan_score(&hand, &[malformed_off_suit]),
+            pure_one_suit_plan_score(&hand, &[])
+        );
+        assert_eq!(pure_one_suit_plan_score(&hand, &[valid_off_suit]), 0.0);
+    }
+
+    #[test]
+    fn piao_plan_ignores_malformed_chi_meld() {
+        let hand = vec![1, 1, 2, 3, 4, 5, 6, 11, 11, 21, 21, 35, 35];
+        let malformed_chi = WsShenyangMahjongMeld {
+            kind: ShenyangMahjongMeldKind::CHI,
+            tiles: vec![7, 7, 8],
+            from_position: Some(1),
+        };
+        let valid_chi = test_chi_meld(7);
+
+        assert!(piao_plan_score(&hand, &[]) > 0.0);
+        assert_eq!(
+            piao_plan_score(&hand, &[malformed_chi.clone()]),
+            piao_plan_score(&hand, &[])
+        );
+        assert_eq!(piao_plan_score(&hand, &[valid_chi]), 0.0);
+        assert_eq!(
+            piao_threat_level(&[
+                malformed_chi,
+                test_peng_meld(1),
+                test_peng_meld(11),
+                test_peng_meld(21),
+            ]),
+            3
+        );
     }
 
     #[test]
