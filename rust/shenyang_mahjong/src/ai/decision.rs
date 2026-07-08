@@ -1516,10 +1516,12 @@ fn isolated_suited_singleton_discard_bias(tile: i32) -> f64 {
 }
 
 fn is_triplet_like_meld(meld: &WsShenyangMahjongMeld) -> bool {
-    matches!(
-        meld.kind,
-        ShenyangMahjongMeldKind::PENG | ShenyangMahjongMeldKind::GANG
-    ) && meld.tiles.len() >= 3
+    let expected_len = match meld.kind {
+        ShenyangMahjongMeldKind::PENG => 3,
+        ShenyangMahjongMeldKind::GANG => 4,
+        ShenyangMahjongMeldKind::CHI => return false,
+    };
+    meld.tiles.len() == expected_len
         && meld
             .tiles
             .first()
@@ -4260,6 +4262,20 @@ mod tests {
         let melds = vec![WsShenyangMahjongMeld {
             kind: ShenyangMahjongMeldKind::PENG,
             tiles: vec![1, 1],
+            from_position: Some(1),
+        }];
+        let hand = vec![11, 12, 13, 21, 22, 23, 31, 35];
+
+        assert!(!is_triplet_like_meld(&melds[0]));
+        assert!(!has_triplet_or_dragon_pair(&hand, &melds));
+        assert_eq!(piao_threat_level(&melds), 0);
+    }
+
+    #[test]
+    fn basic_heng_filter_ignores_short_gang_meld() {
+        let melds = vec![WsShenyangMahjongMeld {
+            kind: ShenyangMahjongMeldKind::GANG,
+            tiles: vec![1, 1, 1],
             from_position: Some(1),
         }];
         let hand = vec![11, 12, 13, 21, 22, 23, 31, 35];
