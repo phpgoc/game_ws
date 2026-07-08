@@ -2958,13 +2958,14 @@ fn seven_pairs_plan_discard_bias(
     }
     let count = hand.iter().filter(|item| **item == tile).count();
     if count >= 2 {
-        return if is_honor(tile) {
+        let base = if is_honor(tile) {
             -18.0
         } else if tile_is_terminal(tile) {
             -15.0
         } else {
             -12.0
         };
+        return base + seven_pairs_pair_liveness_discard_bias(hand, table, position, tile, count);
     }
     if is_dragon(tile) {
         18.0
@@ -2974,6 +2975,23 @@ fn seven_pairs_plan_discard_bias(
         0.0
     } else {
         3.0
+    }
+}
+
+fn seven_pairs_pair_liveness_discard_bias(
+    hand: &[i32],
+    table: &AiPublicTable,
+    position: usize,
+    tile: i32,
+    count: usize,
+) -> f64 {
+    if count != 2 {
+        return 0.0;
+    }
+    match remaining_tile_count(hand, table, position, tile) {
+        0 => 4.0,
+        1 => 0.0,
+        _ => -2.0,
     }
 }
 
@@ -7257,6 +7275,21 @@ mod tests {
 
         assert!(honor_pair < terminal_pair);
         assert!(terminal_pair < middle_pair);
+    }
+
+    #[test]
+    fn seven_pairs_plan_protects_live_pair_over_dead_pair() {
+        let table = table_with_discards(1, vec![5, 5]);
+        let hand = vec![1, 1, 5, 5, 11, 11, 12, 12, 21, 21, 31, 31, 35, 36];
+
+        let dead_middle_pair =
+            seven_pairs_plan_discard_bias(&hand, 5, &[], &table, 0, WIN_RULE_SHENYANG_BASIC);
+        let live_middle_pair =
+            seven_pairs_plan_discard_bias(&hand, 12, &[], &table, 0, WIN_RULE_SHENYANG_BASIC);
+
+        assert_eq!(remaining_tile_count(&hand, &table, 0, 5), 0);
+        assert!(remaining_tile_count(&hand, &table, 0, 12) > 0);
+        assert!(live_middle_pair < dead_middle_pair);
     }
 
     #[test]
