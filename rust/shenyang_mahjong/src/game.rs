@@ -1423,6 +1423,9 @@ pub(crate) fn settlement_score_changes_for_state(
 
     for winner in &settlement.winner_positions {
         let winner_fan = capped_winner_hand_fan(state, settlement, *winner, configs);
+        if winner_fan <= 0 {
+            continue;
+        }
         for payer in &payers {
             if payer == winner {
                 continue;
@@ -5613,6 +5616,41 @@ mod tests {
             .map(|change| (change.position, change.score))
             .collect::<Vec<_>>(),
             vec![(0, -1), (1, 1), (2, 0), (3, 0)]
+        );
+    }
+
+    #[test]
+    fn settlement_score_ignores_illegal_winner_hand() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 35]);
+        state.melds.insert(
+            1,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::PENG,
+                vec![99, 99, 99],
+                Some(0),
+            )],
+        );
+        state.enter_settlement_with_reverse_win(
+            vec![1],
+            Some(0),
+            Some(35),
+            false,
+            false,
+            false,
+            false,
+        );
+        let settlement = state.settlement.as_ref().expect("settlement");
+
+        assert_eq!(winner_hand_fan(&state, settlement, 1), 0);
+        assert_eq!(
+            settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &HashMap::new())
+                .into_iter()
+                .map(|change| (change.position, change.score))
+                .collect::<Vec<_>>(),
+            vec![(0, 0), (1, 0), (2, 0), (3, 0)]
         );
     }
 
