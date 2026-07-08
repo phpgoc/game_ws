@@ -5,7 +5,9 @@ use share_type_public::games::shenyang_mahjong::WsShenyangMahjongScoreChange;
 use ws_common::RoomService;
 
 #[cfg(feature = "official")]
-use crate::game::{settlement_is_reverse_win, settlement_score_changes_for_state};
+use crate::game::{
+    settlement_from_position, settlement_is_reverse_win, settlement_score_changes_for_state,
+};
 use crate::game_state::{SettlementState, ShenyangMahjongLoopState};
 #[cfg(feature = "official")]
 use crate::rules::{
@@ -109,8 +111,7 @@ pub fn settle_round(
         return;
     };
 
-    let discarder_user_id = settlement
-        .from_position
+    let discarder_user_id = official_from_position_for_settlement(settlement)
         .and_then(|position| room_service.room_official_user_id(room_key, position));
     let is_reverse_win = official_reverse_win_for_settlement(settlement);
     let players = state.players_snapshot();
@@ -155,6 +156,11 @@ pub fn settle_round(
 #[cfg(feature = "official")]
 fn official_reverse_win_for_settlement(settlement: &SettlementState) -> bool {
     settlement_is_reverse_win(settlement)
+}
+
+#[cfg(feature = "official")]
+fn official_from_position_for_settlement(settlement: &SettlementState) -> Option<usize> {
+    settlement_from_position(settlement)
 }
 
 #[cfg(feature = "official")]
@@ -264,8 +270,8 @@ mod tests {
 
     #[cfg(feature = "official")]
     use super::{
-        official_reverse_win_for_settlement, winner_pattern_for_position,
-        winner_scores_for_settlement,
+        official_from_position_for_settlement, official_reverse_win_for_settlement,
+        winner_pattern_for_position, winner_scores_for_settlement,
     };
     use super::{winner_score_for_settlement, winner_score_from_changes};
 
@@ -352,7 +358,7 @@ mod tests {
         };
         let invalid_self_draw_flag = SettlementState {
             winner_positions: vec![1],
-            from_position: None,
+            from_position: Some(0),
             win_tile: Some(5),
             is_self_draw: true,
             is_reverse_win: true,
@@ -361,9 +367,17 @@ mod tests {
         };
 
         assert!(official_reverse_win_for_settlement(&valid_reverse_win));
+        assert_eq!(
+            official_from_position_for_settlement(&valid_reverse_win),
+            Some(0)
+        );
         assert!(!official_reverse_win_for_settlement(
             &invalid_self_draw_flag
         ));
+        assert_eq!(
+            official_from_position_for_settlement(&invalid_self_draw_flag),
+            None
+        );
     }
 
     #[cfg(feature = "official")]

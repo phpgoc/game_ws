@@ -253,7 +253,7 @@ pub(crate) fn build_settlement_event_with_configs(
             .iter()
             .map(|position| *position as i32)
             .collect(),
-        from_position: settlement.from_position.map(|position| position as i32),
+        from_position: settlement_from_position(settlement).map(|position| position as i32),
         win_tile: settlement.win_tile,
         is_self_draw: settlement.is_self_draw,
         is_reverse_win: settlement_is_reverse_win(settlement),
@@ -387,7 +387,17 @@ fn build_winner_details(
 }
 
 pub(crate) fn settlement_is_reverse_win(settlement: &crate::game_state::SettlementState) -> bool {
-    !settlement.is_self_draw && settlement.from_position.is_some() && settlement.is_reverse_win
+    settlement_from_position(settlement).is_some() && settlement.is_reverse_win
+}
+
+pub(crate) fn settlement_from_position(
+    settlement: &crate::game_state::SettlementState,
+) -> Option<usize> {
+    if settlement.is_self_draw {
+        None
+    } else {
+        settlement.from_position
+    }
 }
 
 fn settlement_is_gang_draw(settlement: &crate::game_state::SettlementState) -> bool {
@@ -5060,11 +5070,12 @@ mod tests {
         state
             .hands
             .insert(1, vec![2, 3, 4, 5, 6, 7, 11, 12, 13, 21, 22, 23, 31, 31]);
-        state.enter_settlement_with_reverse_win(vec![1], None, None, true, true, false, false);
+        state.enter_settlement_with_reverse_win(vec![1], Some(0), None, true, true, false, false);
         let settlement = state.settlement.as_ref().expect("settlement");
 
         assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
         let event = build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
+        assert_eq!(event.from_position, None);
         assert!(!event.is_reverse_win);
         assert!(!event.winner_details[0].is_reverse_win);
     }
