@@ -66,6 +66,7 @@ pub(super) fn self_gang_score(
     let is_added_gang = has_peng_meld(melds, tile);
     let is_ready = best_ready_score_after_discard(hand, melds, table, position, win_rule) > 0.0;
     let pure_one_suit_score = pure_one_suit_plan_score_for_context(hand, melds, table, position);
+    let piao_score = piao_plan_score_for_context(hand, melds, table, position);
     if pure_one_suit_score > 0.0 {
         if is_honor(tile) || !is_main_pure_suit_tile(hand, melds, tile) || !is_ready {
             return f64::NEG_INFINITY;
@@ -77,10 +78,10 @@ pub(super) fn self_gang_score(
     if !is_ready && table.max_fan.is_some_and(|max_fan| max_fan <= 1) {
         return f64::NEG_INFINITY;
     }
-    if !is_added_gang
-        && !is_ready
-        && !is_dragon(tile)
-        && piao_plan_score_for_context(hand, melds, table, position) >= 22.0
+    if !is_added_gang && !is_ready && !is_dragon(tile) && piao_score >= 22.0 {
+        return f64::NEG_INFINITY;
+    }
+    if !is_added_gang && !is_ready && is_dragon(tile) && has_open_meld(melds) && piao_score >= 22.0
     {
         return f64::NEG_INFINITY;
     }
@@ -148,7 +149,7 @@ pub(super) fn self_gang_score(
             12.0
         };
     }
-    if piao_plan_score_for_context(hand, melds, table, position) >= 22.0 {
+    if piao_score >= 22.0 {
         score += 8.0;
     }
     if is_ready && has_open_meld(melds) {

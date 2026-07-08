@@ -15,12 +15,39 @@ fn dealer_self_gang_delays_closed_plain_gang_before_opening_basic_hand() {
 #[test]
 fn self_gang_allows_dragon_gang_after_opening_basic_hand() {
     let mut table = table_with_discards(1, Vec::new());
-    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
+    table.seats.get_mut(&0).unwrap().melds = vec![test_chi_meld(1)];
     let hand = vec![11, 12, 13, 21, 22, 23, 31, 35, 35, 35, 35];
 
     assert_eq!(
+        piao_plan_score_for_context(
+            &hand,
+            table.seats.get(&0).unwrap().melds.as_slice(),
+            &table,
+            0
+        ),
+        0.0
+    );
+    assert_eq!(
         choose_self_gang_from_view(&hand, &[35], &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(35)
+    );
+}
+
+#[test]
+fn self_gang_delays_open_piao_dragon_gang_until_ready() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
+    let hand = vec![2, 5, 8, 11, 14, 17, 21, 35, 35, 35, 35];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+
+    assert!(piao_plan_score_for_context(&hand, melds, &table, 0) >= 22.0);
+    assert_eq!(
+        best_ready_score_after_discard(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        0.0
+    );
+    assert_eq!(
+        choose_self_gang_from_view(&hand, &[35], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        None
     );
 }
 
