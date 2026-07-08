@@ -1543,16 +1543,7 @@ fn isolated_suited_singleton_discard_bias(tile: i32) -> f64 {
 }
 
 fn is_triplet_like_meld(meld: &WsShenyangMahjongMeld) -> bool {
-    let expected_len = match meld.kind {
-        ShenyangMahjongMeldKind::PENG => 3,
-        ShenyangMahjongMeldKind::GANG => 4,
-        ShenyangMahjongMeldKind::CHI => return false,
-    };
-    meld.tiles.len() == expected_len
-        && meld
-            .tiles
-            .first()
-            .is_some_and(|tile| meld.tiles.iter().all(|item| item == tile))
+    meld_primary_tile(meld).is_some()
 }
 
 fn is_open_meld(meld: &WsShenyangMahjongMeld) -> bool {
@@ -1744,6 +1735,11 @@ fn meld_primary_tile(meld: &WsShenyangMahjongMeld) -> Option<i32> {
         .iter()
         .all(|tile| *tile == first)
         .then_some(first)
+        .filter(|tile| is_valid_tile(*tile))
+}
+
+fn is_valid_tile(tile: i32) -> bool {
+    SHENYANG_MAHJONG_TILE_KINDS.contains(&tile)
 }
 
 fn mid_round_public_discard_bias(table: &AiPublicTable, position: usize, tile: i32) -> f64 {
@@ -4329,9 +4325,17 @@ mod tests {
             tiles: vec![1, 1, 1],
             from_position: Some(1),
         };
+        let invalid_tile_peng = WsShenyangMahjongMeld {
+            kind: ShenyangMahjongMeldKind::PENG,
+            tiles: vec![99, 99, 99],
+            from_position: Some(1),
+        };
 
         assert!(!has_open_meld(&[malformed_peng]));
         assert!(!has_open_meld(&[malformed_chi]));
+        assert!(!has_open_meld(&[invalid_tile_peng.clone()]));
+        assert!(!is_triplet_like_meld(&invalid_tile_peng));
+        assert_eq!(piao_threat_level(&[invalid_tile_peng]), 0);
         assert!(has_open_meld(&[test_chi_meld(1)]));
     }
 
@@ -8336,10 +8340,16 @@ mod tests {
             tiles: vec![2, 2, 2],
             from_position: Some(1),
         };
+        let invalid_tile_peng = WsShenyangMahjongMeld {
+            kind: ShenyangMahjongMeldKind::PENG,
+            tiles: vec![99, 99, 99],
+            from_position: Some(1),
+        };
 
         assert_eq!(estimated_four_gui_yi_fan(&[2, 2], &[short_peng]), 0);
         assert_eq!(estimated_four_gui_yi_fan(&[2], &[test_peng_meld(2)]), 1);
         assert_eq!(estimated_four_gui_yi_fan(&[2], &[invalid_chi]), 0);
+        assert_eq!(estimated_four_gui_yi_fan(&[99], &[invalid_tile_peng]), 0);
         assert_eq!(
             estimated_four_gui_yi_fan(&[2, 2, 2], &[test_chi_meld(2)]),
             1
@@ -8368,9 +8378,15 @@ mod tests {
             tiles: vec![35, 35],
             from_position: Some(1),
         };
+        let invalid_tile_gang = WsShenyangMahjongMeld {
+            kind: ShenyangMahjongMeldKind::GANG,
+            tiles: vec![99, 99, 99, 99],
+            from_position: None,
+        };
 
         assert_eq!(estimated_meld_fan(&[short_gang]), 0);
         assert_eq!(estimated_meld_fan(&[short_peng]), 0);
+        assert_eq!(estimated_meld_fan(&[invalid_tile_gang]), 0);
     }
 
     #[test]

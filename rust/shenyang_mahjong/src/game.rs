@@ -3,10 +3,10 @@ use std::sync::Arc;
 
 use serde_json::{Value, json};
 use share_type_public::games::shenyang_mahjong::{
-    ShenyangMahjongAction, ShenyangMahjongMeldKind, ShenyangMahjongPhase,
-    ShenyangMahjongWinPattern, WsShenyangMahjongClaimOption, WsShenyangMahjongClaimWindowEvent,
-    WsShenyangMahjongDealEvent, WsShenyangMahjongMeld, WsShenyangMahjongPlayEvent,
-    WsShenyangMahjongPlayRequest, WsShenyangMahjongPlayerSnapshot,
+    SHENYANG_MAHJONG_TILE_KINDS, ShenyangMahjongAction, ShenyangMahjongMeldKind,
+    ShenyangMahjongPhase, ShenyangMahjongWinPattern, WsShenyangMahjongClaimOption,
+    WsShenyangMahjongClaimWindowEvent, WsShenyangMahjongDealEvent, WsShenyangMahjongMeld,
+    WsShenyangMahjongPlayEvent, WsShenyangMahjongPlayRequest, WsShenyangMahjongPlayerSnapshot,
     WsShenyangMahjongPublicPlayerSnapshot, WsShenyangMahjongScoreChange,
     WsShenyangMahjongSettlementEvent, WsShenyangMahjongTableSnapshotEvent,
     WsShenyangMahjongWinnerDetail,
@@ -558,6 +558,10 @@ fn is_dragon_tile(tile: i32) -> bool {
     matches!(tile, 35..=37)
 }
 
+fn is_valid_tile(tile: i32) -> bool {
+    SHENYANG_MAHJONG_TILE_KINDS.contains(&tile)
+}
+
 fn concealed_dragon_triplet_fan(hand_tiles: &[i32]) -> i32 {
     [35, 36, 37]
         .into_iter()
@@ -672,7 +676,7 @@ fn meld_primary_tile(meld: &WsShenyangMahjongMeld) -> Option<i32> {
         return None;
     }
     let tile = *meld.tiles.first()?;
-    meld.tiles.iter().all(|item| *item == tile).then_some(tile)
+    (is_valid_tile(tile) && meld.tiles.iter().all(|item| *item == tile)).then_some(tile)
 }
 
 fn is_chi_meld(meld: &WsShenyangMahjongMeld) -> bool {
@@ -697,12 +701,7 @@ fn peng_meld_tile(meld: &WsShenyangMahjongMeld) -> Option<i32> {
     if meld.kind != ShenyangMahjongMeldKind::PENG {
         return None;
     }
-    let tile = *meld.tiles.first()?;
-    if meld.tiles.iter().all(|item| *item == tile) {
-        Some(tile)
-    } else {
-        None
-    }
+    meld_primary_tile(meld)
 }
 
 pub(crate) fn perform_discard(
@@ -4750,6 +4749,29 @@ mod tests {
     }
 
     #[test]
+    fn settlement_fan_ignores_invalid_tile_melds() {
+        let mut invalid_gang_state = playable_state();
+        invalid_gang_state
+            .hands
+            .insert(1, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31]);
+        invalid_gang_state.melds.insert(
+            1,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::GANG,
+                vec![99, 99, 99, 99],
+                None,
+            )],
+        );
+        invalid_gang_state.enter_settlement(vec![1], None, None, true);
+        let invalid_gang_settlement = invalid_gang_state.settlement.as_ref().expect("settlement");
+
+        assert_eq!(
+            winner_hand_fan(&invalid_gang_state, invalid_gang_settlement, 1),
+            1
+        );
+    }
+
+    #[test]
     fn settlement_fan_counts_concealed_dragon_triplet() {
         let mut state = playable_state();
         state
@@ -4858,6 +4880,17 @@ mod tests {
                 )]
             ),
             1
+        );
+        assert_eq!(
+            four_gui_yi_fan(
+                &[99],
+                &[build_meld(
+                    ShenyangMahjongMeldKind::PENG,
+                    vec![99, 99, 99],
+                    Some(0)
+                )]
+            ),
+            0
         );
     }
 
@@ -5417,6 +5450,46 @@ mod tests {
                 &malformed_open_payer_state,
                 &[0, 1, 2, 3],
                 malformed_open_settlement,
+                &HashMap::new()
+            )
+            .into_iter()
+            .map(|change| (change.position, change.score))
+            .collect::<Vec<_>>(),
+            vec![(0, -2), (1, 2), (2, 0), (3, 0)]
+        );
+
+        let mut invalid_tile_open_payer_state = playable_state();
+        invalid_tile_open_payer_state.dealer_position = 2;
+        invalid_tile_open_payer_state
+            .hands
+            .insert(1, vec![2, 3, 5, 6, 7, 11, 12, 13, 21, 22, 23, 31, 31]);
+        invalid_tile_open_payer_state.melds.insert(
+            0,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::PENG,
+                vec![99, 99, 99],
+                Some(1),
+            )],
+        );
+        invalid_tile_open_payer_state.enter_settlement_with_reverse_win(
+            vec![1],
+            Some(0),
+            Some(4),
+            false,
+            false,
+            false,
+            false,
+        );
+        let invalid_tile_open_settlement = invalid_tile_open_payer_state
+            .settlement
+            .as_ref()
+            .expect("settlement");
+
+        assert_eq!(
+            settlement_score_changes_for_state(
+                &invalid_tile_open_payer_state,
+                &[0, 1, 2, 3],
+                invalid_tile_open_settlement,
                 &HashMap::new()
             )
             .into_iter()
