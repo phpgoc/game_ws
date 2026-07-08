@@ -549,6 +549,9 @@ pub fn satisfies_shenyang_basic_win(tiles: &[i32], melds: &[WsShenyangMahjongMel
     if melds.iter().any(|meld| !is_valid_meld(meld)) {
         return false;
     }
+    if !is_complete_win(tiles, melds.len()) {
+        return false;
+    }
     if is_seven_pairs_win(tiles) {
         return true;
     }
@@ -1036,6 +1039,15 @@ mod tests {
 
         assert!(is_pure_one_suit_win(&tiles, &[]));
         assert!(satisfies_shenyang_basic_win(&tiles, &[]));
+    }
+
+    #[test]
+    fn shenyang_basic_rejects_incomplete_pure_one_suit() {
+        let tiles = vec![1, 2, 3, 2, 3, 4, 4, 5, 6, 7, 7, 7, 9];
+
+        assert!(!is_complete_win(&tiles, 0));
+        assert!(!is_pure_one_suit_win(&tiles, &[]));
+        assert!(!satisfies_shenyang_basic_win(&tiles, &[]));
     }
 
     #[test]
