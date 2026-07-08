@@ -1982,7 +1982,12 @@ fn one_step_wait_potential(
     if hand.len() % 3 != 1 || ready_tile_score(hand, melds, table, position, win_rule) > 0.0 {
         return 0.0;
     }
-    if hand_power(hand) < 50.0 && pair_count(hand) < 4 {
+    let open_basic_route_foundation = win_rule == WIN_RULE_SHENYANG_BASIC
+        && has_open_meld(melds)
+        && missing_suits(hand, melds).is_empty()
+        && has_terminal_or_honor_with_extra(hand, melds, None)
+        && has_triplet_or_dragon_pair(hand, melds);
+    if hand_power(hand) < 50.0 && pair_count(hand) < 4 && !open_basic_route_foundation {
         return 0.0;
     }
 
@@ -9448,6 +9453,25 @@ mod tests {
         assert!(
             one_step_wait_potential(&hand, &[], &table, 0, WIN_RULE_RELAXED) > 0.0,
             "near-ready hand should see useful draws"
+        );
+    }
+
+    #[test]
+    fn one_step_wait_potential_values_open_basic_route_foundation() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(31)];
+        let melds = table.seats.get(&0).unwrap().melds.as_slice();
+        let hand = vec![1, 2, 3, 5, 11, 12, 13, 21, 35, 35];
+
+        assert!(hand_power(&hand) < 50.0);
+        assert!(pair_count(&hand) < 4);
+        assert!(has_open_meld(melds));
+        assert!(missing_suits(&hand, melds).is_empty());
+        assert!(has_terminal_or_honor_with_extra(&hand, melds, None));
+        assert!(has_triplet_or_dragon_pair(&hand, melds));
+        assert!(
+            one_step_wait_potential(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0,
+            "open basic hand with all hard requirements should value one-step ready draws"
         );
     }
 
