@@ -328,6 +328,34 @@ fn self_gang_ignores_invalid_candidate_tile() {
 }
 
 #[test]
+fn self_gang_rejects_impossible_extra_copy_after_peng() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(3)];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31];
+
+    assert!(!can_self_gang_candidate(&hand, melds, 3));
+    assert_eq!(
+        choose_self_gang_from_view(&hand, &[3], &table, 0, WIN_RULE_RELAXED),
+        None
+    );
+}
+
+#[test]
+fn self_gang_rejects_concealed_gang_when_same_peng_meld_exists() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(3)];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![3, 3, 3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31];
+
+    assert!(!can_self_gang_candidate(&hand, melds, 3));
+    assert_eq!(
+        choose_self_gang_from_view(&hand, &[3], &table, 0, WIN_RULE_RELAXED),
+        None
+    );
+}
+
+#[test]
 fn self_gang_passes_final_unready_hand_for_defense() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 16;

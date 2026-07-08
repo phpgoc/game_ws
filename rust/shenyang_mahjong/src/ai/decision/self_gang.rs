@@ -51,7 +51,13 @@ pub(super) fn can_self_gang_candidate(
         return false;
     }
     let hand_count = hand.iter().filter(|item| **item == tile).count();
-    hand_count >= 4 || (hand_count >= 1 && has_peng_meld(melds, tile))
+    let peng_meld_count = melds
+        .iter()
+        .filter(|meld| {
+            meld.kind == ShenyangMahjongMeldKind::PENG && meld_primary_tile(meld) == Some(tile)
+        })
+        .count();
+    (hand_count == 4 && peng_meld_count == 0) || (hand_count == 1 && peng_meld_count == 1)
 }
 
 pub(super) fn self_gang_score(

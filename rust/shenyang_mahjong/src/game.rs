@@ -425,10 +425,13 @@ fn positive_winner_positions_from_scores<'a>(
 }
 
 fn can_added_gang(hand: &[i32], melds: &[WsShenyangMahjongMeld], target_tile: i32) -> bool {
-    tiles_in_hand(hand, &[target_tile])
+    is_valid_tile(target_tile)
+        && hand.iter().filter(|tile| **tile == target_tile).count() == 1
         && melds
             .iter()
-            .any(|meld| peng_meld_tile(meld) == Some(target_tile))
+            .filter(|meld| peng_meld_tile(meld) == Some(target_tile))
+            .count()
+            == 1
 }
 
 #[cfg(test)]
@@ -2213,6 +2216,47 @@ mod tests {
     }
 
     #[test]
+    fn added_gang_rejects_extra_copy_after_peng() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(0, vec![3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31]);
+        state.melds.insert(
+            0,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::PENG,
+                vec![3, 3, 3],
+                Some(2),
+            )],
+        );
+        state.wall = vec![35];
+        state.last_drawn_tile = Some(3);
+        let original_hand = state.hands.get(&0).cloned().unwrap();
+        let original_melds = state.melds.get(&0).cloned().unwrap();
+        let mut dispatch = Dispatch::default();
+
+        assert!(!can_self_gang(&state, 0, 3));
+        assert!(!perform_self_gang(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::new(),
+            &mut dispatch,
+            0,
+            3,
+        ));
+
+        assert_eq!(state.hands.get(&0), Some(&original_hand));
+        let melds = state.melds.get(&0).expect("melds should stay");
+        assert_eq!(melds.len(), original_melds.len());
+        assert_eq!(melds[0].kind, original_melds[0].kind);
+        assert_eq!(melds[0].tiles, original_melds[0].tiles);
+        assert_eq!(melds[0].from_position, original_melds[0].from_position);
+        assert_eq!(state.wall, vec![35]);
+        assert!(dispatch.messages.is_empty());
+    }
+
+    #[test]
     fn claim_options_allow_hu_after_open_meld() {
         let mut state = playable_state();
         state
@@ -2310,6 +2354,18 @@ mod tests {
         assert!(next_player.chi_options.contains(&vec![1, 2]));
         assert!(next_player.chi_options.contains(&vec![2, 4]));
         assert!(!options.iter().any(|option| option.position == 3));
+    }
+
+    #[test]
+    fn claim_options_reject_impossible_fifth_tile_claims() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![3, 3, 3, 3, 7, 8, 9, 11, 12, 13, 21, 22, 31]);
+
+        let options = build_claim_options(&state, 3, 0, &relaxed_configs());
+
+        assert!(!options.iter().any(|option| option.position == 1));
     }
 
     #[test]

@@ -28,10 +28,10 @@ pub fn can_chi(hand: &[i32], target_tile: i32, consume_tiles: &[i32]) -> bool {
 }
 
 pub fn can_concealed_gang(hand: &[i32], target_tile: i32) -> bool {
-    if !is_valid_tile(target_tile) {
+    if !is_valid_tile(target_tile) || !has_valid_tile_multiplicity(hand) {
         return false;
     }
-    hand.iter().filter(|&&tile| tile == target_tile).count() >= 4
+    hand.iter().filter(|&&tile| tile == target_tile).count() == 4
 }
 
 fn can_form_sets(counts: &mut [u8; 38]) -> bool {
@@ -156,17 +156,20 @@ fn can_form_triplets_with_pair(tiles: &[i32]) -> bool {
 }
 
 pub fn can_gang(hand: &[i32], target_tile: i32) -> bool {
-    if !is_valid_tile(target_tile) {
+    if !is_valid_tile(target_tile) || !has_valid_tile_multiplicity(hand) {
         return false;
     }
-    hand.iter().filter(|&&tile| tile == target_tile).count() >= 3
+    hand.iter().filter(|&&tile| tile == target_tile).count() == 3
 }
 
 pub fn can_peng(hand: &[i32], target_tile: i32) -> bool {
-    if !is_valid_tile(target_tile) {
+    if !is_valid_tile(target_tile) || !has_valid_tile_multiplicity(hand) {
         return false;
     }
-    hand.iter().filter(|&&tile| tile == target_tile).count() >= 2
+    matches!(
+        hand.iter().filter(|&&tile| tile == target_tile).count(),
+        2 | 3
+    )
 }
 
 fn counts_after_removing(tiles: &[i32], remove_tiles: &[i32]) -> Option<[u8; 38]> {
@@ -756,6 +759,7 @@ mod tests {
         assert!(can_concealed_gang(&hand, 31));
         assert!(!can_concealed_gang(&hand, 32));
         assert!(!can_concealed_gang(&[99, 99, 99, 99], 99));
+        assert!(!can_concealed_gang(&[31, 31, 31, 31, 31], 31));
     }
 
     #[test]
@@ -764,6 +768,8 @@ mod tests {
         assert!(can_gang(&hand, 31));
         assert!(!can_gang(&hand, 32));
         assert!(!can_gang(&[99, 99, 99], 99));
+        assert!(!can_gang(&[31, 31, 31, 31], 31));
+        assert!(!can_gang(&[31, 31, 31, 99], 31));
     }
 
     fn meld(
@@ -782,8 +788,11 @@ mod tests {
     fn peng_requires_two_copies() {
         let hand = vec![31, 31, 32, 33];
         assert!(can_peng(&hand, 31));
+        assert!(can_peng(&[31, 31, 31, 32], 31));
         assert!(!can_peng(&hand, 32));
         assert!(!can_peng(&[99, 99], 99));
+        assert!(!can_peng(&[31, 31, 31, 31], 31));
+        assert!(!can_peng(&[31, 31, 99], 31));
     }
 
     #[test]
