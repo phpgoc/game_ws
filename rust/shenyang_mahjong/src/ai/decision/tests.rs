@@ -5855,6 +5855,28 @@ fn opponent_four_piao_threat_ignores_impossible_two_missing_suits() {
 }
 
 #[test]
+fn opponent_four_piao_threat_penalizes_missing_suit_wait_tile() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 16;
+    table.seats.get_mut(&1).unwrap().hand_count = 2;
+    table.seats.get_mut(&1).unwrap().melds = vec![
+        test_peng_meld(1),
+        test_peng_meld(11),
+        test_peng_meld(12),
+        test_peng_meld(31),
+    ];
+
+    assert_eq!(
+        piao_missing_suits_from_melds(&table.seats.get(&1).unwrap().melds),
+        vec![2]
+    );
+    assert!(
+        opponent_threat_discard_bias(&table, 0, 25, 1)
+            < opponent_threat_discard_bias(&table, 0, 15, 1)
+    );
+}
+
+#[test]
 fn piao_threat_penalizes_live_wind_pair_more_than_terminal_singleton() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 16;
