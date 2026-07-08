@@ -543,6 +543,25 @@ mod tests {
         assert_seeded_settlement_event_is_consistent(&state, &one_fan_capped_configs(), 2026070402);
     }
 
+    #[test]
+    fn four_ai_positions_settle_relaxed_seeded_round() {
+        let configs = relaxed_configs();
+        let state = run_seeded_ai_round_with_configs(2026070406, 260, &configs);
+        let settlement = state.settlement.as_ref().expect("AI relaxed settlement");
+        let total_discards = state.discards.values().map(Vec::len).sum::<usize>();
+
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert!(
+            settlement.is_self_draw
+                || settlement.from_position.is_some()
+                || settlement.winner_positions.is_empty(),
+            "relaxed seeded AI round should settle as a self draw, discard win, or legal draw"
+        );
+        assert!(total_discards > 0);
+        assert_seeded_settlement_winners_are_legal(&state, &configs, 2026070406);
+        assert_seeded_settlement_event_is_consistent(&state, &configs, 2026070406);
+    }
+
     fn assert_seeded_settlement_winners_are_legal(
         state: &ShenyangMahjongLoopState,
         configs: &HashMap<String, i32>,
