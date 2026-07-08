@@ -670,6 +670,24 @@ fn meld_primary_tile(meld: &WsShenyangMahjongMeld) -> Option<i32> {
     meld.tiles.iter().all(|item| *item == tile).then_some(tile)
 }
 
+fn is_chi_meld(meld: &WsShenyangMahjongMeld) -> bool {
+    if meld.kind != ShenyangMahjongMeldKind::CHI || meld.tiles.len() != 3 {
+        return false;
+    }
+    let mut tiles = meld.tiles.clone();
+    tiles.sort_unstable();
+    let [a, b, c] = [tiles[0], tiles[1], tiles[2]];
+    matches!(a, 1..=9 | 11..=19 | 21..=29)
+        && a / 10 == b / 10
+        && a / 10 == c / 10
+        && a + 1 == b
+        && b + 1 == c
+}
+
+fn is_open_meld(meld: &WsShenyangMahjongMeld) -> bool {
+    meld.from_position.is_some() && (meld_primary_tile(meld).is_some() || is_chi_meld(meld))
+}
+
 fn peng_meld_tile(meld: &WsShenyangMahjongMeld) -> Option<i32> {
     if meld.kind != ShenyangMahjongMeldKind::PENG {
         return None;
@@ -901,7 +919,7 @@ fn position_has_open_meld(state: &ShenyangMahjongLoopState, position: usize) -> 
     state
         .melds
         .get(&position)
-        .is_some_and(|melds| melds.iter().any(|meld| meld.from_position.is_some()))
+        .is_some_and(|melds| melds.iter().any(is_open_meld))
 }
 
 pub(crate) fn push_direct_event<T: serde::Serialize>(
@@ -5306,6 +5324,46 @@ mod tests {
                 &closed_payer_state,
                 &[0, 1, 2, 3],
                 closed_settlement,
+                &HashMap::new()
+            )
+            .into_iter()
+            .map(|change| (change.position, change.score))
+            .collect::<Vec<_>>(),
+            vec![(0, -2), (1, 2), (2, 0), (3, 0)]
+        );
+
+        let mut malformed_open_payer_state = playable_state();
+        malformed_open_payer_state.dealer_position = 2;
+        malformed_open_payer_state
+            .hands
+            .insert(1, vec![2, 3, 5, 6, 7, 11, 12, 13, 21, 22, 23, 31, 31]);
+        malformed_open_payer_state.melds.insert(
+            0,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::PENG,
+                vec![1, 1],
+                Some(1),
+            )],
+        );
+        malformed_open_payer_state.enter_settlement_with_reverse_win(
+            vec![1],
+            Some(0),
+            Some(4),
+            false,
+            false,
+            false,
+            false,
+        );
+        let malformed_open_settlement = malformed_open_payer_state
+            .settlement
+            .as_ref()
+            .expect("settlement");
+
+        assert_eq!(
+            settlement_score_changes_for_state(
+                &malformed_open_payer_state,
+                &[0, 1, 2, 3],
+                malformed_open_settlement,
                 &HashMap::new()
             )
             .into_iter()

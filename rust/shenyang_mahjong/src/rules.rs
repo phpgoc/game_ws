@@ -192,7 +192,7 @@ pub(crate) fn has_dragon_pair_as_standard_pair(tiles: &[i32]) -> bool {
 }
 
 fn has_open_meld(melds: &[WsShenyangMahjongMeld]) -> bool {
-    melds.iter().any(|meld| meld.from_position.is_some())
+    melds.iter().any(is_open_meld)
 }
 
 fn has_terminal_or_honor(tiles: &[i32]) -> bool {
@@ -441,6 +441,19 @@ fn is_triplet_meld(meld: &WsShenyangMahjongMeld) -> bool {
         ShenyangMahjongMeldKind::CHI => return false,
     };
     meld.tiles.len() == expected_len && meld.tiles.iter().all(|tile| *tile == meld.tiles[0])
+}
+
+fn is_sequence_meld(meld: &WsShenyangMahjongMeld) -> bool {
+    if meld.kind != ShenyangMahjongMeldKind::CHI || meld.tiles.len() != 3 {
+        return false;
+    }
+    let mut tiles = meld.tiles.clone();
+    tiles.sort_unstable();
+    is_valid_sequence(&tiles)
+}
+
+fn is_open_meld(meld: &WsShenyangMahjongMeld) -> bool {
+    meld.from_position.is_some() && (is_triplet_meld(meld) || is_sequence_meld(meld))
 }
 
 fn is_unique_complete_wait(tiles: &[i32], melds: &[WsShenyangMahjongMeld], win_tile: i32) -> bool {
@@ -839,6 +852,16 @@ mod tests {
 
         assert!(is_complete_win_with_melds(&tiles, &melds, WIN_RULE_RELAXED));
         assert!(!satisfies_shenyang_basic_win(&tiles, &melds));
+    }
+
+    #[test]
+    fn shenyang_basic_rejects_malformed_open_meld_as_opening() {
+        let tiles = vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35];
+        let short_peng = vec![meld(ShenyangMahjongMeldKind::PENG, vec![1, 1], Some(1))];
+        let invalid_chi = vec![meld(ShenyangMahjongMeldKind::CHI, vec![1, 1, 1], Some(1))];
+
+        assert!(!satisfies_shenyang_basic_win(&tiles, &short_peng));
+        assert!(!satisfies_shenyang_basic_win(&tiles, &invalid_chi));
     }
 
     #[test]
