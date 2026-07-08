@@ -1555,10 +1555,13 @@ fn winner_hand_fan_with_rule(
     let mut fan = win_pattern_base_fan(pattern);
     fan += meld_fan(melds);
     fan += concealed_dragon_triplet_fan(&hand_tiles);
-    if settlement.is_reverse_win {
+    if !settlement.is_self_draw
+        && settlement.from_position.is_some()
+        && settlement.is_reverse_win
+    {
         fan += 1;
     }
-    if settlement.is_gang_draw {
+    if settlement.is_self_draw && settlement.is_gang_draw {
         fan += 1;
     }
     if settlement.is_self_draw && settlement.is_haidilao {
@@ -4997,6 +5000,26 @@ mod tests {
     }
 
     #[test]
+    fn settlement_fan_ignores_gang_draw_flag_on_discard_win() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![2, 3, 5, 6, 7, 11, 12, 13, 21, 22, 23, 31, 31]);
+        state.enter_settlement_with_reverse_win(
+            vec![1],
+            Some(0),
+            Some(4),
+            false,
+            false,
+            true,
+            false,
+        );
+        let settlement = state.settlement.as_ref().expect("settlement");
+
+        assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
+    }
+
+    #[test]
     fn settlement_fan_ignores_haidilao_flag_on_discard_win() {
         let mut state = playable_state();
         state
@@ -5011,6 +5034,18 @@ mod tests {
             false,
             true,
         );
+        let settlement = state.settlement.as_ref().expect("settlement");
+
+        assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
+    }
+
+    #[test]
+    fn settlement_fan_ignores_reverse_win_flag_on_self_draw() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![2, 3, 4, 5, 6, 7, 11, 12, 13, 21, 22, 23, 31, 31]);
+        state.enter_settlement_with_reverse_win(vec![1], None, None, true, true, false, false);
         let settlement = state.settlement.as_ref().expect("settlement");
 
         assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
