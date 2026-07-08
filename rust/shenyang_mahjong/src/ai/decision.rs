@@ -2702,8 +2702,8 @@ fn piao_single_wait_tile_score(
         .filter(|max_fan| *max_fan > 0)
         .map(|max_fan| estimated_fan.min(max_fan))
         .unwrap_or(estimated_fan);
-    let speed_first = table.dealer_position == position || is_late_round(table);
-    let remaining_weight = if speed_first { 14.0 } else { 9.0 };
+    let speed_first = table.dealer_position == position || is_late_defense_round(table);
+    let remaining_weight = if speed_first { 14.0 } else { 7.0 };
     let fan_weight = if speed_first { 2.0 } else { 7.0 };
     let wait_shape_bias = if table
         .max_fan
@@ -3346,11 +3346,13 @@ fn wait_setting_discard_safety_adjustment(
     discard_tile: i32,
     own_tile_count: usize,
 ) -> f64 {
+    let pure_one_suit_threat =
+        pure_one_suit_threat_discard_bias(table, position, discard_tile, own_tile_count);
     let safety = late_defense_tile_safety_score(table, position, discard_tile, own_tile_count)
         + mid_round_public_discard_bias(table, position, discard_tile)
         + mid_round_open_meld_safety_bias(table, discard_tile)
         + mid_broken_opponent_missing_suit_safety_bias(table, position, discard_tile);
-    safety.clamp(-36.0, 36.0) * 0.6
+    safety.clamp(-36.0, 36.0) * 0.6 + pure_one_suit_threat.min(0.0) * 1.0
 }
 
 fn seven_pairs_wait_tile_score(
@@ -7512,6 +7514,45 @@ mod tests {
         assert_eq!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(31)
+        );
+    }
+
+    #[test]
+    fn mid_round_non_dealer_piao_single_wait_can_chase_wind_fan() {
+        let mut table = table_with_discards(1, vec![31]);
+        table.wall_count = 32;
+        table.seats.get_mut(&0).unwrap().melds = vec![
+            test_peng_meld(1),
+            test_peng_meld(11),
+            test_peng_meld(21),
+            test_peng_meld(35),
+        ];
+        let melds = table.seats.get(&0).unwrap().melds.as_slice();
+
+        assert_eq!(remaining_tile_count(&[31], &table, 0, 31), 2);
+        assert_eq!(remaining_tile_count(&[5], &table, 0, 5), 3);
+        assert!(
+            piao_single_wait_tile_score(31, &[31], melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
+                > piao_single_wait_tile_score(5, &[5], melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
+        );
+    }
+
+    #[test]
+    fn dealer_piao_single_wait_still_prefers_wider_middle_wait() {
+        let mut table = table_with_discards(1, vec![31]);
+        table.dealer_position = 0;
+        table.wall_count = 32;
+        table.seats.get_mut(&0).unwrap().melds = vec![
+            test_peng_meld(1),
+            test_peng_meld(11),
+            test_peng_meld(21),
+            test_peng_meld(35),
+        ];
+        let melds = table.seats.get(&0).unwrap().melds.as_slice();
+
+        assert!(
+            piao_single_wait_tile_score(5, &[5], melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
+                > piao_single_wait_tile_score(31, &[31], melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
         );
     }
 
