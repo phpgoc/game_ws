@@ -58,6 +58,29 @@ fn ready_score_counts_projected_meld_tiles_as_dead() {
 }
 
 #[test]
+fn ready_score_does_not_double_count_visible_claim_tile_in_projected_meld() {
+    let mut table = table_with_discards(1, vec![3]);
+    table.dealer_position = 0;
+    table.claim_window = Some(AiClaimView {
+        tile: 3,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let melds = vec![test_peng_meld(3)];
+    let hand = vec![1, 2, 4, 5, 6, 11, 12, 13, 21, 21];
+
+    assert_eq!(visible_tile_count(&table, 3), 1);
+    assert_eq!(
+        remaining_tile_count_with_melds(&hand, &melds, &table, 0, 3),
+        1
+    );
+    assert_eq!(
+        ready_tile_score(&hand, &melds, &table, 0, WIN_RULE_RELAXED),
+        33.0
+    );
+}
+
+#[test]
 fn ready_score_counts_simulated_discarded_wait_tile_as_dead() {
     let mut table = table_with_discards(1, Vec::new());
     table.dealer_position = 0;

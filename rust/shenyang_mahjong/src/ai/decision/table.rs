@@ -247,7 +247,10 @@ fn simulated_meld_tile_count(
         .map(|seat| valid_meld_tile_count(&seat.melds, tile))
         .unwrap_or(0);
     let projected_melds = valid_meld_tile_count(melds, tile);
-    (projected_melds - current_table_melds).max(0)
+    let added_meld_tiles = (projected_melds - current_table_melds).max(0);
+    let already_visible_claim_tile =
+        i32::from(added_meld_tiles > 0 && claim_tile_already_visible(table, tile));
+    (added_meld_tiles - already_visible_claim_tile).max(0)
 }
 
 fn valid_meld_tile_count(melds: &[WsShenyangMahjongMeld], tile: i32) -> i32 {
@@ -257,4 +260,15 @@ fn valid_meld_tile_count(melds: &[WsShenyangMahjongMeld], tile: i32) -> i32 {
         .flat_map(|meld| meld.tiles.iter().copied())
         .filter(|meld_tile| *meld_tile == tile)
         .count() as i32
+}
+
+fn claim_tile_already_visible(table: &AiPublicTable, tile: i32) -> bool {
+    let Some(claim_window) = &table.claim_window else {
+        return false;
+    };
+    claim_window.tile == tile
+        && table
+            .seats
+            .get(&claim_window.from_position)
+            .is_some_and(|seat| seat.discards.contains(&tile))
 }
