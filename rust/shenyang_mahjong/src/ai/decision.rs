@@ -3884,7 +3884,8 @@ fn can_recover_basic_heng(
         *counts.entry(tile).or_default() += 1;
     }
 
-    counts.into_iter().any(|(tile, count)| {
+    SHENYANG_MAHJONG_TILE_KINDS.into_iter().any(|tile| {
+        let count = counts.get(&tile).copied().unwrap_or(0);
         let remaining = remaining_tile_count(hand, table, 0, tile) as usize;
         let can_draw_triplet = count < 3 && remaining >= 3 - count;
         let can_draw_dragon_pair = is_dragon(tile) && count < 2 && remaining >= 2 - count;
@@ -4642,12 +4643,7 @@ mod tests {
     #[test]
     fn unrecoverable_basic_rule_counts_dead_heng_requirement() {
         let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 14, 15, 21, 22];
-        let dead_heng_seed_discards = hand
-            .iter()
-            .copied()
-            .flat_map(|tile| std::iter::repeat_n(tile, 3))
-            .collect::<Vec<_>>();
-        let table = table_with_discards(1, dead_heng_seed_discards);
+        let table = table_with_discards(1, dead_basic_heng_discards(&hand));
 
         assert!(missing_suits(&hand, &[]).is_empty());
         assert!(has_terminal_or_honor_with_extra(&hand, &[], None));
@@ -4660,14 +4656,37 @@ mod tests {
     }
 
     #[test]
+    fn recoverable_basic_heng_counts_live_dragon_pair_without_hand_seed() {
+        let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 14, 15, 21, 22];
+        let mut discards = SHENYANG_MAHJONG_TILE_KINDS
+            .into_iter()
+            .flat_map(|tile| {
+                let visible = if tile == 35 {
+                    2
+                } else if is_dragon(tile) {
+                    3
+                } else {
+                    2
+                };
+                std::iter::repeat_n(tile, visible)
+            })
+            .collect::<Vec<_>>();
+        sort_tiles(&mut discards);
+        let table = table_with_discards(1, discards);
+
+        assert!(!has_triplet_or_dragon_pair(&hand, &[]));
+        assert_eq!(remaining_tile_count(&hand, &table, 0, 35), 2);
+        assert!(can_recover_basic_heng(&hand, &[], &table));
+        assert_eq!(
+            unrecoverable_basic_rule_requirement_count(&hand, &[], &table),
+            0
+        );
+    }
+
+    #[test]
     fn broken_closed_defense_opens_mid_when_heng_is_unrecoverable() {
         let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 14, 15, 21, 22];
-        let dead_heng_seed_discards = hand
-            .iter()
-            .copied()
-            .flat_map(|tile| std::iter::repeat_n(tile, 3))
-            .collect::<Vec<_>>();
-        let mut table = table_with_discards(1, dead_heng_seed_discards);
+        let mut table = table_with_discards(1, dead_basic_heng_discards(&hand));
         table.wall_count = 52;
 
         assert!(hand_power(&hand) >= 14.0);
@@ -10601,6 +10620,30 @@ mod tests {
             claim_window: None,
             seats,
         }
+    }
+
+    fn dead_basic_heng_discards(hand: &[i32]) -> Vec<i32> {
+        let mut counts = HashMap::<i32, usize>::new();
+        for tile in hand.iter().copied() {
+            *counts.entry(tile).or_default() += 1;
+        }
+
+        let mut discards = SHENYANG_MAHJONG_TILE_KINDS
+            .into_iter()
+            .flat_map(|tile| {
+                let count = counts.get(&tile).copied().unwrap_or(0);
+                let visible = if is_dragon(tile) && count < 2 {
+                    3
+                } else if !is_dragon(tile) && count < 3 {
+                    2
+                } else {
+                    0
+                };
+                std::iter::repeat_n(tile, visible)
+            })
+            .collect::<Vec<_>>();
+        sort_tiles(&mut discards);
+        discards
     }
 
     fn dead_terminal_or_honor_discards() -> Vec<i32> {
