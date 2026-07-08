@@ -768,6 +768,9 @@ pub fn choose_self_gang_from_view(
     let current_score = best_score_after_forced_discard(hand, melds, table, position, win_rule);
     let mut best: Option<(f64, i32)> = None;
     for tile in candidate_tiles.iter().copied() {
+        if !can_self_gang_candidate(hand, melds, tile) {
+            continue;
+        }
         let score = self_gang_score(tile, hand, melds, table, position, win_rule, current_score);
         match best {
             None => best = Some((score, tile)),
@@ -779,6 +782,14 @@ pub fn choose_self_gang_from_view(
         }
     }
     best.and_then(|(score, tile)| (score >= 0.0).then_some(tile))
+}
+
+fn can_self_gang_candidate(hand: &[i32], melds: &[WsShenyangMahjongMeld], tile: i32) -> bool {
+    if !is_valid_tile(tile) {
+        return false;
+    }
+    let hand_count = hand.iter().filter(|item| **item == tile).count();
+    hand_count >= 4 || (hand_count >= 1 && has_peng_meld(melds, tile))
 }
 
 fn claim_leaves_unrecoverable_basic_requirement(
@@ -10647,6 +10658,21 @@ mod tests {
         assert_eq!(
             choose_self_gang_from_view(&hand, &[3, 35], &table, 0, WIN_RULE_RELAXED),
             Some(35)
+        );
+    }
+
+    #[test]
+    fn self_gang_ignores_invalid_candidate_tile() {
+        let table = table_with_discards(1, Vec::new());
+        let hand = vec![3, 3, 3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 35];
+
+        assert_eq!(
+            choose_self_gang_from_view(&hand, &[3, 35], &table, 0, WIN_RULE_RELAXED),
+            Some(3)
+        );
+        assert_eq!(
+            choose_self_gang_from_view(&hand, &[35], &table, 0, WIN_RULE_RELAXED),
+            None
         );
     }
 
