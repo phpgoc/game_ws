@@ -513,7 +513,9 @@ pub fn choose_discard_from_view(
         return choose_late_defense_discard(hand, table, position);
     }
     if should_use_broken_hand_public_defense_discard(hand, melds, table, position, win_rule) {
-        if let Some(tile) = choose_broken_hand_public_defense_discard(hand, table, position) {
+        if let Some(tile) =
+            choose_broken_hand_public_defense_discard(hand, melds, table, position, win_rule)
+        {
             return Some(tile);
         }
     }
@@ -666,8 +668,10 @@ fn choose_late_defense_discard_from_candidates(
 
 fn choose_broken_hand_public_defense_discard(
     hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
+    win_rule: i32,
 ) -> Option<i32> {
     let public_candidates = unique_tiles(hand)
         .into_iter()
@@ -676,8 +680,10 @@ fn choose_broken_hand_public_defense_discard(
     if !public_candidates.is_empty() {
         return choose_public_defense_discard_from_candidates(
             hand,
+            melds,
             table,
             position,
+            win_rule,
             public_candidates,
         );
     }
@@ -689,8 +695,10 @@ fn choose_broken_hand_public_defense_discard(
     if !open_meld_candidates.is_empty() {
         return choose_public_defense_discard_from_candidates(
             hand,
+            melds,
             table,
             position,
+            win_rule,
             open_meld_candidates,
         );
     }
@@ -699,19 +707,29 @@ fn choose_broken_hand_public_defense_discard(
         .into_iter()
         .filter(|tile| mid_broken_opponent_missing_suit_safety_bias(table, position, *tile) > 0.0)
         .collect::<Vec<_>>();
-    choose_public_defense_discard_from_candidates(hand, table, position, missing_suit_candidates)
+    choose_public_defense_discard_from_candidates(
+        hand,
+        melds,
+        table,
+        position,
+        win_rule,
+        missing_suit_candidates,
+    )
 }
 
 fn choose_public_defense_discard_from_candidates(
     hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
+    win_rule: i32,
     candidates: Vec<i32>,
 ) -> Option<i32> {
     let mut best: Option<(f64, i32)> = None;
     for tile in candidates {
         let own_tile_count = hand.iter().filter(|item| **item == tile).count();
-        let score = public_defense_tile_safety_score(table, position, tile, own_tile_count);
+        let score = public_defense_tile_safety_score(table, position, tile, own_tile_count)
+            + basic_heng_recovery_public_defense_bias(hand, melds, table, tile, win_rule);
         match best {
             None => best = Some((score, tile)),
             Some((best_score, best_tile)) => {
@@ -1664,6 +1682,30 @@ fn public_defense_tile_safety_score(
         + mid_round_public_discard_bias(table, position, tile)
         + mid_round_open_meld_safety_bias(table, tile)
         + mid_broken_opponent_missing_suit_safety_bias(table, position, tile)
+}
+
+fn basic_heng_recovery_public_defense_bias(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    tile: i32,
+    win_rule: i32,
+) -> f64 {
+    if win_rule != WIN_RULE_SHENYANG_BASIC
+        || has_triplet_or_dragon_pair(hand, melds)
+        || !can_recover_basic_heng(hand, melds, table)
+    {
+        return 0.0;
+    }
+
+    let hand_after_discard = remove_n_tiles(hand, tile, 1);
+    if hand_after_discard.len() + 1 != hand.len()
+        || can_recover_basic_heng_after_discard(&hand_after_discard, melds, table, tile)
+    {
+        return 0.0;
+    }
+
+    -22.0
 }
 
 fn public_defense_own_tile_shape_bias(tile: i32, own_tile_count: usize) -> f64 {
@@ -2907,6 +2949,21 @@ fn remaining_tile_count(hand: &[i32], table: &AiPublicTable, _position: usize, t
     (4 - visible - own).max(0)
 }
 
+fn remaining_tile_count_after_discard(
+    hand_after_discard: &[i32],
+    table: &AiPublicTable,
+    discarded_tile: i32,
+    tile: i32,
+) -> i32 {
+    let visible = visible_tile_count(table, tile);
+    let own = hand_after_discard
+        .iter()
+        .filter(|&&item| item == tile)
+        .count() as i32;
+    let own_discard = i32::from(discarded_tile == tile);
+    (4 - visible - own - own_discard).max(0)
+}
+
 fn remove_n_tiles(hand: &[i32], tile: i32, count: usize) -> Vec<i32> {
     let mut removed = 0usize;
     let mut next = Vec::with_capacity(hand.len().saturating_sub(count));
@@ -3887,6 +3944,32 @@ fn can_recover_basic_heng(
     SHENYANG_MAHJONG_TILE_KINDS.into_iter().any(|tile| {
         let count = counts.get(&tile).copied().unwrap_or(0);
         let remaining = remaining_tile_count(hand, table, 0, tile) as usize;
+        let can_draw_triplet = count < 3 && remaining >= 3 - count;
+        let can_draw_dragon_pair = is_dragon(tile) && count < 2 && remaining >= 2 - count;
+        can_draw_triplet || can_draw_dragon_pair
+    })
+}
+
+fn can_recover_basic_heng_after_discard(
+    hand_after_discard: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    discarded_tile: i32,
+) -> bool {
+    if has_triplet_or_dragon_pair(hand_after_discard, melds) {
+        return true;
+    }
+
+    let mut counts = HashMap::<i32, usize>::new();
+    for tile in hand_after_discard.iter().copied() {
+        *counts.entry(tile).or_default() += 1;
+    }
+
+    SHENYANG_MAHJONG_TILE_KINDS.into_iter().any(|tile| {
+        let count = counts.get(&tile).copied().unwrap_or(0);
+        let remaining =
+            remaining_tile_count_after_discard(hand_after_discard, table, discarded_tile, tile)
+                as usize;
         let can_draw_triplet = count < 3 && remaining >= 3 - count;
         let can_draw_dragon_pair = is_dragon(tile) && count < 2 && remaining >= 2 - count;
         can_draw_triplet || can_draw_dragon_pair
@@ -9624,6 +9707,37 @@ mod tests {
     }
 
     #[test]
+    fn mid_broken_basic_public_defense_preserves_only_recoverable_heng_seed() {
+        let hand = vec![1, 2, 5, 8, 11, 12, 14, 17, 21, 22, 24, 27, 29, 35];
+        let mut discards = dead_basic_heng_discards(&hand);
+        if let Some(index) = discards.iter().position(|tile| *tile == 35) {
+            discards.remove(index);
+        }
+        let mut table = table_with_discards(1, discards);
+        table.wall_count = 40;
+
+        assert!(can_recover_basic_heng(&hand, &[], &table));
+        let after_dragon = remove_n_tiles(&hand, 35, 1);
+        assert!(!can_recover_basic_heng_after_discard(
+            &after_dragon,
+            &[],
+            &table,
+            35
+        ));
+        assert!(should_use_broken_hand_public_defense_discard(
+            &hand,
+            &[],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC
+        ));
+        assert_ne!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(35)
+        );
+    }
+
+    #[test]
     fn mid_broken_public_defense_preserves_triplet_over_public_pair() {
         let mut table = table_with_discards(1, vec![5, 7]);
         table.wall_count = 40;
@@ -9634,7 +9748,14 @@ mod tests {
                 > public_defense_tile_safety_score(&table, 0, 5, 3)
         );
         assert_eq!(
-            choose_public_defense_discard_from_candidates(&hand, &table, 0, vec![5, 7]),
+            choose_public_defense_discard_from_candidates(
+                &hand,
+                &[],
+                &table,
+                0,
+                WIN_RULE_RELAXED,
+                vec![5, 7]
+            ),
             Some(7)
         );
     }
