@@ -2369,6 +2369,18 @@ mod tests {
     }
 
     #[test]
+    fn claim_options_reject_impossible_fifth_tile_chi() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![1, 2, 3, 3, 3, 3, 7, 8, 9, 11, 12, 13, 21]);
+
+        let options = build_claim_options(&state, 3, 0, &relaxed_configs());
+
+        assert!(!options.iter().any(|option| option.position == 1));
+    }
+
+    #[test]
     fn claim_options_respect_shenyang_basic_win_rule() {
         let mut state = playable_state();
         state

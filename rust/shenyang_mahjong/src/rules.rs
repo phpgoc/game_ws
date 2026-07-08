@@ -19,6 +19,11 @@ pub fn can_chi(hand: &[i32], target_tile: i32, consume_tiles: &[i32]) -> bool {
     if consume_tiles.len() != 2 || !is_suited_tile(target_tile) {
         return false;
     }
+    if !has_valid_tile_multiplicity(hand)
+        || hand.iter().filter(|&&tile| tile == target_tile).count() >= 4
+    {
+        return false;
+    }
     if !tiles_in_hand(hand, consume_tiles) {
         return false;
     }
@@ -675,6 +680,8 @@ mod tests {
         assert!(can_chi(&hand, 3, &[2, 4]));
         assert!(!can_chi(&hand, 3, &[4, 6]));
         assert!(!can_chi(&hand, 31, &[32, 33]));
+        assert!(!can_chi(&[1, 2, 3, 3, 3, 3], 3, &[1, 2]));
+        assert!(!can_chi(&[1, 2, 99], 3, &[1, 2]));
     }
 
     #[test]
