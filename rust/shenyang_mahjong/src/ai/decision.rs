@@ -1691,21 +1691,11 @@ fn basic_heng_recovery_public_defense_bias(
     tile: i32,
     win_rule: i32,
 ) -> f64 {
-    if win_rule != WIN_RULE_SHENYANG_BASIC
-        || has_triplet_or_dragon_pair(hand, melds)
-        || !can_recover_basic_heng(hand, melds, table)
-    {
-        return 0.0;
+    if loses_basic_heng_recovery_after_discard(hand, melds, table, tile, win_rule) {
+        -22.0
+    } else {
+        0.0
     }
-
-    let hand_after_discard = remove_n_tiles(hand, tile, 1);
-    if hand_after_discard.len() + 1 != hand.len()
-        || can_recover_basic_heng_after_discard(&hand_after_discard, melds, table, tile)
-    {
-        return 0.0;
-    }
-
-    -22.0
 }
 
 fn public_defense_own_tile_shape_bias(tile: i32, own_tile_count: usize) -> f64 {
@@ -3976,6 +3966,25 @@ fn can_recover_basic_heng_after_discard(
     })
 }
 
+fn loses_basic_heng_recovery_after_discard(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    tile: i32,
+    win_rule: i32,
+) -> bool {
+    if win_rule != WIN_RULE_SHENYANG_BASIC
+        || has_triplet_or_dragon_pair(hand, melds)
+        || !can_recover_basic_heng(hand, melds, table)
+    {
+        return false;
+    }
+
+    let hand_after_discard = remove_n_tiles(hand, tile, 1);
+    hand_after_discard.len() + 1 == hand.len()
+        && !can_recover_basic_heng_after_discard(&hand_after_discard, melds, table, tile)
+}
+
 fn should_pass_late_unready_claim_for_defense(
     table: &AiPublicTable,
     current_ready_score: f64,
@@ -4389,7 +4398,21 @@ fn violates_basic_heng_discard(
     }
     let had_heng = has_triplet_or_dragon_pair_with_extra(hand_after_discard, melds, Some(tile));
     let has_heng_after = has_triplet_or_dragon_pair(hand_after_discard, melds);
-    if !had_heng || has_heng_after {
+    if has_heng_after {
+        return false;
+    }
+    let mut hand_before_discard = hand_after_discard.to_vec();
+    hand_before_discard.push(tile);
+    sort_tiles(&mut hand_before_discard);
+    let lost_recoverable_heng = !had_heng
+        && loses_basic_heng_recovery_after_discard(
+            &hand_before_discard,
+            melds,
+            table,
+            tile,
+            win_rule,
+        );
+    if !had_heng && !lost_recoverable_heng {
         return false;
     }
     if should_preserve_seven_pairs_plan_for_context(
@@ -8030,6 +8053,54 @@ mod tests {
             basic_heng_seed_discard_bias(&hand, 35, &[], WIN_RULE_RELAXED),
             0.0
         );
+        assert_ne!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(35)
+        );
+    }
+
+    #[test]
+    fn discard_preserves_only_recoverable_heng_seed() {
+        let hand = vec![1, 2, 3, 4, 5, 11, 12, 13, 14, 15, 21, 22, 23, 35];
+        let mut discards = dead_basic_heng_discards(&hand);
+        if let Some(index) = discards.iter().position(|tile| *tile == 35) {
+            discards.remove(index);
+        }
+        let table = table_with_discards(1, discards);
+
+        assert!(!has_triplet_or_dragon_pair(&hand, &[]));
+        assert!(can_recover_basic_heng(&hand, &[], &table));
+        let after_dragon = remove_n_tiles(&hand, 35, 1);
+        assert!(!can_recover_basic_heng_after_discard(
+            &after_dragon,
+            &[],
+            &table,
+            35
+        ));
+        assert!(loses_basic_heng_recovery_after_discard(
+            &hand,
+            &[],
+            &table,
+            35,
+            WIN_RULE_SHENYANG_BASIC
+        ));
+        assert!(violates_basic_heng_discard(
+            &after_dragon,
+            &[],
+            &table,
+            0,
+            35,
+            WIN_RULE_SHENYANG_BASIC
+        ));
+        let after_one = remove_n_tiles(&hand, 1, 1);
+        assert!(!violates_basic_heng_discard(
+            &after_one,
+            &[],
+            &table,
+            0,
+            1,
+            WIN_RULE_SHENYANG_BASIC
+        ));
         assert_ne!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(35)
