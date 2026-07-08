@@ -607,6 +607,19 @@ fn choose_late_defense_discard_preserving_pairs(
     table: &AiPublicTable,
     position: usize,
 ) -> Option<i32> {
+    let public_candidates = unique_tiles(hand)
+        .into_iter()
+        .filter(|tile| public_discard_count(table, *tile) > 0)
+        .collect::<Vec<_>>();
+    if !public_candidates.is_empty() {
+        return choose_late_defense_discard_from_candidates(
+            hand,
+            table,
+            position,
+            public_candidates,
+        );
+    }
+
     let singletons = unique_tiles(hand)
         .into_iter()
         .filter(|tile| hand.iter().filter(|item| **item == *tile).count() == 1)
@@ -7173,8 +7186,20 @@ mod tests {
     }
 
     #[test]
-    fn late_defense_preserves_locked_five_pairs_over_public_pair_tile() {
+    fn late_defense_breaks_locked_five_pairs_for_only_public_tile() {
         let mut table = table_with_discards(1, vec![1]);
+        table.wall_count = 20;
+        let hand = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 14, 21, 21, 31, 35];
+
+        assert_eq!(
+            choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn late_defense_preserves_locked_five_pairs_without_public_tile() {
+        let mut table = table_with_discards(1, Vec::new());
         table.wall_count = 20;
         let hand = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 14, 21, 21, 31, 35];
 
