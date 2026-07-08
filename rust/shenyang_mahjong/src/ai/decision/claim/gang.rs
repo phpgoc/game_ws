@@ -1,0 +1,76 @@
+use super::*;
+
+pub(in crate::ai::decision) fn should_claim_gang_from_discard(
+    hand: &[i32],
+    current_melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+    tile: i32,
+    from_position: usize,
+) -> bool {
+    if ready_visible_fan_reaches_cap(hand, current_melds, table, position, win_rule) {
+        return false;
+    }
+    let current_ready_score = ready_tile_score(hand, current_melds, table, position, win_rule);
+    let reaches_ready = claim_gang_from_discard_reaches_ready(
+        hand,
+        current_melds,
+        table,
+        position,
+        win_rule,
+        tile,
+        from_position,
+    );
+    if current_ready_score > 0.0 {
+        return reaches_ready;
+    }
+    if is_dragon(tile) {
+        if table.max_fan.is_some_and(|max_fan| max_fan <= 1) {
+            return reaches_ready;
+        }
+        return true;
+    }
+    if should_claim_opening_gang_for_basic_hand(
+        hand,
+        current_melds,
+        table,
+        position,
+        win_rule,
+        tile,
+    ) {
+        return true;
+    }
+    if should_open_broken_closed_hand_for_defense(hand, current_melds, table, position, win_rule) {
+        return true;
+    }
+
+    if piao_plan_score_for_context(hand, current_melds, table, position) >= 22.0 {
+        return reaches_ready;
+    }
+    reaches_ready
+}
+
+pub(in crate::ai::decision) fn should_claim_opening_gang_for_basic_hand(
+    hand: &[i32],
+    current_melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+    tile: i32,
+) -> bool {
+    win_rule == WIN_RULE_SHENYANG_BASIC
+        && !has_open_meld(current_melds)
+        && can_gang(hand, tile)
+        && !table.max_fan.is_some_and(|max_fan| max_fan <= 1)
+        && !is_closed_early_piao_candidate(hand, current_melds, table, position)
+        && !should_preserve_seven_pairs_plan_for_context(
+            hand,
+            current_melds,
+            table,
+            position,
+            win_rule,
+        )
+        && pure_one_suit_plan_score_for_context(hand, current_melds, table, position) <= 0.0
+        && piao_plan_score_for_context(hand, current_melds, table, position) < 22.0
+}
