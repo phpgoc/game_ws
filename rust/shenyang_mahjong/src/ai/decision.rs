@@ -1114,15 +1114,20 @@ fn estimated_four_gui_yi_fan(hand: &[i32], melds: &[WsShenyangMahjongMeld]) -> i
     for tile in hand.iter().copied() {
         *counts.entry(tile).or_default() += 1;
     }
-    for meld in melds
-        .iter()
-        .filter(|meld| meld.kind != ShenyangMahjongMeldKind::GANG)
-    {
+    for meld in melds.iter().filter(|meld| is_four_gui_yi_meld(meld)) {
         for tile in meld.tiles.iter().copied() {
             *counts.entry(tile).or_default() += 1;
         }
     }
     counts.into_values().filter(|count| *count == 4).count() as i32
+}
+
+fn is_four_gui_yi_meld(meld: &WsShenyangMahjongMeld) -> bool {
+    match meld.kind {
+        ShenyangMahjongMeldKind::PENG => is_triplet_like_meld(meld),
+        ShenyangMahjongMeldKind::CHI => is_sequence_meld(meld),
+        ShenyangMahjongMeldKind::GANG => false,
+    }
 }
 
 fn estimated_concealed_dragon_triplet_fan(hand: &[i32]) -> i32 {
@@ -8291,6 +8296,28 @@ mod tests {
         assert_eq!(
             estimated_visible_fan_without_wait(&win_hand, &melds, WIN_RULE_SHENYANG_BASIC),
             2
+        );
+    }
+
+    #[test]
+    fn estimated_four_gui_yi_ignores_malformed_melds() {
+        let short_peng = WsShenyangMahjongMeld {
+            kind: ShenyangMahjongMeldKind::PENG,
+            tiles: vec![2, 2],
+            from_position: Some(1),
+        };
+        let invalid_chi = WsShenyangMahjongMeld {
+            kind: ShenyangMahjongMeldKind::CHI,
+            tiles: vec![2, 2, 2],
+            from_position: Some(1),
+        };
+
+        assert_eq!(estimated_four_gui_yi_fan(&[2, 2], &[short_peng]), 0);
+        assert_eq!(estimated_four_gui_yi_fan(&[2], &[test_peng_meld(2)]), 1);
+        assert_eq!(estimated_four_gui_yi_fan(&[2], &[invalid_chi]), 0);
+        assert_eq!(
+            estimated_four_gui_yi_fan(&[2, 2, 2], &[test_chi_meld(2)]),
+            1
         );
     }
 

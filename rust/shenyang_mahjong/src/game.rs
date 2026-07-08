@@ -538,15 +538,20 @@ fn four_gui_yi_fan(hand_tiles: &[i32], melds: &[WsShenyangMahjongMeld]) -> i32 {
     for tile in hand_tiles.iter().copied() {
         *counts.entry(tile).or_default() += 1;
     }
-    for meld in melds
-        .iter()
-        .filter(|meld| meld.kind != ShenyangMahjongMeldKind::GANG)
-    {
+    for meld in melds.iter().filter(|meld| is_four_gui_yi_meld(meld)) {
         for tile in meld.tiles.iter().copied() {
             *counts.entry(tile).or_default() += 1;
         }
     }
     counts.into_values().filter(|count| *count == 4).count() as i32
+}
+
+fn is_four_gui_yi_meld(meld: &WsShenyangMahjongMeld) -> bool {
+    match meld.kind {
+        ShenyangMahjongMeldKind::PENG => meld_primary_tile(meld).is_some(),
+        ShenyangMahjongMeldKind::CHI => is_chi_meld(meld),
+        ShenyangMahjongMeldKind::GANG => false,
+    }
 }
 
 fn is_dragon_tile(tile: i32) -> bool {
@@ -4806,6 +4811,54 @@ mod tests {
         let settlement = state.settlement.as_ref().expect("settlement");
 
         assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
+    }
+
+    #[test]
+    fn settlement_fan_ignores_malformed_melds_for_four_gui_yi() {
+        assert_eq!(
+            four_gui_yi_fan(
+                &[2, 2],
+                &[build_meld(
+                    ShenyangMahjongMeldKind::PENG,
+                    vec![2, 2],
+                    Some(0)
+                )]
+            ),
+            0
+        );
+        assert_eq!(
+            four_gui_yi_fan(
+                &[2],
+                &[build_meld(
+                    ShenyangMahjongMeldKind::PENG,
+                    vec![2, 2, 2],
+                    Some(0)
+                )]
+            ),
+            1
+        );
+        assert_eq!(
+            four_gui_yi_fan(
+                &[2],
+                &[build_meld(
+                    ShenyangMahjongMeldKind::CHI,
+                    vec![2, 2, 2],
+                    Some(0)
+                )]
+            ),
+            0
+        );
+        assert_eq!(
+            four_gui_yi_fan(
+                &[2, 2, 2],
+                &[build_meld(
+                    ShenyangMahjongMeldKind::CHI,
+                    vec![2, 3, 4],
+                    Some(0)
+                )]
+            ),
+            1
+        );
     }
 
     #[test]
