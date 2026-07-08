@@ -548,18 +548,27 @@ pub(super) fn opponent_threat_discard_bias(
             continue;
         }
         let exposure_scale = piao_threat_exposure_scale(table, tile);
-        let terminal_or_honor_need_penalty = piao_terminal_or_honor_need_penalty(&seat.melds, tile);
         if threat_level >= 4 && seat.hand_count <= 2 {
             let public_discount = (public_discard_count(table, tile) as f64 * 10.0
                 + exposed_meld_tile_count(table, tile) as f64 * 8.0)
                 .min(48.0);
-            let missing_suit_wait_penalty =
-                if piao_final_pair_missing_suit_wait_matches(&seat.melds, tile) {
-                    if own_tile_count >= 2 { 14.0 } else { 11.0 }
-                } else {
-                    0.0
-                };
-            let single_wait_penalty = if is_dragon(tile) {
+            let final_pair_wait_matches =
+                piao_final_pair_wait_satisfies_exposed_requirements(&seat.melds, tile);
+            let terminal_or_honor_need_penalty = if final_pair_wait_matches {
+                piao_terminal_or_honor_need_penalty(&seat.melds, tile)
+            } else {
+                0.0
+            };
+            let missing_suit_wait_penalty = if final_pair_wait_matches
+                && piao_final_pair_missing_suit_wait_matches(&seat.melds, tile)
+            {
+                if own_tile_count >= 2 { 14.0 } else { 11.0 }
+            } else {
+                0.0
+            };
+            let single_wait_penalty = if !final_pair_wait_matches {
+                0.0
+            } else if is_dragon(tile) {
                 86.0
             } else if is_honor(tile) || tile_is_terminal(tile) {
                 80.0
@@ -577,6 +586,7 @@ pub(super) fn opponent_threat_discard_bias(
                 * late_multiplier;
             continue;
         }
+        let terminal_or_honor_need_penalty = piao_terminal_or_honor_need_penalty(&seat.melds, tile);
         let piao_wait_suit_penalty = if is_suited(tile)
             && piao_missing_suits_from_melds(&seat.melds).contains(&tile_suit(tile))
         {
@@ -603,6 +613,21 @@ pub(super) fn opponent_threat_discard_bias(
             * exposure_scale;
     }
     bias
+}
+
+pub(super) fn piao_final_pair_wait_satisfies_exposed_requirements(
+    melds: &[WsShenyangMahjongMeld],
+    tile: i32,
+) -> bool {
+    let missing_suits = piao_missing_suits_from_melds(melds);
+    if !missing_suits.is_empty() && (!is_suited(tile) || !missing_suits.contains(&tile_suit(tile)))
+    {
+        return false;
+    }
+    if piao_needs_terminal_or_honor_from_melds(melds) {
+        return is_honor(tile) || tile_is_terminal(tile);
+    }
+    true
 }
 
 pub(super) fn piao_final_pair_missing_suit_wait_matches(

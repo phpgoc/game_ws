@@ -726,6 +726,14 @@ fn opponent_four_piao_threat_needing_yaojiu_only_penalizes_missing_suit_terminal
         opponent_threat_discard_bias(&table, 0, 25, 1)
             >= opponent_threat_discard_bias(&table, 0, 15, 1)
     );
+    assert!(
+        opponent_threat_discard_bias(&table, 0, 21, 1)
+            < opponent_threat_discard_bias(&table, 0, 31, 1)
+    );
+    assert!(
+        opponent_threat_discard_bias(&table, 0, 31, 1)
+            >= opponent_threat_discard_bias(&table, 0, 25, 1)
+    );
 }
 
 #[test]
