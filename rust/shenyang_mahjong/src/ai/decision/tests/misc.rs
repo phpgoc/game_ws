@@ -1,6 +1,33 @@
 use super::*;
 
 #[test]
+fn round_thresholds_match_ai_phase_boundaries() {
+    let mut table = table_with_discards(1, Vec::new());
+
+    table.wall_count = FINAL_DEFENSE_WALL_COUNT + 1;
+    assert!(!is_late_defense_round(&table));
+    table.wall_count = FINAL_DEFENSE_WALL_COUNT;
+    assert!(is_late_defense_round(&table));
+
+    table.wall_count = LATE_PRESSURE_WALL_COUNT + 1;
+    assert!(!is_late_round(&table));
+    table.wall_count = LATE_PRESSURE_WALL_COUNT;
+    assert!(is_late_round(&table));
+
+    table.wall_count = MID_BROKEN_HAND_WALL_COUNT + 1;
+    assert!(!is_mid_broken_hand_defense_round(&table));
+    assert!(!is_mid_opening_round(&table));
+    table.wall_count = MID_BROKEN_HAND_WALL_COUNT;
+    assert!(is_mid_broken_hand_defense_round(&table));
+    assert!(is_mid_opening_round(&table));
+
+    table.wall_count = MID_ROUND_WALL_COUNT + 1;
+    assert!(!is_mid_round(&table));
+    table.wall_count = MID_ROUND_WALL_COUNT;
+    assert!(is_mid_round(&table));
+}
+
+#[test]
 fn capped_non_dealer_prefers_wider_wait_over_single_wait_fan() {
     let mut table = table_with_discards(1, Vec::new());
     table.max_fan = Some(1);
