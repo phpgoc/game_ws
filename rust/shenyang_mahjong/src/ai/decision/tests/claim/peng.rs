@@ -773,6 +773,76 @@ fn claim_peng_takes_fourth_piao_meld_to_set_up_shou_ba_yi() {
 }
 
 #[test]
+fn ready_piao_claim_peng_takes_fourth_plain_meld_for_shou_ba_yi() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.seats.get_mut(&0).unwrap().melds =
+        vec![test_peng_meld(1), test_peng_meld(11), test_peng_meld(21)];
+    table.claim_window = Some(AiClaimView {
+        tile: 5,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![5, 5, 6, 8];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let current_ready_score = ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC);
+
+    assert!(current_ready_score > 0.0);
+    assert!(!is_complete_win_with_melds(
+        &[5, 5, 5, 6, 8],
+        melds,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert!(should_claim_ready_piao_peng_for_shou_ba_yi(
+        &hand,
+        melds,
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+        5,
+        1,
+        current_ready_score
+    ));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Peng)
+    );
+}
+
+#[test]
+fn dealer_ready_piao_passes_fourth_plain_peng_for_speed() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.dealer_position = 0;
+    table.seats.get_mut(&0).unwrap().melds =
+        vec![test_peng_meld(1), test_peng_meld(11), test_peng_meld(21)];
+    table.claim_window = Some(AiClaimView {
+        tile: 5,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![5, 5, 6, 8];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let current_ready_score = ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC);
+
+    assert!(current_ready_score > 0.0);
+    assert!(!should_claim_ready_piao_peng_for_shou_ba_yi(
+        &hand,
+        melds,
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+        5,
+        1,
+        current_ready_score
+    ));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Pass)
+    );
+}
+
+#[test]
 fn claim_peng_takes_three_pair_three_suit_piao_start() {
     let mut table = table_with_discards(1, Vec::new());
     table.claim_window = Some(AiClaimView {

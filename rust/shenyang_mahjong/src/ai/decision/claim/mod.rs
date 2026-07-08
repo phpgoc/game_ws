@@ -172,6 +172,18 @@ pub fn choose_claim_from_view(
             return Some(AiClaimChoice::Pass);
         }
         if current_ready_score > 0.0 {
+            if should_claim_ready_piao_peng_for_shou_ba_yi(
+                hand,
+                &current_melds,
+                table,
+                position,
+                win_rule,
+                tile,
+                claim.from_position,
+                current_ready_score,
+            ) {
+                return Some(AiClaimChoice::Peng);
+            }
             if should_claim_ready_dragon_peng_from_discard(
                 hand,
                 &current_melds,
