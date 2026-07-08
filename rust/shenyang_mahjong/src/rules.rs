@@ -28,6 +28,9 @@ pub fn can_chi(hand: &[i32], target_tile: i32, consume_tiles: &[i32]) -> bool {
 }
 
 pub fn can_concealed_gang(hand: &[i32], target_tile: i32) -> bool {
+    if !is_valid_tile(target_tile) {
+        return false;
+    }
     hand.iter().filter(|&&tile| tile == target_tile).count() >= 4
 }
 
@@ -153,10 +156,16 @@ fn can_form_triplets_with_pair(tiles: &[i32]) -> bool {
 }
 
 pub fn can_gang(hand: &[i32], target_tile: i32) -> bool {
+    if !is_valid_tile(target_tile) {
+        return false;
+    }
     hand.iter().filter(|&&tile| tile == target_tile).count() >= 3
 }
 
 pub fn can_peng(hand: &[i32], target_tile: i32) -> bool {
+    if !is_valid_tile(target_tile) {
+        return false;
+    }
     hand.iter().filter(|&&tile| tile == target_tile).count() >= 2
 }
 
@@ -685,6 +694,7 @@ mod tests {
         let hand = vec![31, 31, 31, 31, 32, 33];
         assert!(can_concealed_gang(&hand, 31));
         assert!(!can_concealed_gang(&hand, 32));
+        assert!(!can_concealed_gang(&[99, 99, 99, 99], 99));
     }
 
     #[test]
@@ -692,6 +702,7 @@ mod tests {
         let hand = vec![31, 31, 31, 32, 33];
         assert!(can_gang(&hand, 31));
         assert!(!can_gang(&hand, 32));
+        assert!(!can_gang(&[99, 99, 99], 99));
     }
 
     fn meld(
@@ -711,6 +722,7 @@ mod tests {
         let hand = vec![31, 31, 32, 33];
         assert!(can_peng(&hand, 31));
         assert!(!can_peng(&hand, 32));
+        assert!(!can_peng(&[99, 99], 99));
     }
 
     #[test]
