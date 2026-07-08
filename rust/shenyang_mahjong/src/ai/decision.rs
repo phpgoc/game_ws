@@ -2441,7 +2441,10 @@ fn piao_plan_score(hand: &[i32], melds: &[WsShenyangMahjongMeld]) -> f64 {
     let triplets = counts.values().filter(|count| **count >= 3).count();
     let pairs = counts.values().filter(|count| **count >= 2).count();
     let score = open_triplets as f64 * 18.0 + triplets as f64 * 14.0 + pairs as f64 * 5.0;
-    if open_triplets + triplets >= 2 || pairs >= 4 || (open_triplets >= 1 && pairs >= 2) {
+    if open_triplets + triplets >= 2
+        || pairs >= 3
+        || (open_triplets >= 1 && pairs >= 2)
+    {
         score
     } else {
         0.0
@@ -7497,10 +7500,38 @@ mod tests {
 
         assert_eq!(pair_count(&hand), 3);
         assert!(is_closed_early_piao_candidate(&hand, &[], &table, 0));
+        assert!(piao_plan_score_for_context(&hand, &[], &table, 0) > 0.0);
         assert_eq!(
             choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
             Some(31)
         );
+    }
+
+    #[test]
+    fn piao_plan_scores_three_pair_three_suit_candidate() {
+        let table = table_with_discards(1, Vec::new());
+        let hand = vec![1, 1, 4, 5, 11, 11, 12, 13, 21, 21, 22, 23, 31, 35];
+
+        assert_eq!(pair_count(&hand), 3);
+        assert_eq!(piao_plan_score_for_context(&hand, &[], &table, 0), 15.0);
+    }
+
+    #[test]
+    fn piao_plan_rejects_three_pair_candidate_missing_suit() {
+        let table = table_with_discards(1, Vec::new());
+        let hand = vec![1, 1, 4, 5, 11, 11, 12, 13, 14, 14, 16, 17, 31, 35];
+
+        assert_eq!(pair_count(&hand), 3);
+        assert_eq!(piao_plan_score_for_context(&hand, &[], &table, 0), 0.0);
+    }
+
+    #[test]
+    fn dealer_discounts_three_pair_piao_candidate_for_speed() {
+        let mut table = table_with_discards(1, Vec::new());
+        table.dealer_position = 0;
+        let hand = vec![1, 1, 4, 5, 11, 11, 12, 13, 21, 21, 22, 23, 31, 35];
+
+        assert_eq!(piao_plan_score_for_context(&hand, &[], &table, 0), 5.25);
     }
 
     #[test]
