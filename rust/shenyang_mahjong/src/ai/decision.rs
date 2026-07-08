@@ -1511,7 +1511,7 @@ fn is_dragon(tile: i32) -> bool {
 }
 
 fn is_honor(tile: i32) -> bool {
-    tile >= 31
+    matches!(tile, 31..=37)
 }
 
 fn is_late_defense_round(table: &AiPublicTable) -> bool {
@@ -4619,6 +4619,15 @@ mod tests {
             suited_tile_count_for_suit(&hand, &[malformed_third_suit], 2),
             0
         );
+    }
+
+    #[test]
+    fn route_requirement_scans_ignore_invalid_hand_tiles() {
+        let hand = vec![2, 3, 4, 5, 6, 7, 12, 13, 14, 15, 16, 17, 18, 99];
+
+        assert!(!is_honor(99));
+        assert_eq!(terminal_or_honor_count(&hand, &[]), 0);
+        assert!(!has_terminal_or_honor_with_extra(&hand, &[], None));
     }
 
     #[test]
