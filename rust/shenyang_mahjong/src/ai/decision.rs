@@ -2328,12 +2328,43 @@ fn pure_one_suit_threat_suit(seat: &AiSeatView) -> Option<(i32, usize)> {
         }
     }
     if open_meld_count == 0 {
-        return None;
+        return pure_one_suit_closed_discard_threat_suit(seat).map(|suit| (suit, 0));
     }
     threat_suit.and_then(|suit| {
         (open_meld_count >= 2 || pure_one_suit_single_meld_discard_evidence(seat, suit))
             .then_some((suit, open_meld_count))
     })
+}
+
+fn pure_one_suit_closed_discard_threat_suit(seat: &AiSeatView) -> Option<i32> {
+    if has_open_meld(&seat.melds) || seat.discards.len() < 5 {
+        return None;
+    }
+
+    let mut suit_discards = [0usize; 3];
+    for discard in seat
+        .discards
+        .iter()
+        .copied()
+        .filter(|tile| is_suited(*tile))
+    {
+        suit_discards[tile_suit(discard) as usize] += 1;
+    }
+    let untouched_suits = suit_discards
+        .iter()
+        .enumerate()
+        .filter_map(|(suit, count)| (*count == 0).then_some(suit as i32))
+        .collect::<Vec<_>>();
+    if untouched_suits.len() != 1 {
+        return None;
+    }
+    let threat_suit = untouched_suits[0];
+    let off_suit_discards = seat
+        .discards
+        .iter()
+        .filter(|discard| !is_suited(**discard) || tile_suit(**discard) != threat_suit)
+        .count();
+    (off_suit_discards >= 5).then_some(threat_suit)
 }
 
 fn pure_one_suit_single_meld_discard_evidence(seat: &AiSeatView, threat_suit: i32) -> bool {
@@ -9660,6 +9691,21 @@ mod tests {
     }
 
     #[test]
+    fn pure_one_suit_threat_reads_closed_discard_pattern() {
+        let mut table = table_with_discards(1, vec![1, 2, 11, 12, 31]);
+        table.wall_count = 32;
+
+        assert_eq!(
+            pure_one_suit_threat_suit(table.seats.get(&1).unwrap()),
+            Some((2, 0))
+        );
+        assert!(
+            pure_one_suit_threat_discard_bias(&table, 0, 24, 1)
+                < pure_one_suit_threat_discard_bias(&table, 0, 14, 1)
+        );
+    }
+
+    #[test]
     fn pure_one_suit_threat_ignores_weak_single_meld_evidence() {
         let mut weak_table = table_with_discards(1, vec![2, 22, 31]);
         weak_table.wall_count = 32;
@@ -9676,6 +9722,21 @@ mod tests {
 
         assert_eq!(
             pure_one_suit_threat_suit(same_suit_table.seats.get(&1).unwrap()),
+            None
+        );
+    }
+
+    #[test]
+    fn pure_one_suit_threat_ignores_ambiguous_closed_discards() {
+        let only_honors = table_with_discards(1, vec![31, 32, 33, 35, 36]);
+        let one_suit_only = table_with_discards(1, vec![1, 2, 3, 4, 5]);
+
+        assert_eq!(
+            pure_one_suit_threat_suit(only_honors.seats.get(&1).unwrap()),
+            None
+        );
+        assert_eq!(
+            pure_one_suit_threat_suit(one_suit_only.seats.get(&1).unwrap()),
             None
         );
     }
