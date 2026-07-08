@@ -256,9 +256,9 @@ pub(crate) fn build_settlement_event_with_configs(
         from_position: settlement.from_position.map(|position| position as i32),
         win_tile: settlement.win_tile,
         is_self_draw: settlement.is_self_draw,
-        is_reverse_win: settlement.is_reverse_win,
-        is_gang_draw: settlement.is_gang_draw,
-        is_haidilao: settlement.is_haidilao,
+        is_reverse_win: settlement_is_reverse_win(settlement),
+        is_gang_draw: settlement_is_gang_draw(settlement),
+        is_haidilao: settlement_is_haidilao(settlement),
         score_changes,
         winner_details,
         players: snapshots,
@@ -377,13 +377,25 @@ fn build_winner_details(
                 position: *position as i32,
                 pattern,
                 is_self_draw: settlement.is_self_draw,
-                is_reverse_win: settlement.is_reverse_win,
-                is_gang_draw: settlement.is_gang_draw,
-                is_haidilao: settlement.is_haidilao,
+                is_reverse_win: settlement_is_reverse_win(settlement),
+                is_gang_draw: settlement_is_gang_draw(settlement),
+                is_haidilao: settlement_is_haidilao(settlement),
                 score,
             })
         })
         .collect()
+}
+
+fn settlement_is_reverse_win(settlement: &crate::game_state::SettlementState) -> bool {
+    !settlement.is_self_draw && settlement.from_position.is_some() && settlement.is_reverse_win
+}
+
+fn settlement_is_gang_draw(settlement: &crate::game_state::SettlementState) -> bool {
+    settlement.is_self_draw && settlement.is_gang_draw
+}
+
+fn settlement_is_haidilao(settlement: &crate::game_state::SettlementState) -> bool {
+    settlement.is_self_draw && settlement.is_haidilao
 }
 
 fn positive_winner_positions_from_scores<'a>(
@@ -1555,16 +1567,13 @@ fn winner_hand_fan_with_rule(
     let mut fan = win_pattern_base_fan(pattern);
     fan += meld_fan(melds);
     fan += concealed_dragon_triplet_fan(&hand_tiles);
-    if !settlement.is_self_draw
-        && settlement.from_position.is_some()
-        && settlement.is_reverse_win
-    {
+    if settlement_is_reverse_win(settlement) {
         fan += 1;
     }
-    if settlement.is_self_draw && settlement.is_gang_draw {
+    if settlement_is_gang_draw(settlement) {
         fan += 1;
     }
-    if settlement.is_self_draw && settlement.is_haidilao {
+    if settlement_is_haidilao(settlement) {
         fan += 1;
     }
     if is_single_wait_win(&hand_tiles, melds, settlement.win_tile, win_rule) {
@@ -5017,6 +5026,9 @@ mod tests {
         let settlement = state.settlement.as_ref().expect("settlement");
 
         assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
+        let event = build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
+        assert!(!event.is_gang_draw);
+        assert!(!event.winner_details[0].is_gang_draw);
     }
 
     #[test]
@@ -5037,6 +5049,9 @@ mod tests {
         let settlement = state.settlement.as_ref().expect("settlement");
 
         assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
+        let event = build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
+        assert!(!event.is_haidilao);
+        assert!(!event.winner_details[0].is_haidilao);
     }
 
     #[test]
@@ -5049,6 +5064,9 @@ mod tests {
         let settlement = state.settlement.as_ref().expect("settlement");
 
         assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
+        let event = build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
+        assert!(!event.is_reverse_win);
+        assert!(!event.winner_details[0].is_reverse_win);
     }
 
     #[test]
