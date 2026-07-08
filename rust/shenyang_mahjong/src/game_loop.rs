@@ -9,7 +9,8 @@ use ws_common::{RoomService, SessionSenders};
 use crate::ai::{maybe_play_ai_turn, maybe_resolve_ai_claims};
 use crate::game::{
     LoopStateRegistry, current_play_time, perform_discard, push_phase_change,
-    push_private_deal_events, push_room_event, resolve_claim_window, settlement_time,
+    push_private_deal_events, push_room_event, redeal_after_settlement_with_configs,
+    resolve_claim_window, settlement_time,
 };
 use crate::game_state::{ClaimResponse, ShenyangMahjongLoopState};
 use share_type_public::games::shenyang_mahjong::ShenyangMahjongPhase;
@@ -227,7 +228,7 @@ pub(crate) fn start_game_loop(
                     }
                     {
                         let mut guard = state.lock().unwrap();
-                        guard.redeal();
+                        redeal_after_settlement_with_configs(&mut guard, &configs);
                     }
                     let mut dispatch = ws_common::Dispatch::default();
                     {

@@ -265,6 +265,20 @@ pub(crate) fn build_settlement_event_with_configs(
     })
 }
 
+pub(crate) fn redeal_after_settlement_with_configs(
+    state: &mut ShenyangMahjongLoopState,
+    configs: &HashMap<String, i32>,
+) {
+    if let Some(settlement) = state.settlement.as_ref() {
+        let effective_winner_positions =
+            positive_winner_positions_for_state(state, settlement, configs);
+        if let Some(settlement) = state.settlement.as_mut() {
+            settlement.winner_positions = effective_winner_positions;
+        }
+    }
+    state.redeal();
+}
+
 pub(crate) fn build_table_snapshot_event_with_configs(
     state: &ShenyangMahjongLoopState,
     viewer_position: usize,
@@ -323,6 +337,18 @@ pub(crate) fn build_table_snapshot_event_with_configs(
             ),
         }),
     }
+}
+
+fn positive_winner_positions_for_state(
+    state: &ShenyangMahjongLoopState,
+    settlement: &crate::game_state::SettlementState,
+    configs: &HashMap<String, i32>,
+) -> Vec<usize> {
+    let players = state.players_snapshot();
+    let mut positions: Vec<usize> = players.keys().copied().collect();
+    positions.sort_unstable();
+    let score_changes = settlement_score_changes_for_state(state, &positions, settlement, configs);
+    positive_winner_positions_from_scores(settlement, &score_changes).collect()
 }
 
 fn build_winner_details(
@@ -5751,6 +5777,55 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn redeal_uses_only_positive_score_winners_for_dealer_rotation() {
+        let mut state = playable_state();
+        state.dealer_position = 0;
+        state
+            .hands
+            .insert(0, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 35]);
+        state.melds.insert(
+            0,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::PENG,
+                vec![99, 99, 99],
+                Some(2),
+            )],
+        );
+        state.hands.insert(1, vec![1, 1, 35, 35]);
+        state.melds.insert(
+            1,
+            vec![
+                build_meld(ShenyangMahjongMeldKind::PENG, vec![11, 11, 11], Some(0)),
+                build_meld(ShenyangMahjongMeldKind::PENG, vec![21, 21, 21], Some(2)),
+                build_meld(ShenyangMahjongMeldKind::PENG, vec![31, 31, 31], Some(3)),
+            ],
+        );
+        state.enter_settlement_with_reverse_win(
+            vec![0, 1],
+            Some(2),
+            Some(1),
+            false,
+            false,
+            false,
+            false,
+        );
+        let settlement = state.settlement.as_ref().expect("settlement");
+
+        assert_eq!(winner_hand_fan(&state, settlement, 0), 0);
+        assert!(winner_hand_fan(&state, settlement, 1) > 0);
+        assert_eq!(
+            positive_winner_positions_for_state(&state, settlement, &HashMap::new()),
+            vec![1]
+        );
+
+        redeal_after_settlement_with_configs(&mut state, &HashMap::new());
+
+        assert_eq!(state.dealer_position, 1);
+        assert_eq!(state.current_position, 1);
+        assert!(state.settlement.is_none());
     }
 
     #[test]
