@@ -367,7 +367,10 @@ pub fn is_seven_pairs_win(tiles: &[i32]) -> bool {
 }
 
 pub fn is_single_wait_shape(tiles: &[i32], melds: &[WsShenyangMahjongMeld], win_tile: i32) -> bool {
-    if !is_complete_win(tiles, melds.len()) || !tiles.contains(&win_tile) {
+    if melds.iter().any(|meld| !is_valid_meld(meld))
+        || !is_complete_win(tiles, melds.len())
+        || !tiles.contains(&win_tile)
+    {
         return false;
     }
     if !is_unique_complete_wait(tiles, melds, win_tile) {
@@ -1033,6 +1036,25 @@ mod tests {
         let tiles = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 35, 35];
 
         assert!(is_single_wait_shape(&tiles, &[], 35));
+    }
+
+    #[test]
+    fn single_wait_shape_rejects_invalid_meld() {
+        let tiles = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 35, 35];
+        let invalid_meld = vec![meld(
+            ShenyangMahjongMeldKind::PENG,
+            vec![99, 99, 99],
+            Some(0),
+        )];
+
+        assert!(is_complete_win(&tiles, invalid_meld.len()));
+        assert!(!is_single_wait_shape(&tiles, &invalid_meld, 35));
+        assert!(!is_single_wait_shape_with_rule(
+            &tiles,
+            &invalid_meld,
+            35,
+            WIN_RULE_RELAXED
+        ));
     }
 
     #[test]

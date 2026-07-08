@@ -8480,6 +8480,21 @@ mod tests {
     }
 
     #[test]
+    fn estimated_fan_ignores_invalid_meld_for_single_wait() {
+        let win_hand = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 35, 35];
+        let invalid_meld = WsShenyangMahjongMeld {
+            kind: ShenyangMahjongMeldKind::PENG,
+            tiles: vec![99, 99, 99],
+            from_position: Some(1),
+        };
+
+        assert_eq!(
+            estimated_fan_with_wait(&win_hand, &[invalid_meld], 35, WIN_RULE_RELAXED),
+            1
+        );
+    }
+
+    #[test]
     fn fan_wait_bias_uses_win_rule_for_closed_basic_hand() {
         let table = table_with_discards(1, Vec::new());
         let win_hand = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35];

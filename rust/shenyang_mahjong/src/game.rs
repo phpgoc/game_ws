@@ -5178,6 +5178,42 @@ mod tests {
     }
 
     #[test]
+    fn settlement_fan_ignores_invalid_meld_for_single_wait() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 35]);
+        state.melds.insert(
+            1,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::PENG,
+                vec![99, 99, 99],
+                Some(0),
+            )],
+        );
+        state.enter_settlement_with_reverse_win(
+            vec![1],
+            Some(0),
+            Some(35),
+            false,
+            false,
+            false,
+            false,
+        );
+        let settlement = state.settlement.as_ref().expect("settlement");
+        let hand_tiles = winner_final_hand_tiles(&state, settlement, 1);
+        let melds = state.melds.get(&1).map(Vec::as_slice).unwrap_or(&[]);
+
+        assert!(!is_single_wait_win(
+            &hand_tiles,
+            melds,
+            settlement.win_tile,
+            WIN_RULE_RELAXED
+        ));
+        assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
+    }
+
+    #[test]
     fn settlement_fan_does_not_count_closed_middle_shape_with_multiple_waits() {
         let mut state = playable_state();
         state
