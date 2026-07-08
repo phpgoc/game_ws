@@ -658,6 +658,14 @@ fn meld_fan(melds: &[WsShenyangMahjongMeld]) -> i32 {
 }
 
 fn meld_primary_tile(meld: &WsShenyangMahjongMeld) -> Option<i32> {
+    let expected_len = match meld.kind {
+        ShenyangMahjongMeldKind::PENG => 3,
+        ShenyangMahjongMeldKind::GANG => 4,
+        ShenyangMahjongMeldKind::CHI => return None,
+    };
+    if meld.tiles.len() != expected_len {
+        return None;
+    }
     let tile = *meld.tiles.first()?;
     meld.tiles.iter().all(|item| *item == tile).then_some(tile)
 }
@@ -4673,6 +4681,49 @@ mod tests {
         let settlement = state.settlement.as_ref().expect("settlement");
 
         assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
+    }
+
+    #[test]
+    fn settlement_fan_ignores_short_dragon_melds() {
+        let mut short_gang_state = playable_state();
+        short_gang_state
+            .hands
+            .insert(1, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31]);
+        short_gang_state.melds.insert(
+            1,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::GANG,
+                vec![35, 35, 35],
+                None,
+            )],
+        );
+        short_gang_state.enter_settlement(vec![1], None, None, true);
+        let short_gang_settlement = short_gang_state.settlement.as_ref().expect("settlement");
+
+        assert_eq!(
+            winner_hand_fan(&short_gang_state, short_gang_settlement, 1),
+            1
+        );
+
+        let mut short_peng_state = playable_state();
+        short_peng_state
+            .hands
+            .insert(1, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31]);
+        short_peng_state.melds.insert(
+            1,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::PENG,
+                vec![35, 35],
+                Some(0),
+            )],
+        );
+        short_peng_state.enter_settlement(vec![1], None, None, true);
+        let short_peng_settlement = short_peng_state.settlement.as_ref().expect("settlement");
+
+        assert_eq!(
+            winner_hand_fan(&short_peng_state, short_peng_settlement, 1),
+            1
+        );
     }
 
     #[test]

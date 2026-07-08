@@ -1700,6 +1700,14 @@ fn live_terminal_or_honor_count(hand: &[i32], table: &AiPublicTable) -> i32 {
 }
 
 fn meld_primary_tile(meld: &WsShenyangMahjongMeld) -> Option<i32> {
+    let expected_len = match meld.kind {
+        ShenyangMahjongMeldKind::PENG => 3,
+        ShenyangMahjongMeldKind::GANG => 4,
+        ShenyangMahjongMeldKind::CHI => return None,
+    };
+    if meld.tiles.len() != expected_len {
+        return None;
+    }
     let first = *meld.tiles.first()?;
     meld.tiles
         .iter()
@@ -8255,6 +8263,23 @@ mod tests {
             estimated_visible_fan_without_wait(&win_hand, &[], WIN_RULE_RELAXED),
             2
         );
+    }
+
+    #[test]
+    fn estimated_meld_fan_ignores_short_dragon_melds() {
+        let short_gang = WsShenyangMahjongMeld {
+            kind: ShenyangMahjongMeldKind::GANG,
+            tiles: vec![35, 35, 35],
+            from_position: None,
+        };
+        let short_peng = WsShenyangMahjongMeld {
+            kind: ShenyangMahjongMeldKind::PENG,
+            tiles: vec![35, 35],
+            from_position: Some(1),
+        };
+
+        assert_eq!(estimated_meld_fan(&[short_gang]), 0);
+        assert_eq!(estimated_meld_fan(&[short_peng]), 0);
     }
 
     #[test]
