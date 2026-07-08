@@ -700,6 +700,35 @@ fn opponent_four_piao_threat_penalizes_missing_suit_wait_tile() {
 }
 
 #[test]
+fn opponent_four_piao_threat_needing_yaojiu_only_penalizes_missing_suit_terminal_wait() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 16;
+    table.seats.get_mut(&1).unwrap().hand_count = 2;
+    table.seats.get_mut(&1).unwrap().melds = vec![
+        test_peng_meld(2),
+        test_peng_meld(3),
+        test_peng_meld(12),
+        test_peng_meld(13),
+    ];
+
+    assert_eq!(
+        piao_missing_suits_from_melds(&table.seats.get(&1).unwrap().melds),
+        vec![2]
+    );
+    assert!(piao_needs_terminal_or_honor_from_melds(
+        &table.seats.get(&1).unwrap().melds
+    ));
+    assert!(
+        opponent_threat_discard_bias(&table, 0, 21, 1)
+            < opponent_threat_discard_bias(&table, 0, 25, 1)
+    );
+    assert!(
+        opponent_threat_discard_bias(&table, 0, 25, 1)
+            >= opponent_threat_discard_bias(&table, 0, 15, 1)
+    );
+}
+
+#[test]
 fn piao_threat_penalizes_live_wind_pair_more_than_terminal_singleton() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 16;
