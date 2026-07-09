@@ -203,6 +203,21 @@ fn seven_pairs_plan_protects_live_pair_over_dead_pair() {
 }
 
 #[test]
+fn seven_pairs_plan_protects_live_middle_pair_over_dead_wind_pair() {
+    let table = table_with_discards(1, vec![31, 31]);
+    let hand = vec![1, 1, 5, 5, 11, 11, 12, 12, 21, 21, 31, 31, 35, 36];
+
+    let dead_wind_pair =
+        seven_pairs_plan_discard_bias(&hand, 31, &[], &table, 0, WIN_RULE_SHENYANG_BASIC);
+    let live_middle_pair =
+        seven_pairs_plan_discard_bias(&hand, 5, &[], &table, 0, WIN_RULE_SHENYANG_BASIC);
+
+    assert_eq!(remaining_tile_count(&hand, &table, 0, 31), 0);
+    assert!(remaining_tile_count(&hand, &table, 0, 5) > 0);
+    assert!(live_middle_pair < dead_wind_pair);
+}
+
+#[test]
 fn discard_locked_five_pairs_prefers_honor_singleton_first() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 1, 2, 2, 5, 9, 11, 11, 12, 12, 14, 21, 21, 31];

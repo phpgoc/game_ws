@@ -44,7 +44,7 @@ pub(in crate::ai::decision) fn seven_pairs_pair_liveness_discard_bias(
         return 0.0;
     }
     match remaining_tile_count(hand, table, position, tile) {
-        0 => 4.0,
+        0 => 5.0,
         1 => 0.0,
         _ => -2.0,
     }
