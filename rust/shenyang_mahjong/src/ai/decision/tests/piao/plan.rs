@@ -28,6 +28,24 @@ fn piao_plan_ignores_malformed_chi_meld() {
 }
 
 #[test]
+fn piao_plan_ignores_invalid_hand_pairs() {
+    let table = table_with_discards(1, Vec::new());
+    let hand = vec![1, 11, 21, 31, 97, 97, 98, 98, 99, 99];
+
+    assert!(has_piao_route_basics(&hand, &[]));
+    assert_eq!(piao_plan_score(&hand, &[]), 0.0);
+    assert_eq!(piao_plan_score_for_context(&hand, &[], &table, 0), 0.0);
+}
+
+#[test]
+fn piao_committed_group_count_ignores_invalid_hand_triplets() {
+    let hand = vec![11, 11, 21, 21, 31, 99, 99, 99];
+    let melds = vec![test_peng_meld(1)];
+
+    assert_eq!(piao_committed_group_count(&hand, &melds), 1);
+}
+
+#[test]
 fn uncapped_room_keeps_piao_plan_biases() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 13, 21, 21, 22, 31, 32];

@@ -9,7 +9,7 @@ pub(in crate::ai::decision) fn piao_committed_group_count(
         .filter(|meld| is_triplet_like_meld(meld))
         .count();
     let mut counts: HashMap<i32, usize> = HashMap::new();
-    for &tile in hand {
+    for &tile in hand.iter().filter(|tile| is_valid_tile(**tile)) {
         *counts.entry(tile).or_default() += 1;
     }
     open_triplets + counts.values().filter(|count| **count >= 3).count()
@@ -27,7 +27,7 @@ pub(in crate::ai::decision) fn piao_plan_score(
         .filter(|meld| is_triplet_like_meld(meld))
         .count();
     let mut counts: HashMap<i32, usize> = HashMap::new();
-    for &tile in hand {
+    for &tile in hand.iter().filter(|tile| is_valid_tile(**tile)) {
         *counts.entry(tile).or_default() += 1;
     }
     let triplets = counts.values().filter(|count| **count >= 3).count();
