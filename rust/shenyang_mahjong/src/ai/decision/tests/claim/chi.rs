@@ -187,6 +187,34 @@ fn claim_chi_opens_mid_broken_hand_for_defense() {
 }
 
 #[test]
+fn dealer_claim_chi_opens_mid_broken_hand_for_defense_in_relaxed_rule() {
+    let mut table = table_with_discards(3, Vec::new());
+    table.dealer_position = 0;
+    table.wall_count = 52;
+    table.claim_window = Some(AiClaimView {
+        tile: 3,
+        from_position: 3,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![1, 1, 2, 5, 8, 11, 14, 17, 21, 24, 31, 32, 33];
+
+    assert!(should_claim_chi_to_open_broken_hand_for_defense(
+        &hand,
+        &[],
+        &table,
+        0,
+        WIN_RULE_RELAXED
+    ));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+        Some(AiClaimChoice::Chi {
+            consume_tiles: vec![1, 2]
+        })
+    );
+}
+
+#[test]
 fn claim_chi_does_not_rush_opening_closed_basic_hand_early() {
     let mut table = table_with_discards(3, Vec::new());
     table.claim_window = Some(AiClaimView {

@@ -9,7 +9,6 @@ pub(in crate::ai::decision) fn should_claim_chi_to_open_broken_hand_for_defense(
 ) -> bool {
     if win_rule == WIN_RULE_SHENYANG_BASIC
         || has_open_meld(melds)
-        || table.dealer_position == position
         || !is_mid_broken_hand_defense_round(table)
         || should_preserve_seven_pairs_plan_for_context(hand, melds, table, position, win_rule)
         || pure_one_suit_plan_score_for_context(hand, melds, table, position) > 0.0
