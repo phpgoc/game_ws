@@ -5,7 +5,7 @@ pub(in crate::ai::decision) fn is_seven_pairs_wait_shape(hand: &[i32]) -> bool {
         return false;
     }
     let mut counts: HashMap<i32, usize> = HashMap::new();
-    for &tile in hand {
+    for &tile in hand.iter().filter(|tile| is_valid_tile(**tile)) {
         *counts.entry(tile).or_default() += 1;
     }
     let pairs = counts.values().map(|count| count / 2).sum::<usize>();
@@ -15,7 +15,7 @@ pub(in crate::ai::decision) fn is_seven_pairs_wait_shape(hand: &[i32]) -> bool {
 
 pub(in crate::ai::decision) fn pair_count(hand: &[i32]) -> usize {
     let mut counts: HashMap<i32, usize> = HashMap::new();
-    for &tile in hand {
+    for &tile in hand.iter().filter(|tile| is_valid_tile(**tile)) {
         *counts.entry(tile).or_default() += 1;
     }
     counts.values().map(|count| count / 2).sum()
@@ -36,7 +36,7 @@ pub(in crate::ai::decision) fn remove_n_tiles(hand: &[i32], tile: i32, count: us
 
 pub(in crate::ai::decision) fn single_tile(hand: &[i32]) -> Option<i32> {
     let mut counts: HashMap<i32, usize> = HashMap::new();
-    for &tile in hand {
+    for &tile in hand.iter().filter(|tile| is_valid_tile(**tile)) {
         *counts.entry(tile).or_default() += 1;
     }
     counts

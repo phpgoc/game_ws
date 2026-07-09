@@ -31,6 +31,34 @@ fn broken_closed_defense_preserves_seven_pairs_route() {
 }
 
 #[test]
+fn seven_pairs_plan_ignores_invalid_pairs() {
+    let table = table_with_discards(1, Vec::new());
+    let hand = vec![1, 1, 2, 2, 3, 4, 5, 6, 7, 31, 97, 97, 98, 98];
+
+    assert_eq!(pair_count(&hand), 2);
+    assert_eq!(
+        seven_pairs_plan_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        0.0
+    );
+    assert!(!should_lock_seven_pairs_plan(
+        &hand,
+        &[],
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+}
+
+#[test]
+fn seven_pairs_wait_shape_ignores_invalid_singleton() {
+    let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 99];
+
+    assert_eq!(pair_count(&hand), 6);
+    assert!(!is_seven_pairs_wait_shape(&hand));
+    assert_eq!(single_tile(&hand), None);
+}
+
+#[test]
 fn capped_locked_seven_pairs_route_can_discard_last_honor() {
     let mut table = table_with_discards(1, Vec::new());
     table.max_fan = Some(1);
