@@ -180,7 +180,9 @@ pub(in crate::ai::decision) fn piao_threat_cannot_satisfy_three_suits(
 }
 
 pub(in crate::ai::decision) fn piao_threat_exposure_scale(table: &AiPublicTable, tile: i32) -> f64 {
-    match exposed_meld_tile_count(table, tile) {
+    let known_public_count =
+        exposed_meld_tile_count(table, tile) + public_discard_count(table, tile);
+    match known_public_count {
         0 => 1.0,
         1 => 0.8,
         2 => 0.55,

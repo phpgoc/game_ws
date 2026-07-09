@@ -184,3 +184,27 @@ fn piao_threat_discounts_exposed_meld_tiles() {
             > opponent_threat_discard_bias(&table, 0, 5, 1)
     );
 }
+
+#[test]
+fn piao_threat_discounts_public_discards_from_other_seats() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 16;
+    table.seats.get_mut(&1).unwrap().melds =
+        vec![test_peng_meld(1), test_peng_meld(11), test_peng_meld(21)];
+    table.seats.insert(
+        2,
+        AiSeatView {
+            position: 2,
+            hand_count: 10,
+            discards: vec![5, 5],
+            melds: Vec::new(),
+        },
+    );
+
+    assert_eq!(public_discard_count(&table, 5), 2);
+    assert_eq!(public_discard_count(&table, 6), 0);
+    assert!(
+        opponent_threat_discard_bias(&table, 0, 5, 1)
+            > opponent_threat_discard_bias(&table, 0, 6, 1)
+    );
+}
