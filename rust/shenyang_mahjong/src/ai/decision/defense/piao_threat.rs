@@ -45,6 +45,9 @@ pub(in crate::ai::decision) fn opponent_threat_discard_bias(
             bias += 4.5;
             continue;
         }
+        if piao_threat_tile_fully_accounted(table, tile, own_tile_count) {
+            continue;
+        }
         let exposure_scale = piao_threat_exposure_scale(table, tile);
         if threat_level >= 4 && seat.hand_count <= 2 {
             let public_discount = (public_discard_count(table, tile) as f64 * 10.0
@@ -186,8 +189,17 @@ pub(in crate::ai::decision) fn piao_threat_exposure_scale(table: &AiPublicTable,
         0 => 1.0,
         1 => 0.8,
         2 => 0.55,
-        _ => 0.25,
+        3 => 0.25,
+        _ => 0.0,
     }
+}
+
+pub(in crate::ai::decision) fn piao_threat_tile_fully_accounted(
+    table: &AiPublicTable,
+    tile: i32,
+    own_tile_count: usize,
+) -> bool {
+    exposed_meld_tile_count(table, tile) + public_discard_count(table, tile) + own_tile_count >= 4
 }
 
 pub(in crate::ai::decision) fn piao_threat_pair_penalty(tile: i32, own_tile_count: usize) -> f64 {

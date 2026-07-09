@@ -208,3 +208,36 @@ fn piao_threat_discounts_public_discards_from_other_seats() {
             > opponent_threat_discard_bias(&table, 0, 6, 1)
     );
 }
+
+#[test]
+fn piao_threat_ignores_tile_fully_accounted_by_public_and_own_tiles() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 16;
+    table.seats.get_mut(&1).unwrap().hand_count = 2;
+    table.seats.get_mut(&1).unwrap().melds = vec![
+        test_peng_meld(1),
+        test_peng_meld(11),
+        test_peng_meld(21),
+        test_peng_meld(31),
+    ];
+    table.seats.insert(
+        2,
+        AiSeatView {
+            position: 2,
+            hand_count: 10,
+            discards: vec![5, 5],
+            melds: Vec::new(),
+        },
+    );
+
+    assert!(piao_threat_tile_fully_accounted(&table, 5, 2));
+    assert_eq!(opponent_threat_discard_bias(&table, 0, 5, 2), 0.0);
+    assert!(opponent_threat_discard_bias(&table, 0, 6, 1) < 0.0);
+}
+
+#[test]
+fn piao_threat_exposure_reaches_zero_when_all_copies_are_public() {
+    let table = table_with_discards(1, vec![5, 5, 5, 5]);
+
+    assert_eq!(piao_threat_exposure_scale(&table, 5), 0.0);
+}
