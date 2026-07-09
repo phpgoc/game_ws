@@ -81,6 +81,9 @@ pub(super) fn self_gang_score(
     if is_ready && ready_visible_fan_reaches_cap(hand, melds, table, position, win_rule) {
         return f64::NEG_INFINITY;
     }
+    if !is_ready && capped_open_basic_route_visible_fan_reaches_cap(hand, melds, table) {
+        return f64::NEG_INFINITY;
+    }
     if !is_ready && table.max_fan.is_some_and(|max_fan| max_fan <= 1) {
         return f64::NEG_INFINITY;
     }
