@@ -232,6 +232,7 @@ fn known_tile_count(state: &ShenyangMahjongLoopState, tile: i32) -> usize {
         .melds
         .values()
         .flat_map(|melds| melds.iter())
+        .filter(|meld| meld_primary_tile(meld).is_some() || is_chi_meld(meld))
         .flat_map(|meld| meld.tiles.iter().copied())
         .filter(|known_tile| *known_tile == tile)
         .count();
@@ -2545,6 +2546,32 @@ mod tests {
 
         assert!(known_tile_count(&state, 3) > 4);
         assert!(options.is_empty());
+    }
+
+    #[test]
+    fn claim_options_ignore_malformed_melds_for_known_tile_count() {
+        let mut state = playable_state();
+        state.discards.insert(0, vec![3]);
+        state
+            .hands
+            .insert(1, vec![3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35]);
+        state.melds.insert(
+            2,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::CHI,
+                vec![3, 3, 3],
+                Some(1),
+            )],
+        );
+
+        let options = build_claim_options(&state, 3, 0, &relaxed_configs());
+        let player = options
+            .iter()
+            .find(|option| option.position == 1)
+            .expect("malformed meld should not block legal claim options");
+
+        assert_eq!(known_tile_count(&state, 3), 3);
+        assert!(player.can_peng);
     }
 
     #[test]
