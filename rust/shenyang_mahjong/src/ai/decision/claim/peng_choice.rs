@@ -177,32 +177,6 @@ pub(super) fn choose_peng_claim(
     (after >= current_score + required_gain).then_some(AiClaimChoice::Peng)
 }
 
-fn should_claim_capped_dragon_peng_over_five_pairs(
-    hand: &[i32],
-    current_melds: &[WsShenyangMahjongMeld],
-    table: &AiPublicTable,
-    position: usize,
-    win_rule: i32,
-    tile: i32,
-    from_position: usize,
-) -> bool {
-    if win_rule != WIN_RULE_SHENYANG_BASIC
-        || !is_dragon(tile)
-        || pair_count(hand) != 5
-        || !can_peng(hand, tile)
-        || !should_lock_seven_pairs_plan(hand, current_melds, table, position, win_rule)
-    {
-        return false;
-    }
-    let next_hand = remove_n_tiles(hand, tile, 2);
-    if next_hand.len() + 2 != hand.len() {
-        return false;
-    }
-    let mut next_melds = current_melds.to_vec();
-    next_melds.push(claim_peng_meld(tile, from_position));
-    capped_open_basic_route_visible_fan_reaches_cap(&next_hand, &next_melds, table)
-}
-
 fn required_peng_gain(
     hand: &[i32],
     current_melds: &[WsShenyangMahjongMeld],
