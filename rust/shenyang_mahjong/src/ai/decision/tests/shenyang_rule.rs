@@ -214,6 +214,26 @@ fn unrecoverable_basic_rule_counts_dead_heng_requirement() {
 }
 
 #[test]
+fn shenyang_rule_progress_penalizes_unrecoverable_missing_heng_more() {
+    let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 14, 15, 21, 22];
+    let live_table = table_with_discards(1, Vec::new());
+    let dead_table = table_with_discards(1, dead_basic_heng_discards(&hand));
+
+    assert!(can_recover_basic_heng(&hand, &[], &live_table));
+    assert!(!can_recover_basic_heng(&hand, &[], &dead_table));
+
+    let live_score =
+        shenyang_rule_progress_score(&hand, &[], &live_table, 0, WIN_RULE_SHENYANG_BASIC);
+    let dead_score =
+        shenyang_rule_progress_score(&hand, &[], &dead_table, 0, WIN_RULE_SHENYANG_BASIC);
+
+    assert!(
+        dead_score < live_score - 8.0,
+        "unrecoverable missing heng should push ordinary hands toward defense"
+    );
+}
+
+#[test]
 fn recoverable_basic_heng_counts_live_dragon_pair_without_hand_seed() {
     let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 14, 15, 21, 22];
     let mut discards = SHENYANG_MAHJONG_TILE_KINDS

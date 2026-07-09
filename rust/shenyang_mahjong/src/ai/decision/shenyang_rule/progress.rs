@@ -57,8 +57,10 @@ pub(in crate::ai::decision) fn shenyang_rule_progress_score(
     }
     if has_triplet_or_dragon_pair(hand, melds) {
         score += 8.0;
-    } else {
+    } else if can_recover_basic_heng(hand, melds, table) {
         score -= 5.0;
+    } else {
+        score -= 16.0;
     }
     score
 }
