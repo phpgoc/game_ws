@@ -397,6 +397,30 @@ fn late_defense_values_two_exposed_meld_tiles_over_live_wind() {
 }
 
 #[test]
+fn late_defense_values_fully_accounted_pair_over_live_wind() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 16;
+    table.seats.get_mut(&1).unwrap().melds = vec![test_chi_meld(4)];
+    table.seats.insert(
+        2,
+        AiSeatView {
+            position: 2,
+            hand_count: 10,
+            discards: Vec::new(),
+            melds: vec![test_chi_meld(6)],
+        },
+    );
+
+    assert_eq!(public_discard_count(&table, 6), 0);
+    assert_eq!(exposed_meld_tile_count(&table, 6), 2);
+    assert!(late_defense_tile_fully_accounted(&table, 6, 2));
+    assert!(
+        late_defense_tile_safety_score(&table, 0, 6, 2)
+            > late_defense_tile_safety_score(&table, 0, 31, 1)
+    );
+}
+
+#[test]
 fn late_defense_discards_three_exposed_meld_tile_before_live_wind() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 16;

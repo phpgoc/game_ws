@@ -66,9 +66,9 @@ pub(in crate::ai::decision) fn choose_late_defense_discard_from_candidates(
 }
 
 fn late_defense_known_safe_candidate(hand: &[i32], table: &AiPublicTable, tile: i32) -> bool {
+    let own_tile_count = hand.iter().filter(|item| **item == tile).count();
     public_discard_count(table, tile) > 0
-        || exposed_meld_tile_count(table, tile) + hand.iter().filter(|item| **item == tile).count()
-            >= 4
+        || late_defense_tile_fully_accounted(table, tile, own_tile_count)
 }
 
 pub(in crate::ai::decision) fn choose_broken_hand_public_defense_discard(
