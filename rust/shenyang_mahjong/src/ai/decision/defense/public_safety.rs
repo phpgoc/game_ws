@@ -96,7 +96,7 @@ pub(in crate::ai::decision) fn mid_round_live_honor_risk_bias(
     {
         return 0.0;
     }
-    if public_discard_count(table, tile) > 0 {
+    if tile_known_safe_for_live_risk(table, tile, own_tile_count) {
         return 0.0;
     }
     if !is_dragon(tile) {
@@ -144,9 +144,11 @@ pub(in crate::ai::decision) fn mid_round_live_suited_risk_bias(
         || is_late_defense_round(table)
         || own_tile_count != 1
         || !is_suited(tile)
-        || public_discard_count(table, tile) > 0
         || should_keep_pairs_for_seven_pairs_discard(hand, melds, table, position, win_rule)
     {
+        return 0.0;
+    }
+    if tile_known_safe_for_live_risk(table, tile, own_tile_count) {
         return 0.0;
     }
     let base = if tile_is_terminal(tile) { 7.0 } else { 10.0 };
@@ -191,6 +193,11 @@ pub(in crate::ai::decision) fn live_risk_exposure_scale(table: &AiPublicTable, t
         3 => 0.25,
         _ => 0.0,
     }
+}
+
+fn tile_known_safe_for_live_risk(table: &AiPublicTable, tile: i32, own_tile_count: usize) -> bool {
+    public_discard_count(table, tile) > 0
+        || exposed_meld_tile_count(table, tile) + own_tile_count >= 4
 }
 
 pub(in crate::ai::decision) fn own_open_live_suited_pressure(

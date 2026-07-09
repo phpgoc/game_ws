@@ -197,7 +197,7 @@ fn mid_round_open_dragon_meld_does_not_add_live_dragon_pressure() {
 
     table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(35)];
     assert_eq!(open_opponent_live_dragon_risk(&table, 0, 35), 0.0);
-    assert_eq!(mid_round_live_honor_risk_bias(&table, 0, 35, 1), base);
+    assert_eq!(mid_round_live_honor_risk_bias(&table, 0, 35, 1), 0.0);
 
     table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(9)];
     assert!(open_opponent_live_dragon_risk(&table, 0, 35) > 0.0);
@@ -227,6 +227,24 @@ fn mid_round_live_dragon_risk_discounts_exposed_meld_tiles() {
         open_opponent_live_dragon_risk(&exposed_table, 0, 35)
             < open_opponent_live_dragon_risk(&live_table, 0, 35)
     );
+}
+
+#[test]
+fn mid_round_live_dragon_risk_ignores_tile_fully_accounted_by_meld_and_own_tile() {
+    let mut accounted_table = table_with_discards(1, Vec::new());
+    accounted_table.wall_count = 42;
+    accounted_table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(35)];
+
+    let mut live_table = accounted_table.clone();
+    live_table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(9)];
+
+    assert_eq!(public_discard_count(&accounted_table, 35), 0);
+    assert_eq!(exposed_meld_tile_count(&accounted_table, 35), 3);
+    assert_eq!(
+        mid_round_live_honor_risk_bias(&accounted_table, 0, 35, 1),
+        0.0
+    );
+    assert!(mid_round_live_honor_risk_bias(&live_table, 0, 35, 1) < 0.0);
 }
 
 #[test]
@@ -357,6 +375,27 @@ fn mid_round_live_suited_risk_discounts_exposed_meld_tiles() {
     assert!(
         mid_round_live_suited_risk_bias(&hand, &[], &exposed_table, 0, 9, 1, WIN_RULE_RELAXED)
             > mid_round_live_suited_risk_bias(&hand, &[], &live_table, 0, 9, 1, WIN_RULE_RELAXED)
+    );
+}
+
+#[test]
+fn mid_round_live_suited_risk_ignores_tile_fully_accounted_by_meld_and_own_tile() {
+    let mut accounted_table = table_with_discards(1, Vec::new());
+    accounted_table.wall_count = 37;
+    accounted_table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(9)];
+    let hand = vec![1, 2, 3, 9, 11, 12, 14, 16, 18, 21, 22, 24, 26, 31];
+
+    let mut live_table = accounted_table.clone();
+    live_table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(16)];
+
+    assert_eq!(public_discard_count(&accounted_table, 9), 0);
+    assert_eq!(exposed_meld_tile_count(&accounted_table, 9), 3);
+    assert_eq!(
+        mid_round_live_suited_risk_bias(&hand, &[], &accounted_table, 0, 9, 1, WIN_RULE_RELAXED),
+        0.0
+    );
+    assert!(
+        mid_round_live_suited_risk_bias(&hand, &[], &live_table, 0, 9, 1, WIN_RULE_RELAXED) < 0.0
     );
 }
 
