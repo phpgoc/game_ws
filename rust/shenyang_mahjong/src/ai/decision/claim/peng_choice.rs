@@ -123,6 +123,17 @@ pub(super) fn choose_peng_claim(
     ) {
         return Some(AiClaimChoice::Peng);
     }
+    if should_claim_peng_to_open_capped_basic_route(
+        hand,
+        current_melds,
+        table,
+        position,
+        win_rule,
+        tile,
+        from_position,
+    ) {
+        return Some(AiClaimChoice::Peng);
+    }
     if should_pass_closed_basic_peng_to_preserve_sequence(
         hand,
         current_melds,
