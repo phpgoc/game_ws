@@ -29,7 +29,8 @@ use crate::rules::is_single_wait_shape_with_rule;
 use crate::rules::{
     WIN_RULE_SHENYANG_BASIC, can_chi, can_concealed_gang, can_gang, can_peng,
     is_complete_win_with_melds, is_piao_hu_win, is_pure_one_suit_win, is_seven_pairs_win,
-    is_single_wait_shape_with_known_unavailable_tiles, tiles_in_hand, win_rule_from_configs,
+    is_single_wait_shape_with_known_unavailable_tiles, shenyang_score_concealed_dragon_triplet_fan,
+    shenyang_score_four_gui_yi_fan, shenyang_score_meld_fan, tiles_in_hand, win_rule_from_configs,
 };
 
 pub(crate) type LoopStateHandle = Arc<std::sync::Mutex<ShenyangMahjongLoopState>>;
@@ -645,43 +646,11 @@ fn finish_added_gang(
 }
 
 fn four_gui_yi_fan(hand_tiles: &[i32], melds: &[WsShenyangMahjongMeld]) -> i32 {
-    let mut counts = HashMap::<i32, i32>::new();
-    for tile in hand_tiles
-        .iter()
-        .copied()
-        .filter(|tile| is_valid_tile(*tile))
-    {
-        *counts.entry(tile).or_default() += 1;
-    }
-    for meld in melds.iter().filter(|meld| is_four_gui_yi_meld(meld)) {
-        for tile in meld.tiles.iter().copied() {
-            *counts.entry(tile).or_default() += 1;
-        }
-    }
-    counts.into_values().filter(|count| *count == 4).count() as i32
-}
-
-fn is_four_gui_yi_meld(meld: &WsShenyangMahjongMeld) -> bool {
-    match meld.kind {
-        ShenyangMahjongMeldKind::PENG => meld_primary_tile(meld).is_some(),
-        ShenyangMahjongMeldKind::CHI => is_chi_meld(meld),
-        ShenyangMahjongMeldKind::GANG => false,
-    }
-}
-
-fn is_dragon_tile(tile: i32) -> bool {
-    matches!(tile, 35..=37)
+    shenyang_score_four_gui_yi_fan(hand_tiles, melds)
 }
 
 fn is_valid_tile(tile: i32) -> bool {
     SHENYANG_MAHJONG_TILE_KINDS.contains(&tile)
-}
-
-fn concealed_dragon_triplet_fan(hand_tiles: &[i32]) -> i32 {
-    [35, 36, 37]
-        .into_iter()
-        .filter(|dragon| hand_tiles.iter().filter(|tile| **tile == *dragon).count() >= 3)
-        .count() as i32
 }
 
 fn is_shou_ba_yi(
@@ -825,40 +794,6 @@ fn maybe_record_settlement(
     configs: &HashMap<String, i32>,
 ) {
     crate::official::settle_round(room_service, room_key, state, configs);
-}
-
-fn meld_fan(melds: &[WsShenyangMahjongMeld]) -> i32 {
-    melds
-        .iter()
-        .map(|meld| match meld.kind {
-            ShenyangMahjongMeldKind::PENG
-                if meld_primary_tile(meld).is_some_and(is_dragon_tile) =>
-            {
-                1
-            }
-            ShenyangMahjongMeldKind::GANG => {
-                let concealed = meld.from_position.is_none();
-                match meld_primary_tile(meld) {
-                    Some(tile) if is_dragon_tile(tile) => {
-                        if concealed {
-                            4
-                        } else {
-                            2
-                        }
-                    }
-                    Some(_) => {
-                        if concealed {
-                            2
-                        } else {
-                            1
-                        }
-                    }
-                    None => 0,
-                }
-            }
-            _ => 0,
-        })
-        .sum()
 }
 
 fn meld_primary_tile(meld: &WsShenyangMahjongMeld) -> Option<i32> {
@@ -1713,8 +1648,8 @@ fn winner_hand_fan_with_rule(
     let pattern = winner_pattern_with_rule(&hand_tiles, melds, win_rule);
     let known_unavailable_tiles = public_unavailable_tiles_for_winner(state, winner);
     let mut fan = win_pattern_base_fan(pattern);
-    fan += meld_fan(melds);
-    fan += concealed_dragon_triplet_fan(&hand_tiles);
+    fan += shenyang_score_meld_fan(melds);
+    fan += shenyang_score_concealed_dragon_triplet_fan(&hand_tiles);
     if settlement_is_reverse_win(settlement) {
         fan += 1;
     }

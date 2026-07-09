@@ -4,51 +4,15 @@ pub(in crate::ai::decision) fn estimated_four_gui_yi_fan(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
 ) -> i32 {
-    let mut counts = HashMap::<i32, i32>::new();
-    for tile in hand.iter().copied().filter(|tile| is_valid_tile(*tile)) {
-        *counts.entry(tile).or_default() += 1;
-    }
-    for meld in melds.iter().filter(|meld| is_four_gui_yi_meld(meld)) {
-        for tile in meld.tiles.iter().copied() {
-            *counts.entry(tile).or_default() += 1;
-        }
-    }
-    counts.into_values().filter(|count| *count == 4).count() as i32
-}
-
-pub(in crate::ai::decision) fn is_four_gui_yi_meld(meld: &WsShenyangMahjongMeld) -> bool {
-    match meld.kind {
-        ShenyangMahjongMeldKind::PENG => is_triplet_like_meld(meld),
-        ShenyangMahjongMeldKind::CHI => is_sequence_meld(meld),
-        ShenyangMahjongMeldKind::GANG => false,
-    }
+    shenyang_score_four_gui_yi_fan(hand, melds)
 }
 
 pub(in crate::ai::decision) fn estimated_concealed_dragon_triplet_fan(hand: &[i32]) -> i32 {
-    [35, 36, 37]
-        .into_iter()
-        .filter(|dragon| hand.iter().filter(|tile| **tile == *dragon).count() >= 3)
-        .count() as i32
+    shenyang_score_concealed_dragon_triplet_fan(hand)
 }
 
 pub(in crate::ai::decision) fn estimated_meld_fan(melds: &[WsShenyangMahjongMeld]) -> i32 {
-    melds
-        .iter()
-        .map(|meld| match meld.kind {
-            ShenyangMahjongMeldKind::PENG if meld_primary_tile(meld).is_some_and(is_dragon) => 1,
-            ShenyangMahjongMeldKind::GANG => {
-                let concealed = meld.from_position.is_none();
-                match meld_primary_tile(meld) {
-                    Some(tile) if is_dragon(tile) && concealed => 4,
-                    Some(tile) if is_dragon(tile) => 2,
-                    Some(_) if concealed => 2,
-                    Some(_) => 1,
-                    None => 0,
-                }
-            }
-            _ => 0,
-        })
-        .sum()
+    shenyang_score_meld_fan(melds)
 }
 
 pub(in crate::ai::decision) fn estimated_visible_bonus_fan(

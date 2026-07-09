@@ -29,7 +29,8 @@ use share_type_public::games::shenyang_mahjong::{
 use crate::rules::{
     WIN_RULE_SHENYANG_BASIC, can_chi, can_gang, can_peng, is_complete_win_with_melds,
     is_piao_hu_win, is_pure_one_suit_win, is_seven_pairs_win,
-    is_single_wait_shape_with_known_unavailable_tiles, sort_tiles,
+    is_single_wait_shape_with_known_unavailable_tiles, shenyang_score_concealed_dragon_triplet_fan,
+    shenyang_score_four_gui_yi_fan, shenyang_score_meld_fan, sort_tiles,
 };
 #[cfg(test)]
 use crate::rules::{has_triplet_in_standard_decomposition, is_complete_win};
