@@ -238,11 +238,14 @@ pub(in crate::ai::decision) fn fan_wait_bias(
         );
         if total_fan >= max_fan {
             let fan_gap = max_fan - visible_fan;
-            return if fan_gap == 1 && remaining >= 3 {
-                14.0
-            } else {
-                0.0
-            };
+            let wait_fan_gain = total_fan - visible_fan;
+            if fan_gap == 1 && remaining >= 3 {
+                return 14.0;
+            }
+            if fan_gap == 2 && wait_fan_gain >= 2 && remaining >= 2 {
+                return 10.0;
+            }
+            return 0.0;
         }
     }
 

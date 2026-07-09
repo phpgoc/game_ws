@@ -440,7 +440,7 @@ fn fan_wait_bias_counts_single_yaojiu_terminal_wait_extra_for_cap() {
             2,
             &[],
         ),
-        0.0
+        10.0
     );
     assert_eq!(
         fan_wait_bias(
@@ -453,7 +453,7 @@ fn fan_wait_bias_counts_single_yaojiu_terminal_wait_extra_for_cap() {
             3,
             &[],
         ),
-        0.0
+        10.0
     );
 
     table.max_fan = Some(6);
