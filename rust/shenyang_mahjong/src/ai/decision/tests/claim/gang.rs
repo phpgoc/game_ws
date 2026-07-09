@@ -431,6 +431,33 @@ fn claim_gang_penges_to_preserve_four_gui_yi_when_peng_stays_ready() {
 }
 
 #[test]
+fn capped_claim_gang_does_not_peng_to_preserve_redundant_four_gui_yi() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.dealer_position = 0;
+    table.max_fan = Some(2);
+    table.seats.get_mut(&0).unwrap().melds = vec![test_chi_meld(11)];
+    table.claim_window = Some(AiClaimView {
+        tile: 4,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![2, 2, 2, 4, 4, 4, 5, 21, 21, 21];
+
+    assert!(!ready_visible_fan_reaches_cap(
+        &hand,
+        table.seats.get(&0).unwrap().melds.as_slice(),
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Gang)
+    );
+}
+
+#[test]
 fn claim_gang_takes_late_ready_dragon_gang_when_it_keeps_ready() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 36;

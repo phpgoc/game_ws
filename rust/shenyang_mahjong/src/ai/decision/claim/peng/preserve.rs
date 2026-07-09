@@ -27,6 +27,18 @@ pub(in crate::ai::decision) fn should_peng_to_preserve_four_gui_yi_from_discard(
     if gang_ready_score <= 0.0 {
         return false;
     }
+    if let Some(max_fan) = table.max_fan.filter(|max_fan| *max_fan > 0)
+        && ready_hand_visible_fan_reaches_cap(
+            &gang_hand,
+            &gang_melds,
+            table,
+            position,
+            win_rule,
+            max_fan,
+        )
+    {
+        return false;
+    }
     let gang_visible_fan = estimated_visible_bonus_fan(&gang_hand, &gang_melds);
     let gang_four_gui_yi = estimated_four_gui_yi_fan(&gang_hand, &gang_melds);
 
