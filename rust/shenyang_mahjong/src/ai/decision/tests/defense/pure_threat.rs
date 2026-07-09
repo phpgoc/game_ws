@@ -34,6 +34,30 @@ fn pure_one_suit_threat_penalizes_live_main_suit_tile() {
 }
 
 #[test]
+fn pure_one_suit_threat_ignores_tile_fully_accounted_by_exposed_and_own_tiles() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 32;
+    table.seats.get_mut(&1).unwrap().melds = vec![test_chi_meld(11), test_peng_meld(14)];
+    table.seats.insert(
+        2,
+        AiSeatView {
+            position: 2,
+            hand_count: 10,
+            discards: Vec::new(),
+            melds: vec![test_peng_meld(18)],
+        },
+    );
+
+    assert_eq!(
+        pure_one_suit_threat_suit(table.seats.get(&1).unwrap()),
+        Some((1, 2))
+    );
+    assert!(pure_one_suit_threat_tile_fully_accounted(&table, 18, 1));
+    assert_eq!(pure_one_suit_threat_discard_bias(&table, 0, 18, 1), 0.0);
+    assert!(pure_one_suit_threat_discard_bias(&table, 0, 19, 1) < 0.0);
+}
+
+#[test]
 fn pure_one_suit_threat_uses_opponent_discards_as_route_evidence() {
     let mut base_table = table_with_discards(1, Vec::new());
     base_table.wall_count = 32;

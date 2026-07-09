@@ -9,6 +9,9 @@ pub(in crate::ai::decision) fn pure_one_suit_threat_discard_bias(
     if table.wall_count > 52 || !is_suited(tile) || public_discard_count(table, tile) > 0 {
         return 0.0;
     }
+    if pure_one_suit_threat_tile_fully_accounted(table, tile, own_tile_count) {
+        return 0.0;
+    }
     let suit = tile_suit(tile);
     table
         .seats
@@ -89,6 +92,14 @@ pub(in crate::ai::decision) fn pure_one_suit_threat_meld_pressure(open_melds: us
     } else {
         (open_melds as f64 - 1.0).min(2.0)
     }
+}
+
+pub(in crate::ai::decision) fn pure_one_suit_threat_tile_fully_accounted(
+    table: &AiPublicTable,
+    tile: i32,
+    own_tile_count: usize,
+) -> bool {
+    exposed_meld_tile_count(table, tile) + public_discard_count(table, tile) + own_tile_count >= 4
 }
 
 pub(in crate::ai::decision) fn pure_one_suit_threat_suit(
