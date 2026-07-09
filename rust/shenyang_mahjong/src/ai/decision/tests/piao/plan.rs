@@ -74,6 +74,24 @@ fn one_fan_capped_room_disables_piao_plan_biases() {
 }
 
 #[test]
+fn capped_open_basic_route_disables_redundant_piao_plan() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.max_fan = Some(2);
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(35)];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![1, 1, 2, 3, 11, 11, 12, 13, 21, 21];
+
+    assert!(has_open_meld(melds));
+    assert_eq!(estimated_visible_bonus_fan(&hand, melds), 1);
+    assert!(piao_plan_score(&hand, melds) >= 20.0);
+    assert_eq!(piao_plan_score_for_context(&hand, melds, &table, 0), 0.0);
+    assert_eq!(
+        piao_discard_bias(&hand, 1, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        0.0
+    );
+}
+
+#[test]
 fn piao_plan_counts_open_triplet_with_two_pairs_as_route() {
     let hand = vec![11, 11, 12, 13, 14, 21, 21, 23, 24, 31];
     let melds = vec![test_peng_meld(1)];

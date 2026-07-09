@@ -47,7 +47,11 @@ pub(in crate::ai::decision) fn piao_plan_score_for_context(
     position: usize,
 ) -> f64 {
     let score = piao_plan_score(hand, melds);
-    if score <= 0.0 || piao_plan_is_capped(table) || !has_piao_route_basics(hand, melds) {
+    if score <= 0.0
+        || piao_plan_is_capped(table)
+        || !has_piao_route_basics(hand, melds)
+        || capped_open_basic_route_makes_piao_redundant(hand, melds, table)
+    {
         return 0.0;
     }
     if table.dealer_position == position && score < 40.0 {
@@ -59,6 +63,19 @@ pub(in crate::ai::decision) fn piao_plan_score_for_context(
 
 pub(in crate::ai::decision) fn piao_plan_is_capped(table: &AiPublicTable) -> bool {
     table.max_fan.is_some_and(|max_fan| max_fan <= 1)
+}
+
+fn capped_open_basic_route_makes_piao_redundant(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+) -> bool {
+    let Some(max_fan) = table.max_fan.filter(|max_fan| *max_fan > 1) else {
+        return false;
+    };
+    has_open_meld(melds)
+        && has_triplet_or_dragon_pair(hand, melds)
+        && 1 + estimated_visible_bonus_fan(hand, melds) >= max_fan
 }
 
 pub(in crate::ai::decision) fn has_piao_route_basics(
