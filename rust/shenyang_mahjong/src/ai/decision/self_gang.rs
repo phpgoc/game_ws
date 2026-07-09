@@ -87,7 +87,7 @@ pub(super) fn self_gang_score(
     if !is_ready && table.max_fan.is_some_and(|max_fan| max_fan <= 1) {
         return f64::NEG_INFINITY;
     }
-    if !is_added_gang && !is_ready && !is_dragon(tile) {
+    if !is_ready && !is_dragon(tile) {
         return f64::NEG_INFINITY;
     }
     if !is_added_gang && !is_ready && is_dragon(tile) && has_open_meld(melds) && piao_score >= 22.0
