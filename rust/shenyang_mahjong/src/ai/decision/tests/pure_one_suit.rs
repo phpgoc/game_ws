@@ -31,6 +31,25 @@ fn capped_discard_does_not_chase_pure_one_suit_when_three_suits_remain() {
 }
 
 #[test]
+fn capped_open_basic_route_disables_redundant_pure_one_suit_plan() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.max_fan = Some(2);
+    let melds = vec![test_gang_meld(1)];
+    let hand = vec![2, 3, 3, 4, 4, 5, 6, 7, 8, 9, 11, 21];
+
+    assert!(has_open_meld(&melds));
+    assert!(missing_suits(&hand, &melds).is_empty());
+    assert!(has_terminal_or_honor_with_extra(&hand, &melds, None));
+    assert!(has_triplet_or_dragon_pair(&hand, &melds));
+    assert_eq!(estimated_visible_bonus_fan(&hand, &melds), 1);
+    assert!(pure_one_suit_plan_score(&hand, &melds) > 0.0);
+    assert_eq!(
+        pure_one_suit_plan_score_for_context(&hand, &melds, &table, 0),
+        0.0
+    );
+}
+
+#[test]
 fn capped_pure_one_suit_route_can_discard_last_honor_when_suits_are_missing() {
     let mut table = table_with_discards(1, Vec::new());
     table.max_fan = Some(1);

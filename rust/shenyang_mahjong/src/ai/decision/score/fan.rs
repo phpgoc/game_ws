@@ -60,6 +60,21 @@ pub(in crate::ai::decision) fn estimated_visible_bonus_fan(
         + estimated_four_gui_yi_fan(hand, melds)
 }
 
+pub(in crate::ai::decision) fn capped_open_basic_route_visible_fan_reaches_cap(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+) -> bool {
+    let Some(max_fan) = table.max_fan.filter(|max_fan| *max_fan > 0) else {
+        return false;
+    };
+    has_open_meld(melds)
+        && missing_suits(hand, melds).is_empty()
+        && has_terminal_or_honor_with_extra(hand, melds, None)
+        && has_triplet_or_dragon_pair(hand, melds)
+        && 1 + estimated_visible_bonus_fan(hand, melds) >= max_fan
+}
+
 pub(in crate::ai::decision) fn four_gui_yi_discard_bias(
     hand: &[i32],
     tile: i32,

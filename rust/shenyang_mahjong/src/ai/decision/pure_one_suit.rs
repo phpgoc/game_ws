@@ -77,17 +77,17 @@ pub(super) fn pure_one_suit_plan_score_for_context(
     position: usize,
 ) -> f64 {
     let score = pure_one_suit_plan_score(hand, melds);
-    if score <= 0.0 || table.dealer_position != position {
-        if score > 0.0
-            && table.max_fan.is_some_and(|max_fan| max_fan <= 1)
-            && missing_suits(hand, melds).is_empty()
-        {
-            return 0.0;
-        }
-        return score;
+    if score <= 0.0 {
+        return 0.0;
     }
     if table.max_fan.is_some_and(|max_fan| max_fan <= 1) && missing_suits(hand, melds).is_empty() {
         return 0.0;
+    }
+    if capped_open_basic_route_visible_fan_reaches_cap(hand, melds, table) {
+        return 0.0;
+    }
+    if table.dealer_position != position {
+        return score;
     }
     pure_one_suit_shape(hand, melds)
         .filter(|(_, main_count, blockers)| *main_count >= 11 && *blockers <= 2)
