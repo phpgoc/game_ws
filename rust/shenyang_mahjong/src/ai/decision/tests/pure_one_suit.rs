@@ -58,6 +58,54 @@ fn capped_open_basic_route_disables_redundant_pure_one_suit_plan() {
 }
 
 #[test]
+fn capped_basic_foundation_disables_redundant_closed_pure_one_suit_plan() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.max_fan = Some(2);
+    let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 11, 21, 35, 35, 35];
+
+    assert!(has_basic_normal_route_foundation(
+        &hand,
+        &[],
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert_eq!(estimated_visible_bonus_fan(&hand, &[]), 1);
+    assert!(capped_basic_route_foundation_visible_fan_reaches_cap(
+        &hand,
+        &[],
+        &table,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert!(pure_one_suit_plan_score(&hand, &[]) > 0.0);
+    assert_eq!(
+        pure_one_suit_plan_score_for_context(&hand, &[], &table, 0),
+        0.0
+    );
+}
+
+#[test]
+fn capped_basic_foundation_preserves_three_suits_over_pure_one_suit_chase() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.max_fan = Some(2);
+    let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 11, 21, 31, 35, 35, 35];
+    let after_discard = remove_n_tiles(&hand, 11, 1);
+
+    assert!(capped_basic_route_foundation_visible_fan_reaches_cap(
+        &hand,
+        &[],
+        &table,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert!(
+        three_suits_discard_bias(&after_discard, &[], &table, 0, 11, WIN_RULE_SHENYANG_BASIC)
+            <= -80.0
+    );
+    assert!(!matches!(
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(11 | 21)
+    ));
+}
+
+#[test]
 fn capped_pure_one_suit_route_can_discard_last_honor_when_suits_are_missing() {
     let mut table = table_with_discards(1, Vec::new());
     table.max_fan = Some(1);

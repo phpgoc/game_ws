@@ -23,17 +23,6 @@ pub(in crate::ai::decision) fn should_chase_basic_missing_suit_pairs(
         && !missing_suits(hand, melds).is_empty()
 }
 
-pub(in crate::ai::decision) fn has_basic_normal_route_foundation(
-    hand: &[i32],
-    melds: &[WsShenyangMahjongMeld],
-    win_rule: i32,
-) -> bool {
-    win_rule == WIN_RULE_SHENYANG_BASIC
-        && missing_suits(hand, melds).is_empty()
-        && has_terminal_or_honor_with_extra(hand, melds, None)
-        && has_triplet_or_dragon_pair(hand, melds)
-}
-
 pub(in crate::ai::decision) fn should_lock_seven_pairs_plan(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -57,7 +46,7 @@ pub(in crate::ai::decision) fn should_lock_seven_pairs_plan(
     if pairs < 5 {
         return false;
     }
-    if capped_basic_route_foundation_reaches_cap(hand, melds, table, win_rule) {
+    if capped_basic_route_foundation_visible_fan_reaches_cap(hand, melds, table, win_rule) {
         return false;
     }
     if table.dealer_position == position && has_basic_normal_route_foundation(hand, melds, win_rule)
@@ -84,7 +73,9 @@ pub(in crate::ai::decision) fn seven_pairs_plan_score(
     {
         return 0.0;
     }
-    if pairs < 6 && capped_basic_route_foundation_reaches_cap(hand, melds, table, win_rule) {
+    if pairs < 6
+        && capped_basic_route_foundation_visible_fan_reaches_cap(hand, melds, table, win_rule)
+    {
         return 0.0;
     }
     if win_rule == WIN_RULE_SHENYANG_BASIC && pairs < 6 && missing_suits(hand, melds).is_empty() {
@@ -106,17 +97,4 @@ pub(in crate::ai::decision) fn should_preserve_seven_pairs_plan_for_context(
     win_rule: i32,
 ) -> bool {
     hand.len() == 13 && should_lock_seven_pairs_plan(hand, melds, table, position, win_rule)
-}
-
-fn capped_basic_route_foundation_reaches_cap(
-    hand: &[i32],
-    melds: &[WsShenyangMahjongMeld],
-    table: &AiPublicTable,
-    win_rule: i32,
-) -> bool {
-    let Some(max_fan) = table.max_fan.filter(|max_fan| *max_fan > 0) else {
-        return false;
-    };
-    has_basic_normal_route_foundation(hand, melds, win_rule)
-        && 1 + estimated_visible_bonus_fan(hand, melds) >= max_fan
 }

@@ -75,6 +75,30 @@ pub(in crate::ai::decision) fn capped_open_basic_route_visible_fan_reaches_cap(
         && 1 + estimated_visible_bonus_fan(hand, melds) >= max_fan
 }
 
+pub(in crate::ai::decision) fn has_basic_normal_route_foundation(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    win_rule: i32,
+) -> bool {
+    win_rule == WIN_RULE_SHENYANG_BASIC
+        && missing_suits(hand, melds).is_empty()
+        && has_terminal_or_honor_with_extra(hand, melds, None)
+        && has_triplet_or_dragon_pair(hand, melds)
+}
+
+pub(in crate::ai::decision) fn capped_basic_route_foundation_visible_fan_reaches_cap(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    win_rule: i32,
+) -> bool {
+    let Some(max_fan) = table.max_fan.filter(|max_fan| *max_fan > 0) else {
+        return false;
+    };
+    has_basic_normal_route_foundation(hand, melds, win_rule)
+        && 1 + estimated_visible_bonus_fan(hand, melds) >= max_fan
+}
+
 pub(in crate::ai::decision) fn four_gui_yi_discard_bias(
     hand: &[i32],
     tile: i32,
