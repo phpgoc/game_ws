@@ -190,6 +190,30 @@ fn capped_discard_clears_spare_single_dragon_when_basic_route_is_ready() {
 }
 
 #[test]
+fn capped_open_basic_route_discards_redundant_single_dragon() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.max_fan = Some(2);
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(35)];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![1, 2, 3, 5, 11, 12, 13, 21, 22, 23, 36];
+    let after_dragon = remove_n_tiles(&hand, 36, 1);
+
+    assert!(capped_open_basic_route_visible_fan_reaches_cap(
+        &after_dragon,
+        melds,
+        &table
+    ));
+    assert!(
+        capped_spare_dragon_discard_bias(&hand, 36, melds, &table)
+            > capped_spare_dragon_discard_bias(&hand, 5, melds, &table)
+    );
+    assert_eq!(
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(36)
+    );
+}
+
+#[test]
 fn discard_preserves_last_honor_for_basic_rule() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![2, 3, 4, 5, 6, 7, 12, 13, 14, 22, 23, 24, 31, 5];
