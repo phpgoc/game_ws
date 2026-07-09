@@ -17,6 +17,7 @@ decision/
   score/              # progress, readiness, fan, and pressure scoring
   seven_pairs/        # seven-pairs planning, waits, and discard choices
   shenyang_rule/      # Shenyang-basic progress and requirement guards
+  table/              # public table reads, visibility, remaining tiles, and turn order
   tests/              # tests mirroring the production decision layout
 ```
 
@@ -33,8 +34,8 @@ decision/
   tile removal helpers.
 - `meld.rs`: meld validation, meld construction, and meld shape helpers.
 - `score/`: readiness, visible fan, pressure, and progress scoring.
-- `table.rs`: public table reads, visible counts, remaining tiles, and
-  simulated discard visibility.
+- `table/`: public table reads, visible counts, remaining tile projections,
+  turn-order helpers, and simulated discard visibility.
 - `tile.rs`: tile-kind predicates and tile identity helpers.
 - `types.rs`: small decision types shared by callers.
 
