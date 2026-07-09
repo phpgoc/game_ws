@@ -3,6 +3,23 @@
 This directory is split by decision responsibility. Keep `mod.rs` as a thin
 entry point and put new rule or heuristic code in the smallest matching module.
 
+## Directory tree
+
+```text
+decision/
+  mod.rs              # module wiring and public exports only
+  claim/              # Hu/Gang/Peng/Chi/Pass choices while reacting to a discard
+    peng/             # Peng-specific offensive, defensive, and route-preserving heuristics
+  defense/            # public danger reads and defensive discard/opening logic
+  discard/            # own-turn discard orchestration and discard scoring adjustments
+  hand/               # closed-hand shape, suit, pair, sequence, and requirement helpers
+  piao/               # piao-hu planning, waits, and discard choices
+  score/              # progress, readiness, fan, and pressure scoring
+  seven_pairs/        # seven-pairs planning, waits, and discard choices
+  shenyang_rule/      # Shenyang-basic progress and requirement guards
+  tests/              # tests mirroring the production decision layout
+```
+
 ## Entry points
 
 - `mod.rs`: module wiring and public exports only.
@@ -40,3 +57,6 @@ entry point and put new rule or heuristic code in the smallest matching module.
 
 Prefer adding a new focused module when a file starts mixing unrelated
 heuristics. Avoid putting new business logic directly into `mod.rs`.
+As a rough limit, production decision files should stay comfortably below a few
+hundred lines; split by rule, route, or table-read responsibility before a file
+starts collecting unrelated heuristics.
