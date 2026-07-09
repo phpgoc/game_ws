@@ -12,6 +12,9 @@ pub(in crate::ai::decision) fn should_claim_gang_from_discard(
     if ready_visible_fan_reaches_cap(hand, current_melds, table, position, win_rule) {
         return false;
     }
+    if capped_open_basic_route_visible_fan_reaches_cap(hand, current_melds, table) {
+        return false;
+    }
     let current_ready_score = ready_tile_score(hand, current_melds, table, position, win_rule);
     let reaches_ready = claim_gang_from_discard_reaches_ready(
         hand,

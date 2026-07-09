@@ -452,6 +452,42 @@ fn claim_gang_takes_open_plain_gang_when_it_reaches_ready() {
 }
 
 #[test]
+fn capped_open_basic_route_delays_plain_gang_before_ready() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.max_fan = Some(2);
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(35)];
+    table.claim_window = Some(AiClaimView {
+        tile: 9,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![1, 4, 7, 9, 9, 9, 11, 14, 17, 21];
+
+    assert!(capped_open_basic_route_visible_fan_reaches_cap(
+        &hand, melds, &table
+    ));
+    assert_eq!(
+        ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        0.0
+    );
+    assert!(!should_claim_gang_from_discard(
+        &hand,
+        melds,
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+        9,
+        1
+    ));
+    assert_ne!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Gang)
+    );
+}
+
+#[test]
 fn claim_gang_penges_to_preserve_four_gui_yi_when_peng_stays_ready() {
     let mut table = table_with_discards(1, Vec::new());
     table.dealer_position = 0;
