@@ -122,6 +122,32 @@ fn one_fan_capped_room_does_not_lock_five_pairs_when_basic_route_is_viable() {
 }
 
 #[test]
+fn two_fan_capped_room_does_not_lock_five_pairs_when_basic_bonus_caps() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.max_fan = Some(2);
+    let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 22, 35, 35, 35];
+
+    assert_eq!(pair_count(&hand), 5);
+    assert!(has_basic_normal_route_foundation(
+        &hand,
+        &[],
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert_eq!(estimated_visible_bonus_fan(&hand, &[]), 1);
+    assert!(!should_lock_seven_pairs_plan(
+        &hand,
+        &[],
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert_eq!(
+        seven_pairs_plan_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        0.0
+    );
+}
+
+#[test]
 fn dealer_does_not_lock_five_pairs_when_basic_route_is_viable() {
     let mut table = table_with_discards(1, Vec::new());
     table.dealer_position = 0;
