@@ -91,6 +91,7 @@ fn opponent_four_piao_threat_penalizes_missing_suit_wait_tile() {
         opponent_threat_discard_bias(&table, 0, 25, 1)
             < opponent_threat_discard_bias(&table, 0, 15, 1)
     );
+    assert_eq!(opponent_threat_discard_bias(&table, 0, 15, 1), 0.0);
 }
 
 #[test]

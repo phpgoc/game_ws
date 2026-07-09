@@ -55,21 +55,18 @@ pub(in crate::ai::decision) fn opponent_threat_discard_bias(
                 .min(48.0);
             let final_pair_wait_matches =
                 piao_final_pair_wait_satisfies_exposed_requirements(&seat.melds, tile);
-            let terminal_or_honor_need_penalty = if final_pair_wait_matches {
-                piao_terminal_or_honor_need_penalty(&seat.melds, tile)
-            } else {
-                0.0
-            };
-            let missing_suit_wait_penalty = if final_pair_wait_matches
-                && piao_final_pair_missing_suit_wait_matches(&seat.melds, tile)
-            {
-                if own_tile_count >= 2 { 14.0 } else { 11.0 }
-            } else {
-                0.0
-            };
-            let single_wait_penalty = if !final_pair_wait_matches {
-                0.0
-            } else if is_dragon(tile) {
+            if !final_pair_wait_matches {
+                continue;
+            }
+            let terminal_or_honor_need_penalty =
+                piao_terminal_or_honor_need_penalty(&seat.melds, tile);
+            let missing_suit_wait_penalty =
+                if piao_final_pair_missing_suit_wait_matches(&seat.melds, tile) {
+                    if own_tile_count >= 2 { 14.0 } else { 11.0 }
+                } else {
+                    0.0
+                };
+            let single_wait_penalty = if is_dragon(tile) {
                 86.0
             } else if is_honor(tile) || tile_is_terminal(tile) {
                 80.0
