@@ -50,7 +50,7 @@ pub fn choose_discard_from_view(
     let preserve_early_piao_pairs = has_early_piao_singleton_discard(hand, melds, table, position);
     let mut best_allowed: Option<(f64, i32)> = None;
     let mut best_any: Option<(f64, i32)> = None;
-    for tile in hand.iter().copied() {
+    for tile in unique_tiles(hand) {
         let count = hand.iter().filter(|&&item| item == tile).count();
         if preserve_early_piao_pairs && count >= 2 {
             continue;

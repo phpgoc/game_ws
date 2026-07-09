@@ -38,6 +38,22 @@ fn hand_power_ignores_invalid_tiles() {
 }
 
 #[test]
+fn unique_tiles_ignores_invalid_tiles() {
+    assert_eq!(unique_tiles(&[99, 1, 1, 37, 0]), vec![1, 37]);
+}
+
+#[test]
+fn discard_candidates_ignore_invalid_tiles() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 16;
+    let hand = vec![1, 1, 4, 7, 9, 12, 14, 14, 17, 21, 23, 25, 31, 99];
+
+    let choice = choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED);
+
+    assert!(choice.is_some_and(is_valid_tile));
+}
+
+#[test]
 fn capped_non_dealer_prefers_wider_wait_over_single_wait_fan() {
     let mut table = table_with_discards(1, Vec::new());
     table.max_fan = Some(1);

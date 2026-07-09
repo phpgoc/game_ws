@@ -33,7 +33,11 @@ pub(super) fn tile_suit(tile: i32) -> i32 {
 }
 
 pub(super) fn unique_tiles(hand: &[i32]) -> Vec<i32> {
-    let mut tiles = hand.to_vec();
+    let mut tiles = hand
+        .iter()
+        .copied()
+        .filter(|tile| is_valid_tile(*tile))
+        .collect::<Vec<_>>();
     tiles.sort_unstable();
     tiles.dedup();
     tiles
