@@ -685,8 +685,13 @@ fn is_shou_ba_yi(
     pattern: ShenyangMahjongWinPattern,
     hand_tiles: &[i32],
     melds: &[WsShenyangMahjongMeld],
+    win_tile: Option<i32>,
+    win_rule: i32,
 ) -> bool {
-    pattern == ShenyangMahjongWinPattern::PiaoHu && melds.len() == 4 && hand_tiles.len() == 2
+    pattern == ShenyangMahjongWinPattern::PiaoHu
+        && melds.len() == 4
+        && hand_tiles.len() == 2
+        && is_single_wait_win(hand_tiles, melds, win_tile, win_rule)
 }
 
 fn is_single_wait_win(
@@ -1646,7 +1651,7 @@ fn winner_hand_fan_with_rule(
     if is_single_yaojiu_wait_win(&hand_tiles, melds, settlement.win_tile, win_rule) {
         fan += 1;
     }
-    if is_shou_ba_yi(pattern, &hand_tiles, melds) {
+    if is_shou_ba_yi(pattern, &hand_tiles, melds, settlement.win_tile, win_rule) {
         fan += 1;
     }
     fan + four_gui_yi_fan(&hand_tiles, melds)
@@ -5499,7 +5504,7 @@ mod tests {
         state.enter_settlement(vec![1], None, None, true);
         let settlement = state.settlement.as_ref().expect("settlement");
 
-        assert_eq!(winner_hand_fan(&state, settlement, 1), 5);
+        assert_eq!(winner_hand_fan(&state, settlement, 1), 4);
     }
 
     #[test]
@@ -5518,7 +5523,7 @@ mod tests {
         state.enter_settlement(vec![1], None, None, true);
         let settlement = state.settlement.as_ref().expect("settlement");
 
-        assert_eq!(winner_hand_fan(&state, settlement, 1), 6);
+        assert_eq!(winner_hand_fan(&state, settlement, 1), 5);
     }
 
     #[test]
@@ -5579,6 +5584,25 @@ mod tests {
         let settlement = state.settlement.as_ref().expect("settlement");
 
         assert_eq!(winner_hand_fan(&state, settlement, 1), 6);
+    }
+
+    #[test]
+    fn settlement_fan_requires_win_tile_for_shou_ba_yi() {
+        let mut state = playable_state();
+        state.hands.insert(1, vec![35, 35]);
+        state.melds.insert(
+            1,
+            vec![
+                build_meld(ShenyangMahjongMeldKind::PENG, vec![1, 1, 1], Some(0)),
+                build_meld(ShenyangMahjongMeldKind::PENG, vec![11, 11, 11], Some(2)),
+                build_meld(ShenyangMahjongMeldKind::PENG, vec![21, 21, 21], Some(3)),
+                build_meld(ShenyangMahjongMeldKind::PENG, vec![31, 31, 31], Some(0)),
+            ],
+        );
+        state.enter_settlement(vec![1], None, None, true);
+        let settlement = state.settlement.as_ref().expect("settlement");
+
+        assert_eq!(winner_hand_fan(&state, settlement, 1), 3);
     }
 
     #[test]
