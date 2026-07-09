@@ -108,7 +108,15 @@ fn piao_single_wait_tile_score_with_simulated_discards(
     let mut win_hand = hand_after_discard.to_vec();
     win_hand.push(wait_tile);
     win_hand.sort_unstable();
-    let estimated_fan = estimated_fan_with_wait(&win_hand, melds, wait_tile, win_rule);
+    let known_unavailable_tiles =
+        known_unavailable_tiles_with_simulated_discards(table, position, melds, simulated_discards);
+    let estimated_fan = estimated_fan_with_known_unavailable_wait(
+        &win_hand,
+        melds,
+        wait_tile,
+        win_rule,
+        &known_unavailable_tiles,
+    );
     let capped_fan = table
         .max_fan
         .filter(|max_fan| *max_fan > 0)

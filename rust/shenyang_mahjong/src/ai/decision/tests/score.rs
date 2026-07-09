@@ -232,7 +232,16 @@ fn fan_wait_bias_counts_piao_shou_ba_yi_for_cap() {
         6
     );
     assert_eq!(
-        fan_wait_bias(&win_hand, &melds, &table, 0, WIN_RULE_SHENYANG_BASIC, 35, 2),
+        fan_wait_bias(
+            &win_hand,
+            &melds,
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+            35,
+            2,
+            &[],
+        ),
         0.0
     );
 }
@@ -292,6 +301,39 @@ fn estimated_fan_counts_single_yaojiu_terminal_wait_extra() {
 }
 
 #[test]
+fn estimated_fan_counts_single_yaojiu_when_public_discards_exhaust_other_wait() {
+    let table = table_with_discards(1, vec![4, 4, 4, 4]);
+    let hand_after_discard = vec![2, 3, 21, 22, 23, 25, 25, 31, 31, 31];
+    let win_hand = vec![1, 2, 3, 21, 22, 23, 25, 25, 31, 31, 31];
+    let melds = vec![test_chi_meld(11)];
+    let known_unavailable = known_unavailable_tiles_with_simulated_discards(&table, 0, &melds, &[]);
+
+    assert_eq!(
+        estimated_fan_with_wait(&win_hand, &melds, 1, WIN_RULE_SHENYANG_BASIC),
+        1
+    );
+    assert_eq!(
+        estimated_fan_with_known_unavailable_wait(
+            &win_hand,
+            &melds,
+            1,
+            WIN_RULE_SHENYANG_BASIC,
+            &known_unavailable,
+        ),
+        3
+    );
+    assert!(
+        ready_tile_score(
+            &hand_after_discard,
+            &melds,
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+        ) > 100.0
+    );
+}
+
+#[test]
 fn estimated_fan_counts_single_yaojiu_honor_wait_extra() {
     let win_hand = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35];
 
@@ -321,9 +363,18 @@ fn fan_wait_bias_uses_win_rule_for_closed_basic_hand() {
     let table = table_with_discards(1, Vec::new());
     let win_hand = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35];
 
-    assert!(fan_wait_bias(&win_hand, &[], &table, 0, WIN_RULE_RELAXED, 35, 2) > 0.0);
+    assert!(fan_wait_bias(&win_hand, &[], &table, 0, WIN_RULE_RELAXED, 35, 2, &[]) > 0.0);
     assert_eq!(
-        fan_wait_bias(&win_hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC, 35, 2),
+        fan_wait_bias(
+            &win_hand,
+            &[],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+            35,
+            2,
+            &[],
+        ),
         0.0
     );
 }
@@ -334,11 +385,31 @@ fn fan_wait_bias_counts_middle_tile_seven_pairs_single_wait() {
     table.max_fan = Some(5);
     let win_hand = vec![1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 11, 11, 21, 21];
 
-    assert!(fan_wait_bias(&win_hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC, 5, 3) > 0.0);
+    assert!(
+        fan_wait_bias(
+            &win_hand,
+            &[],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+            5,
+            3,
+            &[]
+        ) > 0.0
+    );
 
     table.dealer_position = 0;
     assert_eq!(
-        fan_wait_bias(&win_hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC, 5, 3),
+        fan_wait_bias(
+            &win_hand,
+            &[],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+            5,
+            3,
+            &[],
+        ),
         0.0
     );
 }
@@ -359,17 +430,44 @@ fn fan_wait_bias_counts_single_yaojiu_terminal_wait_extra_for_cap() {
         7
     );
     assert_eq!(
-        fan_wait_bias(&win_hand, &melds, &table, 0, WIN_RULE_SHENYANG_BASIC, 11, 2),
+        fan_wait_bias(
+            &win_hand,
+            &melds,
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+            11,
+            2,
+            &[],
+        ),
         0.0
     );
     assert_eq!(
-        fan_wait_bias(&win_hand, &melds, &table, 0, WIN_RULE_SHENYANG_BASIC, 11, 3),
+        fan_wait_bias(
+            &win_hand,
+            &melds,
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+            11,
+            3,
+            &[],
+        ),
         0.0
     );
 
     table.max_fan = Some(6);
     assert_eq!(
-        fan_wait_bias(&win_hand, &melds, &table, 0, WIN_RULE_SHENYANG_BASIC, 11, 3),
+        fan_wait_bias(
+            &win_hand,
+            &melds,
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+            11,
+            3,
+            &[],
+        ),
         14.0
     );
 }

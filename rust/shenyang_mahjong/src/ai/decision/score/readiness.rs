@@ -53,6 +53,8 @@ fn ready_hand_visible_fan_reaches_cap_with_simulated_discards(
     if hand.len() % 3 != 1 {
         return false;
     }
+    let known_unavailable_tiles =
+        known_unavailable_tiles_with_simulated_discards(table, position, melds, simulated_discards);
     SHENYANG_MAHJONG_TILE_KINDS.into_iter().any(|tile| {
         remaining_tile_count_with_melds_after_discards(
             hand,
@@ -67,7 +69,13 @@ fn ready_hand_visible_fan_reaches_cap_with_simulated_discards(
                 next.push(tile);
                 next.sort_unstable();
                 is_complete_win_with_melds(&next, melds, win_rule)
-                    && estimated_fan_with_wait(&next, melds, tile, win_rule) >= max_fan
+                    && estimated_fan_with_known_unavailable_wait(
+                        &next,
+                        melds,
+                        tile,
+                        win_rule,
+                        &known_unavailable_tiles,
+                    ) >= max_fan
             }
     })
 }
@@ -112,6 +120,8 @@ pub(in crate::ai::decision) fn ready_tile_score_with_simulated_discards(
         return 0.0;
     }
 
+    let known_unavailable_tiles =
+        known_unavailable_tiles_with_simulated_discards(table, position, melds, simulated_discards);
     let mut score = 0.0;
     let mut wait_kinds = 0;
     for tile in SHENYANG_MAHJONG_TILE_KINDS {
@@ -132,7 +142,16 @@ pub(in crate::ai::decision) fn ready_tile_score_with_simulated_discards(
         if is_complete_win_with_melds(&next, melds, win_rule) {
             wait_kinds += 1;
             score += 28.0 + remaining as f64 * 5.0;
-            score += fan_wait_bias(&next, melds, table, position, win_rule, tile, remaining);
+            score += fan_wait_bias(
+                &next,
+                melds,
+                table,
+                position,
+                win_rule,
+                tile,
+                remaining,
+                &known_unavailable_tiles,
+            );
             if melds.is_empty() && is_seven_pairs_wait_shape(hand) && is_seven_pairs_win(&next) {
                 score += seven_pairs_wait_tile_score(tile, hand, table, position);
             }

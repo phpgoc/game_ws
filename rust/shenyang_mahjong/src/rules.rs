@@ -400,38 +400,38 @@ pub fn is_seven_pairs_win(tiles: &[i32]) -> bool {
     })
 }
 
+#[cfg(test)]
 pub fn is_single_wait_shape(tiles: &[i32], melds: &[WsShenyangMahjongMeld], win_tile: i32) -> bool {
-    if melds.iter().any(|meld| !is_valid_meld(meld))
-        || !has_valid_tile_multiplicity(&all_tiles_with_melds(tiles, melds))
-        || !is_complete_win(tiles, melds.len())
-        || !tiles.contains(&win_tile)
-    {
-        return false;
-    }
-    if !is_unique_complete_wait(tiles, melds, win_tile) {
-        return false;
-    }
-    is_seven_pairs_single_wait(tiles, win_tile)
-        || is_pair_single_wait(tiles, win_tile)
-        || is_closed_middle_wait(tiles, win_tile)
-        || is_edge_wait(tiles, win_tile)
-        || is_terminal_tile(win_tile)
-        || is_honor_tile(win_tile)
+    is_single_wait_shape_with_known_unavailable_tiles(tiles, melds, win_tile, WIN_RULE_RELAXED, &[])
 }
 
+#[cfg(test)]
 pub fn is_single_wait_shape_with_rule(
     tiles: &[i32],
     melds: &[WsShenyangMahjongMeld],
     win_tile: i32,
     win_rule: i32,
 ) -> bool {
-    if win_rule != WIN_RULE_SHENYANG_BASIC {
-        return is_single_wait_shape(tiles, melds, win_tile);
-    }
+    is_single_wait_shape_with_known_unavailable_tiles(tiles, melds, win_tile, win_rule, &[])
+}
+
+pub fn is_single_wait_shape_with_known_unavailable_tiles(
+    tiles: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    win_tile: i32,
+    win_rule: i32,
+    known_unavailable_tiles: &[i32],
+) -> bool {
     if !is_complete_win_with_melds(tiles, melds, win_rule) || !tiles.contains(&win_tile) {
         return false;
     }
-    if !is_unique_complete_wait_with_rule(tiles, melds, win_tile, win_rule) {
+    if !is_unique_complete_wait_with_known_unavailable_tiles(
+        tiles,
+        melds,
+        win_tile,
+        win_rule,
+        known_unavailable_tiles,
+    ) {
         return false;
     }
     is_seven_pairs_single_wait(tiles, win_tile)
@@ -507,6 +507,7 @@ fn is_open_meld(meld: &WsShenyangMahjongMeld) -> bool {
     meld.from_position.is_some() && (is_triplet_meld(meld) || is_sequence_meld(meld))
 }
 
+#[cfg(test)]
 fn is_unique_complete_wait(tiles: &[i32], melds: &[WsShenyangMahjongMeld], win_tile: i32) -> bool {
     let Some(index) = tiles.iter().position(|tile| *tile == win_tile) else {
         return false;
@@ -526,20 +527,22 @@ fn is_unique_complete_wait(tiles: &[i32], melds: &[WsShenyangMahjongMeld], win_t
     waits.len() == 1 && waits[0] == win_tile
 }
 
-fn is_unique_complete_wait_with_rule(
+fn is_unique_complete_wait_with_known_unavailable_tiles(
     tiles: &[i32],
     melds: &[WsShenyangMahjongMeld],
     win_tile: i32,
     win_rule: i32,
+    known_unavailable_tiles: &[i32],
 ) -> bool {
     let Some(index) = tiles.iter().position(|tile| *tile == win_tile) else {
         return false;
     };
     let mut base = tiles.to_vec();
     base.remove(index);
+    let known_counts = tile_counts(known_unavailable_tiles);
     let waits = SHENYANG_MAHJONG_TILE_KINDS
         .into_iter()
-        .filter(|tile| base.iter().filter(|item| *item == tile).count() < 4)
+        .filter(|tile| has_available_wait_copy(&base, melds, &known_counts, *tile))
         .filter(|tile| {
             let mut test = base.clone();
             test.push(*tile);
@@ -548,6 +551,23 @@ fn is_unique_complete_wait_with_rule(
         })
         .collect::<Vec<_>>();
     waits.len() == 1 && waits[0] == win_tile
+}
+
+fn has_available_wait_copy(
+    base_tiles: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    known_unavailable_counts: &[u8; 38],
+    tile: i32,
+) -> bool {
+    let base_count = base_tiles.iter().filter(|item| **item == tile).count();
+    let meld_count = melds
+        .iter()
+        .filter(|meld| is_valid_meld(meld))
+        .flat_map(|meld| meld.tiles.iter())
+        .filter(|item| **item == tile)
+        .count();
+    let known_count = known_unavailable_counts[tile as usize] as usize;
+    base_count + meld_count + known_count < 4
 }
 
 fn is_valid_sequence(sequence: &[i32]) -> bool {
@@ -669,8 +689,9 @@ mod tests {
         WIN_RULE_RELAXED, WIN_RULE_SHENYANG_BASIC, can_chi, can_concealed_gang, can_gang, can_peng,
         has_triplet_in_standard_decomposition, is_complete_win, is_complete_win_with_melds,
         is_piao_hu_win, is_pure_one_suit_win, is_seven_pairs_win, is_single_wait_shape,
-        is_single_wait_shape_with_rule, is_standard_win, is_unique_complete_wait, is_win,
-        satisfies_shenyang_basic_win, win_rule_from_configs,
+        is_single_wait_shape_with_known_unavailable_tiles, is_single_wait_shape_with_rule,
+        is_standard_win, is_unique_complete_wait, is_win, satisfies_shenyang_basic_win,
+        win_rule_from_configs,
     };
 
     #[test]
@@ -1289,6 +1310,26 @@ mod tests {
         assert!(is_complete_win_with_melds(&tiles, &melds, WIN_RULE_RELAXED));
         assert!(is_unique_complete_wait(&tiles, &melds, 1));
         assert!(is_single_wait_shape(&tiles, &melds, 1));
+    }
+
+    #[test]
+    fn single_wait_shape_ignores_waits_blocked_by_known_unavailable_tiles() {
+        let tiles = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 25, 25, 31, 31, 31];
+
+        assert!(is_standard_win(&tiles));
+        assert!(!is_single_wait_shape_with_rule(
+            &tiles,
+            &[],
+            1,
+            WIN_RULE_RELAXED
+        ));
+        assert!(is_single_wait_shape_with_known_unavailable_tiles(
+            &tiles,
+            &[],
+            1,
+            WIN_RULE_RELAXED,
+            &[4, 4, 4, 4]
+        ));
     }
 
     #[test]

@@ -110,13 +110,30 @@ pub(in crate::ai::decision) fn estimated_visible_fan_without_wait(
     base + estimated_visible_bonus_fan(win_hand, melds)
 }
 
+#[cfg(test)]
 pub(in crate::ai::decision) fn estimated_fan_with_wait(
     win_hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
     win_tile: i32,
     win_rule: i32,
 ) -> i32 {
-    let is_single_wait = is_single_wait_shape_with_rule(win_hand, melds, win_tile, win_rule);
+    estimated_fan_with_known_unavailable_wait(win_hand, melds, win_tile, win_rule, &[])
+}
+
+pub(in crate::ai::decision) fn estimated_fan_with_known_unavailable_wait(
+    win_hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    win_tile: i32,
+    win_rule: i32,
+    known_unavailable_tiles: &[i32],
+) -> i32 {
+    let is_single_wait = is_single_wait_shape_with_known_unavailable_tiles(
+        win_hand,
+        melds,
+        win_tile,
+        win_rule,
+        known_unavailable_tiles,
+    );
     let wait_fan = if is_single_wait {
         single_wait_fan(win_tile)
     } else {
@@ -170,10 +187,17 @@ pub(in crate::ai::decision) fn fan_wait_bias(
     win_rule: i32,
     win_tile: i32,
     remaining: i32,
+    known_unavailable_tiles: &[i32],
 ) -> f64 {
     if table.dealer_position == position
         || is_late_defense_round(table)
-        || !is_single_wait_shape_with_rule(win_hand, melds, win_tile, win_rule)
+        || !is_single_wait_shape_with_known_unavailable_tiles(
+            win_hand,
+            melds,
+            win_tile,
+            win_rule,
+            known_unavailable_tiles,
+        )
     {
         return 0.0;
     }
@@ -185,7 +209,13 @@ pub(in crate::ai::decision) fn fan_wait_bias(
         if visible_fan >= max_fan {
             return 0.0;
         }
-        let total_fan = estimated_fan_with_wait(win_hand, melds, win_tile, win_rule);
+        let total_fan = estimated_fan_with_known_unavailable_wait(
+            win_hand,
+            melds,
+            win_tile,
+            win_rule,
+            known_unavailable_tiles,
+        );
         if total_fan >= max_fan {
             let fan_gap = max_fan - visible_fan;
             return if fan_gap == 1 && remaining >= 3 {

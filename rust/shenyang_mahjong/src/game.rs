@@ -24,10 +24,12 @@ use crate::game_state::{
     ClaimResponse, ClaimWindowKind, ClaimWindowState, ShenyangMahjongGameState,
     ShenyangMahjongLoopState, build_meld,
 };
+#[cfg(test)]
+use crate::rules::is_single_wait_shape_with_rule;
 use crate::rules::{
     WIN_RULE_SHENYANG_BASIC, can_chi, can_concealed_gang, can_gang, can_peng,
     is_complete_win_with_melds, is_piao_hu_win, is_pure_one_suit_win, is_seven_pairs_win,
-    is_single_wait_shape_with_rule, tiles_in_hand, win_rule_from_configs,
+    is_single_wait_shape_with_known_unavailable_tiles, tiles_in_hand, win_rule_from_configs,
 };
 
 pub(crate) type LoopStateHandle = Arc<std::sync::Mutex<ShenyangMahjongLoopState>>;
@@ -687,13 +689,21 @@ fn is_shou_ba_yi(
     melds: &[WsShenyangMahjongMeld],
     win_tile: Option<i32>,
     win_rule: i32,
+    known_unavailable_tiles: &[i32],
 ) -> bool {
     pattern == ShenyangMahjongWinPattern::PiaoHu
         && melds.len() == 4
         && hand_tiles.len() == 2
-        && is_single_wait_win(hand_tiles, melds, win_tile, win_rule)
+        && is_single_wait_win_with_known_unavailable_tiles(
+            hand_tiles,
+            melds,
+            win_tile,
+            win_rule,
+            known_unavailable_tiles,
+        )
 }
 
+#[cfg(test)]
 fn is_single_wait_win(
     hand_tiles: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -706,10 +716,30 @@ fn is_single_wait_win(
     is_single_wait_shape_with_rule(hand_tiles, melds, win_tile, win_rule)
 }
 
+fn is_single_wait_win_with_known_unavailable_tiles(
+    hand_tiles: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    win_tile: Option<i32>,
+    win_rule: i32,
+    known_unavailable_tiles: &[i32],
+) -> bool {
+    let Some(win_tile) = win_tile else {
+        return false;
+    };
+    is_single_wait_shape_with_known_unavailable_tiles(
+        hand_tiles,
+        melds,
+        win_tile,
+        win_rule,
+        known_unavailable_tiles,
+    )
+}
+
 fn is_yaojiu_tile(tile: i32) -> bool {
     matches!(tile, 1 | 9 | 11 | 19 | 21 | 29 | 31..=37)
 }
 
+#[cfg(test)]
 fn is_single_yaojiu_wait_win(
     hand_tiles: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -720,6 +750,53 @@ fn is_single_yaojiu_wait_win(
         return false;
     };
     is_yaojiu_tile(win_tile) && is_single_wait_win(hand_tiles, melds, Some(win_tile), win_rule)
+}
+
+fn is_single_yaojiu_wait_win_with_known_unavailable_tiles(
+    hand_tiles: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    win_tile: Option<i32>,
+    win_rule: i32,
+    known_unavailable_tiles: &[i32],
+) -> bool {
+    let Some(win_tile) = win_tile else {
+        return false;
+    };
+    is_yaojiu_tile(win_tile)
+        && is_single_wait_win_with_known_unavailable_tiles(
+            hand_tiles,
+            melds,
+            Some(win_tile),
+            win_rule,
+            known_unavailable_tiles,
+        )
+}
+
+fn public_unavailable_tiles_for_winner(
+    state: &ShenyangMahjongLoopState,
+    winner: usize,
+) -> Vec<i32> {
+    let mut tiles = Vec::new();
+    for discards in state.discards.values() {
+        tiles.extend(discards.iter().copied().filter(|tile| is_valid_tile(*tile)));
+    }
+    for (position, melds) in &state.melds {
+        if *position == winner {
+            continue;
+        }
+        for meld in melds
+            .iter()
+            .filter(|meld| meld_primary_tile(meld).is_some() || is_chi_meld(meld))
+        {
+            tiles.extend(
+                meld.tiles
+                    .iter()
+                    .copied()
+                    .filter(|tile| is_valid_tile(*tile)),
+            );
+        }
+    }
+    tiles
 }
 
 fn join_succeeded(dispatch: &Dispatch, session_id: SessionId) -> bool {
@@ -1633,6 +1710,7 @@ fn winner_hand_fan_with_rule(
         return 0;
     }
     let pattern = winner_pattern_with_rule(&hand_tiles, melds, win_rule);
+    let known_unavailable_tiles = public_unavailable_tiles_for_winner(state, winner);
     let mut fan = win_pattern_base_fan(pattern);
     fan += meld_fan(melds);
     fan += concealed_dragon_triplet_fan(&hand_tiles);
@@ -1645,13 +1723,32 @@ fn winner_hand_fan_with_rule(
     if settlement_is_haidilao(settlement) {
         fan += 1;
     }
-    if is_single_wait_win(&hand_tiles, melds, settlement.win_tile, win_rule) {
+    if is_single_wait_win_with_known_unavailable_tiles(
+        &hand_tiles,
+        melds,
+        settlement.win_tile,
+        win_rule,
+        &known_unavailable_tiles,
+    ) {
         fan += 1;
     }
-    if is_single_yaojiu_wait_win(&hand_tiles, melds, settlement.win_tile, win_rule) {
+    if is_single_yaojiu_wait_win_with_known_unavailable_tiles(
+        &hand_tiles,
+        melds,
+        settlement.win_tile,
+        win_rule,
+        &known_unavailable_tiles,
+    ) {
         fan += 1;
     }
-    if is_shou_ba_yi(pattern, &hand_tiles, melds, settlement.win_tile, win_rule) {
+    if is_shou_ba_yi(
+        pattern,
+        &hand_tiles,
+        melds,
+        settlement.win_tile,
+        win_rule,
+        &known_unavailable_tiles,
+    ) {
         fan += 1;
     }
     fan + four_gui_yi_fan(&hand_tiles, melds)
@@ -5709,6 +5806,60 @@ mod tests {
             WIN_RULE_RELAXED
         ));
         assert_eq!(winner_hand_fan(&state, settlement, 1), 4);
+    }
+
+    #[test]
+    fn settlement_fan_counts_single_yaojiu_wait_when_other_wait_is_discarded_out() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![2, 3, 21, 22, 23, 25, 25, 31, 31, 31]);
+        state.melds.insert(
+            1,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::CHI,
+                vec![11, 12, 13],
+                Some(0),
+            )],
+        );
+        for position in 0..4 {
+            state.discards.insert(position, vec![4]);
+        }
+        state.enter_settlement_with_reverse_win(
+            vec![1],
+            Some(0),
+            Some(1),
+            false,
+            false,
+            false,
+            false,
+        );
+        let settlement = state.settlement.as_ref().expect("settlement");
+        let hand_tiles = winner_final_hand_tiles(&state, settlement, 1);
+        let melds = state.melds.get(&1).map(Vec::as_slice).unwrap_or(&[]);
+        let public_unavailable = public_unavailable_tiles_for_winner(&state, 1);
+
+        assert!(!is_single_wait_win(
+            &hand_tiles,
+            melds,
+            settlement.win_tile,
+            WIN_RULE_SHENYANG_BASIC
+        ));
+        assert_eq!(
+            public_unavailable.iter().filter(|tile| **tile == 4).count(),
+            4
+        );
+        assert!(is_single_yaojiu_wait_win_with_known_unavailable_tiles(
+            &hand_tiles,
+            melds,
+            settlement.win_tile,
+            WIN_RULE_SHENYANG_BASIC,
+            &public_unavailable
+        ));
+        assert_eq!(
+            winner_hand_fan_with_rule(&state, settlement, 1, WIN_RULE_SHENYANG_BASIC),
+            3
+        );
     }
 
     #[test]

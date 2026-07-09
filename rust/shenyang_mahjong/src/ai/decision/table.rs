@@ -81,6 +81,45 @@ pub(super) fn live_tile_count_for_suit_after_discard(
         .sum()
 }
 
+pub(super) fn known_unavailable_tiles_with_simulated_discards(
+    table: &AiPublicTable,
+    position: usize,
+    projected_melds: &[WsShenyangMahjongMeld],
+    simulated_discards: &[i32],
+) -> Vec<i32> {
+    let claimed_tile_in_projected_meld = table.claim_window.as_ref().and_then(|claim| {
+        let current_meld_count = table
+            .seats
+            .get(&position)
+            .map(|seat| valid_meld_tile_count(&seat.melds, claim.tile))
+            .unwrap_or(0);
+        let projected_meld_count = valid_meld_tile_count(projected_melds, claim.tile);
+        (projected_meld_count > current_meld_count && claim_tile_already_visible(table, claim.tile))
+            .then_some(claim.tile)
+    });
+    let mut skipped_claim_discard = false;
+    let mut tiles = Vec::new();
+    for seat in table.seats.values() {
+        for discard in &seat.discards {
+            if claimed_tile_in_projected_meld == Some(*discard) && !skipped_claim_discard {
+                skipped_claim_discard = true;
+                continue;
+            }
+            tiles.push(*discard);
+        }
+    }
+    tiles.extend(simulated_discards.iter().copied());
+    for (seat_position, seat) in &table.seats {
+        if *seat_position == position {
+            continue;
+        }
+        for meld in seat.melds.iter().filter(|meld| is_valid_meld(meld)) {
+            tiles.extend(meld.tiles.iter().copied());
+        }
+    }
+    tiles
+}
+
 pub(super) fn next_position_after(current: usize, table: &AiPublicTable) -> usize {
     let mut positions: Vec<usize> = table.seats.keys().copied().collect();
     positions.sort_unstable();

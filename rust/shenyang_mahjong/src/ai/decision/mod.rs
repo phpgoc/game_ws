@@ -28,8 +28,8 @@ use share_type_public::games::shenyang_mahjong::{
 
 use crate::rules::{
     WIN_RULE_SHENYANG_BASIC, can_chi, can_gang, can_peng, is_complete_win_with_melds,
-    is_piao_hu_win, is_pure_one_suit_win, is_seven_pairs_win, is_single_wait_shape_with_rule,
-    sort_tiles,
+    is_piao_hu_win, is_pure_one_suit_win, is_seven_pairs_win,
+    is_single_wait_shape_with_known_unavailable_tiles, sort_tiles,
 };
 #[cfg(test)]
 use crate::rules::{has_triplet_in_standard_decomposition, is_complete_win};
@@ -65,12 +65,13 @@ use table::remaining_tile_count_with_melds;
 #[cfg(test)]
 use table::visible_tile_count;
 use table::{
-    exposed_meld_tile_count, live_terminal_or_honor_count,
-    live_terminal_or_honor_count_after_discard, live_tile_count_for_suit,
-    live_tile_count_for_suit_after_discard, next_position_after, open_meld_tile_count,
-    open_opponent_exists_for_tile, own_previous_discard_count, public_discard_count,
-    public_discard_seat_count, remaining_tile_count, remaining_tile_count_after_discard,
-    remaining_tile_count_with_melds_after_discards, seat_has_open_meld_tile,
+    exposed_meld_tile_count, known_unavailable_tiles_with_simulated_discards,
+    live_terminal_or_honor_count, live_terminal_or_honor_count_after_discard,
+    live_tile_count_for_suit, live_tile_count_for_suit_after_discard, next_position_after,
+    open_meld_tile_count, open_opponent_exists_for_tile, own_previous_discard_count,
+    public_discard_count, public_discard_seat_count, remaining_tile_count,
+    remaining_tile_count_after_discard, remaining_tile_count_with_melds_after_discards,
+    seat_has_open_meld_tile,
 };
 use tile::{
     is_dragon, is_honor, is_suited, is_valid_tile, is_wind, tile_is_terminal, tile_rank, tile_suit,
