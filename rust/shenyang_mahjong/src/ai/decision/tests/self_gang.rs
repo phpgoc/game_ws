@@ -255,6 +255,21 @@ fn self_gang_allows_same_closed_plain_gang_when_opening_is_not_required() {
 }
 
 #[test]
+fn relaxed_self_gang_delays_closed_plain_gang_before_ready() {
+    let table = table_with_discards(1, Vec::new());
+    let hand = vec![3, 3, 3, 3, 4, 6, 8, 11, 13, 15, 21, 24, 27, 31];
+
+    assert_eq!(
+        best_ready_score_after_discard(&hand, &[], &table, 0, WIN_RULE_RELAXED),
+        0.0
+    );
+    assert_eq!(
+        choose_self_gang_from_view(&hand, &[3], &table, 0, WIN_RULE_RELAXED),
+        None
+    );
+}
+
+#[test]
 fn one_fan_capped_self_gang_delays_closed_plain_before_ready() {
     let mut table = table_with_discards(1, Vec::new());
     table.max_fan = Some(1);
