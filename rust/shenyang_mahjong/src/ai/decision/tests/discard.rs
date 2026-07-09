@@ -322,6 +322,46 @@ fn discard_preserves_ready_four_gui_yi_route() {
 }
 
 #[test]
+fn capped_discard_does_not_preserve_redundant_four_gui_yi() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.max_fan = Some(1);
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(2)];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![2, 3, 4, 5, 11, 12, 13, 21, 22, 23, 35];
+    let after_four_gui_yi_discard = remove_n_tiles(&hand, 2, 1);
+
+    assert_eq!(estimated_four_gui_yi_fan(&hand, melds), 1);
+    assert_eq!(
+        estimated_four_gui_yi_fan(&after_four_gui_yi_discard, melds),
+        0
+    );
+    let mut win_hand = after_four_gui_yi_discard.clone();
+    win_hand.push(35);
+    sort_tiles(&mut win_hand);
+    assert!(is_complete_win_with_melds(
+        &win_hand,
+        melds,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert_eq!(
+        estimated_visible_fan_without_wait(&win_hand, melds, WIN_RULE_SHENYANG_BASIC),
+        1
+    );
+    assert!(ready_hand_visible_fan_reaches_cap(
+        &after_four_gui_yi_discard,
+        melds,
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+        1
+    ));
+    assert_eq!(
+        four_gui_yi_discard_bias(&hand, 2, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        0.0
+    );
+}
+
+#[test]
 fn discard_preserves_only_triplet_for_basic_heng() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 1, 1, 2, 3, 4, 11, 12, 13, 21, 22, 23, 35, 36];

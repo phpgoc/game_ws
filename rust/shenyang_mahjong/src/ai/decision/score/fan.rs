@@ -80,6 +80,11 @@ pub(in crate::ai::decision) fn four_gui_yi_discard_bias(
     if after_four_gui_yi >= current_four_gui_yi {
         return 0.0;
     }
+    if let Some(max_fan) = table.max_fan.filter(|max_fan| *max_fan > 0)
+        && ready_hand_visible_fan_reaches_cap(&next, melds, table, position, win_rule, max_fan)
+    {
+        return 0.0;
+    }
 
     let fan_loss = (current_four_gui_yi - after_four_gui_yi) as f64;
     if ready_tile_score_after_discard(&next, melds, table, position, win_rule, tile) > 0.0 {
