@@ -29,7 +29,8 @@ entry point and put new rule or heuristic code in the smallest matching module.
 - `piao/`: Piao-hu planning and discard helpers.
 - `seven_pairs/`: seven-pairs planning, waits, and discard choices.
 - `pure_one_suit.rs`: pure-one-suit planning.
-- `shenyang_rule.rs`: Shenyang-basic rule requirement checks.
+- `shenyang_rule/`: Shenyang-basic rule progress, recovery checks, and discard
+  requirement guards.
 - `round.rs`: round-phase helpers.
 
 ## Tests

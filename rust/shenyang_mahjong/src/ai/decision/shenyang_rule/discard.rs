@@ -1,151 +1,7 @@
-use super::*;
+use super::super::*;
+use super::heng::loses_basic_heng_recovery_after_discard;
 
-pub(super) fn basic_heng_seed_discard_bias(
-    hand: &[i32],
-    tile: i32,
-    melds: &[WsShenyangMahjongMeld],
-    win_rule: i32,
-) -> f64 {
-    if win_rule != WIN_RULE_SHENYANG_BASIC || has_triplet_or_dragon_pair(hand, melds) {
-        return 0.0;
-    }
-    let count = hand.iter().filter(|item| **item == tile).count();
-    if is_dragon(tile) && count == 1 {
-        -7.0
-    } else if count == 2 {
-        -4.0
-    } else {
-        0.0
-    }
-}
-
-pub(super) fn shenyang_rule_progress_score(
-    hand: &[i32],
-    melds: &[WsShenyangMahjongMeld],
-    table: &AiPublicTable,
-    position: usize,
-    win_rule: i32,
-) -> f64 {
-    if win_rule != WIN_RULE_SHENYANG_BASIC
-        || should_lock_seven_pairs_plan(hand, melds, table, position, win_rule)
-    {
-        return 0.0;
-    }
-    let pure_score = pure_one_suit_plan_score_for_context(hand, melds, table, position);
-    if pure_score > 0.0 {
-        return pure_score;
-    }
-    let mut score = 0.0;
-    let suits = suit_presence(hand, melds);
-    let suit_count = suits.into_iter().filter(|present| *present).count();
-    score += match suit_count {
-        3 => 10.0,
-        2 => -6.0,
-        1 => -14.0,
-        _ => -20.0,
-    };
-    if has_open_meld(melds) {
-        score += 9.0;
-    } else {
-        score -= 8.0;
-    }
-    if has_terminal_or_honor_with_extra(hand, melds, None) {
-        score += 7.0;
-    } else {
-        score -= 10.0;
-    }
-    if has_triplet_or_dragon_pair(hand, melds) {
-        score += 8.0;
-    } else {
-        score -= 5.0;
-    }
-    score
-}
-
-pub(super) fn unrecoverable_basic_rule_requirement_count(
-    hand: &[i32],
-    melds: &[WsShenyangMahjongMeld],
-    table: &AiPublicTable,
-) -> usize {
-    let missing_suits = missing_suits(hand, melds)
-        .into_iter()
-        .filter(|suit| live_tile_count_for_suit(hand, table, *suit) <= 0)
-        .count();
-    let missing_terminal_or_honor = !has_terminal_or_honor_with_extra(hand, melds, None)
-        && live_terminal_or_honor_count(hand, table) <= 0;
-    let missing_heng = !can_recover_basic_heng(hand, melds, table);
-    missing_suits + usize::from(missing_terminal_or_honor) + usize::from(missing_heng)
-}
-
-pub(super) fn can_recover_basic_heng(
-    hand: &[i32],
-    melds: &[WsShenyangMahjongMeld],
-    table: &AiPublicTable,
-) -> bool {
-    if has_triplet_or_dragon_pair(hand, melds) {
-        return true;
-    }
-
-    let mut counts = HashMap::<i32, usize>::new();
-    for tile in hand.iter().copied() {
-        *counts.entry(tile).or_default() += 1;
-    }
-
-    SHENYANG_MAHJONG_TILE_KINDS.into_iter().any(|tile| {
-        let count = counts.get(&tile).copied().unwrap_or(0);
-        let remaining = remaining_tile_count(hand, table, 0, tile) as usize;
-        let can_draw_triplet = count < 3 && remaining >= 3 - count;
-        let can_draw_dragon_pair = is_dragon(tile) && count < 2 && remaining >= 2 - count;
-        can_draw_triplet || can_draw_dragon_pair
-    })
-}
-
-pub(super) fn can_recover_basic_heng_after_discard(
-    hand_after_discard: &[i32],
-    melds: &[WsShenyangMahjongMeld],
-    table: &AiPublicTable,
-    discarded_tile: i32,
-) -> bool {
-    if has_triplet_or_dragon_pair(hand_after_discard, melds) {
-        return true;
-    }
-
-    let mut counts = HashMap::<i32, usize>::new();
-    for tile in hand_after_discard.iter().copied() {
-        *counts.entry(tile).or_default() += 1;
-    }
-
-    SHENYANG_MAHJONG_TILE_KINDS.into_iter().any(|tile| {
-        let count = counts.get(&tile).copied().unwrap_or(0);
-        let remaining =
-            remaining_tile_count_after_discard(hand_after_discard, table, discarded_tile, tile)
-                as usize;
-        let can_draw_triplet = count < 3 && remaining >= 3 - count;
-        let can_draw_dragon_pair = is_dragon(tile) && count < 2 && remaining >= 2 - count;
-        can_draw_triplet || can_draw_dragon_pair
-    })
-}
-
-pub(super) fn loses_basic_heng_recovery_after_discard(
-    hand: &[i32],
-    melds: &[WsShenyangMahjongMeld],
-    table: &AiPublicTable,
-    tile: i32,
-    win_rule: i32,
-) -> bool {
-    if win_rule != WIN_RULE_SHENYANG_BASIC
-        || has_triplet_or_dragon_pair(hand, melds)
-        || !can_recover_basic_heng(hand, melds, table)
-    {
-        return false;
-    }
-
-    let hand_after_discard = remove_n_tiles(hand, tile, 1);
-    hand_after_discard.len() + 1 == hand.len()
-        && !can_recover_basic_heng_after_discard(&hand_after_discard, melds, table, tile)
-}
-
-pub(super) fn terminal_or_honor_discard_bias(
+pub(in crate::ai::decision) fn terminal_or_honor_discard_bias(
     hand_after_discard: &[i32],
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
@@ -167,7 +23,7 @@ pub(super) fn terminal_or_honor_discard_bias(
     }
 }
 
-pub(super) fn three_suits_discard_bias(
+pub(in crate::ai::decision) fn three_suits_discard_bias(
     hand_after_discard: &[i32],
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
@@ -206,7 +62,7 @@ pub(super) fn three_suits_discard_bias(
     bias
 }
 
-pub(super) fn violates_basic_terminal_or_honor_discard(
+pub(in crate::ai::decision) fn violates_basic_terminal_or_honor_discard(
     hand_after_discard: &[i32],
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
@@ -242,7 +98,7 @@ pub(super) fn violates_basic_terminal_or_honor_discard(
     true
 }
 
-pub(super) fn violates_basic_heng_discard(
+pub(in crate::ai::decision) fn violates_basic_heng_discard(
     hand_after_discard: &[i32],
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
@@ -284,7 +140,7 @@ pub(super) fn violates_basic_heng_discard(
     pure_one_suit_plan_score_for_context(hand_after_discard, melds, table, position) <= 0.0
 }
 
-pub(super) fn violates_basic_three_suits_discard(
+pub(in crate::ai::decision) fn violates_basic_three_suits_discard(
     hand_after_discard: &[i32],
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
