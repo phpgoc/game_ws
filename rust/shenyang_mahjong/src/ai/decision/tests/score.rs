@@ -334,6 +334,23 @@ fn estimated_fan_counts_single_yaojiu_when_public_discards_exhaust_other_wait() 
 }
 
 #[test]
+fn known_unavailable_tiles_ignore_invalid_discards() {
+    let table = table_with_discards(1, vec![4, 4, 99]);
+    let known_unavailable =
+        known_unavailable_tiles_with_simulated_discards(&table, 0, &[], &[4, 31, 99]);
+
+    assert_eq!(
+        known_unavailable.iter().filter(|tile| **tile == 4).count(),
+        3
+    );
+    assert_eq!(
+        known_unavailable.iter().filter(|tile| **tile == 31).count(),
+        1
+    );
+    assert!(!known_unavailable.contains(&99));
+}
+
+#[test]
 fn estimated_fan_counts_single_yaojiu_honor_wait_extra() {
     let win_hand = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35];
 

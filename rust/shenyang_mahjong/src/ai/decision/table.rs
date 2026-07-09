@@ -5,9 +5,12 @@ use share_type_public::games::shenyang_mahjong::{
 use crate::ai::observation::{AiPublicTable, AiSeatView};
 
 use super::meld::{has_open_meld, is_open_meld, is_valid_meld};
-use super::tile::{is_honor, tile_is_terminal};
+use super::tile::{is_honor, is_valid_tile, tile_is_terminal};
 
 pub(super) fn exposed_meld_tile_count(table: &AiPublicTable, tile: i32) -> usize {
+    if !is_valid_tile(tile) {
+        return 0;
+    }
     table
         .seats
         .values()
@@ -100,15 +103,25 @@ pub(super) fn known_unavailable_tiles_with_simulated_discards(
     let mut skipped_claim_discard = false;
     let mut tiles = Vec::new();
     for seat in table.seats.values() {
-        for discard in &seat.discards {
-            if claimed_tile_in_projected_meld == Some(*discard) && !skipped_claim_discard {
+        for discard in seat
+            .discards
+            .iter()
+            .copied()
+            .filter(|tile| is_valid_tile(*tile))
+        {
+            if claimed_tile_in_projected_meld == Some(discard) && !skipped_claim_discard {
                 skipped_claim_discard = true;
                 continue;
             }
-            tiles.push(*discard);
+            tiles.push(discard);
         }
     }
-    tiles.extend(simulated_discards.iter().copied());
+    tiles.extend(
+        simulated_discards
+            .iter()
+            .copied()
+            .filter(|tile| is_valid_tile(*tile)),
+    );
     for (seat_position, seat) in &table.seats {
         if *seat_position == position {
             continue;
@@ -134,6 +147,9 @@ pub(super) fn next_position_after(current: usize, table: &AiPublicTable) -> usiz
 }
 
 pub(super) fn open_meld_tile_count(table: &AiPublicTable, tile: i32) -> usize {
+    if !is_valid_tile(tile) {
+        return 0;
+    }
     table
         .seats
         .values()
@@ -149,6 +165,9 @@ pub(super) fn open_opponent_exists_for_tile(
     position: usize,
     tile: i32,
 ) -> bool {
+    if !is_valid_tile(tile) {
+        return false;
+    }
     table.seats.iter().any(|(seat_position, seat)| {
         *seat_position != position
             && has_open_meld(&seat.melds)
@@ -162,6 +181,9 @@ pub(super) fn own_previous_discard_count(
     position: usize,
     tile: i32,
 ) -> usize {
+    if !is_valid_tile(tile) {
+        return 0;
+    }
     table
         .seats
         .get(&position)
@@ -175,6 +197,9 @@ pub(super) fn own_previous_discard_count(
 }
 
 pub(super) fn public_discard_count(table: &AiPublicTable, tile: i32) -> usize {
+    if !is_valid_tile(tile) {
+        return 0;
+    }
     table
         .seats
         .values()
@@ -188,6 +213,9 @@ pub(super) fn public_discard_count(table: &AiPublicTable, tile: i32) -> usize {
 }
 
 pub(super) fn public_discard_seat_count(table: &AiPublicTable, tile: i32) -> usize {
+    if !is_valid_tile(tile) {
+        return 0;
+    }
     table
         .seats
         .values()
@@ -201,6 +229,9 @@ pub(super) fn remaining_tile_count(
     _position: usize,
     tile: i32,
 ) -> i32 {
+    if !is_valid_tile(tile) {
+        return 0;
+    }
     let visible = visible_tile_count(table, tile);
     let own = hand.iter().filter(|&&item| item == tile).count() as i32;
     (4 - visible - own).max(0)
@@ -225,6 +256,9 @@ pub(super) fn remaining_tile_count_with_melds_after_discards(
     tile: i32,
     discarded_tiles: &[i32],
 ) -> i32 {
+    if !is_valid_tile(tile) {
+        return 0;
+    }
     let visible = visible_tile_count(table, tile);
     let own = hand.iter().filter(|&&item| item == tile).count() as i32;
     let simulated_melds = simulated_meld_tile_count(table, position, melds, tile);
@@ -241,6 +275,9 @@ pub(super) fn remaining_tile_count_after_discard(
     discarded_tile: i32,
     tile: i32,
 ) -> i32 {
+    if !is_valid_tile(tile) {
+        return 0;
+    }
     let visible = visible_tile_count(table, tile);
     let own = hand_after_discard
         .iter()
@@ -251,12 +288,18 @@ pub(super) fn remaining_tile_count_after_discard(
 }
 
 pub(super) fn seat_has_open_meld_tile(seat: &AiSeatView, tile: i32) -> bool {
+    if !is_valid_tile(tile) {
+        return false;
+    }
     seat.melds
         .iter()
         .any(|meld| is_open_meld(meld) && meld.tiles.contains(&tile))
 }
 
 pub(super) fn visible_tile_count(table: &AiPublicTable, tile: i32) -> i32 {
+    if !is_valid_tile(tile) {
+        return 0;
+    }
     table
         .seats
         .values()
@@ -280,6 +323,9 @@ fn simulated_meld_tile_count(
     melds: &[WsShenyangMahjongMeld],
     tile: i32,
 ) -> i32 {
+    if !is_valid_tile(tile) {
+        return 0;
+    }
     let current_table_melds = table
         .seats
         .get(&position)
@@ -293,6 +339,9 @@ fn simulated_meld_tile_count(
 }
 
 fn valid_meld_tile_count(melds: &[WsShenyangMahjongMeld], tile: i32) -> i32 {
+    if !is_valid_tile(tile) {
+        return 0;
+    }
     melds
         .iter()
         .filter(|meld| is_valid_meld(meld))
@@ -302,6 +351,9 @@ fn valid_meld_tile_count(melds: &[WsShenyangMahjongMeld], tile: i32) -> i32 {
 }
 
 fn claim_tile_already_visible(table: &AiPublicTable, tile: i32) -> bool {
+    if !is_valid_tile(tile) {
+        return false;
+    }
     let Some(claim_window) = &table.claim_window else {
         return false;
     };

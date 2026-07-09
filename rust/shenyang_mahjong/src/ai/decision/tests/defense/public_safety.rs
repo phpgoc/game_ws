@@ -146,6 +146,24 @@ fn mid_round_public_honor_stays_safer_than_four_public_middle_tiles() {
 }
 
 #[test]
+fn public_table_counts_ignore_invalid_discards_and_queries() {
+    let mut table = table_with_discards(1, vec![14, 99, 99]);
+    table.seats.get_mut(&0).unwrap().discards = vec![14, 99];
+
+    assert_eq!(public_discard_count(&table, 14), 2);
+    assert_eq!(public_discard_seat_count(&table, 14), 2);
+    assert_eq!(own_previous_discard_count(&table, 0, 14), 1);
+    assert_eq!(visible_tile_count(&table, 14), 2);
+
+    assert_eq!(public_discard_count(&table, 99), 0);
+    assert_eq!(public_discard_seat_count(&table, 99), 0);
+    assert_eq!(own_previous_discard_count(&table, 0, 99), 0);
+    assert_eq!(visible_tile_count(&table, 99), 0);
+    assert_eq!(remaining_tile_count(&[14, 99], &table, 0, 99), 0);
+    assert_eq!(remaining_tile_count_after_discard(&[14], &table, 99, 99), 0);
+}
+
+#[test]
 fn mid_round_discard_follows_public_middle_before_late_round() {
     let mut table = table_with_discards(1, vec![14]);
     table.wall_count = 55;
