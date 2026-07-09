@@ -10,10 +10,7 @@ pub(in crate::ai::decision) fn should_preserve_piao_plan_for_chi(
         return false;
     }
     let score = piao_plan_score_for_context(hand, melds, table, position);
-    let early_piao_candidate = melds.is_empty()
-        && pair_count(hand) >= 3
-        && table.dealer_position != position
-        && !piao_plan_is_capped(table);
+    let early_piao_candidate = is_closed_early_piao_candidate(hand, melds, table, position);
     if !early_piao_candidate && score <= 0.0 {
         return false;
     }

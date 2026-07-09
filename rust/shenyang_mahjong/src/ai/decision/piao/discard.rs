@@ -7,14 +7,7 @@ pub(in crate::ai::decision) fn early_piao_candidate_discard_bias(
     table: &AiPublicTable,
     position: usize,
 ) -> f64 {
-    if piao_plan_is_capped(table) || table.dealer_position == position {
-        return 0.0;
-    }
-    if melds.iter().any(is_sequence_meld)
-        || pair_count(hand) < 3
-        || !missing_suits(hand, melds).is_empty()
-        || !has_terminal_or_honor_with_extra(hand, melds, None)
-    {
+    if !is_closed_early_piao_candidate(hand, melds, table, position) {
         return 0.0;
     }
     let count = hand.iter().filter(|item| **item == tile).count();
