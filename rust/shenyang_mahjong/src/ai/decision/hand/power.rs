@@ -2,7 +2,7 @@ use super::*;
 
 pub(in crate::ai::decision) fn hand_power(hand: &[i32]) -> f64 {
     let mut counts: HashMap<i32, usize> = HashMap::new();
-    for &tile in hand {
+    for &tile in hand.iter().filter(|tile| is_valid_tile(**tile)) {
         *counts.entry(tile).or_default() += 1;
     }
 
@@ -35,7 +35,11 @@ pub(in crate::ai::decision) fn hand_power(hand: &[i32]) -> f64 {
         }
     }
 
-    let mut working = hand.to_vec();
+    let mut working = hand
+        .iter()
+        .copied()
+        .filter(|tile| is_valid_tile(*tile))
+        .collect::<Vec<_>>();
     sort_tiles(&mut working);
     let mut i = 0usize;
     while i + 2 < working.len() {

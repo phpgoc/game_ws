@@ -28,6 +28,16 @@ fn round_thresholds_match_ai_phase_boundaries() {
 }
 
 #[test]
+fn hand_power_ignores_invalid_tiles() {
+    let base_hand = vec![1, 2, 3, 11, 12, 13];
+    let hand_with_invalid_triplet = vec![1, 2, 3, 11, 12, 13, 99, 99, 99];
+
+    assert!(!is_valid_tile(99));
+    assert_eq!(hand_power(&[99, 99, 99]), 0.0);
+    assert!((hand_power(&hand_with_invalid_triplet) - hand_power(&base_hand)).abs() < 0.0001);
+}
+
+#[test]
 fn capped_non_dealer_prefers_wider_wait_over_single_wait_fan() {
     let mut table = table_with_discards(1, Vec::new());
     table.max_fan = Some(1);
