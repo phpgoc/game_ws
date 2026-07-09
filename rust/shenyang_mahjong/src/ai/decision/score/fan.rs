@@ -180,13 +180,13 @@ pub(in crate::ai::decision) fn fan_wait_bias(
     if remaining <= 1 {
         return 0.0;
     }
-    let wait_fan = single_wait_fan(win_tile);
     if let Some(max_fan) = table.max_fan {
         let visible_fan = estimated_visible_fan_without_wait(win_hand, melds, win_rule);
         if visible_fan >= max_fan {
             return 0.0;
         }
-        if visible_fan + wait_fan >= max_fan {
+        let total_fan = estimated_fan_with_wait(win_hand, melds, win_tile, win_rule);
+        if total_fan >= max_fan {
             let fan_gap = max_fan - visible_fan;
             return if fan_gap == 1 && remaining >= 3 {
                 14.0

@@ -212,6 +212,32 @@ fn estimated_visible_fan_does_not_count_piao_shou_ba_yi_without_wait_tile() {
 }
 
 #[test]
+fn fan_wait_bias_counts_piao_shou_ba_yi_for_cap() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.max_fan = Some(6);
+    let win_hand = vec![35, 35];
+    let melds = vec![
+        test_peng_meld(1),
+        test_peng_meld(11),
+        test_peng_meld(21),
+        test_peng_meld(31),
+    ];
+
+    assert_eq!(
+        estimated_visible_fan_without_wait(&win_hand, &melds, WIN_RULE_SHENYANG_BASIC),
+        3
+    );
+    assert_eq!(
+        estimated_fan_with_wait(&win_hand, &melds, 35, WIN_RULE_SHENYANG_BASIC),
+        6
+    );
+    assert_eq!(
+        fan_wait_bias(&win_hand, &melds, &table, 0, WIN_RULE_SHENYANG_BASIC, 35, 2),
+        0.0
+    );
+}
+
+#[test]
 fn estimated_visible_fan_requires_open_meld_for_piao() {
     let closed_triplet_hand = vec![1, 1, 1, 11, 11, 11, 21, 21, 21, 31, 31, 31, 35, 35];
 
