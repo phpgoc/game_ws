@@ -103,6 +103,26 @@ fn closed_opponent_threat_grows_for_unshed_suit_after_off_suit_discards() {
 }
 
 #[test]
+fn closed_opponent_threat_ignores_invalid_off_suit_discards() {
+    let mut neutral = table_with_discards(1, Vec::new());
+    neutral.wall_count = 16;
+    neutral.seats.get_mut(&1).unwrap().hand_count = 13;
+
+    let mut invalid_discards = table_with_discards(1, vec![97, 98, 99, 100]);
+    invalid_discards.wall_count = 16;
+    invalid_discards.seats.get_mut(&1).unwrap().hand_count = 13;
+
+    assert_eq!(
+        closed_suit_shedding_scale(invalid_discards.seats.get(&1).unwrap(), 5),
+        closed_suit_shedding_scale(neutral.seats.get(&1).unwrap(), 5)
+    );
+    assert_eq!(
+        closed_opponent_threat_discard_bias(&invalid_discards, 0, 5, 1),
+        closed_opponent_threat_discard_bias(&neutral, 0, 5, 1)
+    );
+}
+
+#[test]
 fn closed_opponent_threat_ignores_fully_exposed_tile() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 16;

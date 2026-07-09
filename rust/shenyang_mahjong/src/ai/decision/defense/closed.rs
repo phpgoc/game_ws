@@ -101,7 +101,10 @@ pub(in crate::ai::decision) fn closed_suit_shedding_scale(seat: &AiSeatView, til
             let off_suit_discards = seat
                 .discards
                 .iter()
-                .filter(|discard| !is_suited(**discard) || tile_suit(**discard) != tile_suit(tile))
+                .filter(|discard| {
+                    is_valid_tile(**discard)
+                        && (!is_suited(**discard) || tile_suit(**discard) != tile_suit(tile))
+                })
                 .count();
             if off_suit_discards >= 4 { 1.25 } else { 1.0 }
         }

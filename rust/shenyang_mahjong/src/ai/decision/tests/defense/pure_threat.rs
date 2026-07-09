@@ -100,6 +100,19 @@ fn pure_one_suit_threat_reads_single_meld_with_strong_off_suit_discards() {
 }
 
 #[test]
+fn pure_one_suit_threat_ignores_invalid_off_suit_discard_evidence() {
+    let mut table = table_with_discards(1, vec![97, 98, 99, 100]);
+    table.wall_count = 32;
+    table.seats.get_mut(&1).unwrap().melds = vec![test_chi_meld(11)];
+
+    assert_eq!(
+        pure_one_suit_threat_suit(table.seats.get(&1).unwrap()),
+        None
+    );
+    assert_eq!(pure_one_suit_threat_discard_bias(&table, 0, 18, 1), 0.0);
+}
+
+#[test]
 fn pure_one_suit_threat_reads_closed_discard_pattern() {
     let mut table = table_with_discards(1, vec![1, 2, 11, 12, 31]);
     table.wall_count = 32;
