@@ -11,7 +11,29 @@ fn closed_opponent_threat_does_not_penalize_public_safe_tile() {
 }
 
 #[test]
-fn closed_opponent_threat_discounts_exposed_meld_tiles() {
+fn closed_opponent_threat_discounts_partially_exposed_meld_tiles() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 16;
+    table.seats.get_mut(&1).unwrap().hand_count = 13;
+    table.seats.insert(
+        2,
+        AiSeatView {
+            position: 2,
+            hand_count: 10,
+            discards: Vec::new(),
+            melds: vec![test_chi_meld(7)],
+        },
+    );
+
+    let exposed_terminal_bias = closed_opponent_threat_discard_bias(&table, 0, 9, 1);
+    let cold_honor_bias = closed_opponent_threat_discard_bias(&table, 0, 31, 1);
+
+    assert!(exposed_terminal_bias < 0.0);
+    assert!(exposed_terminal_bias > cold_honor_bias);
+}
+
+#[test]
+fn closed_opponent_threat_ignores_tile_fully_accounted_by_exposed_and_own_tiles() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 16;
     table.seats.get_mut(&1).unwrap().hand_count = 13;
@@ -25,11 +47,9 @@ fn closed_opponent_threat_discounts_exposed_meld_tiles() {
         },
     );
 
-    let exposed_terminal_bias = closed_opponent_threat_discard_bias(&table, 0, 9, 1);
-    let cold_honor_bias = closed_opponent_threat_discard_bias(&table, 0, 31, 1);
-
-    assert!(exposed_terminal_bias < 0.0);
-    assert!(exposed_terminal_bias > cold_honor_bias);
+    assert!(closed_threat_tile_fully_accounted(&table, 9, 1));
+    assert_eq!(closed_opponent_threat_discard_bias(&table, 0, 9, 1), 0.0);
+    assert!(closed_opponent_threat_discard_bias(&table, 0, 31, 1) < 0.0);
 }
 
 #[test]

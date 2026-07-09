@@ -9,6 +9,9 @@ pub(in crate::ai::decision) fn closed_opponent_threat_discard_bias(
     if table.wall_count > 42 || public_discard_count(table, tile) > 0 {
         return 0.0;
     }
+    if closed_threat_tile_fully_accounted(table, tile, own_tile_count) {
+        return 0.0;
+    }
     let exposure_scale = closed_threat_exposure_scale(table, tile);
     if exposure_scale == 0.0 {
         return 0.0;
@@ -121,4 +124,12 @@ pub(in crate::ai::decision) fn closed_threat_exposure_scale(
         3 => 0.15,
         _ => 0.0,
     }
+}
+
+pub(in crate::ai::decision) fn closed_threat_tile_fully_accounted(
+    table: &AiPublicTable,
+    tile: i32,
+    own_tile_count: usize,
+) -> bool {
+    exposed_meld_tile_count(table, tile) + public_discard_count(table, tile) + own_tile_count >= 4
 }
