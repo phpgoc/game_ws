@@ -102,6 +102,7 @@ pub(super) fn pure_one_suit_shape(
     let all_tiles = hand
         .iter()
         .copied()
+        .filter(|tile| is_valid_tile(*tile))
         .chain(valid_meld_tiles(melds))
         .collect::<Vec<_>>();
     let main_suit = dominant_pure_suit(hand, melds)?;

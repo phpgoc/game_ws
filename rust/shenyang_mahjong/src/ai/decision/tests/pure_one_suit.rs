@@ -19,6 +19,14 @@ fn pure_one_suit_plan_ignores_malformed_off_suit_meld() {
 }
 
 #[test]
+fn pure_one_suit_plan_ignores_invalid_hand_blockers() {
+    let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 91, 92, 93, 94, 95, 96, 97];
+
+    assert_eq!(pure_one_suit_shape(&hand, &[]), Some((0, 8, 0)));
+    assert!(pure_one_suit_plan_score(&hand, &[]) > 0.0);
+}
+
+#[test]
 fn capped_discard_does_not_chase_pure_one_suit_when_three_suits_remain() {
     let mut table = table_with_discards(1, Vec::new());
     table.max_fan = Some(1);
