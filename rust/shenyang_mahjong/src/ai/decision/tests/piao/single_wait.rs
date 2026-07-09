@@ -129,6 +129,28 @@ fn piao_single_wait_discard_avoids_pure_one_suit_threat_tile() {
 }
 
 #[test]
+fn piao_single_wait_score_rejects_wait_that_cannot_complete_requirements() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.seats.get_mut(&0).unwrap().melds = vec![
+        test_peng_meld(2),
+        test_peng_meld(3),
+        test_peng_meld(12),
+        test_peng_meld(13),
+    ];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+
+    assert!(piao_needs_terminal_or_honor_from_melds(melds));
+    assert_eq!(piao_missing_suits_from_melds(melds), vec![2]);
+    assert_eq!(
+        piao_single_wait_tile_score(15, &[15], melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        -240.0
+    );
+    assert!(
+        piao_single_wait_tile_score(21, &[21], melds, &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0
+    );
+}
+
+#[test]
 fn late_open_hand_avoids_live_tile_against_four_piao_melds() {
     let mut seats = HashMap::new();
     seats.insert(

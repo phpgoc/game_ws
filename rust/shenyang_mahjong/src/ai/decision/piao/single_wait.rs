@@ -93,6 +93,14 @@ fn piao_single_wait_tile_score_with_simulated_discards(
     win_rule: i32,
     simulated_discards: &[i32],
 ) -> f64 {
+    let mut win_hand = hand_after_discard.to_vec();
+    win_hand.push(wait_tile);
+    win_hand.sort_unstable();
+    if !is_piao_hu_win(&win_hand, melds) || !is_complete_win_with_melds(&win_hand, melds, win_rule)
+    {
+        return -240.0;
+    }
+
     let remaining = remaining_tile_count_with_melds_after_discards(
         hand_after_discard,
         melds,
@@ -105,9 +113,6 @@ fn piao_single_wait_tile_score_with_simulated_discards(
         return -240.0;
     }
 
-    let mut win_hand = hand_after_discard.to_vec();
-    win_hand.push(wait_tile);
-    win_hand.sort_unstable();
     let known_unavailable_tiles =
         known_unavailable_tiles_with_simulated_discards(table, position, melds, simulated_discards);
     let estimated_fan = estimated_fan_with_known_unavailable_wait(
