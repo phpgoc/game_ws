@@ -192,7 +192,7 @@ fn estimated_visible_fan_counts_four_concealed_dragons_as_triplet_and_four_gui_y
 }
 
 #[test]
-fn estimated_visible_fan_counts_piao_shou_ba_yi_before_wait_fan() {
+fn estimated_visible_fan_does_not_count_piao_shou_ba_yi_without_wait_tile() {
     let win_hand = vec![35, 35];
     let melds = vec![
         test_peng_meld(1),
@@ -203,7 +203,11 @@ fn estimated_visible_fan_counts_piao_shou_ba_yi_before_wait_fan() {
 
     assert_eq!(
         estimated_visible_fan_without_wait(&win_hand, &melds, WIN_RULE_SHENYANG_BASIC),
-        4
+        3
+    );
+    assert_eq!(
+        estimated_fan_with_wait(&win_hand, &melds, 35, WIN_RULE_SHENYANG_BASIC),
+        6
     );
 }
 

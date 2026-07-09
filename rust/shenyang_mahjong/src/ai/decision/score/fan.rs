@@ -107,12 +107,7 @@ pub(in crate::ai::decision) fn estimated_visible_fan_without_wait(
     } else {
         1
     };
-    let shou_ba_yi_fan = if is_piao && melds.len() == 4 && win_hand.len() == 2 {
-        1
-    } else {
-        0
-    };
-    base + estimated_visible_bonus_fan(win_hand, melds) + shou_ba_yi_fan
+    base + estimated_visible_bonus_fan(win_hand, melds)
 }
 
 pub(in crate::ai::decision) fn estimated_fan_with_wait(
@@ -121,12 +116,22 @@ pub(in crate::ai::decision) fn estimated_fan_with_wait(
     win_tile: i32,
     win_rule: i32,
 ) -> i32 {
-    let wait_fan = if is_single_wait_shape_with_rule(win_hand, melds, win_tile, win_rule) {
+    let is_single_wait = is_single_wait_shape_with_rule(win_hand, melds, win_tile, win_rule);
+    let wait_fan = if is_single_wait {
         single_wait_fan(win_tile)
     } else {
         0
     };
-    estimated_visible_fan_without_wait(win_hand, melds, win_rule) + wait_fan
+    let shou_ba_yi_fan = if is_single_wait
+        && is_piao_hu_win(win_hand, melds)
+        && melds.len() == 4
+        && win_hand.len() == 2
+    {
+        1
+    } else {
+        0
+    };
+    estimated_visible_fan_without_wait(win_hand, melds, win_rule) + wait_fan + shou_ba_yi_fan
 }
 
 pub(in crate::ai::decision) fn single_wait_fan(win_tile: i32) -> i32 {
