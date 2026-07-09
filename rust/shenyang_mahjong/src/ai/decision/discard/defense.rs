@@ -13,17 +13,12 @@ pub(in crate::ai::decision) fn choose_late_defense_discard_preserving_pairs(
     table: &AiPublicTable,
     position: usize,
 ) -> Option<i32> {
-    let public_candidates = unique_tiles(hand)
+    let safe_candidates = unique_tiles(hand)
         .into_iter()
-        .filter(|tile| public_discard_count(table, *tile) > 0)
+        .filter(|tile| late_defense_known_safe_candidate(hand, table, *tile))
         .collect::<Vec<_>>();
-    if !public_candidates.is_empty() {
-        return choose_late_defense_discard_from_candidates(
-            hand,
-            table,
-            position,
-            public_candidates,
-        );
+    if !safe_candidates.is_empty() {
+        return choose_late_defense_discard_from_candidates(hand, table, position, safe_candidates);
     }
 
     let singletons = unique_tiles(hand)
@@ -44,15 +39,15 @@ pub(in crate::ai::decision) fn choose_late_defense_discard_from_candidates(
     candidates: Vec<i32>,
 ) -> Option<i32> {
     let mut best: Option<(f64, i32)> = None;
-    let public_candidates = candidates
+    let safe_candidates = candidates
         .iter()
         .copied()
-        .filter(|tile| public_discard_count(table, *tile) > 0)
+        .filter(|tile| late_defense_known_safe_candidate(hand, table, *tile))
         .collect::<Vec<_>>();
-    let candidates = if public_candidates.is_empty() {
+    let candidates = if safe_candidates.is_empty() {
         candidates
     } else {
-        public_candidates
+        safe_candidates
     };
 
     for tile in candidates {
@@ -68,6 +63,12 @@ pub(in crate::ai::decision) fn choose_late_defense_discard_from_candidates(
         }
     }
     best.map(|(_, tile)| tile)
+}
+
+fn late_defense_known_safe_candidate(hand: &[i32], table: &AiPublicTable, tile: i32) -> bool {
+    public_discard_count(table, tile) > 0
+        || exposed_meld_tile_count(table, tile) + hand.iter().filter(|item| **item == tile).count()
+            >= 4
 }
 
 pub(in crate::ai::decision) fn choose_broken_hand_public_defense_discard(

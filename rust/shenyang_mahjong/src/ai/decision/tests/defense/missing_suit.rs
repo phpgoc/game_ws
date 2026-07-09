@@ -418,6 +418,25 @@ fn late_defense_discards_three_exposed_meld_tile_before_live_wind() {
 }
 
 #[test]
+fn late_defense_discards_fully_accounted_tile_before_live_wind() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 16;
+    table.seats.get_mut(&1).unwrap().melds = vec![test_chi_meld(4)];
+    let hand = vec![2, 4, 6, 6, 6, 8, 12, 14, 16, 18, 22, 24, 31, 35];
+
+    assert_eq!(public_discard_count(&table, 6), 0);
+    assert_eq!(exposed_meld_tile_count(&table, 6), 1);
+    assert_eq!(
+        choose_late_defense_discard_from_candidates(&hand, &table, 0, vec![6, 31]),
+        Some(6)
+    );
+    assert_eq!(
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        Some(6)
+    );
+}
+
+#[test]
 fn late_defense_prefers_lone_wind_before_breaking_wind_pair() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 16;
