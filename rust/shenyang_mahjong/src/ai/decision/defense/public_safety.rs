@@ -154,7 +154,7 @@ pub(in crate::ai::decision) fn mid_round_live_suited_risk_bias(
     let base = if tile_is_terminal(tile) { 7.0 } else { 10.0 };
     -(base
         + open_opponent_live_suited_risk(table, position, tile)
-        + own_open_live_suited_pressure(melds, table, position, tile))
+        + own_open_live_suited_pressure(melds, table, position, tile, own_tile_count))
 }
 
 pub(in crate::ai::decision) fn open_opponent_live_suited_risk(
@@ -205,8 +205,12 @@ pub(in crate::ai::decision) fn own_open_live_suited_pressure(
     table: &AiPublicTable,
     position: usize,
     tile: i32,
+    own_tile_count: usize,
 ) -> f64 {
-    if table.wall_count > 42 || !is_suited(tile) || public_discard_count(table, tile) > 0 {
+    if table.wall_count > 42
+        || !is_suited(tile)
+        || tile_known_safe_for_live_risk(table, tile, own_tile_count)
+    {
         return 0.0;
     }
     let own_open_melds = melds.iter().filter(|meld| is_open_meld(meld)).count();

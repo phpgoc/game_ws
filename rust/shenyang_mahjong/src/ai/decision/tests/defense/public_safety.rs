@@ -460,8 +460,30 @@ fn own_open_live_suited_pressure_ignores_opponent_open_meld_tile() {
     table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(14)];
     let melds = vec![test_peng_meld(1), test_peng_meld(11)];
 
-    assert_eq!(own_open_live_suited_pressure(&melds, &table, 0, 14), 0.0);
-    assert!(own_open_live_suited_pressure(&melds, &table, 0, 15) > 0.0);
+    assert_eq!(own_open_live_suited_pressure(&melds, &table, 0, 14, 1), 0.0);
+    assert!(own_open_live_suited_pressure(&melds, &table, 0, 15, 1) > 0.0);
+}
+
+#[test]
+fn own_open_live_suited_pressure_ignores_fully_accounted_tile() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 37;
+    table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(16)];
+    table.seats.insert(
+        2,
+        AiSeatView {
+            position: 2,
+            hand_count: 10,
+            discards: Vec::new(),
+            melds: vec![test_peng_meld(9)],
+        },
+    );
+    let melds = vec![test_peng_meld(1), test_peng_meld(11)];
+
+    assert_eq!(public_discard_count(&table, 9), 0);
+    assert_eq!(exposed_meld_tile_count(&table, 9), 3);
+    assert_eq!(own_open_live_suited_pressure(&melds, &table, 0, 9, 1), 0.0);
+    assert!(own_open_live_suited_pressure(&melds, &table, 0, 15, 1) > 0.0);
 }
 
 #[test]
