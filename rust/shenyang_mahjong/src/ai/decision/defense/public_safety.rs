@@ -33,7 +33,7 @@ pub(in crate::ai::decision) fn public_defense_own_tile_shape_bias(
 ) -> f64 {
     match own_tile_count {
         0 | 1 => 0.0,
-        2 if is_dragon(tile) => -18.0,
+        2 if is_dragon(tile) => -22.0,
         2 if is_wind(tile) || tile_is_terminal(tile) => -12.0,
         2 => -8.0,
         _ if is_dragon(tile) => -28.0,
@@ -55,7 +55,7 @@ pub(in crate::ai::decision) fn mid_round_public_discard_bias(
         return 0.0;
     }
     let shape_bonus = if is_honor(tile) {
-        16.0
+        22.0
     } else if tile_is_terminal(tile) {
         1.5
     } else {

@@ -116,6 +116,36 @@ fn mid_round_discard_follows_public_dragon_over_multiple_public_terminal() {
 }
 
 #[test]
+fn mid_round_public_honor_stays_safer_than_four_public_middle_tiles() {
+    let mut table = table_with_discards(1, vec![14, 14, 31]);
+    table.wall_count = 46;
+    table.seats.insert(
+        2,
+        AiSeatView {
+            position: 2,
+            hand_count: 10,
+            discards: vec![14],
+            melds: Vec::new(),
+        },
+    );
+    table.seats.insert(
+        3,
+        AiSeatView {
+            position: 3,
+            hand_count: 10,
+            discards: vec![14],
+            melds: Vec::new(),
+        },
+    );
+
+    assert_eq!(public_discard_count(&table, 14), 4);
+    assert_eq!(public_discard_count(&table, 31), 1);
+    assert!(
+        mid_round_public_discard_bias(&table, 0, 31) > mid_round_public_discard_bias(&table, 0, 14)
+    );
+}
+
+#[test]
 fn mid_round_discard_follows_public_middle_before_late_round() {
     let mut table = table_with_discards(1, vec![14]);
     table.wall_count = 55;
