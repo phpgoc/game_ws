@@ -19,6 +19,7 @@ pub(in crate::ai::decision) fn has_triplet_like_group(
     melds.iter().any(is_triplet_like_meld)
         || unique_tiles(hand)
             .into_iter()
+            .filter(|tile| is_valid_tile(*tile))
             .any(|tile| hand.iter().filter(|item| **item == tile).count() >= 3)
 }
 
@@ -34,7 +35,12 @@ pub(in crate::ai::decision) fn has_triplet_or_dragon_pair_with_extra(
     melds: &[WsShenyangMahjongMeld],
     extra: Option<i32>,
 ) -> bool {
-    let tiles = hand.iter().copied().chain(extra).collect::<Vec<_>>();
+    let tiles = hand
+        .iter()
+        .copied()
+        .chain(extra)
+        .filter(|tile| is_valid_tile(*tile))
+        .collect::<Vec<_>>();
     if is_complete_win(&tiles, melds.len()) {
         return melds.iter().any(is_triplet_like_meld)
             || has_triplet_in_standard_decomposition(&tiles)

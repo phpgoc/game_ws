@@ -113,6 +113,16 @@ fn route_requirement_scans_ignore_invalid_hand_tiles() {
 }
 
 #[test]
+fn basic_heng_filter_ignores_invalid_hand_triplet() {
+    let hand = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 35, 99, 99, 99];
+
+    assert!(!is_valid_tile(99));
+    assert!(!has_triplet_like_group(&hand, &[]));
+    assert!(!has_triplet_or_dragon_pair(&hand, &[]));
+    assert!(basic_heng_seed_discard_bias(&hand, 35, &[], WIN_RULE_SHENYANG_BASIC) < 0.0);
+}
+
+#[test]
 fn visible_tile_counts_ignore_malformed_meld_tiles() {
     let mut table = table_with_discards(1, Vec::new());
     table.seats.get_mut(&1).unwrap().melds = vec![
