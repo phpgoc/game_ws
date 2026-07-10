@@ -505,6 +505,29 @@ fn own_open_live_suited_pressure_ignores_fully_accounted_tile() {
 }
 
 #[test]
+fn own_open_public_safety_starts_after_first_open_meld() {
+    let mut table = table_with_discards(1, vec![14]);
+    table.wall_count = 37;
+    table.seats.insert(
+        2,
+        AiSeatView {
+            position: 2,
+            hand_count: 10,
+            discards: Vec::new(),
+            melds: vec![test_peng_meld(16)],
+        },
+    );
+    let closed_melds = Vec::new();
+    let open_melds = vec![test_peng_meld(1)];
+
+    assert_eq!(
+        own_open_public_safety_bias(&closed_melds, &table, 0, 14),
+        0.0
+    );
+    assert!(own_open_public_safety_bias(&open_melds, &table, 0, 14) > 0.0);
+}
+
+#[test]
 fn mid_round_discard_avoids_live_terminal_against_open_opponent() {
     let mut table = table_with_discards(1, vec![14]);
     table.wall_count = 37;

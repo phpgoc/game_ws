@@ -233,7 +233,7 @@ pub(in crate::ai::decision) fn own_open_public_safety_bias(
         return 0.0;
     }
     let own_open_melds = melds.iter().filter(|meld| is_open_meld(meld)).count();
-    if own_open_melds < 2 || !open_opponent_exists_for_tile(table, position, tile) {
+    if own_open_melds == 0 || !open_opponent_exists_for_tile(table, position, tile) {
         return 0.0;
     }
     let public_discards = public_discard_count(table, tile);
