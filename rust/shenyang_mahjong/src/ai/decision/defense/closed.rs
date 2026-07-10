@@ -38,15 +38,7 @@ pub(in crate::ai::decision) fn closed_opponent_threat_discard_bias(
             } else {
                 -5.0
             };
-            let pair_penalty = if own_tile_count >= 2 {
-                if is_honor(tile) || tile_is_terminal(tile) {
-                    4.0
-                } else {
-                    3.0
-                }
-            } else {
-                0.0
-            };
+            let pair_penalty = closed_threat_pair_penalty(tile, own_tile_count);
             (base - pair_penalty)
                 * pressure_scale
                 * exposure_scale
@@ -135,4 +127,14 @@ pub(in crate::ai::decision) fn closed_threat_tile_fully_accounted(
     own_tile_count: usize,
 ) -> bool {
     exposed_meld_tile_count(table, tile) + public_discard_count(table, tile) + own_tile_count >= 4
+}
+
+pub(in crate::ai::decision) fn closed_threat_pair_penalty(tile: i32, own_tile_count: usize) -> f64 {
+    match own_tile_count {
+        0 | 1 => 0.0,
+        2 if is_honor(tile) || tile_is_terminal(tile) => 4.0,
+        2 => 3.0,
+        _ if is_honor(tile) || tile_is_terminal(tile) => 1.5,
+        _ => 1.0,
+    }
 }

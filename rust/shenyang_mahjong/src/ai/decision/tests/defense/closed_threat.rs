@@ -215,6 +215,20 @@ fn closed_opponent_threat_penalizes_cold_pair_more_than_singleton() {
 }
 
 #[test]
+fn closed_opponent_threat_penalizes_own_pair_more_than_own_triplet() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 16;
+    table.seats.get_mut(&1).unwrap().hand_count = 13;
+
+    assert_eq!(closed_threat_pair_penalty(9, 2), 4.0);
+    assert_eq!(closed_threat_pair_penalty(19, 3), 1.5);
+    assert!(
+        closed_opponent_threat_discard_bias(&table, 0, 9, 2)
+            < closed_opponent_threat_discard_bias(&table, 0, 19, 3)
+    );
+}
+
+#[test]
 fn closed_opponent_threat_starts_before_final_defense() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 37;
