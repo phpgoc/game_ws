@@ -33,6 +33,21 @@ fn opponent_four_piao_threat_penalizes_live_pair_more_than_singleton() {
 }
 
 #[test]
+fn piao_threat_penalizes_own_pair_more_than_own_triplet() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 16;
+    table.seats.get_mut(&1).unwrap().melds =
+        vec![test_peng_meld(1), test_peng_meld(11), test_peng_meld(21)];
+
+    assert!(piao_threat_pair_penalty(31, 2) > piao_threat_pair_penalty(31, 3));
+    assert!(piao_threat_pair_penalty(5, 2) > piao_threat_pair_penalty(5, 3));
+    assert!(
+        opponent_threat_discard_bias(&table, 0, 31, 2)
+            < opponent_threat_discard_bias(&table, 0, 31, 3)
+    );
+}
+
+#[test]
 fn opponent_four_piao_threat_ignores_impossible_two_missing_suits() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 16;

@@ -217,12 +217,11 @@ pub(in crate::ai::decision) fn piao_threat_tile_fully_accounted(
 }
 
 pub(in crate::ai::decision) fn piao_threat_pair_penalty(tile: i32, own_tile_count: usize) -> f64 {
-    if own_tile_count < 2 {
-        return 0.0;
-    }
-    if is_honor(tile) || tile_is_terminal(tile) {
-        6.0
-    } else {
-        4.0
+    match own_tile_count {
+        0 | 1 => 0.0,
+        2 if is_honor(tile) || tile_is_terminal(tile) => 6.0,
+        2 => 4.0,
+        _ if is_honor(tile) || tile_is_terminal(tile) => 2.5,
+        _ => 1.5,
     }
 }
