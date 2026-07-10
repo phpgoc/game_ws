@@ -1,5 +1,31 @@
 use super::*;
 
+pub(in crate::ai::decision) fn closed_hand_count_pressure_scale(seat: &AiSeatView) -> f64 {
+    let concealed_gangs = seat
+        .melds
+        .iter()
+        .filter(|meld| meld.kind == ShenyangMahjongMeldKind::GANG && meld.from_position.is_none())
+        .count();
+    if concealed_gangs == 0 {
+        return 1.0;
+    }
+
+    let gang_scale = match concealed_gangs {
+        1 => 1.18,
+        2 => 1.35,
+        _ => 1.55,
+    };
+    let hand_count_scale = match seat.hand_count {
+        0 => 0.0,
+        1..=5 => 1.55,
+        6..=9 => 1.35,
+        10 => 1.18,
+        11..=12 => 1.08,
+        _ => 1.0,
+    };
+    f64::max(gang_scale, hand_count_scale)
+}
+
 pub(in crate::ai::decision) fn closed_opponent_threat_discard_bias(
     table: &AiPublicTable,
     position: usize,
@@ -48,37 +74,6 @@ pub(in crate::ai::decision) fn closed_opponent_threat_discard_bias(
         .sum()
 }
 
-pub(in crate::ai::decision) fn is_closed_opponent_threat_candidate(seat: &AiSeatView) -> bool {
-    !has_open_meld(&seat.melds)
-        && (seat.hand_count >= 10 || (seat.hand_count > 0 && has_concealed_gang_meld(&seat.melds)))
-}
-
-pub(in crate::ai::decision) fn closed_hand_count_pressure_scale(seat: &AiSeatView) -> f64 {
-    let concealed_gangs = seat
-        .melds
-        .iter()
-        .filter(|meld| meld.kind == ShenyangMahjongMeldKind::GANG && meld.from_position.is_none())
-        .count();
-    if concealed_gangs == 0 {
-        return 1.0;
-    }
-
-    let gang_scale = match concealed_gangs {
-        1 => 1.18,
-        2 => 1.35,
-        _ => 1.55,
-    };
-    let hand_count_scale = match seat.hand_count {
-        0 => 0.0,
-        1..=5 => 1.55,
-        6..=9 => 1.35,
-        10 => 1.18,
-        11..=12 => 1.08,
-        _ => 1.0,
-    };
-    f64::max(gang_scale, hand_count_scale)
-}
-
 pub(in crate::ai::decision) fn closed_suit_shedding_scale(seat: &AiSeatView, tile: i32) -> f64 {
     if !is_suited(tile) {
         return 1.0;
@@ -121,14 +116,6 @@ pub(in crate::ai::decision) fn closed_threat_exposure_scale(
     }
 }
 
-pub(in crate::ai::decision) fn closed_threat_tile_fully_accounted(
-    table: &AiPublicTable,
-    tile: i32,
-    own_tile_count: usize,
-) -> bool {
-    exposed_meld_tile_count(table, tile) + public_discard_count(table, tile) + own_tile_count >= 4
-}
-
 pub(in crate::ai::decision) fn closed_threat_pair_penalty(tile: i32, own_tile_count: usize) -> f64 {
     match own_tile_count {
         0 | 1 => 0.0,
@@ -137,4 +124,17 @@ pub(in crate::ai::decision) fn closed_threat_pair_penalty(tile: i32, own_tile_co
         _ if is_honor(tile) || tile_is_terminal(tile) => 1.5,
         _ => 1.0,
     }
+}
+
+pub(in crate::ai::decision) fn closed_threat_tile_fully_accounted(
+    table: &AiPublicTable,
+    tile: i32,
+    own_tile_count: usize,
+) -> bool {
+    exposed_meld_tile_count(table, tile) + public_discard_count(table, tile) + own_tile_count >= 4
+}
+
+pub(in crate::ai::decision) fn is_closed_opponent_threat_candidate(seat: &AiSeatView) -> bool {
+    !has_open_meld(&seat.melds)
+        && (seat.hand_count >= 10 || (seat.hand_count > 0 && has_concealed_gang_meld(&seat.melds)))
 }

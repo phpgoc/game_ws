@@ -1,5 +1,3 @@
-use super::*;
-
 mod chi_choice;
 mod defensive_open;
 mod gang;
@@ -9,6 +7,8 @@ mod peng;
 mod peng_choice;
 mod preserve;
 mod requirements;
+
+use super::*;
 
 pub(super) use defensive_open::*;
 pub(super) use gang::*;

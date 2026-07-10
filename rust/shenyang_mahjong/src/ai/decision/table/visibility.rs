@@ -5,6 +5,23 @@ use crate::ai::observation::AiPublicTable;
 use crate::ai::decision::meld::{is_open_meld, is_valid_meld};
 use crate::ai::decision::tile::is_valid_tile;
 
+pub(in crate::ai::decision::table) fn claim_tile_already_visible(
+    table: &AiPublicTable,
+    tile: i32,
+) -> bool {
+    if !is_valid_tile(tile) {
+        return false;
+    }
+    let Some(claim_window) = &table.claim_window else {
+        return false;
+    };
+    claim_window.tile == tile
+        && table
+            .seats
+            .get(&claim_window.from_position)
+            .is_some_and(|seat| seat.discards.contains(&tile))
+}
+
 pub(in crate::ai::decision) fn exposed_meld_tile_count(table: &AiPublicTable, tile: i32) -> usize {
     if !is_valid_tile(tile) {
         return 0;
@@ -132,6 +149,21 @@ pub(in crate::ai::decision) fn public_discard_seat_count(
         .count()
 }
 
+pub(in crate::ai::decision::table) fn valid_meld_tile_count(
+    melds: &[WsShenyangMahjongMeld],
+    tile: i32,
+) -> i32 {
+    if !is_valid_tile(tile) {
+        return 0;
+    }
+    melds
+        .iter()
+        .filter(|meld| is_valid_meld(meld))
+        .flat_map(|meld| meld.tiles.iter().copied())
+        .filter(|meld_tile| *meld_tile == tile)
+        .count() as i32
+}
+
 pub(in crate::ai::decision) fn visible_tile_count(table: &AiPublicTable, tile: i32) -> i32 {
     if !is_valid_tile(tile) {
         return 0;
@@ -151,36 +183,4 @@ pub(in crate::ai::decision) fn visible_tile_count(table: &AiPublicTable, tile: i
             discard_count + meld_count
         })
         .sum::<usize>() as i32
-}
-
-pub(in crate::ai::decision::table) fn valid_meld_tile_count(
-    melds: &[WsShenyangMahjongMeld],
-    tile: i32,
-) -> i32 {
-    if !is_valid_tile(tile) {
-        return 0;
-    }
-    melds
-        .iter()
-        .filter(|meld| is_valid_meld(meld))
-        .flat_map(|meld| meld.tiles.iter().copied())
-        .filter(|meld_tile| *meld_tile == tile)
-        .count() as i32
-}
-
-pub(in crate::ai::decision::table) fn claim_tile_already_visible(
-    table: &AiPublicTable,
-    tile: i32,
-) -> bool {
-    if !is_valid_tile(tile) {
-        return false;
-    }
-    let Some(claim_window) = &table.claim_window else {
-        return false;
-    };
-    claim_window.tile == tile
-        && table
-            .seats
-            .get(&claim_window.from_position)
-            .is_some_and(|seat| seat.discards.contains(&tile))
 }

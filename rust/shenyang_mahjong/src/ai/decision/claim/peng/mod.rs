@@ -1,10 +1,10 @@
-use super::*;
-
 mod basic;
 mod defense;
 mod piao;
 mod preserve;
 mod ready;
+
+use super::*;
 
 pub(in crate::ai::decision) use basic::*;
 pub(in crate::ai::decision) use defense::*;

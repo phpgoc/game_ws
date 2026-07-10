@@ -11,24 +11,6 @@ pub(in crate::ai::decision) fn own_previous_discard_safety_bias(
     own_previous_discard_count(table, position, tile) as f64 * 4.0
 }
 
-pub(in crate::ai::decision) fn wait_setting_discard_safety_adjustment(
-    table: &AiPublicTable,
-    position: usize,
-    discard_tile: i32,
-    own_tile_count: usize,
-) -> f64 {
-    let piao_threat = opponent_threat_discard_bias(table, position, discard_tile, own_tile_count);
-    let pure_one_suit_threat =
-        pure_one_suit_threat_discard_bias(table, position, discard_tile, own_tile_count);
-    let safety = late_defense_tile_safety_score(table, position, discard_tile, own_tile_count)
-        + mid_round_public_discard_bias(table, position, discard_tile)
-        + mid_round_open_meld_safety_bias(table, discard_tile)
-        + mid_broken_opponent_missing_suit_safety_bias(table, position, discard_tile);
-    safety.clamp(-36.0, 36.0) * 0.6
-        + piao_threat.min(0.0) * 1.5
-        + pure_one_suit_threat.min(0.0) * 1.0
-}
-
 pub(in crate::ai::decision) fn should_open_broken_closed_hand_for_defense(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -141,4 +123,22 @@ pub(in crate::ai::decision) fn should_use_broken_hand_public_defense_discard(
     unrecoverable_rule_requirements >= 1
         || missing_rule_requirements >= 2
         || hand_power(hand) < power_threshold
+}
+
+pub(in crate::ai::decision) fn wait_setting_discard_safety_adjustment(
+    table: &AiPublicTable,
+    position: usize,
+    discard_tile: i32,
+    own_tile_count: usize,
+) -> f64 {
+    let piao_threat = opponent_threat_discard_bias(table, position, discard_tile, own_tile_count);
+    let pure_one_suit_threat =
+        pure_one_suit_threat_discard_bias(table, position, discard_tile, own_tile_count);
+    let safety = late_defense_tile_safety_score(table, position, discard_tile, own_tile_count)
+        + mid_round_public_discard_bias(table, position, discard_tile)
+        + mid_round_open_meld_safety_bias(table, discard_tile)
+        + mid_broken_opponent_missing_suit_safety_bias(table, position, discard_tile);
+    safety.clamp(-36.0, 36.0) * 0.6
+        + piao_threat.min(0.0) * 1.5
+        + pure_one_suit_threat.min(0.0) * 1.0
 }

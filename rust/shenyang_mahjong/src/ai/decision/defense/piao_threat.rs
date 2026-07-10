@@ -1,28 +1,5 @@
 use super::*;
 
-pub(in crate::ai::decision) fn piao_threat_needs_suit(seat: &AiSeatView, suit: i32) -> bool {
-    piao_threat_level(&seat.melds) >= 3
-        && !piao_threat_cannot_satisfy_three_suits(&seat.melds, seat.hand_count)
-        && piao_missing_suits_from_melds(&seat.melds).contains(&suit)
-}
-
-pub(in crate::ai::decision) fn piao_threat_blocks_missing_suit_safety(
-    seat: &AiSeatView,
-    tile: i32,
-) -> bool {
-    if !is_suited(tile) {
-        return false;
-    }
-    let threat_level = piao_threat_level(&seat.melds);
-    if threat_level < 3 || piao_threat_cannot_satisfy_three_suits(&seat.melds, seat.hand_count) {
-        return false;
-    }
-    if threat_level >= 4 && seat.hand_count <= 2 {
-        return piao_final_pair_wait_satisfies_exposed_requirements(&seat.melds, tile);
-    }
-    piao_threat_needs_suit(seat, tile_suit(tile))
-}
-
 pub(in crate::ai::decision) fn opponent_threat_discard_bias(
     table: &AiPublicTable,
     position: usize,
@@ -118,6 +95,19 @@ pub(in crate::ai::decision) fn opponent_threat_discard_bias(
     bias
 }
 
+pub(in crate::ai::decision) fn piao_final_pair_missing_suit_wait_matches(
+    melds: &[WsShenyangMahjongMeld],
+    tile: i32,
+) -> bool {
+    if !is_suited(tile) || !piao_missing_suits_from_melds(melds).contains(&tile_suit(tile)) {
+        return false;
+    }
+    if piao_needs_terminal_or_honor_from_melds(melds) {
+        return tile_is_terminal(tile);
+    }
+    true
+}
+
 pub(in crate::ai::decision) fn piao_final_pair_wait_satisfies_exposed_requirements(
     melds: &[WsShenyangMahjongMeld],
     tile: i32,
@@ -133,17 +123,15 @@ pub(in crate::ai::decision) fn piao_final_pair_wait_satisfies_exposed_requiremen
     true
 }
 
-pub(in crate::ai::decision) fn piao_final_pair_missing_suit_wait_matches(
+pub(in crate::ai::decision) fn piao_needs_terminal_or_honor_from_melds(
     melds: &[WsShenyangMahjongMeld],
-    tile: i32,
 ) -> bool {
-    if !is_suited(tile) || !piao_missing_suits_from_melds(melds).contains(&tile_suit(tile)) {
-        return false;
-    }
-    if piao_needs_terminal_or_honor_from_melds(melds) {
-        return tile_is_terminal(tile);
-    }
-    true
+    piao_threat_level(melds) >= 3
+        && !melds
+            .iter()
+            .filter(|meld| is_triplet_like_meld(meld))
+            .flat_map(|meld| meld.tiles.iter().copied())
+            .any(|tile| is_honor(tile) || tile_is_terminal(tile))
 }
 
 pub(in crate::ai::decision) fn piao_terminal_or_honor_need_penalty(
@@ -164,15 +152,21 @@ pub(in crate::ai::decision) fn piao_terminal_or_honor_need_penalty(
     }
 }
 
-pub(in crate::ai::decision) fn piao_needs_terminal_or_honor_from_melds(
-    melds: &[WsShenyangMahjongMeld],
+pub(in crate::ai::decision) fn piao_threat_blocks_missing_suit_safety(
+    seat: &AiSeatView,
+    tile: i32,
 ) -> bool {
-    piao_threat_level(melds) >= 3
-        && !melds
-            .iter()
-            .filter(|meld| is_triplet_like_meld(meld))
-            .flat_map(|meld| meld.tiles.iter().copied())
-            .any(|tile| is_honor(tile) || tile_is_terminal(tile))
+    if !is_suited(tile) {
+        return false;
+    }
+    let threat_level = piao_threat_level(&seat.melds);
+    if threat_level < 3 || piao_threat_cannot_satisfy_three_suits(&seat.melds, seat.hand_count) {
+        return false;
+    }
+    if threat_level >= 4 && seat.hand_count <= 2 {
+        return piao_final_pair_wait_satisfies_exposed_requirements(&seat.melds, tile);
+    }
+    piao_threat_needs_suit(seat, tile_suit(tile))
 }
 
 pub(in crate::ai::decision) fn piao_threat_cannot_satisfy_three_suits(
@@ -206,6 +200,12 @@ pub(in crate::ai::decision) fn piao_threat_exposure_scale(table: &AiPublicTable,
     }
 }
 
+pub(in crate::ai::decision) fn piao_threat_needs_suit(seat: &AiSeatView, suit: i32) -> bool {
+    piao_threat_level(&seat.melds) >= 3
+        && !piao_threat_cannot_satisfy_three_suits(&seat.melds, seat.hand_count)
+        && piao_missing_suits_from_melds(&seat.melds).contains(&suit)
+}
+
 pub(in crate::ai::decision) fn piao_threat_own_discard_safety_bias(
     table: &AiPublicTable,
     discard_count: usize,
@@ -218,14 +218,6 @@ pub(in crate::ai::decision) fn piao_threat_own_discard_safety_bias(
     4.5 + repeated_discard_bonus + late_round_bonus
 }
 
-pub(in crate::ai::decision) fn piao_threat_tile_fully_accounted(
-    table: &AiPublicTable,
-    tile: i32,
-    own_tile_count: usize,
-) -> bool {
-    exposed_meld_tile_count(table, tile) + public_discard_count(table, tile) + own_tile_count >= 4
-}
-
 pub(in crate::ai::decision) fn piao_threat_pair_penalty(tile: i32, own_tile_count: usize) -> f64 {
     match own_tile_count {
         0 | 1 => 0.0,
@@ -234,4 +226,12 @@ pub(in crate::ai::decision) fn piao_threat_pair_penalty(tile: i32, own_tile_coun
         _ if is_honor(tile) || tile_is_terminal(tile) => 2.5,
         _ => 1.5,
     }
+}
+
+pub(in crate::ai::decision) fn piao_threat_tile_fully_accounted(
+    table: &AiPublicTable,
+    tile: i32,
+    own_tile_count: usize,
+) -> bool {
+    exposed_meld_tile_count(table, tile) + public_discard_count(table, tile) + own_tile_count >= 4
 }

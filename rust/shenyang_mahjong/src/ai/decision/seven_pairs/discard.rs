@@ -1,5 +1,22 @@
 use super::*;
 
+pub(in crate::ai::decision) fn seven_pairs_pair_liveness_discard_bias(
+    hand: &[i32],
+    table: &AiPublicTable,
+    position: usize,
+    tile: i32,
+    count: usize,
+) -> f64 {
+    if count != 2 {
+        return 0.0;
+    }
+    match remaining_tile_count(hand, table, position, tile) {
+        0 => 5.0,
+        1 => 0.0,
+        _ => -2.0,
+    }
+}
+
 pub(in crate::ai::decision) fn seven_pairs_plan_discard_bias(
     hand: &[i32],
     tile: i32,
@@ -30,23 +47,6 @@ pub(in crate::ai::decision) fn seven_pairs_plan_discard_bias(
         0.0
     } else {
         3.0
-    }
-}
-
-pub(in crate::ai::decision) fn seven_pairs_pair_liveness_discard_bias(
-    hand: &[i32],
-    table: &AiPublicTable,
-    position: usize,
-    tile: i32,
-    count: usize,
-) -> f64 {
-    if count != 2 {
-        return 0.0;
-    }
-    match remaining_tile_count(hand, table, position, tile) {
-        0 => 5.0,
-        1 => 0.0,
-        _ => -2.0,
     }
 }
 

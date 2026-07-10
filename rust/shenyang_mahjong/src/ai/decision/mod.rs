@@ -1,6 +1,3 @@
-use std::cmp::Ordering;
-use std::collections::HashMap;
-
 mod claim;
 mod defense;
 mod discard;
@@ -14,8 +11,14 @@ mod self_gang;
 mod seven_pairs;
 mod shenyang_rule;
 mod table;
+
+#[cfg(test)]
+mod tests;
 mod tile;
 mod types;
+
+use std::cmp::Ordering;
+use std::collections::HashMap;
 
 pub use claim::choose_claim_from_view;
 pub use discard::choose_discard_from_view;
@@ -81,6 +84,15 @@ use tile::{
     unique_tiles,
 };
 
+pub(in crate::ai::decision) fn has_door_opening_meld(
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+) -> bool {
+    melds
+        .iter()
+        .any(|meld| is_open_meld(meld) && (table.chi_opens_door || !is_sequence_meld(meld)))
+}
+
 pub(in crate::ai::decision) fn is_complete_win_for_table(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -107,15 +119,3 @@ pub(in crate::ai::decision) fn is_single_wait_shape_for_table(
         known_unavailable_tiles,
     )
 }
-
-pub(in crate::ai::decision) fn has_door_opening_meld(
-    melds: &[WsShenyangMahjongMeld],
-    table: &AiPublicTable,
-) -> bool {
-    melds
-        .iter()
-        .any(|meld| is_open_meld(meld) && (table.chi_opens_door || !is_sequence_meld(meld)))
-}
-
-#[cfg(test)]
-mod tests;

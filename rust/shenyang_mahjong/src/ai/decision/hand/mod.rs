@@ -1,3 +1,9 @@
+mod counts;
+mod power;
+mod requirements;
+mod sequences;
+mod suits;
+
 use std::collections::{HashMap, HashSet};
 
 use share_type_public::games::shenyang_mahjong::WsShenyangMahjongMeld;
@@ -11,12 +17,6 @@ use super::meld::{is_triplet_like_meld, valid_meld_tiles};
 use super::tile::{
     is_honor, is_suited, is_valid_tile, tile_is_terminal, tile_rank, tile_suit, unique_tiles,
 };
-
-mod counts;
-mod power;
-mod requirements;
-mod sequences;
-mod suits;
 
 pub(super) use counts::*;
 pub(super) use power::*;

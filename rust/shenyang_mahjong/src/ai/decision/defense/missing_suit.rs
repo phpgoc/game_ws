@@ -1,14 +1,22 @@
 use super::*;
 
-pub(in crate::ai::decision) fn opponent_missing_suit_safety_bias(
+pub(in crate::ai::decision) fn closed_opponent_may_need_suit(
     table: &AiPublicTable,
     position: usize,
-    tile: i32,
-) -> f64 {
-    if !is_late_defense_round(table) || !is_suited(tile) {
-        return 0.0;
-    }
-    opponent_missing_suit_safety_read(table, position, tile)
+    suit: i32,
+) -> bool {
+    table.seats.iter().any(|(seat_position, seat)| {
+        *seat_position != position
+            && !has_open_meld(&seat.melds)
+            && (seat.hand_count >= 13
+                || (seat.hand_count > 0 && has_concealed_gang_meld(&seat.melds)))
+            && seat
+                .discards
+                .iter()
+                .filter(|discard| is_suited(**discard) && tile_suit(**discard) == suit)
+                .count()
+                < 2
+    })
 }
 
 pub(in crate::ai::decision) fn mid_broken_opponent_missing_suit_safety_bias(
@@ -21,6 +29,17 @@ pub(in crate::ai::decision) fn mid_broken_opponent_missing_suit_safety_bias(
         return 0.0;
     }
     opponent_missing_suit_safety_read(table, position, tile) * 0.7
+}
+
+pub(in crate::ai::decision) fn opponent_missing_suit_safety_bias(
+    table: &AiPublicTable,
+    position: usize,
+    tile: i32,
+) -> f64 {
+    if !is_late_defense_round(table) || !is_suited(tile) {
+        return 0.0;
+    }
+    opponent_missing_suit_safety_read(table, position, tile)
 }
 
 pub(in crate::ai::decision) fn opponent_missing_suit_safety_read(
@@ -71,23 +90,4 @@ pub(in crate::ai::decision) fn opponent_missing_suit_safety_read(
             }
         })
         .sum()
-}
-
-pub(in crate::ai::decision) fn closed_opponent_may_need_suit(
-    table: &AiPublicTable,
-    position: usize,
-    suit: i32,
-) -> bool {
-    table.seats.iter().any(|(seat_position, seat)| {
-        *seat_position != position
-            && !has_open_meld(&seat.melds)
-            && (seat.hand_count >= 13
-                || (seat.hand_count > 0 && has_concealed_gang_meld(&seat.melds)))
-            && seat
-                .discards
-                .iter()
-                .filter(|discard| is_suited(**discard) && tile_suit(**discard) == suit)
-                .count()
-                < 2
-    })
 }

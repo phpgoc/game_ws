@@ -1,29 +1,6 @@
 use super::*;
 
 #[test]
-fn late_defense_can_follow_exposed_middle_against_piao_threat() {
-    let mut table = table_with_discards(1, Vec::new());
-    table.wall_count = 16;
-    table.seats.get_mut(&1).unwrap().melds =
-        vec![test_peng_meld(1), test_peng_meld(11), test_peng_meld(21)];
-    table.seats.insert(
-        2,
-        AiSeatView {
-            position: 2,
-            hand_count: 10,
-            discards: Vec::new(),
-            melds: vec![test_peng_meld(6)],
-        },
-    );
-    let hand = vec![2, 3, 4, 5, 6, 7, 8, 12, 14, 16, 18, 22, 24, 26];
-
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
-        Some(6)
-    );
-}
-
-#[test]
 fn late_defense_avoids_breaking_wind_pair_against_piao_threat() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 16;
@@ -52,12 +29,26 @@ fn late_defense_avoids_piao_threat_missing_suit_wait_tiles() {
 }
 
 #[test]
-fn opponent_threat_counts_ai_controlled_table_seat() {
+fn late_defense_can_follow_exposed_middle_against_piao_threat() {
     let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 16;
     table.seats.get_mut(&1).unwrap().melds =
         vec![test_peng_meld(1), test_peng_meld(11), test_peng_meld(21)];
+    table.seats.insert(
+        2,
+        AiSeatView {
+            position: 2,
+            hand_count: 10,
+            discards: Vec::new(),
+            melds: vec![test_peng_meld(6)],
+        },
+    );
+    let hand = vec![2, 3, 4, 5, 6, 7, 8, 12, 14, 16, 18, 22, 24, 26];
 
-    assert!(opponent_threat_discard_bias(&table, 0, 5, 1) < 0.0);
+    assert_eq!(
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        Some(6)
+    );
 }
 
 #[test]
@@ -66,4 +57,13 @@ fn opponent_missing_suit_read_counts_ai_controlled_table_seat() {
     table.wall_count = 16;
 
     assert!(opponent_missing_suit_safety_bias(&table, 0, 14) > 0.0);
+}
+
+#[test]
+fn opponent_threat_counts_ai_controlled_table_seat() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.seats.get_mut(&1).unwrap().melds =
+        vec![test_peng_meld(1), test_peng_meld(11), test_peng_meld(21)];
+
+    assert!(opponent_threat_discard_bias(&table, 0, 5, 1) < 0.0);
 }

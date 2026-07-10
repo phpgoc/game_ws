@@ -1,45 +1,26 @@
+//! Room membership, settings, and common request handling.
+
+mod model;
+
 use std::{collections::HashMap, sync::Arc};
 
-use crate::game_setting::GameSettings;
 use crate::official::OfficialPlayerSession;
-use serde::{Serialize, de::DeserializeOwned};
-use serde_json::{Value, json};
+use serde::de::DeserializeOwned;
+use serde_json::Value;
 use share_type_public::{
     CommonEvent, GameId, GameParam, Routes, WsAddAiRequest, WsCode, WsJoinRequest,
-    WsMessageRequest, WsPositionEvent, WsRequest, WsResponseCode, WsSwapPositionPayload,
+    WsMessageRequest, WsPositionEvent, WsResponseCode, WsSwapPositionPayload,
     WsWithoutDataResponse,
     ws::WsResponse,
     ws::{WsMessageEvent, WsNameEvent},
 };
 
+pub use model::{
+    ClientRequest, Delivery, Dispatch, OutboundPayload, RequestResponse, SessionId,
+    SettingsBuilderResult,
+};
+
 const AI_SESSION_ID_BASE: SessionId = 9_000_000_000_000_000_000;
-
-pub type ClientRequest = WsRequest<Value>;
-
-#[derive(Debug, Clone, Serialize)]
-pub struct Delivery {
-    pub recipient: SessionId,
-    pub payload: OutboundPayload,
-}
-
-#[derive(Debug, Default, Clone, Serialize)]
-pub struct Dispatch {
-    pub messages: Vec<Delivery>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(untagged)]
-pub enum OutboundPayload {
-    Response(RequestResponse),
-    Event(CommonEvent<Value>),
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(untagged)]
-pub enum RequestResponse {
-    WithoutData(WsWithoutDataResponse),
-    WithData(WsResponse<Value>),
-}
 
 /// 一个房间，由 password（room_key）标识。
 /// `configs` — 可配置参数的当前值（HashMap<String, i32>）。
@@ -63,8 +44,6 @@ pub struct RoomService {
     next_ai_sequence: u64,
 }
 
-pub type SessionId = u64;
-
 #[derive(Debug, Default)]
 struct SessionState {
     name: Option<String>,
@@ -72,9 +51,6 @@ struct SessionState {
     position: Option<usize>,
     official_session_id: Option<String>,
 }
-
-/// 构建房间设置的结果：GameSettings（含默认值和人数限制）和参数描述。
-pub type SettingsBuilderResult = (GameSettings, HashMap<String, GameParam>);
 
 fn config_value(configs: &HashMap<String, i32>, key: &str, default: i32) -> i32 {
     configs.get(key).copied().unwrap_or(default)
@@ -114,6 +90,79 @@ impl RoomService {
             if !in_sessions && !in_players {
                 return candidate;
             }
+        }
+    }
+
+    pub fn broadcast<T: serde::Serialize>(
+        &self,
+        room_key: &str,
+        code: i32,
+        payload: T,
+        dispatch: &mut Dispatch,
+    ) {
+        let Some(entry) = self.rooms.get(room_key) else {
+            return;
+        };
+        let data = serde_json::to_value(payload).unwrap_or(Value::Null);
+        for (_, (sid, _)) in entry.state.players() {
+            dispatch.messages.push(Delivery {
+                recipient: sid,
+                payload: OutboundPayload::Event(CommonEvent {
+                    code,
+                    data: data.clone(),
+                }),
+            });
+        }
+    }
+
+    /// Broadcast to currently connected sessions in a room without reading game state.
+    ///
+    /// This is useful inside game request handlers: the runtime already holds the
+    /// `RoomService` lock, while some game loops may hold game-state locks and then
+    /// wait for `RoomService`. Reading `entry.state.players()` here can invert that
+    /// lock order and deadlock.
+    pub fn broadcast_connected<T: serde::Serialize>(
+        &self,
+        room_key: &str,
+        code: i32,
+        payload: T,
+        dispatch: &mut Dispatch,
+    ) {
+        let data = serde_json::to_value(payload).unwrap_or(Value::Null);
+        for sid in self.connected_session_ids(room_key) {
+            dispatch.messages.push(Delivery {
+                recipient: sid,
+                payload: OutboundPayload::Event(CommonEvent {
+                    code,
+                    data: data.clone(),
+                }),
+            });
+        }
+    }
+
+    pub fn broadcast_except<T: serde::Serialize>(
+        &self,
+        room_key: &str,
+        exclude: SessionId,
+        code: i32,
+        payload: T,
+        dispatch: &mut Dispatch,
+    ) {
+        let Some(entry) = self.rooms.get(room_key) else {
+            return;
+        };
+        let data = serde_json::to_value(payload).unwrap_or(Value::Null);
+        for (_, (sid, _)) in entry.state.players() {
+            if sid == exclude {
+                continue;
+            }
+            dispatch.messages.push(Delivery {
+                recipient: sid,
+                payload: OutboundPayload::Event(CommonEvent {
+                    code,
+                    data: data.clone(),
+                }),
+            });
         }
     }
 
@@ -171,11 +220,6 @@ impl RoomService {
                 .then_some(*sid)
             })
             .collect()
-    }
-
-    /// 获取当前 configs JSON（用于 SETTING/JOIN 响应）。
-    fn current_configs_json(&self, room_key: &str) -> Option<Value> {
-        self.rooms.get(room_key).map(|e| json!(e.configs))
     }
 
     fn direct_response(recipient: SessionId, route: i32, code: WsResponseCode) -> Delivery {
@@ -236,15 +280,6 @@ impl RoomService {
         dispatch
     }
 
-    pub fn ensure_in_room(
-        &self,
-        session_id: SessionId,
-        route: i32,
-        dispatch: &mut Dispatch,
-    ) -> bool {
-        self.require_login(session_id, route, dispatch)
-    }
-
     pub fn error_response(
         &self,
         session_id: SessionId,
@@ -256,56 +291,9 @@ impl RoomService {
         }
     }
 
-    /// 获取 game state 里的玩家快照。
-    pub fn get_game_state_players(
-        &self,
-        room_key: &str,
-    ) -> std::collections::HashMap<usize, (SessionId, String)> {
-        self.rooms
-            .get(room_key)
-            .map(|e| e.state.players())
-            .unwrap_or_default()
-    }
-
-    /// 获取房间共享 CommonGameState 句柄（供游戏 loop 与 common 同步访问）。
-    pub fn get_room_common_state_handle(
-        &self,
-        room_key: &str,
-    ) -> Option<std::sync::Arc<std::sync::Mutex<crate::game_state::CommonGameState>>> {
-        self.rooms
-            .get(room_key)
-            .map(|entry| entry.state.shared_common_state())
-    }
-
-    /// 获取当前 configs（HashMap 形式，给游戏逻辑用）。
-    pub fn get_room_configs(&self, room_key: &str) -> Option<HashMap<String, i32>> {
-        self.rooms.get(room_key).map(|e| e.configs.clone())
-    }
-
-    /// 获取当前 configs 的 JSON 值。
-    pub fn get_room_configs_json(&self, session_id: SessionId) -> Option<Value> {
-        let room_key = self.room_key_of(session_id)?;
-        self.current_configs_json(&room_key)
-    }
-
-    /// 返回房间内所有成员 (SessionId, name, position, avatar_url)。
-    pub fn get_room_members(&self, room_key: &str) -> Vec<(SessionId, String, usize, String)> {
-        let Some(entry) = self.rooms.get(room_key) else {
-            return Vec::new();
-        };
-        entry
-            .state
-            .players()
-            .iter()
-            .filter_map(|(pos, (sid, name))| {
-                Some((*sid, name.clone(), *pos, entry.state.player_avatar(*pos)))
-            })
-            .collect()
-    }
-
     fn handle_add_ai_request(&mut self, session_id: SessionId, data: Value) -> Dispatch {
         let mut dispatch = Dispatch::default();
-        if !self.require_login(session_id, Routes::ADD_AI as i32, &mut dispatch) {
+        if !self.require_room_membership(session_id, Routes::ADD_AI as i32, &mut dispatch) {
             return dispatch;
         }
         if self.session_position(session_id) != Some(0) {
@@ -322,7 +310,7 @@ impl RoomService {
                 WsResponseCode::NOT_LOGIN,
             );
         };
-        let Ok(payload) = Self::parse::<WsAddAiRequest>(data) else {
+        let Ok(payload) = Self::parse_payload::<WsAddAiRequest>(data) else {
             return self.error_response(
                 session_id,
                 Routes::ADD_AI as i32,
@@ -384,7 +372,7 @@ impl RoomService {
                 entry.state.add_player(position, ai_session_id, &ai_name);
                 entry.state.mark_ai_position(position);
             }
-            self.send_all(
+            self.broadcast(
                 &room_key,
                 WsCode::JOIN as i32,
                 share_type_public::WsMemberInfo {
@@ -412,7 +400,7 @@ impl RoomService {
 
     fn handle_away_request(&mut self, session_id: SessionId) -> Dispatch {
         let mut dispatch = Dispatch::default();
-        if !self.require_login(session_id, Routes::AWAY as i32, &mut dispatch) {
+        if !self.require_room_membership(session_id, Routes::AWAY as i32, &mut dispatch) {
             return dispatch;
         }
         let Some(room_key) = self.room_key_of(session_id) else {
@@ -438,7 +426,7 @@ impl RoomService {
             }
             entry.state.mark_away(position);
         }
-        self.send_all(
+        self.broadcast(
             &room_key,
             WsCode::AWAY as i32,
             WsPositionEvent {
@@ -451,7 +439,7 @@ impl RoomService {
 
     fn handle_back_request(&mut self, session_id: SessionId) -> Dispatch {
         let mut dispatch = Dispatch::default();
-        if !self.require_login(session_id, Routes::BACK as i32, &mut dispatch) {
+        if !self.require_room_membership(session_id, Routes::BACK as i32, &mut dispatch) {
             return dispatch;
         }
         let Some(room_key) = self.room_key_of(session_id) else {
@@ -477,7 +465,7 @@ impl RoomService {
             }
             entry.state.clear_away_position(position);
         }
-        self.send_all(
+        self.broadcast(
             &room_key,
             WsCode::BACK as i32,
             WsPositionEvent {
@@ -549,7 +537,7 @@ impl RoomService {
 
     fn handle_disband_request(&mut self, session_id: SessionId) -> Dispatch {
         let mut dispatch = Dispatch::default();
-        if !self.require_login(session_id, Routes::DISBAND as i32, &mut dispatch) {
+        if !self.require_room_membership(session_id, Routes::DISBAND as i32, &mut dispatch) {
             return dispatch;
         }
         if self.session_position(session_id) != Some(0) {
@@ -574,7 +562,7 @@ impl RoomService {
     where
         F: Fn() -> SettingsBuilderResult,
     {
-        let Ok(payload) = Self::parse::<WsJoinRequest>(data) else {
+        let Ok(payload) = Self::parse_payload::<WsJoinRequest>(data) else {
             return self.error_response(
                 session_id,
                 Routes::JOIN as i32,
@@ -720,7 +708,7 @@ impl RoomService {
                 session.official_session_id = official_session_id.clone();
             }
 
-            self.send_other(
+            self.broadcast_except(
                 &password,
                 session_id,
                 WsCode::JOIN as i32,
@@ -824,7 +812,7 @@ impl RoomService {
         }
 
         // — 广播 JOIN 事件给其他人 —
-        self.send_other(
+        self.broadcast_except(
             &password,
             session_id,
             WsCode::JOIN as i32,
@@ -872,10 +860,10 @@ impl RoomService {
 
     fn handle_message_request(&mut self, session_id: SessionId, data: Value) -> Dispatch {
         let mut dispatch = Dispatch::default();
-        if !self.require_login(session_id, Routes::MESSAGE as i32, &mut dispatch) {
+        if !self.require_room_membership(session_id, Routes::MESSAGE as i32, &mut dispatch) {
             return dispatch;
         }
-        let Ok(payload) = Self::parse::<WsMessageRequest>(data) else {
+        let Ok(payload) = Self::parse_payload::<WsMessageRequest>(data) else {
             return self.error_response(
                 session_id,
                 Routes::MESSAGE as i32,
@@ -889,7 +877,7 @@ impl RoomService {
                 WsResponseCode::NOT_LOGIN,
             );
         };
-        self.send_other(
+        self.broadcast_except(
             &room_key,
             session_id,
             WsCode::MESSAGE as i32,
@@ -905,7 +893,7 @@ impl RoomService {
 
     fn handle_pause_request(&mut self, session_id: SessionId) -> Dispatch {
         let mut dispatch = Dispatch::default();
-        if !self.require_login(session_id, Routes::PAUSE as i32, &mut dispatch) {
+        if !self.require_room_membership(session_id, Routes::PAUSE as i32, &mut dispatch) {
             return dispatch;
         }
         let Some(room_key) = self.room_key_of(session_id) else {
@@ -932,7 +920,7 @@ impl RoomService {
             }
             entry.state.pause();
         }
-        self.send_other(
+        self.broadcast_except(
             &room_key,
             session_id,
             WsCode::PAUSE as i32,
@@ -947,7 +935,7 @@ impl RoomService {
 
     fn handle_quit_request(&mut self, session_id: SessionId) -> Dispatch {
         let mut dispatch = Dispatch::default();
-        if !self.require_login(session_id, Routes::QUIT as i32, &mut dispatch) {
+        if !self.require_room_membership(session_id, Routes::QUIT as i32, &mut dispatch) {
             return dispatch;
         }
         self.quit_room(session_id, &mut dispatch);
@@ -957,7 +945,7 @@ impl RoomService {
 
     fn handle_resume_request(&mut self, session_id: SessionId) -> Dispatch {
         let mut dispatch = Dispatch::default();
-        if !self.require_login(session_id, Routes::RESUME as i32, &mut dispatch) {
+        if !self.require_room_membership(session_id, Routes::RESUME as i32, &mut dispatch) {
             return dispatch;
         }
         let Some(room_key) = self.room_key_of(session_id) else {
@@ -984,7 +972,7 @@ impl RoomService {
             }
             entry.state.resume();
         }
-        self.send_other(
+        self.broadcast_except(
             &room_key,
             session_id,
             WsCode::RESUME as i32,
@@ -999,7 +987,7 @@ impl RoomService {
 
     fn handle_setting_request(&mut self, session_id: SessionId, data: &Value) -> Dispatch {
         let mut dispatch = Dispatch::default();
-        if !self.require_login(session_id, Routes::SETTING as i32, &mut dispatch) {
+        if !self.require_room_membership(session_id, Routes::SETTING as i32, &mut dispatch) {
             return dispatch;
         }
         if self.session_position(session_id) != Some(0) {
@@ -1016,7 +1004,8 @@ impl RoomService {
                 WsResponseCode::NOT_LOGIN,
             );
         };
-        let Ok(payload) = Self::parse::<share_type_public::WsSettingPayload>(data.clone()) else {
+        let Ok(payload) = Self::parse_payload::<share_type_public::WsSettingPayload>(data.clone())
+        else {
             return self.error_response(
                 session_id,
                 Routes::SETTING as i32,
@@ -1039,7 +1028,7 @@ impl RoomService {
                     },
                     &mut dispatch,
                 );
-                self.send_other(
+                self.broadcast_except(
                     &room_key,
                     session_id,
                     WsCode::SETTING as i32,
@@ -1058,7 +1047,7 @@ impl RoomService {
 
     fn handle_swap_request(&mut self, session_id: SessionId, data: Value) -> Dispatch {
         let mut dispatch = Dispatch::default();
-        if !self.require_login(session_id, Routes::SWAP as i32, &mut dispatch) {
+        if !self.require_room_membership(session_id, Routes::SWAP as i32, &mut dispatch) {
             return dispatch;
         }
         if self.session_position(session_id) != Some(0) {
@@ -1068,7 +1057,7 @@ impl RoomService {
                 WsResponseCode::NO_PERMISSION,
             );
         }
-        let Ok(payload) = Self::parse::<WsSwapPositionPayload>(data) else {
+        let Ok(payload) = Self::parse_payload::<WsSwapPositionPayload>(data) else {
             return self.error_response(
                 session_id,
                 Routes::SWAP as i32,
@@ -1144,7 +1133,7 @@ impl RoomService {
             s.position = Some(pos_a);
         }
 
-        self.send_all(
+        self.broadcast(
             &room_key,
             WsCode::SWAP as i32,
             WsSwapPositionPayload { a: pos_a, b: pos_b },
@@ -1195,14 +1184,13 @@ impl RoomService {
 
         if let Some(entry) = self.rooms.get_mut(&room_key) {
             let players = entry.state.players();
-            if position.is_none() {
-                if let Some((pos, (_, player_name))) =
+            if position.is_none()
+                && let Some((pos, (_, player_name))) =
                     players.iter().find(|(_, (sid, _))| *sid == session_id)
-                {
-                    position = Some(*pos);
-                    if name.is_empty() {
-                        name = player_name.clone();
-                    }
+            {
+                position = Some(*pos);
+                if name.is_empty() {
+                    name = player_name.clone();
                 }
             }
             let Some(pos) = position else {
@@ -1271,7 +1259,7 @@ impl RoomService {
         }
     }
 
-    pub fn parse<T: DeserializeOwned>(value: Value) -> Result<T, serde_json::Error> {
+    pub fn parse_payload<T: DeserializeOwned>(value: Value) -> Result<T, serde_json::Error> {
         serde_json::from_value(value)
     }
 
@@ -1339,14 +1327,13 @@ impl RoomService {
         if let Some(entry) = self.rooms.get_mut(&room_key) {
             let players = entry.state.players();
             let mut position = session.position.take();
-            if position.is_none() {
-                if let Some((pos, (_, name))) =
+            if position.is_none()
+                && let Some((pos, (_, name))) =
                     players.iter().find(|(_, (sid, _))| *sid == session_id)
-                {
-                    position = Some(*pos);
-                    if leave_name.is_empty() {
-                        leave_name = name.clone();
-                    }
+            {
+                position = Some(*pos);
+                if leave_name.is_empty() {
+                    leave_name = name.clone();
                 }
             }
             if let Some(pos) = position {
@@ -1379,7 +1366,12 @@ impl RoomService {
         }
     }
 
-    fn require_login(&self, session_id: SessionId, route: i32, dispatch: &mut Dispatch) -> bool {
+    pub fn require_room_membership(
+        &self,
+        session_id: SessionId,
+        route: i32,
+        dispatch: &mut Dispatch,
+    ) -> bool {
         let logged_in = self
             .sessions
             .get(&session_id)
@@ -1413,6 +1405,21 @@ impl RoomService {
         Some(next)
     }
 
+    /// 获取房间共享 CommonGameState 句柄（供游戏 loop 与 common 同步访问）。
+    pub fn room_common_state(
+        &self,
+        room_key: &str,
+    ) -> Option<std::sync::Arc<std::sync::Mutex<crate::game_state::CommonGameState>>> {
+        self.rooms
+            .get(room_key)
+            .map(|entry| entry.state.shared_common_state())
+    }
+
+    /// 获取当前 configs（HashMap 形式，给游戏逻辑用）。
+    pub fn room_configs(&self, room_key: &str) -> Option<HashMap<String, i32>> {
+        self.rooms.get(room_key).map(|e| e.configs.clone())
+    }
+
     pub fn room_count(&self) -> usize {
         self.rooms.len()
     }
@@ -1425,11 +1432,33 @@ impl RoomService {
         self.rooms.get(room_key).map(|entry| entry.game_id)
     }
 
+    /// 房间人数是否达到下限（可以开始了）。
+    pub fn room_is_ready_to_start(&self, room_key: &str) -> bool {
+        let Some(entry) = self.rooms.get(room_key) else {
+            return false;
+        };
+        let count = entry.state.players().len();
+        count >= entry.min_players
+    }
+
     pub fn room_key_of(&self, session_id: SessionId) -> Option<String> {
         self.sessions
             .get(&session_id)
             .and_then(|item| item.room_key.as_ref())
             .cloned()
+    }
+
+    /// 返回房间内所有成员 (SessionId, name, position, avatar_url)。
+    pub fn room_members(&self, room_key: &str) -> Vec<(SessionId, String, usize, String)> {
+        let Some(entry) = self.rooms.get(room_key) else {
+            return Vec::new();
+        };
+        entry
+            .state
+            .players()
+            .iter()
+            .map(|(pos, (sid, name))| (*sid, name.clone(), *pos, entry.state.player_avatar(*pos)))
+            .collect()
     }
 
     pub fn room_official_match_id(&self, room_key: &str) -> Option<i64> {
@@ -1472,18 +1501,6 @@ impl RoomService {
             .and_then(|entry| entry.official_user_ids_by_position.get(&position).copied())
     }
 
-    /// 房间人数是否达到下限（可以开始了）。
-    pub fn room_ready_to_start(&self, session_id: SessionId) -> bool {
-        let Some(room_key) = self.room_key_of(session_id) else {
-            return false;
-        };
-        let Some(entry) = self.rooms.get(&room_key) else {
-            return false;
-        };
-        let count = entry.state.players().len();
-        count >= entry.min_players
-    }
-
     fn select_position(
         &self,
         room_key: &str,
@@ -1504,88 +1521,11 @@ impl RoomService {
         (0..max_players).find(|pos| !players.contains_key(pos))
     }
 
-    pub fn send_all<T: serde::Serialize>(
-        &self,
-        room_key: &str,
-        code: i32,
-        payload: T,
-        dispatch: &mut Dispatch,
-    ) {
-        let Some(entry) = self.rooms.get(room_key) else {
-            return;
-        };
-        let data = serde_json::to_value(payload).unwrap_or(Value::Null);
-        for (_, (sid, _)) in entry.state.players() {
-            dispatch.messages.push(Delivery {
-                recipient: sid,
-                payload: OutboundPayload::Event(CommonEvent {
-                    code,
-                    data: data.clone(),
-                }),
-            });
-        }
-    }
-
-    /// Broadcast to currently connected sessions in a room without reading game state.
-    ///
-    /// This is useful inside game request handlers: the runtime already holds the
-    /// `RoomService` lock, while some game loops may hold game-state locks and then
-    /// wait for `RoomService`. Reading `entry.state.players()` here can invert that
-    /// lock order and deadlock.
-    pub fn send_all_connected<T: serde::Serialize>(
-        &self,
-        room_key: &str,
-        code: i32,
-        payload: T,
-        dispatch: &mut Dispatch,
-    ) {
-        let data = serde_json::to_value(payload).unwrap_or(Value::Null);
-        for sid in self.connected_session_ids(room_key) {
-            dispatch.messages.push(Delivery {
-                recipient: sid,
-                payload: OutboundPayload::Event(CommonEvent {
-                    code,
-                    data: data.clone(),
-                }),
-            });
-        }
-    }
-
-    pub fn send_other<T: serde::Serialize>(
-        &self,
-        room_key: &str,
-        exclude: SessionId,
-        code: i32,
-        payload: T,
-        dispatch: &mut Dispatch,
-    ) {
-        let Some(entry) = self.rooms.get(room_key) else {
-            return;
-        };
-        let data = serde_json::to_value(payload).unwrap_or(Value::Null);
-        for (_, (sid, _)) in entry.state.players() {
-            if sid == exclude {
-                continue;
-            }
-            dispatch.messages.push(Delivery {
-                recipient: sid,
-                payload: OutboundPayload::Event(CommonEvent {
-                    code,
-                    data: data.clone(),
-                }),
-            });
-        }
-    }
-
     fn session_active_in_room(&self, session_id: SessionId, room_key: &str) -> bool {
         self.sessions
             .get(&session_id)
             .and_then(|session| session.room_key.as_deref())
             == Some(room_key)
-    }
-
-    pub fn session_count(&self) -> usize {
-        self.sessions.len()
     }
 
     pub fn session_name(&self, session_id: SessionId) -> String {
@@ -1630,7 +1570,7 @@ impl RoomService {
     /// 验证每个参数：
     ///   - Range：值在 [min, max] 内
     ///   - Enum：值在 options 索引范围内
-    /// 验证通过后同步更新 `configs` 和 `param_descriptions` 中的 `default`。
+    ///     验证通过后同步更新 `configs` 和 `param_descriptions` 中的 `default`。
     pub fn update_room_settings(
         &mut self,
         session_id: SessionId,
@@ -1744,9 +1684,7 @@ mod tests {
         }
 
         let room_key = service.room_key_of(1).expect("room key");
-        let common = service
-            .get_room_common_state_handle(&room_key)
-            .expect("common state");
+        let common = service.room_common_state(&room_key).expect("common state");
         service.set_room_game_state(
             &room_key,
             Box::new(NoAcceptState {
@@ -1812,10 +1750,18 @@ mod tests {
 
         service.clear_room_game_state("p1");
 
-        let players = service.get_game_state_players("p1");
+        let players = service.room_members("p1");
         assert_eq!(players.len(), 2);
-        assert_eq!(players.get(&0).map(|(_, name)| name.as_str()), Some("u1"));
-        assert_eq!(players.get(&1).map(|(_, name)| name.as_str()), Some("u2"));
+        assert!(
+            players
+                .iter()
+                .any(|(_, name, position, _)| { *position == 0 && name == "u1" })
+        );
+        assert!(
+            players
+                .iter()
+                .any(|(_, name, position, _)| { *position == 1 && name == "u2" })
+        );
 
         let rejoin = service
             .handle_common_request(
@@ -1947,12 +1893,11 @@ mod tests {
             .expect("join common");
 
         assert_eq!(service.session_position(3), Some(0));
-        assert_eq!(
+        assert!(
             service
-                .get_game_state_players("p1")
-                .get(&0)
-                .map(|(sid, _)| *sid),
-            Some(3)
+                .room_members("p1")
+                .iter()
+                .any(|(session_id, _, position, _)| *position == 0 && *session_id == 3)
         );
         let active_event = rejoin.messages.iter().any(|item| match &item.payload {
             OutboundPayload::Event(event) if event.code == WsCode::JOIN as i32 => {
@@ -2726,9 +2671,7 @@ mod tests {
         }
 
         let room_key = service.room_key_of(1).expect("room key");
-        let common = service
-            .get_room_common_state_handle(&room_key)
-            .expect("common state");
+        let common = service.room_common_state(&room_key).expect("common state");
         service.set_room_game_state(&room_key, Box::new(NoAcceptState { common }));
 
         let swap = service

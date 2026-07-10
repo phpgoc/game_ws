@@ -82,22 +82,6 @@ pub(in crate::ai::decision) fn piao_discard_bias(
     }
 }
 
-pub(in crate::ai::decision) fn piao_pair_liveness_discard_bias(
-    hand: &[i32],
-    table: &AiPublicTable,
-    position: usize,
-    tile: i32,
-    count: usize,
-) -> f64 {
-    if count != 2 {
-        return 0.0;
-    }
-    match remaining_tile_count(hand, table, position, tile) {
-        0 => 3.0,
-        _ => 0.0,
-    }
-}
-
 pub(in crate::ai::decision) fn piao_dragon_pair_discard_bias(
     hand: &[i32],
     table: &AiPublicTable,
@@ -112,5 +96,21 @@ pub(in crate::ai::decision) fn piao_dragon_pair_discard_bias(
         0 => -1.5,
         1 => -3.0,
         _ => -5.0,
+    }
+}
+
+pub(in crate::ai::decision) fn piao_pair_liveness_discard_bias(
+    hand: &[i32],
+    table: &AiPublicTable,
+    position: usize,
+    tile: i32,
+    count: usize,
+) -> f64 {
+    if count != 2 {
+        return 0.0;
+    }
+    match remaining_tile_count(hand, table, position, tile) {
+        0 => 3.0,
+        _ => 0.0,
     }
 }

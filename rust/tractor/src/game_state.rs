@@ -7,7 +7,7 @@ use rand::seq::SliceRandom;
 use share_type_public::{
     TractorPhase, TractorRank, WsTractorPlayedCards, WsTractorTableSnapshotEvent,
 };
-use ws_common::game_state::{CommonGameState, GameState};
+use ws_common::{CommonGameState, GameState};
 
 pub const TRACTOR_RANKS: [TractorRank; 13] = [
     TractorRank::TWO,

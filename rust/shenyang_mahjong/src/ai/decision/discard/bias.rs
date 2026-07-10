@@ -1,5 +1,31 @@
 use super::*;
 
+pub(in crate::ai::decision) fn capped_spare_dragon_discard_bias(
+    hand: &[i32],
+    tile: i32,
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+) -> f64 {
+    if !is_dragon(tile)
+        || hand.iter().filter(|item| **item == tile).count() != 1
+        || !has_triplet_or_dragon_pair(hand, melds)
+        || terminal_or_honor_count(hand, melds) <= 1
+    {
+        return 0.0;
+    }
+    if table.max_fan.is_some_and(|max_fan| max_fan <= 1) {
+        return 5.0;
+    }
+
+    let after_discard = remove_n_tiles(hand, tile, 1);
+    if after_discard.len() + 1 == hand.len()
+        && capped_open_basic_route_visible_fan_reaches_cap(&after_discard, melds, table)
+    {
+        return 6.0;
+    }
+    0.0
+}
+
 pub(in crate::ai::decision) fn dragon_value_bias(hand: &[i32], tile: i32) -> f64 {
     if !is_dragon(tile) {
         return 0.0;
@@ -31,30 +57,4 @@ pub(in crate::ai::decision) fn isolated_suited_singleton_discard_bias(tile: i32)
 
 pub(in crate::ai::decision) fn pair_discard_bias(hand: &[i32]) -> f64 {
     if pair_count(hand) >= 4 { -4.4 } else { -1.8 }
-}
-
-pub(in crate::ai::decision) fn capped_spare_dragon_discard_bias(
-    hand: &[i32],
-    tile: i32,
-    melds: &[WsShenyangMahjongMeld],
-    table: &AiPublicTable,
-) -> f64 {
-    if !is_dragon(tile)
-        || hand.iter().filter(|item| **item == tile).count() != 1
-        || !has_triplet_or_dragon_pair(hand, melds)
-        || terminal_or_honor_count(hand, melds) <= 1
-    {
-        return 0.0;
-    }
-    if table.max_fan.is_some_and(|max_fan| max_fan <= 1) {
-        return 5.0;
-    }
-
-    let after_discard = remove_n_tiles(hand, tile, 1);
-    if after_discard.len() + 1 == hand.len()
-        && capped_open_basic_route_visible_fan_reaches_cap(&after_discard, melds, table)
-    {
-        return 6.0;
-    }
-    0.0
 }

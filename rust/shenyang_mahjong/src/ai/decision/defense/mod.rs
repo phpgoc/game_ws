@@ -1,5 +1,3 @@
-use super::*;
-
 mod broken;
 mod closed;
 mod late;
@@ -7,6 +5,8 @@ mod missing_suit;
 mod piao_threat;
 mod public_safety;
 mod pure_threat;
+
+use super::*;
 
 pub(super) use broken::*;
 pub(super) use closed::*;

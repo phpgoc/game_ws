@@ -1,5 +1,47 @@
 use super::*;
 
+pub(in crate::ai::decision) fn pure_one_suit_closed_discard_threat_suit(
+    seat: &AiSeatView,
+) -> Option<i32> {
+    if has_open_meld(&seat.melds) || valid_discards(seat).count() < 5 {
+        return None;
+    }
+
+    let mut suit_discards = [0usize; 3];
+    for discard in valid_discards(seat)
+        .copied()
+        .filter(|tile| is_suited(*tile))
+    {
+        suit_discards[tile_suit(discard) as usize] += 1;
+    }
+    let untouched_suits = suit_discards
+        .iter()
+        .enumerate()
+        .filter_map(|(suit, count)| (*count == 0).then_some(suit as i32))
+        .collect::<Vec<_>>();
+    if untouched_suits.len() != 1 {
+        return None;
+    }
+    let threat_suit = untouched_suits[0];
+    let off_suit_discards = valid_discards(seat)
+        .filter(|discard| !is_suited(**discard) || tile_suit(**discard) != threat_suit)
+        .count();
+    (off_suit_discards >= 5).then_some(threat_suit)
+}
+
+pub(in crate::ai::decision) fn pure_one_suit_single_meld_discard_evidence(
+    seat: &AiSeatView,
+    threat_suit: i32,
+) -> bool {
+    let same_suit_discards = valid_discards(seat)
+        .filter(|discard| is_suited(**discard) && tile_suit(**discard) == threat_suit)
+        .count();
+    let off_suit_discards = valid_discards(seat)
+        .filter(|discard| !is_suited(**discard) || tile_suit(**discard) != threat_suit)
+        .count();
+    same_suit_discards == 0 && off_suit_discards >= 4
+}
+
 pub(in crate::ai::decision) fn pure_one_suit_threat_discard_bias(
     table: &AiPublicTable,
     position: usize,
@@ -86,14 +128,6 @@ pub(in crate::ai::decision) fn pure_one_suit_threat_meld_pressure(open_melds: us
     }
 }
 
-pub(in crate::ai::decision) fn pure_one_suit_threat_tile_fully_accounted(
-    table: &AiPublicTable,
-    tile: i32,
-    own_tile_count: usize,
-) -> bool {
-    exposed_meld_tile_count(table, tile) + public_discard_count(table, tile) + own_tile_count >= 4
-}
-
 pub(in crate::ai::decision) fn pure_one_suit_threat_pair_penalty(
     tile: i32,
     own_tile_count: usize,
@@ -135,46 +169,12 @@ pub(in crate::ai::decision) fn pure_one_suit_threat_suit(
     })
 }
 
-pub(in crate::ai::decision) fn pure_one_suit_closed_discard_threat_suit(
-    seat: &AiSeatView,
-) -> Option<i32> {
-    if has_open_meld(&seat.melds) || valid_discards(seat).count() < 5 {
-        return None;
-    }
-
-    let mut suit_discards = [0usize; 3];
-    for discard in valid_discards(seat)
-        .copied()
-        .filter(|tile| is_suited(*tile))
-    {
-        suit_discards[tile_suit(discard) as usize] += 1;
-    }
-    let untouched_suits = suit_discards
-        .iter()
-        .enumerate()
-        .filter_map(|(suit, count)| (*count == 0).then_some(suit as i32))
-        .collect::<Vec<_>>();
-    if untouched_suits.len() != 1 {
-        return None;
-    }
-    let threat_suit = untouched_suits[0];
-    let off_suit_discards = valid_discards(seat)
-        .filter(|discard| !is_suited(**discard) || tile_suit(**discard) != threat_suit)
-        .count();
-    (off_suit_discards >= 5).then_some(threat_suit)
-}
-
-pub(in crate::ai::decision) fn pure_one_suit_single_meld_discard_evidence(
-    seat: &AiSeatView,
-    threat_suit: i32,
+pub(in crate::ai::decision) fn pure_one_suit_threat_tile_fully_accounted(
+    table: &AiPublicTable,
+    tile: i32,
+    own_tile_count: usize,
 ) -> bool {
-    let same_suit_discards = valid_discards(seat)
-        .filter(|discard| is_suited(**discard) && tile_suit(**discard) == threat_suit)
-        .count();
-    let off_suit_discards = valid_discards(seat)
-        .filter(|discard| !is_suited(**discard) || tile_suit(**discard) != threat_suit)
-        .count();
-    same_suit_discards == 0 && off_suit_discards >= 4
+    exposed_meld_tile_count(table, tile) + public_discard_count(table, tile) + own_tile_count >= 4
 }
 
 fn valid_discards(seat: &AiSeatView) -> impl Iterator<Item = &i32> {

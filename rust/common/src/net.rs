@@ -9,7 +9,7 @@ fn is_bindable(host: Ipv4Addr, port: u16) -> bool {
     TcpListener::bind(addr).is_ok()
 }
 
-pub fn resolve_host(host: Option<String>) -> anyhow::Result<Ipv4Addr> {
+pub(crate) fn resolve_host(host: Option<String>) -> anyhow::Result<Ipv4Addr> {
     match host {
         Some(host) => host
             .parse::<Ipv4Addr>()
@@ -18,7 +18,7 @@ pub fn resolve_host(host: Option<String>) -> anyhow::Result<Ipv4Addr> {
     }
 }
 
-pub fn resolve_port(host: Ipv4Addr, port: Option<u16>) -> anyhow::Result<u16> {
+pub(crate) fn resolve_port(host: Ipv4Addr, port: Option<u16>) -> anyhow::Result<u16> {
     match port {
         Some(port) => {
             if port <= 9000 {
@@ -42,4 +42,47 @@ fn select_private_ipv4() -> Option<Ipv4Addr> {
         std::net::IpAddr::V4(v4) if v4.is_private() => Some(v4),
         _ => None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        net::{Ipv4Addr, TcpListener},
+        str::FromStr,
+    };
+
+    use super::{resolve_host, resolve_port};
+
+    #[test]
+    fn resolve_host_accepts_ipv4_literal() {
+        assert_eq!(
+            resolve_host(Some("127.0.0.1".to_string())).unwrap(),
+            Ipv4Addr::LOCALHOST
+        );
+    }
+
+    #[test]
+    fn resolve_host_rejects_invalid_literal() {
+        let error = resolve_host(Some("localhost".to_string())).unwrap_err();
+        assert_eq!(error.to_string(), "invalid host: localhost");
+    }
+
+    #[test]
+    fn resolve_port_rejects_address_already_in_use() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        assert!(port > 9000);
+
+        let error = resolve_port(Ipv4Addr::from_str("127.0.0.1").unwrap(), Some(port)).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!("port is not bindable: 127.0.0.1:{port}")
+        );
+    }
+
+    #[test]
+    fn resolve_port_rejects_reserved_range() {
+        let error = resolve_port(Ipv4Addr::LOCALHOST, Some(9000)).unwrap_err();
+        assert_eq!(error.to_string(), "port must be > 9000, got 9000");
+    }
 }

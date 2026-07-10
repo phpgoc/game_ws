@@ -78,7 +78,7 @@ fn build_auto_dispatch(
     };
 
     if let Some(position) = away_position {
-        room_service.send_all(
+        room_service.broadcast(
             room_key,
             WsCode::AWAY as i32,
             WsPositionEvent {
@@ -90,7 +90,7 @@ fn build_auto_dispatch(
     let Some((play_event, snapshot, settlement)) = auto_result else {
         return dispatch;
     };
-    room_service.send_all(room_key, WsCode::PLAY as i32, play_event, &mut dispatch);
+    room_service.broadcast(room_key, WsCode::PLAY as i32, play_event, &mut dispatch);
     push_table_snapshot(room_key, room_service, snapshot, &mut dispatch);
     if let Some(settlement) = settlement {
         crate::official::settle_round(
@@ -100,7 +100,7 @@ fn build_auto_dispatch(
             settlement.score,
             settlement.target_rank,
         );
-        room_service.send_all(
+        room_service.broadcast(
             room_key,
             WsCode::GAME_OVER as i32,
             settlement,
@@ -155,7 +155,7 @@ fn push_private_deals(
     state: &TractorGameState,
     dispatch: &mut Dispatch,
 ) {
-    for (session_id, _, position, _) in room_service.get_room_members(room_key) {
+    for (session_id, _, position, _) in room_service.room_members(room_key) {
         push_direct_event(
             dispatch,
             session_id,
@@ -178,7 +178,7 @@ fn push_table_snapshot(
     snapshot: WsTractorTableSnapshotEvent,
     dispatch: &mut Dispatch,
 ) {
-    room_service.send_all(room_key, WsCode::TABLE_SNAPSHOT as i32, snapshot, dispatch);
+    room_service.broadcast(room_key, WsCode::TABLE_SNAPSHOT as i32, snapshot, dispatch);
 }
 
 fn settlement_event(state: &TractorGameState) -> WsTractorSettlementEvent {
@@ -212,7 +212,7 @@ pub(crate) fn start_game_loop(
         let configs = room_service
             .lock()
             .await
-            .get_room_configs(&room_key)
+            .room_configs(&room_key)
             .unwrap_or_default();
 
         loop {
@@ -265,7 +265,7 @@ pub(crate) fn start_game_loop(
                         {
                             let room = room_service.lock().await;
                             let guard = state.lock().unwrap();
-                            room.send_all(
+                            room.broadcast(
                                 &room_key,
                                 WsCode::START as i32,
                                 serde_json::json!({}),
@@ -297,9 +297,25 @@ mod tests {
     use super::*;
     use share_type_public::{TractorPhase, TractorRank};
     use std::sync::{Arc, Mutex as StdMutex};
-    use ws_common::game_state::CommonGameState;
+    use ws_common::CommonGameState;
 
     use crate::game_state::{TractorGameState, TractorRules};
+
+    #[test]
+    fn auto_dispatch_uses_smart_ai_for_ai_position_lead() {
+        let state = test_state_with_ai_leader();
+        let room = RoomService::default();
+        let configs = HashMap::new();
+
+        let _ = build_auto_dispatch("room", &room, &state, &configs);
+
+        let guard = state.lock().unwrap();
+        assert_eq!(guard.current_trick.len(), 1);
+        assert_eq!(guard.current_trick[0].position, 0);
+        assert_eq!(guard.current_trick[0].cards, vec![13]);
+        assert!(!guard.hands.get(&0).unwrap().contains(&13));
+        assert!(guard.hands.get(&0).unwrap().contains(&53));
+    }
 
     fn test_state_with_ai_leader() -> TractorStateHandle {
         let mut common = CommonGameState::new();
@@ -326,21 +342,5 @@ mod tests {
         state.hands.insert(2, vec![3]);
         state.hands.insert(3, vec![4]);
         Arc::new(StdMutex::new(state))
-    }
-
-    #[test]
-    fn auto_dispatch_uses_smart_ai_for_ai_position_lead() {
-        let state = test_state_with_ai_leader();
-        let room = RoomService::default();
-        let configs = HashMap::new();
-
-        let _ = build_auto_dispatch("room", &room, &state, &configs);
-
-        let guard = state.lock().unwrap();
-        assert_eq!(guard.current_trick.len(), 1);
-        assert_eq!(guard.current_trick[0].position, 0);
-        assert_eq!(guard.current_trick[0].cards, vec![13]);
-        assert!(!guard.hands.get(&0).unwrap().contains(&13));
-        assert!(guard.hands.get(&0).unwrap().contains(&53));
     }
 }

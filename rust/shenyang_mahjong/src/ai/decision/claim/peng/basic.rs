@@ -43,50 +43,6 @@ pub(in crate::ai::decision) fn should_claim_peng_for_basic_heng_and_opening(
     })
 }
 
-pub(in crate::ai::decision) fn should_claim_peng_to_open_mid_basic_hand(
-    hand: &[i32],
-    current_melds: &[WsShenyangMahjongMeld],
-    table: &AiPublicTable,
-    position: usize,
-    win_rule: i32,
-    tile: i32,
-    from_position: usize,
-) -> bool {
-    if win_rule != WIN_RULE_SHENYANG_BASIC
-        || has_door_opening_meld(current_melds, table)
-        || !is_mid_opening_round(table)
-        || !can_peng(hand, tile)
-        || !missing_suits(hand, current_melds).is_empty()
-        || !has_terminal_or_honor_with_extra(hand, current_melds, Some(tile))
-        || !has_triplet_or_dragon_pair(hand, current_melds)
-        || should_preserve_seven_pairs_plan_for_context(
-            hand,
-            current_melds,
-            table,
-            position,
-            win_rule,
-        )
-        || pure_one_suit_plan_score_for_context(hand, current_melds, table, position) > 0.0
-    {
-        return false;
-    }
-
-    let mut next = remove_n_tiles(hand, tile, 2);
-    if next.len() + 2 != hand.len() {
-        return false;
-    }
-    sort_tiles(&mut next);
-    let mut melds = current_melds.to_vec();
-    melds.push(claim_peng_meld(tile, from_position));
-
-    unique_tiles(&next).into_iter().any(|discard| {
-        let after_discard = remove_n_tiles(&next, discard, 1);
-        missing_suits(&after_discard, &melds).is_empty()
-            && has_terminal_or_honor_with_extra(&after_discard, &melds, None)
-            && has_triplet_or_dragon_pair(&after_discard, &melds)
-    })
-}
-
 pub(in crate::ai::decision) fn should_claim_peng_to_open_capped_basic_route(
     hand: &[i32],
     current_melds: &[WsShenyangMahjongMeld],
@@ -130,6 +86,50 @@ pub(in crate::ai::decision) fn should_claim_peng_to_open_capped_basic_route(
             && has_terminal_or_honor_with_extra(&after_discard, &melds, None)
             && has_triplet_or_dragon_pair(&after_discard, &melds)
             && capped_open_basic_route_visible_fan_reaches_cap(&after_discard, &melds, table)
+    })
+}
+
+pub(in crate::ai::decision) fn should_claim_peng_to_open_mid_basic_hand(
+    hand: &[i32],
+    current_melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+    tile: i32,
+    from_position: usize,
+) -> bool {
+    if win_rule != WIN_RULE_SHENYANG_BASIC
+        || has_door_opening_meld(current_melds, table)
+        || !is_mid_opening_round(table)
+        || !can_peng(hand, tile)
+        || !missing_suits(hand, current_melds).is_empty()
+        || !has_terminal_or_honor_with_extra(hand, current_melds, Some(tile))
+        || !has_triplet_or_dragon_pair(hand, current_melds)
+        || should_preserve_seven_pairs_plan_for_context(
+            hand,
+            current_melds,
+            table,
+            position,
+            win_rule,
+        )
+        || pure_one_suit_plan_score_for_context(hand, current_melds, table, position) > 0.0
+    {
+        return false;
+    }
+
+    let mut next = remove_n_tiles(hand, tile, 2);
+    if next.len() + 2 != hand.len() {
+        return false;
+    }
+    sort_tiles(&mut next);
+    let mut melds = current_melds.to_vec();
+    melds.push(claim_peng_meld(tile, from_position));
+
+    unique_tiles(&next).into_iter().any(|discard| {
+        let after_discard = remove_n_tiles(&next, discard, 1);
+        missing_suits(&after_discard, &melds).is_empty()
+            && has_terminal_or_honor_with_extra(&after_discard, &melds, None)
+            && has_triplet_or_dragon_pair(&after_discard, &melds)
     })
 }
 

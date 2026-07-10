@@ -35,23 +35,6 @@ pub(in crate::ai::decision) fn late_defense_discard_bias(
     }
 }
 
-pub(in crate::ai::decision) fn late_defense_tile_safety_score(
-    table: &AiPublicTable,
-    position: usize,
-    tile: i32,
-    own_tile_count: usize,
-) -> f64 {
-    late_defense_discard_bias(table, position, tile)
-        + late_defense_exposed_meld_bias(table, tile)
-        + late_defense_fully_accounted_bias(table, tile, own_tile_count)
-        + late_defense_own_tile_shape_bias(table, tile, own_tile_count)
-        + opponent_threat_discard_bias(table, position, tile, own_tile_count)
-        + pure_one_suit_threat_discard_bias(table, position, tile, own_tile_count)
-        + opponent_missing_suit_safety_bias(table, position, tile)
-        + closed_opponent_threat_discard_bias(table, position, tile, own_tile_count)
-        + estimate_pressure_for_tile(table, position, tile)
-}
-
 pub(in crate::ai::decision) fn late_defense_exposed_meld_bias(
     table: &AiPublicTable,
     tile: i32,
@@ -65,14 +48,6 @@ pub(in crate::ai::decision) fn late_defense_exposed_meld_bias(
         2 => 20.0,
         _ => 28.0,
     }
-}
-
-pub(in crate::ai::decision) fn late_defense_tile_fully_accounted(
-    table: &AiPublicTable,
-    tile: i32,
-    own_tile_count: usize,
-) -> bool {
-    exposed_meld_tile_count(table, tile) + own_tile_count >= 4
 }
 
 pub(in crate::ai::decision) fn late_defense_fully_accounted_bias(
@@ -107,4 +82,29 @@ pub(in crate::ai::decision) fn late_defense_own_tile_shape_bias(
     } else {
         -2.0
     }
+}
+
+pub(in crate::ai::decision) fn late_defense_tile_fully_accounted(
+    table: &AiPublicTable,
+    tile: i32,
+    own_tile_count: usize,
+) -> bool {
+    exposed_meld_tile_count(table, tile) + own_tile_count >= 4
+}
+
+pub(in crate::ai::decision) fn late_defense_tile_safety_score(
+    table: &AiPublicTable,
+    position: usize,
+    tile: i32,
+    own_tile_count: usize,
+) -> f64 {
+    late_defense_discard_bias(table, position, tile)
+        + late_defense_exposed_meld_bias(table, tile)
+        + late_defense_fully_accounted_bias(table, tile, own_tile_count)
+        + late_defense_own_tile_shape_bias(table, tile, own_tile_count)
+        + opponent_threat_discard_bias(table, position, tile, own_tile_count)
+        + pure_one_suit_threat_discard_bias(table, position, tile, own_tile_count)
+        + opponent_missing_suit_safety_bias(table, position, tile)
+        + closed_opponent_threat_discard_bias(table, position, tile, own_tile_count)
+        + estimate_pressure_for_tile(table, position, tile)
 }

@@ -1,5 +1,27 @@
 use super::*;
 
+pub(in crate::ai::decision) fn best_one_step_wait_potential_after_discard(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+) -> f64 {
+    if hand.is_empty() {
+        return one_step_wait_potential(hand, melds, table, position, win_rule);
+    }
+    unique_tiles(hand)
+        .into_iter()
+        .map(|tile| {
+            let mut next = hand.to_vec();
+            if let Some(index) = next.iter().position(|item| *item == tile) {
+                next.remove(index);
+            }
+            one_step_wait_potential_after_discard(&next, melds, table, position, win_rule, tile)
+        })
+        .fold(0.0, f64::max)
+}
+
 pub(in crate::ai::decision) fn best_score_after_forced_discard(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -21,28 +43,6 @@ pub(in crate::ai::decision) fn best_score_after_forced_discard(
         ));
     }
     best
-}
-
-pub(in crate::ai::decision) fn best_one_step_wait_potential_after_discard(
-    hand: &[i32],
-    melds: &[WsShenyangMahjongMeld],
-    table: &AiPublicTable,
-    position: usize,
-    win_rule: i32,
-) -> f64 {
-    if hand.is_empty() {
-        return one_step_wait_potential(hand, melds, table, position, win_rule);
-    }
-    unique_tiles(hand)
-        .into_iter()
-        .map(|tile| {
-            let mut next = hand.to_vec();
-            if let Some(index) = next.iter().position(|item| *item == tile) {
-                next.remove(index);
-            }
-            one_step_wait_potential_after_discard(&next, melds, table, position, win_rule, tile)
-        })
-        .fold(0.0, f64::max)
 }
 
 pub(in crate::ai::decision) fn hand_progress_score(

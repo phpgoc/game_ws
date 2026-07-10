@@ -5,10 +5,7 @@ use share_type_public::games::shenyang_mahjong::{
     SHENYANG_MAHJONG_TILE_KINDS, ShenyangMahjongAction, ShenyangMahjongMeldKind,
     ShenyangMahjongPhase, WsShenyangMahjongMeld,
 };
-use ws_common::{
-    SessionId,
-    game_state::{CommonGameState, GameState},
-};
+use ws_common::{CommonGameState, GameState, SessionId};
 
 use crate::rules::{remove_tiles, sort_tiles};
 
@@ -96,6 +93,27 @@ pub fn claim_action_to_play_action(response: &ClaimResponse) -> ShenyangMahjongA
     }
 }
 
+fn system_wall_seed() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_nanos() as u64)
+        .unwrap_or(42)
+}
+
+fn wall_seed_base_from_env() -> Option<u64> {
+    let value = std::env::var(WALL_SEED_ENV).ok()?;
+    match value.parse::<u64>() {
+        Ok(seed) => Some(seed),
+        Err(_) => {
+            ws_common::dlog!(
+                ws_common::tracing::Level::WARN,
+                "ignoring invalid {WALL_SEED_ENV}={value:?}; expected unsigned integer"
+            );
+            None
+        }
+    }
+}
+
 impl ShenyangMahjongGameState {
     pub fn from_loop_state(inner: Arc<Mutex<ShenyangMahjongLoopState>>) -> Self {
         Self { inner }
@@ -162,13 +180,6 @@ impl ShenyangMahjongLoopState {
         }
         self.current_position = self.dealer_position;
         self.set_action_received(false);
-    }
-
-    #[cfg(test)]
-    pub(crate) fn set_wall_seed_base_for_test(&mut self, seed: Option<u64>) {
-        self.wall_seed_base = seed;
-        self.wall_round_index = 0;
-        self.last_wall_seed = None;
     }
 
     pub fn draw_for_position(&mut self, position: usize) -> Option<i32> {
@@ -288,6 +299,12 @@ impl ShenyangMahjongLoopState {
         positions[(current_index + 1) % positions.len()]
     }
 
+    fn next_wall_seed(&self) -> u64 {
+        self.wall_seed_base
+            .map(|seed| seed.wrapping_add(self.wall_round_index))
+            .unwrap_or_else(|| system_wall_seed().wrapping_add(self.wall_round_index))
+    }
+
     pub fn player_name(&self, position: usize) -> String {
         self.base.lock().unwrap().player_name(position)
     }
@@ -347,10 +364,11 @@ impl ShenyangMahjongLoopState {
         self.base.lock().unwrap().turn_countdown = turn_countdown;
     }
 
-    fn next_wall_seed(&self) -> u64 {
-        self.wall_seed_base
-            .map(|seed| seed.wrapping_add(self.wall_round_index))
-            .unwrap_or_else(|| system_wall_seed().wrapping_add(self.wall_round_index))
+    #[cfg(test)]
+    pub(crate) fn set_wall_seed_base_for_test(&mut self, seed: Option<u64>) {
+        self.wall_seed_base = seed;
+        self.wall_round_index = 0;
+        self.last_wall_seed = None;
     }
 
     fn shuffle_wall_with_seed(seed: u64) -> Vec<i32> {
@@ -384,27 +402,6 @@ impl ShenyangMahjongLoopState {
     }
 }
 
-fn system_wall_seed() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_nanos() as u64)
-        .unwrap_or(42)
-}
-
-fn wall_seed_base_from_env() -> Option<u64> {
-    let value = std::env::var(WALL_SEED_ENV).ok()?;
-    match value.parse::<u64>() {
-        Ok(seed) => Some(seed),
-        Err(_) => {
-            ws_common::dlog!(
-                ws_common::tracing::Level::WARN,
-                "ignoring invalid {WALL_SEED_ENV}={value:?}; expected unsigned integer"
-            );
-            None
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -417,33 +414,6 @@ mod tests {
         state.deal_new_round();
 
         assert!(state.is_away(2));
-    }
-
-    #[test]
-    fn seeded_wall_shuffle_is_reproducible() {
-        assert_eq!(
-            ShenyangMahjongLoopState::shuffle_wall_with_seed(2026070401),
-            ShenyangMahjongLoopState::shuffle_wall_with_seed(2026070401)
-        );
-        assert_ne!(
-            ShenyangMahjongLoopState::shuffle_wall_with_seed(2026070401),
-            ShenyangMahjongLoopState::shuffle_wall_with_seed(2026070402)
-        );
-    }
-
-    #[test]
-    fn seeded_deal_advances_round_seed() {
-        let mut state = state_with_players();
-        state.wall_seed_base = Some(2026070401);
-
-        state.deal_new_round();
-        assert_eq!(state.last_wall_seed, Some(2026070401));
-
-        state.enter_settlement(Vec::new(), None, None, false);
-        state.redeal();
-        state.deal_new_round();
-
-        assert_eq!(state.last_wall_seed, Some(2026070402));
     }
 
     #[test]
@@ -501,6 +471,33 @@ mod tests {
 
         assert_eq!(state.dealer_position, 0);
         assert_eq!(state.current_position, 0);
+    }
+
+    #[test]
+    fn seeded_deal_advances_round_seed() {
+        let mut state = state_with_players();
+        state.wall_seed_base = Some(2026070401);
+
+        state.deal_new_round();
+        assert_eq!(state.last_wall_seed, Some(2026070401));
+
+        state.enter_settlement(Vec::new(), None, None, false);
+        state.redeal();
+        state.deal_new_round();
+
+        assert_eq!(state.last_wall_seed, Some(2026070402));
+    }
+
+    #[test]
+    fn seeded_wall_shuffle_is_reproducible() {
+        assert_eq!(
+            ShenyangMahjongLoopState::shuffle_wall_with_seed(2026070401),
+            ShenyangMahjongLoopState::shuffle_wall_with_seed(2026070401)
+        );
+        assert_ne!(
+            ShenyangMahjongLoopState::shuffle_wall_with_seed(2026070401),
+            ShenyangMahjongLoopState::shuffle_wall_with_seed(2026070402)
+        );
     }
 
     fn state_with_players() -> ShenyangMahjongLoopState {

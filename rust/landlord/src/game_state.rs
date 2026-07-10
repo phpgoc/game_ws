@@ -1,10 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use ws_common::{
-    SessionId,
-    game_state::{CommonGameState, GameState},
-};
+use ws_common::{CommonGameState, GameState, SessionId};
 
 use share_type_public::LandlordPhase;
 

@@ -1,76 +1,5 @@
 use super::*;
 
-pub(in crate::ai::decision) fn choose_late_defense_discard(
-    hand: &[i32],
-    table: &AiPublicTable,
-    position: usize,
-) -> Option<i32> {
-    choose_late_defense_discard_from_candidates(hand, table, position, unique_tiles(hand))
-}
-
-pub(in crate::ai::decision) fn choose_late_defense_discard_preserving_pairs(
-    hand: &[i32],
-    table: &AiPublicTable,
-    position: usize,
-) -> Option<i32> {
-    let safe_candidates = unique_tiles(hand)
-        .into_iter()
-        .filter(|tile| late_defense_known_safe_candidate(hand, table, *tile))
-        .collect::<Vec<_>>();
-    if !safe_candidates.is_empty() {
-        return choose_late_defense_discard_from_candidates(hand, table, position, safe_candidates);
-    }
-
-    let singletons = unique_tiles(hand)
-        .into_iter()
-        .filter(|tile| hand.iter().filter(|item| **item == *tile).count() == 1)
-        .collect::<Vec<_>>();
-    if singletons.is_empty() {
-        choose_late_defense_discard(hand, table, position)
-    } else {
-        choose_late_defense_discard_from_candidates(hand, table, position, singletons)
-    }
-}
-
-pub(in crate::ai::decision) fn choose_late_defense_discard_from_candidates(
-    hand: &[i32],
-    table: &AiPublicTable,
-    position: usize,
-    candidates: Vec<i32>,
-) -> Option<i32> {
-    let mut best: Option<(f64, i32)> = None;
-    let safe_candidates = candidates
-        .iter()
-        .copied()
-        .filter(|tile| late_defense_known_safe_candidate(hand, table, *tile))
-        .collect::<Vec<_>>();
-    let candidates = if safe_candidates.is_empty() {
-        candidates
-    } else {
-        safe_candidates
-    };
-
-    for tile in candidates {
-        let own_tile_count = hand.iter().filter(|item| **item == tile).count();
-        let score = late_defense_tile_safety_score(table, position, tile, own_tile_count);
-        match best {
-            None => best = Some((score, tile)),
-            Some((best_score, best_tile)) => {
-                if score > best_score || (score == best_score && tile < best_tile) {
-                    best = Some((score, tile));
-                }
-            }
-        }
-    }
-    best.map(|(_, tile)| tile)
-}
-
-fn late_defense_known_safe_candidate(hand: &[i32], table: &AiPublicTable, tile: i32) -> bool {
-    let own_tile_count = hand.iter().filter(|item| **item == tile).count();
-    public_discard_count(table, tile) > 0
-        || late_defense_tile_fully_accounted(table, tile, own_tile_count)
-}
-
 pub(in crate::ai::decision) fn choose_broken_hand_public_defense_discard(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -122,6 +51,71 @@ pub(in crate::ai::decision) fn choose_broken_hand_public_defense_discard(
     )
 }
 
+pub(in crate::ai::decision) fn choose_late_defense_discard(
+    hand: &[i32],
+    table: &AiPublicTable,
+    position: usize,
+) -> Option<i32> {
+    choose_late_defense_discard_from_candidates(hand, table, position, unique_tiles(hand))
+}
+
+pub(in crate::ai::decision) fn choose_late_defense_discard_from_candidates(
+    hand: &[i32],
+    table: &AiPublicTable,
+    position: usize,
+    candidates: Vec<i32>,
+) -> Option<i32> {
+    let mut best: Option<(f64, i32)> = None;
+    let safe_candidates = candidates
+        .iter()
+        .copied()
+        .filter(|tile| late_defense_known_safe_candidate(hand, table, *tile))
+        .collect::<Vec<_>>();
+    let candidates = if safe_candidates.is_empty() {
+        candidates
+    } else {
+        safe_candidates
+    };
+
+    for tile in candidates {
+        let own_tile_count = hand.iter().filter(|item| **item == tile).count();
+        let score = late_defense_tile_safety_score(table, position, tile, own_tile_count);
+        match best {
+            None => best = Some((score, tile)),
+            Some((best_score, best_tile)) => {
+                if score > best_score || (score == best_score && tile < best_tile) {
+                    best = Some((score, tile));
+                }
+            }
+        }
+    }
+    best.map(|(_, tile)| tile)
+}
+
+pub(in crate::ai::decision) fn choose_late_defense_discard_preserving_pairs(
+    hand: &[i32],
+    table: &AiPublicTable,
+    position: usize,
+) -> Option<i32> {
+    let safe_candidates = unique_tiles(hand)
+        .into_iter()
+        .filter(|tile| late_defense_known_safe_candidate(hand, table, *tile))
+        .collect::<Vec<_>>();
+    if !safe_candidates.is_empty() {
+        return choose_late_defense_discard_from_candidates(hand, table, position, safe_candidates);
+    }
+
+    let singletons = unique_tiles(hand)
+        .into_iter()
+        .filter(|tile| hand.iter().filter(|item| **item == *tile).count() == 1)
+        .collect::<Vec<_>>();
+    if singletons.is_empty() {
+        choose_late_defense_discard(hand, table, position)
+    } else {
+        choose_late_defense_discard_from_candidates(hand, table, position, singletons)
+    }
+}
+
 pub(in crate::ai::decision) fn choose_public_defense_discard_from_candidates(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -145,4 +139,10 @@ pub(in crate::ai::decision) fn choose_public_defense_discard_from_candidates(
         }
     }
     best.map(|(_, tile)| tile)
+}
+
+fn late_defense_known_safe_candidate(hand: &[i32], table: &AiPublicTable, tile: i32) -> bool {
+    let own_tile_count = hand.iter().filter(|item| **item == tile).count();
+    public_discard_count(table, tile) > 0
+        || late_defense_tile_fully_accounted(table, tile, own_tile_count)
 }

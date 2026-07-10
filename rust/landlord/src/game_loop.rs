@@ -782,7 +782,7 @@ pub(crate) fn start_game_loop(
             room_service
                 .lock()
                 .await
-                .get_room_configs(&room_key)
+                .room_configs(&room_key)
                 .unwrap_or_default()
         };
 

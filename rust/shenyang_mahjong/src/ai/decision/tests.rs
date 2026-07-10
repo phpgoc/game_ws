@@ -1,9 +1,3 @@
-use std::collections::HashMap;
-
-use super::*;
-use crate::ai::observation::{AiClaimView, AiSeatView};
-use crate::rules::{WIN_RULE_RELAXED, WIN_RULE_SHENYANG_BASIC};
-
 mod claim;
 mod defense;
 mod discard;
@@ -15,36 +9,11 @@ mod self_gang;
 mod seven_pairs;
 mod shenyang_rule;
 
-fn table_with_discards(position: usize, discards: Vec<i32>) -> AiPublicTable {
-    let mut seats = HashMap::new();
-    seats.insert(
-        0,
-        AiSeatView {
-            position: 0,
-            hand_count: 14,
-            discards: Vec::new(),
-            melds: Vec::new(),
-        },
-    );
-    seats.insert(
-        position,
-        AiSeatView {
-            position,
-            hand_count: 10,
-            discards,
-            melds: Vec::new(),
-        },
-    );
-    AiPublicTable {
-        current_position: 0,
-        dealer_position: 1,
-        wall_count: 60,
-        max_fan: None,
-        chi_opens_door: true,
-        claim_window: None,
-        seats,
-    }
-}
+use std::collections::HashMap;
+
+use super::*;
+use crate::ai::observation::{AiClaimView, AiSeatView};
+use crate::rules::{WIN_RULE_RELAXED, WIN_RULE_SHENYANG_BASIC};
 
 fn dead_basic_heng_discards(hand: &[i32]) -> Vec<i32> {
     let mut counts = HashMap::<i32, usize>::new();
@@ -78,18 +47,41 @@ fn dead_terminal_or_honor_discards() -> Vec<i32> {
         .collect()
 }
 
+fn table_with_discards(position: usize, discards: Vec<i32>) -> AiPublicTable {
+    let mut seats = HashMap::new();
+    seats.insert(
+        0,
+        AiSeatView {
+            position: 0,
+            hand_count: 14,
+            discards: Vec::new(),
+            melds: Vec::new(),
+        },
+    );
+    seats.insert(
+        position,
+        AiSeatView {
+            position,
+            hand_count: 10,
+            discards,
+            melds: Vec::new(),
+        },
+    );
+    AiPublicTable {
+        current_position: 0,
+        dealer_position: 1,
+        wall_count: 60,
+        max_fan: None,
+        chi_opens_door: true,
+        claim_window: None,
+        seats,
+    }
+}
+
 fn test_chi_meld(start_tile: i32) -> WsShenyangMahjongMeld {
     WsShenyangMahjongMeld {
         kind: ShenyangMahjongMeldKind::CHI,
         tiles: vec![start_tile, start_tile + 1, start_tile + 2],
-        from_position: Some(1),
-    }
-}
-
-fn test_gang_meld(tile: i32) -> WsShenyangMahjongMeld {
-    WsShenyangMahjongMeld {
-        kind: ShenyangMahjongMeldKind::GANG,
-        tiles: vec![tile, tile, tile, tile],
         from_position: Some(1),
     }
 }
@@ -99,6 +91,14 @@ fn test_concealed_gang_meld(tile: i32) -> WsShenyangMahjongMeld {
         kind: ShenyangMahjongMeldKind::GANG,
         tiles: vec![tile, tile, tile, tile],
         from_position: None,
+    }
+}
+
+fn test_gang_meld(tile: i32) -> WsShenyangMahjongMeld {
+    WsShenyangMahjongMeld {
+        kind: ShenyangMahjongMeldKind::GANG,
+        tiles: vec![tile, tile, tile, tile],
+        from_position: Some(1),
     }
 }
 

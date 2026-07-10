@@ -5,7 +5,7 @@ use std::{
 
 use rand::seq::SliceRandom;
 use share_type_public::TexasHoldEmPhase;
-use ws_common::game_state::{CommonGameState, GameState};
+use ws_common::{CommonGameState, GameState};
 
 use crate::{
     hand_evaluator::{EvaluatedHand, evaluate_best, evaluate_omaha},

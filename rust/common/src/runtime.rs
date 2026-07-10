@@ -19,9 +19,21 @@ use tokio_tungstenite::{accept_async, tungstenite::Message};
 use tracing::{error, info, warn};
 
 use crate::{
-    ClientRequest, Dispatch, RoomService, SessionId, SettingsBuilderResult, from_message,
-    parse_bind_cli, resolve_host, resolve_port, to_text_message,
+    ClientRequest, Dispatch, RoomService, SessionId, SettingsBuilderResult,
+    cli::parse_bind_cli,
+    from_message,
+    net::{resolve_host, resolve_port},
+    to_text_message,
 };
+
+struct ConnectionContext<H> {
+    idle_timeout: Duration,
+    heartbeat_interval: Duration,
+    senders: SessionSenders,
+    room_service: Arc<Mutex<RoomService>>,
+    game_handler: Arc<Mutex<H>>,
+    stop_signal: StopSignal,
+}
 
 pub trait GameHandler: Send + 'static {
     fn accepts_game_id(&self, game_id: share_type_public::GameId) -> bool {
@@ -100,16 +112,19 @@ async fn handle_connection<H>(
     stream: TcpStream,
     peer: SocketAddr,
     session_id: SessionId,
-    idle_timeout: Duration,
-    heartbeat_interval: Duration,
-    senders: SessionSenders,
-    room_service: Arc<Mutex<RoomService>>,
-    game_handler: Arc<Mutex<H>>,
-    mut stop_signal: StopSignal,
+    context: ConnectionContext<H>,
 ) -> anyhow::Result<()>
 where
     H: GameHandler,
 {
+    let ConnectionContext {
+        idle_timeout,
+        heartbeat_interval,
+        senders,
+        room_service,
+        game_handler,
+        mut stop_signal,
+    } = context;
     let ws = accept_async(stream).await?;
     let (mut sink, mut source) = ws.split();
     let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
@@ -186,15 +201,13 @@ where
                 || handler.build_room_settings(),
             ) {
                 // 首个 JOIN 建房成功后，挂载游戏态，确保后续逻辑走具体游戏状态。
-                if creates_room_on_join {
-                    if let Some(room_key) = room.room_key_of(session_id) {
-                        let mut gs = handler.build_game_state();
-                        for (sid, name, pos, avatar) in room.get_room_members(&room_key) {
-                            gs.add_player(pos, sid, &name);
-                            gs.set_avatar(pos, &avatar);
-                        }
-                        room.set_room_game_state(&room_key, gs);
+                if creates_room_on_join && let Some(room_key) = room.room_key_of(session_id) {
+                    let mut gs = handler.build_game_state();
+                    for (sid, name, pos, avatar) in room.room_members(&room_key) {
+                        gs.add_player(pos, sid, &name);
+                        gs.set_avatar(pos, &avatar);
                     }
+                    room.set_room_game_state(&room_key, gs);
                 }
                 handler.after_common_request(&mut room, session_id, &request, &mut dispatch);
                 dispatch
@@ -222,7 +235,7 @@ fn init_tracing() {
         .try_init();
 }
 
-pub async fn run_game_server<H>(
+async fn run_game_server<H>(
     service_name: &'static str,
     host: Option<String>,
     port: Option<u16>,
@@ -322,27 +335,17 @@ where
             result = listener.accept() => result?,
         };
         let session_id = next_session.fetch_add(1, Ordering::Relaxed);
-        let senders = Arc::clone(&senders);
-        let room_service = Arc::clone(&room_service);
-        let game_handler = Arc::clone(&game_handler);
-        let idle_timeout = config.idle_timeout;
-        let heartbeat_interval = config.heartbeat_interval;
-        let stop_signal = stop_signal.clone();
+        let context = ConnectionContext {
+            idle_timeout: config.idle_timeout,
+            heartbeat_interval: config.heartbeat_interval,
+            senders: Arc::clone(&senders),
+            room_service: Arc::clone(&room_service),
+            game_handler: Arc::clone(&game_handler),
+            stop_signal: stop_signal.clone(),
+        };
 
         tokio::spawn(async move {
-            if let Err(err) = handle_connection(
-                stream,
-                peer,
-                session_id,
-                idle_timeout,
-                heartbeat_interval,
-                senders,
-                room_service,
-                game_handler,
-                stop_signal,
-            )
-            .await
-            {
+            if let Err(err) = handle_connection(stream, peer, session_id, context).await {
                 error!(session_id, peer = %peer, ?err, "connection ended with error");
             } else {
                 info!(session_id, peer = %peer, "connection closed");
@@ -387,11 +390,11 @@ impl RuntimeStopHandle {
 }
 
 impl StopSignal {
-    pub fn is_stopped(&self) -> bool {
+    fn is_stopped(&self) -> bool {
         *self.rx.borrow()
     }
 
-    pub fn new(rx: watch::Receiver<bool>) -> Self {
+    fn new(rx: watch::Receiver<bool>) -> Self {
         Self { rx }
     }
 
@@ -400,5 +403,71 @@ impl StopSignal {
             return;
         }
         let _ = self.rx.changed().await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::HashMap, sync::mpsc::sync_channel, time::Duration};
+
+    use share_type_public::GameId;
+
+    use crate::{
+        ClientRequest, Dispatch, GameSettings, RoomService, SessionId, game_state::SharedGameState,
+    };
+
+    use super::{
+        GameHandler, RuntimeConfig, run_room_runtime_until_stopped_with_ready, runtime_stop_channel,
+    };
+
+    struct TestHandler;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn runtime_reports_ready_and_stops_cleanly() {
+        let (stop_handle, stop_signal) = runtime_stop_channel();
+        let (ready_tx, ready_rx) = sync_channel(1);
+        let runtime = tokio::spawn(run_room_runtime_until_stopped_with_ready(
+            RuntimeConfig {
+                service_name: "test",
+                listen_addr: "127.0.0.1:0".to_string(),
+                idle_timeout: Duration::from_secs(1),
+                heartbeat_interval: Duration::from_secs(1),
+            },
+            TestHandler,
+            stop_signal,
+            ready_tx,
+        ));
+
+        let stats = ready_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert_eq!(stats.client_count().await, 0);
+        assert_eq!(stats.room_count().await, 0);
+
+        stop_handle.stop();
+        let stopped_stats = runtime.await.unwrap().unwrap();
+        assert_eq!(stopped_stats.client_count().await, 0);
+        assert_eq!(stopped_stats.room_count().await, 0);
+    }
+
+    impl GameHandler for TestHandler {
+        fn build_game_state(&self) -> Box<dyn crate::game_state::GameState> {
+            Box::new(SharedGameState::new())
+        }
+
+        fn build_room_settings(&self) -> crate::SettingsBuilderResult {
+            (GameSettings::new(1, 4), HashMap::new())
+        }
+
+        fn game_id(&self) -> GameId {
+            GameId::ALL
+        }
+
+        fn handle_game_request(
+            &mut self,
+            _room_service: &mut RoomService,
+            _session_id: SessionId,
+            _request: ClientRequest,
+        ) -> Dispatch {
+            Dispatch::default()
+        }
     }
 }

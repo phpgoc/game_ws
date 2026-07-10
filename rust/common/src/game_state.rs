@@ -186,6 +186,28 @@ pub struct SharedGameState {
     common: Arc<Mutex<CommonGameState>>,
 }
 
+fn swap_map_entries<T>(values: &mut HashMap<usize, T>, pos_a: usize, pos_b: usize) {
+    let a = values.remove(&pos_a);
+    let b = values.remove(&pos_b);
+    if let Some(value) = b {
+        values.insert(pos_a, value);
+    }
+    if let Some(value) = a {
+        values.insert(pos_b, value);
+    }
+}
+
+fn swap_set_membership(values: &mut HashSet<usize>, pos_a: usize, pos_b: usize) {
+    let a = values.remove(&pos_a);
+    let b = values.remove(&pos_b);
+    if b {
+        values.insert(pos_a);
+    }
+    if a {
+        values.insert(pos_b);
+    }
+}
+
 impl CommonGameState {
     pub fn add_player(&mut self, position: usize, session_id: SessionId, name: &str) {
         self.players
@@ -268,46 +290,11 @@ impl CommonGameState {
     }
 
     pub fn swap_player(&mut self, pos_a: usize, pos_b: usize) {
-        let a = self.players.remove(&pos_a);
-        let b = self.players.remove(&pos_b);
-        let a_avatar = self.avatars.remove(&pos_a);
-        let b_avatar = self.avatars.remove(&pos_b);
-        if let Some(av) = b_avatar {
-            self.avatars.insert(pos_a, av);
-        }
-        if let Some(av) = a_avatar {
-            self.avatars.insert(pos_b, av);
-        }
-        let a_away = self.away_positions.remove(&pos_a);
-        let b_away = self.away_positions.remove(&pos_b);
-        let a_disconnected = self.disconnected_positions.remove(&pos_a);
-        let b_disconnected = self.disconnected_positions.remove(&pos_b);
-        let a_ai = self.ai_positions.remove(&pos_a);
-        let b_ai = self.ai_positions.remove(&pos_b);
-        if let Some(p) = b {
-            self.players.insert(pos_a, p);
-        }
-        if let Some(p) = a {
-            self.players.insert(pos_b, p);
-        }
-        if b_away {
-            self.away_positions.insert(pos_a);
-        }
-        if a_away {
-            self.away_positions.insert(pos_b);
-        }
-        if b_disconnected {
-            self.disconnected_positions.insert(pos_a);
-        }
-        if a_disconnected {
-            self.disconnected_positions.insert(pos_b);
-        }
-        if b_ai {
-            self.ai_positions.insert(pos_a);
-        }
-        if a_ai {
-            self.ai_positions.insert(pos_b);
-        }
+        swap_map_entries(&mut self.players, pos_a, pos_b);
+        swap_map_entries(&mut self.avatars, pos_a, pos_b);
+        swap_set_membership(&mut self.away_positions, pos_a, pos_b);
+        swap_set_membership(&mut self.disconnected_positions, pos_a, pos_b);
+        swap_set_membership(&mut self.ai_positions, pos_a, pos_b);
     }
 }
 
@@ -324,5 +311,66 @@ impl SharedGameState {
 impl GameState for SharedGameState {
     fn shared_common_state(&self) -> Arc<Mutex<CommonGameState>> {
         Arc::clone(&self.common)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CommonGameState;
+
+    #[test]
+    fn removing_player_clears_all_position_metadata() {
+        let mut state = CommonGameState::new();
+        state.add_player(1, 10, "player");
+        state.set_avatar(1, "avatar");
+        state.mark_away(1);
+        state.mark_disconnected(1);
+        state.mark_ai_position(1);
+
+        state.remove_player(1);
+
+        assert!(!state.players.contains_key(&1));
+        assert!(!state.avatars.contains_key(&1));
+        assert!(!state.is_away(1));
+        assert!(!state.is_disconnected(1));
+        assert!(!state.is_ai_position(1));
+    }
+
+    #[test]
+    fn swapping_players_moves_all_position_metadata() {
+        let mut state = CommonGameState::new();
+        state.add_player(0, 10, "first");
+        state.add_player(1, 11, "second");
+        state.set_avatar(0, "first-avatar");
+        state.set_avatar(1, "second-avatar");
+        state.mark_away(0);
+        state.mark_disconnected(1);
+        state.mark_ai_position(0);
+
+        state.swap_player(0, 1);
+
+        assert_eq!(state.player_name(0), "second");
+        assert_eq!(state.player_name(1), "first");
+        assert_eq!(state.player_avatar(0), "second-avatar");
+        assert_eq!(state.player_avatar(1), "first-avatar");
+        assert!(state.is_away(1));
+        assert!(!state.is_away(0));
+        assert!(state.is_disconnected(0));
+        assert!(!state.is_disconnected(1));
+        assert!(state.is_ai_position(1));
+        assert!(!state.is_ai_position(0));
+    }
+
+    #[test]
+    fn swapping_with_empty_position_moves_player() {
+        let mut state = CommonGameState::new();
+        state.add_player(0, 10, "player");
+        state.mark_away(0);
+
+        state.swap_player(0, 2);
+
+        assert!(!state.players.contains_key(&0));
+        assert_eq!(state.player_name(2), "player");
+        assert!(state.is_away(2));
     }
 }

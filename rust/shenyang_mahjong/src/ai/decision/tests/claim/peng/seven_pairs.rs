@@ -18,31 +18,6 @@ fn claim_peng_passes_when_five_pairs_missing_suit_can_chase_seven_pairs() {
 }
 
 #[test]
-fn claim_peng_preserves_quad_as_two_pairs_seven_pairs_route() {
-    let mut table = table_with_discards(1, Vec::new());
-    table.claim_window = Some(AiClaimView {
-        tile: 2,
-        from_position: 1,
-        eligible_positions: vec![0],
-    });
-    let claim = table.claim_window.clone().unwrap();
-    let hand = vec![1, 1, 1, 1, 2, 2, 3, 3, 11, 11, 12, 31, 35];
-
-    assert_eq!(pair_count(&hand), 5);
-    assert!(should_lock_seven_pairs_plan(
-        &hand,
-        &[],
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
-    assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(AiClaimChoice::Pass)
-    );
-}
-
-#[test]
 fn claim_peng_passes_when_it_breaks_seven_pairs_shape() {
     let mut table = table_with_discards(1, Vec::new());
     table.claim_window = Some(AiClaimView {
@@ -70,6 +45,31 @@ fn claim_peng_preserves_five_pairs_even_with_three_suits() {
     let claim = table.claim_window.clone().unwrap();
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 31, 32];
 
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Pass)
+    );
+}
+
+#[test]
+fn claim_peng_preserves_quad_as_two_pairs_seven_pairs_route() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.claim_window = Some(AiClaimView {
+        tile: 2,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![1, 1, 1, 1, 2, 2, 3, 3, 11, 11, 12, 31, 35];
+
+    assert_eq!(pair_count(&hand), 5);
+    assert!(should_lock_seven_pairs_plan(
+        &hand,
+        &[],
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC
+    ));
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Pass)

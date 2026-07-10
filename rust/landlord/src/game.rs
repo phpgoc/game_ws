@@ -6,7 +6,7 @@ use share_type_public::{GameId, LandlordRoutes, Routes, WsCode, WsReJoinResponse
 use tokio::sync::Mutex;
 use ws_common::{
     ClientRequest, Dispatch, GameHandler, OutboundPayload, RequestResponse, RoomService, SessionId,
-    SessionSenders, game_state::SharedGameState,
+    SessionSenders, SharedGameState,
 };
 
 use crate::game_loop::start_game_loop;
@@ -69,15 +69,8 @@ impl LandlordGameHandler {
         }
 
         let mut dispatch = Dispatch::default();
-        if !room_service.ensure_in_room(session_id, Routes::START as i32, &mut dispatch) {
+        if !room_service.require_room_membership(session_id, Routes::START as i32, &mut dispatch) {
             return dispatch;
-        }
-        if !room_service.room_ready_to_start(session_id) {
-            return room_service.error_response(
-                session_id,
-                Routes::START as i32,
-                WsResponseCode::NOT_IN_RANGE,
-            );
         }
         let Some(room_key) = room_service.room_key_of(session_id) else {
             return room_service.error_response(
@@ -86,9 +79,15 @@ impl LandlordGameHandler {
                 WsResponseCode::NOT_IN_RANGE,
             );
         };
+        if !room_service.room_is_ready_to_start(&room_key) {
+            return room_service.error_response(
+                session_id,
+                Routes::START as i32,
+                WsResponseCode::NOT_IN_RANGE,
+            );
+        }
 
-        let Some(mut shared_common_state) = room_service.get_room_common_state_handle(&room_key)
-        else {
+        let Some(mut shared_common_state) = room_service.room_common_state(&room_key) else {
             return room_service.error_response(
                 session_id,
                 Routes::START as i32,
@@ -151,7 +150,7 @@ impl LandlordGameHandler {
             );
         }
 
-        room_service.send_all(
+        room_service.broadcast(
             &room_key,
             WsCode::START as i32,
             serde_json::json!({}),
@@ -196,7 +195,7 @@ impl LandlordGameHandler {
             );
         };
 
-        let Ok(payload) = RoomService::parse::<WsCallLandlordRequest>(data) else {
+        let Ok(payload) = RoomService::parse_payload::<WsCallLandlordRequest>(data) else {
             return room_service.error_response(
                 session_id,
                 LandlordRoutes::CALL_LANDLORD as i32,
@@ -268,7 +267,7 @@ impl LandlordGameHandler {
 
         // 广播叫分事件给所有人（含自己，方便前端统一处理）
         let mut dispatch = Dispatch::default();
-        room_service.send_all_connected(
+        room_service.broadcast_connected(
             &room_key,
             WsCode::CALL_LANDLORD as i32,
             WsCallLandlordEvent { name, score },
@@ -341,7 +340,7 @@ impl LandlordGameHandler {
         }
 
         let mut dispatch = Dispatch::default();
-        room_service.send_all_connected(
+        room_service.broadcast_connected(
             &room_key,
             WsCode::PLAY as i32,
             WsPlayEvent { name, cards },
@@ -456,7 +455,7 @@ impl GameHandler for LandlordGameHandler {
         }
     }
 
-    fn build_game_state(&self) -> Box<dyn ws_common::game_state::GameState> {
+    fn build_game_state(&self) -> Box<dyn ws_common::GameState> {
         Box::new(SharedGameState::new())
     }
 

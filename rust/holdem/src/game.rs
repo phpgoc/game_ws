@@ -13,7 +13,7 @@ use share_type_public::{
 use tokio::sync::Mutex;
 use ws_common::{
     ClientRequest, Delivery, Dispatch, GameHandler, OutboundPayload, RoomService, SessionId,
-    SessionSenders, game_state::SharedGameState, to_text_message,
+    SessionSenders, SharedGameState, to_text_message,
 };
 
 use crate::{
@@ -227,7 +227,7 @@ impl HoldemGameHandler {
         if should_settle {
             let settlement = settle_hand(state);
             crate::official::settle_round(room_service, room_key);
-            room_service.send_all(room_key, WsCode::GAME_OVER as i32, settlement, dispatch);
+            room_service.broadcast(room_key, WsCode::GAME_OVER as i32, settlement, dispatch);
             self.states.lock().unwrap().remove(room_key);
             room_service.clear_room_game_state(room_key);
             return;
@@ -260,7 +260,7 @@ impl HoldemGameHandler {
             };
             s.set_action_received(true);
             let play_time = room_service
-                .get_room_configs(room_key)
+                .room_configs(room_key)
                 .unwrap_or_default()
                 .get("play_time")
                 .copied()
@@ -270,7 +270,7 @@ impl HoldemGameHandler {
             event
         };
 
-        room_service.send_all(room_key, WsCode::PLAY as i32, action_event, dispatch);
+        room_service.broadcast(room_key, WsCode::PLAY as i32, action_event, dispatch);
         self.advance_after_action(room_key, room_service, state, dispatch);
         true
     }
@@ -341,7 +341,7 @@ impl HoldemGameHandler {
         if !should_auto {
             let base = state.lock().unwrap().base.clone();
             base.lock().unwrap().mark_away(position);
-            room_service.send_all(
+            room_service.broadcast(
                 room_key,
                 WsCode::AWAY as i32,
                 share_type_public::WsPositionEvent {
@@ -387,7 +387,8 @@ impl HoldemGameHandler {
                 WsResponseCode::NOT_LOGIN,
             );
         };
-        let Ok(payload) = RoomService::parse::<WsTexasHoldEmAutoStrategyRequest>(data) else {
+        let Ok(payload) = RoomService::parse_payload::<WsTexasHoldEmAutoStrategyRequest>(data)
+        else {
             return room_service.error_response(
                 session_id,
                 Routes::AUTO_STRATEGY as i32,
@@ -427,7 +428,7 @@ impl HoldemGameHandler {
                 WsResponseCode::NOT_LOGIN,
             );
         };
-        let Ok(payload) = RoomService::parse::<WsTexasHoldEmPlayRequest>(data) else {
+        let Ok(payload) = RoomService::parse_payload::<WsTexasHoldEmPlayRequest>(data) else {
             return room_service.error_response(
                 session_id,
                 Routes::PLAY as i32,
@@ -477,15 +478,8 @@ impl HoldemGameHandler {
             );
         }
         let mut dispatch = Dispatch::default();
-        if !room_service.ensure_in_room(session_id, Routes::START as i32, &mut dispatch) {
+        if !room_service.require_room_membership(session_id, Routes::START as i32, &mut dispatch) {
             return dispatch;
-        }
-        if !room_service.room_ready_to_start(session_id) {
-            return room_service.error_response(
-                session_id,
-                Routes::START as i32,
-                WsResponseCode::NOT_IN_RANGE,
-            );
         }
         let Some(room_key) = room_service.room_key_of(session_id) else {
             return room_service.error_response(
@@ -494,14 +488,21 @@ impl HoldemGameHandler {
                 WsResponseCode::NOT_LOGIN,
             );
         };
-        let Some(common) = room_service.get_room_common_state_handle(&room_key) else {
+        if !room_service.room_is_ready_to_start(&room_key) {
+            return room_service.error_response(
+                session_id,
+                Routes::START as i32,
+                WsResponseCode::NOT_IN_RANGE,
+            );
+        }
+        let Some(common) = room_service.room_common_state(&room_key) else {
             return room_service.error_response(
                 session_id,
                 Routes::START as i32,
                 WsResponseCode::NO_PERMISSION,
             );
         };
-        let configs = room_service.get_room_configs(&room_key).unwrap_or_default();
+        let configs = room_service.room_configs(&room_key).unwrap_or_default();
         let variant = room_service
             .room_game_id(&room_key)
             .and_then(variant_for_game_id)
@@ -538,7 +539,7 @@ impl HoldemGameHandler {
         if let Some(game_id) = room_service.room_game_id(&room_key) {
             crate::official::create_match(room_service, &room_key, game_id);
         }
-        room_service.send_all(&room_key, WsCode::START as i32, json!({}), &mut dispatch);
+        room_service.broadcast(&room_key, WsCode::START as i32, json!({}), &mut dispatch);
         self.push_private_deals(&room_key, room_service, &state, &mut dispatch);
         self.push_turn_event(&room_key, room_service, &state, &mut dispatch);
         room_service.push_ok_response(&mut dispatch, session_id, Routes::START as i32);
@@ -568,7 +569,7 @@ impl HoldemGameHandler {
                 })
             })
             .collect();
-        for (session_id, _, position, _) in room_service.get_room_members(room_key) {
+        for (session_id, _, position, _) in room_service.room_members(room_key) {
             let payload = WsTexasHoldEmDealEvent {
                 my_cards: s.hands.get(&position).cloned().unwrap_or_default(),
                 open_cards: s
@@ -601,7 +602,7 @@ impl HoldemGameHandler {
         dispatch: &mut Dispatch,
     ) {
         let s = state.lock().unwrap();
-        room_service.send_all(
+        room_service.broadcast(
             room_key,
             WsCode::DEAL_OPEN_CARDS as i32,
             WsTexasHoldEmPublicCardsEvent {
@@ -621,7 +622,7 @@ impl HoldemGameHandler {
         dispatch: &mut Dispatch,
     ) {
         let s = state.lock().unwrap();
-        room_service.send_all(
+        room_service.broadcast(
             room_key,
             WsCode::CHANGE_DEAL as i32,
             WsTexasHoldEmTurnEvent {
@@ -656,7 +657,7 @@ impl GameHandler for HoldemGameHandler {
         accepts_poker_game_id(game_id)
     }
 
-    fn build_game_state(&self) -> Box<dyn ws_common::game_state::GameState> {
+    fn build_game_state(&self) -> Box<dyn ws_common::GameState> {
         Box::new(SharedGameState::new())
     }
 
@@ -750,9 +751,7 @@ mod tests {
             handler.game_id(),
             || handler.build_room_settings(),
         );
-        let common = room
-            .get_room_common_state_handle("room")
-            .expect("room common state");
+        let common = room.room_common_state("room").expect("room common state");
         let state = Arc::new(std::sync::Mutex::new(
             HoldemGameState::from_common_with_variant(common, STANDARD_TEXAS),
         ));

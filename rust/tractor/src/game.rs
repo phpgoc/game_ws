@@ -84,7 +84,7 @@ impl TractorGameHandler {
                 WsResponseCode::NOT_LOGIN,
             );
         };
-        let Ok(payload) = RoomService::parse::<WsTractorPlayRequest>(data) else {
+        let Ok(payload) = RoomService::parse_payload::<WsTractorPlayRequest>(data) else {
             return room_service.error_response(
                 session_id,
                 Routes::PLAY as i32,
@@ -110,7 +110,7 @@ impl TractorGameHandler {
                 );
             };
             let play_time = room_service
-                .get_room_configs(&room_key)
+                .room_configs(&room_key)
                 .unwrap_or_default()
                 .get(KEY_PLAY_TIME)
                 .copied()
@@ -131,8 +131,8 @@ impl TractorGameHandler {
         };
 
         let mut dispatch = Dispatch::default();
-        room_service.send_all(&room_key, WsCode::PLAY as i32, play_event, &mut dispatch);
-        room_service.send_all(
+        room_service.broadcast(&room_key, WsCode::PLAY as i32, play_event, &mut dispatch);
+        room_service.broadcast(
             &room_key,
             WsCode::TABLE_SNAPSHOT as i32,
             snapshot,
@@ -158,7 +158,7 @@ impl TractorGameHandler {
                 settlement.score,
                 settlement.target_rank,
             );
-            room_service.send_all(
+            room_service.broadcast(
                 &room_key,
                 WsCode::GAME_OVER as i32,
                 settlement,
@@ -185,15 +185,8 @@ impl TractorGameHandler {
             );
         }
         let mut dispatch = Dispatch::default();
-        if !room_service.ensure_in_room(session_id, Routes::START as i32, &mut dispatch) {
+        if !room_service.require_room_membership(session_id, Routes::START as i32, &mut dispatch) {
             return dispatch;
-        }
-        if !room_service.room_ready_to_start(session_id) {
-            return room_service.error_response(
-                session_id,
-                Routes::START as i32,
-                WsResponseCode::NOT_IN_RANGE,
-            );
         }
         let Some(room_key) = room_service.room_key_of(session_id) else {
             return room_service.error_response(
@@ -202,6 +195,13 @@ impl TractorGameHandler {
                 WsResponseCode::NOT_LOGIN,
             );
         };
+        if !room_service.room_is_ready_to_start(&room_key) {
+            return room_service.error_response(
+                session_id,
+                Routes::START as i32,
+                WsResponseCode::NOT_IN_RANGE,
+            );
+        }
         if self.state(&room_key).is_some() {
             return room_service.error_response(
                 session_id,
@@ -216,7 +216,7 @@ impl TractorGameHandler {
                 WsResponseCode::NO_PERMISSION,
             );
         };
-        let configs = room_service.get_room_configs(&room_key).unwrap_or_default();
+        let configs = room_service.room_configs(&room_key).unwrap_or_default();
         let rules = Self::configs_to_rules(&configs);
         let play_time = configs.get(KEY_PLAY_TIME).copied().unwrap_or(30).max(1) as u32;
 
@@ -253,7 +253,7 @@ impl TractorGameHandler {
         }
 
         crate::official::create_match(room_service, &room_key);
-        room_service.send_all(&room_key, WsCode::START as i32, json!({}), &mut dispatch);
+        room_service.broadcast(&room_key, WsCode::START as i32, json!({}), &mut dispatch);
         self.push_private_deals(&room_key, room_service, &state, &mut dispatch);
         self.push_table_snapshot(&room_key, room_service, &state, &mut dispatch);
         room_service.push_ok_response(&mut dispatch, session_id, Routes::START as i32);
@@ -267,7 +267,7 @@ impl TractorGameHandler {
         state: &TractorStateHandle,
         dispatch: &mut Dispatch,
     ) {
-        let members = room_service.get_room_members(room_key);
+        let members = room_service.room_members(room_key);
         let s = state.lock().unwrap();
         for (session_id, _, position, _) in members {
             let payload = WsTractorDealEvent {
@@ -296,7 +296,7 @@ impl TractorGameHandler {
         dispatch: &mut Dispatch,
     ) {
         let snapshot = state.lock().unwrap().snapshot();
-        room_service.send_all(room_key, WsCode::TABLE_SNAPSHOT as i32, snapshot, dispatch);
+        room_service.broadcast(room_key, WsCode::TABLE_SNAPSHOT as i32, snapshot, dispatch);
     }
 
     fn state(&self, room_key: &str) -> Option<TractorStateHandle> {
@@ -315,8 +315,8 @@ impl Default for TractorGameHandler {
 }
 
 impl GameHandler for TractorGameHandler {
-    fn build_game_state(&self) -> Box<dyn ws_common::game_state::GameState> {
-        Box::new(ws_common::game_state::SharedGameState::new())
+    fn build_game_state(&self) -> Box<dyn ws_common::GameState> {
+        Box::new(ws_common::SharedGameState::new())
     }
 
     fn build_room_settings(&self) -> ws_common::SettingsBuilderResult {
@@ -350,12 +350,12 @@ impl GameHandler for TractorGameHandler {
     }
 }
 
-impl ws_common::game_state::GameState for TractorGameStateHandle {
+impl ws_common::GameState for TractorGameStateHandle {
     fn can_accept_players(&self) -> bool {
         self.inner.lock().unwrap().phase == share_type_public::TractorPhase::Start
     }
 
-    fn shared_common_state(&self) -> Arc<std::sync::Mutex<ws_common::game_state::CommonGameState>> {
+    fn shared_common_state(&self) -> Arc<std::sync::Mutex<ws_common::CommonGameState>> {
         Arc::clone(&self.inner.lock().unwrap().base)
     }
 }

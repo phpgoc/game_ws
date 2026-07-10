@@ -176,7 +176,7 @@ mod tests {
         ShenyangMahjongMeldKind, ShenyangMahjongPhase, WsShenyangMahjongMeld,
         WsShenyangMahjongScoreChange,
     };
-    use ws_common::game_state::CommonGameState;
+    use ws_common::CommonGameState;
 
     use super::*;
     use crate::game::build_settlement_event_with_configs;
@@ -184,72 +184,6 @@ mod tests {
     use crate::rules::{
         WIN_RULE_RELAXED, is_complete_win_with_melds_and_open_rule, win_rule_from_configs,
     };
-
-    fn relaxed_configs() -> HashMap<String, i32> {
-        HashMap::from([("win_rule".to_owned(), WIN_RULE_RELAXED)])
-    }
-
-    fn one_fan_capped_configs() -> HashMap<String, i32> {
-        HashMap::from([("max_fan".to_owned(), 1)])
-    }
-
-    #[test]
-    fn away_position_does_not_self_draw_without_drawn_tile() {
-        let mut state = playable_state();
-        state.base.lock().unwrap().mark_away(0);
-        state
-            .hands
-            .insert(0, vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35, 35]);
-        let mut dispatch = Dispatch::default();
-
-        assert!(!maybe_play_ai_turn(
-            &RoomService::default(),
-            "room",
-            &mut state,
-            &HashMap::new(),
-            &mut dispatch,
-        ));
-
-        assert_eq!(state.phase, ShenyangMahjongPhase::Play);
-        assert!(state.discards.get(&0).unwrap().is_empty());
-        assert!(state.settlement.is_none());
-    }
-
-    #[test]
-    fn away_position_uses_ai_claim_response() {
-        let mut state = playable_state();
-        state.base.lock().unwrap().mark_away(0);
-        state.current_position = 1;
-        state
-            .hands
-            .insert(0, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35]);
-        state.discards.insert(1, vec![35]);
-        state.claim_window = Some(ClaimWindowState {
-            tile: 35,
-            from_position: 1,
-            kind: ClaimWindowKind::Discard,
-            eligible_positions: vec![0],
-            responses: HashMap::new(),
-        });
-        let mut dispatch = Dispatch::default();
-
-        assert!(maybe_resolve_ai_claims(
-            &RoomService::default(),
-            "room",
-            &mut state,
-            &relaxed_configs(),
-            &mut dispatch,
-        ));
-
-        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
-        assert_eq!(
-            state
-                .settlement
-                .as_ref()
-                .map(|settlement| settlement.winner_positions.clone()),
-            Some(vec![0]),
-        );
-    }
 
     #[test]
     fn ai_claim_response_reports_progress_while_waiting_for_human() {
@@ -287,307 +221,6 @@ mod tests {
         ));
         assert!(!claim_window.responses.contains_key(&1));
         assert_eq!(state.phase, ShenyangMahjongPhase::Play);
-    }
-
-    #[test]
-    fn away_position_uses_ai_discard() {
-        let mut state = playable_state();
-        state.base.lock().unwrap().mark_away(0);
-        let mut dispatch = Dispatch::default();
-
-        assert!(maybe_play_ai_turn(
-            &RoomService::default(),
-            "room",
-            &mut state,
-            &relaxed_configs(),
-            &mut dispatch,
-        ));
-
-        assert_eq!(state.hands.get(&0).unwrap().len(), 13);
-        assert_eq!(state.discards.get(&0).unwrap().len(), 1);
-    }
-
-    #[test]
-    fn away_position_uses_ai_gang_claim_response() {
-        let mut state = playable_state();
-        state.base.lock().unwrap().mark_away(0);
-        state.current_position = 1;
-        state
-            .hands
-            .insert(0, vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 35, 35, 35]);
-        state.discards.insert(1, vec![35]);
-        state.wall = vec![37; 24];
-        state.claim_window = Some(ClaimWindowState {
-            tile: 35,
-            from_position: 1,
-            kind: ClaimWindowKind::Discard,
-            eligible_positions: vec![0],
-            responses: HashMap::new(),
-        });
-        let mut dispatch = Dispatch::default();
-
-        assert!(maybe_resolve_ai_claims(
-            &RoomService::default(),
-            "room",
-            &mut state,
-            &HashMap::new(),
-            &mut dispatch,
-        ));
-
-        assert!(state.claim_window.is_none());
-        assert_eq!(state.current_position, 0);
-        assert_eq!(state.hands.get(&0).unwrap().len(), 11);
-        assert!(state.hands.get(&0).unwrap().contains(&37));
-        assert_eq!(
-            state.melds.get(&0).unwrap().first().unwrap().tiles,
-            vec![35, 35, 35, 35]
-        );
-    }
-
-    #[test]
-    fn away_position_uses_ai_self_draw_for_seven_pairs() {
-        let mut state = playable_state();
-        state.base.lock().unwrap().mark_away(0);
-        state
-            .hands
-            .insert(0, vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35, 35]);
-        state.last_drawn_tile = Some(35);
-        let mut dispatch = Dispatch::default();
-
-        assert!(maybe_play_ai_turn(
-            &RoomService::default(),
-            "room",
-            &mut state,
-            &relaxed_configs(),
-            &mut dispatch,
-        ));
-
-        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
-        assert_eq!(
-            state
-                .settlement
-                .as_ref()
-                .map(|settlement| settlement.winner_positions.clone()),
-            Some(vec![0]),
-        );
-        assert!(state.discards.get(&0).unwrap().is_empty());
-    }
-
-    #[test]
-    fn away_position_uses_ai_self_draw_for_open_basic_pure_one_suit() {
-        let mut state = playable_state();
-        state.base.lock().unwrap().mark_away(0);
-        state.hands.insert(0, vec![3, 4, 5, 4, 5, 6, 5, 6, 7, 8, 8]);
-        state.melds.insert(
-            0,
-            vec![WsShenyangMahjongMeld {
-                kind: ShenyangMahjongMeldKind::CHI,
-                tiles: vec![2, 3, 4],
-                from_position: Some(1),
-            }],
-        );
-        state.last_drawn_tile = Some(8);
-        let mut dispatch = Dispatch::default();
-
-        assert!(maybe_play_ai_turn(
-            &RoomService::default(),
-            "room",
-            &mut state,
-            &HashMap::new(),
-            &mut dispatch,
-        ));
-
-        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
-        assert_eq!(
-            state
-                .settlement
-                .as_ref()
-                .map(|settlement| settlement.winner_positions.clone()),
-            Some(vec![0]),
-        );
-        assert!(state.discards.get(&0).unwrap().is_empty());
-    }
-
-    #[test]
-    fn away_position_self_draws_closed_basic_pure_one_suit() {
-        let mut state = playable_state();
-        state.base.lock().unwrap().mark_away(0);
-        state
-            .hands
-            .insert(0, vec![1, 2, 3, 2, 3, 4, 4, 5, 6, 7, 7, 7, 9, 9]);
-        state.last_drawn_tile = Some(9);
-        let mut dispatch = Dispatch::default();
-
-        assert!(maybe_play_ai_turn(
-            &RoomService::default(),
-            "room",
-            &mut state,
-            &HashMap::new(),
-            &mut dispatch,
-        ));
-
-        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
-        assert_eq!(
-            state
-                .settlement
-                .as_ref()
-                .map(|settlement| settlement.winner_positions.clone()),
-            Some(vec![0])
-        );
-    }
-
-    #[test]
-    fn away_position_uses_ai_self_gang_before_discard() {
-        let mut state = playable_state();
-        state.base.lock().unwrap().mark_away(0);
-        state
-            .hands
-            .insert(0, vec![4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35, 35, 35, 35]);
-        state.last_drawn_tile = Some(35);
-        state.wall = vec![37; 24];
-        let mut dispatch = Dispatch::default();
-
-        assert!(maybe_play_ai_turn(
-            &RoomService::default(),
-            "room",
-            &mut state,
-            &relaxed_configs(),
-            &mut dispatch,
-        ));
-
-        assert_eq!(state.current_position, 0);
-        assert_eq!(state.last_drawn_tile, Some(37));
-        assert!(state.hands.get(&0).unwrap().contains(&37));
-        assert_eq!(
-            state.melds.get(&0).unwrap().first().unwrap().tiles,
-            vec![35, 35, 35, 35]
-        );
-        assert!(state.discards.get(&0).unwrap().is_empty());
-    }
-
-    #[test]
-    fn disconnected_position_uses_ai_discard() {
-        let mut state = playable_state();
-        state.base.lock().unwrap().mark_disconnected(0);
-        let mut dispatch = Dispatch::default();
-
-        assert!(maybe_play_ai_turn(
-            &RoomService::default(),
-            "room",
-            &mut state,
-            &HashMap::new(),
-            &mut dispatch,
-        ));
-
-        assert_eq!(state.hands.get(&0).unwrap().len(), 13);
-        assert_eq!(state.discards.get(&0).unwrap().len(), 1);
-    }
-
-    #[test]
-    fn four_ai_positions_can_finish_seeded_round_with_win() {
-        let state = run_seeded_ai_round(2026070402, 220);
-        let settlement = state.settlement.as_ref().expect("AI round settlement");
-        let total_discards = state.discards.values().map(Vec::len).sum::<usize>();
-
-        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
-        assert!(
-            !settlement.winner_positions.is_empty(),
-            "seeded AI round should end with a winning hand"
-        );
-        assert!(settlement.win_tile.is_some());
-        assert!(total_discards > 0);
-        assert_seeded_settlement_winners_are_legal(&state, &HashMap::new(), 2026070402);
-        assert_seeded_settlement_event_is_consistent(&state, &HashMap::new(), 2026070402);
-    }
-
-    #[test]
-    fn four_ai_positions_settle_multiple_seeded_rounds() {
-        for seed in [2026070403, 2026070404, 2026070405] {
-            let state = run_seeded_ai_round(seed, 260);
-            let settlement = state.settlement.as_ref().expect("AI round settlement");
-            let total_discards = state.discards.values().map(Vec::len).sum::<usize>();
-
-            assert_eq!(
-                state.phase,
-                ShenyangMahjongPhase::Settlement,
-                "seed {seed} should settle"
-            );
-            assert!(
-                settlement.is_self_draw
-                    || settlement.from_position.is_some()
-                    || settlement.winner_positions.is_empty(),
-                "seed {seed} settlement should be a self draw, discard win, or legal draw"
-            );
-            assert!(
-                total_discards > 0,
-                "seed {seed} should play at least one discard"
-            );
-            assert_seeded_settlement_winners_are_legal(&state, &HashMap::new(), seed);
-            assert_seeded_settlement_event_is_consistent(&state, &HashMap::new(), seed);
-        }
-    }
-
-    #[test]
-    fn four_ai_positions_settle_one_fan_capped_seeded_round() {
-        let state = run_seeded_ai_round_with_configs(2026070402, 220, &one_fan_capped_configs());
-        let settlement = state.settlement.as_ref().expect("AI capped settlement");
-        let total_discards = state.discards.values().map(Vec::len).sum::<usize>();
-
-        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
-        assert!(
-            settlement.is_self_draw
-                || settlement.from_position.is_some()
-                || settlement.winner_positions.is_empty(),
-            "capped seeded AI round should settle as a self draw, discard win, or legal draw"
-        );
-        assert!(total_discards > 0);
-        assert_seeded_settlement_winners_are_legal(&state, &one_fan_capped_configs(), 2026070402);
-        assert_seeded_settlement_event_is_consistent(&state, &one_fan_capped_configs(), 2026070402);
-    }
-
-    #[test]
-    fn four_ai_positions_settle_relaxed_seeded_round() {
-        let configs = relaxed_configs();
-        let state = run_seeded_ai_round_with_configs(2026070406, 260, &configs);
-        let settlement = state.settlement.as_ref().expect("AI relaxed settlement");
-        let total_discards = state.discards.values().map(Vec::len).sum::<usize>();
-
-        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
-        assert!(
-            settlement.is_self_draw
-                || settlement.from_position.is_some()
-                || settlement.winner_positions.is_empty(),
-            "relaxed seeded AI round should settle as a self draw, discard win, or legal draw"
-        );
-        assert!(total_discards > 0);
-        assert_seeded_settlement_winners_are_legal(&state, &configs, 2026070406);
-        assert_seeded_settlement_event_is_consistent(&state, &configs, 2026070406);
-    }
-
-    fn assert_seeded_settlement_winners_are_legal(
-        state: &ShenyangMahjongLoopState,
-        configs: &HashMap<String, i32>,
-        seed: u64,
-    ) {
-        let settlement = state.settlement.as_ref().expect("AI round settlement");
-        let win_rule = win_rule_from_configs(configs);
-        let chi_opens_door = configs.get("chi_opens_door").copied().unwrap_or(1) == 1;
-
-        for winner in &settlement.winner_positions {
-            let mut hand = state.hands.get(winner).cloned().unwrap_or_default();
-            if !settlement.is_self_draw
-                && let Some(tile) = settlement.win_tile
-            {
-                hand.push(tile);
-                hand.sort_unstable();
-            }
-            let melds = state.melds.get(winner).map(Vec::as_slice).unwrap_or(&[]);
-
-            assert!(
-                is_complete_win_with_melds_and_open_rule(&hand, melds, win_rule, chi_opens_door),
-                "seed {seed} winner {winner} should have a legal Shenyang Mahjong hand: hand={hand:?}, melds={melds:?}, settlement={settlement:?}"
-            );
-        }
     }
 
     fn assert_seeded_settlement_event_is_consistent(
@@ -719,15 +352,396 @@ mod tests {
         }
     }
 
-    fn settlement_score_for_position(
-        score_changes: &[WsShenyangMahjongScoreChange],
-        position: usize,
-    ) -> i32 {
-        score_changes
-            .iter()
-            .find(|change| change.position == position as i32)
-            .map(|change| change.score)
-            .unwrap_or(0)
+    fn assert_seeded_settlement_winners_are_legal(
+        state: &ShenyangMahjongLoopState,
+        configs: &HashMap<String, i32>,
+        seed: u64,
+    ) {
+        let settlement = state.settlement.as_ref().expect("AI round settlement");
+        let win_rule = win_rule_from_configs(configs);
+        let chi_opens_door = configs.get("chi_opens_door").copied().unwrap_or(1) == 1;
+
+        for winner in &settlement.winner_positions {
+            let mut hand = state.hands.get(winner).cloned().unwrap_or_default();
+            if !settlement.is_self_draw
+                && let Some(tile) = settlement.win_tile
+            {
+                hand.push(tile);
+                hand.sort_unstable();
+            }
+            let melds = state.melds.get(winner).map(Vec::as_slice).unwrap_or(&[]);
+
+            assert!(
+                is_complete_win_with_melds_and_open_rule(&hand, melds, win_rule, chi_opens_door),
+                "seed {seed} winner {winner} should have a legal Shenyang Mahjong hand: hand={hand:?}, melds={melds:?}, settlement={settlement:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn away_position_does_not_self_draw_without_drawn_tile() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_away(0);
+        state
+            .hands
+            .insert(0, vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35, 35]);
+        let mut dispatch = Dispatch::default();
+
+        assert!(!maybe_play_ai_turn(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::new(),
+            &mut dispatch,
+        ));
+
+        assert_eq!(state.phase, ShenyangMahjongPhase::Play);
+        assert!(state.discards.get(&0).unwrap().is_empty());
+        assert!(state.settlement.is_none());
+    }
+
+    #[test]
+    fn away_position_self_draws_closed_basic_pure_one_suit() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_away(0);
+        state
+            .hands
+            .insert(0, vec![1, 2, 3, 2, 3, 4, 4, 5, 6, 7, 7, 7, 9, 9]);
+        state.last_drawn_tile = Some(9);
+        let mut dispatch = Dispatch::default();
+
+        assert!(maybe_play_ai_turn(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::new(),
+            &mut dispatch,
+        ));
+
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert_eq!(
+            state
+                .settlement
+                .as_ref()
+                .map(|settlement| settlement.winner_positions.clone()),
+            Some(vec![0])
+        );
+    }
+
+    #[test]
+    fn away_position_uses_ai_claim_response() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_away(0);
+        state.current_position = 1;
+        state
+            .hands
+            .insert(0, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35]);
+        state.discards.insert(1, vec![35]);
+        state.claim_window = Some(ClaimWindowState {
+            tile: 35,
+            from_position: 1,
+            kind: ClaimWindowKind::Discard,
+            eligible_positions: vec![0],
+            responses: HashMap::new(),
+        });
+        let mut dispatch = Dispatch::default();
+
+        assert!(maybe_resolve_ai_claims(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+        ));
+
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert_eq!(
+            state
+                .settlement
+                .as_ref()
+                .map(|settlement| settlement.winner_positions.clone()),
+            Some(vec![0]),
+        );
+    }
+
+    #[test]
+    fn away_position_uses_ai_discard() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_away(0);
+        let mut dispatch = Dispatch::default();
+
+        assert!(maybe_play_ai_turn(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+        ));
+
+        assert_eq!(state.hands.get(&0).unwrap().len(), 13);
+        assert_eq!(state.discards.get(&0).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn away_position_uses_ai_gang_claim_response() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_away(0);
+        state.current_position = 1;
+        state
+            .hands
+            .insert(0, vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 35, 35, 35]);
+        state.discards.insert(1, vec![35]);
+        state.wall = vec![37; 24];
+        state.claim_window = Some(ClaimWindowState {
+            tile: 35,
+            from_position: 1,
+            kind: ClaimWindowKind::Discard,
+            eligible_positions: vec![0],
+            responses: HashMap::new(),
+        });
+        let mut dispatch = Dispatch::default();
+
+        assert!(maybe_resolve_ai_claims(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::new(),
+            &mut dispatch,
+        ));
+
+        assert!(state.claim_window.is_none());
+        assert_eq!(state.current_position, 0);
+        assert_eq!(state.hands.get(&0).unwrap().len(), 11);
+        assert!(state.hands.get(&0).unwrap().contains(&37));
+        assert_eq!(
+            state.melds.get(&0).unwrap().first().unwrap().tiles,
+            vec![35, 35, 35, 35]
+        );
+    }
+
+    #[test]
+    fn away_position_uses_ai_self_draw_for_open_basic_pure_one_suit() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_away(0);
+        state.hands.insert(0, vec![3, 4, 5, 4, 5, 6, 5, 6, 7, 8, 8]);
+        state.melds.insert(
+            0,
+            vec![WsShenyangMahjongMeld {
+                kind: ShenyangMahjongMeldKind::CHI,
+                tiles: vec![2, 3, 4],
+                from_position: Some(1),
+            }],
+        );
+        state.last_drawn_tile = Some(8);
+        let mut dispatch = Dispatch::default();
+
+        assert!(maybe_play_ai_turn(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::new(),
+            &mut dispatch,
+        ));
+
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert_eq!(
+            state
+                .settlement
+                .as_ref()
+                .map(|settlement| settlement.winner_positions.clone()),
+            Some(vec![0]),
+        );
+        assert!(state.discards.get(&0).unwrap().is_empty());
+    }
+
+    #[test]
+    fn away_position_uses_ai_self_draw_for_seven_pairs() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_away(0);
+        state
+            .hands
+            .insert(0, vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35, 35]);
+        state.last_drawn_tile = Some(35);
+        let mut dispatch = Dispatch::default();
+
+        assert!(maybe_play_ai_turn(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+        ));
+
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert_eq!(
+            state
+                .settlement
+                .as_ref()
+                .map(|settlement| settlement.winner_positions.clone()),
+            Some(vec![0]),
+        );
+        assert!(state.discards.get(&0).unwrap().is_empty());
+    }
+
+    #[test]
+    fn away_position_uses_ai_self_gang_before_discard() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_away(0);
+        state
+            .hands
+            .insert(0, vec![4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35, 35, 35, 35]);
+        state.last_drawn_tile = Some(35);
+        state.wall = vec![37; 24];
+        let mut dispatch = Dispatch::default();
+
+        assert!(maybe_play_ai_turn(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+        ));
+
+        assert_eq!(state.current_position, 0);
+        assert_eq!(state.last_drawn_tile, Some(37));
+        assert!(state.hands.get(&0).unwrap().contains(&37));
+        assert_eq!(
+            state.melds.get(&0).unwrap().first().unwrap().tiles,
+            vec![35, 35, 35, 35]
+        );
+        assert!(state.discards.get(&0).unwrap().is_empty());
+    }
+
+    #[test]
+    fn disconnected_position_uses_ai_discard() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_disconnected(0);
+        let mut dispatch = Dispatch::default();
+
+        assert!(maybe_play_ai_turn(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::new(),
+            &mut dispatch,
+        ));
+
+        assert_eq!(state.hands.get(&0).unwrap().len(), 13);
+        assert_eq!(state.discards.get(&0).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn four_ai_positions_can_finish_seeded_round_with_win() {
+        let state = run_seeded_ai_round(2026070402, 220);
+        let settlement = state.settlement.as_ref().expect("AI round settlement");
+        let total_discards = state.discards.values().map(Vec::len).sum::<usize>();
+
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert!(
+            !settlement.winner_positions.is_empty(),
+            "seeded AI round should end with a winning hand"
+        );
+        assert!(settlement.win_tile.is_some());
+        assert!(total_discards > 0);
+        assert_seeded_settlement_winners_are_legal(&state, &HashMap::new(), 2026070402);
+        assert_seeded_settlement_event_is_consistent(&state, &HashMap::new(), 2026070402);
+    }
+
+    #[test]
+    fn four_ai_positions_settle_multiple_seeded_rounds() {
+        for seed in [2026070403, 2026070404, 2026070405] {
+            let state = run_seeded_ai_round(seed, 260);
+            let settlement = state.settlement.as_ref().expect("AI round settlement");
+            let total_discards = state.discards.values().map(Vec::len).sum::<usize>();
+
+            assert_eq!(
+                state.phase,
+                ShenyangMahjongPhase::Settlement,
+                "seed {seed} should settle"
+            );
+            assert!(
+                settlement.is_self_draw
+                    || settlement.from_position.is_some()
+                    || settlement.winner_positions.is_empty(),
+                "seed {seed} settlement should be a self draw, discard win, or legal draw"
+            );
+            assert!(
+                total_discards > 0,
+                "seed {seed} should play at least one discard"
+            );
+            assert_seeded_settlement_winners_are_legal(&state, &HashMap::new(), seed);
+            assert_seeded_settlement_event_is_consistent(&state, &HashMap::new(), seed);
+        }
+    }
+
+    #[test]
+    fn four_ai_positions_settle_one_fan_capped_seeded_round() {
+        let state = run_seeded_ai_round_with_configs(2026070402, 220, &one_fan_capped_configs());
+        let settlement = state.settlement.as_ref().expect("AI capped settlement");
+        let total_discards = state.discards.values().map(Vec::len).sum::<usize>();
+
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert!(
+            settlement.is_self_draw
+                || settlement.from_position.is_some()
+                || settlement.winner_positions.is_empty(),
+            "capped seeded AI round should settle as a self draw, discard win, or legal draw"
+        );
+        assert!(total_discards > 0);
+        assert_seeded_settlement_winners_are_legal(&state, &one_fan_capped_configs(), 2026070402);
+        assert_seeded_settlement_event_is_consistent(&state, &one_fan_capped_configs(), 2026070402);
+    }
+
+    #[test]
+    fn four_ai_positions_settle_relaxed_seeded_round() {
+        let configs = relaxed_configs();
+        let state = run_seeded_ai_round_with_configs(2026070406, 260, &configs);
+        let settlement = state.settlement.as_ref().expect("AI relaxed settlement");
+        let total_discards = state.discards.values().map(Vec::len).sum::<usize>();
+
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert!(
+            settlement.is_self_draw
+                || settlement.from_position.is_some()
+                || settlement.winner_positions.is_empty(),
+            "relaxed seeded AI round should settle as a self draw, discard win, or legal draw"
+        );
+        assert!(total_discards > 0);
+        assert_seeded_settlement_winners_are_legal(&state, &configs, 2026070406);
+        assert_seeded_settlement_event_is_consistent(&state, &configs, 2026070406);
+    }
+
+    fn one_fan_capped_configs() -> HashMap<String, i32> {
+        HashMap::from([("max_fan".to_owned(), 1)])
+    }
+
+    fn playable_state() -> ShenyangMahjongLoopState {
+        let base = Arc::new(Mutex::new(CommonGameState::default()));
+        {
+            let mut common = base.lock().unwrap();
+            for position in 0..4 {
+                common.add_player(position, position as u64 + 1, &format!("P{}", position));
+            }
+        }
+        let mut state = ShenyangMahjongLoopState::new(base);
+        state.phase = ShenyangMahjongPhase::Play;
+        state.current_position = 0;
+        state.dealer_position = 0;
+        state
+            .hands
+            .insert(0, vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35]);
+        for position in 0..4 {
+            state.discards.insert(position, Vec::new());
+            state
+                .melds
+                .insert(position, Vec::<WsShenyangMahjongMeld>::new());
+        }
+        state.wall = vec![37, 36, 35, 34, 33, 32];
+        state
+    }
+
+    fn relaxed_configs() -> HashMap<String, i32> {
+        HashMap::from([("win_rule".to_owned(), WIN_RULE_RELAXED)])
     }
 
     fn run_seeded_ai_round(seed: u64, max_steps: usize) -> ShenyangMahjongLoopState {
@@ -771,31 +785,6 @@ mod tests {
         state
     }
 
-    fn playable_state() -> ShenyangMahjongLoopState {
-        let base = Arc::new(Mutex::new(CommonGameState::default()));
-        {
-            let mut common = base.lock().unwrap();
-            for position in 0..4 {
-                common.add_player(position, position as u64 + 1, &format!("P{}", position));
-            }
-        }
-        let mut state = ShenyangMahjongLoopState::new(base);
-        state.phase = ShenyangMahjongPhase::Play;
-        state.current_position = 0;
-        state.dealer_position = 0;
-        state
-            .hands
-            .insert(0, vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35]);
-        for position in 0..4 {
-            state.discards.insert(position, Vec::new());
-            state
-                .melds
-                .insert(position, Vec::<WsShenyangMahjongMeld>::new());
-        }
-        state.wall = vec![37, 36, 35, 34, 33, 32];
-        state
-    }
-
     fn seeded_ai_round_state(seed: u64) -> ShenyangMahjongLoopState {
         let base = Arc::new(Mutex::new(CommonGameState::default()));
         {
@@ -809,5 +798,16 @@ mod tests {
         state.set_wall_seed_base_for_test(Some(seed));
         state.deal_new_round();
         state
+    }
+
+    fn settlement_score_for_position(
+        score_changes: &[WsShenyangMahjongScoreChange],
+        position: usize,
+    ) -> i32 {
+        score_changes
+            .iter()
+            .find(|change| change.position == position as i32)
+            .map(|change| change.score)
+            .unwrap_or(0)
     }
 }

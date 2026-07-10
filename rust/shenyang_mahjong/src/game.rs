@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+﻿use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use serde_json::{Value, json};
@@ -15,7 +15,7 @@ use share_type_public::{GameId, Routes, WsCode, WsResponseCode};
 use tokio::sync::Mutex;
 use ws_common::{
     ClientRequest, Delivery, Dispatch, GameHandler, OutboundPayload, RequestResponse, RoomService,
-    SessionId, SessionSenders, game_state::SharedGameState,
+    SessionId, SessionSenders, SharedGameState,
 };
 
 use crate::game_loop::start_game_loop;
@@ -1141,7 +1141,7 @@ pub(crate) fn push_room_event<T: serde::Serialize>(
     code: i32,
     payload: T,
 ) {
-    room_service.send_all_connected(room_key, code, payload, dispatch);
+    room_service.broadcast_connected(room_key, code, payload, dispatch);
 }
 
 pub(crate) fn resolve_claim_window(
@@ -1753,7 +1753,7 @@ impl ShenyangMahjongGameHandler {
                 WsResponseCode::NOT_LOGIN,
             );
         };
-        let Ok(payload) = RoomService::parse::<WsShenyangMahjongPlayRequest>(data) else {
+        let Ok(payload) = RoomService::parse_payload::<WsShenyangMahjongPlayRequest>(data) else {
             return room_service.error_response(
                 session_id,
                 Routes::PLAY as i32,
@@ -1768,7 +1768,7 @@ impl ShenyangMahjongGameHandler {
             );
         };
 
-        let configs = room_service.get_room_configs(&room_key).unwrap_or_default();
+        let configs = room_service.room_configs(&room_key).unwrap_or_default();
         let mut dispatch = Dispatch::default();
 
         {
@@ -2033,15 +2033,8 @@ impl ShenyangMahjongGameHandler {
         }
 
         let mut dispatch = Dispatch::default();
-        if !room_service.ensure_in_room(session_id, Routes::START as i32, &mut dispatch) {
+        if !room_service.require_room_membership(session_id, Routes::START as i32, &mut dispatch) {
             return dispatch;
-        }
-        if !room_service.room_ready_to_start(session_id) {
-            return room_service.error_response(
-                session_id,
-                Routes::START as i32,
-                WsResponseCode::NOT_IN_RANGE,
-            );
         }
         let Some(room_key) = room_service.room_key_of(session_id) else {
             return room_service.error_response(
@@ -2050,7 +2043,14 @@ impl ShenyangMahjongGameHandler {
                 WsResponseCode::NOT_IN_RANGE,
             );
         };
-        let Some(shared_common_state) = room_service.get_room_common_state_handle(&room_key) else {
+        if !room_service.room_is_ready_to_start(&room_key) {
+            return room_service.error_response(
+                session_id,
+                Routes::START as i32,
+                WsResponseCode::NOT_IN_RANGE,
+            );
+        }
+        let Some(shared_common_state) = room_service.room_common_state(&room_key) else {
             return room_service.error_response(
                 session_id,
                 Routes::START as i32,
@@ -2105,7 +2105,7 @@ impl ShenyangMahjongGameHandler {
             );
         }
 
-        room_service.send_all(
+        room_service.broadcast(
             &room_key,
             WsCode::START as i32,
             serde_json::json!({}),
@@ -2173,7 +2173,7 @@ impl GameHandler for ShenyangMahjongGameHandler {
         let Some(loop_state) = self.loop_state(&room_key) else {
             return;
         };
-        let configs = room_service.get_room_configs(&room_key).unwrap_or_default();
+        let configs = room_service.room_configs(&room_key).unwrap_or_default();
         let state = loop_state.lock().unwrap();
         if state.phase == ShenyangMahjongPhase::Start {
             return;
@@ -2186,7 +2186,7 @@ impl GameHandler for ShenyangMahjongGameHandler {
         );
     }
 
-    fn build_game_state(&self) -> Box<dyn ws_common::game_state::GameState> {
+    fn build_game_state(&self) -> Box<dyn ws_common::GameState> {
         Box::new(SharedGameState::new())
     }
 
@@ -2226,7 +2226,7 @@ mod tests {
     use std::sync::{Arc, Mutex as StdMutex};
 
     use crate::rules::WIN_RULE_RELAXED;
-    use ws_common::game_state::CommonGameState;
+    use ws_common::CommonGameState;
 
     use super::*;
 
@@ -4158,7 +4158,7 @@ mod tests {
         }
         let room_key = room_service.room_key_of(1).expect("room key");
         let common = room_service
-            .get_room_common_state_handle(&room_key)
+            .room_common_state(&room_key)
             .expect("common state");
         let loop_state = Arc::new(StdMutex::new(ShenyangMahjongLoopState::new(Arc::clone(
             &common,
@@ -7018,7 +7018,7 @@ mod tests {
         }
         let room_key = room_service.room_key_of(1).expect("room key");
         let common = room_service
-            .get_room_common_state_handle(&room_key)
+            .room_common_state(&room_key)
             .expect("common state");
         let loop_state = Arc::new(StdMutex::new(ShenyangMahjongLoopState::new(Arc::clone(
             &common,

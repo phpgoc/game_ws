@@ -62,7 +62,7 @@ pub(crate) fn start_game_loop(
         let configs: HashMap<String, i32> = room_service
             .lock()
             .await
-            .get_room_configs(&room_key)
+            .room_configs(&room_key)
             .unwrap_or_default();
 
         loop {
@@ -274,7 +274,7 @@ pub(crate) fn start_game_loop(
 mod tests {
     use std::sync::{Arc, Mutex};
 
-    use ws_common::game_state::CommonGameState;
+    use ws_common::CommonGameState;
 
     use super::*;
 

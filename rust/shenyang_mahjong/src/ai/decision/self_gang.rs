@@ -1,5 +1,23 @@
 use super::*;
 
+pub(super) fn can_self_gang_candidate(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    tile: i32,
+) -> bool {
+    if !is_valid_tile(tile) {
+        return false;
+    }
+    let hand_count = hand.iter().filter(|item| **item == tile).count();
+    let peng_meld_count = melds
+        .iter()
+        .filter(|meld| {
+            meld.kind == ShenyangMahjongMeldKind::PENG && meld_primary_tile(meld) == Some(tile)
+        })
+        .count();
+    (hand_count == 4 && peng_meld_count == 0) || (hand_count == 1 && peng_meld_count == 1)
+}
+
 pub fn choose_self_gang_from_view(
     hand: &[i32],
     candidate_tiles: &[i32],
@@ -40,24 +58,6 @@ pub fn choose_self_gang_from_view(
         }
     }
     best.and_then(|(score, tile)| (score >= 0.0).then_some(tile))
-}
-
-pub(super) fn can_self_gang_candidate(
-    hand: &[i32],
-    melds: &[WsShenyangMahjongMeld],
-    tile: i32,
-) -> bool {
-    if !is_valid_tile(tile) {
-        return false;
-    }
-    let hand_count = hand.iter().filter(|item| **item == tile).count();
-    let peng_meld_count = melds
-        .iter()
-        .filter(|meld| {
-            meld.kind == ShenyangMahjongMeldKind::PENG && meld_primary_tile(meld) == Some(tile)
-        })
-        .count();
-    (hand_count == 4 && peng_meld_count == 0) || (hand_count == 1 && peng_meld_count == 1)
 }
 
 pub(super) fn self_gang_score(
@@ -173,6 +173,13 @@ pub(super) fn self_gang_score(
     score
 }
 
+pub(super) fn should_pass_late_unready_self_gang_for_defense(
+    table: &AiPublicTable,
+    current_ready_score: f64,
+) -> bool {
+    is_late_defense_round(table) && current_ready_score <= 0.0
+}
+
 pub(super) fn should_preserve_four_gui_yi(tile: i32) -> bool {
     !is_dragon(tile)
 }
@@ -185,11 +192,4 @@ pub(super) fn should_preserve_seven_pairs_for_self_gang(
     win_rule: i32,
 ) -> bool {
     should_lock_seven_pairs_plan(hand, melds, table, position, win_rule)
-}
-
-pub(super) fn should_pass_late_unready_self_gang_for_defense(
-    table: &AiPublicTable,
-    current_ready_score: f64,
-) -> bool {
-    is_late_defense_round(table) && current_ready_score <= 0.0
 }

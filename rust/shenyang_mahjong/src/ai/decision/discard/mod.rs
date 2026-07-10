@@ -1,8 +1,8 @@
-use super::*;
-
 mod bias;
 mod defense;
 mod sequences;
+
+use super::*;
 
 pub(super) use bias::*;
 pub(super) use defense::*;
