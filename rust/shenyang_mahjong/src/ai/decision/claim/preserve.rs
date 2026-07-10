@@ -75,3 +75,53 @@ pub(in crate::ai::decision) fn should_claim_capped_dragon_peng_over_five_pairs(
     next_melds.push(claim_peng_meld(tile, from_position));
     capped_open_basic_route_visible_fan_reaches_cap(&next_hand, &next_melds, table)
 }
+
+pub(in crate::ai::decision) fn should_claim_dragon_peng_over_live_five_pairs(
+    hand: &[i32],
+    current_melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+    tile: i32,
+    from_position: usize,
+) -> bool {
+    if win_rule != WIN_RULE_SHENYANG_BASIC
+        || !is_dragon(tile)
+        || pair_count(hand) != 5
+        || !current_melds.is_empty()
+        || !can_peng(hand, tile)
+        || !missing_suits(hand, current_melds).is_empty()
+        || !has_terminal_or_honor_with_extra(hand, current_melds, Some(tile))
+    {
+        return false;
+    }
+    let non_dragon_pair_tiles = unique_tiles(hand)
+        .into_iter()
+        .filter(|pair_tile| {
+            *pair_tile != tile
+                && !is_dragon(*pair_tile)
+                && hand.iter().filter(|item| **item == *pair_tile).count() == 2
+        })
+        .collect::<Vec<_>>();
+    if non_dragon_pair_tiles.is_empty()
+        || non_dragon_pair_tiles
+            .iter()
+            .any(|pair_tile| remaining_tile_count(hand, table, position, *pair_tile) == 0)
+    {
+        return false;
+    }
+
+    let mut next = remove_n_tiles(hand, tile, 2);
+    if next.len() + 2 != hand.len() {
+        return false;
+    }
+    sort_tiles(&mut next);
+    let mut melds = current_melds.to_vec();
+    melds.push(claim_peng_meld(tile, from_position));
+
+    unique_tiles(&next).into_iter().any(|discard| {
+        let after_discard = remove_n_tiles(&next, discard, 1);
+        has_piao_route_basics(&after_discard, &melds)
+            && piao_plan_score(&after_discard, &melds) > 0.0
+    })
+}

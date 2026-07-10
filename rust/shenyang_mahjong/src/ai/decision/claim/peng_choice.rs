@@ -40,6 +40,17 @@ pub(super) fn choose_peng_claim(
     ) {
         return Some(AiClaimChoice::Peng);
     }
+    if should_claim_dragon_peng_over_live_five_pairs(
+        hand,
+        current_melds,
+        table,
+        position,
+        win_rule,
+        tile,
+        from_position,
+    ) {
+        return Some(AiClaimChoice::Peng);
+    }
     if should_preserve_seven_pairs_plan_for_context(hand, current_melds, table, position, win_rule)
     {
         return Some(AiClaimChoice::Pass);
