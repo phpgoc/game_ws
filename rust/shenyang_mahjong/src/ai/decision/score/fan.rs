@@ -257,6 +257,9 @@ pub(in crate::ai::decision) fn fan_wait_bias(
             win_rule,
             table.chi_opens_door,
         );
+        if visible_fan * 2 > max_fan {
+            return 0.0;
+        }
         if visible_fan >= max_fan {
             return 0.0;
         }

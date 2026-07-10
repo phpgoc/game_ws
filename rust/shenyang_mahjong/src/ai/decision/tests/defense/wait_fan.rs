@@ -60,3 +60,35 @@ fn mid_round_open_hand_does_not_chase_wait_fan_with_live_terminal_discard() {
         Some(9)
     );
 }
+
+#[test]
+fn fan_wait_bias_stops_when_visible_fan_exceeds_half_cap() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 30;
+    table.max_fan = Some(4);
+    let melds = vec![test_gang_meld(35)];
+    let win_hand = vec![2, 2, 5, 6, 7, 11, 12, 13, 21, 22, 23];
+
+    let visible_fan = estimated_visible_fan_without_wait_and_open_rule(
+        &win_hand,
+        &melds,
+        WIN_RULE_SHENYANG_BASIC,
+        table.chi_opens_door,
+    );
+    assert_eq!(visible_fan, 3);
+    assert!(visible_fan * 2 > table.max_fan.unwrap());
+
+    assert_eq!(
+        fan_wait_bias(
+            &win_hand,
+            &melds,
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+            6,
+            4,
+            &[4],
+        ),
+        0.0
+    );
+}

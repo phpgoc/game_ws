@@ -228,7 +228,7 @@ fn estimated_visible_fan_does_not_count_piao_shou_ba_yi_without_wait_tile() {
 }
 
 #[test]
-fn fan_wait_bias_counts_piao_shou_ba_yi_for_cap() {
+fn fan_wait_bias_stops_piao_shou_ba_yi_when_visible_fan_exceeds_half_cap() {
     let mut table = table_with_discards(1, Vec::new());
     table.max_fan = Some(5);
     let win_hand = vec![35, 35];
@@ -247,6 +247,7 @@ fn fan_wait_bias_counts_piao_shou_ba_yi_for_cap() {
         estimated_fan_with_wait(&win_hand, &melds, 35, WIN_RULE_SHENYANG_BASIC),
         5
     );
+    assert!(3 * 2 > table.max_fan.unwrap());
     assert_eq!(
         fan_wait_bias(
             &win_hand,
@@ -258,7 +259,7 @@ fn fan_wait_bias_counts_piao_shou_ba_yi_for_cap() {
             2,
             &[],
         ),
-        10.0
+        0.0
     );
 }
 
@@ -415,7 +416,7 @@ fn fan_wait_bias_uses_win_rule_for_closed_basic_hand() {
 #[test]
 fn fan_wait_bias_counts_middle_tile_seven_pairs_single_wait() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(5);
+    table.max_fan = Some(8);
     let win_hand = vec![1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 11, 11, 21, 21];
 
     assert!(
@@ -448,7 +449,7 @@ fn fan_wait_bias_counts_middle_tile_seven_pairs_single_wait() {
 }
 
 #[test]
-fn fan_wait_bias_counts_terminal_single_wait_once_for_cap() {
+fn fan_wait_bias_stops_terminal_single_wait_when_visible_fan_exceeds_half_cap() {
     let mut table = table_with_discards(1, Vec::new());
     table.max_fan = Some(6);
     let win_hand = vec![11, 11, 14, 15, 15, 16, 16, 17, 17, 17, 17];
@@ -462,6 +463,7 @@ fn fan_wait_bias_counts_terminal_single_wait_once_for_cap() {
         estimated_fan_with_wait(&win_hand, &melds, 11, WIN_RULE_SHENYANG_BASIC),
         6
     );
+    assert!(5 * 2 > table.max_fan.unwrap());
 
     assert_eq!(
         fan_wait_bias(
@@ -472,6 +474,36 @@ fn fan_wait_bias_counts_terminal_single_wait_once_for_cap() {
             WIN_RULE_SHENYANG_BASIC,
             11,
             3,
+            &[],
+        ),
+        0.0
+    );
+}
+
+#[test]
+fn fan_wait_bias_counts_single_wait_cap_when_visible_fan_is_half_cap() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.max_fan = Some(2);
+    let win_hand = vec![2, 2, 5, 6, 7, 11, 12, 13, 21, 22, 23];
+    let melds = vec![test_peng_meld(31)];
+
+    assert_eq!(
+        estimated_visible_fan_without_wait(&win_hand, &melds, WIN_RULE_SHENYANG_BASIC),
+        1
+    );
+    assert_eq!(
+        estimated_fan_with_wait(&win_hand, &melds, 6, WIN_RULE_SHENYANG_BASIC),
+        2
+    );
+    assert_eq!(
+        fan_wait_bias(
+            &win_hand,
+            &melds,
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+            6,
+            4,
             &[],
         ),
         14.0
