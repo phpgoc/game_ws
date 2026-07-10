@@ -1029,11 +1029,16 @@ pub(crate) fn perform_self_gang(
     true
 }
 
-fn position_has_open_meld(state: &ShenyangMahjongLoopState, position: usize) -> bool {
-    state
-        .melds
-        .get(&position)
-        .is_some_and(|melds| melds.iter().any(is_open_meld))
+fn position_has_open_meld(
+    state: &ShenyangMahjongLoopState,
+    position: usize,
+    chi_opens_door: bool,
+) -> bool {
+    state.melds.get(&position).is_some_and(|melds| {
+        melds
+            .iter()
+            .any(|meld| is_open_meld(meld) && (chi_opens_door || !is_chi_meld(meld)))
+    })
 }
 
 pub(crate) fn push_direct_event<T: serde::Serialize>(
@@ -1505,6 +1510,7 @@ pub(crate) fn settlement_score_changes_for_state(
     settlement: &crate::game_state::SettlementState,
     configs: &HashMap<String, i32>,
 ) -> Vec<WsShenyangMahjongScoreChange> {
+    let chi_opens_door = chi_opens_door(configs);
     let mut sorted_positions = positions.to_vec();
     sorted_positions.sort_unstable();
 
@@ -1535,7 +1541,7 @@ pub(crate) fn settlement_score_changes_for_state(
     let all_payers_closed = payers.len() >= 3
         && payers
             .iter()
-            .all(|position| !position_has_open_meld(state, *position));
+            .all(|position| !position_has_open_meld(state, *position, chi_opens_door));
     let mut totals = sorted_positions
         .iter()
         .map(|position| (*position, 0))
@@ -1557,7 +1563,7 @@ pub(crate) fn settlement_score_changes_for_state(
             if *payer == state.dealer_position {
                 payment += 1;
             }
-            if !position_has_open_meld(state, *payer) {
+            if !position_has_open_meld(state, *payer, chi_opens_door) {
                 payment += if all_payers_closed { 2 } else { 1 };
             }
             payment = payment.max(1);
@@ -6340,6 +6346,21 @@ mod tests {
             .collect::<Vec<_>>(),
             vec![(0, -1), (1, 1), (2, 0), (3, 0)]
         );
+        assert_eq!(
+            settlement_score_changes_for_state(
+                &open_payer_state,
+                &[0, 1, 2, 3],
+                open_settlement,
+                &HashMap::from([
+                    ("win_rule".to_owned(), WIN_RULE_RELAXED),
+                    ("chi_opens_door".to_owned(), 0),
+                ])
+            )
+            .into_iter()
+            .map(|change| (change.position, change.score))
+            .collect::<Vec<_>>(),
+            vec![(0, -2), (1, 2), (2, 0), (3, 0)]
+        );
     }
 
     #[test]
@@ -6711,6 +6732,45 @@ mod tests {
                 .map(|change| (change.position, change.score))
                 .collect::<Vec<_>>(),
             vec![(0, -7), (1, -5), (2, 18), (3, -6)]
+        );
+    }
+
+    #[test]
+    fn settlement_self_draw_treats_chi_only_payer_as_closed_when_chi_does_not_open_door() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(2, vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35, 35]);
+        state.melds.insert(
+            1,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::CHI,
+                vec![11, 12, 13],
+                Some(0),
+            )],
+        );
+        state.enter_settlement(vec![2], None, Some(35), true);
+
+        let settlement = state.settlement.as_ref().expect("settlement");
+
+        assert_eq!(
+            settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &HashMap::new())
+                .into_iter()
+                .map(|change| (change.position, change.score))
+                .collect::<Vec<_>>(),
+            vec![(0, -7), (1, -5), (2, 18), (3, -6)]
+        );
+        assert_eq!(
+            settlement_score_changes_for_state(
+                &state,
+                &[0, 1, 2, 3],
+                settlement,
+                &HashMap::from([("chi_opens_door".to_owned(), 0)])
+            )
+            .into_iter()
+            .map(|change| (change.position, change.score))
+            .collect::<Vec<_>>(),
+            vec![(0, -8), (1, -7), (2, 22), (3, -7)]
         );
     }
 
