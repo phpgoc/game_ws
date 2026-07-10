@@ -53,8 +53,18 @@ pub(in crate::ai::decision) fn should_claim_capped_dragon_peng_over_five_pairs(
         || !is_dragon(tile)
         || pair_count(hand) != 5
         || !can_peng(hand, tile)
-        || !should_lock_seven_pairs_plan(hand, current_melds, table, position, win_rule)
     {
+        return false;
+    }
+    let preserves_pair_route =
+        should_lock_seven_pairs_plan(hand, current_melds, table, position, win_rule)
+            || capped_basic_route_foundation_visible_fan_exceeds_half_cap(
+                hand,
+                current_melds,
+                table,
+                win_rule,
+            );
+    if !preserves_pair_route {
         return false;
     }
     let next_hand = remove_n_tiles(hand, tile, 2);

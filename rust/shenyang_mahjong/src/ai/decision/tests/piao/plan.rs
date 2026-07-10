@@ -139,6 +139,29 @@ fn capped_basic_foundation_disables_redundant_closed_piao_plan() {
 }
 
 #[test]
+fn half_capped_basic_foundation_stops_closed_piao_chase() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.max_fan = Some(4);
+    let hand = vec![1, 1, 2, 2, 11, 11, 12, 13, 21, 22, 35, 35, 35, 35];
+
+    assert!(has_basic_normal_route_foundation(
+        &hand,
+        &[],
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert_eq!(estimated_visible_bonus_fan(&hand, &[]), 2);
+    assert!(capped_basic_route_foundation_visible_fan_exceeds_half_cap(
+        &hand,
+        &[],
+        &table,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert!(piao_plan_score(&hand, &[]) >= 20.0);
+    assert_eq!(piao_plan_score_for_context(&hand, &[], &table, 0), 0.0);
+    assert!(!is_closed_early_piao_candidate(&hand, &[], &table, 0));
+}
+
+#[test]
 fn piao_plan_counts_open_triplet_with_two_pairs_as_route() {
     let hand = vec![11, 11, 12, 13, 14, 21, 21, 23, 24, 31];
     let melds = vec![test_peng_meld(1)];

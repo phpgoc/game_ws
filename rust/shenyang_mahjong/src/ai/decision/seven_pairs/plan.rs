@@ -46,6 +46,9 @@ pub(in crate::ai::decision) fn should_lock_seven_pairs_plan(
     if pairs < 5 {
         return false;
     }
+    if capped_basic_route_foundation_visible_fan_exceeds_half_cap(hand, melds, table, win_rule) {
+        return false;
+    }
     if capped_basic_route_foundation_visible_fan_reaches_cap(hand, melds, table, win_rule) {
         return false;
     }
@@ -70,6 +73,11 @@ pub(in crate::ai::decision) fn seven_pairs_plan_score(
     if table.dealer_position == position
         && pairs < 6
         && !should_chase_basic_missing_suit_four_pairs(hand, melds, win_rule)
+    {
+        return 0.0;
+    }
+    if pairs < 6
+        && capped_basic_route_foundation_visible_fan_exceeds_half_cap(hand, melds, table, win_rule)
     {
         return 0.0;
     }

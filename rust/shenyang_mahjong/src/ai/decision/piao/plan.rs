@@ -51,6 +51,12 @@ pub(in crate::ai::decision) fn piao_plan_score_for_context(
         || piao_plan_is_capped(table)
         || !has_piao_route_basics(hand, melds)
         || capped_open_basic_route_visible_fan_reaches_cap(hand, melds, table)
+        || capped_basic_route_foundation_visible_fan_exceeds_half_cap(
+            hand,
+            melds,
+            table,
+            WIN_RULE_SHENYANG_BASIC,
+        )
         || capped_basic_route_foundation_visible_fan_reaches_cap(
             hand,
             melds,
@@ -119,6 +125,12 @@ pub(in crate::ai::decision) fn is_closed_early_piao_candidate(
         && pair_count(hand) >= 3
         && table.dealer_position != position
         && !piao_plan_is_capped(table)
+        && !capped_basic_route_foundation_visible_fan_exceeds_half_cap(
+            hand,
+            melds,
+            table,
+            WIN_RULE_SHENYANG_BASIC,
+        )
         && !capped_basic_route_foundation_visible_fan_reaches_cap(
             hand,
             melds,

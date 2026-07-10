@@ -386,11 +386,17 @@ fn three_fan_capped_claim_gang_penges_dragon_over_five_pairs() {
     let claim = table.claim_window.clone().unwrap();
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 22, 35, 35, 35];
 
-    assert!(should_lock_seven_pairs_plan(
+    assert!(!should_lock_seven_pairs_plan(
         &hand,
         &[],
         &table,
         0,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert!(capped_basic_route_foundation_visible_fan_exceeds_half_cap(
+        &hand,
+        &[],
+        &table,
         WIN_RULE_SHENYANG_BASIC
     ));
     let gang_hand = remove_n_tiles(&hand, 35, 3);

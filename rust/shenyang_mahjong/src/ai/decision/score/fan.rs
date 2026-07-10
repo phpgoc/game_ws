@@ -63,6 +63,19 @@ pub(in crate::ai::decision) fn capped_basic_route_foundation_visible_fan_reaches
         && 1 + estimated_visible_bonus_fan(hand, melds) >= max_fan
 }
 
+pub(in crate::ai::decision) fn capped_basic_route_foundation_visible_fan_exceeds_half_cap(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    win_rule: i32,
+) -> bool {
+    let Some(max_fan) = table.max_fan.filter(|max_fan| *max_fan > 0) else {
+        return false;
+    };
+    let visible_fan = 1 + estimated_visible_bonus_fan(hand, melds);
+    has_basic_normal_route_foundation(hand, melds, win_rule) && visible_fan * 2 > max_fan
+}
+
 pub(in crate::ai::decision) fn four_gui_yi_discard_bias(
     hand: &[i32],
     tile: i32,

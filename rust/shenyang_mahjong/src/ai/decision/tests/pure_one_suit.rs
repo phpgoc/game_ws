@@ -83,6 +83,25 @@ fn capped_basic_foundation_disables_redundant_closed_pure_one_suit_plan() {
 }
 
 #[test]
+fn half_capped_basic_foundation_disables_closed_pure_one_suit_chase() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.max_fan = Some(4);
+    let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 11, 21, 35, 35, 35, 35];
+
+    assert!(has_basic_normal_route_foundation(
+        &hand,
+        &[],
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert_eq!(estimated_visible_bonus_fan(&hand, &[]), 2);
+    assert!(pure_one_suit_plan_score(&hand, &[]) > 0.0);
+    assert_eq!(
+        pure_one_suit_plan_score_for_context(&hand, &[], &table, 0),
+        0.0
+    );
+}
+
+#[test]
 fn capped_basic_foundation_preserves_three_suits_over_pure_one_suit_chase() {
     let mut table = table_with_discards(1, Vec::new());
     table.max_fan = Some(2);
