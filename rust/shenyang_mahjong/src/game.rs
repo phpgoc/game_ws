@@ -722,45 +722,6 @@ fn is_single_wait_win_with_known_unavailable_tiles(
     )
 }
 
-fn is_yaojiu_tile(tile: i32) -> bool {
-    matches!(tile, 1 | 9 | 11 | 19 | 21 | 29 | 31..=37)
-}
-
-#[cfg(test)]
-fn is_single_yaojiu_wait_win(
-    hand_tiles: &[i32],
-    melds: &[WsShenyangMahjongMeld],
-    win_tile: Option<i32>,
-    win_rule: i32,
-) -> bool {
-    let Some(win_tile) = win_tile else {
-        return false;
-    };
-    is_yaojiu_tile(win_tile) && is_single_wait_win(hand_tiles, melds, Some(win_tile), win_rule)
-}
-
-fn is_single_yaojiu_wait_win_with_known_unavailable_tiles(
-    hand_tiles: &[i32],
-    melds: &[WsShenyangMahjongMeld],
-    win_tile: Option<i32>,
-    win_rule: i32,
-    chi_opens_door: bool,
-    known_unavailable_tiles: &[i32],
-) -> bool {
-    let Some(win_tile) = win_tile else {
-        return false;
-    };
-    is_yaojiu_tile(win_tile)
-        && is_single_wait_win_with_known_unavailable_tiles(
-            hand_tiles,
-            melds,
-            Some(win_tile),
-            win_rule,
-            chi_opens_door,
-            known_unavailable_tiles,
-        )
-}
-
 fn public_unavailable_tiles_for_winner(
     state: &ShenyangMahjongLoopState,
     winner: usize,
@@ -1704,16 +1665,6 @@ fn winner_hand_fan_with_rule_and_open_rule(
         fan += 1;
     }
     if is_single_wait_win_with_known_unavailable_tiles(
-        &hand_tiles,
-        melds,
-        settlement.win_tile,
-        win_rule,
-        chi_opens_door,
-        &known_unavailable_tiles,
-    ) {
-        fan += 1;
-    }
-    if is_single_yaojiu_wait_win_with_known_unavailable_tiles(
         &hand_tiles,
         melds,
         settlement.win_tile,
@@ -5049,7 +5000,7 @@ mod tests {
         assert!(!settlement.is_gang_draw);
         assert!(settlement.is_haidilao);
         assert_eq!(settlement.win_tile, Some(35));
-        assert_eq!(winner_hand_fan(&state, settlement, 0), 4);
+        assert_eq!(winner_hand_fan(&state, settlement, 0), 3);
 
         let event = build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
         assert!(!event.is_gang_draw);
@@ -5139,7 +5090,7 @@ mod tests {
         assert!(settlement.is_gang_draw);
         assert!(settlement.is_haidilao);
         assert_eq!(settlement.win_tile, Some(31));
-        assert_eq!(winner_hand_fan(&state, settlement, 0), 7);
+        assert_eq!(winner_hand_fan(&state, settlement, 0), 6);
 
         let event = build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
         assert!(event.is_gang_draw);
@@ -5390,7 +5341,7 @@ mod tests {
         state.enter_settlement(vec![1], None, Some(35), true);
         let settlement = state.settlement.as_ref().expect("settlement");
 
-        assert_eq!(winner_hand_fan(&state, settlement, 1), 4);
+        assert_eq!(winner_hand_fan(&state, settlement, 1), 3);
     }
 
     #[test]
@@ -5482,7 +5433,7 @@ mod tests {
         state.enter_settlement(vec![1], None, Some(35), true);
         let settlement = state.settlement.as_ref().expect("settlement");
 
-        assert_eq!(winner_hand_fan(&state, settlement, 1), 7);
+        assert_eq!(winner_hand_fan(&state, settlement, 1), 6);
     }
 
     #[test]
@@ -5718,7 +5669,7 @@ mod tests {
         state.enter_settlement(vec![1], Some(0), Some(35), false);
         let settlement = state.settlement.as_ref().expect("settlement");
 
-        assert_eq!(winner_hand_fan(&state, settlement, 1), 6);
+        assert_eq!(winner_hand_fan(&state, settlement, 1), 5);
     }
 
     #[test]
@@ -5772,7 +5723,7 @@ mod tests {
     }
 
     #[test]
-    fn settlement_fan_counts_single_yaojiu_terminal_wait_extra() {
+    fn settlement_fan_counts_terminal_single_wait_once() {
         let mut state = playable_state();
         state
             .hands
@@ -5795,17 +5746,11 @@ mod tests {
             settlement.win_tile,
             WIN_RULE_RELAXED
         ));
-        assert!(is_single_yaojiu_wait_win(
-            &hand_tiles,
-            &[],
-            settlement.win_tile,
-            WIN_RULE_RELAXED
-        ));
-        assert_eq!(winner_hand_fan(&state, settlement, 1), 7);
+        assert_eq!(winner_hand_fan(&state, settlement, 1), 6);
     }
 
     #[test]
-    fn settlement_fan_counts_single_yaojiu_wait_when_other_wait_is_exhausted() {
+    fn settlement_fan_counts_terminal_single_wait_when_other_wait_is_exhausted() {
         let mut state = playable_state();
         state
             .hands
@@ -5837,17 +5782,11 @@ mod tests {
             settlement.win_tile,
             WIN_RULE_RELAXED
         ));
-        assert!(is_single_yaojiu_wait_win(
-            &hand_tiles,
-            melds,
-            settlement.win_tile,
-            WIN_RULE_RELAXED
-        ));
-        assert_eq!(winner_hand_fan(&state, settlement, 1), 4);
+        assert_eq!(winner_hand_fan(&state, settlement, 1), 3);
     }
 
     #[test]
-    fn settlement_fan_counts_single_yaojiu_wait_when_other_wait_is_discarded_out() {
+    fn settlement_fan_counts_terminal_single_wait_when_other_wait_is_discarded_out() {
         let mut state = playable_state();
         state
             .hands
@@ -5887,7 +5826,7 @@ mod tests {
             public_unavailable.iter().filter(|tile| **tile == 4).count(),
             4
         );
-        assert!(is_single_yaojiu_wait_win_with_known_unavailable_tiles(
+        assert!(is_single_wait_win_with_known_unavailable_tiles(
             &hand_tiles,
             melds,
             settlement.win_tile,
@@ -5897,12 +5836,12 @@ mod tests {
         ));
         assert_eq!(
             winner_hand_fan_with_rule(&state, settlement, 1, WIN_RULE_SHENYANG_BASIC),
-            3
+            2
         );
     }
 
     #[test]
-    fn settlement_fan_counts_single_yaojiu_honor_wait_extra() {
+    fn settlement_fan_counts_honor_single_wait_once() {
         let mut state = playable_state();
         state
             .hands
@@ -5925,13 +5864,7 @@ mod tests {
             settlement.win_tile,
             WIN_RULE_RELAXED
         ));
-        assert!(is_single_yaojiu_wait_win(
-            &hand_tiles,
-            &[],
-            settlement.win_tile,
-            WIN_RULE_RELAXED
-        ));
-        assert_eq!(winner_hand_fan(&state, settlement, 1), 3);
+        assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
     }
 
     #[test]
@@ -6046,7 +5979,7 @@ mod tests {
         state.enter_settlement(vec![1], Some(0), Some(35), false);
         let settlement = state.settlement.as_ref().expect("settlement");
 
-        assert_eq!(winner_hand_fan(&state, settlement, 1), 3);
+        assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
     }
 
     #[test]
@@ -6086,7 +6019,7 @@ mod tests {
         );
         let settlement = state.settlement.as_ref().expect("settlement");
 
-        assert_eq!(winner_hand_fan(&state, settlement, 1), 3);
+        assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
         assert_eq!(
             winner_hand_fan_with_rule(&state, settlement, 1, WIN_RULE_SHENYANG_BASIC),
             0
@@ -6118,7 +6051,7 @@ mod tests {
                 WIN_RULE_SHENYANG_BASIC,
                 true,
             ),
-            3
+            2
         );
         assert_eq!(
             winner_hand_fan_with_rule_and_open_rule(
@@ -6150,13 +6083,13 @@ mod tests {
         state.enter_settlement(vec![0], Some(1), Some(35), false);
         let settlement = state.settlement.as_ref().expect("settlement");
 
-        assert_eq!(winner_hand_fan(&state, settlement, 0), 6);
+        assert_eq!(winner_hand_fan(&state, settlement, 0), 5);
         assert_eq!(
             settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &HashMap::new())
                 .into_iter()
                 .map(|change| (change.position, change.score))
                 .collect::<Vec<_>>(),
-            vec![(0, 7), (1, -7), (2, 0), (3, 0)]
+            vec![(0, 6), (1, -6), (2, 0), (3, 0)]
         );
     }
 
@@ -6175,7 +6108,7 @@ mod tests {
                 .into_iter()
                 .map(|change| (change.position, change.score))
                 .collect::<Vec<_>>(),
-            vec![(0, -9), (1, -9), (2, 27), (3, -9)]
+            vec![(0, -8), (1, -8), (2, 24), (3, -8)]
         );
     }
 
@@ -6723,7 +6656,7 @@ mod tests {
                 .into_iter()
                 .map(|change| (change.position, change.score))
                 .collect::<Vec<_>>(),
-            vec![(0, -9), (1, -8), (2, 25), (3, -8)]
+            vec![(0, -8), (1, -7), (2, 22), (3, -7)]
         );
     }
 
@@ -6750,7 +6683,7 @@ mod tests {
                 .into_iter()
                 .map(|change| (change.position, change.score))
                 .collect::<Vec<_>>(),
-            vec![(0, -9), (1, -8), (2, 25), (3, -8)]
+            vec![(0, -8), (1, -7), (2, 22), (3, -7)]
         );
     }
 
@@ -6777,7 +6710,7 @@ mod tests {
                 .into_iter()
                 .map(|change| (change.position, change.score))
                 .collect::<Vec<_>>(),
-            vec![(0, -8), (1, -6), (2, 21), (3, -7)]
+            vec![(0, -7), (1, -5), (2, 18), (3, -6)]
         );
     }
 
@@ -6939,14 +6872,14 @@ mod tests {
             ShenyangMahjongWinPattern::SevenPairs
         );
         assert!(event.winner_details[0].is_self_draw);
-        assert_eq!(event.winner_details[0].score, 25);
+        assert_eq!(event.winner_details[0].score, 22);
         assert_eq!(
             event
                 .score_changes
                 .iter()
                 .map(|change| (change.position, change.score))
                 .collect::<Vec<_>>(),
-            vec![(0, -9), (1, -8), (2, 25), (3, -8)]
+            vec![(0, -8), (1, -7), (2, 22), (3, -7)]
         );
     }
 

@@ -36,7 +36,7 @@ fn late_defense_avoids_breaking_cold_terminal_pair_against_closed_opponent() {
 }
 
 #[test]
-fn mid_round_non_dealer_piao_single_wait_can_chase_wind_fan() {
+fn mid_round_non_dealer_piao_single_wait_prefers_wider_middle_without_wind_extra_fan() {
     let mut table = table_with_discards(1, vec![31]);
     table.wall_count = 32;
     table.seats.get_mut(&0).unwrap().melds = vec![
@@ -50,8 +50,8 @@ fn mid_round_non_dealer_piao_single_wait_can_chase_wind_fan() {
     assert_eq!(remaining_tile_count(&[31], &table, 0, 31), 2);
     assert_eq!(remaining_tile_count(&[5], &table, 0, 5), 3);
     assert!(
-        piao_single_wait_tile_score(31, &[31], melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
-            > piao_single_wait_tile_score(5, &[5], melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
+        piao_single_wait_tile_score(5, &[5], melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
+            > piao_single_wait_tile_score(31, &[31], melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
     );
 }
 

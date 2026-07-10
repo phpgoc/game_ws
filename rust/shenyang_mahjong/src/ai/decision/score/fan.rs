@@ -172,11 +172,7 @@ pub(in crate::ai::decision) fn estimated_fan_with_known_unavailable_wait_and_ope
         chi_opens_door,
         known_unavailable_tiles,
     );
-    let wait_fan = if is_single_wait {
-        single_wait_fan(win_tile)
-    } else {
-        0
-    };
+    let wait_fan = if is_single_wait { single_wait_fan() } else { 0 };
     let shou_ba_yi_fan = if is_single_wait
         && is_piao_hu_win(win_hand, melds)
         && melds.len() == 4
@@ -191,12 +187,8 @@ pub(in crate::ai::decision) fn estimated_fan_with_known_unavailable_wait_and_ope
         + shou_ba_yi_fan
 }
 
-pub(in crate::ai::decision) fn single_wait_fan(win_tile: i32) -> i32 {
-    1 + if tile_is_terminal(win_tile) || is_honor(win_tile) {
-        1
-    } else {
-        0
-    }
+pub(in crate::ai::decision) fn single_wait_fan() -> i32 {
+    1
 }
 
 pub(in crate::ai::decision) fn pressured_open_wait_scale(

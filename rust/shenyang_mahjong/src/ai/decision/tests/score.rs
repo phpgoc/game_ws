@@ -223,14 +223,14 @@ fn estimated_visible_fan_does_not_count_piao_shou_ba_yi_without_wait_tile() {
     );
     assert_eq!(
         estimated_fan_with_wait(&win_hand, &melds, 35, WIN_RULE_SHENYANG_BASIC),
-        6
+        5
     );
 }
 
 #[test]
 fn fan_wait_bias_counts_piao_shou_ba_yi_for_cap() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(6);
+    table.max_fan = Some(5);
     let win_hand = vec![35, 35];
     let melds = vec![
         test_peng_meld(1),
@@ -245,7 +245,7 @@ fn fan_wait_bias_counts_piao_shou_ba_yi_for_cap() {
     );
     assert_eq!(
         estimated_fan_with_wait(&win_hand, &melds, 35, WIN_RULE_SHENYANG_BASIC),
-        6
+        5
     );
     assert_eq!(
         fan_wait_bias(
@@ -258,7 +258,7 @@ fn fan_wait_bias_counts_piao_shou_ba_yi_for_cap() {
             2,
             &[],
         ),
-        0.0
+        10.0
     );
 }
 
@@ -306,18 +306,18 @@ fn estimated_visible_fan_does_not_add_closed_winner_fan() {
 }
 
 #[test]
-fn estimated_fan_counts_single_yaojiu_terminal_wait_extra() {
+fn estimated_fan_counts_terminal_single_wait_once() {
     let win_hand = vec![11, 11, 14, 15, 15, 16, 16, 17, 17, 17, 17];
     let melds = vec![test_chi_meld(12)];
 
     assert_eq!(
         estimated_fan_with_wait(&win_hand, &melds, 11, WIN_RULE_SHENYANG_BASIC),
-        7
+        6
     );
 }
 
 #[test]
-fn estimated_fan_counts_single_yaojiu_when_public_discards_exhaust_other_wait() {
+fn estimated_fan_counts_terminal_single_wait_when_public_discards_exhaust_other_wait() {
     let table = table_with_discards(1, vec![4, 4, 4, 4]);
     let hand_after_discard = vec![2, 3, 21, 22, 23, 25, 25, 31, 31, 31];
     let win_hand = vec![1, 2, 3, 21, 22, 23, 25, 25, 31, 31, 31];
@@ -336,7 +336,7 @@ fn estimated_fan_counts_single_yaojiu_when_public_discards_exhaust_other_wait() 
             WIN_RULE_SHENYANG_BASIC,
             &known_unavailable,
         ),
-        3
+        2
     );
     assert!(
         ready_tile_score(
@@ -367,12 +367,12 @@ fn known_unavailable_tiles_ignore_invalid_discards() {
 }
 
 #[test]
-fn estimated_fan_counts_single_yaojiu_honor_wait_extra() {
+fn estimated_fan_counts_honor_single_wait_once() {
     let win_hand = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35];
 
     assert_eq!(
         estimated_fan_with_wait(&win_hand, &[], 35, WIN_RULE_RELAXED),
-        3
+        2
     );
 }
 
@@ -448,9 +448,9 @@ fn fan_wait_bias_counts_middle_tile_seven_pairs_single_wait() {
 }
 
 #[test]
-fn fan_wait_bias_counts_single_yaojiu_terminal_wait_extra_for_cap() {
+fn fan_wait_bias_counts_terminal_single_wait_once_for_cap() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(7);
+    table.max_fan = Some(6);
     let win_hand = vec![11, 11, 14, 15, 15, 16, 16, 17, 17, 17, 17];
     let melds = vec![test_chi_meld(12)];
 
@@ -460,36 +460,9 @@ fn fan_wait_bias_counts_single_yaojiu_terminal_wait_extra_for_cap() {
     );
     assert_eq!(
         estimated_fan_with_wait(&win_hand, &melds, 11, WIN_RULE_SHENYANG_BASIC),
-        7
-    );
-    assert_eq!(
-        fan_wait_bias(
-            &win_hand,
-            &melds,
-            &table,
-            0,
-            WIN_RULE_SHENYANG_BASIC,
-            11,
-            2,
-            &[],
-        ),
-        10.0
-    );
-    assert_eq!(
-        fan_wait_bias(
-            &win_hand,
-            &melds,
-            &table,
-            0,
-            WIN_RULE_SHENYANG_BASIC,
-            11,
-            3,
-            &[],
-        ),
-        10.0
+        6
     );
 
-    table.max_fan = Some(6);
     assert_eq!(
         fan_wait_bias(
             &win_hand,
