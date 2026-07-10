@@ -58,6 +58,20 @@ fn pure_one_suit_threat_ignores_tile_fully_accounted_by_exposed_and_own_tiles() 
 }
 
 #[test]
+fn pure_one_suit_threat_penalizes_own_pair_more_than_own_triplet() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 32;
+    table.seats.get_mut(&1).unwrap().melds = vec![test_chi_meld(11), test_peng_meld(14)];
+
+    assert_eq!(pure_one_suit_threat_pair_penalty(18, 2), 7.0);
+    assert_eq!(pure_one_suit_threat_pair_penalty(18, 3), 2.5);
+    assert!(
+        pure_one_suit_threat_discard_bias(&table, 0, 18, 2)
+            < pure_one_suit_threat_discard_bias(&table, 0, 18, 3)
+    );
+}
+
+#[test]
 fn pure_one_suit_threat_uses_opponent_discards_as_route_evidence() {
     let mut base_table = table_with_discards(1, Vec::new());
     base_table.wall_count = 32;

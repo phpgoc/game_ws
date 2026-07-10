@@ -27,11 +27,7 @@ pub(in crate::ai::decision) fn pure_one_suit_threat_discard_bias(
         })
         .map(|(seat, open_melds, threat_suit)| {
             let base = if tile_is_terminal(tile) { 7.0 } else { 10.0 };
-            let pair_penalty = if own_tile_count >= 2 {
-                if tile_is_terminal(tile) { 5.0 } else { 7.0 }
-            } else {
-                0.0
-            };
+            let pair_penalty = pure_one_suit_threat_pair_penalty(tile, own_tile_count);
             let meld_pressure = pure_one_suit_threat_meld_pressure(open_melds);
             let late_pressure = if table.wall_count <= 20 {
                 1.35
@@ -96,6 +92,19 @@ pub(in crate::ai::decision) fn pure_one_suit_threat_tile_fully_accounted(
     own_tile_count: usize,
 ) -> bool {
     exposed_meld_tile_count(table, tile) + public_discard_count(table, tile) + own_tile_count >= 4
+}
+
+pub(in crate::ai::decision) fn pure_one_suit_threat_pair_penalty(
+    tile: i32,
+    own_tile_count: usize,
+) -> f64 {
+    match own_tile_count {
+        0 | 1 => 0.0,
+        2 if tile_is_terminal(tile) => 5.0,
+        2 => 7.0,
+        _ if tile_is_terminal(tile) => 2.0,
+        _ => 2.5,
+    }
 }
 
 pub(in crate::ai::decision) fn pure_one_suit_threat_suit(
