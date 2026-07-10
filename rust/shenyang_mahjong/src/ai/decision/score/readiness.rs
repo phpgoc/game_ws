@@ -249,3 +249,79 @@ pub(in crate::ai::decision) fn ready_visible_fan_reaches_cap(
     }
     ready_hand_visible_fan_reaches_cap(hand, melds, table, position, win_rule, max_fan)
 }
+
+pub(in crate::ai::decision) fn ready_visible_fan_exceeds_half_cap(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+) -> bool {
+    let Some(max_fan) = table.max_fan.filter(|max_fan| *max_fan > 0) else {
+        return false;
+    };
+    if hand.len() % 3 == 2 {
+        return unique_tiles(hand).into_iter().any(|discard| {
+            let next = remove_n_tiles(hand, discard, 1);
+            ready_hand_visible_fan_exceeds_half_cap_with_simulated_discards(
+                &next,
+                melds,
+                table,
+                position,
+                win_rule,
+                max_fan,
+                &[discard],
+            )
+        });
+    }
+    ready_hand_visible_fan_exceeds_half_cap_with_simulated_discards(
+        hand,
+        melds,
+        table,
+        position,
+        win_rule,
+        max_fan,
+        &[],
+    )
+}
+
+fn ready_hand_visible_fan_exceeds_half_cap_with_simulated_discards(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+    max_fan: i32,
+    simulated_discards: &[i32],
+) -> bool {
+    if hand.len() % 3 != 1 {
+        return false;
+    }
+    let known_unavailable_tiles =
+        known_unavailable_tiles_with_simulated_discards(table, position, melds, simulated_discards);
+    SHENYANG_MAHJONG_TILE_KINDS.into_iter().any(|tile| {
+        remaining_tile_count_with_melds_after_discards(
+            hand,
+            melds,
+            table,
+            position,
+            tile,
+            simulated_discards,
+        ) > 0
+            && {
+                let mut next = hand.to_vec();
+                next.push(tile);
+                next.sort_unstable();
+                is_complete_win_for_table(&next, melds, table, win_rule)
+                    && estimated_fan_with_known_unavailable_wait_and_open_rule(
+                        &next,
+                        melds,
+                        tile,
+                        win_rule,
+                        table.chi_opens_door,
+                        &known_unavailable_tiles,
+                    ) * 2
+                        > max_fan
+            }
+    })
+}

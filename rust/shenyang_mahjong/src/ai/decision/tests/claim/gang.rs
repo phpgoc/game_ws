@@ -440,6 +440,34 @@ fn claim_gang_skips_plain_gang_when_ready_fan_already_capped() {
 }
 
 #[test]
+fn claim_gang_skips_ready_plain_gang_when_fan_exceeds_half_cap() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.max_fan = Some(4);
+    table.seats.get_mut(&0).unwrap().melds = vec![test_gang_meld(35)];
+    table.claim_window = Some(AiClaimView {
+        tile: 9,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![1, 2, 3, 9, 9, 9, 11, 12, 13, 21];
+
+    assert!(ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0);
+    assert!(ready_visible_fan_exceeds_half_cap(
+        &hand,
+        melds,
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Pass)
+    );
+}
+
+#[test]
 fn claim_gang_takes_open_plain_gang_when_it_reaches_ready() {
     let mut table = table_with_discards(1, Vec::new());
     table.seats.get_mut(&0).unwrap().melds = vec![test_chi_meld(1)];

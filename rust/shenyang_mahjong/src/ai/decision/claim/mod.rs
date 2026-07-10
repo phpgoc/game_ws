@@ -56,6 +56,11 @@ pub fn choose_claim_from_view(
     if ready_visible_fan_reaches_cap(hand, &current_melds, table, position, win_rule) {
         return Some(AiClaimChoice::Pass);
     }
+    if current_ready_score > 0.0
+        && ready_visible_fan_exceeds_half_cap(hand, &current_melds, table, position, win_rule)
+    {
+        return Some(AiClaimChoice::Pass);
+    }
 
     if let Some(choice) = choose_gang_claim(
         hand,

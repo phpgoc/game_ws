@@ -320,6 +320,28 @@ fn self_gang_skips_plain_gang_when_concealed_dragon_triplet_caps_ready_hand() {
 }
 
 #[test]
+fn self_gang_skips_ready_plain_gang_when_fan_exceeds_half_cap() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.max_fan = Some(4);
+    table.seats.get_mut(&0).unwrap().melds = vec![test_gang_meld(35)];
+    let hand = vec![1, 2, 3, 9, 9, 9, 9, 11, 12, 13, 21];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+
+    assert!(best_ready_score_after_discard(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0);
+    assert!(ready_visible_fan_exceeds_half_cap(
+        &hand,
+        melds,
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert_eq!(
+        choose_self_gang_from_view(&hand, &[9], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        None
+    );
+}
+
+#[test]
 fn self_gang_delays_open_piao_plain_gang_until_ready() {
     let mut table = table_with_discards(1, Vec::new());
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(31)];
