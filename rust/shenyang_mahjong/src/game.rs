@@ -29,7 +29,7 @@ use crate::rules::is_single_wait_shape_with_rule;
 use crate::rules::{
     WIN_RULE_SHENYANG_BASIC, can_chi, can_concealed_gang, can_gang, can_peng,
     is_complete_win_with_melds_and_open_rule, is_piao_hu_win, is_pure_one_suit_win,
-    is_seven_pairs_win, is_single_wait_shape_with_known_unavailable_tiles,
+    is_seven_pairs_win, is_single_wait_shape_with_known_unavailable_tiles_and_open_rule,
     shenyang_score_concealed_dragon_triplet_fan, shenyang_score_four_gui_yi_fan,
     shenyang_score_meld_fan, tiles_in_hand, win_rule_from_configs,
 };
@@ -672,6 +672,7 @@ fn is_shou_ba_yi(
     melds: &[WsShenyangMahjongMeld],
     win_tile: Option<i32>,
     win_rule: i32,
+    chi_opens_door: bool,
     known_unavailable_tiles: &[i32],
 ) -> bool {
     pattern == ShenyangMahjongWinPattern::PiaoHu
@@ -682,6 +683,7 @@ fn is_shou_ba_yi(
             melds,
             win_tile,
             win_rule,
+            chi_opens_door,
             known_unavailable_tiles,
         )
 }
@@ -704,16 +706,18 @@ fn is_single_wait_win_with_known_unavailable_tiles(
     melds: &[WsShenyangMahjongMeld],
     win_tile: Option<i32>,
     win_rule: i32,
+    chi_opens_door: bool,
     known_unavailable_tiles: &[i32],
 ) -> bool {
     let Some(win_tile) = win_tile else {
         return false;
     };
-    is_single_wait_shape_with_known_unavailable_tiles(
+    is_single_wait_shape_with_known_unavailable_tiles_and_open_rule(
         hand_tiles,
         melds,
         win_tile,
         win_rule,
+        chi_opens_door,
         known_unavailable_tiles,
     )
 }
@@ -740,6 +744,7 @@ fn is_single_yaojiu_wait_win_with_known_unavailable_tiles(
     melds: &[WsShenyangMahjongMeld],
     win_tile: Option<i32>,
     win_rule: i32,
+    chi_opens_door: bool,
     known_unavailable_tiles: &[i32],
 ) -> bool {
     let Some(win_tile) = win_tile else {
@@ -751,6 +756,7 @@ fn is_single_yaojiu_wait_win_with_known_unavailable_tiles(
             melds,
             Some(win_tile),
             win_rule,
+            chi_opens_door,
             known_unavailable_tiles,
         )
 }
@@ -1702,6 +1708,7 @@ fn winner_hand_fan_with_rule_and_open_rule(
         melds,
         settlement.win_tile,
         win_rule,
+        chi_opens_door,
         &known_unavailable_tiles,
     ) {
         fan += 1;
@@ -1711,6 +1718,7 @@ fn winner_hand_fan_with_rule_and_open_rule(
         melds,
         settlement.win_tile,
         win_rule,
+        chi_opens_door,
         &known_unavailable_tiles,
     ) {
         fan += 1;
@@ -1721,6 +1729,7 @@ fn winner_hand_fan_with_rule_and_open_rule(
         melds,
         settlement.win_tile,
         win_rule,
+        chi_opens_door,
         &known_unavailable_tiles,
     ) {
         fan += 1;
@@ -5883,6 +5892,7 @@ mod tests {
             melds,
             settlement.win_tile,
             WIN_RULE_SHENYANG_BASIC,
+            true,
             &public_unavailable
         ));
         assert_eq!(
@@ -6079,6 +6089,45 @@ mod tests {
         assert_eq!(winner_hand_fan(&state, settlement, 1), 3);
         assert_eq!(
             winner_hand_fan_with_rule(&state, settlement, 1, WIN_RULE_SHENYANG_BASIC),
+            0
+        );
+    }
+
+    #[test]
+    fn settlement_fan_respects_whether_chi_opens_door() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35]);
+        state.melds.insert(
+            1,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::CHI,
+                vec![1, 2, 3],
+                Some(0),
+            )],
+        );
+        state.enter_settlement(vec![1], Some(0), Some(35), false);
+        let settlement = state.settlement.as_ref().expect("settlement");
+
+        assert_eq!(
+            winner_hand_fan_with_rule_and_open_rule(
+                &state,
+                settlement,
+                1,
+                WIN_RULE_SHENYANG_BASIC,
+                true,
+            ),
+            3
+        );
+        assert_eq!(
+            winner_hand_fan_with_rule_and_open_rule(
+                &state,
+                settlement,
+                1,
+                WIN_RULE_SHENYANG_BASIC,
+                false,
+            ),
             0
         );
     }

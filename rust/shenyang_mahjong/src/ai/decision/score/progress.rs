@@ -141,7 +141,7 @@ fn one_step_wait_potential_with_simulated_discards(
         return 0.0;
     }
     let open_basic_route_foundation = win_rule == WIN_RULE_SHENYANG_BASIC
-        && has_open_meld(melds)
+        && has_door_opening_meld(melds, table)
         && missing_suits(hand, melds).is_empty()
         && has_terminal_or_honor_with_extra(hand, melds, None)
         && has_triplet_or_dragon_pair(hand, melds);

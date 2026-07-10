@@ -32,7 +32,7 @@ pub(in crate::ai::decision) fn capped_open_basic_route_visible_fan_reaches_cap(
     let Some(max_fan) = table.max_fan.filter(|max_fan| *max_fan > 0) else {
         return false;
     };
-    has_open_meld(melds)
+    has_door_opening_meld(melds, table)
         && missing_suits(hand, melds).is_empty()
         && has_terminal_or_honor_with_extra(hand, melds, None)
         && has_triplet_or_dragon_pair(hand, melds)
@@ -99,12 +99,22 @@ pub(in crate::ai::decision) fn four_gui_yi_discard_bias(
     -6.0 * fan_loss
 }
 
+#[cfg(test)]
 pub(in crate::ai::decision) fn estimated_visible_fan_without_wait(
     win_hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
     win_rule: i32,
 ) -> i32 {
-    if !is_complete_win_with_melds(win_hand, melds, win_rule) {
+    estimated_visible_fan_without_wait_and_open_rule(win_hand, melds, win_rule, true)
+}
+
+pub(in crate::ai::decision) fn estimated_visible_fan_without_wait_and_open_rule(
+    win_hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    win_rule: i32,
+    chi_opens_door: bool,
+) -> i32 {
+    if !is_complete_win_with_melds_and_open_rule(win_hand, melds, win_rule, chi_opens_door) {
         return 0;
     }
     let is_piao = is_piao_hu_win(win_hand, melds);
@@ -128,6 +138,7 @@ pub(in crate::ai::decision) fn estimated_fan_with_wait(
     estimated_fan_with_known_unavailable_wait(win_hand, melds, win_tile, win_rule, &[])
 }
 
+#[cfg(test)]
 pub(in crate::ai::decision) fn estimated_fan_with_known_unavailable_wait(
     win_hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -135,11 +146,30 @@ pub(in crate::ai::decision) fn estimated_fan_with_known_unavailable_wait(
     win_rule: i32,
     known_unavailable_tiles: &[i32],
 ) -> i32 {
-    let is_single_wait = is_single_wait_shape_with_known_unavailable_tiles(
+    estimated_fan_with_known_unavailable_wait_and_open_rule(
         win_hand,
         melds,
         win_tile,
         win_rule,
+        true,
+        known_unavailable_tiles,
+    )
+}
+
+pub(in crate::ai::decision) fn estimated_fan_with_known_unavailable_wait_and_open_rule(
+    win_hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    win_tile: i32,
+    win_rule: i32,
+    chi_opens_door: bool,
+    known_unavailable_tiles: &[i32],
+) -> i32 {
+    let is_single_wait = is_single_wait_shape_with_known_unavailable_tiles_and_open_rule(
+        win_hand,
+        melds,
+        win_tile,
+        win_rule,
+        chi_opens_door,
         known_unavailable_tiles,
     );
     let wait_fan = if is_single_wait {
@@ -156,7 +186,9 @@ pub(in crate::ai::decision) fn estimated_fan_with_known_unavailable_wait(
     } else {
         0
     };
-    estimated_visible_fan_without_wait(win_hand, melds, win_rule) + wait_fan + shou_ba_yi_fan
+    estimated_visible_fan_without_wait_and_open_rule(win_hand, melds, win_rule, chi_opens_door)
+        + wait_fan
+        + shou_ba_yi_fan
 }
 
 pub(in crate::ai::decision) fn single_wait_fan(win_tile: i32) -> i32 {
@@ -199,10 +231,11 @@ pub(in crate::ai::decision) fn fan_wait_bias(
 ) -> f64 {
     if table.dealer_position == position
         || is_late_defense_round(table)
-        || !is_single_wait_shape_with_known_unavailable_tiles(
+        || !is_single_wait_shape_for_table(
             win_hand,
             melds,
             win_tile,
+            table,
             win_rule,
             known_unavailable_tiles,
         )
@@ -213,15 +246,21 @@ pub(in crate::ai::decision) fn fan_wait_bias(
         return 0.0;
     }
     if let Some(max_fan) = table.max_fan {
-        let visible_fan = estimated_visible_fan_without_wait(win_hand, melds, win_rule);
+        let visible_fan = estimated_visible_fan_without_wait_and_open_rule(
+            win_hand,
+            melds,
+            win_rule,
+            table.chi_opens_door,
+        );
         if visible_fan >= max_fan {
             return 0.0;
         }
-        let total_fan = estimated_fan_with_known_unavailable_wait(
+        let total_fan = estimated_fan_with_known_unavailable_wait_and_open_rule(
             win_hand,
             melds,
             win_tile,
             win_rule,
+            table.chi_opens_door,
             known_unavailable_tiles,
         );
         if total_fan >= max_fan {

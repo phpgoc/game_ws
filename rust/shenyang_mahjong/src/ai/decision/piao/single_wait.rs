@@ -23,7 +23,7 @@ pub(in crate::ai::decision) fn choose_piao_single_wait_discard(
             win_hand.push(wait_tile);
             win_hand.sort_unstable();
             if !is_piao_hu_win(&win_hand, melds)
-                || !is_complete_win_with_melds(&win_hand, melds, win_rule)
+                || !is_complete_win_for_table(&win_hand, melds, table, win_rule)
             {
                 return None;
             }
@@ -96,7 +96,8 @@ fn piao_single_wait_tile_score_with_simulated_discards(
     let mut win_hand = hand_after_discard.to_vec();
     win_hand.push(wait_tile);
     win_hand.sort_unstable();
-    if !is_piao_hu_win(&win_hand, melds) || !is_complete_win_with_melds(&win_hand, melds, win_rule)
+    if !is_piao_hu_win(&win_hand, melds)
+        || !is_complete_win_for_table(&win_hand, melds, table, win_rule)
     {
         return -240.0;
     }
@@ -115,11 +116,12 @@ fn piao_single_wait_tile_score_with_simulated_discards(
 
     let known_unavailable_tiles =
         known_unavailable_tiles_with_simulated_discards(table, position, melds, simulated_discards);
-    let estimated_fan = estimated_fan_with_known_unavailable_wait(
+    let estimated_fan = estimated_fan_with_known_unavailable_wait_and_open_rule(
         &win_hand,
         melds,
         wait_tile,
         win_rule,
+        table.chi_opens_door,
         &known_unavailable_tiles,
     );
     let capped_fan = table

@@ -34,7 +34,7 @@ pub(in crate::ai::decision) fn should_preserve_pinghu_sequence_over_peng(
     {
         return false;
     }
-    if win_rule == WIN_RULE_SHENYANG_BASIC && !has_open_meld(melds) {
+    if win_rule == WIN_RULE_SHENYANG_BASIC && !has_door_opening_meld(melds, table) {
         return false;
     }
     true

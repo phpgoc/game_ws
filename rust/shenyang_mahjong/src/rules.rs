@@ -293,6 +293,7 @@ pub fn is_complete_win(tiles: &[i32], meld_count: usize) -> bool {
     is_standard_win(tiles)
 }
 
+#[cfg(test)]
 pub fn is_complete_win_with_melds(
     tiles: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -430,6 +431,7 @@ pub fn is_single_wait_shape_with_rule(
     is_single_wait_shape_with_known_unavailable_tiles(tiles, melds, win_tile, win_rule, &[])
 }
 
+#[cfg(test)]
 pub fn is_single_wait_shape_with_known_unavailable_tiles(
     tiles: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -437,14 +439,35 @@ pub fn is_single_wait_shape_with_known_unavailable_tiles(
     win_rule: i32,
     known_unavailable_tiles: &[i32],
 ) -> bool {
-    if !is_complete_win_with_melds(tiles, melds, win_rule) || !tiles.contains(&win_tile) {
-        return false;
-    }
-    if !is_unique_complete_wait_with_known_unavailable_tiles(
+    is_single_wait_shape_with_known_unavailable_tiles_and_open_rule(
         tiles,
         melds,
         win_tile,
         win_rule,
+        true,
+        known_unavailable_tiles,
+    )
+}
+
+pub fn is_single_wait_shape_with_known_unavailable_tiles_and_open_rule(
+    tiles: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    win_tile: i32,
+    win_rule: i32,
+    chi_opens_door: bool,
+    known_unavailable_tiles: &[i32],
+) -> bool {
+    if !is_complete_win_with_melds_and_open_rule(tiles, melds, win_rule, chi_opens_door)
+        || !tiles.contains(&win_tile)
+    {
+        return false;
+    }
+    if !is_unique_complete_wait_with_known_unavailable_tiles_and_open_rule(
+        tiles,
+        melds,
+        win_tile,
+        win_rule,
+        chi_opens_door,
         known_unavailable_tiles,
     ) {
         return false;
@@ -605,11 +628,12 @@ fn is_unique_complete_wait(tiles: &[i32], melds: &[WsShenyangMahjongMeld], win_t
     waits.len() == 1 && waits[0] == win_tile
 }
 
-fn is_unique_complete_wait_with_known_unavailable_tiles(
+fn is_unique_complete_wait_with_known_unavailable_tiles_and_open_rule(
     tiles: &[i32],
     melds: &[WsShenyangMahjongMeld],
     win_tile: i32,
     win_rule: i32,
+    chi_opens_door: bool,
     known_unavailable_tiles: &[i32],
 ) -> bool {
     let Some(index) = tiles.iter().position(|tile| *tile == win_tile) else {
@@ -625,7 +649,7 @@ fn is_unique_complete_wait_with_known_unavailable_tiles(
             let mut test = base.clone();
             test.push(*tile);
             test.sort_unstable();
-            is_complete_win_with_melds(&test, melds, win_rule)
+            is_complete_win_with_melds_and_open_rule(&test, melds, win_rule, chi_opens_door)
         })
         .collect::<Vec<_>>();
     waits.len() == 1 && waits[0] == win_tile
@@ -777,9 +801,11 @@ mod tests {
         has_triplet_in_standard_decomposition, is_complete_win, is_complete_win_with_melds,
         is_complete_win_with_melds_and_open_rule, is_piao_hu_win, is_pure_one_suit_win,
         is_seven_pairs_win, is_single_wait_shape,
-        is_single_wait_shape_with_known_unavailable_tiles, is_single_wait_shape_with_rule,
-        is_standard_win, is_unique_complete_wait, is_win, satisfies_shenyang_basic_win,
-        satisfies_shenyang_basic_win_with_open_rule, win_rule_from_configs,
+        is_single_wait_shape_with_known_unavailable_tiles,
+        is_single_wait_shape_with_known_unavailable_tiles_and_open_rule,
+        is_single_wait_shape_with_rule, is_standard_win, is_unique_complete_wait, is_win,
+        satisfies_shenyang_basic_win, satisfies_shenyang_basic_win_with_open_rule,
+        win_rule_from_configs,
     };
 
     #[test]
@@ -1488,6 +1514,33 @@ mod tests {
             35,
             WIN_RULE_SHENYANG_BASIC
         ));
+    }
+
+    #[test]
+    fn single_wait_shape_respects_whether_chi_opens_door() {
+        let tiles = vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35];
+        let melds = vec![meld(ShenyangMahjongMeldKind::CHI, vec![1, 2, 3], Some(1))];
+
+        assert!(
+            is_single_wait_shape_with_known_unavailable_tiles_and_open_rule(
+                &tiles,
+                &melds,
+                35,
+                WIN_RULE_SHENYANG_BASIC,
+                true,
+                &[],
+            )
+        );
+        assert!(
+            !is_single_wait_shape_with_known_unavailable_tiles_and_open_rule(
+                &tiles,
+                &melds,
+                35,
+                WIN_RULE_SHENYANG_BASIC,
+                false,
+                &[],
+            )
+        );
     }
 
     #[test]

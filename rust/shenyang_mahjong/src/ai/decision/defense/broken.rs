@@ -36,7 +36,12 @@ pub(in crate::ai::decision) fn should_open_broken_closed_hand_for_defense(
     position: usize,
     win_rule: i32,
 ) -> bool {
-    if has_open_meld(melds) || !is_mid_broken_hand_defense_round(table) {
+    let already_open = if win_rule == WIN_RULE_SHENYANG_BASIC {
+        has_door_opening_meld(melds, table)
+    } else {
+        has_open_meld(melds)
+    };
+    if already_open || !is_mid_broken_hand_defense_round(table) {
         return false;
     }
     if should_preserve_seven_pairs_plan_for_context(hand, melds, table, position, win_rule)

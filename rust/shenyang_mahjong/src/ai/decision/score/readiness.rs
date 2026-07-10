@@ -68,12 +68,13 @@ fn ready_hand_visible_fan_reaches_cap_with_simulated_discards(
                 let mut next = hand.to_vec();
                 next.push(tile);
                 next.sort_unstable();
-                is_complete_win_with_melds(&next, melds, win_rule)
-                    && estimated_fan_with_known_unavailable_wait(
+                is_complete_win_for_table(&next, melds, table, win_rule)
+                    && estimated_fan_with_known_unavailable_wait_and_open_rule(
                         &next,
                         melds,
                         tile,
                         win_rule,
+                        table.chi_opens_door,
                         &known_unavailable_tiles,
                     ) >= max_fan
             }
@@ -139,7 +140,7 @@ pub(in crate::ai::decision) fn ready_tile_score_with_simulated_discards(
         let mut next = hand.to_vec();
         next.push(tile);
         next.sort_unstable();
-        if is_complete_win_with_melds(&next, melds, win_rule) {
+        if is_complete_win_for_table(&next, melds, table, win_rule) {
             wait_kinds += 1;
             score += 28.0 + remaining as f64 * 5.0;
             score += fan_wait_bias(
@@ -216,7 +217,7 @@ fn ready_has_pure_one_suit_win_with_simulated_discards(
                 let mut next = hand.to_vec();
                 next.push(tile);
                 next.sort_unstable();
-                is_complete_win_with_melds(&next, melds, win_rule)
+                is_complete_win_for_table(&next, melds, table, win_rule)
                     && is_pure_one_suit_win(&next, melds)
             }
     })

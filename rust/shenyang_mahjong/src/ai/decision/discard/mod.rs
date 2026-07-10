@@ -22,7 +22,7 @@ pub fn choose_discard_from_view(
         .get(&position)
         .map(|seat| seat.melds.as_slice())
         .unwrap_or(&[]);
-    if is_complete_win_with_melds(hand, melds, win_rule) {
+    if is_complete_win_for_table(hand, melds, table, win_rule) {
         return None;
     }
     if let Some(tile) = choose_seven_pairs_wait_discard(hand, melds, table, position, win_rule) {

@@ -27,13 +27,16 @@ use share_type_public::games::shenyang_mahjong::{
 };
 
 use crate::rules::{
-    WIN_RULE_SHENYANG_BASIC, can_chi, can_gang, can_peng, is_complete_win_with_melds,
+    WIN_RULE_SHENYANG_BASIC, can_chi, can_gang, can_peng, is_complete_win_with_melds_and_open_rule,
     is_piao_hu_win, is_pure_one_suit_win, is_seven_pairs_win,
-    is_single_wait_shape_with_known_unavailable_tiles, shenyang_score_concealed_dragon_triplet_fan,
-    shenyang_score_four_gui_yi_fan, shenyang_score_meld_fan, sort_tiles,
+    is_single_wait_shape_with_known_unavailable_tiles_and_open_rule,
+    shenyang_score_concealed_dragon_triplet_fan, shenyang_score_four_gui_yi_fan,
+    shenyang_score_meld_fan, sort_tiles,
 };
 #[cfg(test)]
-use crate::rules::{has_triplet_in_standard_decomposition, is_complete_win};
+use crate::rules::{
+    has_triplet_in_standard_decomposition, is_complete_win, is_complete_win_with_melds,
+};
 
 use super::observation::{AiClaimView, AiPublicTable, AiSeatView};
 #[cfg(test)]
@@ -77,6 +80,42 @@ use tile::{
     is_dragon, is_honor, is_suited, is_valid_tile, is_wind, tile_is_terminal, tile_rank, tile_suit,
     unique_tiles,
 };
+
+pub(in crate::ai::decision) fn is_complete_win_for_table(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    win_rule: i32,
+) -> bool {
+    is_complete_win_with_melds_and_open_rule(hand, melds, win_rule, table.chi_opens_door)
+}
+
+pub(in crate::ai::decision) fn is_single_wait_shape_for_table(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    win_tile: i32,
+    table: &AiPublicTable,
+    win_rule: i32,
+    known_unavailable_tiles: &[i32],
+) -> bool {
+    is_single_wait_shape_with_known_unavailable_tiles_and_open_rule(
+        hand,
+        melds,
+        win_tile,
+        win_rule,
+        table.chi_opens_door,
+        known_unavailable_tiles,
+    )
+}
+
+pub(in crate::ai::decision) fn has_door_opening_meld(
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+) -> bool {
+    melds
+        .iter()
+        .any(|meld| is_open_meld(meld) && (table.chi_opens_door || !is_sequence_meld(meld)))
+}
 
 #[cfg(test)]
 mod tests;

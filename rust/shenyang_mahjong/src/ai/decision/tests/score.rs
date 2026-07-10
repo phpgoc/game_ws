@@ -58,6 +58,22 @@ fn ready_score_counts_projected_meld_tiles_as_dead() {
 }
 
 #[test]
+fn ready_score_respects_whether_chi_opens_door() {
+    let mut table = table_with_discards(1, Vec::new());
+    let melds = vec![test_chi_meld(1)];
+    let hand = vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35];
+
+    assert!(ready_tile_score(&hand, &melds, &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0);
+
+    table.chi_opens_door = false;
+    assert_eq!(
+        ready_tile_score(&hand, &melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        0.0
+    );
+    assert!(ready_tile_score(&hand, &melds, &table, 0, WIN_RULE_RELAXED) > 0.0);
+}
+
+#[test]
 fn ready_score_does_not_double_count_visible_claim_tile_in_projected_meld() {
     let mut table = table_with_discards(1, vec![3]);
     table.dealer_position = 0;

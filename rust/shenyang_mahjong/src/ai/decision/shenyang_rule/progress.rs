@@ -45,7 +45,7 @@ pub(in crate::ai::decision) fn shenyang_rule_progress_score(
         1 => -14.0,
         _ => -20.0,
     };
-    if has_open_meld(melds) {
+    if has_door_opening_meld(melds, table) {
         score += 9.0;
     } else {
         score -= 8.0;

@@ -181,7 +181,9 @@ mod tests {
     use super::*;
     use crate::game::build_settlement_event_with_configs;
     use crate::game_state::ClaimWindowState;
-    use crate::rules::{WIN_RULE_RELAXED, is_complete_win_with_melds, win_rule_from_configs};
+    use crate::rules::{
+        WIN_RULE_RELAXED, is_complete_win_with_melds_and_open_rule, win_rule_from_configs,
+    };
 
     fn relaxed_configs() -> HashMap<String, i32> {
         HashMap::from([("win_rule".to_owned(), WIN_RULE_RELAXED)])
@@ -569,6 +571,7 @@ mod tests {
     ) {
         let settlement = state.settlement.as_ref().expect("AI round settlement");
         let win_rule = win_rule_from_configs(configs);
+        let chi_opens_door = configs.get("chi_opens_door").copied().unwrap_or(1) == 1;
 
         for winner in &settlement.winner_positions {
             let mut hand = state.hands.get(winner).cloned().unwrap_or_default();
@@ -581,7 +584,7 @@ mod tests {
             let melds = state.melds.get(winner).map(Vec::as_slice).unwrap_or(&[]);
 
             assert!(
-                is_complete_win_with_melds(&hand, melds, win_rule),
+                is_complete_win_with_melds_and_open_rule(&hand, melds, win_rule, chi_opens_door),
                 "seed {seed} winner {winner} should have a legal Shenyang Mahjong hand: hand={hand:?}, melds={melds:?}, settlement={settlement:?}"
             );
         }

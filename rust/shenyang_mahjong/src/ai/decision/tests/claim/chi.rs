@@ -269,6 +269,25 @@ fn claim_chi_takes_shenyang_basic_rule_when_it_reaches_ready() {
 }
 
 #[test]
+fn claim_chi_does_not_fake_open_door_when_configured_off() {
+    let mut table = table_with_discards(3, Vec::new());
+    table.wall_count = 40;
+    table.chi_opens_door = false;
+    table.claim_window = Some(AiClaimView {
+        tile: 3,
+        from_position: 3,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![1, 2, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35];
+
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Pass)
+    );
+}
+
+#[test]
 fn claim_chi_passes_mid_round_when_it_does_not_make_ready_or_defensive_open() {
     let mut table = table_with_discards(3, Vec::new());
     table.wall_count = 40;

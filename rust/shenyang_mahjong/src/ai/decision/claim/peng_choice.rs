@@ -155,7 +155,9 @@ pub(super) fn choose_peng_claim(
     ) {
         return Some(AiClaimChoice::Peng);
     }
-    if win_rule == WIN_RULE_SHENYANG_BASIC && !has_open_meld(current_melds) && can_gang(hand, tile)
+    if win_rule == WIN_RULE_SHENYANG_BASIC
+        && !has_door_opening_meld(current_melds, table)
+        && can_gang(hand, tile)
     {
         return Some(AiClaimChoice::Peng);
     }
@@ -208,7 +210,7 @@ fn required_peng_gain(
     if is_suited(tile) && missing_suits.contains(&tile_suit(tile)) {
         required_gain -= 5.0;
     }
-    if win_rule == WIN_RULE_SHENYANG_BASIC && !has_open_meld(current_melds) {
+    if win_rule == WIN_RULE_SHENYANG_BASIC && !has_door_opening_meld(current_melds, table) {
         required_gain -= 4.0;
     }
     if win_rule == WIN_RULE_SHENYANG_BASIC && !has_triplet_or_dragon_pair(hand, current_melds) {

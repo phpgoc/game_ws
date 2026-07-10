@@ -40,7 +40,7 @@ pub fn choose_claim_from_view(
         .get(&position)
         .map(|seat| seat.melds.as_slice())
         .unwrap_or(&[]);
-    if is_complete_win_with_melds(&win_hand, melds, win_rule) {
+    if is_complete_win_for_table(&win_hand, melds, table, win_rule) {
         return Some(AiClaimChoice::Hu);
     }
 
