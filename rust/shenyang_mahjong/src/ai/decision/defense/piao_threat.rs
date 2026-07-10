@@ -41,8 +41,13 @@ pub(in crate::ai::decision) fn opponent_threat_discard_bias(
         if piao_threat_cannot_satisfy_three_suits(&seat.melds, seat.hand_count) {
             continue;
         }
-        if seat.discards.contains(&tile) {
-            bias += 4.5;
+        let threat_seat_discard_count = seat
+            .discards
+            .iter()
+            .filter(|discard| **discard == tile)
+            .count();
+        if threat_seat_discard_count > 0 {
+            bias += piao_threat_own_discard_safety_bias(table, threat_seat_discard_count);
             continue;
         }
         if piao_threat_tile_fully_accounted(table, tile, own_tile_count) {
@@ -189,6 +194,18 @@ pub(in crate::ai::decision) fn piao_threat_exposure_scale(table: &AiPublicTable,
         3 => 0.25,
         _ => 0.0,
     }
+}
+
+pub(in crate::ai::decision) fn piao_threat_own_discard_safety_bias(
+    table: &AiPublicTable,
+    discard_count: usize,
+) -> f64 {
+    if discard_count == 0 {
+        return 0.0;
+    }
+    let repeated_discard_bonus = (discard_count.saturating_sub(1) as f64 * 4.0).min(12.0);
+    let late_round_bonus = if is_late_round(table) { 2.5 } else { 0.0 };
+    4.5 + repeated_discard_bonus + late_round_bonus
 }
 
 pub(in crate::ai::decision) fn piao_threat_tile_fully_accounted(

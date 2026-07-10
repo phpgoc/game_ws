@@ -211,6 +211,22 @@ fn piao_threat_discounts_public_discards_from_other_seats() {
 }
 
 #[test]
+fn piao_threat_values_repeated_discards_from_threat_seat() {
+    let mut table = table_with_discards(1, vec![5]);
+    table.wall_count = 16;
+    table.seats.get_mut(&1).unwrap().melds =
+        vec![test_peng_meld(1), test_peng_meld(11), test_peng_meld(21)];
+
+    let single_discard_bias = opponent_threat_discard_bias(&table, 0, 5, 1);
+
+    table.seats.get_mut(&1).unwrap().discards = vec![5, 5];
+    let repeated_discard_bias = opponent_threat_discard_bias(&table, 0, 5, 1);
+
+    assert!(single_discard_bias > 0.0);
+    assert!(repeated_discard_bias > single_discard_bias);
+}
+
+#[test]
 fn piao_threat_ignores_tile_fully_accounted_by_public_and_own_tiles() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 16;
