@@ -249,7 +249,7 @@ fn claim_chi_passes_early_even_when_it_can_fill_missing_third_suit() {
 }
 
 #[test]
-fn claim_chi_passes_for_shenyang_basic_rule_even_late() {
+fn claim_chi_takes_shenyang_basic_rule_when_it_reaches_ready() {
     let mut table = table_with_discards(3, Vec::new());
     table.wall_count = 40;
     table.claim_window = Some(AiClaimView {
@@ -262,7 +262,9 @@ fn claim_chi_passes_for_shenyang_basic_rule_even_late() {
 
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(AiClaimChoice::Pass)
+        Some(AiClaimChoice::Chi {
+            consume_tiles: vec![1, 2]
+        })
     );
 }
 

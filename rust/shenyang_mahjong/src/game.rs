@@ -28,9 +28,10 @@ use crate::game_state::{
 use crate::rules::is_single_wait_shape_with_rule;
 use crate::rules::{
     WIN_RULE_SHENYANG_BASIC, can_chi, can_concealed_gang, can_gang, can_peng,
-    is_complete_win_with_melds, is_piao_hu_win, is_pure_one_suit_win, is_seven_pairs_win,
-    is_single_wait_shape_with_known_unavailable_tiles, shenyang_score_concealed_dragon_triplet_fan,
-    shenyang_score_four_gui_yi_fan, shenyang_score_meld_fan, tiles_in_hand, win_rule_from_configs,
+    is_complete_win_with_melds_and_open_rule, is_piao_hu_win, is_pure_one_suit_win,
+    is_seven_pairs_win, is_single_wait_shape_with_known_unavailable_tiles,
+    shenyang_score_concealed_dragon_triplet_fan, shenyang_score_four_gui_yi_fan,
+    shenyang_score_meld_fan, tiles_in_hand, win_rule_from_configs,
 };
 
 pub(crate) type LoopStateHandle = Arc<std::sync::Mutex<ShenyangMahjongLoopState>>;
@@ -85,8 +86,21 @@ pub(crate) fn advance_to_next_turn(
     }
 }
 
-pub(crate) fn allow_chi(configs: &HashMap<String, i32>) -> bool {
-    win_rule_from_configs(configs) != WIN_RULE_SHENYANG_BASIC
+fn chi_opens_door(configs: &HashMap<String, i32>) -> bool {
+    config_value(configs, "chi_opens_door", 1) == 1
+}
+
+fn is_complete_win_with_configs(
+    tiles: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    configs: &HashMap<String, i32>,
+) -> bool {
+    is_complete_win_with_melds_and_open_rule(
+        tiles,
+        melds,
+        win_rule_from_configs(configs),
+        chi_opens_door(configs),
+    )
 }
 
 pub(crate) fn allow_multi_hu(configs: &HashMap<String, i32>) -> bool {
@@ -102,7 +116,6 @@ pub(crate) fn build_claim_options(
     let mut positions: Vec<usize> = state.players_snapshot().keys().copied().collect();
     positions.sort_unstable();
     let next_position = state.next_position(from_position);
-    let allow_chi_now = allow_chi(configs);
     let has_impossible_tile_count = has_impossible_known_tile_count(state, tile);
     let mut options = Vec::new();
 
@@ -118,15 +131,15 @@ pub(crate) fn build_claim_options(
             let mut test = hand.clone();
             test.push(tile);
             test.sort_unstable();
-            is_complete_win_with_melds(
+            is_complete_win_with_configs(
                 &test,
                 state.melds.get(&position).map(Vec::as_slice).unwrap_or(&[]),
-                win_rule_from_configs(configs),
+                configs,
             )
         };
         let can_peng_now = can_peng(&hand, tile);
         let can_gang_now = can_gang(&hand, tile);
-        let chi_options = if allow_chi_now && position == next_position {
+        let chi_options = if position == next_position {
             chi_options_for_hand(&hand, tile)
         } else {
             Vec::new()
@@ -195,10 +208,10 @@ fn build_rob_gang_claim_window_event(
             let mut hand = state.hands.get(&position).cloned().unwrap_or_default();
             hand.push(tile);
             hand.sort_unstable();
-            is_complete_win_with_melds(
+            is_complete_win_with_configs(
                 &hand,
                 state.melds.get(&position).map(Vec::as_slice).unwrap_or(&[]),
-                win_rule_from_configs(configs),
+                configs,
             )
             .then_some(WsShenyangMahjongClaimOption {
                 position: position as i32,
@@ -280,12 +293,7 @@ pub(crate) fn build_settlement_event_with_configs(
         });
     }
 
-    let winner_details = build_winner_details(
-        state,
-        settlement,
-        &score_changes,
-        win_rule_from_configs(configs),
-    );
+    let winner_details = build_winner_details(state, settlement, &score_changes, configs);
 
     Some(WsShenyangMahjongSettlementEvent {
         winner_positions: winner_positions
@@ -394,7 +402,7 @@ fn build_winner_details(
     state: &ShenyangMahjongLoopState,
     settlement: &crate::game_state::SettlementState,
     score_changes: &[WsShenyangMahjongScoreChange],
-    win_rule: i32,
+    configs: &HashMap<String, i32>,
 ) -> Vec<WsShenyangMahjongWinnerDetail> {
     let score_by_position = score_changes
         .iter()
@@ -411,7 +419,12 @@ fn build_winner_details(
             }
             let hand_tiles = winner_final_hand_tiles(state, settlement, *position);
             let melds = state.melds.get(position).map(Vec::as_slice).unwrap_or(&[]);
-            let pattern = winner_pattern_with_rule(&hand_tiles, melds, win_rule);
+            let pattern = winner_pattern_with_rule_and_open_rule(
+                &hand_tiles,
+                melds,
+                win_rule_from_configs(configs),
+                chi_opens_door(configs),
+            );
             Some(WsShenyangMahjongWinnerDetail {
                 position: *position as i32,
                 pattern,
@@ -490,10 +503,10 @@ pub(crate) fn can_self_draw_hu_with_configs(
         return false;
     }
     let hand = state.hands.get(&position).cloned().unwrap_or_default();
-    is_complete_win_with_melds(
+    is_complete_win_with_configs(
         &hand,
         state.melds.get(&position).map(Vec::as_slice).unwrap_or(&[]),
-        win_rule_from_configs(configs),
+        configs,
     )
 }
 
@@ -519,7 +532,7 @@ fn capped_winner_hand_fan(
     winner: usize,
     configs: &HashMap<String, i32>,
 ) -> i32 {
-    let fan = winner_hand_fan_with_rule(state, settlement, winner, win_rule_from_configs(configs));
+    let fan = winner_hand_fan_with_configs(state, settlement, winner, configs);
     max_fan_from_configs(configs)
         .map(|max_fan| fan.min(max_fan))
         .unwrap_or(fan)
@@ -1192,8 +1205,7 @@ pub(crate) fn resolve_claim_window(
                 let mut tiles = hand.clone();
                 tiles.push(claim_window.tile);
                 tiles.sort_unstable();
-                if !invalid_claim_tile_count
-                    && is_complete_win_with_melds(&tiles, melds, win_rule_from_configs(configs))
+                if !invalid_claim_tile_count && is_complete_win_with_configs(&tiles, melds, configs)
                 {
                     hu_positions.push(*position);
                 }
@@ -1215,7 +1227,6 @@ pub(crate) fn resolve_claim_window(
             Some(ClaimResponse::Chi { consume_tiles })
                 if !is_rob_gang
                     && !invalid_claim_tile_count
-                    && allow_chi(configs)
                     && *position == state.next_position(claim_window.from_position)
                     && can_chi(&hand, claim_window.tile, consume_tiles) =>
             {
@@ -1634,18 +1645,45 @@ fn winner_hand_fan(
     winner_hand_fan_with_rule(state, settlement, winner, crate::rules::WIN_RULE_RELAXED)
 }
 
+#[cfg(test)]
 fn winner_hand_fan_with_rule(
     state: &ShenyangMahjongLoopState,
     settlement: &crate::game_state::SettlementState,
     winner: usize,
     win_rule: i32,
 ) -> i32 {
+    winner_hand_fan_with_rule_and_open_rule(state, settlement, winner, win_rule, true)
+}
+
+fn winner_hand_fan_with_configs(
+    state: &ShenyangMahjongLoopState,
+    settlement: &crate::game_state::SettlementState,
+    winner: usize,
+    configs: &HashMap<String, i32>,
+) -> i32 {
+    winner_hand_fan_with_rule_and_open_rule(
+        state,
+        settlement,
+        winner,
+        win_rule_from_configs(configs),
+        chi_opens_door(configs),
+    )
+}
+
+fn winner_hand_fan_with_rule_and_open_rule(
+    state: &ShenyangMahjongLoopState,
+    settlement: &crate::game_state::SettlementState,
+    winner: usize,
+    win_rule: i32,
+    chi_opens_door: bool,
+) -> i32 {
     let hand_tiles = winner_final_hand_tiles(state, settlement, winner);
     let melds = state.melds.get(&winner).map(Vec::as_slice).unwrap_or(&[]);
-    if !is_complete_win_with_melds(&hand_tiles, melds, win_rule) {
+    if !is_complete_win_with_melds_and_open_rule(&hand_tiles, melds, win_rule, chi_opens_door) {
         return 0;
     }
-    let pattern = winner_pattern_with_rule(&hand_tiles, melds, win_rule);
+    let pattern =
+        winner_pattern_with_rule_and_open_rule(&hand_tiles, melds, win_rule, chi_opens_door);
     let known_unavailable_tiles = public_unavailable_tiles_for_winner(state, winner);
     let mut fan = win_pattern_base_fan(pattern);
     fan += shenyang_score_meld_fan(melds);
@@ -1705,13 +1743,23 @@ fn winner_pattern(
     }
 }
 
+#[allow(dead_code)]
 pub(crate) fn winner_pattern_with_rule(
     hand_tiles: &[i32],
     melds: &[WsShenyangMahjongMeld],
     win_rule: i32,
 ) -> ShenyangMahjongWinPattern {
+    winner_pattern_with_rule_and_open_rule(hand_tiles, melds, win_rule, true)
+}
+
+pub(crate) fn winner_pattern_with_rule_and_open_rule(
+    hand_tiles: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    win_rule: i32,
+    chi_opens_door: bool,
+) -> ShenyangMahjongWinPattern {
     if win_rule == WIN_RULE_SHENYANG_BASIC
-        && !is_complete_win_with_melds(hand_tiles, melds, win_rule)
+        && !is_complete_win_with_melds_and_open_rule(hand_tiles, melds, win_rule, chi_opens_door)
     {
         return ShenyangMahjongWinPattern::Standard;
     }
@@ -1807,10 +1855,10 @@ impl ShenyangMahjongGameHandler {
                         let mut tiles = hand.clone();
                         tiles.push(claim_tile);
                         tiles.sort_unstable();
-                        if !is_complete_win_with_melds(
+                        if !is_complete_win_with_configs(
                             &tiles,
                             state.melds.get(&position).map(Vec::as_slice).unwrap_or(&[]),
-                            win_rule_from_configs(&configs),
+                            &configs,
                         ) {
                             return room_service.error_response(
                                 session_id,
@@ -1862,8 +1910,7 @@ impl ShenyangMahjongGameHandler {
                                 WsResponseCode::NO_PERMISSION,
                             );
                         }
-                        if !allow_chi(&configs)
-                            || position != state.next_position(from_position)
+                        if position != state.next_position(from_position)
                             || !can_chi(&hand, claim_tile, &payload.tiles)
                         {
                             return room_service.error_response(
@@ -2415,7 +2462,7 @@ mod tests {
     }
 
     #[test]
-    fn claim_options_hide_chi_for_shenyang_basic_rule() {
+    fn claim_options_list_chi_for_shenyang_basic_rule() {
         let mut state = playable_state();
         state
             .hands
@@ -2423,8 +2470,13 @@ mod tests {
         let configs = HashMap::from([("win_rule".to_owned(), 1)]);
 
         let options = build_claim_options(&state, 3, 0, &configs);
+        let next_player = options
+            .iter()
+            .find(|option| option.position == 1)
+            .expect("next player should have chi options");
 
-        assert!(!options.iter().any(|option| option.position == 1));
+        assert!(next_player.chi_options.contains(&vec![1, 2]));
+        assert!(next_player.chi_options.contains(&vec![2, 4]));
     }
 
     #[test]
@@ -2809,7 +2861,7 @@ mod tests {
     }
 
     #[test]
-    fn play_request_chi_rejects_shenyang_basic_rule() {
+    fn play_request_chi_allows_shenyang_basic_rule() {
         let (mut room_service, mut handler, _room_key, loop_state) =
             setup_request_room_with_configs(serde_json::json!({"win_rule":1}));
         {
@@ -2841,12 +2893,17 @@ mod tests {
 
         assert_eq!(
             response_code(&response, 2, Routes::PLAY),
-            Some(WsResponseCode::NO_PERMISSION as i32)
+            Some(WsResponseCode::OK as i32)
         );
+        assert!(!has_room_event(&response, WsCode::GAME_OVER));
         let state = loop_state.lock().unwrap();
-        assert!(state.claim_window.is_some());
-        assert_eq!(state.discards.get(&0), Some(&vec![3]));
-        assert!(state.melds.get(&1).unwrap().is_empty());
+        assert_eq!(state.phase, ShenyangMahjongPhase::Play);
+        assert!(state.claim_window.is_none());
+        assert_eq!(state.current_position, 1);
+        assert!(state.discards.get(&0).unwrap().is_empty());
+        let meld = state.melds.get(&1).unwrap().first().unwrap();
+        assert_eq!(meld.kind, ShenyangMahjongMeldKind::CHI);
+        assert_eq!(meld.tiles, vec![1, 2, 3]);
     }
 
     #[test]
@@ -4427,7 +4484,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_claim_window_ignores_chi_for_shenyang_basic_rule() {
+    fn resolve_claim_window_allows_chi_for_shenyang_basic_rule() {
         let mut state = playable_state();
         state
             .hands
@@ -4460,11 +4517,13 @@ mod tests {
 
         assert!(state.claim_window.is_none());
         assert_eq!(state.current_position, 1);
-        assert_eq!(state.discards.get(&0), Some(&vec![3]));
-        assert!(state.melds.get(&1).map(Vec::is_empty).unwrap_or(true));
-        assert!(state.hands.get(&1).unwrap().contains(&1));
-        assert!(state.hands.get(&1).unwrap().contains(&2));
-        assert!(state.hands.get(&1).unwrap().contains(&36));
+        assert!(state.discards.get(&0).unwrap().is_empty());
+        assert!(!state.hands.get(&1).unwrap().contains(&1));
+        assert!(!state.hands.get(&1).unwrap().contains(&2));
+        assert!(!state.hands.get(&1).unwrap().contains(&36));
+        let meld = state.melds.get(&1).unwrap().first().unwrap();
+        assert_eq!(meld.kind, ShenyangMahjongMeldKind::CHI);
+        assert_eq!(meld.tiles, vec![1, 2, 3]);
     }
 
     fn response_code(dispatch: &Dispatch, recipient: SessionId, route: Routes) -> Option<i32> {
@@ -4940,8 +4999,16 @@ mod tests {
                 Some(1),
             )],
         );
+        state.last_drawn_tile = Some(35);
 
         assert!(can_self_draw_hu_with_configs(&state, 0, &configs));
+        let chi_does_not_open_configs =
+            HashMap::from([("win_rule".to_owned(), 1), ("chi_opens_door".to_owned(), 0)]);
+        assert!(!can_self_draw_hu_with_configs(
+            &state,
+            0,
+            &chi_does_not_open_configs
+        ));
     }
 
     #[test]

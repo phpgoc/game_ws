@@ -10,8 +10,7 @@ pub(super) fn choose_chi_claim(
     from_position: usize,
     current_ready_score: f64,
 ) -> Option<AiClaimChoice> {
-    if win_rule == WIN_RULE_SHENYANG_BASIC || position != next_position_after(from_position, table)
-    {
+    if position != next_position_after(from_position, table) {
         return None;
     }
     if should_preserve_seven_pairs_plan_for_context(hand, current_melds, table, position, win_rule)
