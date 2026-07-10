@@ -179,9 +179,19 @@ pub(in crate::ai::decision) fn piao_threat_cannot_satisfy_three_suits(
     melds: &[WsShenyangMahjongMeld],
     hand_count: usize,
 ) -> bool {
-    piao_threat_level(melds) >= 4
-        && hand_count <= 2
-        && piao_missing_suits_from_melds(melds).len() >= 2
+    let threat_level = piao_threat_level(melds);
+    if threat_level < 3 {
+        return false;
+    }
+    let missing_suits = piao_missing_suits_from_melds(melds).len();
+    let remaining_suit_sources = if threat_level >= 4 && hand_count <= 2 {
+        1
+    } else if threat_level >= 3 && hand_count <= 5 {
+        2
+    } else {
+        3
+    };
+    missing_suits > remaining_suit_sources
 }
 
 pub(in crate::ai::decision) fn piao_threat_exposure_scale(table: &AiPublicTable, tile: i32) -> f64 {
