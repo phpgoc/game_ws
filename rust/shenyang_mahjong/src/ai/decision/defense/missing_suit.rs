@@ -42,11 +42,14 @@ pub(in crate::ai::decision) fn opponent_missing_suit_safety_read(
         .iter()
         .filter(|(seat_position, _)| **seat_position != position)
         .map(|(_, seat)| {
-            let discarded_in_suit = seat
+            let (discarded_in_suit, middle_discards_in_suit) = seat
                 .discards
                 .iter()
-                .filter(|discard| is_suited(**discard) && tile_suit(**discard) == suit)
-                .count();
+                .copied()
+                .filter(|discard| is_suited(*discard) && tile_suit(*discard) == suit)
+                .fold((0usize, 0usize), |(total, middle), discard| {
+                    (total + 1, middle + usize::from(!tile_is_terminal(discard)))
+                });
             let exposed_in_suit = seat.melds.iter().any(|meld| {
                 if !is_valid_meld(meld) {
                     return false;
@@ -57,10 +60,12 @@ pub(in crate::ai::decision) fn opponent_missing_suit_safety_read(
             });
             if exposed_in_suit {
                 0.0
-            } else if discarded_in_suit >= 3 {
+            } else if discarded_in_suit >= 3 && middle_discards_in_suit > 0 {
                 12.0 + (discarded_in_suit - 3) as f64 * 2.0
-            } else if discarded_in_suit >= 2 {
+            } else if discarded_in_suit >= 2 && middle_discards_in_suit > 0 {
                 5.0
+            } else if discarded_in_suit >= 3 {
+                2.0
             } else {
                 0.0
             }

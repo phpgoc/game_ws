@@ -230,6 +230,20 @@ fn late_defense_prefers_opponent_missing_suit_tile() {
 }
 
 #[test]
+fn late_defense_treats_terminal_only_suit_discards_as_weak_missing_suit_read() {
+    let mut terminal_only = table_with_discards(1, vec![1, 9, 1]);
+    terminal_only.wall_count = 16;
+    let mut with_middle = table_with_discards(1, vec![1, 5, 9]);
+    with_middle.wall_count = 16;
+
+    assert_eq!(opponent_missing_suit_safety_bias(&terminal_only, 0, 5), 2.0);
+    assert!(
+        opponent_missing_suit_safety_bias(&with_middle, 0, 5)
+            > opponent_missing_suit_safety_bias(&terminal_only, 0, 5)
+    );
+}
+
+#[test]
 fn late_defense_missing_suit_read_can_beat_live_wind() {
     let mut table = table_with_discards(1, vec![11, 14, 19]);
     table.wall_count = 16;
