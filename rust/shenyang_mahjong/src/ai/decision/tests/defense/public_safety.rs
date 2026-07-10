@@ -160,7 +160,10 @@ fn public_table_counts_ignore_invalid_discards_and_queries() {
     assert_eq!(own_previous_discard_count(&table, 0, 99), 0);
     assert_eq!(visible_tile_count(&table, 99), 0);
     assert_eq!(remaining_tile_count(&[14, 99], &table, 0, 99), 0);
-    assert_eq!(remaining_tile_count_after_discard(&[14], &table, 99, 99), 0);
+    assert_eq!(
+        remaining_tile_count_with_melds_after_discards(&[14], &[], &table, 0, 99, &[99]),
+        0
+    );
 }
 
 #[test]

@@ -51,24 +51,6 @@ pub(in crate::ai::decision) fn remaining_tile_count_with_melds_after_discards(
     (4 - visible - own - simulated_melds - simulated_discards).max(0)
 }
 
-pub(in crate::ai::decision) fn remaining_tile_count_after_discard(
-    hand_after_discard: &[i32],
-    table: &AiPublicTable,
-    discarded_tile: i32,
-    tile: i32,
-) -> i32 {
-    if !is_valid_tile(tile) {
-        return 0;
-    }
-    let visible = visible_tile_count(table, tile);
-    let own = hand_after_discard
-        .iter()
-        .filter(|&&item| item == tile)
-        .count() as i32;
-    let own_discard = i32::from(discarded_tile == tile);
-    (4 - visible - own - own_discard).max(0)
-}
-
 fn simulated_meld_tile_count(
     table: &AiPublicTable,
     position: usize,

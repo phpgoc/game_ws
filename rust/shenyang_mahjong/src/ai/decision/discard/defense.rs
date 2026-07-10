@@ -134,7 +134,7 @@ pub(in crate::ai::decision) fn choose_public_defense_discard_from_candidates(
     for tile in candidates {
         let own_tile_count = hand.iter().filter(|item| **item == tile).count();
         let score = public_defense_tile_safety_score(table, position, tile, own_tile_count)
-            + basic_heng_recovery_public_defense_bias(hand, melds, table, tile, win_rule);
+            + basic_heng_recovery_public_defense_bias(hand, melds, table, position, tile, win_rule);
         match best {
             None => best = Some((score, tile)),
             Some((best_score, best_tile)) => {

@@ -274,18 +274,20 @@ fn discard_preserves_only_recoverable_heng_seed() {
     let table = table_with_discards(1, discards);
 
     assert!(!has_triplet_or_dragon_pair(&hand, &[]));
-    assert!(can_recover_basic_heng(&hand, &[], &table));
+    assert!(can_recover_basic_heng(&hand, &[], &table, 0));
     let after_dragon = remove_n_tiles(&hand, 35, 1);
     assert!(!can_recover_basic_heng_after_discard(
         &after_dragon,
         &[],
         &table,
+        0,
         35
     ));
     assert!(loses_basic_heng_recovery_after_discard(
         &hand,
         &[],
         &table,
+        0,
         35,
         WIN_RULE_SHENYANG_BASIC
     ));

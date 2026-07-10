@@ -129,6 +129,7 @@ pub(in crate::ai::decision) fn violates_basic_heng_discard(
             &hand_before_discard,
             melds,
             table,
+            position,
             tile,
             win_rule,
         );

@@ -57,7 +57,7 @@ pub(in crate::ai::decision) fn shenyang_rule_progress_score(
     }
     if has_triplet_or_dragon_pair(hand, melds) {
         score += 8.0;
-    } else if can_recover_basic_heng(hand, melds, table) {
+    } else if can_recover_basic_heng(hand, melds, table, position) {
         score -= 5.0;
     } else {
         score -= 16.0;
@@ -69,6 +69,7 @@ pub(in crate::ai::decision) fn unrecoverable_basic_rule_requirement_count(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
+    position: usize,
 ) -> usize {
     let missing_suits = missing_suits(hand, melds)
         .into_iter()
@@ -76,6 +77,6 @@ pub(in crate::ai::decision) fn unrecoverable_basic_rule_requirement_count(
         .count();
     let missing_terminal_or_honor = !has_terminal_or_honor_with_extra(hand, melds, None)
         && live_terminal_or_honor_count(hand, table) <= 0;
-    let missing_heng = !can_recover_basic_heng(hand, melds, table);
+    let missing_heng = !can_recover_basic_heng(hand, melds, table, position);
     missing_suits + usize::from(missing_terminal_or_honor) + usize::from(missing_heng)
 }

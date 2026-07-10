@@ -62,7 +62,7 @@ pub(in crate::ai::decision) fn should_open_broken_closed_hand_for_defense(
             .filter(|missing| *missing)
             .count();
             let unrecoverable_rule_requirements =
-                unrecoverable_basic_rule_requirement_count(hand, melds, table);
+                unrecoverable_basic_rule_requirement_count(hand, melds, table, position);
             (missing_rule_requirements, unrecoverable_rule_requirements)
         } else {
             (0, 0)
@@ -125,7 +125,7 @@ pub(in crate::ai::decision) fn should_use_broken_hand_public_defense_discard(
         0
     };
     let unrecoverable_rule_requirements = if win_rule == WIN_RULE_SHENYANG_BASIC {
-        unrecoverable_basic_rule_requirement_count(hand, melds, table)
+        unrecoverable_basic_rule_requirement_count(hand, melds, table, position)
     } else {
         0
     };

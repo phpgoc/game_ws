@@ -206,11 +206,35 @@ fn unrecoverable_basic_rule_counts_dead_heng_requirement() {
     assert!(missing_suits(&hand, &[]).is_empty());
     assert!(has_terminal_or_honor_with_extra(&hand, &[], None));
     assert!(!has_triplet_or_dragon_pair(&hand, &[]));
-    assert!(!can_recover_basic_heng(&hand, &[], &table));
+    assert!(!can_recover_basic_heng(&hand, &[], &table, 0));
     assert_eq!(
-        unrecoverable_basic_rule_requirement_count(&hand, &[], &table),
+        unrecoverable_basic_rule_requirement_count(&hand, &[], &table, 0),
         1
     );
+}
+
+#[test]
+fn recoverable_basic_heng_discounts_projected_meld_tiles() {
+    let hand = vec![1, 2, 3, 4, 5, 11, 12, 13, 14, 15, 21, 22, 23];
+    let mut table = table_with_discards(1, dead_basic_heng_discards(&hand));
+    if let Some(index) = table
+        .seats
+        .get(&1)
+        .unwrap()
+        .discards
+        .iter()
+        .position(|tile| *tile == 5)
+    {
+        table.seats.get_mut(&1).unwrap().discards.remove(index);
+    }
+    let projected_melds = vec![test_chi_meld(5)];
+
+    assert!(!has_triplet_or_dragon_pair(&hand, &projected_melds));
+    assert_eq!(
+        remaining_tile_count_with_melds_after_discards(&hand, &projected_melds, &table, 0, 5, &[]),
+        1
+    );
+    assert!(!can_recover_basic_heng(&hand, &projected_melds, &table, 0));
 }
 
 #[test]
@@ -219,8 +243,8 @@ fn shenyang_rule_progress_penalizes_unrecoverable_missing_heng_more() {
     let live_table = table_with_discards(1, Vec::new());
     let dead_table = table_with_discards(1, dead_basic_heng_discards(&hand));
 
-    assert!(can_recover_basic_heng(&hand, &[], &live_table));
-    assert!(!can_recover_basic_heng(&hand, &[], &dead_table));
+    assert!(can_recover_basic_heng(&hand, &[], &live_table, 0));
+    assert!(!can_recover_basic_heng(&hand, &[], &dead_table, 0));
 
     let live_score =
         shenyang_rule_progress_score(&hand, &[], &live_table, 0, WIN_RULE_SHENYANG_BASIC);
@@ -254,9 +278,9 @@ fn recoverable_basic_heng_counts_live_dragon_pair_without_hand_seed() {
 
     assert!(!has_triplet_or_dragon_pair(&hand, &[]));
     assert_eq!(remaining_tile_count(&hand, &table, 0, 35), 2);
-    assert!(can_recover_basic_heng(&hand, &[], &table));
+    assert!(can_recover_basic_heng(&hand, &[], &table, 0));
     assert_eq!(
-        unrecoverable_basic_rule_requirement_count(&hand, &[], &table),
+        unrecoverable_basic_rule_requirement_count(&hand, &[], &table, 0),
         0
     );
 }
@@ -277,7 +301,7 @@ fn broken_closed_defense_opens_mid_when_heng_is_unrecoverable() {
         0.0
     );
     assert_eq!(
-        unrecoverable_basic_rule_requirement_count(&hand, &[], &table),
+        unrecoverable_basic_rule_requirement_count(&hand, &[], &table, 0),
         1
     );
     assert!(should_open_broken_closed_hand_for_defense(
@@ -342,7 +366,7 @@ fn broken_closed_defense_waits_mid_recoverable_no_terminal_hand() {
     let hand = vec![2, 2, 2, 5, 5, 6, 7, 12, 13, 14, 22, 23, 24];
 
     assert_eq!(
-        unrecoverable_basic_rule_requirement_count(&hand, &[], &table),
+        unrecoverable_basic_rule_requirement_count(&hand, &[], &table, 0),
         0
     );
     assert!(!should_open_broken_closed_hand_for_defense(
