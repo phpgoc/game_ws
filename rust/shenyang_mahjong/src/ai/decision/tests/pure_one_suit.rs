@@ -121,6 +121,33 @@ fn capped_pure_one_suit_route_can_discard_last_honor_when_suits_are_missing() {
 }
 
 #[test]
+fn pure_one_suit_route_can_discard_last_main_suit_terminal() {
+    let table = table_with_discards(1, Vec::new());
+    let hand = vec![1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 8, 8];
+    let after_discard = remove_n_tiles(&hand, 1, 1);
+
+    assert!(has_terminal_or_honor_with_extra(
+        &after_discard,
+        &[],
+        Some(1)
+    ));
+    assert!(!has_terminal_or_honor_with_extra(&after_discard, &[], None));
+    assert!(pure_one_suit_plan_score_for_context(&after_discard, &[], &table, 0) > 0.0);
+    assert!(!violates_basic_terminal_or_honor_discard(
+        &after_discard,
+        &[],
+        &table,
+        0,
+        1,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert_eq!(
+        terminal_or_honor_discard_bias(&after_discard, &[], &table, 0, 1, WIN_RULE_SHENYANG_BASIC),
+        0.0
+    );
+}
+
+#[test]
 fn pure_one_suit_rule_progress_does_not_require_opening() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 1, 1, 2, 2, 3, 3, 4, 5, 6, 7, 8, 9];

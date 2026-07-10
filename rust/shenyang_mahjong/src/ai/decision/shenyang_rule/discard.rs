@@ -94,9 +94,7 @@ pub(in crate::ai::decision) fn violates_basic_terminal_or_honor_discard(
     ) {
         return false;
     }
-    if pure_one_suit_plan_score_for_context(hand_after_discard, melds, table, position) > 0.0
-        && (is_honor(tile) || !is_main_pure_suit_tile(hand_after_discard, melds, tile))
-    {
+    if pure_one_suit_plan_score_for_context(hand_after_discard, melds, table, position) > 0.0 {
         return false;
     }
     if table.max_fan.is_some_and(|max_fan| max_fan <= 1) {
