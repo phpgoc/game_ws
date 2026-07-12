@@ -65,6 +65,7 @@ pub fn maybe_play_ai_turn(
     if can_self_draw_hu_with_configs(state, position, configs) {
         let table = build_public_table_with_configs(state, configs);
         if let Some(win_tile) = state.last_drawn_tile
+            && !state.pending_gang_draw
             && should_pass_self_draw_hu_from_view(&hand, &table, position, win_rule, win_tile)
             && perform_discard(
                 room_service,
@@ -671,6 +672,39 @@ mod tests {
             state.hands.get(&0).unwrap(),
             &vec![13, 14, 15, 15, 16, 16, 17, 28, 28, 28]
         );
+    }
+
+    #[test]
+    fn away_position_takes_gang_draw_self_draw_in_capped_room() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_away(0);
+        state.dealer_position = 1;
+        state.wall = vec![37; 48];
+        state.discards.insert(1, vec![16]);
+        state
+            .hands
+            .insert(0, vec![13, 14, 15, 15, 16, 16, 16, 17, 28, 28, 28]);
+        state.melds.insert(0, vec![test_peng_meld(1)]);
+        state.last_drawn_tile = Some(16);
+        state.pending_gang_draw = true;
+        let configs = HashMap::from([("max_fan".to_owned(), 2)]);
+        let mut dispatch = Dispatch::default();
+
+        assert!(maybe_play_ai_turn(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &configs,
+            &mut dispatch,
+        ));
+
+        let settlement = state.settlement.as_ref().expect("settlement");
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert_eq!(settlement.winner_positions, vec![0]);
+        assert!(settlement.is_gang_draw);
+        let event = build_settlement_event_with_configs(&state, &configs)
+            .expect("settlement event should be buildable");
+        assert!(event.winner_details[0].is_gang_draw);
     }
 
     #[test]
