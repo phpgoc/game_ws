@@ -88,7 +88,7 @@ pub(in crate::ai::decision) fn should_claim_dragon_peng_over_live_five_pairs(
     if win_rule != WIN_RULE_SHENYANG_BASIC
         || !is_dragon(tile)
         || pair_count(hand) != 5
-        || !current_melds.is_empty()
+        || valid_meld_count(current_melds) > 0
         || !can_peng(hand, tile)
         || !missing_suits(hand, current_melds).is_empty()
         || !has_terminal_or_honor_with_extra(hand, current_melds, Some(tile))
