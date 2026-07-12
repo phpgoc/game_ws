@@ -135,5 +135,5 @@ pub(in crate::ai::decision) fn should_claim_ready_pure_one_suit_gang_from_discar
     sort_tiles(&mut next);
     let mut melds = current_melds.to_vec();
     melds.push(claim_gang_meld(tile, from_position));
-    ready_tile_score(&next, &melds, table, position, win_rule) > 0.0
+    ready_has_pure_one_suit_win(&next, &melds, table, position, win_rule)
 }

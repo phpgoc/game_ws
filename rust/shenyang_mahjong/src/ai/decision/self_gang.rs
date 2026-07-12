@@ -120,7 +120,9 @@ pub(super) fn self_gang_score(
         });
     }
     let after_ready_score = ready_tile_score(&next, &next_melds, table, position, win_rule);
-    if pure_one_suit_score > 0.0 && after_ready_score <= 0.0 {
+    let keeps_pure_one_suit_ready = pure_one_suit_score > 0.0
+        && ready_has_pure_one_suit_win(&next, &next_melds, table, position, win_rule);
+    if pure_one_suit_score > 0.0 && !keeps_pure_one_suit_ready {
         return f64::NEG_INFINITY;
     }
     if is_ready && after_ready_score <= 0.0 {
@@ -131,8 +133,6 @@ pub(super) fn self_gang_score(
             estimated_four_gui_yi_fan(hand, melds) > estimated_four_gui_yi_fan(&next, &next_melds);
         let visible_fan_gain = estimated_visible_bonus_fan(&next, &next_melds)
             - estimated_visible_bonus_fan(hand, melds);
-        let keeps_pure_one_suit_ready = pure_one_suit_score > 0.0
-            && ready_has_pure_one_suit_win(&next, &next_melds, table, position, win_rule);
         if loses_four_gui_yi && visible_fan_gain <= 0 && !keeps_pure_one_suit_ready {
             return f64::NEG_INFINITY;
         }

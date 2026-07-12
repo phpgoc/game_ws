@@ -198,6 +198,35 @@ fn self_gang_allows_ready_main_suit_added_gang_for_pure_one_suit_plan() {
 }
 
 #[test]
+fn self_gang_passes_pure_plan_when_gang_only_reaches_basic_ready() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.seats.get_mut(&0).unwrap().melds = vec![test_chi_meld(2)];
+    let current_melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![1, 1, 1, 1, 5, 6, 7, 11, 12, 13, 21];
+    let mut after_gang = remove_n_tiles(&hand, 1, 4);
+    sort_tiles(&mut after_gang);
+    let melds = vec![test_chi_meld(2), test_concealed_gang_meld(1)];
+
+    assert!(pure_one_suit_plan_score_for_context(&hand, current_melds, &table, 0) > 0.0);
+    assert!(
+        best_ready_score_after_discard(&hand, current_melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
+            > 0.0
+    );
+    assert!(ready_tile_score(&after_gang, &melds, &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0);
+    assert!(!ready_has_pure_one_suit_win(
+        &after_gang,
+        &melds,
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+    ));
+    assert_eq!(
+        choose_self_gang_from_view(&hand, &[1], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        None
+    );
+}
+
+#[test]
 fn self_gang_delays_main_suit_added_gang_when_pure_one_suit_plan_not_ready() {
     let mut table = table_with_discards(1, Vec::new());
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];

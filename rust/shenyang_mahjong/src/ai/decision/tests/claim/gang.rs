@@ -304,6 +304,35 @@ fn claim_gang_takes_ready_main_suit_pure_one_suit_when_not_capped() {
 }
 
 #[test]
+fn claim_gang_passes_pure_plan_when_gang_only_reaches_basic_ready() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.claim_window = Some(AiClaimView {
+        tile: 1,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![1, 1, 1, 2, 3, 4, 5, 6, 7, 11, 12, 13, 21];
+    let mut after_claim = remove_n_tiles(&hand, 1, 3);
+    sort_tiles(&mut after_claim);
+    let melds = vec![claim_gang_meld(1, 1)];
+
+    assert!(pure_one_suit_plan_score_for_context(&hand, &[], &table, 0) > 0.0);
+    assert!(ready_tile_score(&after_claim, &melds, &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0);
+    assert!(!ready_has_pure_one_suit_win(
+        &after_claim,
+        &melds,
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+    ));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Pass)
+    );
+}
+
+#[test]
 fn claim_gang_passes_ready_pure_one_suit_when_visible_fan_capped() {
     let mut table = table_with_discards(1, Vec::new());
     table.max_fan = Some(4);
@@ -470,15 +499,29 @@ fn claim_gang_skips_ready_plain_gang_when_fan_exceeds_half_cap() {
 #[test]
 fn claim_gang_takes_open_plain_gang_when_it_reaches_ready() {
     let mut table = table_with_discards(1, Vec::new());
-    table.seats.get_mut(&0).unwrap().melds = vec![test_chi_meld(1)];
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(31)];
     table.claim_window = Some(AiClaimView {
         tile: 9,
         from_position: 1,
         eligible_positions: vec![0],
     });
     let claim = table.claim_window.clone().unwrap();
-    let hand = vec![4, 5, 6, 9, 9, 9, 11, 12, 13, 21];
+    let hand = vec![1, 2, 3, 9, 9, 9, 11, 12, 13, 21];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
 
+    assert_eq!(
+        pure_one_suit_plan_score_for_context(&hand, melds, &table, 0),
+        0.0
+    );
+    assert!(claim_gang_from_discard_reaches_ready(
+        &hand,
+        melds,
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+        9,
+        1
+    ));
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Gang)
