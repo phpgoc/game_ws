@@ -121,7 +121,7 @@ pub(in crate::ai::decision) fn is_closed_early_piao_candidate(
     table: &AiPublicTable,
     position: usize,
 ) -> bool {
-    melds.is_empty()
+    valid_meld_count(melds) == 0
         && pair_count(hand) >= 3
         && table.dealer_position != position
         && !piao_plan_is_capped(table)

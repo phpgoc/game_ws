@@ -191,3 +191,43 @@ fn relaxed_claim_peng_takes_closed_early_piao_candidate_over_sequence_shape() {
         Some(AiClaimChoice::Peng)
     );
 }
+
+#[test]
+fn relaxed_closed_piao_peng_ignores_malformed_meld() {
+    let mut table = table_with_discards(1, Vec::new());
+    let malformed_meld = WsShenyangMahjongMeld {
+        kind: ShenyangMahjongMeldKind::PENG,
+        tiles: vec![31, 31],
+        from_position: Some(2),
+    };
+    table.seats.get_mut(&0).unwrap().melds = vec![malformed_meld.clone()];
+    table.claim_window = Some(AiClaimView {
+        tile: 5,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![1, 1, 4, 5, 5, 6, 11, 12, 13, 21, 21, 35, 35];
+
+    assert_eq!(valid_meld_count(&[malformed_meld.clone()]), 0);
+    assert!(should_claim_peng_for_closed_early_piao_candidate(
+        &hand,
+        &[malformed_meld],
+        &table,
+        0,
+        5,
+        1
+    ));
+    assert!(!should_claim_peng_for_closed_early_piao_candidate(
+        &hand,
+        &[test_peng_meld(31)],
+        &table,
+        0,
+        5,
+        1
+    ));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+        Some(AiClaimChoice::Peng)
+    );
+}

@@ -2,6 +2,7 @@ use super::*;
 
 #[test]
 fn piao_plan_ignores_malformed_chi_meld() {
+    let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 1, 2, 3, 4, 5, 6, 11, 11, 21, 21, 35, 35];
     let malformed_chi = WsShenyangMahjongMeld {
         kind: ShenyangMahjongMeldKind::CHI,
@@ -16,6 +17,18 @@ fn piao_plan_ignores_malformed_chi_meld() {
         piao_plan_score(&hand, &[])
     );
     assert_eq!(piao_plan_score(&hand, &[valid_chi]), 0.0);
+    assert!(is_closed_early_piao_candidate(
+        &hand,
+        &[malformed_chi.clone()],
+        &table,
+        0
+    ));
+    assert!(!is_closed_early_piao_candidate(
+        &hand,
+        &[test_chi_meld(7)],
+        &table,
+        0
+    ));
     assert_eq!(
         piao_threat_level(&[
             malformed_chi,

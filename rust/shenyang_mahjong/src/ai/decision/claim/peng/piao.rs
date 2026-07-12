@@ -9,7 +9,7 @@ pub(in crate::ai::decision) fn should_claim_peng_for_closed_early_piao_candidate
     from_position: usize,
 ) -> bool {
     let pairs = pair_count(hand);
-    if !current_melds.is_empty()
+    if valid_meld_count(current_melds) > 0
         || table.dealer_position == position
         || piao_plan_is_capped(table)
         || !(3..=4).contains(&pairs)
