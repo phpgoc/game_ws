@@ -15,18 +15,6 @@ pub(super) fn choose_peng_claim(
         return None;
     }
     if pure_one_suit_plan_score_for_context(hand, current_melds, table, position) > 0.0 {
-        if should_claim_ready_open_pure_one_suit_peng_from_discard(
-            hand,
-            current_melds,
-            table,
-            position,
-            win_rule,
-            tile,
-            from_position,
-            current_ready_score,
-        ) {
-            return Some(AiClaimChoice::Peng);
-        }
         return Some(AiClaimChoice::Pass);
     }
     if should_claim_capped_dragon_peng_over_five_pairs(

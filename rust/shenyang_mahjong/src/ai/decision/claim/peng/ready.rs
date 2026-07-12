@@ -84,53 +84,6 @@ pub(in crate::ai::decision) fn should_claim_ready_dragon_peng_from_discard(
     after_ready_score >= current_ready_score * keep_ratio
 }
 
-pub(in crate::ai::decision) fn should_claim_ready_open_pure_one_suit_peng_from_discard(
-    hand: &[i32],
-    current_melds: &[WsShenyangMahjongMeld],
-    table: &AiPublicTable,
-    position: usize,
-    win_rule: i32,
-    tile: i32,
-    from_position: usize,
-    current_ready_score: f64,
-) -> bool {
-    if current_ready_score > 0.0
-        || !has_open_meld(current_melds)
-        || !can_peng(hand, tile)
-        || !is_main_pure_suit_tile(hand, current_melds, tile)
-        || should_preserve_seven_pairs_plan_for_context(
-            hand,
-            current_melds,
-            table,
-            position,
-            win_rule,
-        )
-    {
-        return false;
-    }
-
-    let mut next = remove_n_tiles(hand, tile, 2);
-    if next.len() + 2 != hand.len() {
-        return false;
-    }
-    sort_tiles(&mut next);
-    let mut melds = current_melds.to_vec();
-    melds.push(claim_peng_meld(tile, from_position));
-
-    unique_tiles(&next).into_iter().any(|discard| {
-        let mut after_discard = remove_n_tiles(&next, discard, 1);
-        sort_tiles(&mut after_discard);
-        ready_has_pure_one_suit_win_after_discard(
-            &after_discard,
-            &melds,
-            table,
-            position,
-            win_rule,
-            discard,
-        )
-    })
-}
-
 pub(in crate::ai::decision) fn should_claim_ready_pure_one_suit_gang_from_discard(
     hand: &[i32],
     current_melds: &[WsShenyangMahjongMeld],

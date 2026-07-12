@@ -137,7 +137,7 @@ fn claim_peng_preserves_pure_one_suit_seven_pairs_wait() {
 }
 
 #[test]
-fn claim_peng_takes_open_main_suit_pure_one_suit_when_it_reaches_ready() {
+fn claim_peng_passes_open_main_suit_pure_one_suit_even_when_it_reaches_ready() {
     let mut table = table_with_discards(1, Vec::new());
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
     table.claim_window = Some(AiClaimView {
@@ -154,8 +154,24 @@ fn claim_peng_takes_open_main_suit_pure_one_suit_when_it_reaches_ready() {
         ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
         0.0
     );
+    let mut next = remove_n_tiles(&hand, 2, 2);
+    sort_tiles(&mut next);
+    let mut next_melds = melds.to_vec();
+    next_melds.push(claim_peng_meld(2, 1));
+    assert!(unique_tiles(&next).into_iter().any(|discard| {
+        let mut after_discard = remove_n_tiles(&next, discard, 1);
+        sort_tiles(&mut after_discard);
+        ready_has_pure_one_suit_win_after_discard(
+            &after_discard,
+            &next_melds,
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+            discard,
+        )
+    }));
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(AiClaimChoice::Peng)
+        Some(AiClaimChoice::Pass)
     );
 }

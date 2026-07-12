@@ -101,6 +101,7 @@ pub(in crate::ai::decision) fn ready_has_piao_win(
     ready_has_piao_win_with_simulated_discards(hand, melds, table, position, win_rule, &[])
 }
 
+#[cfg(test)]
 pub(in crate::ai::decision) fn ready_has_pure_one_suit_win_after_discard(
     hand_after_discard: &[i32],
     melds: &[WsShenyangMahjongMeld],
