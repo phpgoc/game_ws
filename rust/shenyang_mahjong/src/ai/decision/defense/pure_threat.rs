@@ -60,17 +60,17 @@ pub(in crate::ai::decision) fn pure_one_suit_threat_discard_bias(
         .iter()
         .filter(|(seat_position, _)| **seat_position != position)
         .filter_map(|(_, seat)| {
-            let (threat_suit, open_melds) = pure_one_suit_threat_suit(seat)?;
+            let (threat_suit, known_melds) = pure_one_suit_threat_suit(seat)?;
             (threat_suit == suit && !seat_has_open_meld_tile(seat, tile)).then_some((
                 seat,
-                open_melds,
+                known_melds,
                 threat_suit,
             ))
         })
-        .map(|(seat, open_melds, threat_suit)| {
+        .map(|(seat, known_melds, threat_suit)| {
             let base = if tile_is_terminal(tile) { 7.0 } else { 10.0 };
             let pair_penalty = pure_one_suit_threat_pair_penalty(tile, own_tile_count);
-            let meld_pressure = pure_one_suit_threat_meld_pressure(open_melds);
+            let meld_pressure = pure_one_suit_threat_meld_pressure(known_melds);
             let late_pressure = if table.wall_count <= 20 {
                 1.35
             } else if table.wall_count <= 42 {
@@ -120,11 +120,11 @@ pub(in crate::ai::decision) fn pure_one_suit_threat_discard_scale(
     }
 }
 
-pub(in crate::ai::decision) fn pure_one_suit_threat_meld_pressure(open_melds: usize) -> f64 {
-    if open_melds <= 1 {
+pub(in crate::ai::decision) fn pure_one_suit_threat_meld_pressure(known_melds: usize) -> f64 {
+    if known_melds <= 1 {
         0.55
     } else {
-        (open_melds as f64 - 1.0).min(2.0)
+        (known_melds as f64 - 1.0).min(2.0)
     }
 }
 
@@ -144,9 +144,11 @@ pub(in crate::ai::decision) fn pure_one_suit_threat_pair_penalty(
 pub(in crate::ai::decision) fn pure_one_suit_threat_suit(
     seat: &AiSeatView,
 ) -> Option<(i32, usize)> {
+    let mut known_meld_count = 0usize;
     let mut open_meld_count = 0usize;
     let mut threat_suit = None;
     for meld in seat.melds.iter().filter(|meld| is_valid_meld(meld)) {
+        known_meld_count += 1;
         if is_open_meld(meld) {
             open_meld_count += 1;
         }
@@ -162,16 +164,18 @@ pub(in crate::ai::decision) fn pure_one_suit_threat_suit(
             }
         }
     }
+    if known_meld_count >= 2 {
+        return threat_suit.map(|suit| (suit, known_meld_count));
+    }
     if open_meld_count == 0 {
         let discard_suit = pure_one_suit_closed_discard_threat_suit(seat)?;
         return match threat_suit {
             Some(meld_suit) if meld_suit != discard_suit => None,
-            _ => Some((discard_suit, 0)),
+            _ => Some((discard_suit, known_meld_count)),
         };
     }
     threat_suit.and_then(|suit| {
-        (open_meld_count >= 2 || pure_one_suit_single_meld_discard_evidence(seat, suit))
-            .then_some((suit, open_meld_count))
+        pure_one_suit_single_meld_discard_evidence(seat, suit).then_some((suit, known_meld_count))
     })
 }
 
