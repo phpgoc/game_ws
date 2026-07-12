@@ -20,6 +20,8 @@ pub(super) use requirements::*;
 use chi_choice::choose_chi_claim;
 use gang_choice::choose_gang_claim;
 use peng_choice::choose_peng_claim;
+#[cfg(test)]
+pub(super) use peng_choice::required_peng_gain;
 
 pub fn choose_claim_from_view(
     hand: &[i32],

@@ -35,6 +35,29 @@ fn claim_peng_passes_when_it_breaks_seven_pairs_shape() {
 }
 
 #[test]
+fn required_peng_gain_ignores_malformed_meld_for_four_pair_protection() {
+    let table = table_with_discards(1, Vec::new());
+    let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 22, 31, 35, 36];
+    let malformed_meld = WsShenyangMahjongMeld {
+        kind: ShenyangMahjongMeldKind::CHI,
+        tiles: vec![3, 3, 4],
+        from_position: Some(1),
+    };
+    let base = required_peng_gain(&hand, &[], &table, 0, WIN_RULE_RELAXED, 31);
+
+    assert_eq!(pair_count(&hand), 4);
+    assert_eq!(valid_meld_count(&[malformed_meld.clone()]), 0);
+    assert_eq!(
+        required_peng_gain(&hand, &[malformed_meld], &table, 0, WIN_RULE_RELAXED, 31,),
+        base
+    );
+    assert_eq!(
+        required_peng_gain(&hand, &[test_chi_meld(3)], &table, 0, WIN_RULE_RELAXED, 31,),
+        base - 8.0
+    );
+}
+
+#[test]
 fn claim_peng_preserves_five_pairs_even_with_three_suits() {
     let mut table = table_with_discards(1, Vec::new());
     table.claim_window = Some(AiClaimView {

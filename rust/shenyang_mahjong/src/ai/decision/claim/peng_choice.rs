@@ -189,7 +189,7 @@ pub(super) fn choose_peng_claim(
     (after >= current_score + required_gain).then_some(AiClaimChoice::Peng)
 }
 
-fn required_peng_gain(
+pub(in crate::ai::decision) fn required_peng_gain(
     hand: &[i32],
     current_melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
@@ -224,7 +224,7 @@ fn required_peng_gain(
     if win_rule == WIN_RULE_SHENYANG_BASIC && table.dealer_position == position {
         required_gain -= 8.0;
     }
-    if current_melds.is_empty() && pair_count(hand) >= 4 {
+    if valid_meld_count(current_melds) == 0 && pair_count(hand) >= 4 {
         required_gain += 8.0;
     }
     required_gain
