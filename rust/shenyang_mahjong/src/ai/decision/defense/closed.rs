@@ -26,6 +26,20 @@ pub(in crate::ai::decision) fn closed_hand_count_pressure_scale(seat: &AiSeatVie
     f64::max(gang_scale, hand_count_scale)
 }
 
+pub(in crate::ai::decision) fn closed_route_commitment_scale(seat: &AiSeatView) -> f64 {
+    let valid_discards = seat
+        .discards
+        .iter()
+        .filter(|tile| is_valid_tile(**tile))
+        .count();
+    match valid_discards {
+        0..=2 => 0.85,
+        3..=5 => 1.0,
+        6..=8 => 1.12,
+        _ => 1.25,
+    }
+}
+
 pub(in crate::ai::decision) fn closed_opponent_threat_discard_bias(
     table: &AiPublicTable,
     position: usize,
@@ -69,6 +83,7 @@ pub(in crate::ai::decision) fn closed_opponent_threat_discard_bias(
                 * pressure_scale
                 * exposure_scale
                 * closed_hand_count_pressure_scale(seat)
+                * closed_route_commitment_scale(seat)
                 * closed_suit_shedding_scale(seat, tile)
         })
         .sum()

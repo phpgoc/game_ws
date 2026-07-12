@@ -160,6 +160,10 @@ fn closed_opponent_threat_ignores_invalid_off_suit_discards() {
         closed_suit_shedding_scale(neutral.seats.get(&1).unwrap(), 5)
     );
     assert_eq!(
+        closed_route_commitment_scale(invalid_discards.seats.get(&1).unwrap()),
+        closed_route_commitment_scale(neutral.seats.get(&1).unwrap())
+    );
+    assert_eq!(
         closed_opponent_threat_discard_bias(&invalid_discards, 0, 5, 1),
         closed_opponent_threat_discard_bias(&neutral, 0, 5, 1)
     );
@@ -225,6 +229,26 @@ fn closed_opponent_threat_penalizes_own_pair_more_than_own_triplet() {
     assert!(
         closed_opponent_threat_discard_bias(&table, 0, 9, 2)
             < closed_opponent_threat_discard_bias(&table, 0, 19, 3)
+    );
+}
+
+#[test]
+fn closed_opponent_threat_scales_with_long_closed_discard_history() {
+    let mut short_history = table_with_discards(1, vec![1, 2]);
+    short_history.wall_count = 16;
+    short_history.seats.get_mut(&1).unwrap().hand_count = 13;
+
+    let mut long_history = table_with_discards(1, vec![1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    long_history.wall_count = 16;
+    long_history.seats.get_mut(&1).unwrap().hand_count = 13;
+
+    assert!(
+        closed_route_commitment_scale(long_history.seats.get(&1).unwrap())
+            > closed_route_commitment_scale(short_history.seats.get(&1).unwrap())
+    );
+    assert!(
+        closed_opponent_threat_discard_bias(&long_history, 0, 32, 1)
+            < closed_opponent_threat_discard_bias(&short_history, 0, 32, 1)
     );
 }
 
