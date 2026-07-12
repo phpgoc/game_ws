@@ -66,7 +66,7 @@ pub(in crate::ai::decision) fn closed_opponent_threat_discard_bias(
         .seats
         .iter()
         .filter(|(seat_position, seat)| {
-            **seat_position != position && is_closed_opponent_threat_candidate(seat)
+            **seat_position != position && is_closed_opponent_threat_candidate(seat, table)
         })
         .map(|(_, seat)| {
             let base = if is_dragon(tile) {
@@ -149,7 +149,10 @@ pub(in crate::ai::decision) fn closed_threat_tile_fully_accounted(
     exposed_meld_tile_count(table, tile) + public_discard_count(table, tile) + own_tile_count >= 4
 }
 
-pub(in crate::ai::decision) fn is_closed_opponent_threat_candidate(seat: &AiSeatView) -> bool {
-    !has_open_meld(&seat.melds)
+pub(in crate::ai::decision) fn is_closed_opponent_threat_candidate(
+    seat: &AiSeatView,
+    table: &AiPublicTable,
+) -> bool {
+    !has_door_opening_meld(&seat.melds, table)
         && (seat.hand_count >= 10 || (seat.hand_count > 0 && has_concealed_gang_meld(&seat.melds)))
 }

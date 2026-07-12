@@ -7,7 +7,7 @@ pub(in crate::ai::decision) fn closed_opponent_may_need_suit(
 ) -> bool {
     table.seats.iter().any(|(seat_position, seat)| {
         *seat_position != position
-            && is_closed_opponent_threat_candidate(seat)
+            && is_closed_opponent_threat_candidate(seat, table)
             && seat
                 .discards
                 .iter()
