@@ -10,7 +10,6 @@ pub(in crate::ai::decision) fn should_pass_peng_for_open_pure_defense(
 ) -> bool {
     if is_dragon(tile)
         || !has_open_meld(melds)
-        || table.dealer_position == position
         || !is_late_round(table)
         || should_preserve_seven_pairs_plan_for_context(hand, melds, table, position, win_rule)
         || pure_one_suit_plan_score_for_context(hand, melds, table, position) > 0.0
