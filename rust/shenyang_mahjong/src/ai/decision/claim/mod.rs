@@ -41,6 +41,11 @@ pub fn choose_claim_from_view(
         .map(|seat| seat.melds.as_slice())
         .unwrap_or(&[]);
     if is_complete_win_for_table(&win_hand, melds, table, win_rule) {
+        if should_pass_hu_for_capped_live_wait(
+            hand, &win_hand, melds, table, position, win_rule, tile,
+        ) {
+            return Some(AiClaimChoice::Pass);
+        }
         return Some(AiClaimChoice::Hu);
     }
 
@@ -103,4 +108,74 @@ pub fn choose_claim_from_view(
     }
 
     Some(AiClaimChoice::Pass)
+}
+
+pub(in crate::ai::decision) fn should_pass_hu_for_capped_live_wait(
+    hand: &[i32],
+    win_hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+    tile: i32,
+) -> bool {
+    let Some(max_fan) = table.max_fan.filter(|max_fan| *max_fan > 1) else {
+        return false;
+    };
+    if table.dealer_position == position || is_late_defense_round(table) || hand.len() % 3 != 1 {
+        return false;
+    }
+
+    let current_known_unavailable =
+        known_unavailable_tiles_with_simulated_discards(table, position, melds, &[]);
+    let current_fan = estimated_fan_with_known_unavailable_wait_and_open_rule(
+        win_hand,
+        melds,
+        tile,
+        win_rule,
+        table.chi_opens_door,
+        &current_known_unavailable,
+    );
+    if current_fan != max_fan - 1 {
+        return false;
+    }
+
+    let pass_simulated_discards = [tile];
+    let pass_known_unavailable = known_unavailable_tiles_with_simulated_discards(
+        table,
+        position,
+        melds,
+        &pass_simulated_discards,
+    );
+    let capped_wait_copies = SHENYANG_MAHJONG_TILE_KINDS
+        .into_iter()
+        .map(|wait_tile| {
+            let remaining = remaining_tile_count_with_melds_after_discards(
+                hand,
+                melds,
+                table,
+                position,
+                wait_tile,
+                &pass_simulated_discards,
+            );
+            if remaining <= 0 {
+                return 0;
+            }
+            let mut next = hand.to_vec();
+            next.push(wait_tile);
+            next.sort_unstable();
+            let reaches_cap = is_complete_win_for_table(&next, melds, table, win_rule)
+                && estimated_fan_with_known_unavailable_wait_and_open_rule(
+                    &next,
+                    melds,
+                    wait_tile,
+                    win_rule,
+                    table.chi_opens_door,
+                    &pass_known_unavailable,
+                ) >= max_fan;
+            if reaches_cap { remaining } else { 0 }
+        })
+        .sum::<i32>();
+
+    capped_wait_copies >= 3
 }

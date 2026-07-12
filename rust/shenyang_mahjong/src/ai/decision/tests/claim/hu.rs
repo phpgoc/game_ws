@@ -59,6 +59,118 @@ fn claim_hu_beats_other_claims() {
 }
 
 #[test]
+fn claim_hu_can_pass_one_fan_short_when_capped_wait_is_live() {
+    let mut table = table_with_discards(1, vec![16]);
+    table.max_fan = Some(2);
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
+    table.claim_window = Some(AiClaimView {
+        tile: 16,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![13, 14, 15, 15, 16, 16, 17, 28, 28, 28];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let mut current_win = hand.clone();
+    current_win.push(16);
+    sort_tiles(&mut current_win);
+    let mut capped_wait_win = hand.clone();
+    capped_wait_win.push(13);
+    sort_tiles(&mut capped_wait_win);
+    let current_known_unavailable =
+        known_unavailable_tiles_with_simulated_discards(&table, 0, melds, &[]);
+    let pass_simulated_discards = [16];
+    let pass_known_unavailable =
+        known_unavailable_tiles_with_simulated_discards(&table, 0, melds, &pass_simulated_discards);
+
+    assert!(is_complete_win_for_table(
+        &current_win,
+        melds,
+        &table,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert_eq!(
+        estimated_fan_with_known_unavailable_wait_and_open_rule(
+            &current_win,
+            melds,
+            16,
+            WIN_RULE_SHENYANG_BASIC,
+            table.chi_opens_door,
+            &current_known_unavailable,
+        ),
+        1
+    );
+    assert_eq!(
+        remaining_tile_count_with_melds_after_discards(
+            &hand,
+            melds,
+            &table,
+            0,
+            13,
+            &pass_simulated_discards,
+        ),
+        3
+    );
+    assert_eq!(
+        estimated_fan_with_known_unavailable_wait_and_open_rule(
+            &capped_wait_win,
+            melds,
+            13,
+            WIN_RULE_SHENYANG_BASIC,
+            table.chi_opens_door,
+            &pass_known_unavailable,
+        ),
+        2
+    );
+    assert!(should_pass_hu_for_capped_live_wait(
+        &hand,
+        &current_win,
+        melds,
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+        16,
+    ));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Pass)
+    );
+}
+
+#[test]
+fn dealer_claim_hu_takes_one_fan_short_instead_of_chasing_cap() {
+    let mut table = table_with_discards(1, vec![16]);
+    table.dealer_position = 0;
+    table.max_fan = Some(2);
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
+    table.claim_window = Some(AiClaimView {
+        tile: 16,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![13, 14, 15, 15, 16, 16, 17, 28, 28, 28];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let mut current_win = hand.clone();
+    current_win.push(16);
+    sort_tiles(&mut current_win);
+
+    assert!(!should_pass_hu_for_capped_live_wait(
+        &hand,
+        &current_win,
+        melds,
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+        16,
+    ));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Hu)
+    );
+}
+
+#[test]
 fn claim_hu_respects_whether_chi_opens_door() {
     let mut table = table_with_discards(1, Vec::new());
     table.claim_window = Some(AiClaimView {
