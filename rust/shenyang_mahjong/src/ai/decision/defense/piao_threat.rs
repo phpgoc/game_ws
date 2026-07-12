@@ -12,7 +12,7 @@ pub(in crate::ai::decision) fn opponent_threat_discard_bias(
             continue;
         }
         let threat_level = piao_threat_level(&seat.melds);
-        if threat_level < 3 {
+        if threat_level < 3 || !has_open_meld(&seat.melds) {
             continue;
         }
         if piao_threat_cannot_satisfy_three_suits(&seat.melds, seat.hand_count) {
@@ -160,7 +160,10 @@ pub(in crate::ai::decision) fn piao_threat_blocks_missing_suit_safety(
         return false;
     }
     let threat_level = piao_threat_level(&seat.melds);
-    if threat_level < 3 || piao_threat_cannot_satisfy_three_suits(&seat.melds, seat.hand_count) {
+    if threat_level < 3
+        || !has_open_meld(&seat.melds)
+        || piao_threat_cannot_satisfy_three_suits(&seat.melds, seat.hand_count)
+    {
         return false;
     }
     if threat_level >= 4 && seat.hand_count <= 2 {
@@ -201,7 +204,8 @@ pub(in crate::ai::decision) fn piao_threat_exposure_scale(table: &AiPublicTable,
 }
 
 pub(in crate::ai::decision) fn piao_threat_needs_suit(seat: &AiSeatView, suit: i32) -> bool {
-    piao_threat_level(&seat.melds) >= 3
+    has_open_meld(&seat.melds)
+        && piao_threat_level(&seat.melds) >= 3
         && !piao_threat_cannot_satisfy_three_suits(&seat.melds, seat.hand_count)
         && piao_missing_suits_from_melds(&seat.melds).contains(&suit)
 }
