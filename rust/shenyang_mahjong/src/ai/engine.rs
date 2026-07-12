@@ -11,6 +11,7 @@ use crate::rules::win_rule_from_configs;
 
 use super::decision::{
     AiClaimChoice, choose_claim_from_view, choose_discard_from_view, choose_self_gang_from_view,
+    should_pass_self_draw_hu_from_view,
 };
 use super::observation::build_public_table_with_configs;
 
@@ -60,7 +61,23 @@ pub fn maybe_play_ai_turn(
     if hand.is_empty() {
         return false;
     }
+    let win_rule = win_rule_from_configs(configs);
     if can_self_draw_hu_with_configs(state, position, configs) {
+        let table = build_public_table_with_configs(state, configs);
+        if let Some(win_tile) = state.last_drawn_tile
+            && should_pass_self_draw_hu_from_view(&hand, &table, position, win_rule, win_tile)
+            && perform_discard(
+                room_service,
+                room_key,
+                state,
+                configs,
+                dispatch,
+                position,
+                win_tile,
+            )
+        {
+            return true;
+        }
         perform_self_draw_hu(room_service, room_key, state, configs, dispatch, position);
         return true;
     }
@@ -78,9 +95,7 @@ pub fn maybe_play_ai_turn(
     }
 
     let table = build_public_table_with_configs(state, configs);
-    if let Some(tile) =
-        choose_discard_from_view(&hand, &table, position, win_rule_from_configs(configs))
-    {
+    if let Some(tile) = choose_discard_from_view(&hand, &table, position, win_rule) {
         return perform_discard(
             room_service,
             room_key,
@@ -555,6 +570,40 @@ mod tests {
     }
 
     #[test]
+    fn away_position_passes_low_fan_self_draw_for_live_capped_wait() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_away(0);
+        state.dealer_position = 1;
+        state.wall = vec![37; 48];
+        state.discards.insert(1, vec![16]);
+        state
+            .hands
+            .insert(0, vec![13, 14, 15, 15, 16, 16, 16, 17, 28, 28, 28]);
+        state.melds.insert(0, vec![test_peng_meld(1)]);
+        state.last_drawn_tile = Some(16);
+        let configs = HashMap::from([("max_fan".to_owned(), 2)]);
+        let mut dispatch = Dispatch::default();
+
+        assert!(maybe_play_ai_turn(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &configs,
+            &mut dispatch,
+        ));
+
+        assert_eq!(state.phase, ShenyangMahjongPhase::Play);
+        assert!(state.settlement.is_none());
+        assert_eq!(state.discards.get(&0).unwrap(), &vec![16]);
+        assert_eq!(state.discards.get(&1).unwrap(), &vec![16]);
+        assert_eq!(state.last_drawn_tile, Some(37));
+        assert_eq!(
+            state.hands.get(&0).unwrap(),
+            &vec![13, 14, 15, 15, 16, 16, 17, 28, 28, 28]
+        );
+    }
+
+    #[test]
     fn away_position_uses_ai_self_draw_for_seven_pairs() {
         let mut state = playable_state();
         state.base.lock().unwrap().mark_away(0);
@@ -713,6 +762,14 @@ mod tests {
 
     fn one_fan_capped_configs() -> HashMap<String, i32> {
         HashMap::from([("max_fan".to_owned(), 1)])
+    }
+
+    fn test_peng_meld(tile: i32) -> WsShenyangMahjongMeld {
+        WsShenyangMahjongMeld {
+            kind: ShenyangMahjongMeldKind::PENG,
+            tiles: vec![tile, tile, tile],
+            from_position: Some(1),
+        }
     }
 
     fn playable_state() -> ShenyangMahjongLoopState {

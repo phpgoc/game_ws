@@ -179,3 +179,36 @@ pub(in crate::ai::decision) fn should_pass_hu_for_capped_live_wait(
 
     capped_wait_copies >= 3
 }
+
+pub fn should_pass_self_draw_hu_from_view(
+    win_hand: &[i32],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+    win_tile: i32,
+) -> bool {
+    let melds = table
+        .seats
+        .get(&position)
+        .map(|seat| seat.melds.as_slice())
+        .unwrap_or(&[]);
+    if !is_complete_win_for_table(win_hand, melds, table, win_rule) {
+        return false;
+    }
+    let Some(index) = win_hand.iter().position(|tile| *tile == win_tile) else {
+        return false;
+    };
+    let mut hand_before_win = win_hand.to_vec();
+    hand_before_win.remove(index);
+    sort_tiles(&mut hand_before_win);
+
+    should_pass_hu_for_capped_live_wait(
+        &hand_before_win,
+        win_hand,
+        melds,
+        table,
+        position,
+        win_rule,
+        win_tile,
+    )
+}

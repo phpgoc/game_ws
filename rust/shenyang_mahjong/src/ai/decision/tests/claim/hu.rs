@@ -138,6 +138,62 @@ fn claim_hu_can_pass_one_fan_short_when_capped_wait_is_live() {
 }
 
 #[test]
+fn self_draw_hu_can_pass_one_fan_short_when_capped_wait_is_live() {
+    let mut table = table_with_discards(1, vec![16]);
+    table.max_fan = Some(2);
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
+    let win_hand = vec![13, 14, 15, 15, 16, 16, 16, 17, 28, 28, 28];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let mut capped_wait_win = remove_n_tiles(&win_hand, 16, 1);
+    capped_wait_win.push(13);
+    sort_tiles(&mut capped_wait_win);
+    let pass_simulated_discards = [16];
+    let pass_known_unavailable =
+        known_unavailable_tiles_with_simulated_discards(&table, 0, melds, &pass_simulated_discards);
+
+    assert_eq!(
+        estimated_fan_with_known_unavailable_wait_and_open_rule(
+            &win_hand,
+            melds,
+            16,
+            WIN_RULE_SHENYANG_BASIC,
+            table.chi_opens_door,
+            &[],
+        ),
+        1
+    );
+    assert_eq!(
+        remaining_tile_count_with_melds_after_discards(
+            &remove_n_tiles(&win_hand, 16, 1),
+            melds,
+            &table,
+            0,
+            13,
+            &pass_simulated_discards,
+        ),
+        3
+    );
+    assert_eq!(
+        estimated_fan_with_known_unavailable_wait_and_open_rule(
+            &capped_wait_win,
+            melds,
+            13,
+            WIN_RULE_SHENYANG_BASIC,
+            table.chi_opens_door,
+            &pass_known_unavailable,
+        ),
+        2
+    );
+    assert!(should_pass_self_draw_hu_from_view(
+        &win_hand,
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+        16,
+    ));
+}
+
+#[test]
 fn dealer_claim_hu_takes_one_fan_short_instead_of_chasing_cap() {
     let mut table = table_with_discards(1, vec![16]);
     table.dealer_position = 0;
@@ -168,6 +224,23 @@ fn dealer_claim_hu_takes_one_fan_short_instead_of_chasing_cap() {
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Hu)
     );
+}
+
+#[test]
+fn dealer_self_draw_hu_takes_one_fan_short_instead_of_chasing_cap() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.dealer_position = 0;
+    table.max_fan = Some(2);
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
+    let win_hand = vec![13, 14, 15, 15, 16, 16, 16, 17, 28, 28, 28];
+
+    assert!(!should_pass_self_draw_hu_from_view(
+        &win_hand,
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+        16,
+    ));
 }
 
 #[test]
