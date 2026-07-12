@@ -7,7 +7,7 @@ pub(in crate::ai::decision) fn should_claim_chi_to_open_broken_hand_for_defense(
     position: usize,
     win_rule: i32,
 ) -> bool {
-    if (win_rule == WIN_RULE_SHENYANG_BASIC && !table.chi_opens_door)
+    if !table.chi_opens_door
         || has_open_meld(melds)
         || !is_mid_broken_hand_defense_round(table)
         || should_preserve_seven_pairs_plan_for_context(hand, melds, table, position, win_rule)
