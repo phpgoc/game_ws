@@ -146,8 +146,10 @@ pub(in crate::ai::decision) fn pure_one_suit_threat_suit(
 ) -> Option<(i32, usize)> {
     let mut open_meld_count = 0usize;
     let mut threat_suit = None;
-    for meld in seat.melds.iter().filter(|meld| is_open_meld(meld)) {
-        open_meld_count += 1;
+    for meld in seat.melds.iter().filter(|meld| is_valid_meld(meld)) {
+        if is_open_meld(meld) {
+            open_meld_count += 1;
+        }
         for tile in meld.tiles.iter().copied() {
             if !is_suited(tile) {
                 return None;
@@ -161,7 +163,11 @@ pub(in crate::ai::decision) fn pure_one_suit_threat_suit(
         }
     }
     if open_meld_count == 0 {
-        return pure_one_suit_closed_discard_threat_suit(seat).map(|suit| (suit, 0));
+        let discard_suit = pure_one_suit_closed_discard_threat_suit(seat)?;
+        return match threat_suit {
+            Some(meld_suit) if meld_suit != discard_suit => None,
+            _ => Some((discard_suit, 0)),
+        };
     }
     threat_suit.and_then(|suit| {
         (open_meld_count >= 2 || pure_one_suit_single_meld_discard_evidence(seat, suit))
