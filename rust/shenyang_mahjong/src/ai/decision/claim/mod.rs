@@ -140,7 +140,11 @@ pub(in crate::ai::decision) fn should_pass_hu_for_capped_live_wait(
         return false;
     }
 
-    let pass_simulated_discards = [tile];
+    let pass_simulated_discards = if claim_tile_already_visible(table, tile) {
+        Vec::new()
+    } else {
+        vec![tile]
+    };
     let pass_known_unavailable = known_unavailable_tiles_with_simulated_discards(
         table,
         position,

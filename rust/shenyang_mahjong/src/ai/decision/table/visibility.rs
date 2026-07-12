@@ -5,7 +5,7 @@ use crate::ai::observation::AiPublicTable;
 use crate::ai::decision::meld::{is_open_meld, is_valid_meld};
 use crate::ai::decision::tile::is_valid_tile;
 
-pub(in crate::ai::decision::table) fn claim_tile_already_visible(
+pub(in crate::ai::decision) fn claim_tile_already_visible(
     table: &AiPublicTable,
     tile: i32,
 ) -> bool {

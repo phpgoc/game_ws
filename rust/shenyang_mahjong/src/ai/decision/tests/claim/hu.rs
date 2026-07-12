@@ -59,7 +59,7 @@ fn claim_hu_beats_other_claims() {
 }
 
 #[test]
-fn claim_hu_can_pass_one_fan_short_when_capped_wait_is_live() {
+fn claim_hu_does_not_double_count_visible_tile_to_create_capped_wait() {
     let mut table = table_with_discards(1, vec![16]);
     table.max_fan = Some(2);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
@@ -79,7 +79,7 @@ fn claim_hu_can_pass_one_fan_short_when_capped_wait_is_live() {
     sort_tiles(&mut capped_wait_win);
     let current_known_unavailable =
         known_unavailable_tiles_with_simulated_discards(&table, 0, melds, &[]);
-    let pass_simulated_discards = [16];
+    let pass_simulated_discards = [];
     let pass_known_unavailable =
         known_unavailable_tiles_with_simulated_discards(&table, 0, melds, &pass_simulated_discards);
 
@@ -120,9 +120,9 @@ fn claim_hu_can_pass_one_fan_short_when_capped_wait_is_live() {
             table.chi_opens_door,
             &pass_known_unavailable,
         ),
-        2
+        1
     );
-    assert!(should_pass_hu_for_capped_live_wait(
+    assert!(!should_pass_hu_for_capped_live_wait(
         &hand,
         &current_win,
         melds,
@@ -133,7 +133,7 @@ fn claim_hu_can_pass_one_fan_short_when_capped_wait_is_live() {
     ));
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(AiClaimChoice::Pass)
+        Some(AiClaimChoice::Hu)
     );
 }
 
