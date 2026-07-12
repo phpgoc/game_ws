@@ -70,6 +70,32 @@ fn closed_opponent_threat_counts_short_hand_after_concealed_gang() {
 }
 
 #[test]
+fn closed_opponent_threat_ignores_malformed_concealed_gang_pressure() {
+    let mut baseline = table_with_discards(1, Vec::new());
+    baseline.wall_count = 16;
+    baseline.seats.get_mut(&1).unwrap().hand_count = 13;
+
+    let mut malformed = baseline.clone();
+    malformed.seats.get_mut(&1).unwrap().melds = vec![WsShenyangMahjongMeld {
+        kind: ShenyangMahjongMeldKind::GANG,
+        tiles: vec![9, 9, 9],
+        from_position: None,
+    }];
+
+    assert!(!has_concealed_gang_meld(
+        &malformed.seats.get(&1).unwrap().melds
+    ));
+    assert_eq!(
+        closed_hand_count_pressure_scale(malformed.seats.get(&1).unwrap()),
+        closed_hand_count_pressure_scale(baseline.seats.get(&1).unwrap())
+    );
+    assert_eq!(
+        closed_opponent_threat_discard_bias(&malformed, 0, 32, 1),
+        closed_opponent_threat_discard_bias(&baseline, 0, 32, 1)
+    );
+}
+
+#[test]
 fn closed_opponent_threat_discounts_partially_exposed_meld_tiles() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 16;

@@ -5,6 +5,7 @@ pub(in crate::ai::decision) fn closed_hand_count_pressure_scale(seat: &AiSeatVie
         .melds
         .iter()
         .filter(|meld| meld.kind == ShenyangMahjongMeldKind::GANG && meld.from_position.is_none())
+        .filter(|meld| is_triplet_like_meld(meld))
         .count();
     if concealed_gangs == 0 {
         return 1.0;
