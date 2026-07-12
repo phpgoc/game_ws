@@ -7,9 +7,7 @@ pub(in crate::ai::decision) fn closed_opponent_may_need_suit(
 ) -> bool {
     table.seats.iter().any(|(seat_position, seat)| {
         *seat_position != position
-            && !has_open_meld(&seat.melds)
-            && (seat.hand_count >= 13
-                || (seat.hand_count > 0 && has_concealed_gang_meld(&seat.melds)))
+            && is_closed_opponent_threat_candidate(seat)
             && seat
                 .discards
                 .iter()

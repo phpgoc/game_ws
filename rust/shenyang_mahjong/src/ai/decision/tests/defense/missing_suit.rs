@@ -67,6 +67,41 @@ fn late_defense_closed_opponent_blocks_other_missing_suit_reads() {
 }
 
 #[test]
+fn late_defense_ten_tile_closed_threat_blocks_other_missing_suit_reads() {
+    let mut table = table_with_discards(1, vec![1, 4, 9]);
+    table.wall_count = 16;
+    table.seats.insert(
+        2,
+        AiSeatView {
+            position: 2,
+            hand_count: 10,
+            discards: vec![1, 4, 9],
+            melds: Vec::new(),
+        },
+    );
+
+    let mut short_closed_table = table.clone();
+    short_closed_table.seats.insert(
+        3,
+        AiSeatView {
+            position: 3,
+            hand_count: 9,
+            discards: Vec::new(),
+            melds: Vec::new(),
+        },
+    );
+
+    let mut closed_threat_table = short_closed_table.clone();
+    closed_threat_table.seats.get_mut(&3).unwrap().hand_count = 10;
+
+    assert!(opponent_missing_suit_safety_bias(&short_closed_table, 0, 5) > 0.0);
+    assert_eq!(
+        opponent_missing_suit_safety_bias(&closed_threat_table, 0, 5),
+        0.0
+    );
+}
+
+#[test]
 fn late_defense_concealed_gang_opponent_blocks_other_missing_suit_reads() {
     let mut table = table_with_discards(1, vec![1, 4, 9]);
     table.wall_count = 16;
