@@ -7,13 +7,13 @@ use crate::game::{
     perform_self_gang, resolve_claim_window,
 };
 use crate::game_state::{ClaimResponse, ClaimWindowKind, ShenyangMahjongLoopState};
-use crate::rules::win_rule_from_configs;
+use crate::rules::{is_complete_win_with_melds_and_open_rule, win_rule_from_configs};
 
 use super::decision::{
     AiClaimChoice, choose_claim_from_view, choose_discard_from_view, choose_self_gang_from_view,
     should_pass_self_draw_hu_from_view,
 };
-use super::observation::build_public_table_with_configs;
+use super::observation::{AiClaimView, AiPublicTable, build_public_table_with_configs};
 
 fn choose_self_gang_tile(
     state: &ShenyangMahjongLoopState,
@@ -124,6 +124,7 @@ pub fn maybe_resolve_ai_claims(
     let Some(claim) = table.claim_window.as_ref() else {
         return false;
     };
+    let win_rule = win_rule_from_configs(configs);
 
     let mut changed = false;
     for position in claim_window.eligible_positions {
@@ -135,14 +136,13 @@ pub fn maybe_resolve_ai_claims(
         let Some(hand) = self_hand(state, position) else {
             continue;
         };
-        let choice = choose_claim_from_view(
-            &hand,
-            claim,
-            &table,
-            position,
-            win_rule_from_configs(configs),
-        )
-        .unwrap_or(AiClaimChoice::Pass);
+        let choice =
+            if is_rob_gang && claim_hu_is_complete(&hand, claim, &table, position, win_rule) {
+                AiClaimChoice::Hu
+            } else {
+                choose_claim_from_view(&hand, claim, &table, position, win_rule)
+                    .unwrap_or(AiClaimChoice::Pass)
+            };
         let response = match choice {
             AiClaimChoice::Hu => ClaimResponse::Hu,
             AiClaimChoice::Gang if !is_rob_gang => ClaimResponse::Gang,
@@ -183,6 +183,24 @@ fn self_hand(state: &ShenyangMahjongLoopState, position: usize) -> Option<Vec<i3
     state.hands.get(&position).cloned()
 }
 
+fn claim_hu_is_complete(
+    hand: &[i32],
+    claim: &AiClaimView,
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+) -> bool {
+    let mut win_hand = hand.to_vec();
+    win_hand.push(claim.tile);
+    win_hand.sort_unstable();
+    let melds = table
+        .seats
+        .get(&position)
+        .map(|seat| seat.melds.as_slice())
+        .unwrap_or(&[]);
+    is_complete_win_with_melds_and_open_rule(&win_hand, melds, win_rule, table.chi_opens_door)
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, Mutex};
@@ -197,7 +215,8 @@ mod tests {
     use crate::game::build_settlement_event_with_configs;
     use crate::game_state::ClaimWindowState;
     use crate::rules::{
-        WIN_RULE_RELAXED, is_complete_win_with_melds_and_open_rule, win_rule_from_configs,
+        WIN_RULE_RELAXED, WIN_RULE_SHENYANG_BASIC, is_complete_win_with_melds_and_open_rule,
+        win_rule_from_configs,
     };
 
     #[test]
@@ -477,6 +496,57 @@ mod tests {
                 .map(|settlement| settlement.winner_positions.clone()),
             Some(vec![0]),
         );
+    }
+
+    #[test]
+    fn away_position_takes_rob_gang_hu_in_capped_room() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_away(0);
+        state.current_position = 1;
+        state.dealer_position = 1;
+        state
+            .hands
+            .insert(0, vec![14, 15, 17, 18, 19, 21, 22, 23, 35, 35]);
+        state.melds.insert(0, vec![test_peng_meld(1)]);
+        state.hands.insert(1, vec![16]);
+        state.melds.insert(1, vec![test_peng_meld(16)]);
+        state.claim_window = Some(ClaimWindowState {
+            tile: 16,
+            from_position: 1,
+            kind: ClaimWindowKind::RobGang,
+            eligible_positions: vec![0],
+            responses: HashMap::new(),
+        });
+        let configs = HashMap::from([
+            ("win_rule".to_owned(), WIN_RULE_SHENYANG_BASIC),
+            ("max_fan".to_owned(), 2),
+        ]);
+        let table = build_public_table_with_configs(&state, &configs);
+        let claim = table.claim_window.as_ref().expect("claim window");
+        let mut dispatch = Dispatch::default();
+
+        assert!(claim_hu_is_complete(
+            state.hands.get(&0).unwrap(),
+            claim,
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+        ));
+        assert!(maybe_resolve_ai_claims(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &configs,
+            &mut dispatch,
+        ));
+
+        let settlement = state.settlement.as_ref().expect("settlement");
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert_eq!(settlement.winner_positions, vec![0]);
+        assert!(settlement.is_reverse_win);
+        let event = build_settlement_event_with_configs(&state, &configs)
+            .expect("settlement event should be buildable");
+        assert!(event.winner_details[0].is_reverse_win);
     }
 
     #[test]
