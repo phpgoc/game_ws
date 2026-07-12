@@ -85,6 +85,30 @@ pub(in crate::ai::decision) fn known_unavailable_tiles_with_simulated_discards(
     tiles
 }
 
+pub(in crate::ai::decision) fn known_unavailable_tiles_for_claimed_win(
+    table: &AiPublicTable,
+    position: usize,
+    win_tile: i32,
+) -> Vec<i32> {
+    let current_melds = table
+        .seats
+        .get(&position)
+        .map(|seat| seat.melds.as_slice())
+        .unwrap_or(&[]);
+    let mut tiles =
+        known_unavailable_tiles_with_simulated_discards(table, position, current_melds, &[]);
+    if table
+        .claim_window
+        .as_ref()
+        .is_some_and(|claim| claim.tile == win_tile)
+        && claim_tile_already_visible(table, win_tile)
+        && let Some(index) = tiles.iter().position(|tile| *tile == win_tile)
+    {
+        tiles.remove(index);
+    }
+    tiles
+}
+
 pub(in crate::ai::decision) fn open_meld_tile_count(table: &AiPublicTable, tile: i32) -> usize {
     if !is_valid_tile(tile) {
         return 0;

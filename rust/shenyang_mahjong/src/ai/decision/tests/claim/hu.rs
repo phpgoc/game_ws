@@ -42,6 +42,56 @@ fn claim_hu_accepts_seven_pairs() {
 }
 
 #[test]
+fn claimed_fourth_copy_keeps_seven_pairs_single_wait_fan() {
+    let mut table = table_with_discards(1, vec![1]);
+    table.claim_window = Some(AiClaimView {
+        tile: 1,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let hand = vec![1, 1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22];
+    let mut win_hand = hand.clone();
+    win_hand.push(1);
+    sort_tiles(&mut win_hand);
+    let public_unavailable = known_unavailable_tiles_with_simulated_discards(&table, 0, &[], &[]);
+    let claimed_unavailable = known_unavailable_tiles_for_claimed_win(&table, 0, 1);
+
+    assert_eq!(
+        public_unavailable.iter().filter(|tile| **tile == 1).count(),
+        1
+    );
+    assert_eq!(
+        claimed_unavailable
+            .iter()
+            .filter(|tile| **tile == 1)
+            .count(),
+        0
+    );
+    assert_eq!(
+        estimated_fan_with_known_unavailable_wait_and_open_rule(
+            &win_hand,
+            &[],
+            1,
+            WIN_RULE_SHENYANG_BASIC,
+            table.chi_opens_door,
+            &public_unavailable,
+        ),
+        5
+    );
+    assert_eq!(
+        estimated_fan_with_known_unavailable_wait_and_open_rule(
+            &win_hand,
+            &[],
+            1,
+            WIN_RULE_SHENYANG_BASIC,
+            table.chi_opens_door,
+            &claimed_unavailable,
+        ),
+        6
+    );
+}
+
+#[test]
 fn claim_hu_beats_other_claims() {
     let mut table = table_with_discards(1, Vec::new());
     table.claim_window = Some(AiClaimView {

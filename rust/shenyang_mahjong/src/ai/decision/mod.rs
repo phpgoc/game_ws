@@ -72,7 +72,7 @@ use table::remaining_tile_count_with_melds;
 #[cfg(test)]
 use table::visible_tile_count;
 use table::{
-    claim_tile_already_visible, exposed_meld_tile_count,
+    claim_tile_already_visible, exposed_meld_tile_count, known_unavailable_tiles_for_claimed_win,
     known_unavailable_tiles_with_simulated_discards, live_terminal_or_honor_count,
     live_terminal_or_honor_count_after_discard, live_tile_count_for_suit,
     live_tile_count_for_suit_after_discard, next_position_after, open_meld_tile_count,

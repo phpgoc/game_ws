@@ -126,8 +126,7 @@ pub(in crate::ai::decision) fn should_pass_hu_for_capped_live_wait(
         return false;
     }
 
-    let current_known_unavailable =
-        known_unavailable_tiles_with_simulated_discards(table, position, melds, &[]);
+    let current_known_unavailable = known_unavailable_tiles_for_claimed_win(table, position, tile);
     let current_fan = estimated_fan_with_known_unavailable_wait_and_open_rule(
         win_hand,
         melds,
