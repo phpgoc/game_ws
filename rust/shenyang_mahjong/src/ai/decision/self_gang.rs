@@ -100,7 +100,7 @@ pub(super) fn self_gang_score(
     if !is_added_gang
         && !is_ready
         && win_rule == WIN_RULE_SHENYANG_BASIC
-        && (!is_dragon(tile) || !has_open_meld(melds))
+        && (!is_dragon(tile) || !has_door_opening_meld(melds, table))
     {
         return f64::NEG_INFINITY;
     }

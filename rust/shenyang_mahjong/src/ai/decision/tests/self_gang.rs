@@ -34,6 +34,22 @@ fn self_gang_allows_dragon_gang_after_opening_basic_hand() {
 }
 
 #[test]
+fn self_gang_does_not_treat_chi_as_opening_when_configured_off() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.chi_opens_door = false;
+    table.seats.get_mut(&0).unwrap().melds = vec![test_chi_meld(1)];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![11, 12, 13, 21, 22, 23, 31, 35, 35, 35, 35];
+
+    assert!(has_open_meld(melds));
+    assert!(!has_door_opening_meld(melds, &table));
+    assert_eq!(
+        choose_self_gang_from_view(&hand, &[35], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        None
+    );
+}
+
+#[test]
 fn self_gang_delays_open_piao_dragon_gang_until_ready() {
     let mut table = table_with_discards(1, Vec::new());
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
