@@ -69,6 +69,21 @@ fn basic_heng_heuristic_uses_complete_decomposition_for_fake_triplet() {
 }
 
 #[test]
+fn basic_heng_complete_decomposition_ignores_malformed_meld_count() {
+    let malformed_meld = WsShenyangMahjongMeld {
+        kind: ShenyangMahjongMeldKind::CHI,
+        tiles: vec![11, 11, 11],
+        from_position: Some(1),
+    };
+    let hand = vec![1, 2, 2, 3, 3, 3, 4, 4, 5, 26, 26];
+
+    assert!(!is_valid_meld(&malformed_meld));
+    assert!(has_triplet_or_dragon_pair(&hand, &[]));
+    assert!(has_triplet_or_dragon_pair(&hand, &[malformed_meld]));
+    assert!(!has_triplet_or_dragon_pair(&hand, &[test_chi_meld(11)]));
+}
+
+#[test]
 fn broken_closed_defense_opens_mid_severely_broken_hand() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 52;

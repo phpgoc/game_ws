@@ -41,7 +41,7 @@ pub(in crate::ai::decision) fn has_triplet_or_dragon_pair_with_extra(
         .chain(extra)
         .filter(|tile| is_valid_tile(*tile))
         .collect::<Vec<_>>();
-    if is_complete_win(&tiles, melds.len()) {
+    if is_complete_win(&tiles, valid_meld_count(melds)) {
         return melds.iter().any(is_triplet_like_meld)
             || has_triplet_in_standard_decomposition(&tiles)
             || has_dragon_pair_as_standard_pair(&tiles);
