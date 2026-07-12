@@ -16,6 +16,50 @@ fn basic_three_suits_filter_allows_locked_seven_pairs_route() {
 }
 
 #[test]
+fn four_pair_missing_suit_bias_ignores_malformed_meld() {
+    let table = table_with_discards(1, Vec::new());
+    let hand_after_discard = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 13, 14, 15, 31];
+    let malformed_meld = WsShenyangMahjongMeld {
+        kind: ShenyangMahjongMeldKind::PENG,
+        tiles: vec![31, 31],
+        from_position: Some(1),
+    };
+    let base_bias = three_suits_discard_bias(
+        &hand_after_discard,
+        &[],
+        &table,
+        0,
+        15,
+        WIN_RULE_SHENYANG_BASIC,
+    );
+
+    assert_eq!(pair_count(&hand_after_discard), 4);
+    assert_eq!(missing_suits(&hand_after_discard, &[]), vec![2]);
+    assert_eq!(base_bias, 0.0);
+    assert_eq!(
+        three_suits_discard_bias(
+            &hand_after_discard,
+            &[malformed_meld],
+            &table,
+            0,
+            15,
+            WIN_RULE_SHENYANG_BASIC,
+        ),
+        base_bias
+    );
+    assert!(
+        three_suits_discard_bias(
+            &hand_after_discard,
+            &[test_peng_meld(31)],
+            &table,
+            0,
+            15,
+            WIN_RULE_SHENYANG_BASIC,
+        ) < 0.0
+    );
+}
+
+#[test]
 fn broken_closed_defense_preserves_seven_pairs_route() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 40;

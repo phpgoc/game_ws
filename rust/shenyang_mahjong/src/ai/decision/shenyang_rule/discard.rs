@@ -56,7 +56,7 @@ pub(in crate::ai::decision) fn three_suits_discard_bias(
     let before = suit_presence_with_extra(hand_after_discard, melds, Some(tile));
     let after = suit_presence(hand_after_discard, melds);
     let was_missing_suit = before.iter().any(|present| !*present);
-    if melds.is_empty() && pair_count(hand_after_discard) >= 4 && was_missing_suit {
+    if valid_meld_count(melds) == 0 && pair_count(hand_after_discard) >= 4 && was_missing_suit {
         return 0.0;
     }
     let capped_three_suit_hand =
