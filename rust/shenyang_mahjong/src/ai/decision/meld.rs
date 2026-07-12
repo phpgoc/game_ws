@@ -61,6 +61,10 @@ pub(super) fn is_valid_meld(meld: &WsShenyangMahjongMeld) -> bool {
     is_triplet_like_meld(meld) || is_sequence_meld(meld)
 }
 
+pub(super) fn valid_meld_count(melds: &[WsShenyangMahjongMeld]) -> usize {
+    melds.iter().filter(|meld| is_valid_meld(meld)).count()
+}
+
 pub(super) fn meld_primary_tile(meld: &WsShenyangMahjongMeld) -> Option<i32> {
     let expected_len = match meld.kind {
         ShenyangMahjongMeldKind::PENG => 3,

@@ -14,7 +14,7 @@ pub(in crate::ai::decision) fn estimate_pressure_for_tile(
         if seat.discards.contains(&tile) {
             pressure += 2.0;
         }
-        if seat.melds.len() >= 2 {
+        if valid_meld_count(&seat.melds) >= 2 {
             pressure -= 0.7;
         }
         if tile >= 31 && seat.hand_count >= 10 {

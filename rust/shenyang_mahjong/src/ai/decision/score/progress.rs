@@ -53,7 +53,7 @@ pub(in crate::ai::decision) fn hand_progress_score(
     win_rule: i32,
 ) -> f64 {
     hand_power(hand)
-        + melds.len() as f64 * 10.0
+        + valid_meld_count(melds) as f64 * 10.0
         + ready_tile_score(hand, melds, table, position, win_rule)
         + one_step_wait_potential(hand, melds, table, position, win_rule)
         + seven_pairs_plan_score(hand, melds, table, position, win_rule)
@@ -70,7 +70,7 @@ pub(in crate::ai::decision) fn hand_progress_score_after_discard(
     discarded_tile: i32,
 ) -> f64 {
     hand_power(hand_after_discard)
-        + melds.len() as f64 * 10.0
+        + valid_meld_count(melds) as f64 * 10.0
         + ready_tile_score_after_discard(
             hand_after_discard,
             melds,

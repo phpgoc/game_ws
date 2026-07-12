@@ -35,6 +35,69 @@ fn hand_power_ignores_invalid_tiles() {
 }
 
 #[test]
+fn hand_progress_ignores_invalid_melds_but_counts_valid_melds() {
+    let table = table_with_discards(1, Vec::new());
+    let invalid_melds = vec![
+        WsShenyangMahjongMeld {
+            kind: ShenyangMahjongMeldKind::CHI,
+            tiles: vec![1, 1, 1],
+            from_position: Some(1),
+        },
+        WsShenyangMahjongMeld {
+            kind: ShenyangMahjongMeldKind::PENG,
+            tiles: vec![11, 11],
+            from_position: Some(1),
+        },
+    ];
+    let valid_melds = vec![test_chi_meld(1), test_peng_meld(11)];
+    let base = hand_progress_score(&[], &[], &table, 0, WIN_RULE_RELAXED);
+
+    assert_eq!(
+        hand_progress_score(&[], &invalid_melds, &table, 0, WIN_RULE_RELAXED),
+        base
+    );
+    assert_eq!(
+        hand_progress_score(&[], &valid_melds, &table, 0, WIN_RULE_RELAXED),
+        base + 20.0
+    );
+
+    let base_after_discard =
+        hand_progress_score_after_discard(&[], &[], &table, 0, WIN_RULE_RELAXED, 5);
+    assert_eq!(
+        hand_progress_score_after_discard(&[], &invalid_melds, &table, 0, WIN_RULE_RELAXED, 5,),
+        base_after_discard
+    );
+    assert_eq!(
+        hand_progress_score_after_discard(&[], &valid_melds, &table, 0, WIN_RULE_RELAXED, 5,),
+        base_after_discard + 20.0
+    );
+}
+
+#[test]
+fn tile_pressure_ignores_invalid_melds_but_counts_valid_melds() {
+    let mut table = table_with_discards(1, Vec::new());
+    let base = estimate_pressure_for_tile(&table, 0, 5);
+    table.seats.get_mut(&1).unwrap().melds = vec![
+        WsShenyangMahjongMeld {
+            kind: ShenyangMahjongMeldKind::CHI,
+            tiles: vec![1, 1, 1],
+            from_position: Some(0),
+        },
+        WsShenyangMahjongMeld {
+            kind: ShenyangMahjongMeldKind::PENG,
+            tiles: vec![11, 11],
+            from_position: Some(0),
+        },
+    ];
+
+    assert_eq!(estimate_pressure_for_tile(&table, 0, 5), base);
+
+    table.seats.get_mut(&1).unwrap().melds = vec![test_chi_meld(1), test_peng_meld(11)];
+
+    assert!((estimate_pressure_for_tile(&table, 0, 5) - (base - 0.7)).abs() < 0.0001);
+}
+
+#[test]
 fn late_broken_basic_discard_follows_public_tile_for_weak_recoverable_hand() {
     let mut table = table_with_discards(1, vec![31]);
     table.wall_count = 40;
