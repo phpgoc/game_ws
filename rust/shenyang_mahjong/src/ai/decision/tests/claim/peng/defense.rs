@@ -36,6 +36,43 @@ fn claim_peng_opens_broken_closed_hand_for_defense_in_relaxed_rule() {
 }
 
 #[test]
+fn claim_peng_passes_open_relaxed_pure_defense_hand_to_avoid_more_exposure() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 40;
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(31)];
+    table.claim_window = Some(AiClaimView {
+        tile: 2,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![2, 2, 5, 8, 12, 14, 17, 21, 24, 27];
+
+    assert_eq!(
+        ready_tile_score(&hand, melds, &table, 0, WIN_RULE_RELAXED),
+        0.0
+    );
+    assert_eq!(
+        one_step_wait_potential(&hand, melds, &table, 0, WIN_RULE_RELAXED),
+        0.0
+    );
+    assert!(hand_power(&hand) < 18.0);
+    assert!(should_pass_peng_for_relaxed_pure_defense(
+        &hand,
+        melds,
+        &table,
+        0,
+        WIN_RULE_RELAXED,
+        2
+    ));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+        Some(AiClaimChoice::Pass)
+    );
+}
+
+#[test]
 fn claim_peng_opens_broken_closed_hand_late_for_defense() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 40;

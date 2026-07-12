@@ -10,13 +10,12 @@ pub(in crate::ai::decision) fn should_pass_peng_for_relaxed_pure_defense(
 ) -> bool {
     if win_rule == WIN_RULE_SHENYANG_BASIC
         || is_dragon(tile)
-        || has_open_meld(melds)
+        || !has_open_meld(melds)
         || table.dealer_position == position
         || !is_late_round(table)
         || should_preserve_seven_pairs_plan_for_context(hand, melds, table, position, win_rule)
         || pure_one_suit_plan_score_for_context(hand, melds, table, position) > 0.0
         || piao_plan_score_for_context(hand, melds, table, position) >= 22.0
-        || should_open_broken_closed_hand_for_defense(hand, melds, table, position, win_rule)
     {
         return false;
     }
