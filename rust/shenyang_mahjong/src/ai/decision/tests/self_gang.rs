@@ -52,6 +52,66 @@ fn self_gang_delays_open_piao_dragon_gang_until_ready() {
 }
 
 #[test]
+fn self_gang_passes_committed_piao_plan_when_gang_only_reaches_basic_ready() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![11, 11, 11, 21, 21, 21, 21, 22, 23, 24, 31];
+    let mut after_gang = remove_n_tiles(&hand, 21, 4);
+    sort_tiles(&mut after_gang);
+    let mut after_melds = melds.to_vec();
+    after_melds.push(test_concealed_gang_meld(21));
+
+    assert!(piao_plan_score_for_context(&hand, melds, &table, 0) >= 22.0);
+    assert!(best_ready_score_after_discard(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0);
+    assert!(
+        ready_tile_score(
+            &after_gang,
+            &after_melds,
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC
+        ) > 0.0
+    );
+    assert!(!ready_has_piao_win(
+        &after_gang,
+        &after_melds,
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert_eq!(
+        choose_self_gang_from_view(&hand, &[21], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        None
+    );
+}
+
+#[test]
+fn self_gang_allows_committed_piao_plan_when_gang_reaches_piao_ready() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![11, 11, 11, 21, 21, 21, 21, 31, 31, 35, 35];
+    let mut after_gang = remove_n_tiles(&hand, 21, 4);
+    sort_tiles(&mut after_gang);
+    let mut after_melds = melds.to_vec();
+    after_melds.push(test_concealed_gang_meld(21));
+
+    assert!(piao_plan_score_for_context(&hand, melds, &table, 0) >= 22.0);
+    assert!(ready_has_piao_win(
+        &after_gang,
+        &after_melds,
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert_eq!(
+        choose_self_gang_from_view(&hand, &[21], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(21)
+    );
+}
+
+#[test]
 fn self_gang_allows_added_dragon_after_opening_before_ready() {
     let mut table = table_with_discards(1, Vec::new());
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(35)];

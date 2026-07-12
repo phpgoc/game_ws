@@ -71,6 +71,95 @@ fn claim_gang_delays_open_piao_plain_gang_until_ready_and_pengs() {
 }
 
 #[test]
+fn claim_gang_penges_committed_piao_plan_when_gang_only_reaches_basic_ready() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
+    table.claim_window = Some(AiClaimView {
+        tile: 21,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![11, 11, 11, 21, 21, 21, 22, 23, 24, 31];
+    let mut after_claim = remove_n_tiles(&hand, 21, 3);
+    sort_tiles(&mut after_claim);
+    let mut after_melds = melds.to_vec();
+    after_melds.push(claim_gang_meld(21, 1));
+
+    assert!(piao_plan_score_for_context(&hand, melds, &table, 0) >= 22.0);
+    assert!(
+        ready_tile_score(
+            &after_claim,
+            &after_melds,
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC
+        ) > 0.0
+    );
+    assert!(!ready_has_piao_win(
+        &after_claim,
+        &after_melds,
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert!(!should_claim_gang_from_discard(
+        &hand,
+        melds,
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+        21,
+        1
+    ));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Peng)
+    );
+}
+
+#[test]
+fn claim_gang_takes_committed_piao_plan_when_gang_reaches_piao_ready() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
+    table.claim_window = Some(AiClaimView {
+        tile: 21,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![11, 11, 11, 21, 21, 21, 31, 31, 35, 35];
+    let mut after_claim = remove_n_tiles(&hand, 21, 3);
+    sort_tiles(&mut after_claim);
+    let mut after_melds = melds.to_vec();
+    after_melds.push(claim_gang_meld(21, 1));
+
+    assert!(piao_plan_score_for_context(&hand, melds, &table, 0) >= 22.0);
+    assert!(ready_has_piao_win(
+        &after_claim,
+        &after_melds,
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert!(should_claim_gang_from_discard(
+        &hand,
+        melds,
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+        21,
+        1
+    ));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Gang)
+    );
+}
+
+#[test]
 fn claim_gang_delays_open_plain_gang_when_not_ready() {
     let mut table = table_with_discards(1, Vec::new());
     table.seats.get_mut(&0).unwrap().melds = vec![test_chi_meld(1)];

@@ -125,6 +125,14 @@ pub(super) fn self_gang_score(
     if pure_one_suit_score > 0.0 && !keeps_pure_one_suit_ready {
         return f64::NEG_INFINITY;
     }
+    let committed_piao_plan = piao_score >= 22.0
+        && piao_threat_level(melds) > 0
+        && piao_committed_group_count(hand, melds) >= 3;
+    let keeps_piao_ready =
+        committed_piao_plan && ready_has_piao_win(&next, &next_melds, table, position, win_rule);
+    if committed_piao_plan && !keeps_piao_ready {
+        return f64::NEG_INFINITY;
+    }
     if is_ready && after_ready_score <= 0.0 {
         return f64::NEG_INFINITY;
     }
