@@ -7,7 +7,7 @@ pub(in crate::ai::decision) fn should_chase_basic_missing_suit_four_pairs(
 ) -> bool {
     win_rule == WIN_RULE_SHENYANG_BASIC
         && pair_count(hand) == 4
-        && melds.is_empty()
+        && valid_meld_count(melds) == 0
         && !missing_suits(hand, melds).is_empty()
 }
 
@@ -19,7 +19,7 @@ pub(in crate::ai::decision) fn should_chase_basic_missing_suit_pairs(
 ) -> bool {
     win_rule == WIN_RULE_SHENYANG_BASIC
         && pairs >= 4
-        && melds.is_empty()
+        && valid_meld_count(melds) == 0
         && !missing_suits(hand, melds).is_empty()
 }
 
@@ -30,7 +30,7 @@ pub(in crate::ai::decision) fn should_lock_seven_pairs_plan(
     position: usize,
     win_rule: i32,
 ) -> bool {
-    if !melds.is_empty() || !(hand.len() == 13 || hand.len() == 14) {
+    if valid_meld_count(melds) > 0 || !(hand.len() == 13 || hand.len() == 14) {
         return false;
     }
     if is_seven_pairs_wait_shape(hand) {
@@ -66,7 +66,7 @@ pub(in crate::ai::decision) fn seven_pairs_plan_score(
     position: usize,
     win_rule: i32,
 ) -> f64 {
-    if !melds.is_empty() || !(hand.len() == 13 || hand.len() == 14) {
+    if valid_meld_count(melds) > 0 || !(hand.len() == 13 || hand.len() == 14) {
         return 0.0;
     }
     let pairs = pair_count(hand);

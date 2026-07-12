@@ -57,7 +57,7 @@ pub(in crate::ai::decision) fn should_keep_pairs_for_seven_pairs_discard(
     position: usize,
     win_rule: i32,
 ) -> bool {
-    if !melds.is_empty() || hand.len() != 14 {
+    if valid_meld_count(melds) > 0 || hand.len() != 14 {
         return false;
     }
     should_lock_seven_pairs_plan(hand, melds, table, position, win_rule)

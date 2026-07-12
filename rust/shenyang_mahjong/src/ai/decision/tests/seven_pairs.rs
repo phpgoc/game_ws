@@ -50,6 +50,104 @@ fn seven_pairs_plan_ignores_invalid_pairs() {
 }
 
 #[test]
+fn seven_pairs_plan_ignores_malformed_melds_but_rejects_valid_melds() {
+    let table = table_with_discards(1, Vec::new());
+    let hand = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 12, 31, 35, 36];
+    let discard_hand = [hand.as_slice(), &[37]].concat();
+    let malformed_meld = WsShenyangMahjongMeld {
+        kind: ShenyangMahjongMeldKind::PENG,
+        tiles: vec![21, 21],
+        from_position: Some(1),
+    };
+    let valid_meld = test_peng_meld(21);
+    let base_score = seven_pairs_plan_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC);
+    let base_bias =
+        seven_pairs_plan_discard_bias(&discard_hand, 1, &[], &table, 0, WIN_RULE_SHENYANG_BASIC);
+
+    assert_eq!(valid_meld_count(&[malformed_meld.clone()]), 0);
+    assert_eq!(valid_meld_count(&[valid_meld.clone()]), 1);
+    assert!(should_lock_seven_pairs_plan(
+        &hand,
+        &[malformed_meld.clone()],
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+    ));
+    assert_eq!(
+        seven_pairs_plan_score(
+            &hand,
+            &[malformed_meld.clone()],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+        ),
+        base_score
+    );
+    assert_eq!(
+        seven_pairs_plan_discard_bias(
+            &discard_hand,
+            1,
+            &[malformed_meld],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+        ),
+        base_bias
+    );
+
+    assert!(!should_lock_seven_pairs_plan(
+        &hand,
+        &[valid_meld.clone()],
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+    ));
+    assert_eq!(
+        seven_pairs_plan_score(
+            &hand,
+            &[valid_meld.clone()],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+        ),
+        0.0
+    );
+    assert_eq!(
+        seven_pairs_plan_discard_bias(
+            &discard_hand,
+            1,
+            &[valid_meld],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+        ),
+        0.0
+    );
+
+    let wait_hand = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 12, 13, 13, 31, 5];
+    let base_wait_bias = seven_pairs_wait_discard_bias(&wait_hand, 5, &[], &table, 0);
+    assert!(base_wait_bias > 0.0);
+    assert_eq!(
+        seven_pairs_wait_discard_bias(
+            &wait_hand,
+            5,
+            &[WsShenyangMahjongMeld {
+                kind: ShenyangMahjongMeldKind::PENG,
+                tiles: vec![21, 21],
+                from_position: Some(1),
+            }],
+            &table,
+            0,
+        ),
+        base_wait_bias
+    );
+    assert_eq!(
+        seven_pairs_wait_discard_bias(&wait_hand, 5, &[test_peng_meld(21)], &table, 0),
+        0.0
+    );
+}
+
+#[test]
 fn seven_pairs_wait_shape_ignores_invalid_singleton() {
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 99];
 

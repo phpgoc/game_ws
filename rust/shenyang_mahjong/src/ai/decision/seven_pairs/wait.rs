@@ -61,7 +61,7 @@ pub(in crate::ai::decision) fn seven_pairs_wait_discard_bias(
     table: &AiPublicTable,
     position: usize,
 ) -> f64 {
-    if !melds.is_empty() || hand.len() != 14 || pair_count(hand) != 6 {
+    if valid_meld_count(melds) > 0 || hand.len() != 14 || pair_count(hand) != 6 {
         return 0.0;
     }
     if hand.iter().filter(|item| **item == tile).count() % 2 != 1 {
