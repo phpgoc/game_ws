@@ -61,14 +61,8 @@ pub(super) fn choose_peng_claim(
     ) {
         return Some(AiClaimChoice::Pass);
     }
-    if should_pass_peng_for_relaxed_pure_defense(
-        hand,
-        current_melds,
-        table,
-        position,
-        win_rule,
-        tile,
-    ) {
+    if should_pass_peng_for_open_pure_defense(hand, current_melds, table, position, win_rule, tile)
+    {
         return Some(AiClaimChoice::Pass);
     }
     if current_ready_score > 0.0 {

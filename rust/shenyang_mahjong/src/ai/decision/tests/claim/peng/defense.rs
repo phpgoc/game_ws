@@ -58,7 +58,7 @@ fn claim_peng_passes_open_relaxed_pure_defense_hand_to_avoid_more_exposure() {
         0.0
     );
     assert!(hand_power(&hand) < 18.0);
-    assert!(should_pass_peng_for_relaxed_pure_defense(
+    assert!(should_pass_peng_for_open_pure_defense(
         &hand,
         melds,
         &table,
@@ -68,6 +68,36 @@ fn claim_peng_passes_open_relaxed_pure_defense_hand_to_avoid_more_exposure() {
     ));
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+        Some(AiClaimChoice::Pass)
+    );
+}
+
+#[test]
+fn claim_peng_passes_open_basic_pure_defense_hand_to_avoid_more_exposure() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 40;
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(31)];
+    table.claim_window = Some(AiClaimView {
+        tile: 2,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![2, 2, 5, 8, 12, 14, 17, 21, 24, 27];
+
+    assert!(has_door_opening_meld(melds, &table));
+    assert_eq!(
+        ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        0.0
+    );
+    assert_eq!(
+        one_step_wait_potential(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        0.0
+    );
+    assert!(hand_power(&hand) < 18.0);
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Pass)
     );
 }

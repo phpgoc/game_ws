@@ -1,6 +1,6 @@
 use super::*;
 
-pub(in crate::ai::decision) fn should_pass_peng_for_relaxed_pure_defense(
+pub(in crate::ai::decision) fn should_pass_peng_for_open_pure_defense(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
@@ -8,8 +8,7 @@ pub(in crate::ai::decision) fn should_pass_peng_for_relaxed_pure_defense(
     win_rule: i32,
     tile: i32,
 ) -> bool {
-    if win_rule == WIN_RULE_SHENYANG_BASIC
-        || is_dragon(tile)
+    if is_dragon(tile)
         || !has_open_meld(melds)
         || table.dealer_position == position
         || !is_late_round(table)
