@@ -93,7 +93,7 @@ fn relaxed_claim_chi_does_not_fake_defensive_open_when_configured_off() {
 }
 
 #[test]
-fn claim_chi_does_not_rush_opening_closed_basic_hand_early() {
+fn claim_chi_takes_early_when_it_reaches_basic_ready() {
     let mut table = table_with_discards(3, Vec::new());
     table.claim_window = Some(AiClaimView {
         tile: 3,
@@ -103,9 +103,12 @@ fn claim_chi_does_not_rush_opening_closed_basic_hand_early() {
     let claim = table.claim_window.clone().unwrap();
     let hand = vec![1, 2, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35];
 
+    assert!(!is_mid_opening_round(&table));
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(AiClaimChoice::Pass)
+        Some(AiClaimChoice::Chi {
+            consume_tiles: vec![1, 2]
+        })
     );
 }
 
@@ -164,7 +167,7 @@ fn claim_chi_opens_mid_broken_hand_for_defense() {
 }
 
 #[test]
-fn claim_chi_passes_early_even_when_it_can_fill_missing_third_suit() {
+fn claim_chi_takes_early_when_filling_missing_third_suit_reaches_ready() {
     let mut table = table_with_discards(3, Vec::new());
     table.claim_window = Some(AiClaimView {
         tile: 22,
@@ -174,6 +177,27 @@ fn claim_chi_passes_early_even_when_it_can_fill_missing_third_suit() {
     let claim = table.claim_window.clone().unwrap();
     let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 23, 31, 35];
 
+    assert!(!is_mid_opening_round(&table));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+        Some(AiClaimChoice::Chi {
+            consume_tiles: vec![21, 23]
+        })
+    );
+}
+
+#[test]
+fn claim_chi_passes_early_when_it_does_not_make_ready() {
+    let mut table = table_with_discards(3, Vec::new());
+    table.claim_window = Some(AiClaimView {
+        tile: 3,
+        from_position: 3,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![1, 2, 5, 5, 5, 9, 9, 9, 11, 14, 17, 21, 24];
+
+    assert!(!is_mid_opening_round(&table));
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
         Some(AiClaimChoice::Pass)
