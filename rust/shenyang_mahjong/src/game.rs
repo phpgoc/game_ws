@@ -1037,11 +1037,7 @@ pub(crate) fn perform_self_gang(
     position: usize,
     target_tile: i32,
 ) -> bool {
-    if state.current_position != position
-        || state.last_drawn_tile.is_none()
-        || state.claim_window.is_some()
-        || state.wall_count() == 0
-    {
+    if !can_self_gang(state, position, target_tile) {
         return false;
     }
 
@@ -2567,10 +2563,26 @@ mod tests {
             .hands
             .insert(0, vec![3, 3, 3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31]);
         concealed_gang_state.discards.insert(1, vec![3]);
+        concealed_gang_state.wall = vec![35];
         concealed_gang_state.last_drawn_tile = Some(3);
+        let concealed_hand = concealed_gang_state.hands.get(&0).cloned().unwrap();
+        let mut concealed_dispatch = Dispatch::default();
 
         assert_eq!(known_tile_count(&concealed_gang_state, 3), 5);
         assert!(!can_self_gang(&concealed_gang_state, 0, 3));
+        assert!(!perform_self_gang(
+            &RoomService::default(),
+            "room",
+            &mut concealed_gang_state,
+            &HashMap::new(),
+            &mut concealed_dispatch,
+            0,
+            3,
+        ));
+        assert_eq!(concealed_gang_state.hands.get(&0), Some(&concealed_hand));
+        assert!(concealed_gang_state.melds.get(&0).is_none_or(Vec::is_empty));
+        assert_eq!(concealed_gang_state.wall, vec![35]);
+        assert!(concealed_dispatch.messages.is_empty());
 
         let mut added_gang_state = playable_state();
         added_gang_state
@@ -2585,10 +2597,31 @@ mod tests {
             )],
         );
         added_gang_state.discards.insert(1, vec![3]);
+        added_gang_state.wall = vec![35];
         added_gang_state.last_drawn_tile = Some(3);
+        let added_hand = added_gang_state.hands.get(&0).cloned().unwrap();
+        let added_melds = added_gang_state.melds.get(&0).cloned().unwrap();
+        let mut added_dispatch = Dispatch::default();
 
         assert_eq!(known_tile_count(&added_gang_state, 3), 5);
         assert!(!can_self_gang(&added_gang_state, 0, 3));
+        assert!(!perform_self_gang(
+            &RoomService::default(),
+            "room",
+            &mut added_gang_state,
+            &HashMap::new(),
+            &mut added_dispatch,
+            0,
+            3,
+        ));
+        assert_eq!(added_gang_state.hands.get(&0), Some(&added_hand));
+        let actual_melds = added_gang_state.melds.get(&0).expect("melds should stay");
+        assert_eq!(actual_melds.len(), added_melds.len());
+        assert_eq!(actual_melds[0].kind, added_melds[0].kind);
+        assert_eq!(actual_melds[0].tiles, added_melds[0].tiles);
+        assert_eq!(actual_melds[0].from_position, added_melds[0].from_position);
+        assert_eq!(added_gang_state.wall, vec![35]);
+        assert!(added_dispatch.messages.is_empty());
     }
 
     #[test]
@@ -5685,8 +5718,23 @@ mod tests {
             .hands
             .insert(0, vec![3, 3, 3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31]);
         state.last_drawn_tile = Some(9);
+        let original_hand = state.hands.get(&0).cloned().unwrap();
+        let mut dispatch = Dispatch::default();
 
         assert!(!can_self_gang(&state, 0, 3));
+        assert!(!perform_self_gang(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+            0,
+            3,
+        ));
+        assert_eq!(state.hands.get(&0), Some(&original_hand));
+        assert!(state.melds.get(&0).is_none_or(Vec::is_empty));
+        assert_eq!(state.wall, vec![35]);
+        assert!(dispatch.messages.is_empty());
 
         state.last_drawn_tile = Some(31);
 
