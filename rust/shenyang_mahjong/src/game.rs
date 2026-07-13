@@ -585,7 +585,8 @@ pub(crate) fn can_self_draw_hu_with_configs(
     position: usize,
     configs: &HashMap<String, i32>,
 ) -> bool {
-    if state.current_position != position
+    if state.phase != ShenyangMahjongPhase::Play
+        || state.current_position != position
         || !position_owns_last_drawn_tile(state, position)
         || state.claim_window.is_some()
         || position_has_impossible_known_tile_count(state, position)
@@ -605,7 +606,8 @@ pub(crate) fn can_self_gang(
     position: usize,
     target_tile: i32,
 ) -> bool {
-    if state.current_position != position
+    if state.phase != ShenyangMahjongPhase::Play
+        || state.current_position != position
         || !position_owns_last_drawn_tile(state, position)
         || state.claim_window.is_some()
         || state.wall_count() == 0
@@ -915,7 +917,10 @@ pub(crate) fn perform_discard(
     position: usize,
     tile: i32,
 ) -> bool {
-    if state.current_position != position || state.claim_window.is_some() {
+    if state.phase != ShenyangMahjongPhase::Play
+        || state.current_position != position
+        || state.claim_window.is_some()
+    {
         return false;
     }
     if !state.remove_tiles_from_hand(position, &[tile]) {
@@ -1240,6 +1245,9 @@ pub(crate) fn resolve_claim_window(
     configs: &HashMap<String, i32>,
     dispatch: &mut Dispatch,
 ) {
+    if state.phase != ShenyangMahjongPhase::Play {
+        return;
+    }
     let Some(claim_window) = state.claim_window.clone() else {
         return;
     };
@@ -3352,6 +3360,35 @@ mod tests {
     }
 
     #[test]
+    fn perform_discard_rejects_outside_play_phase() {
+        let mut state = playable_state();
+        state.phase = ShenyangMahjongPhase::Settlement;
+        state.discards.insert(0, Vec::new());
+        state
+            .hands
+            .insert(0, vec![3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 31, 32, 33]);
+        state.wall = vec![36];
+        let original_hand = state.hands.get(&0).cloned().unwrap();
+        let mut dispatch = Dispatch::default();
+
+        assert!(!perform_discard(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+            0,
+            3,
+        ));
+
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert_eq!(state.hands.get(&0), Some(&original_hand));
+        assert!(state.discards.get(&0).unwrap().is_empty());
+        assert_eq!(state.wall, vec![36]);
+        assert!(dispatch.messages.is_empty());
+    }
+
+    #[test]
     fn perform_discard_rejects_during_claim_window() {
         let mut state = playable_state();
         state.current_position = 0;
@@ -4713,6 +4750,44 @@ mod tests {
     }
 
     #[test]
+    fn resolve_claim_window_rejects_outside_play_phase() {
+        let mut state = playable_state();
+        state.phase = ShenyangMahjongPhase::Settlement;
+        state
+            .hands
+            .insert(1, vec![3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35]);
+        state.discards.insert(0, vec![3]);
+        state.wall = vec![36];
+        state.claim_window = Some(ClaimWindowState {
+            tile: 3,
+            from_position: 0,
+            kind: ClaimWindowKind::Discard,
+            eligible_positions: vec![1],
+            responses: HashMap::from([(1, ClaimResponse::Peng)]),
+        });
+        let original_hand = state.hands.get(&1).cloned().unwrap();
+        let mut dispatch = Dispatch::default();
+
+        resolve_claim_window(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::new(),
+            &mut dispatch,
+        );
+
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert_eq!(state.hands.get(&1), Some(&original_hand));
+        assert_eq!(state.discards.get(&0), Some(&vec![3]));
+        assert!(state.melds.get(&1).is_none_or(Vec::is_empty));
+        assert!(state.claim_window.as_ref().is_some_and(|window| {
+            matches!(window.responses.get(&1), Some(ClaimResponse::Peng))
+        }));
+        assert_eq!(state.wall, vec![36]);
+        assert!(dispatch.messages.is_empty());
+    }
+
+    #[test]
     fn resolve_claim_window_ignores_illegal_hu_response() {
         let mut state = playable_state();
         state
@@ -5377,6 +5452,35 @@ mod tests {
     }
 
     #[test]
+    fn self_draw_hu_rejects_outside_play_phase() {
+        let mut state = playable_state();
+        state.phase = ShenyangMahjongPhase::Start;
+        state
+            .hands
+            .insert(0, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+        state.last_drawn_tile = Some(35);
+        let mut dispatch = Dispatch::default();
+
+        assert!(!can_self_draw_hu_with_configs(
+            &state,
+            0,
+            &relaxed_configs()
+        ));
+        perform_self_draw_hu(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+            0,
+        );
+
+        assert_eq!(state.phase, ShenyangMahjongPhase::Start);
+        assert!(state.settlement.is_none());
+        assert!(dispatch.messages.is_empty());
+    }
+
+    #[test]
     fn perform_self_draw_hu_requires_current_position() {
         let mut state = playable_state();
         state.current_position = 1;
@@ -5779,6 +5883,36 @@ mod tests {
         state.last_drawn_tile = Some(3);
 
         assert!(!can_self_gang(&state, 0, 3));
+    }
+
+    #[test]
+    fn self_gang_rejects_outside_play_phase() {
+        let mut state = playable_state();
+        state.phase = ShenyangMahjongPhase::Settlement;
+        state
+            .hands
+            .insert(0, vec![3, 3, 3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31]);
+        state.wall = vec![35];
+        state.last_drawn_tile = Some(31);
+        let original_hand = state.hands.get(&0).cloned().unwrap();
+        let mut dispatch = Dispatch::default();
+
+        assert!(!can_self_gang(&state, 0, 3));
+        assert!(!perform_self_gang(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+            0,
+            3,
+        ));
+
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert_eq!(state.hands.get(&0), Some(&original_hand));
+        assert!(state.melds.get(&0).is_none_or(Vec::is_empty));
+        assert_eq!(state.wall, vec![35]);
+        assert!(dispatch.messages.is_empty());
     }
 
     #[test]
