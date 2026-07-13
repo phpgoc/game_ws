@@ -173,7 +173,7 @@ pub(in crate::ai::decision) fn public_discard_seat_count(
         .count()
 }
 
-pub(in crate::ai::decision) fn position_known_tile_counts_are_possible(
+pub(crate) fn position_known_tile_counts_are_possible(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
