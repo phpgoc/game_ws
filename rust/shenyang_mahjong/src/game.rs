@@ -1748,14 +1748,15 @@ fn settlement_winner_has_valid_win_tile(
     settlement: &crate::game_state::SettlementState,
     winner: usize,
 ) -> bool {
-    !settlement.is_self_draw
-        || settlement.win_tile.is_none_or(|win_tile| {
-            is_valid_tile(win_tile)
-                && state
-                    .hands
-                    .get(&winner)
-                    .is_some_and(|hand| hand.contains(&win_tile))
-        })
+    match settlement.win_tile {
+        Some(win_tile) if !is_valid_tile(win_tile) => false,
+        Some(win_tile) if settlement.is_self_draw => state
+            .hands
+            .get(&winner)
+            .is_some_and(|hand| hand.contains(&win_tile)),
+        Some(_) => true,
+        None => settlement.is_self_draw,
+    }
 }
 
 #[cfg(test)]
@@ -7078,6 +7079,36 @@ mod tests {
                 .is_empty()
         );
 
+        state.settlement.as_mut().unwrap().win_tile = Some(35);
+        let valid_settlement = state.settlement.as_ref().expect("settlement");
+
+        assert!(winner_hand_fan(&state, valid_settlement, 1) > 0);
+        assert_eq!(
+            build_settlement_event(&state)
+                .expect("settlement event")
+                .winner_positions,
+            vec![1]
+        );
+    }
+
+    #[test]
+    fn settlement_rejects_missing_discard_win_tile() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35, 35]);
+        state.enter_settlement(vec![1], Some(0), None, false);
+        let invalid_settlement = state.settlement.clone().expect("settlement");
+
+        assert_eq!(winner_hand_fan(&state, &invalid_settlement, 1), 0);
+        assert!(
+            build_settlement_event(&state)
+                .expect("settlement event")
+                .winner_positions
+                .is_empty()
+        );
+
+        state.hands.get_mut(&1).unwrap().pop();
         state.settlement.as_mut().unwrap().win_tile = Some(35);
         let valid_settlement = state.settlement.as_ref().expect("settlement");
 
