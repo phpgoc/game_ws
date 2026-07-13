@@ -15,6 +15,24 @@ pub(in crate::ai::decision) fn piao_committed_group_count(
     open_triplets + counts.values().filter(|count| **count >= 3).count()
 }
 
+fn piao_plan_has_enough_group_opportunities(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+) -> bool {
+    let missing_groups = 4usize.saturating_sub(piao_committed_group_count(hand, melds));
+    let pending_claim_opportunity = table.claim_window.as_ref().is_some_and(|claim| {
+        claim.from_position != position
+            && claim.eligible_positions.contains(&position)
+            && claim_tile_already_visible(table, claim.tile)
+    });
+    missing_groups
+        <= table
+            .wall_count
+            .saturating_add(usize::from(pending_claim_opportunity))
+}
+
 pub(in crate::ai::decision) fn piao_plan_score(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -48,6 +66,7 @@ pub(in crate::ai::decision) fn piao_plan_score_for_context(
 ) -> f64 {
     let score = piao_plan_score(hand, melds);
     if score <= 0.0
+        || !piao_plan_has_enough_group_opportunities(hand, melds, table, position)
         || piao_plan_is_capped(table)
         || !has_piao_route_basics(hand, melds)
         || capped_open_basic_route_visible_fan_reaches_cap(hand, melds, table)
@@ -123,6 +142,7 @@ pub(in crate::ai::decision) fn is_closed_early_piao_candidate(
 ) -> bool {
     valid_meld_count(melds) == 0
         && pair_count(hand) >= 3
+        && piao_plan_has_enough_group_opportunities(hand, melds, table, position)
         && table.dealer_position != position
         && !piao_plan_is_capped(table)
         && !capped_basic_route_foundation_visible_fan_exceeds_half_cap(

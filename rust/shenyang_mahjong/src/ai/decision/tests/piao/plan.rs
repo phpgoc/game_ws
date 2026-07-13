@@ -59,6 +59,80 @@ fn piao_committed_group_count_ignores_invalid_hand_triplets() {
 }
 
 #[test]
+fn open_piao_plan_stops_when_wall_cannot_complete_missing_triplets() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 1;
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1), test_peng_meld(11)];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![21, 21, 22, 22, 31, 31, 35, 36];
+
+    assert_eq!(piao_committed_group_count(&hand, melds), 2);
+    assert!(piao_plan_score(&hand, melds) > 0.0);
+    assert_eq!(piao_plan_score_for_context(&hand, melds, &table, 0), 0.0);
+    assert_eq!(
+        piao_discard_bias(&hand, 21, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        0.0
+    );
+}
+
+#[test]
+fn open_piao_plan_remains_when_wall_can_complete_missing_triplets() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 2;
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1), test_peng_meld(11)];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![21, 21, 22, 22, 31, 31, 35, 36];
+
+    assert!(piao_plan_score_for_context(&hand, melds, &table, 0) > 0.0);
+}
+
+#[test]
+fn open_piao_plan_only_counts_claim_window_with_visible_source_tile() {
+    let mut forged_table = table_with_discards(1, Vec::new());
+    forged_table.wall_count = 1;
+    forged_table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1), test_peng_meld(11)];
+    forged_table.claim_window = Some(AiClaimView {
+        tile: 21,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let hand = vec![21, 21, 22, 22, 31, 31, 35, 36];
+
+    assert_eq!(
+        piao_plan_score_for_context(
+            &hand,
+            forged_table.seats.get(&0).unwrap().melds.as_slice(),
+            &forged_table,
+            0,
+        ),
+        0.0
+    );
+
+    let mut valid_table = forged_table.clone();
+    valid_table.seats.get_mut(&1).unwrap().discards.push(21);
+    assert!(
+        piao_plan_score_for_context(
+            &hand,
+            valid_table.seats.get(&0).unwrap().melds.as_slice(),
+            &valid_table,
+            0,
+        ) > 0.0
+    );
+}
+
+#[test]
+fn closed_piao_candidate_stops_when_wall_cannot_complete_missing_triplets() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 2;
+    let hand = vec![1, 1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 31];
+
+    assert_eq!(piao_committed_group_count(&hand, &[]), 1);
+    assert!(piao_plan_score(&hand, &[]) > 0.0);
+    assert_eq!(piao_plan_score_for_context(&hand, &[], &table, 0), 0.0);
+    assert!(!is_closed_early_piao_candidate(&hand, &[], &table, 0));
+}
+
+#[test]
 fn uncapped_room_keeps_piao_plan_biases() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 13, 21, 21, 22, 31, 32];
