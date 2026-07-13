@@ -87,6 +87,45 @@ fn open_piao_plan_remains_when_wall_can_complete_missing_triplets() {
 }
 
 #[test]
+fn open_piao_plan_reserves_enough_wall_for_an_independent_pair() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 2;
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1), test_peng_meld(11)];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![21, 21, 22, 22, 31, 35, 36, 37];
+
+    assert_eq!(piao_committed_group_count(&hand, melds), 2);
+    assert!(piao_plan_score(&hand, melds) > 0.0);
+    assert_eq!(piao_plan_score_for_context(&hand, melds, &table, 0), 0.0);
+
+    table.wall_count = 3;
+    assert!(piao_plan_score_for_context(&hand, melds, &table, 0) > 0.0);
+}
+
+#[test]
+fn open_piao_plan_accounts_for_pairs_that_cannot_become_triplets() {
+    let mut table = table_with_discards(1, vec![21, 21, 22, 22]);
+    table.wall_count = 2;
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1), test_peng_meld(11)];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![21, 21, 22, 22, 31, 31, 35, 36];
+
+    assert_eq!(
+        remaining_tile_count_with_melds(&hand, melds, &table, 0, 21),
+        0
+    );
+    assert_eq!(
+        remaining_tile_count_with_melds(&hand, melds, &table, 0, 22),
+        0
+    );
+    assert!(piao_plan_score(&hand, melds) > 0.0);
+    assert_eq!(piao_plan_score_for_context(&hand, melds, &table, 0), 0.0);
+
+    table.wall_count = 3;
+    assert!(piao_plan_score_for_context(&hand, melds, &table, 0) > 0.0);
+}
+
+#[test]
 fn open_piao_plan_only_counts_claim_window_with_visible_source_tile() {
     let mut forged_table = table_with_discards(1, Vec::new());
     forged_table.wall_count = 1;
@@ -118,6 +157,31 @@ fn open_piao_plan_only_counts_claim_window_with_visible_source_tile() {
             0,
         ) > 0.0
     );
+}
+
+#[test]
+fn projected_piao_meld_does_not_reuse_claim_window_opportunity() {
+    let mut table = table_with_discards(1, vec![21]);
+    table.wall_count = 0;
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1), test_peng_meld(11)];
+    table.claim_window = Some(AiClaimView {
+        tile: 21,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let mut projected_melds = table.seats.get(&0).unwrap().melds.clone();
+    projected_melds.push(claim_peng_meld(21, 1));
+    let hand = vec![22, 22, 31, 31, 35, 36];
+
+    assert_eq!(piao_threat_level(&projected_melds), 3);
+    assert!(piao_plan_score(&hand, &projected_melds) > 0.0);
+    assert_eq!(
+        piao_plan_score_for_context(&hand, &projected_melds, &table, 0),
+        0.0
+    );
+
+    table.wall_count = 1;
+    assert!(piao_plan_score_for_context(&hand, &projected_melds, &table, 0) > 0.0);
 }
 
 #[test]
