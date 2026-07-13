@@ -424,7 +424,13 @@ pub(crate) fn build_table_snapshot_event_with_configs(
         dealer_position: state.dealer_position as i32,
         wall_count: state.wall_count() as i32,
         turn_countdown: state.turn_countdown() as i32,
-        last_drawn_tile: state.last_drawn_tile,
+        last_drawn_tile: if state.current_position == viewer_position
+            && position_owns_last_drawn_tile(state, viewer_position)
+        {
+            state.last_drawn_tile
+        } else {
+            None
+        },
         settlement: build_settlement_event_with_configs(state, configs),
         claim_window: state.claim_window.as_ref().map(|window| {
             let event = match window.kind {
@@ -8390,7 +8396,7 @@ mod tests {
     }
 
     #[test]
-    fn table_snapshot_preserves_drawn_tile_and_claim_options() {
+    fn table_snapshot_filters_drawn_tile_and_claim_options() {
         let mut state = playable_state();
         state.current_position = 0;
         state.last_drawn_tile = Some(9);
@@ -8414,6 +8420,8 @@ mod tests {
         });
         state.set_turn_countdown(4);
 
+        let drawer_snapshot =
+            build_table_snapshot_event_with_configs(&state, 0, &relaxed_configs());
         let snapshot = build_table_snapshot_event_with_configs(&state, 1, &relaxed_configs());
         let claim_window = snapshot.claim_window.expect("claim window");
         let option = claim_window
@@ -8422,7 +8430,8 @@ mod tests {
             .find(|option| option.position == 1)
             .expect("claim option");
 
-        assert_eq!(snapshot.last_drawn_tile, Some(9));
+        assert_eq!(drawer_snapshot.last_drawn_tile, Some(9));
+        assert_eq!(snapshot.last_drawn_tile, None);
         assert_eq!(claim_window.tile, 3);
         assert_eq!(claim_window.from_position, 0);
         assert_eq!(claim_window.eligible_positions, vec![1]);
