@@ -1022,6 +1022,7 @@ pub(crate) fn perform_discard(
         || state.current_position != position
         || state.claim_window.is_some()
         || !position_has_discardable_tile_count(state, position)
+        || !is_valid_tile(tile)
     {
         return false;
     }
@@ -3607,6 +3608,40 @@ mod tests {
     }
 
     #[test]
+    fn play_request_discard_rejects_invalid_owned_tile() {
+        let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
+        {
+            let mut state = loop_state.lock().unwrap();
+            state.phase = ShenyangMahjongPhase::Play;
+            state.current_position = 0;
+            for position in 0..4 {
+                state.discards.insert(position, Vec::new());
+                state.melds.insert(position, Vec::new());
+            }
+            state
+                .hands
+                .insert(0, vec![4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 31, 32, 33, 99]);
+            state.wall = vec![36];
+            state.last_drawn_tile = Some(99);
+        }
+
+        let response = handler.handle_game_request(
+            &mut room_service,
+            1,
+            play_request(ShenyangMahjongAction::DISCARD, Vec::new(), Some(99), None),
+        );
+
+        assert_eq!(
+            response_code(&response, 1, Routes::PLAY),
+            Some(WsResponseCode::NO_PERMISSION as i32)
+        );
+        let state = loop_state.lock().unwrap();
+        assert!(state.discards.get(&0).unwrap().is_empty());
+        assert!(state.hands.get(&0).unwrap().contains(&99));
+        assert_eq!(state.wall, vec![36]);
+    }
+
+    #[test]
     fn perform_discard_requires_current_position() {
         let mut state = playable_state();
         state.current_position = 1;
@@ -3652,6 +3687,35 @@ mod tests {
             &mut dispatch,
             0,
             3,
+        ));
+
+        assert_eq!(state.hands.get(&0), Some(&original_hand));
+        assert!(state.discards.get(&0).unwrap().is_empty());
+        assert_eq!(state.wall, vec![36]);
+        assert!(dispatch.messages.is_empty());
+    }
+
+    #[test]
+    fn perform_discard_rejects_invalid_owned_tile() {
+        let mut state = playable_state();
+        state.current_position = 0;
+        state.discards.insert(0, Vec::new());
+        state
+            .hands
+            .insert(0, vec![4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 31, 32, 33, 99]);
+        state.wall = vec![36];
+        state.last_drawn_tile = Some(99);
+        let original_hand = state.hands.get(&0).cloned().unwrap();
+        let mut dispatch = Dispatch::default();
+
+        assert!(!perform_discard(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+            0,
+            99,
         ));
 
         assert_eq!(state.hands.get(&0), Some(&original_hand));
