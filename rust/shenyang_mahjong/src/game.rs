@@ -1161,7 +1161,8 @@ pub(crate) fn push_draw_events(
     let name = state.player_name(position);
     let players = state.players_snapshot();
     for (member_position, (session_id, _)) in players {
-        let tiles = if member_position == position {
+        let is_drawing_player = member_position == position;
+        let tiles = if is_drawing_player {
             vec![tile]
         } else {
             Vec::new()
@@ -1175,7 +1176,7 @@ pub(crate) fn push_draw_events(
                 position: position as i32,
                 action: ShenyangMahjongAction::DRAW,
                 tiles,
-                target_tile: Some(tile),
+                target_tile: is_drawing_player.then_some(tile),
                 from_position: None,
                 wall_count: state.wall_count() as i32,
             },
@@ -2389,6 +2390,41 @@ mod tests {
 
     fn relaxed_configs() -> HashMap<String, i32> {
         HashMap::from([("win_rule".to_owned(), WIN_RULE_RELAXED)])
+    }
+
+    #[test]
+    fn draw_event_hides_tile_from_other_players() {
+        let state = playable_state();
+        let mut dispatch = Dispatch::default();
+
+        push_draw_events(
+            &RoomService::default(),
+            "room",
+            &state,
+            &mut dispatch,
+            1,
+            35,
+        );
+
+        assert_eq!(dispatch.messages.len(), 4);
+        for message in &dispatch.messages {
+            let OutboundPayload::Event(common_event) = &message.payload else {
+                panic!("draw delivery should be an event");
+            };
+            assert_eq!(common_event.code, WsCode::PLAY as i32);
+            let event: WsShenyangMahjongPlayEvent =
+                serde_json::from_value(common_event.data.clone()).expect("draw event payload");
+            assert_eq!(event.action, ShenyangMahjongAction::DRAW);
+            assert_eq!(event.position, 1);
+            assert_eq!(event.wall_count, state.wall_count() as i32);
+            if message.recipient == 2 {
+                assert_eq!(event.tiles, vec![35]);
+                assert_eq!(event.target_tile, Some(35));
+            } else {
+                assert!(event.tiles.is_empty());
+                assert_eq!(event.target_tile, None);
+            }
+        }
     }
 
     #[test]
