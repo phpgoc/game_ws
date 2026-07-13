@@ -124,7 +124,7 @@ pub(in crate::ai::decision) fn should_pass_hu_for_capped_live_wait(
     let Some(max_fan) = table.max_fan.filter(|max_fan| *max_fan > 1) else {
         return false;
     };
-    if table.dealer_position == position || is_late_defense_round(table) || hand.len() % 3 != 1 {
+    if table.dealer_position == position || hand.len() % 3 != 1 {
         return false;
     }
 

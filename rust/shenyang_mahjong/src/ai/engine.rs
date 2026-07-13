@@ -665,11 +665,11 @@ mod tests {
     }
 
     #[test]
-    fn away_position_passes_low_fan_self_draw_for_live_capped_wait() {
+    fn away_position_passes_late_low_fan_self_draw_for_live_capped_wait() {
         let mut state = playable_state();
         state.base.lock().unwrap().mark_away(0);
         state.dealer_position = 1;
-        state.wall = vec![37; 48];
+        state.wall = vec![37; 20];
         state.discards.insert(1, vec![16]);
         state
             .hands
