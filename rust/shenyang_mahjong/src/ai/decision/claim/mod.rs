@@ -140,6 +140,9 @@ pub(in crate::ai::decision) fn should_pass_hu_for_capped_live_wait(
     if current_fan != max_fan - 1 {
         return false;
     }
+    if current_fan * 2 > max_fan {
+        return false;
+    }
 
     let pass_simulated_discards = if claim_tile_already_visible(table, tile) {
         Vec::new()

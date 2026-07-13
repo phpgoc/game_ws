@@ -244,6 +244,95 @@ fn self_draw_hu_can_pass_one_fan_short_when_capped_wait_is_live() {
 }
 
 #[test]
+fn claim_hu_takes_when_current_fan_exceeds_half_cap() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.max_fan = Some(6);
+    table.seats.get_mut(&0).unwrap().melds = vec![test_concealed_gang_meld(35)];
+    table.seats.get_mut(&0).unwrap().discards = vec![16];
+    table.claim_window = Some(AiClaimView {
+        tile: 16,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![13, 14, 15, 15, 16, 16, 17, 28, 28, 28];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let mut current_win = hand.clone();
+    current_win.push(16);
+    sort_tiles(&mut current_win);
+    let mut capped_wait_win = hand.clone();
+    capped_wait_win.push(13);
+    sort_tiles(&mut capped_wait_win);
+    let pass_simulated_discards = [16];
+    let current_known_unavailable = known_unavailable_tiles_for_claimed_win(&table, 0, 16);
+    let pass_known_unavailable =
+        known_unavailable_tiles_with_simulated_discards(&table, 0, melds, &pass_simulated_discards);
+
+    assert_eq!(
+        estimated_fan_with_known_unavailable_wait_and_open_rule(
+            &current_win,
+            melds,
+            16,
+            WIN_RULE_RELAXED,
+            table.chi_opens_door,
+            &current_known_unavailable,
+        ),
+        5
+    );
+    assert_eq!(
+        remaining_tile_count_with_melds_after_discards(
+            &hand,
+            melds,
+            &table,
+            0,
+            13,
+            &pass_simulated_discards,
+        ),
+        3
+    );
+    assert_eq!(
+        estimated_fan_with_known_unavailable_wait_and_open_rule(
+            &capped_wait_win,
+            melds,
+            13,
+            WIN_RULE_RELAXED,
+            table.chi_opens_door,
+            &pass_known_unavailable,
+        ),
+        6
+    );
+    assert!(!should_pass_hu_for_capped_live_wait(
+        &hand,
+        &current_win,
+        melds,
+        &table,
+        0,
+        WIN_RULE_RELAXED,
+        16,
+    ));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+        Some(AiClaimChoice::Hu)
+    );
+}
+
+#[test]
+fn self_draw_hu_takes_when_current_fan_exceeds_half_cap() {
+    let mut table = table_with_discards(1, vec![16]);
+    table.max_fan = Some(6);
+    table.seats.get_mut(&0).unwrap().melds = vec![test_concealed_gang_meld(35)];
+    let win_hand = vec![13, 14, 15, 15, 16, 16, 16, 17, 28, 28, 28];
+
+    assert!(!should_pass_self_draw_hu_from_view(
+        &win_hand,
+        &table,
+        0,
+        WIN_RULE_RELAXED,
+        16,
+    ));
+}
+
+#[test]
 fn dealer_claim_hu_takes_one_fan_short_instead_of_chasing_cap() {
     let mut table = table_with_discards(1, vec![16]);
     table.dealer_position = 0;
