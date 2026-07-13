@@ -18,6 +18,24 @@ fn claim_gang_beats_peng_when_not_winning() {
 }
 
 #[test]
+fn claim_gang_penges_when_replacement_tile_is_unavailable() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 0;
+    table.claim_window = Some(AiClaimView {
+        tile: 35,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 35, 35, 35];
+
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+        Some(AiClaimChoice::Peng)
+    );
+}
+
+#[test]
 fn claim_gang_takes_dragon_gang_to_open_basic_hand_before_ready() {
     let mut table = table_with_discards(1, Vec::new());
     table.claim_window = Some(AiClaimView {

@@ -297,6 +297,19 @@ fn self_gang_allows_open_plain_gang_when_ready() {
 }
 
 #[test]
+fn self_gang_skips_ready_gang_when_replacement_tile_is_unavailable() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 0;
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(31)];
+    let hand = vec![1, 2, 3, 9, 9, 9, 9, 11, 12, 13, 21];
+
+    assert_eq!(
+        choose_self_gang_from_view(&hand, &[9], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        None
+    );
+}
+
+#[test]
 fn self_gang_allows_final_ready_hand_when_gang_keeps_ready() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 16;

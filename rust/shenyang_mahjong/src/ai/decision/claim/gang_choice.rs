@@ -9,7 +9,7 @@ pub(super) fn choose_gang_claim(
     tile: i32,
     from_position: usize,
 ) -> Option<AiClaimChoice> {
-    if !can_gang(hand, tile) {
+    if table.wall_count == 0 || !can_gang(hand, tile) {
         return None;
     }
     if pure_one_suit_plan_score_for_context(hand, current_melds, table, position) > 0.0

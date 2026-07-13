@@ -37,7 +37,8 @@ pub fn choose_self_gang_from_view(
         .get(&position)
         .map(|seat| seat.melds.as_slice())
         .unwrap_or(&[]);
-    if candidate_tiles.is_empty()
+    if table.wall_count == 0
+        || candidate_tiles.is_empty()
         || should_preserve_seven_pairs_for_self_gang(hand, melds, table, position, win_rule)
     {
         return None;
