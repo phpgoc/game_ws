@@ -11,9 +11,7 @@ pub(super) fn can_self_gang_candidate(
     let hand_count = hand.iter().filter(|item| **item == tile).count();
     let peng_meld_count = melds
         .iter()
-        .filter(|meld| {
-            meld.kind == ShenyangMahjongMeldKind::PENG && meld_primary_tile(meld) == Some(tile)
-        })
+        .filter(|meld| is_open_peng_meld(meld, tile))
         .count();
     (hand_count == 4 && peng_meld_count == 0) || (hand_count == 1 && peng_meld_count == 1)
 }

@@ -57,8 +57,8 @@ use hand::{
 };
 use meld::{
     claim_gang_meld, claim_peng_meld, has_concealed_gang_meld, has_open_meld, has_peng_meld,
-    is_open_meld, is_sequence_meld, is_triplet_like_meld, is_valid_meld, meld_primary_tile,
-    promoted_added_gang_melds, valid_meld_count, valid_meld_tiles,
+    is_open_meld, is_open_peng_meld, is_sequence_meld, is_triplet_like_meld, is_valid_meld,
+    meld_primary_tile, promoted_added_gang_melds, valid_meld_count, valid_meld_tiles,
 };
 use piao::*;
 use pure_one_suit::*;

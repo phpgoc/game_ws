@@ -30,9 +30,13 @@ pub(super) fn has_open_meld(melds: &[WsShenyangMahjongMeld]) -> bool {
 }
 
 pub(super) fn has_peng_meld(melds: &[WsShenyangMahjongMeld], tile: i32) -> bool {
-    melds.iter().any(|meld| {
-        meld.kind == ShenyangMahjongMeldKind::PENG && meld_primary_tile(meld) == Some(tile)
-    })
+    melds.iter().any(|meld| is_open_peng_meld(meld, tile))
+}
+
+pub(super) fn is_open_peng_meld(meld: &WsShenyangMahjongMeld, tile: i32) -> bool {
+    meld.kind == ShenyangMahjongMeldKind::PENG
+        && is_open_meld(meld)
+        && meld_primary_tile(meld) == Some(tile)
 }
 
 pub(super) fn is_open_meld(meld: &WsShenyangMahjongMeld) -> bool {
@@ -87,9 +91,10 @@ pub(super) fn promoted_added_gang_melds(
     tile: i32,
 ) -> Vec<WsShenyangMahjongMeld> {
     let mut next_melds = melds.to_vec();
-    if let Some(meld) = next_melds.iter_mut().find(|meld| {
-        meld.kind == ShenyangMahjongMeldKind::PENG && meld_primary_tile(meld) == Some(tile)
-    }) {
+    if let Some(meld) = next_melds
+        .iter_mut()
+        .find(|meld| is_open_peng_meld(meld, tile))
+    {
         meld.kind = ShenyangMahjongMeldKind::GANG;
         meld.tiles = vec![tile, tile, tile, tile];
     }
