@@ -685,7 +685,14 @@ mod tests {
         state
             .hands
             .insert(0, vec![13, 14, 15, 15, 16, 16, 16, 17, 28, 28, 28]);
-        state.melds.insert(0, vec![test_peng_meld(1)]);
+        state.melds.insert(
+            0,
+            vec![WsShenyangMahjongMeld {
+                kind: ShenyangMahjongMeldKind::GANG,
+                tiles: vec![1, 1, 1, 1],
+                from_position: Some(1),
+            }],
+        );
         state.last_drawn_tile = Some(16);
         state.pending_gang_draw = true;
         let configs = HashMap::from([("max_fan".to_owned(), 2)]);

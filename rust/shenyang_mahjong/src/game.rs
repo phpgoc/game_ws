@@ -329,8 +329,8 @@ pub(crate) fn build_settlement_event_with_configs(
         win_tile: settlement.win_tile,
         is_self_draw: settlement.is_self_draw,
         is_reverse_win: settlement_is_reverse_win(state, settlement),
-        is_gang_draw: settlement_is_gang_draw(settlement),
-        is_haidilao: settlement_is_haidilao(settlement),
+        is_gang_draw: settlement_is_gang_draw(state, settlement),
+        is_haidilao: settlement_is_haidilao(state, settlement),
         score_changes,
         winner_details,
         players: snapshots,
@@ -455,8 +455,8 @@ fn build_winner_details(
                 pattern,
                 is_self_draw: settlement.is_self_draw,
                 is_reverse_win: settlement_is_reverse_win(state, settlement),
-                is_gang_draw: settlement_is_gang_draw(settlement),
-                is_haidilao: settlement_is_haidilao(settlement),
+                is_gang_draw: settlement_winner_is_gang_draw(state, settlement, *position),
+                is_haidilao: settlement_is_haidilao(state, settlement),
                 score,
             })
         })
@@ -491,12 +491,40 @@ pub(crate) fn settlement_from_position(
     }
 }
 
-fn settlement_is_gang_draw(settlement: &crate::game_state::SettlementState) -> bool {
-    settlement.is_self_draw && settlement.is_gang_draw
+fn position_has_valid_gang_meld(state: &ShenyangMahjongLoopState, position: usize) -> bool {
+    state.melds.get(&position).is_some_and(|melds| {
+        melds.iter().any(|meld| {
+            meld.kind == ShenyangMahjongMeldKind::GANG && meld_primary_tile(meld).is_some()
+        })
+    })
 }
 
-fn settlement_is_haidilao(settlement: &crate::game_state::SettlementState) -> bool {
-    settlement.is_self_draw && settlement.is_haidilao
+fn settlement_winner_is_gang_draw(
+    state: &ShenyangMahjongLoopState,
+    settlement: &crate::game_state::SettlementState,
+    winner: usize,
+) -> bool {
+    settlement.is_self_draw
+        && settlement.is_gang_draw
+        && settlement.winner_positions.contains(&winner)
+        && position_has_valid_gang_meld(state, winner)
+}
+
+fn settlement_is_gang_draw(
+    state: &ShenyangMahjongLoopState,
+    settlement: &crate::game_state::SettlementState,
+) -> bool {
+    settlement
+        .winner_positions
+        .iter()
+        .any(|winner| settlement_winner_is_gang_draw(state, settlement, *winner))
+}
+
+fn settlement_is_haidilao(
+    state: &ShenyangMahjongLoopState,
+    settlement: &crate::game_state::SettlementState,
+) -> bool {
+    settlement.is_self_draw && settlement.is_haidilao && state.wall_count() == 0
 }
 
 fn positive_winner_positions_from_scores<'a>(
@@ -1736,10 +1764,10 @@ fn winner_hand_fan_with_rule_and_open_rule(
     if settlement_is_reverse_win(state, settlement) {
         fan += 1;
     }
-    if settlement_is_gang_draw(settlement) {
+    if settlement_winner_is_gang_draw(state, settlement, winner) {
         fan += 1;
     }
-    if settlement_is_haidilao(settlement) {
+    if settlement_is_haidilao(state, settlement) {
         fan += 1;
     }
     if is_single_wait_win_with_known_unavailable_tiles(
@@ -5774,15 +5802,50 @@ mod tests {
     }
 
     #[test]
-    fn settlement_fan_counts_gang_draw_and_haidilao() {
+    fn settlement_fan_requires_gang_meld_and_empty_wall_for_draw_bonuses() {
         let mut state = playable_state();
         state
             .hands
             .insert(1, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
         state.enter_settlement_with_reverse_win(vec![1], None, None, true, false, true, true);
-        let settlement = state.settlement.as_ref().expect("settlement");
+        let settlement = state.settlement.clone().expect("settlement");
 
-        assert_eq!(winner_hand_fan(&state, settlement, 1), 3);
+        assert_eq!(winner_hand_fan(&state, &settlement, 1), 2);
+        let no_gang_event =
+            build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
+        assert!(!no_gang_event.is_gang_draw);
+        assert!(no_gang_event.is_haidilao);
+        assert!(!no_gang_event.winner_details[0].is_gang_draw);
+        assert!(no_gang_event.winner_details[0].is_haidilao);
+
+        state
+            .hands
+            .insert(1, vec![3, 4, 5, 11, 12, 13, 21, 22, 23, 31, 31]);
+        state.melds.insert(
+            1,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::GANG,
+                vec![2, 2, 2, 2],
+                None,
+            )],
+        );
+
+        assert_eq!(winner_hand_fan(&state, &settlement, 1), 5);
+        let valid_event = build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
+        assert!(valid_event.is_gang_draw);
+        assert!(valid_event.is_haidilao);
+        assert!(valid_event.winner_details[0].is_gang_draw);
+        assert!(valid_event.winner_details[0].is_haidilao);
+
+        state.wall = vec![35];
+
+        assert_eq!(winner_hand_fan(&state, &settlement, 1), 4);
+        let nonempty_wall_event =
+            build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
+        assert!(nonempty_wall_event.is_gang_draw);
+        assert!(!nonempty_wall_event.is_haidilao);
+        assert!(nonempty_wall_event.winner_details[0].is_gang_draw);
+        assert!(!nonempty_wall_event.winner_details[0].is_haidilao);
     }
 
     #[test]
