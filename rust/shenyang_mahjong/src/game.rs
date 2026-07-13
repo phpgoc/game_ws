@@ -518,6 +518,7 @@ pub(crate) fn can_self_gang(
     if state.current_position != position
         || state.last_drawn_tile.is_none()
         || state.claim_window.is_some()
+        || has_impossible_known_tile_count(state, target_tile)
     {
         return false;
     }
@@ -2405,6 +2406,37 @@ mod tests {
         assert_eq!(melds[0].from_position, original_melds[0].from_position);
         assert_eq!(state.wall, vec![35]);
         assert!(dispatch.messages.is_empty());
+    }
+
+    #[test]
+    fn self_gang_rejects_public_fifth_copy() {
+        let mut concealed_gang_state = playable_state();
+        concealed_gang_state
+            .hands
+            .insert(0, vec![3, 3, 3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31]);
+        concealed_gang_state.discards.insert(1, vec![3]);
+        concealed_gang_state.last_drawn_tile = Some(3);
+
+        assert_eq!(known_tile_count(&concealed_gang_state, 3), 5);
+        assert!(!can_self_gang(&concealed_gang_state, 0, 3));
+
+        let mut added_gang_state = playable_state();
+        added_gang_state
+            .hands
+            .insert(0, vec![3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31]);
+        added_gang_state.melds.insert(
+            0,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::PENG,
+                vec![3, 3, 3],
+                Some(2),
+            )],
+        );
+        added_gang_state.discards.insert(1, vec![3]);
+        added_gang_state.last_drawn_tile = Some(3);
+
+        assert_eq!(known_tile_count(&added_gang_state, 3), 5);
+        assert!(!can_self_gang(&added_gang_state, 0, 3));
     }
 
     #[test]

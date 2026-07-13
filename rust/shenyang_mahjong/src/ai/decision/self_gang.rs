@@ -16,6 +16,15 @@ pub(super) fn can_self_gang_candidate(
     (hand_count == 4 && peng_meld_count == 0) || (hand_count == 1 && peng_meld_count == 1)
 }
 
+pub(in crate::ai::decision) fn self_gang_known_tile_count_is_possible(
+    hand: &[i32],
+    table: &AiPublicTable,
+    tile: i32,
+) -> bool {
+    hand.iter().filter(|item| **item == tile).count() + visible_tile_count(table, tile) as usize
+        <= 4
+}
+
 pub fn choose_self_gang_from_view(
     hand: &[i32],
     candidate_tiles: &[i32],
@@ -42,7 +51,9 @@ pub fn choose_self_gang_from_view(
     let current_score = best_score_after_forced_discard(hand, melds, table, position, win_rule);
     let mut best: Option<(f64, i32)> = None;
     for tile in candidate_tiles.iter().copied() {
-        if !can_self_gang_candidate(hand, melds, tile) {
+        if !can_self_gang_candidate(hand, melds, tile)
+            || !self_gang_known_tile_count_is_possible(hand, table, tile)
+        {
             continue;
         }
         let score = self_gang_score(tile, hand, melds, table, position, win_rule, current_score);

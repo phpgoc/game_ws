@@ -170,6 +170,43 @@ fn self_gang_rejects_concealed_peng_as_added_gang_source() {
 }
 
 #[test]
+fn self_gang_rejects_public_fifth_copy() {
+    let mut concealed_table = table_with_discards(1, vec![35]);
+    let concealed_hand = vec![2, 5, 8, 11, 14, 17, 21, 31, 32, 33, 35, 35, 35, 35];
+
+    assert_eq!(visible_tile_count(&concealed_table, 35), 1);
+    assert!(!self_gang_known_tile_count_is_possible(
+        &concealed_hand,
+        &concealed_table,
+        35,
+    ));
+    assert_eq!(
+        choose_self_gang_from_view(
+            &concealed_hand,
+            &[35],
+            &concealed_table,
+            0,
+            WIN_RULE_RELAXED,
+        ),
+        None
+    );
+
+    concealed_table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(35)];
+    let added_hand = vec![2, 5, 8, 11, 14, 17, 21, 31, 32, 33, 35];
+
+    assert_eq!(visible_tile_count(&concealed_table, 35), 4);
+    assert!(!self_gang_known_tile_count_is_possible(
+        &added_hand,
+        &concealed_table,
+        35,
+    ));
+    assert_eq!(
+        choose_self_gang_from_view(&added_hand, &[35], &concealed_table, 0, WIN_RULE_RELAXED,),
+        None
+    );
+}
+
+#[test]
 fn one_fan_capped_self_gang_delays_dragon_before_ready() {
     let mut table = table_with_discards(1, Vec::new());
     table.max_fan = Some(1);
