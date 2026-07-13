@@ -94,6 +94,79 @@ fn seven_pairs_plan_ignores_invalid_pairs() {
 }
 
 #[test]
+fn five_pair_plan_unlocks_when_wall_cannot_supply_two_missing_pairs() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 1;
+    let hand = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 12, 31, 35, 36];
+
+    assert_eq!(pair_count(&hand), 5);
+    assert!(!should_lock_seven_pairs_plan(
+        &hand,
+        &[],
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert_eq!(
+        seven_pairs_plan_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        0.0
+    );
+}
+
+#[test]
+fn six_pair_plan_unlocks_when_dead_singleton_needs_two_draws() {
+    let mut table = table_with_discards(1, vec![31, 31, 31]);
+    table.wall_count = 1;
+    let hand = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 12, 13, 13, 31];
+
+    assert!(is_seven_pairs_wait_shape(&hand));
+    assert_eq!(remaining_tile_count(&hand, &table, 0, 31), 0);
+    assert!(!should_lock_seven_pairs_plan(
+        &hand,
+        &[],
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert_eq!(
+        seven_pairs_plan_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        0.0
+    );
+}
+
+#[test]
+fn six_pair_plan_keeps_dead_singleton_when_wall_can_replace_the_wait() {
+    let mut table = table_with_discards(1, vec![31, 31, 31]);
+    table.wall_count = 2;
+    let hand = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 12, 13, 13, 31];
+
+    assert!(should_lock_seven_pairs_plan(
+        &hand,
+        &[],
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert!(seven_pairs_plan_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0);
+}
+
+#[test]
+fn six_pair_plan_keeps_live_singleton_with_one_wall_tile() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 1;
+    let hand = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 12, 13, 13, 31];
+
+    assert!(remaining_tile_count(&hand, &table, 0, 31) > 0);
+    assert!(should_lock_seven_pairs_plan(
+        &hand,
+        &[],
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+}
+
+#[test]
 fn seven_pairs_plan_ignores_malformed_melds_but_rejects_valid_melds() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 12, 31, 35, 36];
