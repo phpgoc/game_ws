@@ -92,6 +92,22 @@ pub(crate) fn position_known_tile_counts_are_possible(
     table::position_known_tile_counts_are_possible(hand, melds, table)
 }
 
+pub(crate) fn claim_known_tile_counts_are_possible(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    claim: &AiClaimView,
+    table: &AiPublicTable,
+) -> bool {
+    if !is_valid_tile(claim.tile) || !position_known_tile_counts_are_possible(hand, melds, table) {
+        return false;
+    }
+    let represented_claim = claim_tile_already_visible(table, claim.tile);
+    hand.iter().filter(|tile| **tile == claim.tile).count()
+        + visible_tile_count(table, claim.tile) as usize
+        + usize::from(!represented_claim)
+        <= 4
+}
+
 pub(in crate::ai::decision) fn has_door_opening_meld(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,

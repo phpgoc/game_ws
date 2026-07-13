@@ -12,7 +12,7 @@ use crate::rules::{is_complete_win_with_melds_and_open_rule, win_rule_from_confi
 use super::decision::{
     AiClaimChoice, choose_claim_from_view, choose_discard_from_view,
     choose_forced_discard_from_view, choose_self_gang_from_view,
-    position_known_tile_counts_are_possible, should_pass_self_draw_hu_from_view,
+    claim_known_tile_counts_are_possible, should_pass_self_draw_hu_from_view,
 };
 use super::observation::{AiClaimView, AiPublicTable, build_public_table_with_configs};
 
@@ -206,7 +206,7 @@ fn claim_hu_is_complete(
         .get(&position)
         .map(|seat| seat.melds.as_slice())
         .unwrap_or(&[]);
-    position_known_tile_counts_are_possible(hand, melds, table)
+    claim_known_tile_counts_are_possible(hand, melds, claim, table)
         && is_complete_win_with_melds_and_open_rule(
             &win_hand,
             melds,
@@ -637,6 +637,60 @@ mod tests {
             .insert(1, vec![2, 5, 8, 11, 14, 16, 17, 21, 31, 32, 33]);
         state.melds.insert(1, vec![test_peng_meld(16)]);
         state.discards.insert(2, vec![14, 14, 14, 14]);
+        state.last_drawn_tile = Some(16);
+        state.claim_window = Some(ClaimWindowState {
+            tile: 16,
+            from_position: 1,
+            kind: ClaimWindowKind::RobGang,
+            eligible_positions: vec![0, 2],
+            responses: HashMap::new(),
+        });
+        let configs = HashMap::from([("win_rule".to_owned(), WIN_RULE_SHENYANG_BASIC)]);
+        let table = build_public_table_with_configs(&state, &configs);
+        let claim = table.claim_window.as_ref().expect("claim window");
+        let mut dispatch = Dispatch::default();
+
+        assert!(!claim_hu_is_complete(
+            state.hands.get(&0).unwrap(),
+            claim,
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+        ));
+        assert!(maybe_resolve_ai_claims(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &configs,
+            &mut dispatch,
+        ));
+
+        let claim_window = state
+            .claim_window
+            .as_ref()
+            .expect("claim window stays open");
+        assert!(matches!(
+            claim_window.responses.get(&0),
+            Some(ClaimResponse::Pass)
+        ));
+        assert!(!claim_window.responses.contains_key(&2));
+        assert!(dispatch.messages.is_empty());
+    }
+
+    #[test]
+    fn rob_gang_hu_passes_when_unowned_claim_tile_is_fifth_known_copy() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_away(0);
+        state.current_position = 1;
+        state
+            .hands
+            .insert(0, vec![14, 15, 17, 18, 19, 21, 22, 23, 35, 35]);
+        state.melds.insert(0, vec![test_peng_meld(1)]);
+        state
+            .hands
+            .insert(1, vec![2, 5, 8, 11, 14, 16, 17, 21, 31, 32, 33]);
+        state.melds.insert(1, vec![test_peng_meld(16)]);
+        state.discards.insert(2, vec![16]);
         state.last_drawn_tile = Some(16);
         state.claim_window = Some(ClaimWindowState {
             tile: 16,

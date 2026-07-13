@@ -42,6 +42,30 @@ fn claim_hu_accepts_seven_pairs() {
 }
 
 #[test]
+fn claim_hu_passes_when_unowned_tile_has_five_visible_copies() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.claim_window = Some(AiClaimView {
+        tile: 3,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![1, 2, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 31];
+
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+        Some(AiClaimChoice::Hu)
+    );
+
+    table.seats.get_mut(&1).unwrap().discards = vec![3, 3, 3, 3, 3];
+    assert_eq!(visible_tile_count(&table, 3), 5);
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+        Some(AiClaimChoice::Pass)
+    );
+}
+
+#[test]
 fn claimed_fourth_copy_keeps_seven_pairs_single_wait_fan() {
     let mut table = table_with_discards(1, vec![1]);
     table.claim_window = Some(AiClaimView {

@@ -41,7 +41,7 @@ pub fn choose_claim_from_view(
         .map(|seat| seat.melds.as_slice())
         .unwrap_or(&[]);
     if !has_virtual_tile_count(hand, melds, 13)
-        || !position_known_tile_counts_are_possible(hand, melds, table)
+        || !claim_known_tile_counts_are_possible(hand, melds, claim, table)
     {
         return Some(AiClaimChoice::Pass);
     }
