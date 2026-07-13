@@ -683,7 +683,7 @@ pub(crate) fn can_self_gang(
         || state.claim_window.is_some()
         || state.wall_count() == 0
         || !position_has_discardable_tile_count(state, position)
-        || has_impossible_known_tile_count(state, target_tile)
+        || position_has_impossible_known_tile_count(state, position)
     {
         return false;
     }
@@ -2845,6 +2845,38 @@ mod tests {
         assert_eq!(actual_melds[0].from_position, added_melds[0].from_position);
         assert_eq!(added_gang_state.wall, vec![35]);
         assert!(added_dispatch.messages.is_empty());
+    }
+
+    #[test]
+    fn self_gang_rejects_unrelated_public_fifth_copy() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(0, vec![3, 3, 3, 3, 4, 5, 6, 9, 11, 12, 13, 21, 22, 23]);
+        state.discards.insert(1, vec![9, 9, 9, 9]);
+        state.wall = vec![35];
+        state.last_drawn_tile = Some(3);
+        let original_hand = state.hands.get(&0).cloned().unwrap();
+        let mut dispatch = Dispatch::default();
+
+        assert_eq!(known_tile_count(&state, 3), 4);
+        assert_eq!(known_tile_count(&state, 9), 5);
+        assert!(position_has_impossible_known_tile_count(&state, 0));
+        assert!(!can_self_gang(&state, 0, 3));
+        assert!(!perform_self_gang(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::new(),
+            &mut dispatch,
+            0,
+            3,
+        ));
+
+        assert_eq!(state.hands.get(&0), Some(&original_hand));
+        assert!(state.melds.get(&0).is_none_or(Vec::is_empty));
+        assert_eq!(state.wall, vec![35]);
+        assert!(dispatch.messages.is_empty());
     }
 
     #[test]

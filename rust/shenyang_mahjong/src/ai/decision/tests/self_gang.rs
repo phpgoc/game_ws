@@ -207,6 +207,25 @@ fn self_gang_rejects_public_fifth_copy() {
 }
 
 #[test]
+fn self_gang_rejects_unrelated_public_fifth_copy() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(35)];
+    let hand = vec![2, 5, 8, 11, 14, 17, 21, 31, 32, 33, 35];
+
+    assert_eq!(
+        choose_self_gang_from_view(&hand, &[35], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(35)
+    );
+
+    table.seats.get_mut(&1).unwrap().discards = vec![2, 2, 2, 2];
+    assert_eq!(visible_tile_count(&table, 2), 4);
+    assert_eq!(
+        choose_self_gang_from_view(&hand, &[35], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        None
+    );
+}
+
+#[test]
 fn one_fan_capped_self_gang_delays_dragon_before_ready() {
     let mut table = table_with_discards(1, Vec::new());
     table.max_fan = Some(1);
