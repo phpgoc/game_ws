@@ -439,15 +439,15 @@ fn build_winner_details(
         .collect::<HashMap<_, _>>();
 
     settlement
-        .winner_positions
-        .iter()
+        .unique_winner_positions()
+        .into_iter()
         .filter_map(|position| {
-            let score = score_by_position.get(position).copied().unwrap_or(0);
+            let score = score_by_position.get(&position).copied().unwrap_or(0);
             if score <= 0 {
                 return None;
             }
-            let hand_tiles = winner_final_hand_tiles(state, settlement, *position);
-            let melds = state.melds.get(position).map(Vec::as_slice).unwrap_or(&[]);
+            let hand_tiles = winner_final_hand_tiles(state, settlement, position);
+            let melds = state.melds.get(&position).map(Vec::as_slice).unwrap_or(&[]);
             let pattern = winner_pattern_with_rule_and_open_rule(
                 &hand_tiles,
                 melds,
@@ -455,11 +455,11 @@ fn build_winner_details(
                 chi_opens_door(configs),
             );
             Some(WsShenyangMahjongWinnerDetail {
-                position: *position as i32,
+                position: position as i32,
                 pattern,
                 is_self_draw: settlement.is_self_draw,
                 is_reverse_win: settlement_is_reverse_win(state, settlement),
-                is_gang_draw: settlement_winner_is_gang_draw(state, settlement, *position),
+                is_gang_draw: settlement_winner_is_gang_draw(state, settlement, position),
                 is_haidilao: settlement_is_haidilao(state, settlement),
                 score,
             })
@@ -541,9 +541,8 @@ fn positive_winner_positions_from_scores<'a>(
         .collect::<HashMap<_, _>>();
 
     settlement
-        .winner_positions
-        .iter()
-        .copied()
+        .unique_winner_positions()
+        .into_iter()
         .filter(move |position| score_by_position.get(position).copied().unwrap_or(0) > 0)
 }
 
@@ -1603,11 +1602,8 @@ pub(crate) fn settlement_score_changes_for_state(
             .collect();
     }
 
-    let winner_set = settlement
-        .winner_positions
-        .iter()
-        .copied()
-        .collect::<HashSet<_>>();
+    let winner_positions = settlement.unique_winner_positions();
+    let winner_set = winner_positions.iter().copied().collect::<HashSet<_>>();
     let payers: Vec<usize> = if settlement.is_self_draw {
         sorted_positions
             .iter()
@@ -1626,7 +1622,7 @@ pub(crate) fn settlement_score_changes_for_state(
         .map(|position| (*position, 0))
         .collect::<HashMap<_, _>>();
 
-    for winner in &settlement.winner_positions {
+    for winner in &winner_positions {
         let winner_fan = capped_winner_hand_fan(state, settlement, *winner, configs);
         if winner_fan <= 0 {
             continue;
@@ -6658,6 +6654,30 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![(0, -8), (1, -8), (2, 24), (3, -8)]
         );
+    }
+
+    #[test]
+    fn settlement_deduplicates_restored_winner_positions() {
+        let mut state = playable_state();
+        state.dealer_position = 2;
+        state
+            .hands
+            .insert(2, vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35, 35]);
+        state.enter_settlement(vec![2, 2], None, Some(35), true);
+        let settlement = state.settlement.as_ref().expect("settlement");
+
+        assert_eq!(
+            settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &HashMap::new())
+                .into_iter()
+                .map(|change| (change.position, change.score))
+                .collect::<Vec<_>>(),
+            vec![(0, -8), (1, -8), (2, 24), (3, -8)]
+        );
+
+        let event = build_settlement_event(&state).expect("settlement event");
+        assert_eq!(event.winner_positions, vec![2]);
+        assert_eq!(event.winner_details.len(), 1);
+        assert_eq!(event.winner_details[0].position, 2);
     }
 
     #[test]

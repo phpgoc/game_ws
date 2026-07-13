@@ -201,15 +201,12 @@ pub(crate) fn winner_score_for_settlement(
     player_count: usize,
     winner_position: usize,
 ) -> i64 {
-    if settlement.winner_positions.is_empty()
-        || !settlement.winner_positions.contains(&winner_position)
-    {
+    let winner_positions = settlement.unique_winner_positions();
+    if winner_positions.is_empty() || !winner_positions.contains(&winner_position) {
         return 0;
     }
     if settlement.is_self_draw {
-        player_count
-            .saturating_sub(settlement.winner_positions.len())
-            .max(1) as i64
+        player_count.saturating_sub(winner_positions.len()).max(1) as i64
     } else {
         1
     }
@@ -239,16 +236,16 @@ where
     F: FnMut(usize) -> Option<i64>,
 {
     let mut winner_scores = Vec::new();
-    for position in &settlement.winner_positions {
-        let score = winner_score_from_changes(score_changes, *position);
+    for position in settlement.unique_winner_positions() {
+        let score = winner_score_from_changes(score_changes, position);
         if score <= 0 {
             continue;
         }
-        if let Some(winner_user_id) = user_id_for_position(*position) {
+        if let Some(winner_user_id) = user_id_for_position(position) {
             winner_scores.push(data::GameRoundShenyangMahjongWinnerScoreInput {
                 winner_user_id,
                 score,
-                pattern: winner_pattern_for_position(state, settlement, *position, win_rule),
+                pattern: winner_pattern_for_position(state, settlement, position, win_rule),
             });
         }
     }
@@ -388,10 +385,56 @@ mod tests {
         assert_eq!(winner_scores[0].score, 5);
     }
 
+    #[cfg(feature = "official")]
+    #[test]
+    fn official_winner_scores_deduplicate_restored_winners() {
+        let state = state_with_players();
+        let settlement = SettlementState {
+            winner_positions: vec![1, 1],
+            from_position: None,
+            win_tile: Some(9),
+            is_self_draw: true,
+            is_reverse_win: false,
+            is_gang_draw: false,
+            is_haidilao: false,
+        };
+        let score_changes = vec![WsShenyangMahjongScoreChange {
+            position: 1,
+            score: 15,
+        }];
+
+        let winner_scores = winner_scores_for_settlement(
+            &state,
+            &settlement,
+            &score_changes,
+            crate::rules::WIN_RULE_SHENYANG_BASIC,
+            |position| Some(position as i64 + 10),
+        );
+
+        assert_eq!(winner_scores.len(), 1);
+        assert_eq!(winner_scores[0].winner_user_id, 11);
+        assert_eq!(winner_scores[0].score, 15);
+    }
+
     #[test]
     fn self_draw_score_counts_each_loser() {
         let settlement = SettlementState {
             winner_positions: vec![2],
+            from_position: None,
+            win_tile: Some(3),
+            is_self_draw: true,
+            is_reverse_win: false,
+            is_gang_draw: false,
+            is_haidilao: false,
+        };
+
+        assert_eq!(winner_score_for_settlement(&settlement, 4, 2), 3);
+    }
+
+    #[test]
+    fn self_draw_score_ignores_duplicate_winner_positions() {
+        let settlement = SettlementState {
+            winner_positions: vec![2, 2],
             from_position: None,
             win_tile: Some(3),
             is_self_draw: true,

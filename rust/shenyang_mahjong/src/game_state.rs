@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use share_type_public::games::shenyang_mahjong::{
@@ -44,6 +44,17 @@ pub struct SettlementState {
     pub is_reverse_win: bool,
     pub is_gang_draw: bool,
     pub is_haidilao: bool,
+}
+
+impl SettlementState {
+    pub fn unique_winner_positions(&self) -> Vec<usize> {
+        let mut seen = HashSet::new();
+        self.winner_positions
+            .iter()
+            .copied()
+            .filter(|position| seen.insert(*position))
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone)]
