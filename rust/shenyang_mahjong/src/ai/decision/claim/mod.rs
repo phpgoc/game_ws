@@ -32,7 +32,7 @@ pub fn choose_claim_from_view(
     position: usize,
     win_rule: i32,
 ) -> Option<AiClaimChoice> {
-    if !claim.eligible_positions.contains(&position) {
+    if position == claim.from_position || !claim.eligible_positions.contains(&position) {
         return None;
     }
     let melds = table

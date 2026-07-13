@@ -1336,6 +1336,9 @@ pub(crate) fn resolve_claim_window(
     };
 
     for position in &claim_window.eligible_positions {
+        if *position == claim_window.from_position {
+            continue;
+        }
         let hand = state.hands.get(position).cloned().unwrap_or_default();
         let can_claim_meld = position_has_claimable_tile_count(state, *position);
         match claim_window.responses.get(position) {
@@ -2044,7 +2047,10 @@ impl ShenyangMahjongGameHandler {
                         claim_window.responses.contains_key(&position),
                     )
                 };
-                if !eligible_positions.contains(&position) || already_responded {
+                if position == from_position
+                    || !eligible_positions.contains(&position)
+                    || already_responded
+                {
                     return room_service.error_response(
                         session_id,
                         Routes::PLAY as i32,
@@ -4255,6 +4261,48 @@ mod tests {
     }
 
     #[test]
+    fn play_request_rejects_claim_from_source_position() {
+        let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
+        {
+            let mut state = loop_state.lock().unwrap();
+            state.phase = ShenyangMahjongPhase::Play;
+            state.current_position = 0;
+            for position in 0..4 {
+                state.discards.insert(position, Vec::new());
+                state.melds.insert(position, Vec::new());
+            }
+            state.discards.insert(0, vec![3]);
+            state
+                .hands
+                .insert(0, vec![3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35]);
+            state.wall = vec![36];
+            state.claim_window = Some(ClaimWindowState {
+                tile: 3,
+                from_position: 0,
+                kind: ClaimWindowKind::Discard,
+                eligible_positions: vec![0],
+                responses: HashMap::new(),
+            });
+        }
+
+        let response = handler.handle_game_request(
+            &mut room_service,
+            1,
+            play_request(ShenyangMahjongAction::PENG, Vec::new(), Some(3), Some(0)),
+        );
+
+        assert_eq!(
+            response_code(&response, 1, Routes::PLAY),
+            Some(WsResponseCode::NO_PERMISSION as i32)
+        );
+        let state = loop_state.lock().unwrap();
+        let claim_window = state.claim_window.as_ref().expect("claim window");
+        assert!(claim_window.responses.is_empty());
+        assert_eq!(state.discards.get(&0), Some(&vec![3]));
+        assert!(state.melds.get(&0).unwrap().is_empty());
+    }
+
+    #[test]
     fn play_request_rejects_manual_action_while_away() {
         let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
         {
@@ -5199,6 +5247,40 @@ mod tests {
             1,
         );
         assert!(state.hands.get(&1).unwrap().contains(&36));
+    }
+
+    #[test]
+    fn resolve_claim_window_ignores_response_from_source_position() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(0, vec![3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35]);
+        state.discards.insert(0, vec![3]);
+        state.wall = vec![36];
+        state.current_position = 0;
+        state.claim_window = Some(ClaimWindowState {
+            tile: 3,
+            from_position: 0,
+            kind: ClaimWindowKind::Discard,
+            eligible_positions: vec![0],
+            responses: HashMap::from([(0, ClaimResponse::Peng)]),
+        });
+        let original_hand = state.hands.get(&0).cloned().unwrap();
+        let mut dispatch = Dispatch::default();
+
+        resolve_claim_window(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+        );
+
+        assert!(state.claim_window.is_none());
+        assert_eq!(state.current_position, 1);
+        assert_eq!(state.discards.get(&0), Some(&vec![3]));
+        assert_eq!(state.hands.get(&0), Some(&original_hand));
+        assert!(state.melds.get(&0).is_none_or(Vec::is_empty));
     }
 
     #[test]
