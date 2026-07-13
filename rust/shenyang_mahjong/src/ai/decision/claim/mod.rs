@@ -14,14 +14,16 @@ pub(super) use defensive_open::*;
 pub(super) use gang::*;
 pub(super) use options::*;
 pub(super) use peng::*;
+#[cfg(test)]
+pub(super) use peng_choice::required_peng_gain;
 pub(super) use preserve::*;
 pub(super) use requirements::*;
 
 use chi_choice::choose_chi_claim;
 use gang_choice::choose_gang_claim;
 use peng_choice::choose_peng_claim;
-#[cfg(test)]
-pub(super) use peng_choice::required_peng_gain;
+
+const MIN_WALL_TILES_FOR_CAPPED_HU_CHASE: usize = 4;
 
 pub fn choose_claim_from_view(
     hand: &[i32],
@@ -124,7 +126,10 @@ pub(in crate::ai::decision) fn should_pass_hu_for_capped_live_wait(
     let Some(max_fan) = table.max_fan.filter(|max_fan| *max_fan > 1) else {
         return false;
     };
-    if table.dealer_position == position || hand.len() % 3 != 1 {
+    if table.dealer_position == position
+        || table.wall_count < MIN_WALL_TILES_FOR_CAPPED_HU_CHASE
+        || hand.len() % 3 != 1
+    {
         return false;
     }
 
