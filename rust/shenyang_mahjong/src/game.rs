@@ -1721,6 +1721,21 @@ fn winner_has_impossible_known_tile_count(
     })
 }
 
+fn settlement_winner_has_valid_win_tile(
+    state: &ShenyangMahjongLoopState,
+    settlement: &crate::game_state::SettlementState,
+    winner: usize,
+) -> bool {
+    !settlement.is_self_draw
+        || settlement.win_tile.is_none_or(|win_tile| {
+            is_valid_tile(win_tile)
+                && state
+                    .hands
+                    .get(&winner)
+                    .is_some_and(|hand| hand.contains(&win_tile))
+        })
+}
+
 #[cfg(test)]
 fn winner_hand_fan(
     state: &ShenyangMahjongLoopState,
@@ -1762,7 +1777,9 @@ fn winner_hand_fan_with_rule_and_open_rule(
     win_rule: i32,
     chi_opens_door: bool,
 ) -> i32 {
-    if winner_has_impossible_known_tile_count(state, settlement, winner) {
+    if !settlement_winner_has_valid_win_tile(state, settlement, winner)
+        || winner_has_impossible_known_tile_count(state, settlement, winner)
+    {
         return 0;
     }
     let hand_tiles = winner_final_hand_tiles(state, settlement, winner);
@@ -6920,6 +6937,35 @@ mod tests {
                 .map(|change| (change.position, change.score))
                 .collect::<Vec<_>>(),
             vec![(0, 0), (1, 0), (2, 0), (3, 0)]
+        );
+    }
+
+    #[test]
+    fn settlement_rejects_unowned_self_draw_win_tile() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35, 35]);
+        state.enter_settlement(vec![1], None, Some(9), true);
+        let invalid_settlement = state.settlement.clone().expect("settlement");
+
+        assert_eq!(winner_hand_fan(&state, &invalid_settlement, 1), 0);
+        assert!(
+            build_settlement_event(&state)
+                .expect("settlement event")
+                .winner_positions
+                .is_empty()
+        );
+
+        state.settlement.as_mut().unwrap().win_tile = Some(35);
+        let valid_settlement = state.settlement.as_ref().expect("settlement");
+
+        assert!(winner_hand_fan(&state, valid_settlement, 1) > 0);
+        assert_eq!(
+            build_settlement_event(&state)
+                .expect("settlement event")
+                .winner_positions,
+            vec![1]
         );
     }
 
