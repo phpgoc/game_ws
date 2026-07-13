@@ -636,6 +636,20 @@ fn rob_gang_claim_matches_source(
     can_added_gang(hand, melds, tile)
 }
 
+pub(crate) fn claim_window_matches_source(
+    state: &ShenyangMahjongLoopState,
+    claim_window: &ClaimWindowState,
+) -> bool {
+    match claim_window.kind {
+        ClaimWindowKind::Discard => {
+            discard_claim_matches_source(state, claim_window.tile, claim_window.from_position)
+        }
+        ClaimWindowKind::RobGang => {
+            rob_gang_claim_matches_source(state, claim_window.tile, claim_window.from_position)
+        }
+    }
+}
+
 #[cfg(test)]
 pub(crate) fn can_self_draw_hu(state: &ShenyangMahjongLoopState, position: usize) -> bool {
     can_self_draw_hu_with_configs(state, position, &HashMap::new())
@@ -1366,11 +1380,7 @@ pub(crate) fn resolve_claim_window(
         return;
     };
     let is_rob_gang = matches!(claim_window.kind, ClaimWindowKind::RobGang);
-    let claim_matches_source = if is_rob_gang {
-        rob_gang_claim_matches_source(state, claim_window.tile, claim_window.from_position)
-    } else {
-        discard_claim_matches_source(state, claim_window.tile, claim_window.from_position)
-    };
+    let claim_matches_source = claim_window_matches_source(state, &claim_window);
     let invalid_claim_tile_count = has_impossible_known_tile_count(state, claim_window.tile);
     let mut hu_positions = Vec::new();
     let mut meld_claims = Vec::new();
@@ -2107,7 +2117,14 @@ impl ShenyangMahjongGameHandler {
             }
 
             if state.claim_window.is_some() {
-                let (claim_tile, from_position, is_rob_gang, eligible_positions, already_responded) = {
+                let (
+                    claim_tile,
+                    from_position,
+                    is_rob_gang,
+                    eligible_positions,
+                    already_responded,
+                    claim_matches_source,
+                ) = {
                     let claim_window = state.claim_window.as_ref().unwrap();
                     (
                         claim_window.tile,
@@ -2115,6 +2132,7 @@ impl ShenyangMahjongGameHandler {
                         matches!(claim_window.kind, ClaimWindowKind::RobGang),
                         claim_window.eligible_positions.clone(),
                         claim_window.responses.contains_key(&position),
+                        claim_window_matches_source(&state, claim_window),
                     )
                 };
                 if position == from_position
@@ -2130,11 +2148,6 @@ impl ShenyangMahjongGameHandler {
                 let hand = state.hands.get(&position).cloned().unwrap_or_default();
                 let invalid_claim_tile_count = has_impossible_known_tile_count(&state, claim_tile);
                 let can_claim_meld = position_can_claim_meld(&state, position);
-                let claim_matches_source = if is_rob_gang {
-                    rob_gang_claim_matches_source(&state, claim_tile, from_position)
-                } else {
-                    discard_claim_matches_source(&state, claim_tile, from_position)
-                };
                 let response = match payload.action {
                     ShenyangMahjongAction::PASS => ClaimResponse::Pass,
                     ShenyangMahjongAction::HU => {

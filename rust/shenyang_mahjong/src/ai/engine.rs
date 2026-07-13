@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use ws_common::{Dispatch, RoomService};
 
 use crate::game::{
-    can_self_draw_hu_with_configs, can_self_gang, perform_discard, perform_self_draw_hu,
-    perform_self_gang, resolve_claim_window,
+    can_self_draw_hu_with_configs, can_self_gang, claim_window_matches_source, perform_discard,
+    perform_self_draw_hu, perform_self_gang, resolve_claim_window,
 };
 use crate::game_state::{ClaimResponse, ClaimWindowKind, ShenyangMahjongLoopState};
 use crate::rules::{is_complete_win_with_melds_and_open_rule, win_rule_from_configs};
@@ -133,6 +133,7 @@ pub fn maybe_resolve_ai_claims(
         return false;
     };
     let win_rule = win_rule_from_configs(configs);
+    let claim_matches_source = claim_window_matches_source(state, &claim_window);
 
     let mut changed = false;
     for position in claim_window.eligible_positions {
@@ -144,13 +145,14 @@ pub fn maybe_resolve_ai_claims(
         let Some(hand) = self_hand(state, position) else {
             continue;
         };
-        let choice =
-            if is_rob_gang && claim_hu_is_complete(&hand, claim, &table, position, win_rule) {
-                AiClaimChoice::Hu
-            } else {
-                choose_claim_from_view(&hand, claim, &table, position, win_rule)
-                    .unwrap_or(AiClaimChoice::Pass)
-            };
+        let choice = if !claim_matches_source {
+            AiClaimChoice::Pass
+        } else if is_rob_gang && claim_hu_is_complete(&hand, claim, &table, position, win_rule) {
+            AiClaimChoice::Hu
+        } else {
+            choose_claim_from_view(&hand, claim, &table, position, win_rule)
+                .unwrap_or(AiClaimChoice::Pass)
+        };
         let response = match choice {
             AiClaimChoice::Hu => ClaimResponse::Hu,
             AiClaimChoice::Gang if !is_rob_gang => ClaimResponse::Gang,
@@ -269,6 +271,88 @@ mod tests {
         ));
         assert!(!claim_window.responses.contains_key(&1));
         assert_eq!(state.phase, ShenyangMahjongPhase::Play);
+    }
+
+    #[test]
+    fn ai_claim_passes_mismatched_discard_source() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_ai_position(0);
+        state.current_position = 1;
+        state
+            .hands
+            .insert(0, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35]);
+        state.discards.insert(1, vec![36]);
+        state.claim_window = Some(ClaimWindowState {
+            tile: 35,
+            from_position: 1,
+            kind: ClaimWindowKind::Discard,
+            eligible_positions: vec![0, 2],
+            responses: HashMap::new(),
+        });
+        let mut dispatch = Dispatch::default();
+
+        assert!(maybe_resolve_ai_claims(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+        ));
+
+        let claim_window = state
+            .claim_window
+            .as_ref()
+            .expect("claim window stays open");
+        assert!(matches!(
+            claim_window.responses.get(&0),
+            Some(ClaimResponse::Pass)
+        ));
+        assert!(!claim_window.responses.contains_key(&2));
+        assert!(dispatch.messages.is_empty());
+    }
+
+    #[test]
+    fn ai_claim_passes_invalid_rob_gang_source() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_ai_position(0);
+        state.current_position = 1;
+        state
+            .hands
+            .insert(0, vec![14, 15, 17, 18, 19, 21, 22, 23, 35, 35]);
+        state.melds.insert(0, vec![test_peng_meld(1)]);
+        state
+            .hands
+            .insert(1, vec![2, 5, 8, 11, 14, 16, 17, 21, 31, 32, 33]);
+        state.melds.insert(1, vec![test_peng_meld(16)]);
+        state.last_drawn_tile = Some(17);
+        state.claim_window = Some(ClaimWindowState {
+            tile: 16,
+            from_position: 1,
+            kind: ClaimWindowKind::RobGang,
+            eligible_positions: vec![0, 2],
+            responses: HashMap::new(),
+        });
+        let configs = HashMap::from([("win_rule".to_owned(), WIN_RULE_SHENYANG_BASIC)]);
+        let mut dispatch = Dispatch::default();
+
+        assert!(maybe_resolve_ai_claims(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &configs,
+            &mut dispatch,
+        ));
+
+        let claim_window = state
+            .claim_window
+            .as_ref()
+            .expect("claim window stays open");
+        assert!(matches!(
+            claim_window.responses.get(&0),
+            Some(ClaimResponse::Pass)
+        ));
+        assert!(!claim_window.responses.contains_key(&2));
+        assert!(dispatch.messages.is_empty());
     }
 
     #[test]
