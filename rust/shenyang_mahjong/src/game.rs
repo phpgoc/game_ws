@@ -229,6 +229,25 @@ fn has_impossible_known_tile_count(state: &ShenyangMahjongLoopState, tile: i32) 
     is_valid_tile(tile) && known_tile_count(state, tile) > 4
 }
 
+fn position_has_impossible_known_tile_count(
+    state: &ShenyangMahjongLoopState,
+    position: usize,
+) -> bool {
+    SHENYANG_MAHJONG_TILE_KINDS.into_iter().any(|tile| {
+        let owns_tile = state
+            .hands
+            .get(&position)
+            .is_some_and(|hand| hand.contains(&tile))
+            || state.melds.get(&position).is_some_and(|melds| {
+                melds
+                    .iter()
+                    .filter(|meld| meld_primary_tile(meld).is_some() || is_chi_meld(meld))
+                    .any(|meld| meld.tiles.contains(&tile))
+            });
+        owns_tile && has_impossible_known_tile_count(state, tile)
+    })
+}
+
 fn known_tile_count(state: &ShenyangMahjongLoopState, tile: i32) -> usize {
     let hand_count = state
         .hands
@@ -499,6 +518,7 @@ pub(crate) fn can_self_draw_hu_with_configs(
     if state.current_position != position
         || state.last_drawn_tile.is_none()
         || state.claim_window.is_some()
+        || position_has_impossible_known_tile_count(state, position)
     {
         return false;
     }
@@ -4968,6 +4988,43 @@ mod tests {
 
         assert!(state.settlement.is_none());
         assert!(dispatch.messages.is_empty());
+    }
+
+    #[test]
+    fn self_draw_hu_rejects_public_fifth_copy() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(0, vec![1, 1, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6]);
+        state.discards.insert(1, vec![1]);
+        state.last_drawn_tile = Some(6);
+        let mut dispatch = Dispatch::default();
+
+        assert!(is_seven_pairs_win(state.hands.get(&0).unwrap()));
+        assert_eq!(known_tile_count(&state, 1), 5);
+        assert!(position_has_impossible_known_tile_count(&state, 0));
+        assert!(!can_self_draw_hu_with_configs(
+            &state,
+            0,
+            &relaxed_configs()
+        ));
+
+        perform_self_draw_hu(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+            0,
+        );
+
+        assert!(state.settlement.is_none());
+        assert!(dispatch.messages.is_empty());
+
+        state.discards.insert(1, vec![9, 9, 9, 9, 9]);
+        assert_eq!(known_tile_count(&state, 9), 5);
+        assert!(!position_has_impossible_known_tile_count(&state, 0));
+        assert!(can_self_draw_hu_with_configs(&state, 0, &relaxed_configs()));
     }
 
     #[test]
