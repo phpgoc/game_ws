@@ -328,7 +328,7 @@ pub(crate) fn build_settlement_event_with_configs(
         from_position: settlement_from_position(settlement).map(|position| position as i32),
         win_tile: settlement.win_tile,
         is_self_draw: settlement.is_self_draw,
-        is_reverse_win: settlement_is_reverse_win(settlement),
+        is_reverse_win: settlement_is_reverse_win(state, settlement),
         is_gang_draw: settlement_is_gang_draw(settlement),
         is_haidilao: settlement_is_haidilao(settlement),
         score_changes,
@@ -454,7 +454,7 @@ fn build_winner_details(
                 position: *position as i32,
                 pattern,
                 is_self_draw: settlement.is_self_draw,
-                is_reverse_win: settlement_is_reverse_win(settlement),
+                is_reverse_win: settlement_is_reverse_win(state, settlement),
                 is_gang_draw: settlement_is_gang_draw(settlement),
                 is_haidilao: settlement_is_haidilao(settlement),
                 score,
@@ -463,8 +463,22 @@ fn build_winner_details(
         .collect()
 }
 
-pub(crate) fn settlement_is_reverse_win(settlement: &crate::game_state::SettlementState) -> bool {
-    settlement_from_position(settlement).is_some() && settlement.is_reverse_win
+pub(crate) fn settlement_is_reverse_win(
+    state: &ShenyangMahjongLoopState,
+    settlement: &crate::game_state::SettlementState,
+) -> bool {
+    let Some(from_position) = settlement_from_position(settlement) else {
+        return false;
+    };
+    let Some(win_tile) = settlement.win_tile else {
+        return false;
+    };
+    settlement.is_reverse_win
+        && state.melds.get(&from_position).is_some_and(|melds| {
+            melds
+                .iter()
+                .any(|meld| is_open_meld(meld) && peng_meld_tile(meld) == Some(win_tile))
+        })
 }
 
 pub(crate) fn settlement_from_position(
@@ -1719,7 +1733,7 @@ fn winner_hand_fan_with_rule_and_open_rule(
     let mut fan = win_pattern_base_fan(pattern);
     fan += shenyang_score_meld_fan(melds);
     fan += shenyang_score_concealed_dragon_triplet_fan(&hand_tiles);
-    if settlement_is_reverse_win(settlement) {
+    if settlement_is_reverse_win(state, settlement) {
         fan += 1;
     }
     if settlement_is_gang_draw(settlement) {
@@ -5933,7 +5947,7 @@ mod tests {
     }
 
     #[test]
-    fn settlement_fan_counts_rob_gang_without_gang_draw() {
+    fn settlement_fan_requires_open_peng_source_for_rob_gang() {
         let mut state = playable_state();
         state
             .hands
@@ -5947,9 +5961,28 @@ mod tests {
             false,
             false,
         );
-        let settlement = state.settlement.as_ref().expect("settlement");
+        let settlement = state.settlement.clone().expect("settlement");
 
-        assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
+        assert_eq!(winner_hand_fan(&state, &settlement, 1), 1);
+        let invalid_event =
+            build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
+        assert!(!invalid_event.is_reverse_win);
+        assert!(!invalid_event.winner_details[0].is_reverse_win);
+
+        state.melds.insert(
+            0,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::PENG,
+                vec![4, 4, 4],
+                Some(2),
+            )],
+        );
+
+        assert_eq!(winner_hand_fan(&state, &settlement, 1), 2);
+        let valid_event = build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
+        assert!(valid_event.is_reverse_win);
+        assert!(valid_event.winner_details[0].is_reverse_win);
+        assert!(!valid_event.is_gang_draw);
     }
 
     #[test]
@@ -7352,6 +7385,14 @@ mod tests {
         state
             .hands
             .insert(1, vec![1, 2, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+        state.melds.insert(
+            0,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::PENG,
+                vec![3, 3, 3],
+                Some(2),
+            )],
+        );
         state.enter_settlement_with_reverse_win(
             vec![1],
             Some(0),
@@ -7371,7 +7412,7 @@ mod tests {
             ShenyangMahjongWinPattern::Standard
         );
         assert!(event.winner_details[0].is_reverse_win);
-        assert_eq!(event.winner_details[0].score, 5);
+        assert_eq!(event.winner_details[0].score, 4);
     }
 
     fn setup_request_room() -> (
@@ -7448,7 +7489,14 @@ mod tests {
         state
             .hands
             .insert(1, vec![1, 2, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
-        state.discards.insert(0, vec![3]);
+        state.melds.insert(
+            0,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::PENG,
+                vec![3, 3, 3],
+                Some(2),
+            )],
+        );
         state.enter_settlement_with_reverse_win(
             vec![1],
             Some(0),
@@ -7469,14 +7517,14 @@ mod tests {
         assert!(settlement.is_reverse_win);
         assert_eq!(settlement.winner_details.len(), 1);
         assert_eq!(settlement.winner_details[0].position, 1);
-        assert_eq!(settlement.winner_details[0].score, 5);
+        assert_eq!(settlement.winner_details[0].score, 4);
         assert_eq!(
             settlement
                 .score_changes
                 .iter()
                 .map(|change| (change.position, change.score))
                 .collect::<Vec<_>>(),
-            vec![(0, -5), (1, 5), (2, 0), (3, 0)]
+            vec![(0, -4), (1, 4), (2, 0), (3, 0)]
         );
     }
 

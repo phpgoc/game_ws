@@ -101,8 +101,11 @@ fn official_from_position_for_settlement(settlement: &SettlementState) -> Option
 }
 
 #[cfg(feature = "official")]
-fn official_reverse_win_for_settlement(settlement: &SettlementState) -> bool {
-    settlement_is_reverse_win(settlement)
+fn official_reverse_win_for_settlement(
+    state: &ShenyangMahjongLoopState,
+    settlement: &SettlementState,
+) -> bool {
+    settlement_is_reverse_win(state, settlement)
 }
 
 #[cfg(feature = "official")]
@@ -121,7 +124,7 @@ pub fn settle_round(
 
     let discarder_user_id = official_from_position_for_settlement(settlement)
         .and_then(|position| room_service.room_official_user_id(room_key, position));
-    let is_reverse_win = official_reverse_win_for_settlement(settlement);
+    let is_reverse_win = official_reverse_win_for_settlement(state, settlement);
     let players = state.players_snapshot();
     let positions = players.keys().copied().collect::<Vec<_>>();
     let score_changes = settlement_score_changes_for_state(state, &positions, settlement, configs);
@@ -292,7 +295,17 @@ mod tests {
 
     #[cfg(feature = "official")]
     #[test]
-    fn official_reverse_win_requires_discard_context() {
+    fn official_reverse_win_requires_open_peng_source_and_discard_context() {
+        let state_without_source = state_with_players();
+        let mut state_with_source = state_with_players();
+        state_with_source.melds.insert(
+            0,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::PENG,
+                vec![5, 5, 5],
+                Some(2),
+            )],
+        );
         let valid_reverse_win = SettlementState {
             winner_positions: vec![1],
             from_position: Some(0),
@@ -312,12 +325,20 @@ mod tests {
             is_haidilao: false,
         };
 
-        assert!(official_reverse_win_for_settlement(&valid_reverse_win));
+        assert!(!official_reverse_win_for_settlement(
+            &state_without_source,
+            &valid_reverse_win
+        ));
+        assert!(official_reverse_win_for_settlement(
+            &state_with_source,
+            &valid_reverse_win
+        ));
         assert_eq!(
             official_from_position_for_settlement(&valid_reverse_win),
             Some(0)
         );
         assert!(!official_reverse_win_for_settlement(
+            &state_with_source,
             &invalid_self_draw_flag
         ));
         assert_eq!(
