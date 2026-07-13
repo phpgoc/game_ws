@@ -643,6 +643,7 @@ pub(crate) fn can_self_gang(
         || !position_owns_last_drawn_tile(state, position)
         || state.claim_window.is_some()
         || state.wall_count() == 0
+        || !position_has_discardable_tile_count(state, position)
         || has_impossible_known_tile_count(state, target_tile)
     {
         return false;
@@ -5877,6 +5878,31 @@ mod tests {
         assert_eq!(event.winner_details.len(), 1);
         assert!(!event.winner_details[0].is_gang_draw);
         assert!(event.winner_details[0].is_haidilao);
+    }
+
+    #[test]
+    fn self_gang_requires_fourteen_virtual_tiles() {
+        let mut state = playable_state();
+        state.hands.insert(0, vec![3, 3, 3, 3]);
+        state.wall = vec![35];
+        state.last_drawn_tile = Some(3);
+        let original_hand = state.hands.get(&0).cloned().unwrap();
+        let mut dispatch = Dispatch::default();
+
+        assert!(!can_self_gang(&state, 0, 3));
+        assert!(!perform_self_gang(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+            0,
+            3,
+        ));
+        assert_eq!(state.hands.get(&0), Some(&original_hand));
+        assert!(state.melds.get(&0).is_none_or(Vec::is_empty));
+        assert_eq!(state.wall, vec![35]);
+        assert!(dispatch.messages.is_empty());
     }
 
     #[test]
