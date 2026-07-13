@@ -301,6 +301,7 @@ pub(crate) fn build_settlement_event_with_configs(
     let score_changes = settlement_score_changes_for_state(state, &positions, settlement, configs);
     let winner_positions =
         positive_winner_positions_from_scores(settlement, &score_changes).collect::<Vec<_>>();
+    let has_effective_winner = !winner_positions.is_empty();
     let winner_position_set = winner_positions.iter().copied().collect::<HashSet<_>>();
 
     for position in &positions {
@@ -329,12 +330,20 @@ pub(crate) fn build_settlement_event_with_configs(
             .iter()
             .map(|position| *position as i32)
             .collect(),
-        from_position: settlement_from_position(settlement).map(|position| position as i32),
-        win_tile: settlement.win_tile,
-        is_self_draw: settlement.is_self_draw,
-        is_reverse_win: settlement_is_reverse_win(state, settlement),
-        is_gang_draw: settlement_is_gang_draw(state, settlement),
-        is_haidilao: settlement_is_haidilao(state, settlement),
+        from_position: if has_effective_winner {
+            settlement_from_position(settlement).map(|position| position as i32)
+        } else {
+            None
+        },
+        win_tile: if has_effective_winner {
+            settlement.win_tile
+        } else {
+            None
+        },
+        is_self_draw: has_effective_winner && settlement.is_self_draw,
+        is_reverse_win: has_effective_winner && settlement_is_reverse_win(state, settlement),
+        is_gang_draw: has_effective_winner && settlement_is_gang_draw(state, settlement),
+        is_haidilao: has_effective_winner && settlement_is_haidilao(state, settlement),
         score_changes,
         winner_details,
         players: snapshots,
@@ -7060,6 +7069,73 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![(0, 0), (1, 0), (2, 0), (3, 0)]
         );
+    }
+
+    #[test]
+    fn settlement_event_normalizes_invalid_reverse_win_as_draw() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![2, 3, 5, 6, 8, 11, 12, 13, 21, 22, 23, 31, 31]);
+        state.melds.insert(
+            0,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::PENG,
+                vec![4, 4, 4],
+                Some(2),
+            )],
+        );
+        state.enter_settlement_with_reverse_win(
+            vec![1],
+            Some(0),
+            Some(4),
+            false,
+            true,
+            false,
+            false,
+        );
+
+        let event = build_settlement_event_with_configs(&state, &relaxed_configs())
+            .expect("settlement event");
+
+        assert!(event.winner_positions.is_empty());
+        assert!(event.winner_details.is_empty());
+        assert_eq!(event.from_position, None);
+        assert_eq!(event.win_tile, None);
+        assert!(!event.is_self_draw);
+        assert!(!event.is_reverse_win);
+        assert!(!event.is_gang_draw);
+        assert!(!event.is_haidilao);
+    }
+
+    #[test]
+    fn settlement_event_normalizes_invalid_gang_haidilao_as_draw() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![2, 3, 5, 6, 8, 11, 12, 13, 31, 31, 31]);
+        state.melds.insert(
+            1,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::GANG,
+                vec![35, 35, 35, 35],
+                None,
+            )],
+        );
+        state.wall.clear();
+        state.enter_settlement_with_reverse_win(vec![1], None, Some(31), true, false, true, true);
+
+        let event = build_settlement_event_with_configs(&state, &relaxed_configs())
+            .expect("settlement event");
+
+        assert!(event.winner_positions.is_empty());
+        assert!(event.winner_details.is_empty());
+        assert_eq!(event.from_position, None);
+        assert_eq!(event.win_tile, None);
+        assert!(!event.is_self_draw);
+        assert!(!event.is_reverse_win);
+        assert!(!event.is_gang_draw);
+        assert!(!event.is_haidilao);
     }
 
     #[test]

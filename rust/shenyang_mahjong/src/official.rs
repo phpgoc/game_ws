@@ -96,16 +96,18 @@ pub fn create_match(room_service: &mut RoomService, room_key: &str) {
 pub fn create_match(_room_service: &mut RoomService, _room_key: &str) {}
 
 #[cfg(feature = "official")]
-fn official_from_position_for_settlement(settlement: &SettlementState) -> Option<usize> {
-    settlement_from_position(settlement)
-}
-
-#[cfg(feature = "official")]
-fn official_reverse_win_for_settlement(
+fn official_discard_context_for_settlement(
     state: &ShenyangMahjongLoopState,
     settlement: &SettlementState,
-) -> bool {
-    settlement_is_reverse_win(state, settlement)
+    has_effective_winner: bool,
+) -> (Option<usize>, bool) {
+    if !has_effective_winner {
+        return (None, false);
+    }
+    (
+        settlement_from_position(settlement),
+        settlement_is_reverse_win(state, settlement),
+    )
 }
 
 #[cfg(feature = "official")]
@@ -122,9 +124,6 @@ pub fn settle_round(
         return;
     };
 
-    let discarder_user_id = official_from_position_for_settlement(settlement)
-        .and_then(|position| room_service.room_official_user_id(room_key, position));
-    let is_reverse_win = official_reverse_win_for_settlement(state, settlement);
     let players = state.players_snapshot();
     let positions = players.keys().copied().collect::<Vec<_>>();
     let score_changes = settlement_score_changes_for_state(state, &positions, settlement, configs);
@@ -133,6 +132,10 @@ pub fn settle_round(
         winner_scores_for_settlement(state, settlement, &score_changes, win_rule, |position| {
             room_service.room_official_user_id(room_key, position)
         });
+    let (from_position, is_reverse_win) =
+        official_discard_context_for_settlement(state, settlement, !winner_scores.is_empty());
+    let discarder_user_id =
+        from_position.and_then(|position| room_service.room_official_user_id(room_key, position));
 
     tokio::spawn(async move {
         if let Err(err) = data::game_round_shenyang_mahjong_settlement(
@@ -269,8 +272,8 @@ mod tests {
 
     #[cfg(feature = "official")]
     use super::{
-        official_from_position_for_settlement, official_reverse_win_for_settlement,
-        winner_pattern_for_position, winner_scores_for_settlement,
+        official_discard_context_for_settlement, winner_pattern_for_position,
+        winner_scores_for_settlement,
     };
     use super::{winner_score_for_settlement, winner_score_from_changes};
 
@@ -321,26 +324,43 @@ mod tests {
             is_gang_draw: false,
             is_haidilao: false,
         };
+        let draw_with_reverse_context = SettlementState {
+            winner_positions: Vec::new(),
+            from_position: Some(0),
+            win_tile: Some(5),
+            is_self_draw: false,
+            is_reverse_win: true,
+            is_gang_draw: false,
+            is_haidilao: false,
+        };
 
-        assert!(!official_reverse_win_for_settlement(
-            &state_without_source,
-            &valid_reverse_win
-        ));
-        assert!(official_reverse_win_for_settlement(
-            &state_with_source,
-            &valid_reverse_win
-        ));
         assert_eq!(
-            official_from_position_for_settlement(&valid_reverse_win),
-            Some(0)
+            official_discard_context_for_settlement(
+                &state_without_source,
+                &valid_reverse_win,
+                true,
+            ),
+            (Some(0), false)
         );
-        assert!(!official_reverse_win_for_settlement(
-            &state_with_source,
-            &invalid_self_draw_flag
-        ));
         assert_eq!(
-            official_from_position_for_settlement(&invalid_self_draw_flag),
-            None
+            official_discard_context_for_settlement(&state_with_source, &valid_reverse_win, true),
+            (Some(0), true)
+        );
+        assert_eq!(
+            official_discard_context_for_settlement(
+                &state_with_source,
+                &invalid_self_draw_flag,
+                true,
+            ),
+            (None, false)
+        );
+        assert_eq!(
+            official_discard_context_for_settlement(
+                &state_with_source,
+                &draw_with_reverse_context,
+                false,
+            ),
+            (None, false)
         );
     }
 
