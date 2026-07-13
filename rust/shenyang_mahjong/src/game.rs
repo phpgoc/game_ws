@@ -186,11 +186,11 @@ fn build_claim_window_event_with_options(
 fn claim_window_event_for_viewer(
     event: &WsShenyangMahjongClaimWindowEvent,
     viewer_position: usize,
-    has_responded: bool,
+    can_respond: bool,
 ) -> WsShenyangMahjongClaimWindowEvent {
     let viewer_position = viewer_position as i32;
     let mut event = event.clone();
-    if has_responded {
+    if !can_respond {
         event.eligible_positions.clear();
         event.options.clear();
         return event;
@@ -449,11 +449,9 @@ pub(crate) fn build_table_snapshot_event_with_configs(
                     configs,
                 ),
             };
-            claim_window_event_for_viewer(
-                &event,
-                viewer_position,
-                window.responses.contains_key(&viewer_position),
-            )
+            let can_respond = window.eligible_positions.contains(&viewer_position)
+                && !window.responses.contains_key(&viewer_position);
+            claim_window_event_for_viewer(&event, viewer_position, can_respond)
         }),
     }
 }
@@ -1212,11 +1210,12 @@ fn push_claim_window_events(
     event: &WsShenyangMahjongClaimWindowEvent,
 ) {
     for (position, (session_id, _)) in state.players_snapshot() {
+        let can_respond = event.eligible_positions.contains(&(position as i32));
         push_direct_event(
             dispatch,
             session_id,
             WsCode::CLAIM_WINDOW as i32,
-            claim_window_event_for_viewer(event, position, false),
+            claim_window_event_for_viewer(event, position, can_respond),
         );
     }
 }
@@ -8471,5 +8470,12 @@ mod tests {
         assert_eq!(pending_claim_window.options.len(), 1);
         assert_eq!(pending_claim_window.options[0].position, 2);
         assert!(pending_claim_window.options[0].can_hu);
+
+        state.claim_window.as_mut().unwrap().eligible_positions = vec![1];
+        let excluded_snapshot =
+            build_table_snapshot_event_with_configs(&state, 2, &relaxed_configs());
+        let excluded_claim_window = excluded_snapshot.claim_window.expect("claim window");
+        assert!(excluded_claim_window.eligible_positions.is_empty());
+        assert!(excluded_claim_window.options.is_empty());
     }
 }
