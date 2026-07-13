@@ -186,9 +186,15 @@ fn build_claim_window_event_with_options(
 fn claim_window_event_for_viewer(
     event: &WsShenyangMahjongClaimWindowEvent,
     viewer_position: usize,
+    has_responded: bool,
 ) -> WsShenyangMahjongClaimWindowEvent {
     let viewer_position = viewer_position as i32;
     let mut event = event.clone();
+    if has_responded {
+        event.eligible_positions.clear();
+        event.options.clear();
+        return event;
+    }
     event
         .eligible_positions
         .retain(|position| *position == viewer_position);
@@ -420,10 +426,8 @@ pub(crate) fn build_table_snapshot_event_with_configs(
         turn_countdown: state.turn_countdown() as i32,
         last_drawn_tile: state.last_drawn_tile,
         settlement: build_settlement_event_with_configs(state, configs),
-        claim_window: state
-            .claim_window
-            .as_ref()
-            .map(|window| match window.kind {
+        claim_window: state.claim_window.as_ref().map(|window| {
+            let event = match window.kind {
                 ClaimWindowKind::Discard => build_claim_window_event(
                     state,
                     window.tile,
@@ -438,8 +442,13 @@ pub(crate) fn build_table_snapshot_event_with_configs(
                     state.turn_countdown() as i32,
                     configs,
                 ),
-            })
-            .map(|event| claim_window_event_for_viewer(&event, viewer_position)),
+            };
+            claim_window_event_for_viewer(
+                &event,
+                viewer_position,
+                window.responses.contains_key(&viewer_position),
+            )
+        }),
     }
 }
 
@@ -1201,7 +1210,7 @@ fn push_claim_window_events(
             dispatch,
             session_id,
             WsCode::CLAIM_WINDOW as i32,
-            claim_window_event_for_viewer(event, position),
+            claim_window_event_for_viewer(event, position, false),
         );
     }
 }
@@ -8394,7 +8403,7 @@ mod tests {
             .insert(1, vec![1, 2, 3, 3, 3, 4, 11, 12, 13, 21, 22, 23, 31]);
         state
             .hands
-            .insert(2, vec![1, 2, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+            .insert(2, vec![1, 2, 11, 12, 13, 21, 22, 23, 32, 32, 32, 35, 35]);
         state.discards.insert(0, vec![3]);
         state.claim_window = Some(ClaimWindowState {
             tile: 3,
@@ -8432,5 +8441,26 @@ mod tests {
         assert_eq!(observer_claim_window.from_position, 0);
         assert!(observer_claim_window.eligible_positions.is_empty());
         assert!(observer_claim_window.options.is_empty());
+
+        state
+            .claim_window
+            .as_mut()
+            .unwrap()
+            .responses
+            .insert(1, ClaimResponse::Pass);
+        let responded_snapshot =
+            build_table_snapshot_event_with_configs(&state, 1, &relaxed_configs());
+        let responded_claim_window = responded_snapshot.claim_window.expect("claim window");
+        assert_eq!(responded_claim_window.tile, 3);
+        assert!(responded_claim_window.eligible_positions.is_empty());
+        assert!(responded_claim_window.options.is_empty());
+
+        let pending_snapshot =
+            build_table_snapshot_event_with_configs(&state, 2, &relaxed_configs());
+        let pending_claim_window = pending_snapshot.claim_window.expect("claim window");
+        assert_eq!(pending_claim_window.eligible_positions, vec![2]);
+        assert_eq!(pending_claim_window.options.len(), 1);
+        assert_eq!(pending_claim_window.options[0].position, 2);
+        assert!(pending_claim_window.options[0].can_hu);
     }
 }
