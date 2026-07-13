@@ -90,6 +90,10 @@ fn chi_opens_door(configs: &HashMap<String, i32>) -> bool {
     config_value(configs, "chi_opens_door", 1) == 1
 }
 
+fn allow_chi(configs: &HashMap<String, i32>) -> bool {
+    config_value(configs, "allow_chi", 1) == 1
+}
+
 fn is_complete_win_with_configs(
     tiles: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -130,7 +134,7 @@ pub(crate) fn build_claim_options(
         let can_hu = can_claim_hu_with_configs(state, position, tile, configs);
         let can_peng_now = can_peng(&hand, tile);
         let can_gang_now = can_gang(&hand, tile);
-        let chi_options = if position == next_position {
+        let chi_options = if allow_chi(configs) && position == next_position {
             chi_options_for_hand(&hand, tile)
         } else {
             Vec::new()
@@ -1273,6 +1277,7 @@ pub(crate) fn resolve_claim_window(
             Some(ClaimResponse::Chi { consume_tiles })
                 if !is_rob_gang
                     && !invalid_claim_tile_count
+                    && allow_chi(configs)
                     && *position == state.next_position(claim_window.from_position)
                     && can_chi(&hand, claim_window.tile, consume_tiles) =>
             {
@@ -1965,7 +1970,7 @@ impl ShenyangMahjongGameHandler {
                         ClaimResponse::Gang
                     }
                     ShenyangMahjongAction::CHI => {
-                        if is_rob_gang || invalid_claim_tile_count {
+                        if is_rob_gang || invalid_claim_tile_count || !allow_chi(&configs) {
                             return room_service.error_response(
                                 session_id,
                                 Routes::PLAY as i32,
@@ -2645,6 +2650,23 @@ mod tests {
     }
 
     #[test]
+    fn claim_options_respect_allow_chi_config() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![1, 2, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35]);
+        let configs = HashMap::from([("win_rule".to_owned(), 1), ("allow_chi".to_owned(), 0)]);
+
+        let options = build_claim_options(&state, 3, 0, &configs);
+
+        assert!(
+            options
+                .iter()
+                .all(|option| option.position != 1 || option.chi_options.is_empty())
+        );
+    }
+
+    #[test]
     fn claim_options_list_concrete_actions() {
         let mut state = playable_state();
         state.discards.insert(0, vec![3]);
@@ -3069,6 +3091,47 @@ mod tests {
         let meld = state.melds.get(&1).unwrap().first().unwrap();
         assert_eq!(meld.kind, ShenyangMahjongMeldKind::CHI);
         assert_eq!(meld.tiles, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn play_request_chi_respects_allow_chi_config() {
+        let (mut room_service, mut handler, _room_key, loop_state) =
+            setup_request_room_with_configs(serde_json::json!({"allow_chi":0,"win_rule":0}));
+        {
+            let mut state = loop_state.lock().unwrap();
+            state.phase = ShenyangMahjongPhase::Play;
+            state.current_position = 0;
+            for position in 0..4 {
+                state.discards.insert(position, Vec::new());
+                state.melds.insert(position, Vec::new());
+            }
+            state.discards.insert(0, vec![3]);
+            state
+                .hands
+                .insert(1, vec![1, 2, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35]);
+            state.claim_window = Some(ClaimWindowState {
+                tile: 3,
+                from_position: 0,
+                kind: ClaimWindowKind::Discard,
+                eligible_positions: vec![1],
+                responses: HashMap::new(),
+            });
+        }
+
+        let response = handler.handle_game_request(
+            &mut room_service,
+            2,
+            play_request(ShenyangMahjongAction::CHI, vec![1, 2], Some(3), Some(0)),
+        );
+
+        assert_eq!(
+            response_code(&response, 2, Routes::PLAY),
+            Some(WsResponseCode::NO_PERMISSION as i32)
+        );
+        let state = loop_state.lock().unwrap();
+        assert!(state.claim_window.is_some());
+        assert_eq!(state.discards.get(&0), Some(&vec![3]));
+        assert!(state.melds.get(&1).unwrap().is_empty());
     }
 
     #[test]
@@ -4772,6 +4835,45 @@ mod tests {
         let meld = state.melds.get(&1).unwrap().first().unwrap();
         assert_eq!(meld.kind, ShenyangMahjongMeldKind::CHI);
         assert_eq!(meld.tiles, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn resolve_claim_window_respects_allow_chi_config() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![1, 2, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35]);
+        state.discards.insert(0, vec![3]);
+        state.wall = vec![36];
+        state.current_position = 0;
+        state.claim_window = Some(ClaimWindowState {
+            tile: 3,
+            from_position: 0,
+            kind: ClaimWindowKind::Discard,
+            eligible_positions: vec![1],
+            responses: HashMap::from([(
+                1,
+                ClaimResponse::Chi {
+                    consume_tiles: vec![1, 2],
+                },
+            )]),
+        });
+        let configs = HashMap::from([("allow_chi".to_owned(), 0)]);
+        let mut dispatch = Dispatch::default();
+
+        resolve_claim_window(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &configs,
+            &mut dispatch,
+        );
+
+        assert!(state.claim_window.is_none());
+        assert_eq!(state.current_position, 1);
+        assert_eq!(state.discards.get(&0), Some(&vec![3]));
+        assert!(state.melds.get(&1).map(Vec::is_empty).unwrap_or(true));
+        assert!(state.hands.get(&1).unwrap().contains(&36));
     }
 
     fn response_code(dispatch: &Dispatch, recipient: SessionId, route: Routes) -> Option<i32> {

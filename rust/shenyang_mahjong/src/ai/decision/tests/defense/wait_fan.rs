@@ -49,6 +49,7 @@ fn mid_round_open_hand_does_not_chase_wait_fan_with_live_terminal_discard() {
         dealer_position: 0,
         wall_count: 37,
         max_fan: Some(4),
+        allow_chi: true,
         chi_opens_door: true,
         claim_window: None,
         seats,

@@ -52,6 +52,13 @@ pub fn build_shenyang_mahjong_settings() -> (GameSettings, HashMap<String, GameP
             }),
         ),
         (
+            "allow_chi".into(),
+            GameParam::Enum(GameParamEnum {
+                default: 1,
+                options: vec!["disabled".into(), "enabled".into()],
+            }),
+        ),
+        (
             "chi_opens_door".into(),
             GameParam::Enum(GameParamEnum {
                 default: 1,
@@ -99,5 +106,7 @@ mod tests {
         assert!(descriptions.contains_key("win_rule"));
         assert_eq!(settings.values.get("chi_opens_door"), Some(&1));
         assert!(descriptions.contains_key("chi_opens_door"));
+        assert_eq!(settings.values.get("allow_chi"), Some(&1));
+        assert!(descriptions.contains_key("allow_chi"));
     }
 }

@@ -10,6 +10,9 @@ pub(super) fn choose_chi_claim(
     from_position: usize,
     current_ready_score: f64,
 ) -> Option<AiClaimChoice> {
+    if !table.allow_chi {
+        return Some(AiClaimChoice::Pass);
+    }
     if position != next_position_after(from_position, table) {
         return None;
     }

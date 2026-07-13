@@ -21,6 +21,25 @@ fn claim_chi_can_fill_missing_third_suit() {
 }
 
 #[test]
+fn claim_chi_passes_when_disabled() {
+    let mut table = table_with_discards(3, Vec::new());
+    table.wall_count = 40;
+    table.allow_chi = false;
+    table.claim_window = Some(AiClaimView {
+        tile: 22,
+        from_position: 3,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 23, 31, 35];
+
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+        Some(AiClaimChoice::Pass)
+    );
+}
+
+#[test]
 fn claim_chi_can_use_claim_tile_as_low_edge() {
     let mut table = table_with_discards(3, Vec::new());
     table.wall_count = 40;
