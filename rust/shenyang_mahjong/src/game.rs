@@ -1023,6 +1023,7 @@ pub(crate) fn perform_discard(
         || state.claim_window.is_some()
         || !position_has_discardable_tile_count(state, position)
         || !is_valid_tile(tile)
+        || position_has_impossible_known_tile_count(state, position)
     {
         return false;
     }
@@ -3502,20 +3503,19 @@ mod tests {
             for position in 0..4 {
                 state.discards.insert(position, Vec::new());
                 state.melds.insert(position, Vec::new());
-                state.hands.insert(
-                    position,
-                    vec![4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 31, 32, 33],
-                );
             }
             state
                 .hands
                 .insert(0, vec![3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 31, 32, 33]);
             state
                 .hands
-                .insert(1, vec![1, 2, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+                .insert(1, vec![1, 2, 7, 9, 14, 16, 18, 24, 26, 28, 34, 35, 36]);
             state
                 .hands
-                .insert(2, vec![3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35]);
+                .insert(2, vec![3, 3, 4, 6, 8, 11, 13, 15, 17, 21, 23, 25, 27]);
+            state
+                .hands
+                .insert(3, vec![5, 7, 9, 12, 14, 16, 18, 22, 24, 26, 28, 32, 37]);
             state.wall = vec![36];
             state.last_drawn_tile = Some(3);
         }
@@ -3642,6 +3642,52 @@ mod tests {
     }
 
     #[test]
+    fn play_request_discard_rejects_public_fifth_copy() {
+        let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
+        {
+            let mut state = loop_state.lock().unwrap();
+            state.phase = ShenyangMahjongPhase::Play;
+            state.current_position = 0;
+            for position in 0..4 {
+                state.discards.insert(position, Vec::new());
+                state.melds.insert(position, Vec::new());
+            }
+            state.discards.insert(1, vec![3]);
+            state
+                .hands
+                .insert(0, vec![3, 3, 3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31]);
+            state.wall = vec![36];
+            state.last_drawn_tile = Some(3);
+        }
+
+        let response = handler.handle_game_request(
+            &mut room_service,
+            1,
+            play_request(ShenyangMahjongAction::DISCARD, Vec::new(), Some(3), None),
+        );
+
+        assert_eq!(
+            response_code(&response, 1, Routes::PLAY),
+            Some(WsResponseCode::NO_PERMISSION as i32)
+        );
+        let state = loop_state.lock().unwrap();
+        assert_eq!(known_tile_count(&state, 3), 5);
+        assert_eq!(state.discards.get(&1), Some(&vec![3]));
+        assert!(state.discards.get(&0).unwrap().is_empty());
+        assert_eq!(
+            state
+                .hands
+                .get(&0)
+                .unwrap()
+                .iter()
+                .filter(|&&tile| tile == 3)
+                .count(),
+            4
+        );
+        assert_eq!(state.wall, vec![36]);
+    }
+
+    #[test]
     fn perform_discard_requires_current_position() {
         let mut state = playable_state();
         state.current_position = 1;
@@ -3725,6 +3771,38 @@ mod tests {
     }
 
     #[test]
+    fn perform_discard_rejects_public_fifth_copy() {
+        let mut state = playable_state();
+        state.current_position = 0;
+        state.discards.insert(0, Vec::new());
+        state.discards.insert(1, vec![3]);
+        state
+            .hands
+            .insert(0, vec![3, 3, 3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31]);
+        state.wall = vec![36];
+        state.last_drawn_tile = Some(3);
+        let original_hand = state.hands.get(&0).cloned().unwrap();
+        let mut dispatch = Dispatch::default();
+
+        assert_eq!(known_tile_count(&state, 3), 5);
+        assert!(!perform_discard(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+            0,
+            3,
+        ));
+
+        assert_eq!(state.hands.get(&0), Some(&original_hand));
+        assert!(state.discards.get(&0).unwrap().is_empty());
+        assert_eq!(state.discards.get(&1), Some(&vec![3]));
+        assert_eq!(state.wall, vec![36]);
+        assert!(dispatch.messages.is_empty());
+    }
+
+    #[test]
     fn perform_discard_rejects_outside_play_phase() {
         let mut state = playable_state();
         state.phase = ShenyangMahjongPhase::Settlement;
@@ -3798,14 +3876,19 @@ mod tests {
             for position in 0..4 {
                 state.discards.insert(position, Vec::new());
                 state.melds.insert(position, Vec::new());
-                state.hands.insert(
-                    position,
-                    vec![4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 31, 32, 33],
-                );
             }
             state
                 .hands
                 .insert(0, vec![1, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 31, 32, 33]);
+            state
+                .hands
+                .insert(1, vec![2, 4, 7, 9, 14, 16, 18, 24, 26, 28, 34, 35, 37]);
+            state
+                .hands
+                .insert(2, vec![3, 5, 8, 11, 13, 15, 17, 21, 23, 25, 27, 32, 36]);
+            state
+                .hands
+                .insert(3, vec![6, 7, 9, 12, 14, 16, 18, 22, 24, 26, 28, 33, 34]);
             state.wall = vec![36];
             state.last_drawn_tile = Some(1);
         }
