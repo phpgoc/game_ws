@@ -933,6 +933,23 @@ fn is_open_meld(meld: &WsShenyangMahjongMeld) -> bool {
     meld.from_position.is_some() && (meld_primary_tile(meld).is_some() || is_chi_meld(meld))
 }
 
+fn position_has_discardable_tile_count(state: &ShenyangMahjongLoopState, position: usize) -> bool {
+    let Some(hand_count) = state.hands.get(&position).map(Vec::len) else {
+        return false;
+    };
+    let meld_count = state
+        .melds
+        .get(&position)
+        .map(|melds| {
+            melds
+                .iter()
+                .filter(|meld| meld_primary_tile(meld).is_some() || is_chi_meld(meld))
+                .count()
+        })
+        .unwrap_or_default();
+    hand_count + meld_count * 3 == 14
+}
+
 fn peng_meld_tile(meld: &WsShenyangMahjongMeld) -> Option<i32> {
     if meld.kind != ShenyangMahjongMeldKind::PENG {
         return None;
@@ -952,6 +969,7 @@ pub(crate) fn perform_discard(
     if state.phase != ShenyangMahjongPhase::Play
         || state.current_position != position
         || state.claim_window.is_some()
+        || !position_has_discardable_tile_count(state, position)
     {
         return false;
     }
@@ -3465,6 +3483,34 @@ mod tests {
 
         assert_eq!(state.hands.get(&0), Some(&original_hand));
         assert!(state.discards.get(&0).unwrap().is_empty());
+        assert!(dispatch.messages.is_empty());
+    }
+
+    #[test]
+    fn perform_discard_requires_fourteen_virtual_tiles() {
+        let mut state = playable_state();
+        state.current_position = 0;
+        state.discards.insert(0, Vec::new());
+        state
+            .hands
+            .insert(0, vec![3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 32, 33]);
+        state.wall = vec![36];
+        let original_hand = state.hands.get(&0).cloned().unwrap();
+        let mut dispatch = Dispatch::default();
+
+        assert!(!perform_discard(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+            0,
+            3,
+        ));
+
+        assert_eq!(state.hands.get(&0), Some(&original_hand));
+        assert!(state.discards.get(&0).unwrap().is_empty());
+        assert_eq!(state.wall, vec![36]);
         assert!(dispatch.messages.is_empty());
     }
 
