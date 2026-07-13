@@ -558,24 +558,29 @@ pub(crate) fn can_self_draw_hu(state: &ShenyangMahjongLoopState, position: usize
     can_self_draw_hu_with_configs(state, position, &HashMap::new())
 }
 
+fn position_owns_last_drawn_tile(state: &ShenyangMahjongLoopState, position: usize) -> bool {
+    state.last_drawn_tile.is_some_and(|last_drawn_tile| {
+        is_valid_tile(last_drawn_tile)
+            && state
+                .hands
+                .get(&position)
+                .is_some_and(|hand| hand.contains(&last_drawn_tile))
+    })
+}
+
 pub(crate) fn can_self_draw_hu_with_configs(
     state: &ShenyangMahjongLoopState,
     position: usize,
     configs: &HashMap<String, i32>,
 ) -> bool {
     if state.current_position != position
+        || !position_owns_last_drawn_tile(state, position)
         || state.claim_window.is_some()
         || position_has_impossible_known_tile_count(state, position)
     {
         return false;
     }
     let hand = state.hands.get(&position).cloned().unwrap_or_default();
-    let Some(last_drawn_tile) = state.last_drawn_tile else {
-        return false;
-    };
-    if !is_valid_tile(last_drawn_tile) || !hand.contains(&last_drawn_tile) {
-        return false;
-    }
     is_complete_win_with_configs(
         &hand,
         state.melds.get(&position).map(Vec::as_slice).unwrap_or(&[]),
@@ -589,7 +594,7 @@ pub(crate) fn can_self_gang(
     target_tile: i32,
 ) -> bool {
     if state.current_position != position
-        || state.last_drawn_tile.is_none()
+        || !position_owns_last_drawn_tile(state, position)
         || state.claim_window.is_some()
         || has_impossible_known_tile_count(state, target_tile)
     {
@@ -5453,6 +5458,21 @@ mod tests {
         assert_eq!(event.winner_details.len(), 1);
         assert!(event.winner_details[0].is_gang_draw);
         assert!(event.winner_details[0].is_haidilao);
+    }
+
+    #[test]
+    fn self_gang_requires_owned_last_drawn_tile() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(0, vec![3, 3, 3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31]);
+        state.last_drawn_tile = Some(9);
+
+        assert!(!can_self_gang(&state, 0, 3));
+
+        state.last_drawn_tile = Some(31);
+
+        assert!(can_self_gang(&state, 0, 3));
     }
 
     #[test]
