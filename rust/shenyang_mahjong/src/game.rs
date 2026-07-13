@@ -611,6 +611,31 @@ fn can_added_gang(hand: &[i32], melds: &[WsShenyangMahjongMeld], target_tile: i3
             == 1
 }
 
+fn rob_gang_claim_matches_source(
+    state: &ShenyangMahjongLoopState,
+    tile: i32,
+    from_position: usize,
+) -> bool {
+    if state.wall_count() == 0
+        || state.last_drawn_tile != Some(tile)
+        || !position_has_discardable_tile_count(state, from_position)
+        || has_impossible_known_tile_count(state, tile)
+    {
+        return false;
+    }
+    let hand = state
+        .hands
+        .get(&from_position)
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
+    let melds = state
+        .melds
+        .get(&from_position)
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
+    can_added_gang(hand, melds, tile)
+}
+
 #[cfg(test)]
 pub(crate) fn can_self_draw_hu(state: &ShenyangMahjongLoopState, position: usize) -> bool {
     can_self_draw_hu_with_configs(state, position, &HashMap::new())
@@ -1334,8 +1359,11 @@ pub(crate) fn resolve_claim_window(
         return;
     };
     let is_rob_gang = matches!(claim_window.kind, ClaimWindowKind::RobGang);
-    let claim_matches_source = is_rob_gang
-        || discard_claim_matches_source(state, claim_window.tile, claim_window.from_position);
+    let claim_matches_source = if is_rob_gang {
+        rob_gang_claim_matches_source(state, claim_window.tile, claim_window.from_position)
+    } else {
+        discard_claim_matches_source(state, claim_window.tile, claim_window.from_position)
+    };
     let invalid_claim_tile_count = has_impossible_known_tile_count(state, claim_window.tile);
     let mut hu_positions = Vec::new();
     let mut meld_claims = Vec::new();
@@ -1468,6 +1496,21 @@ pub(crate) fn resolve_claim_window(
     }
 
     if is_rob_gang {
+        if !claim_matches_source {
+            state.claim_window = None;
+            state.current_position = claim_window.from_position;
+            state.set_turn_countdown(current_play_time(configs));
+            state.set_action_received(false);
+            push_phase_change(
+                room_service,
+                room_key,
+                dispatch,
+                state.phase,
+                state.current_position,
+                state.turn_countdown(),
+            );
+            return;
+        }
         let _ = finish_added_gang(
             room_service,
             room_key,
@@ -2080,8 +2123,11 @@ impl ShenyangMahjongGameHandler {
                 let hand = state.hands.get(&position).cloned().unwrap_or_default();
                 let invalid_claim_tile_count = has_impossible_known_tile_count(&state, claim_tile);
                 let can_claim_meld = position_has_claimable_tile_count(&state, position);
-                let claim_matches_source =
-                    is_rob_gang || discard_claim_matches_source(&state, claim_tile, from_position);
+                let claim_matches_source = if is_rob_gang {
+                    rob_gang_claim_matches_source(&state, claim_tile, from_position)
+                } else {
+                    discard_claim_matches_source(&state, claim_tile, from_position)
+                };
                 let response = match payload.action {
                     ShenyangMahjongAction::PASS => ClaimResponse::Pass,
                     ShenyangMahjongAction::HU => {
@@ -4651,6 +4697,7 @@ mod tests {
             state
                 .hands
                 .insert(1, vec![1, 2, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+            state.wall = vec![36];
             state.last_drawn_tile = Some(3);
             state.claim_window = Some(ClaimWindowState {
                 tile: 3,
@@ -4711,6 +4758,52 @@ mod tests {
             state.melds.get(&0).unwrap().first().unwrap().kind,
             ShenyangMahjongMeldKind::PENG
         );
+    }
+
+    #[test]
+    fn play_request_rob_gang_hu_requires_added_gang_source() {
+        let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
+        {
+            let mut state = loop_state.lock().unwrap();
+            state.phase = ShenyangMahjongPhase::Play;
+            state.current_position = 0;
+            for position in 0..4 {
+                state.discards.insert(position, Vec::new());
+                state.melds.insert(position, Vec::new());
+            }
+            state
+                .hands
+                .insert(0, vec![3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 21, 22, 23, 31]);
+            state
+                .hands
+                .insert(1, vec![1, 2, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+            state.wall = vec![36];
+            state.last_drawn_tile = Some(3);
+            state.claim_window = Some(ClaimWindowState {
+                tile: 3,
+                from_position: 0,
+                kind: ClaimWindowKind::RobGang,
+                eligible_positions: vec![1],
+                responses: HashMap::new(),
+            });
+        }
+
+        let response = handler.handle_game_request(
+            &mut room_service,
+            2,
+            play_request(ShenyangMahjongAction::HU, Vec::new(), Some(3), Some(0)),
+        );
+
+        assert_eq!(
+            response_code(&response, 2, Routes::PLAY),
+            Some(WsResponseCode::NO_PERMISSION as i32)
+        );
+        let state = loop_state.lock().unwrap();
+        assert!(state.settlement.is_none());
+        let claim_window = state.claim_window.as_ref().expect("claim window");
+        assert!(claim_window.responses.is_empty());
+        assert!(state.hands.get(&0).unwrap().contains(&3));
+        assert!(state.melds.get(&0).unwrap().is_empty());
     }
 
     #[test]
@@ -5696,6 +5789,76 @@ mod tests {
     }
 
     #[test]
+    fn rob_gang_hu_ignores_invalid_added_gang_source() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(0, vec![3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 21, 22, 23, 31]);
+        state
+            .hands
+            .insert(1, vec![1, 2, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+        state.wall = vec![36];
+        state.last_drawn_tile = Some(3);
+        state.claim_window = Some(ClaimWindowState {
+            tile: 3,
+            from_position: 0,
+            kind: ClaimWindowKind::RobGang,
+            eligible_positions: vec![1],
+            responses: HashMap::from([(1, ClaimResponse::Hu)]),
+        });
+        let original_hand = state.hands.get(&0).cloned().unwrap();
+        let mut dispatch = Dispatch::default();
+
+        resolve_claim_window(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+        );
+
+        assert!(state.settlement.is_none());
+        assert!(state.claim_window.is_none());
+        assert_eq!(state.phase, ShenyangMahjongPhase::Play);
+        assert_eq!(state.current_position, 0);
+        assert_eq!(state.hands.get(&0), Some(&original_hand));
+        assert_eq!(state.wall, vec![36]);
+    }
+
+    #[test]
+    fn rob_gang_pass_clears_invalid_added_gang_source() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(0, vec![3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 21, 22, 23, 31]);
+        state.wall = vec![36];
+        state.last_drawn_tile = Some(3);
+        state.claim_window = Some(ClaimWindowState {
+            tile: 3,
+            from_position: 0,
+            kind: ClaimWindowKind::RobGang,
+            eligible_positions: vec![1],
+            responses: HashMap::from([(1, ClaimResponse::Pass)]),
+        });
+        let original_hand = state.hands.get(&0).cloned().unwrap();
+        let mut dispatch = Dispatch::default();
+
+        resolve_claim_window(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+        );
+
+        assert!(state.claim_window.is_none());
+        assert_eq!(state.phase, ShenyangMahjongPhase::Play);
+        assert_eq!(state.current_position, 0);
+        assert_eq!(state.hands.get(&0), Some(&original_hand));
+        assert_eq!(state.wall, vec![36]);
+    }
+
+    #[test]
     fn rob_gang_hu_respects_basic_open_requirement() {
         let mut state = playable_state();
         state
@@ -5832,10 +5995,12 @@ mod tests {
         assert!(state.settlement.is_none());
         assert!(state.claim_window.is_none());
         assert_eq!(state.current_position, 0);
-        assert_eq!(state.last_drawn_tile, Some(36));
+        assert_eq!(state.last_drawn_tile, Some(3));
+        assert!(state.hands.get(&0).unwrap().contains(&3));
+        assert_eq!(state.wall, vec![36]);
         assert_eq!(
             state.melds.get(&0).unwrap().first().unwrap().kind,
-            ShenyangMahjongMeldKind::GANG
+            ShenyangMahjongMeldKind::PENG
         );
     }
 

@@ -573,8 +573,11 @@ mod tests {
             .hands
             .insert(0, vec![14, 15, 17, 18, 19, 21, 22, 23, 35, 35]);
         state.melds.insert(0, vec![test_peng_meld(1)]);
-        state.hands.insert(1, vec![16]);
+        state
+            .hands
+            .insert(1, vec![2, 5, 8, 11, 14, 16, 17, 21, 31, 32, 33]);
         state.melds.insert(1, vec![test_peng_meld(16)]);
+        state.last_drawn_tile = Some(16);
         state.claim_window = Some(ClaimWindowState {
             tile: 16,
             from_position: 1,
