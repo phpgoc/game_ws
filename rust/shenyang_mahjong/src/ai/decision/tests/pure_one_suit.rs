@@ -217,6 +217,35 @@ fn discard_starts_pure_one_suit_plan_at_eight_main_suit_tiles() {
 }
 
 #[test]
+fn pure_one_suit_plan_abandons_exhausted_main_suit() {
+    let hand = vec![1, 1, 2, 2, 3, 3, 4, 4, 11, 12, 21, 22, 31, 35];
+    let live_table = table_with_discards(1, Vec::new());
+
+    assert!(pure_one_suit_plan_score(&hand, &[]) > 0.0);
+    assert!(pure_one_suit_plan_score_for_context(&hand, &[], &live_table, 0) > 0.0);
+    assert!(pure_one_suit_discard_bias(&hand, 11, &[], &live_table, 0) > 0.0);
+
+    let exhausted_main_suit = (1..=9)
+        .flat_map(|tile| {
+            let own_count = hand.iter().filter(|item| **item == tile).count();
+            std::iter::repeat_n(tile, 4 - own_count)
+        })
+        .collect::<Vec<_>>();
+    let exhausted_table = table_with_discards(1, exhausted_main_suit);
+
+    assert_eq!(live_tile_count_for_suit(&hand, &exhausted_table, 0), 0);
+    assert!(pure_one_suit_plan_score(&hand, &[]) > 0.0);
+    assert_eq!(
+        pure_one_suit_plan_score_for_context(&hand, &[], &exhausted_table, 0),
+        0.0
+    );
+    assert_eq!(
+        pure_one_suit_discard_bias(&hand, 11, &[], &exhausted_table, 0),
+        0.0
+    );
+}
+
+#[test]
 fn non_dealer_relaxed_pure_one_suit_plan_can_break_three_suits() {
     let mut table = table_with_discards(1, Vec::new());
     table.dealer_position = 1;
