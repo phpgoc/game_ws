@@ -183,6 +183,21 @@ fn build_claim_window_event_with_options(
     }
 }
 
+fn claim_window_event_for_viewer(
+    event: &WsShenyangMahjongClaimWindowEvent,
+    viewer_position: usize,
+) -> WsShenyangMahjongClaimWindowEvent {
+    let viewer_position = viewer_position as i32;
+    let mut event = event.clone();
+    event
+        .eligible_positions
+        .retain(|position| *position == viewer_position);
+    event
+        .options
+        .retain(|option| option.position == viewer_position);
+    event
+}
+
 fn build_rob_gang_claim_window_event(
     state: &ShenyangMahjongLoopState,
     tile: i32,
@@ -405,22 +420,26 @@ pub(crate) fn build_table_snapshot_event_with_configs(
         turn_countdown: state.turn_countdown() as i32,
         last_drawn_tile: state.last_drawn_tile,
         settlement: build_settlement_event_with_configs(state, configs),
-        claim_window: state.claim_window.as_ref().map(|window| match window.kind {
-            ClaimWindowKind::Discard => build_claim_window_event(
-                state,
-                window.tile,
-                window.from_position,
-                state.turn_countdown() as i32,
-                configs,
-            ),
-            ClaimWindowKind::RobGang => build_rob_gang_claim_window_event(
-                state,
-                window.tile,
-                window.from_position,
-                state.turn_countdown() as i32,
-                configs,
-            ),
-        }),
+        claim_window: state
+            .claim_window
+            .as_ref()
+            .map(|window| match window.kind {
+                ClaimWindowKind::Discard => build_claim_window_event(
+                    state,
+                    window.tile,
+                    window.from_position,
+                    state.turn_countdown() as i32,
+                    configs,
+                ),
+                ClaimWindowKind::RobGang => build_rob_gang_claim_window_event(
+                    state,
+                    window.tile,
+                    window.from_position,
+                    state.turn_countdown() as i32,
+                    configs,
+                ),
+            })
+            .map(|event| claim_window_event_for_viewer(&event, viewer_position)),
     }
 }
 
@@ -963,13 +982,7 @@ pub(crate) fn perform_discard(
             responses: HashMap::new(),
         });
         state.set_turn_countdown(current_claim_time(configs));
-        push_room_event(
-            room_service,
-            room_key,
-            dispatch,
-            WsCode::CLAIM_WINDOW as i32,
-            claim_event,
-        );
+        push_claim_window_events(state, dispatch, &claim_event);
     }
     true
 }
@@ -1080,13 +1093,7 @@ pub(crate) fn perform_self_gang(
             });
             state.set_turn_countdown(current_claim_time(configs));
             state.set_action_received(false);
-            push_room_event(
-                room_service,
-                room_key,
-                dispatch,
-                WsCode::CLAIM_WINDOW as i32,
-                claim_event,
-            );
+            push_claim_window_events(state, dispatch, &claim_event);
             return true;
         }
         return finish_added_gang(
@@ -1180,6 +1187,21 @@ pub(crate) fn push_draw_events(
                 from_position: None,
                 wall_count: state.wall_count() as i32,
             },
+        );
+    }
+}
+
+fn push_claim_window_events(
+    state: &ShenyangMahjongLoopState,
+    dispatch: &mut Dispatch,
+    event: &WsShenyangMahjongClaimWindowEvent,
+) {
+    for (position, (session_id, _)) in state.players_snapshot() {
+        push_direct_event(
+            dispatch,
+            session_id,
+            WsCode::CLAIM_WINDOW as i32,
+            claim_window_event_for_viewer(event, position),
         );
     }
 }
@@ -3321,6 +3343,34 @@ mod tests {
             Some(WsResponseCode::OK as i32)
         );
         assert!(has_room_event(&response, WsCode::CLAIM_WINDOW));
+        for recipient in 1..=4 {
+            let common_event = response
+                .messages
+                .iter()
+                .find_map(|message| match &message.payload {
+                    OutboundPayload::Event(event)
+                        if message.recipient == recipient
+                            && event.code == WsCode::CLAIM_WINDOW as i32 =>
+                    {
+                        Some(event)
+                    }
+                    _ => None,
+                })
+                .expect("each player should receive the public claim window");
+            let event: WsShenyangMahjongClaimWindowEvent =
+                serde_json::from_value(common_event.data.clone()).expect("claim window payload");
+            let viewer_position = recipient as i32 - 1;
+            assert_eq!(event.tile, 3);
+            assert_eq!(event.from_position, 0);
+            if matches!(viewer_position, 1 | 2) {
+                assert_eq!(event.eligible_positions, vec![viewer_position]);
+                assert_eq!(event.options.len(), 1);
+                assert_eq!(event.options[0].position, viewer_position);
+            } else {
+                assert!(event.eligible_positions.is_empty());
+                assert!(event.options.is_empty());
+            }
+        }
         let state = loop_state.lock().unwrap();
         let claim_window = state.claim_window.as_ref().expect("claim window");
         assert!(matches!(claim_window.kind, ClaimWindowKind::Discard));
@@ -8342,12 +8392,15 @@ mod tests {
         state
             .hands
             .insert(1, vec![1, 2, 3, 3, 3, 4, 11, 12, 13, 21, 22, 23, 31]);
+        state
+            .hands
+            .insert(2, vec![1, 2, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
         state.discards.insert(0, vec![3]);
         state.claim_window = Some(ClaimWindowState {
             tile: 3,
             from_position: 0,
             kind: ClaimWindowKind::Discard,
-            eligible_positions: vec![1],
+            eligible_positions: vec![1, 2],
             responses: HashMap::new(),
         });
         state.set_turn_countdown(4);
@@ -8370,5 +8423,14 @@ mod tests {
         assert!(option.can_gang);
         assert!(option.chi_options.contains(&vec![1, 2]));
         assert!(option.chi_options.contains(&vec![2, 4]));
+        assert_eq!(claim_window.options.len(), 1);
+
+        let observer_snapshot =
+            build_table_snapshot_event_with_configs(&state, 3, &relaxed_configs());
+        let observer_claim_window = observer_snapshot.claim_window.expect("claim window");
+        assert_eq!(observer_claim_window.tile, 3);
+        assert_eq!(observer_claim_window.from_position, 0);
+        assert!(observer_claim_window.eligible_positions.is_empty());
+        assert!(observer_claim_window.options.is_empty());
     }
 }
