@@ -1631,6 +1631,39 @@ fn winner_final_hand_tiles(
     hand_tiles
 }
 
+fn winner_has_impossible_known_tile_count(
+    state: &ShenyangMahjongLoopState,
+    settlement: &crate::game_state::SettlementState,
+    position: usize,
+) -> bool {
+    let hand_tiles = winner_final_hand_tiles(state, settlement, position);
+    let melds = state.melds.get(&position).map(Vec::as_slice).unwrap_or(&[]);
+    let unrepresented_claimed_tile =
+        if settlement.is_self_draw || !settlement.winner_positions.contains(&position) {
+            None
+        } else {
+            settlement.win_tile.filter(|tile| {
+                settlement
+                    .from_position
+                    .and_then(|from_position| state.discards.get(&from_position))
+                    .and_then(|discards| discards.last())
+                    .copied()
+                    != Some(*tile)
+            })
+        };
+
+    SHENYANG_MAHJONG_TILE_KINDS.into_iter().any(|tile| {
+        let owns_tile = hand_tiles.contains(&tile)
+            || melds
+                .iter()
+                .filter(|meld| meld_primary_tile(meld).is_some() || is_chi_meld(meld))
+                .any(|meld| meld.tiles.contains(&tile));
+        let known_count =
+            known_tile_count(state, tile) + usize::from(unrepresented_claimed_tile == Some(tile));
+        owns_tile && known_count > 4
+    })
+}
+
 #[cfg(test)]
 fn winner_hand_fan(
     state: &ShenyangMahjongLoopState,
@@ -1672,6 +1705,9 @@ fn winner_hand_fan_with_rule_and_open_rule(
     win_rule: i32,
     chi_opens_door: bool,
 ) -> i32 {
+    if winner_has_impossible_known_tile_count(state, settlement, winner) {
+        return 0;
+    }
     let hand_tiles = winner_final_hand_tiles(state, settlement, winner);
     let melds = state.melds.get(&winner).map(Vec::as_slice).unwrap_or(&[]);
     if !is_complete_win_with_melds_and_open_rule(&hand_tiles, melds, win_rule, chi_opens_door) {
@@ -6653,6 +6689,116 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![(0, 0), (1, 0), (2, 0), (3, 0)]
         );
+    }
+
+    #[test]
+    fn settlement_rejects_public_fifth_copy_used_by_self_draw_winner() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![1, 1, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6]);
+        state.discards.insert(2, vec![1]);
+        state.enter_settlement(vec![1], None, Some(6), true);
+        let settlement = state.settlement.clone().expect("settlement");
+
+        assert_eq!(known_tile_count(&state, 1), 5);
+        assert!(position_has_impossible_known_tile_count(&state, 1));
+        assert!(winner_has_impossible_known_tile_count(
+            &state,
+            &settlement,
+            1
+        ));
+        assert_eq!(winner_hand_fan(&state, &settlement, 1), 0);
+        assert_eq!(
+            settlement_score_changes_for_state(&state, &[0, 1, 2, 3], &settlement, &HashMap::new())
+                .into_iter()
+                .map(|change| (change.position, change.score))
+                .collect::<Vec<_>>(),
+            vec![(0, 0), (1, 0), (2, 0), (3, 0)]
+        );
+        assert!(
+            build_settlement_event(&state)
+                .expect("settlement event")
+                .winner_positions
+                .is_empty()
+        );
+
+        state.discards.insert(2, vec![9, 9, 9, 9, 9]);
+
+        assert_eq!(known_tile_count(&state, 9), 5);
+        assert!(!position_has_impossible_known_tile_count(&state, 1));
+        assert!(!winner_has_impossible_known_tile_count(
+            &state,
+            &settlement,
+            1
+        ));
+        assert!(winner_hand_fan(&state, &settlement, 1) > 0);
+        assert_eq!(
+            build_settlement_event(&state)
+                .expect("settlement event")
+                .winner_positions,
+            vec![1]
+        );
+    }
+
+    #[test]
+    fn settlement_rejects_public_fifth_claim_tile() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![1, 1, 1, 1, 2, 3, 7, 8, 11, 12, 13, 35, 35]);
+        state.melds.insert(
+            2,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::GANG,
+                vec![6, 6, 6, 6],
+                None,
+            )],
+        );
+        state.enter_settlement_with_reverse_win(
+            vec![1],
+            Some(0),
+            Some(6),
+            false,
+            false,
+            false,
+            false,
+        );
+        let settlement = state.settlement.clone().expect("settlement");
+
+        assert_eq!(known_tile_count(&state, 6), 4);
+        assert!(!position_has_impossible_known_tile_count(&state, 1));
+        assert!(winner_has_impossible_known_tile_count(
+            &state,
+            &settlement,
+            1
+        ));
+        assert_eq!(winner_hand_fan(&state, &settlement, 1), 0);
+        assert_eq!(
+            settlement_score_changes_for_state(&state, &[0, 1, 2, 3], &settlement, &HashMap::new())
+                .into_iter()
+                .map(|change| (change.position, change.score))
+                .collect::<Vec<_>>(),
+            vec![(0, 0), (1, 0), (2, 0), (3, 0)]
+        );
+
+        state.melds.insert(
+            2,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::PENG,
+                vec![6, 6, 6],
+                Some(3),
+            )],
+        );
+        state.discards.insert(0, vec![6]);
+
+        assert_eq!(known_tile_count(&state, 6), 4);
+        assert!(!winner_has_impossible_known_tile_count(
+            &state,
+            &settlement,
+            1
+        ));
+        assert!(winner_hand_fan(&state, &settlement, 1) > 0);
     }
 
     #[test]
