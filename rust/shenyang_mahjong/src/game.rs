@@ -1657,17 +1657,18 @@ pub(crate) fn settlement_score_changes_for_state(
     }
 
     let winner_set = winner_positions.iter().copied().collect::<HashSet<_>>();
+    let loser_positions = sorted_positions
+        .iter()
+        .copied()
+        .filter(|position| !winner_set.contains(position))
+        .collect::<Vec<_>>();
     let payers: Vec<usize> = if settlement.is_self_draw {
-        sorted_positions
-            .iter()
-            .copied()
-            .filter(|position| !winner_set.contains(position))
-            .collect()
+        loser_positions.clone()
     } else {
         settlement.from_position.into_iter().collect()
     };
-    let all_payers_closed = payers.len() >= 3
-        && payers
+    let all_losers_closed = loser_positions.len() >= 3
+        && loser_positions
             .iter()
             .all(|position| !position_has_open_meld(state, *position, chi_opens_door));
     let mut totals = sorted_positions
@@ -1692,7 +1693,7 @@ pub(crate) fn settlement_score_changes_for_state(
                 payment += 1;
             }
             if !position_has_open_meld(state, *payer, chi_opens_door) {
-                payment += if all_payers_closed { 2 } else { 1 };
+                payment += if all_losers_closed { 2 } else { 1 };
             }
             payment = payment.max(1);
             *totals.entry(*winner).or_default() += payment;
@@ -2426,6 +2427,14 @@ mod tests {
 
     fn relaxed_configs() -> HashMap<String, i32> {
         HashMap::from([("win_rule".to_owned(), WIN_RULE_RELAXED)])
+    }
+
+    fn open_peng_meld(tile: i32, from_position: usize) -> WsShenyangMahjongMeld {
+        build_meld(
+            ShenyangMahjongMeldKind::PENG,
+            vec![tile, tile, tile],
+            Some(from_position),
+        )
     }
 
     #[test]
@@ -7213,9 +7222,39 @@ mod tests {
     }
 
     #[test]
+    fn settlement_score_counts_three_closed_losers_on_discard_win() {
+        let mut state = playable_state();
+        state.dealer_position = 2;
+        state
+            .hands
+            .insert(1, vec![2, 3, 5, 6, 7, 11, 12, 13, 35, 35]);
+        state.melds.insert(
+            1,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::CHI,
+                vec![21, 22, 23],
+                Some(2),
+            )],
+        );
+        state.enter_settlement(vec![1], Some(0), Some(4), false);
+        let settlement = state.settlement.as_ref().expect("settlement");
+
+        assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
+        assert_eq!(
+            settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &HashMap::new())
+                .into_iter()
+                .map(|change| (change.position, change.score))
+                .collect::<Vec<_>>(),
+            vec![(0, -3), (1, 3), (2, 0), (3, 0)]
+        );
+    }
+
+    #[test]
     fn settlement_score_adds_closed_fan_when_discard_payer_has_not_opened() {
+        let open_non_payer_meld = || vec![open_peng_meld(31, 2)];
         let mut closed_payer_state = playable_state();
         closed_payer_state.dealer_position = 2;
+        closed_payer_state.melds.insert(3, open_non_payer_meld());
         closed_payer_state
             .hands
             .insert(1, vec![2, 3, 5, 6, 7, 11, 12, 13, 35, 35]);
@@ -7257,6 +7296,9 @@ mod tests {
 
         let mut malformed_open_payer_state = playable_state();
         malformed_open_payer_state.dealer_position = 2;
+        malformed_open_payer_state
+            .melds
+            .insert(3, open_non_payer_meld());
         malformed_open_payer_state
             .hands
             .insert(1, vec![2, 3, 5, 6, 7, 11, 12, 13, 35, 35]);
@@ -7306,6 +7348,9 @@ mod tests {
         let mut invalid_tile_open_payer_state = playable_state();
         invalid_tile_open_payer_state.dealer_position = 2;
         invalid_tile_open_payer_state
+            .melds
+            .insert(3, open_non_payer_meld());
+        invalid_tile_open_payer_state
             .hands
             .insert(1, vec![2, 3, 5, 6, 7, 11, 12, 13, 35, 35]);
         invalid_tile_open_payer_state.melds.insert(
@@ -7353,6 +7398,7 @@ mod tests {
 
         let mut open_payer_state = playable_state();
         open_payer_state.dealer_position = 2;
+        open_payer_state.melds.insert(3, open_non_payer_meld());
         open_payer_state
             .hands
             .insert(1, vec![2, 3, 5, 6, 7, 11, 12, 13, 35, 35]);
@@ -7833,6 +7879,7 @@ mod tests {
                 Some(2),
             )],
         );
+        state.melds.insert(3, vec![open_peng_meld(34, 2)]);
         state.enter_settlement_with_reverse_win(
             vec![1],
             Some(0),
@@ -8072,6 +8119,7 @@ mod tests {
                 build_meld(ShenyangMahjongMeldKind::PENG, vec![31, 31, 31], Some(3)),
             ],
         );
+        state.melds.insert(3, vec![open_peng_meld(34, 2)]);
         state.enter_settlement_with_reverse_win(
             vec![1],
             Some(0),
@@ -8104,6 +8152,7 @@ mod tests {
                 build_meld(ShenyangMahjongMeldKind::PENG, vec![21, 21, 21], Some(2)),
             ],
         );
+        state.melds.insert(3, vec![open_peng_meld(34, 2)]);
         state.enter_settlement_with_reverse_win(
             vec![1],
             Some(0),
@@ -8137,6 +8186,7 @@ mod tests {
                 build_meld(ShenyangMahjongMeldKind::PENG, vec![9, 9, 9], Some(2)),
             ],
         );
+        state.melds.insert(3, vec![open_peng_meld(34, 2)]);
         state.enter_settlement_with_reverse_win(
             vec![1],
             Some(0),
@@ -8163,6 +8213,7 @@ mod tests {
         state
             .hands
             .insert(1, vec![1, 2, 3, 2, 3, 4, 4, 5, 6, 7, 7, 7, 9]);
+        state.melds.insert(3, vec![open_peng_meld(34, 2)]);
         state.enter_settlement_with_reverse_win(
             vec![1],
             Some(0),
