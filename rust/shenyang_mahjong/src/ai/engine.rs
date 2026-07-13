@@ -437,6 +437,29 @@ mod tests {
     }
 
     #[test]
+    fn away_position_does_not_self_draw_with_unowned_drawn_tile() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_away(0);
+        state
+            .hands
+            .insert(0, vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35, 35]);
+        state.last_drawn_tile = Some(9);
+        let mut dispatch = Dispatch::default();
+
+        assert!(!maybe_play_ai_turn(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::new(),
+            &mut dispatch,
+        ));
+
+        assert_eq!(state.phase, ShenyangMahjongPhase::Play);
+        assert!(state.discards.get(&0).unwrap().is_empty());
+        assert!(state.settlement.is_none());
+    }
+
+    #[test]
     fn away_position_self_draws_closed_basic_pure_one_suit() {
         let mut state = playable_state();
         state.base.lock().unwrap().mark_away(0);

@@ -564,13 +564,18 @@ pub(crate) fn can_self_draw_hu_with_configs(
     configs: &HashMap<String, i32>,
 ) -> bool {
     if state.current_position != position
-        || state.last_drawn_tile.is_none()
         || state.claim_window.is_some()
         || position_has_impossible_known_tile_count(state, position)
     {
         return false;
     }
     let hand = state.hands.get(&position).cloned().unwrap_or_default();
+    let Some(last_drawn_tile) = state.last_drawn_tile else {
+        return false;
+    };
+    if !is_valid_tile(last_drawn_tile) || !hand.contains(&last_drawn_tile) {
+        return false;
+    }
     is_complete_win_with_configs(
         &hand,
         state.melds.get(&position).map(Vec::as_slice).unwrap_or(&[]),
@@ -5091,6 +5096,14 @@ mod tests {
             &relaxed_configs()
         ));
 
+        state.last_drawn_tile = Some(9);
+
+        assert!(!can_self_draw_hu_with_configs(
+            &state,
+            0,
+            &relaxed_configs()
+        ));
+
         state.last_drawn_tile = Some(35);
 
         assert!(can_self_draw_hu_with_configs(&state, 0, &relaxed_configs()));
@@ -5273,6 +5286,7 @@ mod tests {
             .hands
             .insert(0, vec![1, 2, 3, 2, 3, 4, 4, 5, 6, 7, 7, 7, 9, 9]);
         state.melds.insert(0, Vec::new());
+        state.last_drawn_tile = Some(9);
 
         assert!(can_self_draw_hu_with_configs(&state, 0, &configs));
 
