@@ -80,10 +80,10 @@ pub(super) fn pure_one_suit_plan_score_for_context(
     if score <= 0.0 {
         return 0.0;
     }
-    let Some((main_suit, _, _)) = pure_one_suit_shape(hand, melds) else {
+    let Some((main_suit, _, blockers)) = pure_one_suit_shape(hand, melds) else {
         return 0.0;
     };
-    if live_tile_count_for_suit(hand, table, main_suit) == 0 {
+    if live_tile_count_for_suit(hand, table, main_suit) < blockers as i32 {
         return 0.0;
     }
     if table.max_fan.is_some_and(|max_fan| max_fan <= 1) && missing_suits(hand, melds).is_empty() {

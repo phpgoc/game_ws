@@ -246,6 +246,39 @@ fn pure_one_suit_plan_abandons_exhausted_main_suit() {
 }
 
 #[test]
+fn pure_one_suit_plan_requires_enough_live_tiles_for_blockers() {
+    let hand = vec![1, 1, 2, 2, 3, 3, 4, 4, 11, 12, 21, 22, 31, 35];
+    let all_other_main_suit_tiles = (1..=9)
+        .flat_map(|tile| {
+            let own_count = hand.iter().filter(|item| **item == tile).count();
+            std::iter::repeat_n(tile, 4 - own_count)
+        })
+        .collect::<Vec<_>>();
+    let (_, _, blockers) = pure_one_suit_shape(&hand, &[]).expect("pure shape");
+
+    assert_eq!(blockers, 6);
+    let insufficient_table = table_with_discards(
+        1,
+        all_other_main_suit_tiles[..all_other_main_suit_tiles.len() - 5].to_vec(),
+    );
+    assert_eq!(live_tile_count_for_suit(&hand, &insufficient_table, 0), 5);
+    assert_eq!(
+        pure_one_suit_plan_score_for_context(&hand, &[], &insufficient_table, 0),
+        0.0
+    );
+
+    let sufficient_table = table_with_discards(
+        1,
+        all_other_main_suit_tiles[..all_other_main_suit_tiles.len() - blockers].to_vec(),
+    );
+    assert_eq!(
+        live_tile_count_for_suit(&hand, &sufficient_table, 0),
+        blockers as i32
+    );
+    assert!(pure_one_suit_plan_score_for_context(&hand, &[], &sufficient_table, 0) > 0.0);
+}
+
+#[test]
 fn non_dealer_relaxed_pure_one_suit_plan_can_break_three_suits() {
     let mut table = table_with_discards(1, Vec::new());
     table.dealer_position = 1;
