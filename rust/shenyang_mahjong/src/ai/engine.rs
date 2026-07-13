@@ -118,6 +118,9 @@ pub fn maybe_resolve_ai_claims(
     configs: &HashMap<String, i32>,
     dispatch: &mut Dispatch,
 ) -> bool {
+    if state.phase != share_type_public::games::shenyang_mahjong::ShenyangMahjongPhase::Play {
+        return false;
+    }
     let Some(claim_window) = state.claim_window.clone() else {
         return false;
     };
@@ -257,6 +260,40 @@ mod tests {
         ));
         assert!(!claim_window.responses.contains_key(&1));
         assert_eq!(state.phase, ShenyangMahjongPhase::Play);
+    }
+
+    #[test]
+    fn ai_claim_response_rejects_outside_play_phase() {
+        let mut state = playable_state();
+        state.phase = ShenyangMahjongPhase::Settlement;
+        state.base.lock().unwrap().mark_ai_position(0);
+        state.current_position = 2;
+        state.discards.insert(2, vec![35]);
+        state.claim_window = Some(ClaimWindowState {
+            tile: 35,
+            from_position: 2,
+            kind: ClaimWindowKind::Discard,
+            eligible_positions: vec![0, 1],
+            responses: HashMap::new(),
+        });
+        let mut dispatch = Dispatch::default();
+
+        assert!(!maybe_resolve_ai_claims(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+        ));
+
+        assert!(
+            state
+                .claim_window
+                .as_ref()
+                .is_some_and(|window| window.responses.is_empty())
+        );
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert!(dispatch.messages.is_empty());
     }
 
     fn assert_seeded_settlement_event_is_consistent(
