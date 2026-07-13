@@ -127,16 +127,7 @@ pub(crate) fn build_claim_options(
             continue;
         }
         let hand = state.hands.get(&position).cloned().unwrap_or_default();
-        let can_hu = {
-            let mut test = hand.clone();
-            test.push(tile);
-            test.sort_unstable();
-            is_complete_win_with_configs(
-                &test,
-                state.melds.get(&position).map(Vec::as_slice).unwrap_or(&[]),
-                configs,
-            )
-        };
+        let can_hu = can_claim_hu_with_configs(state, position, tile, configs);
         let can_peng_now = can_peng(&hand, tile);
         let can_gang_now = can_gang(&hand, tile);
         let chi_options = if position == next_position {
@@ -205,21 +196,15 @@ fn build_rob_gang_claim_window_event(
             if has_impossible_tile_count {
                 return None;
             }
-            let mut hand = state.hands.get(&position).cloned().unwrap_or_default();
-            hand.push(tile);
-            hand.sort_unstable();
-            is_complete_win_with_configs(
-                &hand,
-                state.melds.get(&position).map(Vec::as_slice).unwrap_or(&[]),
-                configs,
+            can_claim_hu_with_configs(state, position, tile, configs).then_some(
+                WsShenyangMahjongClaimOption {
+                    position: position as i32,
+                    can_hu: true,
+                    can_peng: false,
+                    can_gang: false,
+                    chi_options: Vec::new(),
+                },
             )
-            .then_some(WsShenyangMahjongClaimOption {
-                position: position as i32,
-                can_hu: true,
-                can_peng: false,
-                can_gang: false,
-                chi_options: Vec::new(),
-            })
         })
         .collect();
     build_claim_window_event_with_options(tile, from_position, seconds, options, true)
@@ -246,6 +231,27 @@ fn position_has_impossible_known_tile_count(
             });
         owns_tile && has_impossible_known_tile_count(state, tile)
     })
+}
+
+fn can_claim_hu_with_configs(
+    state: &ShenyangMahjongLoopState,
+    position: usize,
+    tile: i32,
+    configs: &HashMap<String, i32>,
+) -> bool {
+    if has_impossible_known_tile_count(state, tile)
+        || position_has_impossible_known_tile_count(state, position)
+    {
+        return false;
+    }
+    let mut hand = state.hands.get(&position).cloned().unwrap_or_default();
+    hand.push(tile);
+    hand.sort_unstable();
+    is_complete_win_with_configs(
+        &hand,
+        state.melds.get(&position).map(Vec::as_slice).unwrap_or(&[]),
+        configs,
+    )
 }
 
 fn known_tile_count(state: &ShenyangMahjongLoopState, tile: i32) -> usize {
@@ -1192,14 +1198,9 @@ pub(crate) fn resolve_claim_window(
 
     for position in &claim_window.eligible_positions {
         let hand = state.hands.get(position).cloned().unwrap_or_default();
-        let melds = state.melds.get(position).map(Vec::as_slice).unwrap_or(&[]);
         match claim_window.responses.get(position) {
             Some(ClaimResponse::Hu) => {
-                let mut tiles = hand.clone();
-                tiles.push(claim_window.tile);
-                tiles.sort_unstable();
-                if !invalid_claim_tile_count && is_complete_win_with_configs(&tiles, melds, configs)
-                {
+                if can_claim_hu_with_configs(state, *position, claim_window.tile, configs) {
                     hu_positions.push(*position);
                 }
             }
@@ -1832,21 +1833,7 @@ impl ShenyangMahjongGameHandler {
                 let response = match payload.action {
                     ShenyangMahjongAction::PASS => ClaimResponse::Pass,
                     ShenyangMahjongAction::HU => {
-                        if invalid_claim_tile_count {
-                            return room_service.error_response(
-                                session_id,
-                                Routes::PLAY as i32,
-                                WsResponseCode::NO_PERMISSION,
-                            );
-                        }
-                        let mut tiles = hand.clone();
-                        tiles.push(claim_tile);
-                        tiles.sort_unstable();
-                        if !is_complete_win_with_configs(
-                            &tiles,
-                            state.melds.get(&position).map(Vec::as_slice).unwrap_or(&[]),
-                            &configs,
-                        ) {
+                        if !can_claim_hu_with_configs(&state, position, claim_tile, &configs) {
                             return room_service.error_response(
                                 session_id,
                                 Routes::PLAY as i32,
@@ -2500,6 +2487,37 @@ mod tests {
     }
 
     #[test]
+    fn claim_options_reject_public_fifth_copy_used_by_winner() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(2, vec![1, 1, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6]);
+        state.discards.insert(0, vec![6]);
+        state.discards.insert(3, vec![1]);
+
+        let invalid_options = build_claim_options(&state, 6, 0, &relaxed_configs());
+
+        assert_eq!(known_tile_count(&state, 1), 5);
+        assert!(position_has_impossible_known_tile_count(&state, 2));
+        assert!(
+            !invalid_options
+                .iter()
+                .any(|option| option.position == 2 && option.can_hu)
+        );
+
+        state.discards.insert(3, vec![9, 9, 9, 9, 9]);
+        let unrelated_options = build_claim_options(&state, 6, 0, &relaxed_configs());
+
+        assert_eq!(known_tile_count(&state, 9), 5);
+        assert!(!position_has_impossible_known_tile_count(&state, 2));
+        assert!(
+            unrelated_options
+                .iter()
+                .any(|option| option.position == 2 && option.can_hu)
+        );
+    }
+
+    #[test]
     fn claim_options_do_not_count_concealed_gang_as_open_for_basic_rule() {
         let mut state = playable_state();
         state
@@ -2725,7 +2743,7 @@ mod tests {
                 .insert(1, vec![1, 2, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
             state
                 .hands
-                .insert(2, vec![1, 2, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+                .insert(2, vec![1, 2, 4, 5, 6, 14, 15, 16, 24, 25, 26, 32, 32]);
             state.claim_window = Some(ClaimWindowState {
                 tile: 3,
                 from_position: 0,
@@ -3343,7 +3361,7 @@ mod tests {
                 .insert(1, vec![1, 2, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
             state
                 .hands
-                .insert(2, vec![1, 2, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+                .insert(2, vec![1, 2, 4, 5, 6, 14, 15, 16, 24, 25, 26, 32, 32]);
             state.claim_window = Some(ClaimWindowState {
                 tile: 3,
                 from_position: 0,
@@ -4164,6 +4182,54 @@ mod tests {
     }
 
     #[test]
+    fn play_request_rejects_public_fifth_copy_used_by_hu_winner() {
+        let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
+        {
+            let mut state = loop_state.lock().unwrap();
+            state.phase = ShenyangMahjongPhase::Play;
+            state.current_position = 0;
+            for position in 0..4 {
+                state.discards.insert(position, Vec::new());
+                state.melds.insert(position, Vec::new());
+            }
+            state
+                .hands
+                .insert(1, vec![1, 1, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6]);
+            state.discards.insert(0, vec![6]);
+            state.discards.insert(2, vec![1]);
+            state.claim_window = Some(ClaimWindowState {
+                tile: 6,
+                from_position: 0,
+                kind: ClaimWindowKind::Discard,
+                eligible_positions: vec![1],
+                responses: HashMap::new(),
+            });
+        }
+
+        let rejected_hu = handler.handle_game_request(
+            &mut room_service,
+            2,
+            ClientRequest {
+                route: Routes::PLAY as i32,
+                data: serde_json::json!({
+                    "action": ShenyangMahjongAction::HU as i32,
+                    "tiles": [],
+                    "target_tile": 6,
+                    "from_position": 0,
+                }),
+            },
+        );
+
+        assert_eq!(
+            response_code(&rejected_hu, 2, Routes::PLAY),
+            Some(WsResponseCode::NO_PERMISSION as i32)
+        );
+        let state = loop_state.lock().unwrap();
+        assert!(state.settlement.is_none());
+        assert!(state.claim_window.is_some());
+    }
+
+    #[test]
     fn play_request_rejects_impossible_fifth_tile_peng_claim() {
         let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
         {
@@ -4377,6 +4443,41 @@ mod tests {
         assert!(state.claim_window.is_none());
         assert_eq!(state.current_position, 1);
         assert_eq!(state.discards.get(&0), Some(&vec![35]));
+        assert!(state.hands.get(&1).unwrap().contains(&36));
+    }
+
+    #[test]
+    fn resolve_claim_window_ignores_public_fifth_copy_used_by_hu_winner() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![1, 1, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6]);
+        state.discards.insert(0, vec![6]);
+        state.discards.insert(2, vec![1]);
+        state.wall = vec![36];
+        state.current_position = 0;
+        state.claim_window = Some(ClaimWindowState {
+            tile: 6,
+            from_position: 0,
+            kind: ClaimWindowKind::Discard,
+            eligible_positions: vec![1],
+            responses: HashMap::from([(1, ClaimResponse::Hu)]),
+        });
+        let mut dispatch = Dispatch::default();
+
+        assert_eq!(known_tile_count(&state, 1), 5);
+        resolve_claim_window(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+        );
+
+        assert!(state.settlement.is_none());
+        assert!(state.claim_window.is_none());
+        assert_eq!(state.current_position, 1);
+        assert_eq!(state.discards.get(&0), Some(&vec![6]));
         assert!(state.hands.get(&1).unwrap().contains(&36));
     }
 
@@ -4761,6 +4862,32 @@ mod tests {
 
         let claim_window = build_rob_gang_claim_window_event(&state, 3, 0, 5, &relaxed_configs());
 
+        assert!(!claim_window.eligible_positions.contains(&1));
+        assert!(claim_window.options.is_empty());
+    }
+
+    #[test]
+    fn rob_gang_options_reject_public_fifth_copy_used_by_winner() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(0, vec![6, 7, 8, 11, 12, 13, 21, 22, 23, 31, 35]);
+        state.melds.insert(
+            0,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::PENG,
+                vec![6, 6, 6],
+                Some(2),
+            )],
+        );
+        state
+            .hands
+            .insert(1, vec![1, 1, 1, 1, 2, 3, 7, 8, 11, 12, 13, 35, 35]);
+        state.discards.insert(2, vec![1]);
+
+        let claim_window = build_rob_gang_claim_window_event(&state, 6, 0, 5, &relaxed_configs());
+
+        assert_eq!(known_tile_count(&state, 1), 5);
         assert!(!claim_window.eligible_positions.contains(&1));
         assert!(claim_window.options.is_empty());
     }
