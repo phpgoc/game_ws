@@ -25,18 +25,6 @@ pub(in crate::ai::decision) fn self_gang_known_tile_count_is_possible(
         <= 4
 }
 
-fn self_gang_position_known_tile_counts_are_possible(
-    hand: &[i32],
-    melds: &[WsShenyangMahjongMeld],
-    table: &AiPublicTable,
-) -> bool {
-    let mut owned_tiles = hand.to_vec();
-    owned_tiles.extend(valid_meld_tiles(melds));
-    unique_tiles(&owned_tiles)
-        .into_iter()
-        .all(|tile| self_gang_known_tile_count_is_possible(hand, table, tile))
-}
-
 pub fn choose_self_gang_from_view(
     hand: &[i32],
     candidate_tiles: &[i32],
@@ -50,7 +38,7 @@ pub fn choose_self_gang_from_view(
         .map(|seat| seat.melds.as_slice())
         .unwrap_or(&[]);
     if !has_virtual_tile_count(hand, melds, 14)
-        || !self_gang_position_known_tile_counts_are_possible(hand, melds, table)
+        || !position_known_tile_counts_are_possible(hand, melds, table)
         || table.wall_count == 0
         || candidate_tiles.is_empty()
         || should_preserve_seven_pairs_for_self_gang(hand, melds, table, position, win_rule)

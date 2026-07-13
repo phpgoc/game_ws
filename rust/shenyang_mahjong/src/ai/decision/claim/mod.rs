@@ -40,7 +40,9 @@ pub fn choose_claim_from_view(
         .get(&position)
         .map(|seat| seat.melds.as_slice())
         .unwrap_or(&[]);
-    if !has_virtual_tile_count(hand, melds, 13) {
+    if !has_virtual_tile_count(hand, melds, 13)
+        || !position_known_tile_counts_are_possible(hand, melds, table)
+    {
         return Some(AiClaimChoice::Pass);
     }
     let tile = claim.tile;

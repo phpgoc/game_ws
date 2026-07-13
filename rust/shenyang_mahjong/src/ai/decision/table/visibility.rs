@@ -2,8 +2,8 @@ use share_type_public::games::shenyang_mahjong::WsShenyangMahjongMeld;
 
 use crate::ai::observation::AiPublicTable;
 
-use crate::ai::decision::meld::{is_open_meld, is_valid_meld};
-use crate::ai::decision::tile::is_valid_tile;
+use crate::ai::decision::meld::{is_open_meld, is_valid_meld, valid_meld_tiles};
+use crate::ai::decision::tile::{is_valid_tile, unique_tiles};
 
 pub(in crate::ai::decision) fn claim_tile_already_visible(
     table: &AiPublicTable,
@@ -171,6 +171,19 @@ pub(in crate::ai::decision) fn public_discard_seat_count(
         .values()
         .filter(|seat| seat.discards.iter().any(|discard| *discard == tile))
         .count()
+}
+
+pub(in crate::ai::decision) fn position_known_tile_counts_are_possible(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+) -> bool {
+    let mut owned_tiles = hand.to_vec();
+    owned_tiles.extend(valid_meld_tiles(melds));
+    unique_tiles(&owned_tiles).into_iter().all(|tile| {
+        hand.iter().filter(|item| **item == tile).count() + visible_tile_count(table, tile) as usize
+            <= 4
+    })
 }
 
 pub(in crate::ai::decision::table) fn valid_meld_tile_count(

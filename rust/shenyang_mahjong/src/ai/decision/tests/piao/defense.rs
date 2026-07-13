@@ -37,7 +37,7 @@ fn seven_pairs_wait_discard_avoids_piao_missing_suit_threat_tile() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 32;
     table.seats.get_mut(&1).unwrap().melds =
-        vec![test_peng_meld(11), test_peng_meld(21), test_peng_meld(35)];
+        vec![test_peng_meld(13), test_peng_meld(23), test_peng_meld(35)];
     let hand = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 21, 21, 22, 22, 31];
     let wind_wait = remove_n_tiles(&hand, 5, 1);
     let middle_wait = remove_n_tiles(&hand, 31, 1);

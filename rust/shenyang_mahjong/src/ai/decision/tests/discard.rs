@@ -173,6 +173,28 @@ fn discard_prefers_isolated_honor() {
 }
 
 #[test]
+fn discard_rejects_impossible_known_tile_state() {
+    let mut table = table_with_discards(1, Vec::new());
+    let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35];
+
+    assert_eq!(
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        Some(31)
+    );
+
+    table.seats.get_mut(&1).unwrap().discards = vec![1, 1, 1, 1];
+    assert_eq!(visible_tile_count(&table, 1), 4);
+    assert_eq!(
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        None
+    );
+    assert_eq!(
+        choose_forced_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        None
+    );
+}
+
+#[test]
 fn discard_prefers_wind_before_single_dragon() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35];

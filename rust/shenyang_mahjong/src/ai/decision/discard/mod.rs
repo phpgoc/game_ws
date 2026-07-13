@@ -38,7 +38,9 @@ fn choose_discard_from_view_inner(
         .get(&position)
         .map(|seat| seat.melds.as_slice())
         .unwrap_or(&[]);
-    if !has_virtual_tile_count(hand, melds, 14) {
+    if !has_virtual_tile_count(hand, melds, 14)
+        || !position_known_tile_counts_are_possible(hand, melds, table)
+    {
         return None;
     }
     if !must_discard && is_complete_win_for_table(hand, melds, table, win_rule) {
