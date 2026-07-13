@@ -312,8 +312,10 @@ mod tests {
         let guard = state.lock().unwrap();
         assert_eq!(guard.current_trick.len(), 1);
         assert_eq!(guard.current_trick[0].position, 0);
-        assert_eq!(guard.current_trick[0].cards, vec![13]);
-        assert!(!guard.hands.get(&0).unwrap().contains(&13));
+        // Leads a low plain singleton (rank 2) to build a void, keeping the joker
+        // and the high trumps in reserve.
+        assert_eq!(guard.current_trick[0].cards, vec![1]);
+        assert!(!guard.hands.get(&0).unwrap().contains(&1));
         assert!(guard.hands.get(&0).unwrap().contains(&53));
     }
 

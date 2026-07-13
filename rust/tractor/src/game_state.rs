@@ -9,6 +9,8 @@ use share_type_public::{
 };
 use ws_common::{CommonGameState, GameState};
 
+use crate::combo::{self, Combo};
+
 pub const TRACTOR_RANKS: [TractorRank; 13] = [
     TractorRank::TWO,
     TractorRank::THREE,
@@ -76,7 +78,7 @@ pub fn adjusted_bottom_card_count(
         })
 }
 
-fn base_card(card: i32) -> i32 {
+pub(crate) fn base_card(card: i32) -> i32 {
     ((card - 1) % 100) + 1
 }
 
@@ -107,15 +109,6 @@ pub fn build_tractor_deck_with_removed_ranks(
     cards
 }
 
-fn card_matches_play_suit(card: i32, suit: Option<i32>, rules: &TractorRules) -> bool {
-    match suit {
-        Some(lead_suit) => {
-            !is_trump_card(card, rules.target_rank) && card_suit(card) == Some(lead_suit)
-        }
-        None => is_trump_card(card, rules.target_rank),
-    }
-}
-
 pub(crate) fn card_rank(card: i32) -> i32 {
     let base = base_card(card);
     if base <= 52 {
@@ -127,7 +120,7 @@ pub(crate) fn card_rank(card: i32) -> i32 {
     }
 }
 
-fn card_score(card: i32) -> i32 {
+pub(crate) fn card_score(card: i32) -> i32 {
     match card_rank(card) {
         5 => 5,
         10 | 13 => 10,
@@ -147,27 +140,6 @@ fn first_match_rank(removed_rank_mask: i32, final_target_rank: TractorRank) -> T
         .unwrap_or(final_target_rank)
 }
 
-pub(crate) fn hand_candidates_for_count(hand: &[i32], count: usize) -> Vec<Vec<i32>> {
-    if count == 0 {
-        return Vec::new();
-    }
-    if count == 1 {
-        return hand.iter().map(|card| vec![*card]).collect();
-    }
-    let mut by_rank: HashMap<i32, Vec<i32>> = HashMap::new();
-    for card in hand {
-        by_rank.entry(card_rank(*card)).or_default().push(*card);
-    }
-    let mut out = Vec::new();
-    for cards in by_rank.values_mut() {
-        cards.sort_unstable();
-        if cards.len() >= count {
-            out.push(cards[..count].to_vec());
-        }
-    }
-    out
-}
-
 pub(crate) fn is_trump_card(card: i32, target_rank: TractorRank) -> bool {
     card_suit(card).is_none() || card_rank(card) == target_rank as i32
 }
@@ -180,18 +152,6 @@ pub fn min_bottom_card_count(deck_count: usize) -> usize {
     }
 }
 
-fn must_follow_play_suit(
-    hand: &[i32],
-    suit: Option<i32>,
-    count: usize,
-    rules: &TractorRules,
-) -> bool {
-    hand.iter()
-        .filter(|card| card_matches_play_suit(**card, suit, rules))
-        .count()
-        >= count
-}
-
 fn next_match_rank(
     current_rank: TractorRank,
     removed_rank_mask: i32,
@@ -200,33 +160,6 @@ fn next_match_rank(
     let path = tractor_rank_path(removed_rank_mask, final_target_rank);
     let index = path.iter().position(|rank| *rank == current_rank)?;
     path.get(index + 1).copied()
-}
-
-fn play_rank(cards: &[i32]) -> Option<i32> {
-    let first = cards.first().copied().map(card_rank)?;
-    cards
-        .iter()
-        .all(|card| card_rank(*card) == first)
-        .then_some(first)
-}
-
-fn play_strength(cards: &[i32], rules: &TractorRules, lead_suit: Option<i32>) -> i32 {
-    cards
-        .iter()
-        .map(|card| tractor_card_value(*card, rules, lead_suit))
-        .max()
-        .unwrap_or_default()
-}
-
-fn play_suit(cards: &[i32], rules: &TractorRules) -> Option<i32> {
-    if cards
-        .iter()
-        .any(|card| is_trump_card(*card, rules.target_rank))
-    {
-        None
-    } else {
-        cards.first().and_then(|card| card_suit(*card))
-    }
 }
 
 fn played_score(cards: &[i32]) -> i32 {
@@ -239,6 +172,11 @@ fn rank_is_removed(mask: i32, rank: TractorRank) -> bool {
         .position(|item| *item == rank)
         .map(|idx| mask & (1_i32 << idx) != 0)
         .unwrap_or(false)
+}
+
+fn candidate_in_hand(hand: &[i32], cards: &[i32]) -> bool {
+    let mut available = hand.to_vec();
+    remove_cards_from_hand(&mut available, cards).is_ok()
 }
 
 fn remove_cards_from_hand(hand: &mut Vec<i32>, cards: &[i32]) -> Result<(), &'static str> {
@@ -260,12 +198,13 @@ fn remove_cards_from_hand(hand: &mut Vec<i32>, cards: &[i32]) -> Result<(), &'st
     Ok(())
 }
 
-fn same_play_shape(cards: &[i32]) -> bool {
-    !cards.is_empty() && play_rank(cards).is_some()
-}
-
 fn team_positions(position: usize) -> [usize; 2] {
     [position, (position + 2) % 4]
+}
+
+/// Two seats are partners when they sit across from each other (0&2, 1&3).
+pub(crate) fn same_team(a: usize, b: usize) -> bool {
+    a % 2 == b % 2
 }
 
 pub(crate) fn tractor_card_value(card: i32, rules: &TractorRules, lead_suit: Option<i32>) -> i32 {
@@ -318,24 +257,6 @@ pub fn tractor_rank_path(
     out
 }
 
-fn trick_winner(trick: &[WsTractorPlayedCards], rules: &TractorRules) -> Option<usize> {
-    let lead = trick.first()?;
-    let lead_suit = play_suit(&lead.cards, rules);
-    trick
-        .iter()
-        .filter_map(|played| {
-            let position = usize::try_from(played.position).ok()?;
-            let value = played
-                .cards
-                .iter()
-                .map(|card| tractor_card_value(*card, rules, lead_suit))
-                .max()?;
-            Some((position, value))
-        })
-        .max_by_key(|(_, value)| *value)
-        .map(|(position, _)| position)
-}
-
 impl TractorGameState {
     pub fn active_positions(&self) -> Vec<usize> {
         let mut positions: Vec<_> = self.base.lock().unwrap().players.keys().copied().collect();
@@ -375,31 +296,10 @@ impl TractorGameState {
             .sum()
     }
 
-    fn candidate_is_legal(&self, position: usize, cards: &[i32]) -> bool {
-        if cards.is_empty() || !same_play_shape(cards) {
-            return false;
-        }
-        let Some(hand) = self.hands.get(&position) else {
-            return false;
-        };
-        let mut available = hand.clone();
-        if remove_cards_from_hand(&mut available, cards).is_err() {
-            return false;
-        }
-        if let Some(lead) = self.current_trick.first() {
-            if cards.len() != lead.cards.len() {
-                return false;
-            }
-            let lead_suit = play_suit(&lead.cards, &self.rules);
-            if must_follow_play_suit(hand, lead_suit, lead.cards.len(), &self.rules)
-                && !cards
-                    .iter()
-                    .all(|card| card_matches_play_suit(*card, lead_suit, &self.rules))
-            {
-                return false;
-            }
-        }
-        true
+    /// Classify the established lead combo of the current trick, if any.
+    pub(crate) fn lead_combo(&self) -> Option<Combo> {
+        let lead = self.current_trick.first()?;
+        combo::classify(&lead.cards, &self.rules)
     }
 
     fn candidate_would_win(&self, position: usize, cards: &[i32]) -> bool {
@@ -409,72 +309,97 @@ impl TractorGameState {
             name: String::new(),
             cards: cards.to_vec(),
         });
-        trick_winner(&trick, &self.rules) == Some(position)
+        combo::trick_winner(&trick, &self.rules) == Some(position)
     }
 
+    /// A safe, rules-correct auto play used for timed-out humans and as the AI
+    /// fallback. Leads the lowest single; when following, beats an opponent with
+    /// the smallest winning play, feeds points to a winning partner, and
+    /// otherwise sheds the lowest legal cards.
     pub fn choose_auto_play(&self, position: usize) -> Option<Vec<i32>> {
         let hand = self.hands.get(&position)?;
         if hand.is_empty() {
             return None;
         }
-        if self.current_trick.is_empty() {
+        let Some(lead) = self.lead_combo() else {
             return hand
                 .iter()
-                .max_by_key(|card| tractor_card_value(**card, &self.rules, None))
+                .min_by_key(|card| tractor_card_value(**card, &self.rules, None))
                 .map(|card| vec![*card]);
-        }
+        };
 
-        let lead = self.current_trick.first()?;
-        let lead_suit = play_suit(&lead.cards, &self.rules);
-        let mut candidates: Vec<Vec<i32>> = hand_candidates_for_count(hand, lead.cards.len())
-            .into_iter()
-            .filter(|cards| self.candidate_is_legal(position, cards))
-            .collect();
+        let lead_suit = lead.suit;
+        let strength = |cards: &[i32]| {
+            cards
+                .iter()
+                .map(|card| tractor_card_value(*card, &self.rules, lead_suit))
+                .max()
+                .unwrap_or_default()
+        };
+        let mut candidates = self.legal_follows(position, &lead);
         if candidates.is_empty() {
-            return None;
+            return combo::forced_follow(hand, &lead, &self.rules);
         }
 
-        let current_winner = trick_winner(&self.current_trick, &self.rules);
+        let current_winner = combo::trick_winner(&self.current_trick, &self.rules);
         let partner_winning = current_winner
-            .map(|winner| team_positions(position).contains(&winner))
+            .map(|winner| team_positions(position).contains(&winner) && winner != position)
             .unwrap_or(false);
-        if partner_winning {
-            candidates.sort_by_key(|cards| {
-                (
-                    played_score(cards),
-                    play_strength(cards, &self.rules, lead_suit),
-                )
-            });
-            return candidates.into_iter().next();
+
+        if !partner_winning {
+            let mut winning: Vec<Vec<i32>> = candidates
+                .iter()
+                .filter(|cards| self.candidate_would_win(position, cards))
+                .cloned()
+                .collect();
+            if !winning.is_empty() {
+                winning.sort_by_key(|cards| strength(cards));
+                let cheapest = &winning[0];
+                // Don't burn trump to ruff a pointless plain-suit trick when the
+                // partner still has a turn to try to take it themselves.
+                let ruffing = lead.suit.is_some()
+                    && cheapest
+                        .iter()
+                        .all(|card| is_trump_card(*card, self.rules.target_rank));
+                let worth_taking = combo::trick_points(&self.current_trick) > 0;
+                if !(ruffing && !worth_taking && self.partner_still_to_play(position)) {
+                    return winning.into_iter().next();
+                }
+            }
         }
 
-        let mut winning_candidates: Vec<Vec<i32>> = candidates
-            .iter()
-            .filter(|cards| self.candidate_would_win(position, cards))
-            .cloned()
-            .collect();
-        if !winning_candidates.is_empty() {
-            winning_candidates.sort_by_key(|cards| play_strength(cards, &self.rules, lead_suit));
-            return winning_candidates.into_iter().next();
-        }
-
-        if self.partner_still_to_play(position) {
-            candidates.sort_by_key(|cards| {
-                (
-                    played_score(cards),
-                    play_strength(cards, &self.rules, lead_suit),
-                )
-            });
-            return candidates.into_iter().next_back();
-        }
-
+        // Can't (or needn't) win: dump points to a winning partner, else shed low.
         candidates.sort_by_key(|cards| {
-            (
-                played_score(cards),
-                play_strength(cards, &self.rules, lead_suit),
-            )
+            if partner_winning {
+                (-played_score(cards), strength(cards))
+            } else {
+                (played_score(cards), strength(cards))
+            }
         });
         candidates.into_iter().next()
+    }
+
+    /// All legal follow plays for `position` against the given lead. The lead
+    /// combo must already be established.
+    pub(crate) fn legal_follows(&self, position: usize, lead: &Combo) -> Vec<Vec<i32>> {
+        let Some(hand) = self.hands.get(&position) else {
+            return Vec::new();
+        };
+        let mut out: Vec<Vec<i32>> = Vec::new();
+        // The rules-correct minimum play is always legal.
+        if let Some(base) = combo::forced_follow(hand, lead, &self.rules) {
+            out.push(base);
+        }
+        // Enrich with every same-shape combo the hand can form; keep only legal ones.
+        for cards in combo::enumerate_leads(hand, &self.rules) {
+            if combo::classify(&cards, &self.rules).map(|c| c.kind) == Some(lead.kind)
+                && combo::follow_is_legal(hand, &cards, lead, &self.rules)
+                && !out.contains(&cards)
+            {
+                out.push(cards);
+            }
+        }
+        out
     }
 
     fn deal_current_round(&mut self) -> Result<(), &'static str> {
@@ -600,7 +525,7 @@ impl TractorGameState {
         )
     }
 
-    fn partner_still_to_play(&self, position: usize) -> bool {
+    pub(crate) fn partner_still_to_play(&self, position: usize) -> bool {
         let partner = (position + 2) % 4;
         let positions = self.active_positions();
         let Some(mut cursor) = self.next_position(position) else {
@@ -639,23 +564,21 @@ impl TractorGameState {
         {
             return Err("not current turn");
         }
-        if !same_play_shape(&cards) {
-            return Err("invalid play shape");
-        }
-        if let Some(lead) = self.current_trick.first()
-            && cards.len() != lead.cards.len()
-        {
-            return Err("must follow card count");
-        }
-        if let Some(lead) = self.current_trick.first() {
-            let lead_suit = play_suit(&lead.cards, &self.rules);
-            let hand = self.hands.get(&position).cloned().unwrap_or_default();
-            if must_follow_play_suit(&hand, lead_suit, lead.cards.len(), &self.rules)
-                && !cards
-                    .iter()
-                    .all(|card| card_matches_play_suit(*card, lead_suit, &self.rules))
-            {
-                return Err("must follow suit");
+        let hand = self.hands.get(&position).cloned().unwrap_or_default();
+        match self.lead_combo() {
+            None => {
+                // Leading: must be a well-formed single / pair / tractor in hand.
+                if combo::classify(&cards, &self.rules).is_none() {
+                    return Err("invalid play shape");
+                }
+                if !candidate_in_hand(&hand, &cards) {
+                    return Err("card not in hand");
+                }
+            }
+            Some(lead) => {
+                if !combo::follow_is_legal(&hand, &cards, &lead, &self.rules) {
+                    return Err("illegal follow");
+                }
             }
         }
         remove_cards_from_hand(self.hands.entry(position).or_default(), &cards)?;
@@ -666,14 +589,18 @@ impl TractorGameState {
         };
         self.current_trick.push(played.clone());
         if self.current_trick.len() >= self.active_positions().len() {
-            let trick_score: i32 = self
+            let trick_score = combo::trick_points(&self.current_trick);
+            let winner = combo::trick_winner(&self.current_trick, &self.rules).unwrap_or(position);
+            let winning_len = self
                 .current_trick
                 .iter()
-                .map(|played| played_score(&played.cards))
-                .sum();
-            let winner = trick_winner(&self.current_trick, &self.rules).unwrap_or(position);
+                .find(|played| played.position == winner as i32)
+                .map(|played| played.cards.len())
+                .unwrap_or(1);
             *self.collected_scores.entry(winner).or_default() += trick_score;
             self.last_trick_winner = Some(winner);
+            // Bottom (扣底) reward is multiplied by the size of the last winning play.
+            self.bottom_multiplier = (winning_len as i32).max(1);
             self.current_trick.clear();
             self.trick_index += 1;
             self.current_position = winner;
@@ -945,5 +872,76 @@ mod tests {
         assert_eq!(state.attacking_score(), 80);
         assert_eq!(state.winner_positions(), vec![1, 3]);
         assert_eq!(state.settlement_score(), 80);
+    }
+
+    #[test]
+    fn tractor_lead_forces_pair_follow_and_higher_tractor_wins() {
+        let mut state = test_state();
+        state.rules.target_rank = TractorRank::TWO;
+        // Lead a suit-0 tractor rank3+rank4; each opponent must follow shape.
+        state.hands.insert(0, vec![2, 102, 3, 103]);
+        state.hands.insert(1, vec![5, 105, 6, 106]); // higher suit-0 tractor
+        state.hands.insert(2, vec![18, 118, 19, 119]);
+        state.hands.insert(3, vec![31, 131, 32, 132]);
+
+        state
+            .play_cards(0, "u0".to_owned(), vec![2, 102, 3, 103])
+            .expect("lead tractor");
+        // A single pair cannot answer a tractor lead (wrong card count).
+        assert!(state.play_cards(1, "u1".to_owned(), vec![5, 105]).is_err());
+        state
+            .play_cards(1, "u1".to_owned(), vec![5, 105, 6, 106])
+            .expect("follow higher tractor");
+        state
+            .play_cards(2, "u2".to_owned(), vec![18, 118, 19, 119])
+            .unwrap();
+        state
+            .play_cards(3, "u3".to_owned(), vec![31, 131, 32, 132])
+            .unwrap();
+
+        // Position 1's higher suit-0 tractor takes the trick.
+        assert_eq!(state.last_trick_winner, Some(1));
+    }
+
+    #[test]
+    fn bottom_multiplier_tracks_last_winning_play_size() {
+        let mut state = test_state();
+        state.rules.target_rank = TractorRank::TWO;
+        state.bottom_cards = vec![9]; // one 10-point card in the bottom
+        // Single final trick: multiplier 1.
+        state.hands.insert(0, vec![5]);
+        state.hands.insert(1, vec![6]);
+        state.hands.insert(2, vec![7]);
+        state.hands.insert(3, vec![8]);
+        for (pos, card) in [(0, 5), (1, 6), (2, 7), (3, 8)] {
+            state
+                .play_cards(pos, format!("u{pos}"), vec![card])
+                .unwrap();
+        }
+        assert_eq!(state.bottom_multiplier, 1);
+        // The winner (highest suit-0 single = position 3) banks bottom × 1.
+        assert_eq!(state.last_trick_winner, Some(3));
+        assert_eq!(state.collected_scores.get(&3).copied(), Some(10));
+
+        // Now a pair-winning final trick: multiplier 2.
+        let mut state = test_state();
+        state.rules.target_rank = TractorRank::TWO;
+        state.bottom_cards = vec![9];
+        state.hands.insert(0, vec![5, 105]);
+        state.hands.insert(1, vec![6, 106]);
+        state.hands.insert(2, vec![7, 107]);
+        state.hands.insert(3, vec![8, 108]);
+        for (pos, cards) in [
+            (0, vec![5, 105]),
+            (1, vec![6, 106]),
+            (2, vec![7, 107]),
+            (3, vec![8, 108]),
+        ] {
+            state.play_cards(pos, format!("u{pos}"), cards).unwrap();
+        }
+        assert_eq!(state.bottom_multiplier, 2);
+        // Winner banks bottom (10) × 2 = 20.
+        assert_eq!(state.last_trick_winner, Some(3));
+        assert_eq!(state.collected_scores.get(&3).copied(), Some(20));
     }
 }
