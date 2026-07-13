@@ -14,6 +14,25 @@ pub fn choose_discard_from_view(
     position: usize,
     win_rule: i32,
 ) -> Option<i32> {
+    choose_discard_from_view_inner(hand, table, position, win_rule, false)
+}
+
+pub fn choose_forced_discard_from_view(
+    hand: &[i32],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+) -> Option<i32> {
+    choose_discard_from_view_inner(hand, table, position, win_rule, true)
+}
+
+fn choose_discard_from_view_inner(
+    hand: &[i32],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+    must_discard: bool,
+) -> Option<i32> {
     if hand.len() % 3 != 2 {
         return None;
     }
@@ -22,7 +41,7 @@ pub fn choose_discard_from_view(
         .get(&position)
         .map(|seat| seat.melds.as_slice())
         .unwrap_or(&[]);
-    if is_complete_win_for_table(hand, melds, table, win_rule) {
+    if !must_discard && is_complete_win_for_table(hand, melds, table, win_rule) {
         return None;
     }
     if let Some(tile) = choose_seven_pairs_wait_discard(hand, melds, table, position, win_rule) {

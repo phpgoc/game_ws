@@ -21,7 +21,7 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 
 pub use claim::{choose_claim_from_view, should_pass_self_draw_hu_from_view};
-pub use discard::choose_discard_from_view;
+pub use discard::{choose_discard_from_view, choose_forced_discard_from_view};
 pub use self_gang::choose_self_gang_from_view;
 pub use types::AiClaimChoice;
 

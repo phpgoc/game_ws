@@ -10,7 +10,8 @@ use crate::game_state::{ClaimResponse, ClaimWindowKind, ShenyangMahjongLoopState
 use crate::rules::{is_complete_win_with_melds_and_open_rule, win_rule_from_configs};
 
 use super::decision::{
-    AiClaimChoice, choose_claim_from_view, choose_discard_from_view, choose_self_gang_from_view,
+    AiClaimChoice, choose_claim_from_view, choose_discard_from_view,
+    choose_forced_discard_from_view, choose_self_gang_from_view,
     should_pass_self_draw_hu_from_view,
 };
 use super::observation::{AiClaimView, AiPublicTable, build_public_table_with_configs};
@@ -97,7 +98,9 @@ pub fn maybe_play_ai_turn(
     }
 
     let table = build_public_table_with_configs(state, configs);
-    if let Some(tile) = choose_discard_from_view(&hand, &table, position, win_rule) {
+    let discard = choose_discard_from_view(&hand, &table, position, win_rule)
+        .or_else(|| choose_forced_discard_from_view(&hand, &table, position, win_rule));
+    if let Some(tile) = discard {
         return perform_discard(
             room_service,
             room_key,
@@ -460,7 +463,7 @@ mod tests {
             .insert(0, vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35, 35]);
         let mut dispatch = Dispatch::default();
 
-        assert!(!maybe_play_ai_turn(
+        assert!(maybe_play_ai_turn(
             &RoomService::default(),
             "room",
             &mut state,
@@ -469,7 +472,7 @@ mod tests {
         ));
 
         assert_eq!(state.phase, ShenyangMahjongPhase::Play);
-        assert!(state.discards.get(&0).unwrap().is_empty());
+        assert_eq!(state.discards.get(&0).unwrap().len(), 1);
         assert!(state.settlement.is_none());
     }
 
@@ -483,7 +486,7 @@ mod tests {
         state.last_drawn_tile = Some(9);
         let mut dispatch = Dispatch::default();
 
-        assert!(!maybe_play_ai_turn(
+        assert!(maybe_play_ai_turn(
             &RoomService::default(),
             "room",
             &mut state,
@@ -492,7 +495,7 @@ mod tests {
         ));
 
         assert_eq!(state.phase, ShenyangMahjongPhase::Play);
-        assert!(state.discards.get(&0).unwrap().is_empty());
+        assert_eq!(state.discards.get(&0).unwrap().len(), 1);
         assert!(state.settlement.is_none());
     }
 
@@ -626,6 +629,40 @@ mod tests {
         ));
 
         assert_eq!(state.hands.get(&0).unwrap().len(), 13);
+        assert_eq!(state.discards.get(&0).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn away_position_discards_complete_shape_after_claim() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_away(0);
+        state
+            .hands
+            .insert(0, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 35, 35]);
+        state.melds.insert(0, vec![test_peng_meld(31)]);
+        state.last_drawn_tile = None;
+        let mut dispatch = Dispatch::default();
+
+        assert!(is_complete_win_with_melds_and_open_rule(
+            state.hands.get(&0).unwrap(),
+            state.melds.get(&0).unwrap(),
+            WIN_RULE_RELAXED,
+            true,
+        ));
+        assert!(!can_self_draw_hu_with_configs(
+            &state,
+            0,
+            &relaxed_configs()
+        ));
+        assert!(maybe_play_ai_turn(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+        ));
+
+        assert_eq!(state.hands.get(&0).unwrap().len(), 10);
         assert_eq!(state.discards.get(&0).unwrap().len(), 1);
     }
 
