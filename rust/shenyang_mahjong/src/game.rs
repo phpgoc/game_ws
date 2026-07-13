@@ -1591,8 +1591,9 @@ pub(crate) fn settlement_score_changes_for_state(
     let chi_opens_door = chi_opens_door(configs);
     let mut sorted_positions = positions.to_vec();
     sorted_positions.sort_unstable();
+    let winner_positions = valid_settlement_winner_positions(&sorted_positions, settlement);
 
-    if settlement.winner_positions.is_empty() {
+    if winner_positions.is_empty() {
         return sorted_positions
             .into_iter()
             .map(|position| WsShenyangMahjongScoreChange {
@@ -1602,7 +1603,6 @@ pub(crate) fn settlement_score_changes_for_state(
             .collect();
     }
 
-    let winner_positions = settlement.unique_winner_positions();
     let winner_set = winner_positions.iter().copied().collect::<HashSet<_>>();
     let payers: Vec<usize> = if settlement.is_self_draw {
         sorted_positions
@@ -1654,6 +1654,32 @@ pub(crate) fn settlement_score_changes_for_state(
             score: totals.get(&position).copied().unwrap_or(0),
         })
         .collect()
+}
+
+fn valid_settlement_winner_positions(
+    positions: &[usize],
+    settlement: &crate::game_state::SettlementState,
+) -> Vec<usize> {
+    let position_set = positions.iter().copied().collect::<HashSet<_>>();
+    let winner_positions = settlement
+        .unique_winner_positions()
+        .into_iter()
+        .filter(|position| position_set.contains(position))
+        .collect::<Vec<_>>();
+
+    if settlement.is_self_draw {
+        return (winner_positions.len() == 1)
+            .then_some(winner_positions)
+            .unwrap_or_default();
+    }
+
+    settlement
+        .from_position
+        .filter(|from_position| {
+            position_set.contains(from_position) && !winner_positions.contains(from_position)
+        })
+        .map(|_| winner_positions)
+        .unwrap_or_default()
 }
 
 pub(crate) fn settlement_time(configs: &HashMap<String, i32>) -> u64 {
@@ -6678,6 +6704,81 @@ mod tests {
         assert_eq!(event.winner_positions, vec![2]);
         assert_eq!(event.winner_details.len(), 1);
         assert_eq!(event.winner_details[0].position, 2);
+    }
+
+    #[test]
+    fn settlement_rejects_unknown_self_draw_winner() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(9, vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35, 35]);
+        state.enter_settlement(vec![9], None, Some(35), true);
+        let settlement = state.settlement.as_ref().expect("settlement");
+
+        assert_eq!(
+            settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &HashMap::new())
+                .into_iter()
+                .map(|change| (change.position, change.score))
+                .collect::<Vec<_>>(),
+            vec![(0, 0), (1, 0), (2, 0), (3, 0)]
+        );
+        assert!(
+            build_settlement_event(&state)
+                .expect("settlement event")
+                .winner_positions
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn settlement_rejects_unknown_discard_payer() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35]);
+        state.enter_settlement(vec![1], Some(9), Some(35), false);
+        let settlement = state.settlement.as_ref().expect("settlement");
+
+        assert_eq!(
+            settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &HashMap::new())
+                .into_iter()
+                .map(|change| (change.position, change.score))
+                .collect::<Vec<_>>(),
+            vec![(0, 0), (1, 0), (2, 0), (3, 0)]
+        );
+        assert!(
+            build_settlement_event(&state)
+                .expect("settlement event")
+                .winner_positions
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn settlement_rejects_multiple_self_draw_winners() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35, 35]);
+        state
+            .hands
+            .insert(2, vec![3, 3, 4, 4, 13, 13, 14, 14, 23, 23, 24, 24, 35, 35]);
+        state.enter_settlement(vec![1, 2], None, Some(35), true);
+        let settlement = state.settlement.as_ref().expect("settlement");
+
+        assert_eq!(
+            settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &HashMap::new())
+                .into_iter()
+                .map(|change| (change.position, change.score))
+                .collect::<Vec<_>>(),
+            vec![(0, 0), (1, 0), (2, 0), (3, 0)]
+        );
+        assert!(
+            build_settlement_event(&state)
+                .expect("settlement event")
+                .winner_positions
+                .is_empty()
+        );
     }
 
     #[test]
