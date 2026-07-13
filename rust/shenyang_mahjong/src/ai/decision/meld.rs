@@ -69,6 +69,14 @@ pub(super) fn valid_meld_count(melds: &[WsShenyangMahjongMeld]) -> usize {
     melds.iter().filter(|meld| is_valid_meld(meld)).count()
 }
 
+pub(super) fn has_virtual_tile_count(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    expected_count: usize,
+) -> bool {
+    hand.len() + valid_meld_count(melds) * 3 == expected_count
+}
+
 pub(super) fn meld_primary_tile(meld: &WsShenyangMahjongMeld) -> Option<i32> {
     let expected_len = match meld.kind {
         ShenyangMahjongMeldKind::PENG => 3,

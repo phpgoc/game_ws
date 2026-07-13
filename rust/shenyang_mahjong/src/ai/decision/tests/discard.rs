@@ -465,3 +465,13 @@ fn mid_pinghu_route_sequence_bias_turns_off_after_shape_period() {
         0.0
     );
 }
+
+#[test]
+fn discard_rejects_incomplete_virtual_hand() {
+    let table = table_with_discards(1, Vec::new());
+
+    assert_eq!(
+        choose_discard_from_view(&[1, 2], &table, 0, WIN_RULE_RELAXED),
+        None
+    );
+}

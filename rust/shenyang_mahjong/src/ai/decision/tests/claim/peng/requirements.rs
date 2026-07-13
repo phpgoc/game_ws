@@ -38,3 +38,19 @@ fn claim_peng_opens_missing_suit_basic_hand_despite_relaxed_near_ready_shape() {
         Some(AiClaimChoice::Peng)
     );
 }
+
+#[test]
+fn claim_peng_passes_incomplete_virtual_hand() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.claim_window = Some(AiClaimView {
+        tile: 35,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+
+    assert_eq!(
+        choose_claim_from_view(&[35, 35], &claim, &table, 0, WIN_RULE_RELAXED),
+        Some(AiClaimChoice::Pass)
+    );
+}

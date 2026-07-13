@@ -35,15 +35,18 @@ pub fn choose_claim_from_view(
     if !claim.eligible_positions.contains(&position) {
         return None;
     }
-    let tile = claim.tile;
-    let mut win_hand = hand.to_vec();
-    win_hand.push(tile);
-    win_hand.sort_unstable();
     let melds = table
         .seats
         .get(&position)
         .map(|seat| seat.melds.as_slice())
         .unwrap_or(&[]);
+    if !has_virtual_tile_count(hand, melds, 13) {
+        return Some(AiClaimChoice::Pass);
+    }
+    let tile = claim.tile;
+    let mut win_hand = hand.to_vec();
+    win_hand.push(tile);
+    win_hand.sort_unstable();
     if is_complete_win_for_table(&win_hand, melds, table, win_rule) {
         if should_pass_hu_for_capped_live_wait(
             hand, &win_hand, melds, table, position, win_rule, tile,

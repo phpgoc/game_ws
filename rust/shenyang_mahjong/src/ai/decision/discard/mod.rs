@@ -33,14 +33,14 @@ fn choose_discard_from_view_inner(
     win_rule: i32,
     must_discard: bool,
 ) -> Option<i32> {
-    if hand.len() % 3 != 2 {
-        return None;
-    }
     let melds = table
         .seats
         .get(&position)
         .map(|seat| seat.melds.as_slice())
         .unwrap_or(&[]);
+    if !has_virtual_tile_count(hand, melds, 14) {
+        return None;
+    }
     if !must_discard && is_complete_win_for_table(hand, melds, table, win_rule) {
         return None;
     }

@@ -739,3 +739,13 @@ fn self_gang_skips_plain_gang_when_single_wait_fan_caps_ready_hand() {
         None
     );
 }
+
+#[test]
+fn self_gang_rejects_incomplete_virtual_hand() {
+    let table = table_with_discards(1, Vec::new());
+
+    assert_eq!(
+        choose_self_gang_from_view(&[35, 35, 35, 35], &[35], &table, 0, WIN_RULE_RELAXED),
+        None
+    );
+}
