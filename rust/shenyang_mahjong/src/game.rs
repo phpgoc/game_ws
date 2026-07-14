@@ -259,6 +259,17 @@ fn position_has_impossible_known_tile_count(
     })
 }
 
+fn hand_tiles_are_valid(hand: &[i32]) -> bool {
+    hand.iter().all(|tile| is_valid_tile(*tile))
+}
+
+fn position_hand_tiles_are_valid(state: &ShenyangMahjongLoopState, position: usize) -> bool {
+    state
+        .hands
+        .get(&position)
+        .is_some_and(|hand| hand_tiles_are_valid(hand))
+}
+
 fn can_claim_hu_with_configs(
     state: &ShenyangMahjongLoopState,
     position: usize,
@@ -266,6 +277,7 @@ fn can_claim_hu_with_configs(
     configs: &HashMap<String, i32>,
 ) -> bool {
     if has_impossible_known_tile_count(state, tile)
+        || !position_hand_tiles_are_valid(state, position)
         || position_has_impossible_known_tile_count(state, position)
         || !position_meld_shapes_are_valid(state, position)
         || !position_meld_sources_are_valid(state, position)
@@ -657,6 +669,7 @@ fn positive_winner_positions_from_scores<'a>(
 
 fn can_added_gang(hand: &[i32], melds: &[WsShenyangMahjongMeld], target_tile: i32) -> bool {
     is_valid_tile(target_tile)
+        && hand_tiles_are_valid(hand)
         && hand.iter().filter(|tile| **tile == target_tile).count() == 1
         && melds
             .iter()
@@ -764,6 +777,7 @@ pub(crate) fn can_self_draw_hu_with_configs(
         || state.current_position != position
         || !position_owns_last_drawn_tile(state, position)
         || state.claim_window.is_some()
+        || !position_hand_tiles_are_valid(state, position)
         || position_has_impossible_known_tile_count(state, position)
         || !position_meld_shapes_are_valid(state, position)
         || !position_meld_sources_are_valid(state, position)
@@ -789,6 +803,7 @@ pub(crate) fn can_self_gang(
         || state.claim_window.is_some()
         || state.wall_count() == 0
         || !position_has_discardable_tile_count(state, position)
+        || !position_hand_tiles_are_valid(state, position)
         || position_has_impossible_known_tile_count(state, position)
         || !position_meld_shapes_are_valid(state, position)
         || !position_meld_sources_are_valid(state, position)
@@ -1146,6 +1161,7 @@ fn position_has_claimable_tile_count(state: &ShenyangMahjongLoopState, position:
 
 fn position_can_claim_meld(state: &ShenyangMahjongLoopState, position: usize) -> bool {
     position_has_claimable_tile_count(state, position)
+        && position_hand_tiles_are_valid(state, position)
         && !position_has_impossible_known_tile_count(state, position)
         && position_meld_shapes_are_valid(state, position)
         && position_meld_sources_are_valid(state, position)
@@ -1176,6 +1192,7 @@ pub(crate) fn perform_discard(
         || state.claim_window.is_some()
         || !position_has_discardable_tile_count(state, position)
         || !is_valid_tile(tile)
+        || !position_hand_tiles_are_valid(state, position)
         || position_has_impossible_known_tile_count(state, position)
         || !position_meld_shapes_are_valid(state, position)
         || !position_meld_sources_are_valid(state, position)
@@ -3333,6 +3350,19 @@ mod tests {
     }
 
     #[test]
+    fn claim_options_reject_player_with_invalid_hand_tile() {
+        let mut state = playable_state();
+        state.discards.insert(0, vec![3]);
+        state
+            .hands
+            .insert(1, vec![3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 99]);
+
+        let options = build_claim_options(&state, 3, 0, &relaxed_configs());
+
+        assert!(!options.iter().any(|option| option.position == 1));
+    }
+
+    #[test]
     fn claim_options_ignore_melds_with_invalid_sources_for_known_tile_count() {
         let mut state = playable_state();
         state.discards.insert(0, vec![3]);
@@ -4087,6 +4117,35 @@ mod tests {
             &mut dispatch,
             0,
             99,
+        ));
+
+        assert_eq!(state.hands.get(&0), Some(&original_hand));
+        assert!(state.discards.get(&0).unwrap().is_empty());
+        assert_eq!(state.wall, vec![36]);
+        assert!(dispatch.messages.is_empty());
+    }
+
+    #[test]
+    fn perform_discard_rejects_valid_target_with_invalid_hand_tile() {
+        let mut state = playable_state();
+        state.current_position = 0;
+        state.discards.insert(0, Vec::new());
+        state
+            .hands
+            .insert(0, vec![4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 31, 32, 33, 99]);
+        state.wall = vec![36];
+        state.last_drawn_tile = Some(4);
+        let original_hand = state.hands.get(&0).cloned().unwrap();
+        let mut dispatch = Dispatch::default();
+
+        assert!(!perform_discard(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+            0,
+            4,
         ));
 
         assert_eq!(state.hands.get(&0), Some(&original_hand));
@@ -7209,6 +7268,50 @@ mod tests {
         assert_eq!(melds[0].kind, ShenyangMahjongMeldKind::PENG);
         assert_eq!(melds[0].tiles, vec![9, 9]);
         assert_eq!(melds[0].from_position, Some(1));
+        assert_eq!(state.wall, vec![35]);
+        assert!(dispatch.messages.is_empty());
+    }
+
+    #[test]
+    fn self_gang_rejects_unrelated_invalid_hand_tile() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(0, vec![3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 99]);
+        state.melds.insert(
+            0,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::PENG,
+                vec![3, 3, 3],
+                Some(2),
+            )],
+        );
+        state.wall = vec![35];
+        state.last_drawn_tile = Some(3);
+        let original_hand = state.hands.get(&0).cloned().unwrap();
+        let original_melds = state.melds.get(&0).cloned().unwrap();
+        let mut dispatch = Dispatch::default();
+
+        assert!(!can_self_gang(&state, 0, 3));
+        assert!(!perform_self_gang(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+            0,
+            3,
+        ));
+
+        assert_eq!(state.hands.get(&0), Some(&original_hand));
+        let actual_melds = state.melds.get(&0).expect("melds should stay");
+        assert_eq!(actual_melds.len(), original_melds.len());
+        assert_eq!(actual_melds[0].kind, original_melds[0].kind);
+        assert_eq!(actual_melds[0].tiles, original_melds[0].tiles);
+        assert_eq!(
+            actual_melds[0].from_position,
+            original_melds[0].from_position
+        );
         assert_eq!(state.wall, vec![35]);
         assert!(dispatch.messages.is_empty());
     }
