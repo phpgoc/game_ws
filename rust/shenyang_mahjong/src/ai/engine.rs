@@ -323,7 +323,7 @@ mod tests {
         state
             .hands
             .insert(1, vec![2, 5, 8, 11, 14, 16, 17, 21, 31, 32, 33]);
-        state.melds.insert(1, vec![test_peng_meld(16)]);
+        state.melds.insert(1, vec![test_peng_meld_from(16, 2)]);
         state.last_drawn_tile = Some(17);
         state.claim_window = Some(ClaimWindowState {
             tile: 16,
@@ -666,7 +666,7 @@ mod tests {
         state
             .hands
             .insert(1, vec![2, 5, 8, 11, 14, 16, 17, 21, 31, 32, 33]);
-        state.melds.insert(1, vec![test_peng_meld(16)]);
+        state.melds.insert(1, vec![test_peng_meld_from(16, 2)]);
         state.last_drawn_tile = Some(16);
         state.claim_window = Some(ClaimWindowState {
             tile: 16,
@@ -719,7 +719,7 @@ mod tests {
         state
             .hands
             .insert(1, vec![2, 5, 8, 11, 14, 16, 17, 21, 31, 32, 33]);
-        state.melds.insert(1, vec![test_peng_meld(16)]);
+        state.melds.insert(1, vec![test_peng_meld_from(16, 2)]);
         state.discards.insert(2, vec![14, 14, 14, 14]);
         state.last_drawn_tile = Some(16);
         state.claim_window = Some(ClaimWindowState {
@@ -773,7 +773,7 @@ mod tests {
         state
             .hands
             .insert(1, vec![2, 5, 8, 11, 14, 16, 17, 21, 31, 32, 33]);
-        state.melds.insert(1, vec![test_peng_meld(16)]);
+        state.melds.insert(1, vec![test_peng_meld_from(16, 2)]);
         state.discards.insert(2, vec![16]);
         state.last_drawn_tile = Some(16);
         state.claim_window = Some(ClaimWindowState {
@@ -1240,10 +1240,14 @@ mod tests {
     }
 
     fn test_peng_meld(tile: i32) -> WsShenyangMahjongMeld {
+        test_peng_meld_from(tile, 1)
+    }
+
+    fn test_peng_meld_from(tile: i32, from_position: i32) -> WsShenyangMahjongMeld {
         WsShenyangMahjongMeld {
             kind: ShenyangMahjongMeldKind::PENG,
             tiles: vec![tile, tile, tile],
-            from_position: Some(1),
+            from_position: Some(from_position),
         }
     }
 

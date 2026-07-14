@@ -267,6 +267,7 @@ fn can_claim_hu_with_configs(
 ) -> bool {
     if has_impossible_known_tile_count(state, tile)
         || position_has_impossible_known_tile_count(state, position)
+        || !position_meld_sources_are_valid(state, position)
     {
         return false;
     }
@@ -533,6 +534,7 @@ pub(crate) fn settlement_is_reverse_win(
         return false;
     };
     settlement.is_reverse_win
+        && position_meld_sources_are_valid(state, from_position)
         && state.melds.get(&from_position).is_some_and(|melds| {
             melds
                 .iter()
@@ -675,6 +677,7 @@ pub(crate) fn can_self_draw_hu_with_configs(
         || !position_owns_last_drawn_tile(state, position)
         || state.claim_window.is_some()
         || position_has_impossible_known_tile_count(state, position)
+        || !position_meld_sources_are_valid(state, position)
     {
         return false;
     }
@@ -698,6 +701,7 @@ pub(crate) fn can_self_gang(
         || state.wall_count() == 0
         || !position_has_discardable_tile_count(state, position)
         || position_has_impossible_known_tile_count(state, position)
+        || !position_meld_sources_are_valid(state, position)
     {
         return false;
     }
@@ -987,6 +991,28 @@ fn is_open_meld(meld: &WsShenyangMahjongMeld) -> bool {
     meld.from_position.is_some() && (meld_primary_tile(meld).is_some() || is_chi_meld(meld))
 }
 
+fn meld_source_is_valid_for_position(
+    state: &ShenyangMahjongLoopState,
+    position: usize,
+    meld: &WsShenyangMahjongMeld,
+) -> bool {
+    match (meld.kind, meld.from_position) {
+        (ShenyangMahjongMeldKind::GANG, None) => true,
+        (_, Some(source)) => usize::try_from(source).ok().is_some_and(|source| {
+            source != position && state.players_snapshot().contains_key(&source)
+        }),
+        _ => false,
+    }
+}
+
+fn position_meld_sources_are_valid(state: &ShenyangMahjongLoopState, position: usize) -> bool {
+    state.melds.get(&position).is_none_or(|melds| {
+        melds
+            .iter()
+            .all(|meld| meld_source_is_valid_for_position(state, position, meld))
+    })
+}
+
 fn position_has_virtual_tile_count(
     state: &ShenyangMahjongLoopState,
     position: usize,
@@ -1015,6 +1041,7 @@ fn position_has_claimable_tile_count(state: &ShenyangMahjongLoopState, position:
 fn position_can_claim_meld(state: &ShenyangMahjongLoopState, position: usize) -> bool {
     position_has_claimable_tile_count(state, position)
         && !position_has_impossible_known_tile_count(state, position)
+        && position_meld_sources_are_valid(state, position)
 }
 
 fn position_has_discardable_tile_count(state: &ShenyangMahjongLoopState, position: usize) -> bool {
@@ -1240,9 +1267,11 @@ fn position_has_open_meld(
     chi_opens_door: bool,
 ) -> bool {
     state.melds.get(&position).is_some_and(|melds| {
-        melds
-            .iter()
-            .any(|meld| is_open_meld(meld) && (chi_opens_door || !is_chi_meld(meld)))
+        melds.iter().any(|meld| {
+            meld_source_is_valid_for_position(state, position, meld)
+                && is_open_meld(meld)
+                && (chi_opens_door || !is_chi_meld(meld))
+        })
     })
 }
 
@@ -1975,6 +2004,7 @@ fn winner_hand_fan_with_rule_and_open_rule(
 ) -> i32 {
     if !settlement_winner_has_valid_win_tile(state, settlement, winner)
         || winner_has_impossible_known_tile_count(state, settlement, winner)
+        || !position_meld_sources_are_valid(state, winner)
     {
         return 0;
     }
@@ -6381,6 +6411,38 @@ mod tests {
     }
 
     #[test]
+    fn self_draw_hu_rejects_self_sourced_open_meld() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(0, vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+        state.melds.insert(
+            0,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::CHI,
+                vec![1, 2, 3],
+                Some(0),
+            )],
+        );
+        state.last_drawn_tile = Some(35);
+        let configs = HashMap::from([("win_rule".to_owned(), WIN_RULE_SHENYANG_BASIC)]);
+
+        assert!(is_complete_win_with_configs(
+            state.hands.get(&0).unwrap(),
+            state.melds.get(&0).unwrap(),
+            &configs
+        ));
+        assert!(!can_self_draw_hu_with_configs(&state, 0, &configs));
+
+        state.enter_settlement(vec![0], None, Some(35), true);
+        let settlement = state.settlement.as_ref().expect("settlement");
+        assert_eq!(
+            winner_hand_fan_with_rule(&state, settlement, 0, WIN_RULE_SHENYANG_BASIC),
+            0
+        );
+    }
+
+    #[test]
     fn self_draw_hu_rejects_complete_open_hand_without_draw() {
         let mut state = playable_state();
         state
@@ -8194,6 +8256,57 @@ mod tests {
             .collect::<Vec<_>>(),
             vec![(0, -2), (1, 2), (2, 0), (3, 0)]
         );
+
+        for invalid_source in [0, 9] {
+            let mut invalid_source_state = playable_state();
+            invalid_source_state.dealer_position = 2;
+            invalid_source_state.melds.insert(3, open_non_payer_meld());
+            invalid_source_state
+                .hands
+                .insert(1, vec![2, 3, 5, 6, 7, 11, 12, 13, 35, 35]);
+            invalid_source_state.melds.insert(
+                0,
+                vec![build_meld(
+                    ShenyangMahjongMeldKind::CHI,
+                    vec![1, 2, 3],
+                    Some(invalid_source),
+                )],
+            );
+            invalid_source_state.melds.insert(
+                1,
+                vec![build_meld(
+                    ShenyangMahjongMeldKind::CHI,
+                    vec![21, 22, 23],
+                    Some(2),
+                )],
+            );
+            invalid_source_state.enter_settlement_with_reverse_win(
+                vec![1],
+                Some(0),
+                Some(4),
+                false,
+                false,
+                false,
+                false,
+            );
+            let settlement = invalid_source_state
+                .settlement
+                .as_ref()
+                .expect("settlement");
+
+            assert_eq!(
+                settlement_score_changes_for_state(
+                    &invalid_source_state,
+                    &[0, 1, 2, 3],
+                    settlement,
+                    &HashMap::new()
+                )
+                .into_iter()
+                .map(|change| (change.position, change.score))
+                .collect::<Vec<_>>(),
+                vec![(0, -2), (1, 2), (2, 0), (3, 0)]
+            );
+        }
 
         let mut malformed_open_payer_state = playable_state();
         malformed_open_payer_state.dealer_position = 2;
