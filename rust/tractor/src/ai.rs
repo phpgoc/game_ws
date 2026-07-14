@@ -7,7 +7,10 @@
 
 use crate::{
     combo::{self, ComboKind},
-    game_state::{TractorGameState, card_rank, card_suit, is_trump_card, tractor_card_value},
+    game_state::{
+        TractorGameState, card_rank, card_score, card_suit, is_trump_card, same_team,
+        tractor_card_value,
+    },
 };
 
 pub fn decide(state: &TractorGameState, position: usize) -> Option<Vec<i32>> {
@@ -23,11 +26,10 @@ pub fn decide(state: &TractorGameState, position: usize) -> Option<Vec<i32>> {
     }
 }
 
-/// Choose an opening play. Preference order:
-///   1. A tractor (连对) — hardest for opponents to answer.
-///   2. A low pair in a plain suit, to probe and draw out trumps.
-///   3. A guaranteed-winning high single once the hand is short.
-///   4. Otherwise the lowest single, keeping strong cards back.
+/// Choose an opening play. The AI estimates whether every legal opponent reply
+/// can beat a candidate, so it can distinguish a controlling tractor from a
+/// merely long but vulnerable one. It still uses low pairs/tractors to strip
+/// shapes early, then cashes control cards once the hand gets shorter.
 fn lead_play(state: &TractorGameState, position: usize, hand: &[i32]) -> Option<Vec<i32>> {
     let rules = &state.rules;
     let value = |cards: &[i32]| {
@@ -40,7 +42,8 @@ fn lead_play(state: &TractorGameState, position: usize, hand: &[i32]) -> Option<
 
     let leads = combo::enumerate_leads(hand, rules);
 
-    // 1. Prefer the longest tractor; break ties by playing the weaker one.
+    // 1. Prefer a controlling tractor, then length. A vulnerable tractor is
+    // played low to strip opponents' pairs without burning the team's control.
     if let Some(tractor) = leads
         .iter()
         .filter(|cards| {
@@ -49,28 +52,71 @@ fn lead_play(state: &TractorGameState, position: usize, hand: &[i32]) -> Option<
                 Some(ComboKind::Tractor(_))
             )
         })
-        .max_by_key(|cards| (cards.len(), std::cmp::Reverse(value(cards))))
+        .max_by_key(|cards| {
+            let controlled = lead_is_controlled(state, position, cards);
+            (
+                controlled,
+                cards.len(),
+                if controlled {
+                    value(cards)
+                } else {
+                    -value(cards)
+                },
+                cards.iter().map(|card| card_score(*card)).sum::<i32>(),
+            )
+        })
     {
         return Some(tractor.clone());
     }
 
-    // 2. Lead a low plain-suit pair to probe (keep trump pairs in reserve).
-    let plain_pairs: Vec<&Vec<i32>> = leads
+    // 2. Lead pairs before falling back to singles. Early in a round, probe a
+    // short plain suit with a cheap non-point pair. Late, cash the strongest
+    // controlled pair. Trump pairs are preserved unless no plain pair remains.
+    let pairs: Vec<&Vec<i32>> = leads
         .iter()
-        .filter(|cards| {
-            combo::classify(cards, rules).map(|c| c.kind) == Some(ComboKind::Pair)
-                && cards.iter().all(|card| !is_trump_card(*card, rules))
-        })
+        .filter(|cards| combo::classify(cards, rules).map(|c| c.kind) == Some(ComboKind::Pair))
         .collect();
-    if let Some(pair) = plain_pairs.iter().min_by_key(|cards| value(cards)) {
-        return Some((*pair).clone());
+    if hand.len() <= 12
+        && let Some(pair) = pairs
+            .iter()
+            .filter(|cards| lead_is_controlled(state, position, cards))
+            .max_by_key(|cards| {
+                (
+                    cards.iter().map(|card| card_score(*card)).sum::<i32>(),
+                    value(cards),
+                )
+            })
+    {
+        return Some((**pair).clone());
+    }
+    let mut suit_len = [0usize; 4];
+    for card in hand.iter().filter(|card| !is_trump_card(**card, rules)) {
+        if let Some(suit) = card_suit(*card) {
+            suit_len[suit as usize] += 1;
+        }
+    }
+    if let Some(pair) = pairs.iter().min_by_key(|cards| {
+        let trump = cards.iter().any(|card| is_trump_card(*card, rules));
+        let points = cards.iter().map(|card| card_score(*card)).sum::<i32>();
+        let suit_size = cards
+            .first()
+            .and_then(|card| card_suit(*card))
+            .map(|suit| suit_len[suit as usize])
+            .unwrap_or(usize::MAX);
+        (trump, points > 0, suit_size, value(cards))
+    }) {
+        return Some((**pair).clone());
     }
 
-    // 3. Late in the hand, cash a guaranteed winner (a card nothing outranks).
+    // 3. Late in the hand, cash an estimated controlling single.
     if hand.len() <= 5
-        && let Some(top) = highest_guaranteed_single(state, position, hand)
+        && let Some(top) = leads
+            .iter()
+            .filter(|cards| cards.len() == 1 && lead_is_controlled(state, position, cards))
+            .max_by_key(|cards| value(cards))
+            .and_then(|cards| cards.first())
     {
-        return Some(vec![top]);
+        return Some(vec![*top]);
     }
 
     // 4. Otherwise sluff the lowest single, holding strength back. Prefer a
@@ -78,24 +124,22 @@ fn lead_play(state: &TractorGameState, position: usize, hand: &[i32]) -> Option<
     lowest_lead_single(hand, rules).map(|card| vec![card])
 }
 
-/// The strongest single card in hand that no opponent card can beat, if any.
-fn highest_guaranteed_single(
-    state: &TractorGameState,
-    position: usize,
-    hand: &[i32],
-) -> Option<i32> {
+fn lead_is_controlled(state: &TractorGameState, position: usize, cards: &[i32]) -> bool {
     let rules = &state.rules;
-    let best = *hand
-        .iter()
-        .max_by_key(|card| tractor_card_value(**card, rules, None))?;
-    let best_value = tractor_card_value(best, rules, None);
-    let outranked_by_opponent = state
+    let Some(lead) = combo::classify(cards, rules) else {
+        return false;
+    };
+    let Some(lead_value) = combo::combo_win_value(cards, &lead, rules) else {
+        return false;
+    };
+    !state
         .hands
-        .iter()
-        .filter(|(pos, _)| !crate::game_state::same_team(**pos, position))
-        .flat_map(|(_, cards)| cards.iter())
-        .any(|card| tractor_card_value(*card, rules, None) > best_value);
-    (!outranked_by_opponent).then_some(best)
+        .keys()
+        .copied()
+        .filter(|other| !same_team(*other, position))
+        .flat_map(|other| state.legal_follows(other, &lead))
+        .filter_map(|reply| combo::combo_win_value(&reply, &lead, rules))
+        .any(|reply_value| reply_value > lead_value)
 }
 
 /// Lowest single to lead: prefer the lowest card of the shortest plain suit so
@@ -177,10 +221,36 @@ mod tests {
     }
 
     #[test]
+    fn ai_cashes_a_controlling_tractor_over_a_vulnerable_one() {
+        let mut state = test_state(TractorRank::TWO);
+        state
+            .hands
+            .insert(0, vec![2, 102, 3, 103, 11, 111, 12, 112, 20]);
+        // The opponent's 5-6 tractor beats the low 3-4 tractor, but cannot
+        // overtake the Q-K tractor in the same suit.
+        state.hands.insert(1, vec![4, 104, 5, 105]);
+        state.hands.insert(2, vec![19]);
+        state.hands.insert(3, vec![21]);
+
+        let play = decide(&state, 0).expect("lead");
+        assert_eq!(
+            combo::classify(&play, &state.rules).map(|combo| combo.kind),
+            Some(ComboKind::Tractor(2))
+        );
+        let mut ranks: Vec<_> = play.iter().map(|card| card_rank(*card)).collect();
+        ranks.sort_unstable();
+        assert_eq!(ranks, vec![12, 12, 13, 13]);
+    }
+
+    #[test]
     fn ai_leads_low_plain_pair_over_high_one() {
         let mut state = test_state(TractorRank::TWO);
-        // Two plain pairs (rank3 low, rank9 high) and no tractor.
-        state.hands.insert(0, vec![2, 102, 8, 108, 20]);
+        // Two plain pairs (rank3 low, rank9 high) in an early-round-sized hand
+        // and no tractor. The AI probes low instead of cashing control early.
+        state.hands.insert(
+            0,
+            vec![2, 102, 8, 108, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23],
+        );
         let play = decide(&state, 0).expect("lead");
         assert_eq!(
             combo::classify(&play, &state.rules).map(|c| c.kind),

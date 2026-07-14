@@ -388,6 +388,7 @@ impl TractorGameState {
         let partner_winning = current_winner
             .map(|winner| team_positions(position).contains(&winner) && winner != position)
             .unwrap_or(false);
+        let is_last_to_play = self.current_trick.len() + 1 >= self.active_positions().len();
 
         if !partner_winning {
             let mut winning: Vec<Vec<i32>> = candidates
@@ -413,7 +414,7 @@ impl TractorGameState {
 
         // Can't (or needn't) win: dump points to a winning partner, else shed low.
         candidates.sort_by_key(|cards| {
-            if partner_winning {
+            if partner_winning && is_last_to_play {
                 (-played_score(cards), strength(cards))
             } else {
                 (played_score(cards), strength(cards))
@@ -1060,6 +1061,48 @@ mod tests {
         state.hands.insert(1, vec![5, 6, 13]);
 
         assert_eq!(state.choose_auto_play(1), Some(vec![5]));
+    }
+
+    #[test]
+    fn ai_only_feeds_points_to_a_winning_partner_when_last() {
+        let mut state = test_state();
+        state.rules.target_rank = TractorRank::TWO;
+        state.current_position = 2;
+        state.current_trick = vec![
+            WsTractorPlayedCards {
+                position: 0,
+                name: "u0".to_owned(),
+                cards: vec![11],
+            },
+            WsTractorPlayedCards {
+                position: 1,
+                name: "u1".to_owned(),
+                cards: vec![3],
+            },
+        ];
+        state.hands.insert(2, vec![2, 9]);
+        assert_eq!(state.choose_auto_play(2), Some(vec![2]));
+
+        state.current_position = 3;
+        state.current_trick = vec![
+            WsTractorPlayedCards {
+                position: 0,
+                name: "u0".to_owned(),
+                cards: vec![3],
+            },
+            WsTractorPlayedCards {
+                position: 1,
+                name: "u1".to_owned(),
+                cards: vec![11],
+            },
+            WsTractorPlayedCards {
+                position: 2,
+                name: "u2".to_owned(),
+                cards: vec![4],
+            },
+        ];
+        state.hands.insert(3, vec![2, 9]);
+        assert_eq!(state.choose_auto_play(3), Some(vec![9]));
     }
 
     #[test]
