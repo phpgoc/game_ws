@@ -61,6 +61,10 @@ pub struct TractorGameState {
     pub current_position: usize,
     pub round_index: i32,
     pub trick_index: i32,
+    /// Completed tricks are public table information. Keeping them lets an AI
+    /// remember exposed cards and infer which players have exhausted a suit
+    /// without inspecting anyone's hidden hand.
+    pub completed_tricks: Vec<Vec<WsTractorPlayedCards>>,
     pub current_trick: Vec<WsTractorPlayedCards>,
 }
 
@@ -481,6 +485,7 @@ impl TractorGameState {
         self.bottom_multiplier = 1;
         self.collected_scores.clear();
         self.last_trick_winner = None;
+        self.completed_tricks.clear();
         self.current_trick.clear();
         self.trick_index = 0;
         self.current_position = self.dealer_position;
@@ -775,6 +780,7 @@ impl TractorGameState {
             current_position: 0,
             round_index: 0,
             trick_index: 0,
+            completed_tricks: Vec::new(),
             current_trick: Vec::new(),
         }
     }
@@ -890,6 +896,7 @@ impl TractorGameState {
             self.last_trick_winner = Some(winner);
             // Bottom (扣底) reward is multiplied by the size of the last winning play.
             self.bottom_multiplier = (winning_len as i32).max(1);
+            self.completed_tricks.push(self.current_trick.clone());
             self.current_trick.clear();
             self.trick_index += 1;
             self.current_position = winner;
@@ -1324,6 +1331,9 @@ mod tests {
         assert_eq!(state.trick_index, 1);
         assert_eq!(state.current_position, 3);
         assert_eq!(state.collected_scores.get(&3).copied(), Some(5));
+        assert_eq!(state.completed_tricks.len(), 1);
+        assert_eq!(state.completed_tricks[0].len(), 4);
+        assert!(state.current_trick.is_empty());
     }
 
     #[test]

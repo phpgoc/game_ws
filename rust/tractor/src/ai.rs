@@ -5,13 +5,16 @@
 //! low). The AI adds combo-aware leading: it looks for tractors and pairs, and
 //! decides whether to probe with a low card or cash a guaranteed winner.
 
+mod knowledge;
+
 use crate::{
     combo::{self, ComboKind},
     game_state::{
-        TractorGameState, card_rank, card_score, card_suit, is_trump_card, same_team,
-        tractor_card_value,
+        TractorGameState, card_rank, card_score, card_suit, is_trump_card, tractor_card_value,
     },
 };
+
+use self::knowledge::PublicKnowledge;
 
 pub fn decide(state: &TractorGameState, position: usize) -> Option<Vec<i32>> {
     let hand = state.hands.get(&position)?;
@@ -32,6 +35,7 @@ pub fn decide(state: &TractorGameState, position: usize) -> Option<Vec<i32>> {
 /// shapes early, then cashes control cards once the hand gets shorter.
 fn lead_play(state: &TractorGameState, position: usize, hand: &[i32]) -> Option<Vec<i32>> {
     let rules = &state.rules;
+    let knowledge = PublicKnowledge::from_state(state, position);
     let value = |cards: &[i32]| {
         cards
             .iter()
@@ -41,6 +45,24 @@ fn lead_play(state: &TractorGameState, position: usize, hand: &[i32]) -> Option<
     };
 
     let leads = combo::enumerate_leads(hand, rules);
+
+    // When every other player has publicly shown void in a long plain suit,
+    // release the longest tractor together. This forces opponents to spend
+    // trump pairs (or discard) instead of wasting repeated single leads.
+    if let Some(tractor) = leads
+        .iter()
+        .filter(|cards| {
+            let Some(combo) = combo::classify(cards, rules) else {
+                return false;
+            };
+            matches!(combo.kind, ComboKind::Tractor(_))
+                && combo.suit.is_some()
+                && knowledge.all_other_players_void(combo.suit)
+        })
+        .max_by_key(|cards| (cards.len(), value(cards)))
+    {
+        return Some(tractor.clone());
+    }
 
     // 1. Prefer a controlling tractor, then length. A vulnerable tractor is
     // played low to strip opponents' pairs without burning the team's control.
@@ -53,7 +75,8 @@ fn lead_play(state: &TractorGameState, position: usize, hand: &[i32]) -> Option<
             )
         })
         .max_by_key(|cards| {
-            let controlled = lead_is_controlled(state, position, cards);
+            let probability = knowledge.lead_control_probability(state, cards);
+            let controlled = probability >= 0.82;
             (
                 controlled,
                 cards.len(),
@@ -79,7 +102,7 @@ fn lead_play(state: &TractorGameState, position: usize, hand: &[i32]) -> Option<
     if hand.len() <= 12
         && let Some(pair) = pairs
             .iter()
-            .filter(|cards| lead_is_controlled(state, position, cards))
+            .filter(|cards| knowledge.lead_control_probability(state, cards) >= 0.82)
             .max_by_key(|cards| {
                 (
                     cards.iter().map(|card| card_score(*card)).sum::<i32>(),
@@ -112,7 +135,9 @@ fn lead_play(state: &TractorGameState, position: usize, hand: &[i32]) -> Option<
     if hand.len() <= 5
         && let Some(top) = leads
             .iter()
-            .filter(|cards| cards.len() == 1 && lead_is_controlled(state, position, cards))
+            .filter(|cards| {
+                cards.len() == 1 && knowledge.lead_control_probability(state, cards) >= 0.82
+            })
             .max_by_key(|cards| value(cards))
             .and_then(|cards| cards.first())
     {
@@ -122,24 +147,6 @@ fn lead_play(state: &TractorGameState, position: usize, hand: &[i32]) -> Option<
     // 4. Otherwise sluff the lowest single, holding strength back. Prefer a
     //    short plain suit so we can create a void to trump later.
     lowest_lead_single(hand, rules).map(|card| vec![card])
-}
-
-fn lead_is_controlled(state: &TractorGameState, position: usize, cards: &[i32]) -> bool {
-    let rules = &state.rules;
-    let Some(lead) = combo::classify(cards, rules) else {
-        return false;
-    };
-    let Some(lead_value) = combo::combo_win_value(cards, &lead, rules) else {
-        return false;
-    };
-    !state
-        .hands
-        .keys()
-        .copied()
-        .filter(|other| !same_team(*other, position))
-        .flat_map(|other| state.legal_follows(other, &lead))
-        .filter_map(|reply| combo::combo_win_value(&reply, &lead, rules))
-        .any(|reply_value| reply_value > lead_value)
 }
 
 /// Lowest single to lead: prefer the lowest card of the shortest plain suit so
@@ -226,8 +233,8 @@ mod tests {
         state
             .hands
             .insert(0, vec![2, 102, 3, 103, 11, 111, 12, 112, 20]);
-        // The opponent's 5-6 tractor beats the low 3-4 tractor, but cannot
-        // overtake the Q-K tractor in the same suit.
+        // Opponent cards are populated only to provide public hand counts. The
+        // probability model must not inspect those hidden values.
         state.hands.insert(1, vec![4, 104, 5, 105]);
         state.hands.insert(2, vec![19]);
         state.hands.insert(3, vec![21]);
