@@ -10,7 +10,7 @@ use crate::ai::{maybe_play_ai_turn, maybe_resolve_ai_claims};
 use crate::game::{
     LoopStateRegistry, current_play_time, perform_discard, push_phase_change,
     push_private_deal_events, push_room_event, redeal_after_settlement_with_configs,
-    resolve_claim_window, settlement_time,
+    resolve_claim_window, settle_draw, settlement_time,
 };
 use crate::game_state::{ClaimResponse, ShenyangMahjongLoopState};
 use share_type_public::games::shenyang_mahjong::ShenyangMahjongPhase;
@@ -53,6 +53,32 @@ fn settlement_should_stop(state: &Arc<std::sync::Mutex<ShenyangMahjongLoopState>
 
 fn should_resolve_timed_out_claims(state: &ShenyangMahjongLoopState) -> bool {
     state.turn_countdown() == 0 && state.claim_window.is_some()
+}
+
+fn perform_auto_discard_or_settle(
+    room_service: &RoomService,
+    room_key: &str,
+    state: &mut ShenyangMahjongLoopState,
+    configs: &HashMap<String, i32>,
+    dispatch: &mut ws_common::Dispatch,
+    position: usize,
+    tile: Option<i32>,
+) -> bool {
+    let discarded = tile.is_some_and(|tile| {
+        perform_discard(
+            room_service,
+            room_key,
+            state,
+            configs,
+            dispatch,
+            position,
+            tile,
+        )
+    });
+    if !discarded {
+        settle_draw(room_service, room_key, state, configs, dispatch);
+    }
+    discarded
 }
 
 pub(crate) fn start_game_loop(
@@ -155,9 +181,10 @@ pub(crate) fn start_game_loop(
                             if guard.claim_window.is_some() {
                                 should_resolve_claims = should_resolve_timed_out_claims(&guard);
                             } else {
-                                should_auto_discard =
-                                    auto_discard_tile(&guard, guard.current_position)
-                                        .map(|tile| (guard.current_position, tile));
+                                should_auto_discard = Some((
+                                    guard.current_position,
+                                    auto_discard_tile(&guard, guard.current_position),
+                                ));
                             }
                         }
                     }
@@ -195,7 +222,7 @@ pub(crate) fn start_game_loop(
                             if guard.current_position != position || guard.claim_window.is_some() {
                                 continue;
                             }
-                            if !perform_discard(
+                            let _ = perform_auto_discard_or_settle(
                                 &room,
                                 &room_key,
                                 &mut guard,
@@ -203,9 +230,7 @@ pub(crate) fn start_game_loop(
                                 &mut dispatch,
                                 position,
                                 tile,
-                            ) {
-                                continue;
-                            }
+                            );
                         }
                         deliver(dispatch, &senders).await;
                         continue;
@@ -316,5 +341,100 @@ mod tests {
         state.set_turn_countdown(0);
 
         assert!(should_resolve_timed_out_claims(&state));
+    }
+
+    #[test]
+    fn failed_auto_discard_settles_round() {
+        let base = Arc::new(Mutex::new(CommonGameState::default()));
+        let mut state = ShenyangMahjongLoopState::new(base);
+        state.phase = ShenyangMahjongPhase::Play;
+        state.current_position = 0;
+        state
+            .hands
+            .insert(0, vec![4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 31, 32, 33, 99]);
+        state.discards.insert(0, Vec::new());
+        state.wall = vec![36];
+        state.last_drawn_tile = Some(4);
+        let original_hand = state.hands.get(&0).cloned().unwrap();
+        let mut dispatch = ws_common::Dispatch::default();
+
+        assert!(!perform_auto_discard_or_settle(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::new(),
+            &mut dispatch,
+            0,
+            Some(4),
+        ));
+
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert!(
+            state
+                .settlement
+                .as_ref()
+                .is_some_and(|settlement| settlement.winner_positions.is_empty())
+        );
+        assert_eq!(state.hands.get(&0), Some(&original_hand));
+        assert!(state.discards.get(&0).unwrap().is_empty());
+    }
+
+    #[test]
+    fn successful_auto_discard_keeps_round_playing() {
+        let base = Arc::new(Mutex::new(CommonGameState::default()));
+        let mut state = ShenyangMahjongLoopState::new(base);
+        state.phase = ShenyangMahjongPhase::Play;
+        state.current_position = 0;
+        state
+            .hands
+            .insert(0, vec![4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 31, 32, 33, 34]);
+        state.discards.insert(0, Vec::new());
+        state.wall = vec![36];
+        state.last_drawn_tile = Some(4);
+        let mut dispatch = ws_common::Dispatch::default();
+
+        assert!(perform_auto_discard_or_settle(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::new(),
+            &mut dispatch,
+            0,
+            Some(4),
+        ));
+
+        assert_eq!(state.phase, ShenyangMahjongPhase::Play);
+        assert!(state.settlement.is_none());
+        assert_eq!(state.discards.get(&0), Some(&vec![4]));
+        assert!(state.hands.get(&0).unwrap().contains(&36));
+    }
+
+    #[test]
+    fn missing_auto_discard_tile_settles_round() {
+        let base = Arc::new(Mutex::new(CommonGameState::default()));
+        let mut state = ShenyangMahjongLoopState::new(base);
+        state.phase = ShenyangMahjongPhase::Play;
+        state.current_position = 0;
+        state.hands.insert(0, Vec::new());
+        state.discards.insert(0, Vec::new());
+        let mut dispatch = ws_common::Dispatch::default();
+
+        assert!(!perform_auto_discard_or_settle(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::new(),
+            &mut dispatch,
+            0,
+            None,
+        ));
+
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert!(
+            state
+                .settlement
+                .as_ref()
+                .is_some_and(|settlement| settlement.winner_positions.is_empty())
+        );
     }
 }

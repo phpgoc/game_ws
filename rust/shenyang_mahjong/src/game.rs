@@ -43,6 +43,34 @@ pub struct ShenyangMahjongGameHandler {
     loop_states: LoopStateRegistry,
 }
 
+pub(crate) fn settle_draw(
+    room_service: &RoomService,
+    room_key: &str,
+    state: &mut ShenyangMahjongLoopState,
+    configs: &HashMap<String, i32>,
+    dispatch: &mut Dispatch,
+) {
+    state.enter_settlement(Vec::new(), None, None, false);
+    maybe_record_settlement(room_service, room_key, state, configs);
+    push_phase_change(
+        room_service,
+        room_key,
+        dispatch,
+        ShenyangMahjongPhase::Settlement,
+        state.current_position,
+        0,
+    );
+    if let Some(event) = build_settlement_event_with_configs(state, configs) {
+        push_room_event(
+            room_service,
+            room_key,
+            dispatch,
+            WsCode::GAME_OVER as i32,
+            event,
+        );
+    }
+}
+
 pub(crate) fn advance_to_next_turn(
     room_service: &RoomService,
     room_key: &str,
@@ -65,25 +93,7 @@ pub(crate) fn advance_to_next_turn(
         return;
     }
 
-    state.enter_settlement(Vec::new(), None, None, false);
-    maybe_record_settlement(room_service, room_key, state, configs);
-    push_phase_change(
-        room_service,
-        room_key,
-        dispatch,
-        ShenyangMahjongPhase::Settlement,
-        state.current_position,
-        0,
-    );
-    if let Some(event) = build_settlement_event_with_configs(state, configs) {
-        push_room_event(
-            room_service,
-            room_key,
-            dispatch,
-            WsCode::GAME_OVER as i32,
-            event,
-        );
-    }
+    settle_draw(room_service, room_key, state, configs, dispatch);
 }
 
 fn chi_opens_door(configs: &HashMap<String, i32>) -> bool {
@@ -842,25 +852,7 @@ fn draw_after_gang_or_settle(
         return;
     }
 
-    state.enter_settlement(Vec::new(), None, None, false);
-    maybe_record_settlement(room_service, room_key, state, configs);
-    push_phase_change(
-        room_service,
-        room_key,
-        dispatch,
-        ShenyangMahjongPhase::Settlement,
-        state.current_position,
-        0,
-    );
-    if let Some(event) = build_settlement_event_with_configs(state, configs) {
-        push_room_event(
-            room_service,
-            room_key,
-            dispatch,
-            WsCode::GAME_OVER as i32,
-            event,
-        );
-    }
+    settle_draw(room_service, room_key, state, configs, dispatch);
 }
 
 fn finish_added_gang(
@@ -1753,25 +1745,7 @@ pub(crate) fn resolve_claim_window(
                             state.turn_countdown(),
                         );
                     } else {
-                        state.enter_settlement(Vec::new(), None, None, false);
-                        maybe_record_settlement(room_service, room_key, state, configs);
-                        push_phase_change(
-                            room_service,
-                            room_key,
-                            dispatch,
-                            ShenyangMahjongPhase::Settlement,
-                            state.current_position,
-                            0,
-                        );
-                        if let Some(event) = build_settlement_event_with_configs(state, configs) {
-                            push_room_event(
-                                room_service,
-                                room_key,
-                                dispatch,
-                                WsCode::GAME_OVER as i32,
-                                event,
-                            );
-                        }
+                        settle_draw(room_service, room_key, state, configs, dispatch);
                     }
                 }
             }
