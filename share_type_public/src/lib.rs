@@ -65,6 +65,7 @@ pub use games::tractor::WsTractorPlayEvent;
 pub use games::tractor::WsTractorPlayRequest;
 pub use games::tractor::WsTractorPlayedCards;
 pub use games::tractor::WsTractorPlayerHandCount;
+pub use games::tractor::WsTractorSelectTrumpRequest;
 pub use games::tractor::WsTractorSettlementEvent;
 pub use games::tractor::WsTractorTableSnapshotEvent;
 pub use games::tractor::WsTractorTrumpDeclaration;

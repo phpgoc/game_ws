@@ -31,6 +31,7 @@ pub enum TractorSuit {
 pub enum TractorRoutes {
     DECLARE_TRUMP = 4001,
     BURY_BOTTOM = 4002,
+    SELECT_TRUMP = 4003,
 }
 
 #[typeshare]
@@ -81,6 +82,12 @@ pub struct WsTractorDealEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsTractorDeclareTrumpRequest {
     pub cards: Vec<i32>,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsTractorSelectTrumpRequest {
+    pub trump_suit: TractorSuit,
 }
 
 #[typeshare]

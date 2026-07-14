@@ -5,7 +5,8 @@ use share_type_public::{
     CommonEvent, GameId, Routes, TractorRank, TractorRoutes, TractorWsCode, WsCode, WsResponseCode,
     games::tractor::{
         WsTractorBottomBuriedEvent, WsTractorBuryBottomRequest, WsTractorDeclareTrumpRequest,
-        WsTractorHandEvent, WsTractorPlayEvent, WsTractorPlayRequest, WsTractorSettlementEvent,
+        WsTractorHandEvent, WsTractorPlayEvent, WsTractorPlayRequest, WsTractorSelectTrumpRequest,
+        WsTractorSettlementEvent,
     },
 };
 use tokio::sync::Mutex;
@@ -193,6 +194,53 @@ impl TractorGameHandler {
                 position: position as i32,
                 cards: hand,
             },
+        );
+        room_service.broadcast(
+            &room_key,
+            WsCode::TABLE_SNAPSHOT as i32,
+            snapshot,
+            &mut dispatch,
+        );
+        room_service.push_ok_response(&mut dispatch, session_id, route);
+        dispatch
+    }
+
+    fn handle_select_trump(
+        &self,
+        room_service: &mut RoomService,
+        session_id: SessionId,
+        data: Value,
+    ) -> Dispatch {
+        let route = TractorRoutes::SELECT_TRUMP as i32;
+        let Some(position) = room_service.session_position(session_id) else {
+            return room_service.error_response(session_id, route, WsResponseCode::NOT_LOGIN);
+        };
+        let Some(room_key) = room_service.room_key_of(session_id) else {
+            return room_service.error_response(session_id, route, WsResponseCode::NOT_LOGIN);
+        };
+        let Ok(payload) = RoomService::parse_payload::<WsTractorSelectTrumpRequest>(data) else {
+            return room_service.error_response(session_id, route, WsResponseCode::ERROR_FORMAT);
+        };
+        let Some(state) = self.state(&room_key) else {
+            return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
+        };
+        let (declaration, snapshot) = {
+            let mut state = state.lock().unwrap();
+            let Ok(declaration) = state.select_dealer_trump(position, payload.trump_suit) else {
+                return room_service.error_response(
+                    session_id,
+                    route,
+                    WsResponseCode::NO_PERMISSION,
+                );
+            };
+            (declaration, state.snapshot())
+        };
+        let mut dispatch = Dispatch::default();
+        room_service.broadcast(
+            &room_key,
+            TractorWsCode::TRUMP_DECLARED as i32,
+            declaration,
+            &mut dispatch,
         );
         room_service.broadcast(
             &room_key,
@@ -456,6 +504,9 @@ impl GameHandler for TractorGameHandler {
             }
             r if r == TractorRoutes::BURY_BOTTOM as i32 => {
                 self.handle_bury_bottom(room_service, session_id, request.data)
+            }
+            r if r == TractorRoutes::SELECT_TRUMP as i32 => {
+                self.handle_select_trump(room_service, session_id, request.data)
             }
             _ => {
                 room_service.error_response(session_id, request.route, WsResponseCode::NOT_IN_RANGE)

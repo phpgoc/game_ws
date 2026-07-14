@@ -518,30 +518,36 @@ impl TractorGameState {
         let finished = self.deal_queue.is_empty();
         let mut auto_declaration = None;
         if finished {
-            // AI is only the fallback when no human has declared. Waiting until
-            // the final card gives people the full configured declaration window
-            // and prevents an AI counter from stealing the dealer at the buzzer.
-            let best_ai_declaration = self
-                .declaration
-                .is_none()
-                .then(|| {
-                    self.active_positions()
-                        .into_iter()
-                        .filter(|position| self.is_ai_controlled_position(*position))
-                        .filter_map(|position| {
-                            self.auto_declaration_cards(position)
-                                .map(|cards| (position, cards))
-                        })
-                        .max_by_key(|(_, cards)| cards.len())
-                })
-                .flatten();
-            if let Some((position, cards)) = best_ai_declaration {
-                auto_declaration = self.declare_trump(position, cards).ok();
-            }
-            if self.round_index == 0
-                && let Some(declaration) = &self.declaration
-            {
-                self.dealer_position = declaration.position as usize;
+            if self.round_index == 0 {
+                // AI is only the fallback when no human has declared. Waiting
+                // until the final card preserves the full first-round counter
+                // window and prevents an AI buzzer counter.
+                let best_ai_declaration = self
+                    .declaration
+                    .is_none()
+                    .then(|| {
+                        self.active_positions()
+                            .into_iter()
+                            .filter(|position| self.is_ai_controlled_position(*position))
+                            .filter_map(|position| {
+                                self.auto_declaration_cards(position)
+                                    .map(|cards| (position, cards))
+                            })
+                            .max_by_key(|(_, cards)| cards.len())
+                    })
+                    .flatten();
+                if let Some((position, cards)) = best_ai_declaration {
+                    auto_declaration = self.declare_trump(position, cards).ok();
+                }
+                if let Some(declaration) = &self.declaration {
+                    self.dealer_position = declaration.position as usize;
+                }
+            } else if self.declaration.is_none() {
+                // From round two onward the established dealer owns the choice.
+                // If a human has not selected during the deal window, choose the
+                // dealer's longest/most paired natural suit at the buzzer.
+                let suit = self.preferred_dealer_trump_suit();
+                auto_declaration = self.select_dealer_trump(self.dealer_position, suit).ok();
             }
             self.current_position = self.dealer_position;
             self.hands
@@ -562,7 +568,7 @@ impl TractorGameState {
         position: usize,
         cards: Vec<i32>,
     ) -> Result<WsTractorTrumpDeclaration, &'static str> {
-        if self.phase != TractorPhase::Deal || cards.is_empty() {
+        if self.round_index != 0 || self.phase != TractorPhase::Deal || cards.is_empty() {
             return Err("not in deal phase");
         }
         let hand = self.hands.get(&position).cloned().unwrap_or_default();
@@ -603,6 +609,66 @@ impl TractorGameState {
         Ok(declaration)
     }
 
+    pub fn select_dealer_trump(
+        &mut self,
+        position: usize,
+        suit: TractorSuit,
+    ) -> Result<WsTractorTrumpDeclaration, &'static str> {
+        if self.round_index == 0 || self.phase != TractorPhase::Deal {
+            return Err("dealer selects trump only in later deal phases");
+        }
+        if position != self.dealer_position {
+            return Err("only dealer selects trump");
+        }
+        let declaration = WsTractorTrumpDeclaration {
+            position: position as i32,
+            name: self.player_name(position),
+            cards: Vec::new(),
+            trump_suit: suit,
+            strength: 0,
+            target_rank: self.rules.target_rank,
+        };
+        self.rules.trump_suit = Some(suit);
+        self.declaration = Some(declaration.clone());
+        Ok(declaration)
+    }
+
+    pub fn preferred_dealer_trump_suit(&self) -> TractorSuit {
+        const SUITS: [TractorSuit; 4] = [
+            TractorSuit::SPADE,
+            TractorSuit::HEART,
+            TractorSuit::CLUB,
+            TractorSuit::DIAMOND,
+        ];
+        let hand = self
+            .hands
+            .get(&self.dealer_position)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        SUITS
+            .into_iter()
+            .max_by_key(|suit| {
+                let cards: Vec<_> = hand
+                    .iter()
+                    .copied()
+                    .filter(|card| card_suit(*card) == Some(*suit as i32))
+                    .collect();
+                let mut identities: HashMap<i32, usize> = HashMap::new();
+                for card in &cards {
+                    *identities.entry(base_card(*card)).or_default() += 1;
+                }
+                let pairs = identities.values().map(|count| count / 2).sum::<usize>();
+                let high_cards = cards.iter().map(|card| card_rank(*card)).sum::<i32>();
+                (
+                    cards.len(),
+                    pairs,
+                    high_cards,
+                    std::cmp::Reverse(*suit as i32),
+                )
+            })
+            .unwrap_or(TractorSuit::SPADE)
+    }
+
     pub fn auto_declaration_cards(&self, position: usize) -> Option<Vec<i32>> {
         let hand = self.hands.get(&position)?;
         let mut by_base: HashMap<i32, Vec<i32>> = HashMap::new();
@@ -633,6 +699,9 @@ impl TractorGameState {
         }
         if cards.len() != self.rules.bottom_card_count {
             return Err("wrong bottom card count");
+        }
+        if self.round_index > 0 && self.rules.trump_suit.is_none() {
+            return Err("dealer must select trump first");
         }
         remove_cards_from_hand(self.hands.entry(position).or_default(), &cards)?;
         self.bottom_cards = cards;
@@ -1018,6 +1087,44 @@ mod tests {
         assert_eq!(state.dealer_position, 0);
         assert_eq!(state.rules.trump_suit, Some(TractorSuit::HEART));
         assert_eq!(state.phase, TractorPhase::Bury);
+    }
+
+    #[test]
+    fn later_round_trump_is_selected_only_by_the_established_dealer() {
+        let mut state = test_state();
+        state.phase = TractorPhase::Deal;
+        state.round_index = 1;
+        state.dealer_position = 2;
+        state.rules.target_rank = TractorRank::FIVE;
+        state.hands.insert(0, vec![4]);
+        state.hands.insert(2, vec![14, 15, 16, 114, 115]);
+
+        assert!(state.declare_trump(0, vec![4]).is_err());
+        assert!(state.select_dealer_trump(1, TractorSuit::SPADE).is_err());
+        assert_eq!(state.preferred_dealer_trump_suit(), TractorSuit::HEART);
+
+        let selection = state
+            .select_dealer_trump(2, TractorSuit::CLUB)
+            .expect("dealer chooses freely");
+        assert!(selection.cards.is_empty());
+        assert_eq!(selection.strength, 0);
+        assert_eq!(selection.position, 2);
+        assert_eq!(state.rules.trump_suit, Some(TractorSuit::CLUB));
+    }
+
+    #[test]
+    fn later_round_cannot_bury_before_trump_is_selected() {
+        let mut state = test_state();
+        state.phase = TractorPhase::Bury;
+        state.round_index = 1;
+        state.dealer_position = 0;
+        state.rules.bottom_card_count = 2;
+        state.rules.trump_suit = None;
+        state.hands.insert(0, vec![2, 3, 4, 5]);
+
+        assert!(state.bury_bottom(0, vec![2, 3]).is_err());
+        state.rules.trump_suit = Some(TractorSuit::DIAMOND);
+        state.bury_bottom(0, vec![2, 3]).expect("selected first");
     }
 
     #[test]
