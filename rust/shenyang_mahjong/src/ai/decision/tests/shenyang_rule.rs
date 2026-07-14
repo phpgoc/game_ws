@@ -300,6 +300,60 @@ fn recoverable_basic_heng_counts_live_dragon_pair_without_hand_seed() {
 }
 
 #[test]
+fn basic_heng_recovery_requires_enough_wall_tiles() {
+    let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 14, 15, 21, 22];
+    let mut discards = SHENYANG_MAHJONG_TILE_KINDS
+        .into_iter()
+        .flat_map(|tile| {
+            let visible = if tile == 35 {
+                2
+            } else if is_dragon(tile) {
+                3
+            } else {
+                2
+            };
+            std::iter::repeat_n(tile, visible)
+        })
+        .collect::<Vec<_>>();
+    sort_tiles(&mut discards);
+    let mut table = table_with_discards(1, discards);
+    table.wall_count = 1;
+
+    assert!(!has_triplet_or_dragon_pair(&hand, &[]));
+    assert_eq!(remaining_tile_count(&hand, &table, 0, 35), 2);
+    assert!(!can_recover_basic_heng(&hand, &[], &table, 0));
+    assert!(!can_recover_basic_heng_after_discard(
+        &hand,
+        &[],
+        &table,
+        0,
+        31,
+    ));
+
+    let mut seeded_hand = hand.clone();
+    *seeded_hand.last_mut().unwrap() = 35;
+    assert_eq!(remaining_tile_count(&seeded_hand, &table, 0, 35), 1);
+    assert!(can_recover_basic_heng(&seeded_hand, &[], &table, 0));
+    assert!(can_recover_basic_heng_after_discard(
+        &seeded_hand,
+        &[],
+        &table,
+        0,
+        31,
+    ));
+
+    table.wall_count = 2;
+    assert!(can_recover_basic_heng(&hand, &[], &table, 0));
+    assert!(can_recover_basic_heng_after_discard(
+        &hand,
+        &[],
+        &table,
+        0,
+        31,
+    ));
+}
+
+#[test]
 fn recoverable_basic_heng_discounts_projected_meld_tiles() {
     let hand = vec![1, 2, 3, 4, 5, 11, 12, 13, 14, 15, 21, 22, 23];
     let mut table = table_with_discards(1, dead_basic_heng_discards(&hand));

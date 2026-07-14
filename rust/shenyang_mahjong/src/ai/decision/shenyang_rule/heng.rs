@@ -1,5 +1,18 @@
 use super::super::*;
 
+fn can_draw_required_tiles(
+    current_count: usize,
+    required_count: usize,
+    remaining_count: usize,
+    wall_count: usize,
+) -> bool {
+    if current_count >= required_count {
+        return false;
+    }
+    let needed = required_count - current_count;
+    remaining_count >= needed && wall_count >= needed
+}
+
 pub(in crate::ai::decision) fn can_recover_basic_heng(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -20,8 +33,9 @@ pub(in crate::ai::decision) fn can_recover_basic_heng(
         let remaining =
             remaining_tile_count_with_melds_after_discards(hand, melds, table, position, tile, &[])
                 as usize;
-        let can_draw_triplet = count < 3 && remaining >= 3 - count;
-        let can_draw_dragon_pair = is_dragon(tile) && count < 2 && remaining >= 2 - count;
+        let can_draw_triplet = can_draw_required_tiles(count, 3, remaining, table.wall_count);
+        let can_draw_dragon_pair =
+            is_dragon(tile) && can_draw_required_tiles(count, 2, remaining, table.wall_count);
         can_draw_triplet || can_draw_dragon_pair
     })
 }
@@ -52,8 +66,9 @@ pub(in crate::ai::decision) fn can_recover_basic_heng_after_discard(
             tile,
             &[discarded_tile],
         ) as usize;
-        let can_draw_triplet = count < 3 && remaining >= 3 - count;
-        let can_draw_dragon_pair = is_dragon(tile) && count < 2 && remaining >= 2 - count;
+        let can_draw_triplet = can_draw_required_tiles(count, 3, remaining, table.wall_count);
+        let can_draw_dragon_pair =
+            is_dragon(tile) && can_draw_required_tiles(count, 2, remaining, table.wall_count);
         can_draw_triplet || can_draw_dragon_pair
     })
 }
