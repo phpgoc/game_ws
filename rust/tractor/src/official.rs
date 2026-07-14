@@ -1,4 +1,4 @@
-use share_type_public::TractorRank;
+use share_type_public::{TractorRank, TractorSuit};
 use ws_common::RoomService;
 
 #[cfg(feature = "official")]
@@ -90,6 +90,7 @@ pub fn settle_round(
     winner_positions: &[i32],
     score: i32,
     target_rank: TractorRank,
+    trump_suit: Option<TractorSuit>,
 ) {
     let Some(game_match_id) = room_service.room_official_match_id(room_key) else {
         return;
@@ -116,7 +117,7 @@ pub fn settle_round(
             winner_user_id_2,
             score: i64::from(score),
             target_rank: target_rank as i32,
-            trump_suit: None,
+            trump_suit: trump_suit.map(|suit| suit as i32),
         })
         .await
         {
@@ -136,5 +137,6 @@ pub fn settle_round(
     _winner_positions: &[i32],
     _score: i32,
     _target_rank: TractorRank,
+    _trump_suit: Option<TractorSuit>,
 ) {
 }

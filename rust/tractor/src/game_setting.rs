@@ -9,8 +9,10 @@ pub const KEY_BLOOD_SCORE_PER_UNIT: &str = "blood_score_per_unit";
 pub const KEY_BLOOD_START_SCORE: &str = "blood_start_score";
 pub const KEY_BOTTOM_CARD_COUNT: &str = "bottom_card_count";
 pub const KEY_DECK_COUNT: &str = "deck_count";
+pub const KEY_DEAL_TIME: &str = "deal_time";
+pub const KEY_FIRST_DEAL_TIME: &str = "first_deal_time";
 pub const KEY_PLAY_TIME: &str = "play_time";
-pub const KEY_REMOVED_RANK_MASK: &str = "removed_rank_mask";
+pub const KEY_REMOVED_RANK_COUNT: &str = "removed_rank_count";
 pub const KEY_SETTLEMENT_TIME: &str = "settlement_time";
 pub const KEY_TARGET_RANK: &str = "target_rank";
 
@@ -22,6 +24,25 @@ pub fn build_tractor_settings() -> (GameSettings, HashMap<String, GameParam>) {
                 default: 2,
                 min: 2,
                 max: 4,
+            }),
+        ),
+        (
+            // Total duration of the first round's incremental deal. It is
+            // intentionally slow so players have time to declare/counter trump.
+            KEY_FIRST_DEAL_TIME.into(),
+            GameParam::Range(GameParamRange {
+                default: 15_000,
+                min: 1_000,
+                max: 60_000,
+            }),
+        ),
+        (
+            // Later rounds already have an established dealer and use a faster deal.
+            KEY_DEAL_TIME.into(),
+            GameParam::Range(GameParamRange {
+                default: 3_000,
+                min: 500,
+                max: 30_000,
             }),
         ),
         (
@@ -69,11 +90,11 @@ pub fn build_tractor_settings() -> (GameSettings, HashMap<String, GameParam>) {
             }),
         ),
         (
-            KEY_REMOVED_RANK_MASK.into(),
+            KEY_REMOVED_RANK_COUNT.into(),
             GameParam::Range(GameParamRange {
                 default: 0,
                 min: 0,
-                max: 8191,
+                max: 9,
             }),
         ),
         (
@@ -125,4 +146,20 @@ pub fn build_tractor_settings() -> (GameSettings, HashMap<String, GameParam>) {
     }
 
     (settings, params)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn first_deal_is_slower_and_compact_deck_is_a_count() {
+        let (settings, params) = build_tractor_settings();
+        assert!(settings.values[KEY_FIRST_DEAL_TIME] > settings.values[KEY_DEAL_TIME]);
+        assert_eq!(settings.values[KEY_REMOVED_RANK_COUNT], 0);
+        let GameParam::Range(removed) = &params[KEY_REMOVED_RANK_COUNT] else {
+            panic!("removed rank count must be a range");
+        };
+        assert_eq!((removed.min, removed.max), (0, 9));
+    }
 }

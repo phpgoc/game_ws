@@ -43,7 +43,12 @@ fn lead_play(state: &TractorGameState, position: usize, hand: &[i32]) -> Option<
     // 1. Prefer the longest tractor; break ties by playing the weaker one.
     if let Some(tractor) = leads
         .iter()
-        .filter(|cards| matches!(combo::classify(cards, rules).map(|c| c.kind), Some(ComboKind::Tractor(_))))
+        .filter(|cards| {
+            matches!(
+                combo::classify(cards, rules).map(|c| c.kind),
+                Some(ComboKind::Tractor(_))
+            )
+        })
         .max_by_key(|cards| (cards.len(), std::cmp::Reverse(value(cards))))
     {
         return Some(tractor.clone());
@@ -54,9 +59,7 @@ fn lead_play(state: &TractorGameState, position: usize, hand: &[i32]) -> Option<
         .iter()
         .filter(|cards| {
             combo::classify(cards, rules).map(|c| c.kind) == Some(ComboKind::Pair)
-                && cards
-                    .iter()
-                    .all(|card| !is_trump_card(*card, rules.target_rank))
+                && cards.iter().all(|card| !is_trump_card(*card, rules))
         })
         .collect();
     if let Some(pair) = plain_pairs.iter().min_by_key(|cards| value(cards)) {
@@ -103,7 +106,7 @@ fn lowest_lead_single(hand: &[i32], rules: &crate::game_state::TractorRules) -> 
 
     let mut suit_len: HashMap<i32, usize> = HashMap::new();
     for card in hand {
-        if !is_trump_card(*card, rules.target_rank)
+        if !is_trump_card(*card, rules)
             && let Some(suit) = card_suit(*card)
         {
             *suit_len.entry(suit).or_default() += 1;
@@ -112,7 +115,7 @@ fn lowest_lead_single(hand: &[i32], rules: &crate::game_state::TractorRules) -> 
     // Among plain cards, minimise (shortest suit, lowest rank, lowest id).
     let plain_best = hand
         .iter()
-        .filter(|card| !is_trump_card(**card, rules.target_rank))
+        .filter(|card| !is_trump_card(**card, rules))
         .min_by_key(|card| {
             let suit = card_suit(**card).unwrap_or(i32::MAX);
             (
@@ -153,8 +156,9 @@ mod tests {
             bottom_card_count: 8,
             deck_count: 2,
             final_target_rank: TractorRank::A,
-            removed_rank_mask: 0,
+            removed_rank_count: 0,
             target_rank: target,
+            trump_suit: None,
         };
         state.current_position = 0;
         state

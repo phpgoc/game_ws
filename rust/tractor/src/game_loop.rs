@@ -2,9 +2,10 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use serde_json::Value;
 use share_type_public::{
-    CommonEvent, TractorPhase, WsCode, WsPositionEvent,
+    CommonEvent, TractorPhase, TractorWsCode, WsCode, WsPositionEvent,
     games::tractor::{
-        WsTractorDealEvent, WsTractorPlayEvent, WsTractorSettlementEvent,
+        WsTractorBottomBuriedEvent, WsTractorBottomCardsEvent, WsTractorDealEvent,
+        WsTractorHandEvent, WsTractorPlayEvent, WsTractorSettlementEvent,
         WsTractorTableSnapshotEvent,
     },
 };
@@ -14,7 +15,9 @@ use ws_common::{
 };
 
 use crate::{
-    game_setting::{KEY_AWAY_TIME, KEY_PLAY_TIME, KEY_SETTLEMENT_TIME},
+    game_setting::{
+        KEY_AWAY_TIME, KEY_DEAL_TIME, KEY_FIRST_DEAL_TIME, KEY_PLAY_TIME, KEY_SETTLEMENT_TIME,
+    },
     game_state::{TractorGameState, TractorStateHandle},
 };
 
@@ -93,12 +96,14 @@ fn build_auto_dispatch(
     room_service.broadcast(room_key, WsCode::PLAY as i32, play_event, &mut dispatch);
     push_table_snapshot(room_key, room_service, snapshot, &mut dispatch);
     if let Some(settlement) = settlement {
+        let trump_suit = state.lock().unwrap().rules.trump_suit;
         crate::official::settle_round(
             room_service,
             room_key,
             &settlement.winner_positions,
             settlement.score,
             settlement.target_rank,
+            trump_suit,
         );
         room_service.broadcast(
             room_key,
@@ -107,6 +112,157 @@ fn build_auto_dispatch(
             &mut dispatch,
         );
     }
+    dispatch
+}
+
+fn build_deal_dispatch(
+    room_key: &str,
+    room_service: &RoomService,
+    state: &TractorStateHandle,
+    configs: &HashMap<String, i32>,
+) -> Dispatch {
+    let mut dispatch = Dispatch::default();
+    let (position, deal_event, declaration, finished, dealer_position, bottom_cards, snapshot) = {
+        let mut state = state.lock().unwrap();
+        let Some((position, card, finished, declaration)) = state.deal_next_card() else {
+            return dispatch;
+        };
+        if finished {
+            let countdown = current_play_time(configs, &state);
+            state.set_turn_countdown(countdown);
+        }
+        let deal_event = WsTractorDealEvent {
+            position: position as i32,
+            cards: vec![card],
+            deck_count: state.rules.deck_count as i32,
+            hand_count: state.remaining_hand_count(position),
+            bottom_card_count: state.rules.bottom_card_count as i32,
+            target_rank: state.rules.target_rank,
+            dealt_count: state.dealt_count as i32,
+            total_deal_count: state.total_deal_count as i32,
+        };
+        (
+            position,
+            deal_event,
+            declaration,
+            finished,
+            state.dealer_position,
+            state.dealer_bottom_cards().unwrap_or_default(),
+            state.snapshot(),
+        )
+    };
+
+    for (session_id, _, member_position, _) in room_service.room_members(room_key) {
+        if member_position == position {
+            push_direct_event(
+                &mut dispatch,
+                session_id,
+                WsCode::DEAL as i32,
+                deal_event.clone(),
+            );
+        }
+        if finished && member_position == dealer_position {
+            push_direct_event(
+                &mut dispatch,
+                session_id,
+                TractorWsCode::BOTTOM_CARDS as i32,
+                WsTractorBottomCardsEvent {
+                    position: dealer_position as i32,
+                    cards: bottom_cards.clone(),
+                    required_count: bottom_cards.len() as i32,
+                },
+            );
+        }
+    }
+    if let Some(declaration) = declaration {
+        room_service.broadcast(
+            room_key,
+            TractorWsCode::TRUMP_DECLARED as i32,
+            declaration,
+            &mut dispatch,
+        );
+    }
+    push_table_snapshot(room_key, room_service, snapshot, &mut dispatch);
+    dispatch
+}
+
+fn build_auto_bury_dispatch(
+    room_key: &str,
+    room_service: &RoomService,
+    state: &TractorStateHandle,
+    configs: &HashMap<String, i32>,
+) -> Dispatch {
+    let mut dispatch = Dispatch::default();
+    let mut away_position = None;
+    let result = {
+        let mut state = state.lock().unwrap();
+        if state.phase != TractorPhase::Bury {
+            return dispatch;
+        }
+        let position = state.dealer_position;
+        let controlled = state.is_ai_controlled_position(position);
+        if !controlled && state.base.lock().unwrap().turn_countdown > 0 {
+            let next = state.base.lock().unwrap().turn_countdown.saturating_sub(1);
+            state.set_turn_countdown(next);
+            return dispatch;
+        }
+        if !controlled && state.base.lock().unwrap().mark_away(position) {
+            away_position = Some(position);
+        }
+        let Some(cards) = state.choose_auto_bury() else {
+            return dispatch;
+        };
+        if state.bury_bottom(position, cards).is_err() {
+            return dispatch;
+        }
+        let countdown = current_play_time(configs, &state);
+        state.set_turn_countdown(countdown);
+        Some((
+            position,
+            state.player_name(position),
+            state.rules.bottom_card_count,
+            state.hands.get(&position).cloned().unwrap_or_default(),
+            state.snapshot(),
+        ))
+    };
+
+    if let Some(position) = away_position {
+        room_service.broadcast(
+            room_key,
+            WsCode::AWAY as i32,
+            WsPositionEvent {
+                position: position as i32,
+            },
+            &mut dispatch,
+        );
+    }
+    let Some((position, name, bottom_card_count, hand, snapshot)) = result else {
+        return dispatch;
+    };
+    room_service.broadcast(
+        room_key,
+        TractorWsCode::BOTTOM_BURIED as i32,
+        WsTractorBottomBuriedEvent {
+            position: position as i32,
+            name,
+            bottom_card_count: bottom_card_count as i32,
+        },
+        &mut dispatch,
+    );
+    for (session_id, _, member_position, _) in room_service.room_members(room_key) {
+        if member_position == position {
+            push_direct_event(
+                &mut dispatch,
+                session_id,
+                TractorWsCode::HAND_UPDATED as i32,
+                WsTractorHandEvent {
+                    position: position as i32,
+                    cards: hand.clone(),
+                },
+            );
+        }
+    }
+    push_table_snapshot(room_key, room_service, snapshot, &mut dispatch);
     dispatch
 }
 
@@ -149,29 +305,6 @@ fn push_direct_event<T: serde::Serialize>(
     });
 }
 
-fn push_private_deals(
-    room_key: &str,
-    room_service: &RoomService,
-    state: &TractorGameState,
-    dispatch: &mut Dispatch,
-) {
-    for (session_id, _, position, _) in room_service.room_members(room_key) {
-        push_direct_event(
-            dispatch,
-            session_id,
-            WsCode::DEAL as i32,
-            WsTractorDealEvent {
-                position: position as i32,
-                cards: state.hands.get(&position).cloned().unwrap_or_default(),
-                deck_count: state.rules.deck_count as i32,
-                hand_count: state.hand_count() as i32,
-                bottom_card_count: state.bottom_cards.len() as i32,
-                target_rank: state.rules.target_rank,
-            },
-        );
-    }
-}
-
 fn push_table_snapshot(
     room_key: &str,
     room_service: &RoomService,
@@ -199,6 +332,21 @@ fn settlement_time(configs: &HashMap<String, i32>) -> u64 {
         .copied()
         .unwrap_or(5)
         .max(1) as u64
+}
+
+fn deal_step_delay(configs: &HashMap<String, i32>, state: &TractorGameState) -> Duration {
+    let key = if state.round_index == 0 {
+        KEY_FIRST_DEAL_TIME
+    } else {
+        KEY_DEAL_TIME
+    };
+    let default = if state.round_index == 0 {
+        15_000
+    } else {
+        3_000
+    };
+    let total_millis = configs.get(key).copied().unwrap_or(default).max(1) as u64;
+    Duration::from_millis((total_millis / state.total_deal_count.max(1) as u64).max(1))
 }
 
 pub(crate) fn start_game_loop(
@@ -231,6 +379,30 @@ pub(crate) fn start_game_loop(
 
             let phase = { state.lock().unwrap().phase };
             match phase {
+                TractorPhase::Deal => {
+                    let delay = {
+                        let guard = state.lock().unwrap();
+                        deal_step_delay(&configs, &guard)
+                    };
+                    let dispatch = {
+                        let room = room_service.lock().await;
+                        build_deal_dispatch(&room_key, &room, &state, &configs)
+                    };
+                    if !dispatch.messages.is_empty() {
+                        deliver(dispatch, &senders).await;
+                    }
+                    tokio::time::sleep(delay).await;
+                }
+                TractorPhase::Bury => {
+                    let dispatch = {
+                        let room = room_service.lock().await;
+                        build_auto_bury_dispatch(&room_key, &room, &state, &configs)
+                    };
+                    if !dispatch.messages.is_empty() {
+                        deliver(dispatch, &senders).await;
+                    }
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
                 TractorPhase::Play => {
                     let dispatch = {
                         let room = room_service.lock().await;
@@ -253,8 +425,7 @@ pub(crate) fn start_game_loop(
                         }
                         match guard.advance_after_settlement() {
                             Ok(true) => {
-                                let countdown = current_play_time(&configs, &guard);
-                                guard.set_turn_countdown(countdown);
+                                guard.set_turn_countdown(0);
                                 (true, guard.snapshot())
                             }
                             _ => (false, guard.snapshot()),
@@ -264,14 +435,12 @@ pub(crate) fn start_game_loop(
                         let mut dispatch = Dispatch::default();
                         {
                             let room = room_service.lock().await;
-                            let guard = state.lock().unwrap();
                             room.broadcast(
                                 &room_key,
                                 WsCode::START as i32,
                                 serde_json::json!({}),
                                 &mut dispatch,
                             );
-                            push_private_deals(&room_key, &room, &guard, &mut dispatch);
                             push_table_snapshot(&room_key, &room, snapshot, &mut dispatch);
                         }
                         deliver(dispatch, &senders).await;
@@ -319,6 +488,26 @@ mod tests {
         assert!(guard.hands.get(&0).unwrap().contains(&53));
     }
 
+    #[test]
+    fn first_round_deal_uses_the_slower_configured_duration() {
+        let state = test_state_with_ai_leader();
+        let configs = HashMap::from([
+            (KEY_FIRST_DEAL_TIME.to_owned(), 12_000),
+            (KEY_DEAL_TIME.to_owned(), 2_000),
+        ]);
+        {
+            let mut state = state.lock().unwrap();
+            state.total_deal_count = 100;
+            state.round_index = 0;
+            assert_eq!(
+                deal_step_delay(&configs, &state),
+                Duration::from_millis(120)
+            );
+            state.round_index = 1;
+            assert_eq!(deal_step_delay(&configs, &state), Duration::from_millis(20));
+        }
+    }
+
     fn test_state_with_ai_leader() -> TractorStateHandle {
         let mut common = CommonGameState::new();
         for position in 0..4 {
@@ -335,8 +524,9 @@ mod tests {
             bottom_card_count: 8,
             deck_count: 2,
             final_target_rank: TractorRank::A,
-            removed_rank_mask: 0,
+            removed_rank_count: 0,
             target_rank: TractorRank::A,
+            trump_suit: None,
         };
         state.current_position = 0;
         state.hands.insert(0, vec![13, 26, 39, 53, 1, 14]);

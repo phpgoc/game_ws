@@ -7,10 +7,41 @@ use typeshare::typeshare;
 #[repr(i8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
 pub enum TractorPhase {
-    Start,
-    Deal,
-    Play,
-    Settlement,
+    Start = 0,
+    Deal = 1,
+    Bury = 2,
+    Play = 3,
+    Settlement = 4,
+}
+
+#[typeshare]
+#[repr(i8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
+pub enum TractorSuit {
+    SPADE = 0,
+    HEART = 1,
+    CLUB = 2,
+    DIAMOND = 3,
+}
+
+#[typeshare]
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
+#[allow(non_camel_case_types)]
+pub enum TractorRoutes {
+    DECLARE_TRUMP = 4001,
+    BURY_BOTTOM = 4002,
+}
+
+#[typeshare]
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
+#[allow(non_camel_case_types)]
+pub enum TractorWsCode {
+    TRUMP_DECLARED = 4001,
+    BOTTOM_CARDS = 4002,
+    BOTTOM_BURIED = 4003,
+    HAND_UPDATED = 4004,
 }
 
 #[typeshare]
@@ -42,6 +73,61 @@ pub struct WsTractorDealEvent {
     pub hand_count: i32,
     pub bottom_card_count: i32,
     pub target_rank: TractorRank,
+    pub dealt_count: i32,
+    pub total_deal_count: i32,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsTractorDeclareTrumpRequest {
+    pub cards: Vec<i32>,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsTractorTrumpDeclaration {
+    pub position: i32,
+    pub name: String,
+    pub cards: Vec<i32>,
+    pub trump_suit: TractorSuit,
+    pub strength: i32,
+    pub target_rank: TractorRank,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsTractorBottomCardsEvent {
+    pub position: i32,
+    pub cards: Vec<i32>,
+    pub required_count: i32,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsTractorBuryBottomRequest {
+    pub cards: Vec<i32>,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsTractorBottomBuriedEvent {
+    pub position: i32,
+    pub name: String,
+    pub bottom_card_count: i32,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsTractorHandEvent {
+    pub position: i32,
+    pub cards: Vec<i32>,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsTractorPlayerHandCount {
+    pub position: i32,
+    pub hand_count: i32,
 }
 
 #[typeshare]
@@ -87,7 +173,7 @@ pub struct WsTractorTableSnapshotEvent {
     pub deck_count: i32,
     pub target_rank: TractorRank,
     pub final_target_rank: TractorRank,
-    pub removed_rank_mask: i32,
+    pub removed_rank_count: i32,
     pub round_index: i32,
     pub blood_enabled: bool,
     pub blood_start_score: i32,
@@ -95,6 +181,11 @@ pub struct WsTractorTableSnapshotEvent {
     pub bottom_card_count: i32,
     pub hand_count: i32,
     pub dealer_position: i32,
+    pub trump_suit: Option<TractorSuit>,
+    pub declaration: Option<WsTractorTrumpDeclaration>,
+    pub dealt_count: i32,
+    pub total_deal_count: i32,
+    pub player_hand_counts: Vec<WsTractorPlayerHandCount>,
     pub current_position: i32,
     pub trick_index: i32,
     pub current_trick: Vec<WsTractorPlayedCards>,
@@ -106,6 +197,7 @@ impl Display for TractorPhase {
         match self {
             Self::Start => write!(f, "Start"),
             Self::Deal => write!(f, "Deal"),
+            Self::Bury => write!(f, "Bury"),
             Self::Play => write!(f, "Play"),
             Self::Settlement => write!(f, "Settlement"),
         }

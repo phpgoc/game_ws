@@ -47,8 +47,8 @@ impl ComboKind {
 /// (`None` => trump group, `Some(suit)` => that plain suit).
 pub fn card_in_group(card: i32, lead_suit: Option<i32>, rules: &TractorRules) -> bool {
     match lead_suit {
-        None => is_trump_card(card, rules.target_rank),
-        Some(suit) => !is_trump_card(card, rules.target_rank) && card_suit(card) == Some(suit),
+        None => is_trump_card(card, rules),
+        Some(suit) => !is_trump_card(card, rules) && card_suit(card) == Some(suit),
     }
 }
 
@@ -105,10 +105,10 @@ pub fn classify(cards: &[i32], rules: &TractorRules) -> Option<Combo> {
     if cards.is_empty() {
         return None;
     }
-    let trump = is_trump_card(cards[0], rules.target_rank);
+    let trump = is_trump_card(cards[0], rules);
     // Every card must sit in the same group (all trump, or all one plain suit).
     let suit = if trump {
-        if !cards.iter().all(|card| is_trump_card(*card, rules.target_rank)) {
+        if !cards.iter().all(|card| is_trump_card(*card, rules)) {
             return None;
         }
         None
@@ -116,7 +116,7 @@ pub fn classify(cards: &[i32], rules: &TractorRules) -> Option<Combo> {
         let suit = card_suit(cards[0])?;
         if !cards
             .iter()
-            .all(|card| !is_trump_card(*card, rules.target_rank) && card_suit(*card) == Some(suit))
+            .all(|card| !is_trump_card(*card, rules) && card_suit(*card) == Some(suit))
         {
             return None;
         }
@@ -142,7 +142,10 @@ pub fn classify(cards: &[i32], rules: &TractorRules) -> Option<Combo> {
         });
     }
 
-    let mut positions: Vec<i32> = counts.keys().map(|base| pair_position(*base, rules)).collect();
+    let mut positions: Vec<i32> = counts
+        .keys()
+        .map(|base| pair_position(*base, rules))
+        .collect();
     positions.sort_unstable();
     // Distinct, strictly consecutive pair positions => tractor.
     if positions.windows(2).all(|w| w[1] == w[0] + 1) {
@@ -176,7 +179,7 @@ pub fn combo_win_value(cards: &[i32], lead: &Combo, rules: &TractorRules) -> Opt
 
 /// Suit of a lead play: `None` when it is trump, otherwise the plain suit.
 pub fn play_suit(cards: &[i32], rules: &TractorRules) -> Option<i32> {
-    if cards.iter().any(|card| is_trump_card(*card, rules.target_rank)) {
+    if cards.iter().any(|card| is_trump_card(*card, rules)) {
         None
     } else {
         cards.first().and_then(|card| card_suit(*card))
@@ -241,12 +244,7 @@ fn hand_contains(hand: &[i32], cards: &[i32]) -> bool {
 ///     lead length): if they can fully follow suit they must;
 ///   - if the lead is a pair/tractor and the hand still holds pairs of the lead
 ///     group, the follow must include as many pairs as required/available.
-pub fn follow_is_legal(
-    hand: &[i32],
-    cards: &[i32],
-    lead: &Combo,
-    rules: &TractorRules,
-) -> bool {
+pub fn follow_is_legal(hand: &[i32], cards: &[i32], lead: &Combo, rules: &TractorRules) -> bool {
     let lead_len = lead.kind.card_count();
     if cards.len() != lead_len || !hand_contains(hand, cards) {
         return false;
@@ -300,7 +298,7 @@ pub fn enumerate_leads(hand: &[i32], rules: &TractorRules) -> Vec<Vec<i32>> {
     // Group cards by (group, base) so pairs use identical cards.
     let mut groups: HashMap<Option<i32>, HashMap<i32, Vec<i32>>> = HashMap::new();
     for card in hand {
-        let group = if is_trump_card(*card, rules.target_rank) {
+        let group = if is_trump_card(*card, rules) {
             None
         } else {
             card_suit(*card)
@@ -449,8 +447,9 @@ mod tests {
             bottom_card_count: 8,
             deck_count: 2,
             final_target_rank: TractorRank::A,
-            removed_rank_mask: 0,
+            removed_rank_count: 0,
             target_rank: target,
+            trump_suit: None,
         }
     }
 
@@ -520,6 +519,17 @@ mod tests {
     }
 
     #[test]
+    fn declared_trump_suit_cards_beat_plain_cards() {
+        let mut rules = rules(TractorRank::TWO);
+        rules.trump_suit = Some(share_type_public::TractorSuit::HEART);
+        let trick = [
+            played(0, vec![13]), // spade A leads
+            played(1, vec![15]), // heart 3 is trump and ruffs
+        ];
+        assert_eq!(trick_winner(&trick, &rules), Some(1));
+    }
+
+    #[test]
     fn higher_pair_beats_lower_pair() {
         let rules = rules(TractorRank::TWO);
         let trick = [
@@ -566,9 +576,12 @@ mod tests {
         let rules = rules(TractorRank::TWO);
         let hand = vec![2, 102, 3, 103, 20];
         let leads = enumerate_leads(&hand, &rules);
-        let has_tractor = leads
-            .iter()
-            .any(|cards| matches!(classify(cards, &rules).map(|c| c.kind), Some(ComboKind::Tractor(2))));
+        let has_tractor = leads.iter().any(|cards| {
+            matches!(
+                classify(cards, &rules).map(|c| c.kind),
+                Some(ComboKind::Tractor(2))
+            )
+        });
         let has_pair = leads
             .iter()
             .any(|cards| classify(cards, &rules).map(|c| c.kind) == Some(ComboKind::Pair));

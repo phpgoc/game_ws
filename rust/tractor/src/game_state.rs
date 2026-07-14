@@ -1,11 +1,12 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     sync::{Arc, Mutex},
 };
 
 use rand::seq::SliceRandom;
 use share_type_public::{
-    TractorPhase, TractorRank, WsTractorPlayedCards, WsTractorTableSnapshotEvent,
+    TractorPhase, TractorRank, TractorSuit, WsTractorPlayedCards, WsTractorPlayerHandCount,
+    WsTractorTableSnapshotEvent, WsTractorTrumpDeclaration,
 };
 use ws_common::{CommonGameState, GameState};
 
@@ -27,13 +28,32 @@ pub const TRACTOR_RANKS: [TractorRank; 13] = [
     TractorRank::A,
 ];
 
+/// Ranks removed by the room's compact-deck setting, in order. Scoring ranks
+/// (5, 10 and K), 2 and jokers are deliberately retained. Thus 3 removes
+/// 3/4/6 and 4 removes 3/4/6/7, matching the room setting shown to users.
+pub const REMOVABLE_RANKS: [TractorRank; 9] = [
+    TractorRank::THREE,
+    TractorRank::FOUR,
+    TractorRank::SIX,
+    TractorRank::SEVEN,
+    TractorRank::EIGHT,
+    TractorRank::NINE,
+    TractorRank::J,
+    TractorRank::Q,
+    TractorRank::A,
+];
+
 #[derive(Debug)]
 pub struct TractorGameState {
     pub base: Arc<Mutex<CommonGameState>>,
     pub phase: TractorPhase,
     pub rules: TractorRules,
     pub hands: HashMap<usize, Vec<i32>>,
+    pub deal_queue: VecDeque<(usize, i32)>,
+    pub dealt_count: usize,
+    pub total_deal_count: usize,
     pub bottom_cards: Vec<i32>,
+    pub declaration: Option<WsTractorTrumpDeclaration>,
     pub bottom_multiplier: i32,
     pub collected_scores: HashMap<usize, i32>,
     pub last_trick_winner: Option<usize>,
@@ -52,8 +72,9 @@ pub struct TractorRules {
     pub bottom_card_count: usize,
     pub deck_count: usize,
     pub final_target_rank: TractorRank,
-    pub removed_rank_mask: i32,
+    pub removed_rank_count: usize,
     pub target_rank: TractorRank,
+    pub trump_suit: Option<TractorSuit>,
 }
 
 pub type TractorStateHandle = Arc<Mutex<TractorGameState>>;
@@ -70,11 +91,11 @@ pub fn adjusted_bottom_card_count(
     let max_bottom = total_cards.saturating_sub(player_count);
     let preferred = preferred.max(minimum).min(max_bottom);
     (preferred..=max_bottom)
-        .find(|bottom| (total_cards - bottom) % player_count == 0)
+        .find(|bottom| (total_cards - bottom).is_multiple_of(player_count))
         .or_else(|| {
             (minimum..preferred)
                 .rev()
-                .find(|bottom| (total_cards - bottom) % player_count == 0)
+                .find(|bottom| (total_cards - bottom).is_multiple_of(player_count))
         })
 }
 
@@ -88,7 +109,7 @@ pub fn build_tractor_deck(deck_count: usize) -> Vec<i32> {
 
 pub fn build_tractor_deck_with_removed_ranks(
     deck_count: usize,
-    removed_rank_mask: i32,
+    removed_rank_count: usize,
 ) -> Vec<i32> {
     let deck_count = deck_count.clamp(2, 4);
     let mut cards = Vec::with_capacity(deck_count * 54);
@@ -97,10 +118,10 @@ pub fn build_tractor_deck_with_removed_ranks(
         for card in 1..=54 {
             let full_card = offset + card;
             let rank = card_rank(full_card);
-            let should_remove = TRACTOR_RANKS
+            let should_remove = REMOVABLE_RANKS
                 .iter()
-                .find(|item| **item as i32 == rank)
-                .is_some_and(|rank| rank_is_removed(removed_rank_mask, *rank));
+                .take(removed_rank_count.min(REMOVABLE_RANKS.len()))
+                .any(|item| *item as i32 == rank);
             if !should_remove {
                 cards.push(full_card);
             }
@@ -133,15 +154,29 @@ pub(crate) fn card_suit(card: i32) -> Option<i32> {
     (base <= 52).then_some((base - 1) / 13)
 }
 
-fn first_match_rank(removed_rank_mask: i32, final_target_rank: TractorRank) -> TractorRank {
-    tractor_rank_path(removed_rank_mask, final_target_rank)
+pub(crate) fn tractor_suit_from_index(suit: i32) -> Option<TractorSuit> {
+    match suit {
+        0 => Some(TractorSuit::SPADE),
+        1 => Some(TractorSuit::HEART),
+        2 => Some(TractorSuit::CLUB),
+        3 => Some(TractorSuit::DIAMOND),
+        _ => None,
+    }
+}
+
+fn first_match_rank(removed_rank_count: usize, final_target_rank: TractorRank) -> TractorRank {
+    tractor_rank_path(removed_rank_count, final_target_rank)
         .first()
         .copied()
         .unwrap_or(final_target_rank)
 }
 
-pub(crate) fn is_trump_card(card: i32, target_rank: TractorRank) -> bool {
-    card_suit(card).is_none() || card_rank(card) == target_rank as i32
+pub(crate) fn is_trump_card(card: i32, rules: &TractorRules) -> bool {
+    card_suit(card).is_none()
+        || card_rank(card) == rules.target_rank as i32
+        || rules
+            .trump_suit
+            .is_some_and(|suit| card_suit(card) == Some(suit as i32))
 }
 
 pub fn min_bottom_card_count(deck_count: usize) -> usize {
@@ -154,10 +189,10 @@ pub fn min_bottom_card_count(deck_count: usize) -> usize {
 
 fn next_match_rank(
     current_rank: TractorRank,
-    removed_rank_mask: i32,
+    removed_rank_count: usize,
     final_target_rank: TractorRank,
 ) -> Option<TractorRank> {
-    let path = tractor_rank_path(removed_rank_mask, final_target_rank);
+    let path = tractor_rank_path(removed_rank_count, final_target_rank);
     let index = path.iter().position(|rank| *rank == current_rank)?;
     path.get(index + 1).copied()
 }
@@ -166,12 +201,11 @@ fn played_score(cards: &[i32]) -> i32 {
     cards.iter().map(|card| card_score(*card)).sum()
 }
 
-fn rank_is_removed(mask: i32, rank: TractorRank) -> bool {
-    TRACTOR_RANKS
+fn rank_is_removed(removed_rank_count: usize, rank: TractorRank) -> bool {
+    REMOVABLE_RANKS
         .iter()
-        .position(|item| *item == rank)
-        .map(|idx| mask & (1_i32 << idx) != 0)
-        .unwrap_or(false)
+        .take(removed_rank_count.min(REMOVABLE_RANKS.len()))
+        .any(|item| *item == rank)
 }
 
 fn candidate_in_hand(hand: &[i32], cards: &[i32]) -> bool {
@@ -209,11 +243,22 @@ pub(crate) fn same_team(a: usize, b: usize) -> bool {
 
 pub(crate) fn tractor_card_value(card: i32, rules: &TractorRules, lead_suit: Option<i32>) -> i32 {
     let rank = card_rank(card);
-    if is_trump_card(card, rules.target_rank) {
-        return match card_suit(card) {
-            None => 1_000 + rank,
-            Some(_) => 900 + rank,
-        };
+    if is_trump_card(card, rules) {
+        let suit = card_suit(card);
+        if suit.is_none() {
+            return 1_200 + rank;
+        }
+        if rank == rules.target_rank as i32 {
+            return if rules
+                .trump_suit
+                .is_some_and(|trump| suit == Some(trump as i32))
+            {
+                1_100
+            } else {
+                1_000
+            };
+        }
+        return 900 + rank;
     }
     if card_suit(card) == lead_suit {
         return 500 + rank;
@@ -228,18 +273,16 @@ pub fn tractor_rank_from_setting_index(index: i32) -> TractorRank {
         .unwrap_or(TractorRank::A)
 }
 
-pub fn tractor_rank_mask(ranks: &[TractorRank]) -> i32 {
-    ranks.iter().fold(0, |mask, rank| {
-        TRACTOR_RANKS
-            .iter()
-            .position(|item| item == rank)
-            .map(|idx| mask | (1_i32 << idx))
-            .unwrap_or(mask)
-    })
+pub fn removed_tractor_ranks(removed_rank_count: usize) -> Vec<TractorRank> {
+    REMOVABLE_RANKS
+        .iter()
+        .take(removed_rank_count.min(REMOVABLE_RANKS.len()))
+        .copied()
+        .collect()
 }
 
 pub fn tractor_rank_path(
-    removed_rank_mask: i32,
+    removed_rank_count: usize,
     final_target_rank: TractorRank,
 ) -> Vec<TractorRank> {
     let mut out = Vec::new();
@@ -247,12 +290,12 @@ pub fn tractor_rank_path(
         if rank as i32 > final_target_rank as i32 {
             break;
         }
-        if rank == final_target_rank || !rank_is_removed(removed_rank_mask, rank) {
+        if !rank_is_removed(removed_rank_count, rank) {
             out.push(rank);
         }
     }
     if out.is_empty() {
-        out.push(final_target_rank);
+        out.push(TractorRank::TWO);
     }
     out
 }
@@ -360,7 +403,7 @@ impl TractorGameState {
                 let ruffing = lead.suit.is_some()
                     && cheapest
                         .iter()
-                        .all(|card| is_trump_card(*card, self.rules.target_rank));
+                        .all(|card| is_trump_card(*card, &self.rules));
                 let worth_taking = combo::trick_points(&self.current_trick) > 0;
                 if !(ruffing && !worth_taking && self.partner_still_to_play(position)) {
                     return winning.into_iter().next();
@@ -410,7 +453,7 @@ impl TractorGameState {
 
         let mut deck = build_tractor_deck_with_removed_ranks(
             self.rules.deck_count,
-            self.rules.removed_rank_mask,
+            self.rules.removed_rank_count,
         );
         if deck.len() <= positions.len() {
             return Err("not enough cards");
@@ -428,7 +471,12 @@ impl TractorGameState {
 
         self.phase = TractorPhase::Deal;
         self.hands.clear();
+        self.deal_queue.clear();
+        self.dealt_count = 0;
+        self.total_deal_count = 0;
         self.bottom_cards.clear();
+        self.declaration = None;
+        self.rules.trump_suit = None;
         self.bottom_multiplier = 1;
         self.collected_scores.clear();
         self.last_trick_winner = None;
@@ -443,14 +491,174 @@ impl TractorGameState {
         }
         for (idx, card) in deck.into_iter().enumerate() {
             let position = positions[idx % positions.len()];
-            self.hands.entry(position).or_default().push(card);
+            self.deal_queue.push_back((position, card));
         }
-        for hand in self.hands.values_mut() {
-            hand.sort_unstable();
+        self.total_deal_count = self.deal_queue.len();
+        for position in positions {
+            self.hands.insert(position, Vec::new());
         }
-        self.phase = TractorPhase::Play;
         self.base.lock().unwrap().action_received = false;
         Ok(())
+    }
+
+    /// Deal exactly one public-progress/private-card step. The final step moves
+    /// the table into Bury and gives the dealer the bottom cards.
+    pub fn deal_next_card(
+        &mut self,
+    ) -> Option<(usize, i32, bool, Option<WsTractorTrumpDeclaration>)> {
+        if self.phase != TractorPhase::Deal {
+            return None;
+        }
+        let (position, card) = self.deal_queue.pop_front()?;
+        let hand = self.hands.entry(position).or_default();
+        hand.push(card);
+        hand.sort_by_key(|card| tractor_card_value(*card, &self.rules, None));
+        self.dealt_count += 1;
+        let finished = self.deal_queue.is_empty();
+        let mut auto_declaration = None;
+        if finished {
+            // AI is only the fallback when no human has declared. Waiting until
+            // the final card gives people the full configured declaration window
+            // and prevents an AI counter from stealing the dealer at the buzzer.
+            let best_ai_declaration = self
+                .declaration
+                .is_none()
+                .then(|| {
+                    self.active_positions()
+                        .into_iter()
+                        .filter(|position| self.is_ai_controlled_position(*position))
+                        .filter_map(|position| {
+                            self.auto_declaration_cards(position)
+                                .map(|cards| (position, cards))
+                        })
+                        .max_by_key(|(_, cards)| cards.len())
+                })
+                .flatten();
+            if let Some((position, cards)) = best_ai_declaration {
+                auto_declaration = self.declare_trump(position, cards).ok();
+            }
+            if self.round_index == 0
+                && let Some(declaration) = &self.declaration
+            {
+                self.dealer_position = declaration.position as usize;
+            }
+            self.current_position = self.dealer_position;
+            self.hands
+                .entry(self.dealer_position)
+                .or_default()
+                .extend(self.bottom_cards.iter().copied());
+            if let Some(dealer_hand) = self.hands.get_mut(&self.dealer_position) {
+                dealer_hand.sort_by_key(|card| tractor_card_value(*card, &self.rules, None));
+            }
+            self.phase = TractorPhase::Bury;
+            self.base.lock().unwrap().action_received = false;
+        }
+        Some((position, card, finished, auto_declaration))
+    }
+
+    pub fn declare_trump(
+        &mut self,
+        position: usize,
+        cards: Vec<i32>,
+    ) -> Result<WsTractorTrumpDeclaration, &'static str> {
+        if self.phase != TractorPhase::Deal || cards.is_empty() {
+            return Err("not in deal phase");
+        }
+        let hand = self.hands.get(&position).cloned().unwrap_or_default();
+        if !candidate_in_hand(&hand, &cards) {
+            return Err("declaration card not dealt");
+        }
+        let first_base = base_card(cards[0]);
+        let Some(suit) = card_suit(cards[0]).and_then(tractor_suit_from_index) else {
+            return Err("joker cannot declare trump");
+        };
+        if cards.iter().any(|card| {
+            base_card(*card) != first_base || card_rank(*card) != self.rules.target_rank as i32
+        }) {
+            return Err("declaration must use identical level cards");
+        }
+        let strength = cards.len() as i32;
+        if self
+            .declaration
+            .as_ref()
+            .is_some_and(|current| current.strength >= strength)
+        {
+            return Err("declaration is not stronger");
+        }
+        let declaration = WsTractorTrumpDeclaration {
+            position: position as i32,
+            name: self.player_name(position),
+            cards,
+            trump_suit: suit,
+            strength,
+            target_rank: self.rules.target_rank,
+        };
+        self.rules.trump_suit = Some(suit);
+        if self.round_index == 0 {
+            self.dealer_position = position;
+            self.current_position = position;
+        }
+        self.declaration = Some(declaration.clone());
+        Ok(declaration)
+    }
+
+    pub fn auto_declaration_cards(&self, position: usize) -> Option<Vec<i32>> {
+        let hand = self.hands.get(&position)?;
+        let mut by_base: HashMap<i32, Vec<i32>> = HashMap::new();
+        for card in hand
+            .iter()
+            .filter(|card| card_rank(**card) == self.rules.target_rank as i32)
+        {
+            by_base.entry(base_card(*card)).or_default().push(*card);
+        }
+        let current_strength = self
+            .declaration
+            .as_ref()
+            .map(|declaration| declaration.strength)
+            .unwrap_or_default();
+        by_base
+            .into_values()
+            .filter(|cards| cards.len() as i32 > current_strength)
+            .max_by_key(Vec::len)
+    }
+
+    pub fn dealer_bottom_cards(&self) -> Option<Vec<i32>> {
+        (self.phase == TractorPhase::Bury).then(|| self.bottom_cards.clone())
+    }
+
+    pub fn bury_bottom(&mut self, position: usize, cards: Vec<i32>) -> Result<(), &'static str> {
+        if self.phase != TractorPhase::Bury || position != self.dealer_position {
+            return Err("not dealer bury turn");
+        }
+        if cards.len() != self.rules.bottom_card_count {
+            return Err("wrong bottom card count");
+        }
+        remove_cards_from_hand(self.hands.entry(position).or_default(), &cards)?;
+        self.bottom_cards = cards;
+        self.phase = TractorPhase::Play;
+        self.current_position = self.dealer_position;
+        self.base.lock().unwrap().action_received = false;
+        Ok(())
+    }
+
+    pub fn choose_auto_bury(&self) -> Option<Vec<i32>> {
+        if self.phase != TractorPhase::Bury {
+            return None;
+        }
+        let mut cards = self.hands.get(&self.dealer_position)?.clone();
+        cards.sort_by_key(|card| {
+            (
+                is_trump_card(*card, &self.rules),
+                card_score(*card) > 0,
+                tractor_card_value(*card, &self.rules, None),
+            )
+        });
+        Some(
+            cards
+                .into_iter()
+                .take(self.rules.bottom_card_count)
+                .collect(),
+        )
     }
 
     pub fn deal_new_round(&mut self, mut rules: TractorRules) -> Result<(), &'static str> {
@@ -460,7 +668,9 @@ impl TractorGameState {
         if positions.len() != 4 {
             return Err("Tractor requires exactly 4 players");
         }
-        rules.target_rank = first_match_rank(rules.removed_rank_mask, rules.final_target_rank);
+        rules.removed_rank_count = rules.removed_rank_count.min(REMOVABLE_RANKS.len());
+        rules.target_rank = first_match_rank(rules.removed_rank_count, rules.final_target_rank);
+        rules.trump_suit = None;
         self.rules = rules;
         self.dealer_position = positions[0];
         self.round_index = 0;
@@ -478,11 +688,16 @@ impl TractorGameState {
                 bottom_card_count: 8,
                 deck_count: 2,
                 final_target_rank: TractorRank::A,
-                removed_rank_mask: 0,
+                removed_rank_count: 0,
                 target_rank: TractorRank::A,
+                trump_suit: None,
             },
             hands: HashMap::new(),
+            deal_queue: VecDeque::new(),
+            dealt_count: 0,
+            total_deal_count: 0,
             bottom_cards: Vec::new(),
+            declaration: None,
             bottom_multiplier: 1,
             collected_scores: HashMap::new(),
             last_trick_winner: None,
@@ -495,7 +710,11 @@ impl TractorGameState {
     }
 
     pub fn hand_count(&self) -> usize {
-        self.hands.values().next().map(Vec::len).unwrap_or_default()
+        if self.total_deal_count > 0 {
+            self.total_deal_count / self.active_positions().len().max(1)
+        } else {
+            self.hands.values().map(Vec::len).max().unwrap_or_default()
+        }
     }
 
     pub fn is_ai_controlled_position(&self, position: usize) -> bool {
@@ -520,7 +739,7 @@ impl TractorGameState {
     pub fn next_target_rank(&self) -> Option<TractorRank> {
         next_match_rank(
             self.rules.target_rank,
-            self.rules.removed_rank_mask,
+            self.rules.removed_rank_count,
             self.rules.final_target_rank,
         )
     }
@@ -643,12 +862,21 @@ impl TractorGameState {
     }
 
     pub fn snapshot(&self) -> WsTractorTableSnapshotEvent {
+        let mut player_hand_counts: Vec<_> = self
+            .hands
+            .iter()
+            .map(|(position, cards)| WsTractorPlayerHandCount {
+                position: *position as i32,
+                hand_count: cards.len() as i32,
+            })
+            .collect();
+        player_hand_counts.sort_by_key(|player| player.position);
         WsTractorTableSnapshotEvent {
             phase: self.phase,
             deck_count: self.rules.deck_count as i32,
             target_rank: self.rules.target_rank,
             final_target_rank: self.rules.final_target_rank,
-            removed_rank_mask: self.rules.removed_rank_mask,
+            removed_rank_count: self.rules.removed_rank_count as i32,
             round_index: self.round_index,
             blood_enabled: self.rules.blood_enabled,
             blood_start_score: self.rules.blood_start_score,
@@ -656,6 +884,11 @@ impl TractorGameState {
             bottom_card_count: self.bottom_cards.len() as i32,
             hand_count: self.hand_count() as i32,
             dealer_position: self.dealer_position as i32,
+            trump_suit: self.rules.trump_suit,
+            declaration: self.declaration.clone(),
+            dealt_count: self.dealt_count as i32,
+            total_deal_count: self.total_deal_count as i32,
+            player_hand_counts,
             current_position: self.current_position as i32,
             trick_index: self.trick_index,
             current_trick: self.current_trick.clone(),
@@ -716,6 +949,106 @@ mod tests {
     }
 
     #[test]
+    fn compact_deck_count_removes_the_documented_non_scoring_ranks() {
+        assert_eq!(build_tractor_deck_with_removed_ranks(2, 0).len(), 108);
+        let ranks = |count| {
+            build_tractor_deck_with_removed_ranks(2, count)
+                .into_iter()
+                .map(card_rank)
+                .collect::<Vec<_>>()
+        };
+        let removed_three = ranks(3);
+        assert!(!removed_three.iter().any(|rank| [3, 4, 6].contains(rank)));
+        assert!(removed_three.contains(&7));
+        assert!(removed_three.contains(&5));
+        assert!(removed_three.contains(&10));
+        assert!(removed_three.contains(&13));
+
+        let removed_four = ranks(4);
+        assert!(!removed_four.iter().any(|rank| [3, 4, 6, 7].contains(rank)));
+        assert!(removed_four.contains(&8));
+    }
+
+    #[test]
+    fn stronger_level_card_declaration_sets_first_dealer_and_trump_suit() {
+        let mut state = test_state();
+        state.phase = TractorPhase::Deal;
+        state.round_index = 0;
+        state.rules.target_rank = TractorRank::THREE;
+        state.hands.insert(1, vec![2, 102]);
+        state.hands.insert(2, vec![15]);
+
+        let first = state.declare_trump(2, vec![15]).expect("single heart 3");
+        assert_eq!(first.trump_suit, TractorSuit::HEART);
+        assert_eq!(state.dealer_position, 2);
+        assert!(state.declare_trump(1, vec![2]).is_err());
+
+        let counter = state
+            .declare_trump(1, vec![2, 102])
+            .expect("pair of spade 3 counters single");
+        assert_eq!(counter.strength, 2);
+        assert_eq!(state.rules.trump_suit, Some(TractorSuit::SPADE));
+        assert_eq!(state.dealer_position, 1);
+    }
+
+    #[test]
+    fn final_deal_ai_fallback_does_not_counter_a_human_declaration() {
+        let mut state = test_state();
+        state.phase = TractorPhase::Deal;
+        state.round_index = 0;
+        state.rules.target_rank = TractorRank::TWO;
+        state.hands.insert(0, vec![14]);
+        state.hands.insert(1, vec![1, 101]);
+        state.deal_queue.push_back((2, 3));
+        state.base.lock().unwrap().mark_ai_position(1);
+
+        state
+            .declare_trump(0, vec![14])
+            .expect("human declares a single heart 2");
+        let (_, _, finished, auto_declaration) =
+            state.deal_next_card().expect("deal the final card");
+
+        assert!(finished);
+        assert!(auto_declaration.is_none());
+        assert_eq!(
+            state.declaration.as_ref().map(|item| item.position),
+            Some(0)
+        );
+        assert_eq!(state.dealer_position, 0);
+        assert_eq!(state.rules.trump_suit, Some(TractorSuit::HEART));
+        assert_eq!(state.phase, TractorPhase::Bury);
+    }
+
+    #[test]
+    fn incremental_deal_gives_bottom_to_dealer_then_requires_equal_bury() {
+        let mut state = test_state();
+        let mut rules = state.rules.clone();
+        rules.target_rank = TractorRank::TWO;
+        state.deal_new_round(rules).expect("prepare round");
+        while state.phase == TractorPhase::Deal {
+            state.deal_next_card().expect("next card");
+        }
+        assert_eq!(state.phase, TractorPhase::Bury);
+        let dealer_count = state.remaining_hand_count(state.dealer_position) as usize;
+        assert_eq!(
+            dealer_count,
+            state.hand_count() + state.rules.bottom_card_count
+        );
+        let bottom = state.choose_auto_bury().expect("automatic bottom");
+        assert_eq!(bottom.len(), state.rules.bottom_card_count);
+        state
+            .bury_bottom(state.dealer_position, bottom)
+            .expect("bury exact count");
+        assert_eq!(state.phase, TractorPhase::Play);
+        assert!(
+            state
+                .hands
+                .values()
+                .all(|cards| cards.len() == state.hand_count())
+        );
+    }
+
+    #[test]
     fn ai_following_opponent_prefers_smallest_winning_card() {
         let mut state = test_state();
         state.current_position = 1;
@@ -738,8 +1071,9 @@ mod tests {
             bottom_card_count: 8,
             deck_count: 2,
             final_target_rank: TractorRank::A,
-            removed_rank_mask: 0,
+            removed_rank_count: 0,
             target_rank: TractorRank::A,
+            trump_suit: None,
         };
         assert_eq!(rules.blood_units(79), 0);
         assert_eq!(rules.blood_units(80), 1);
@@ -764,14 +1098,8 @@ mod tests {
 
     #[test]
     fn rank_path_skips_removed_ranks_and_keeps_final_target() {
-        let removed = tractor_rank_mask(&[
-            TractorRank::THREE,
-            TractorRank::FOUR,
-            TractorRank::SIX,
-            TractorRank::SEVEN,
-        ]);
         assert_eq!(
-            tractor_rank_path(removed, TractorRank::NINE),
+            tractor_rank_path(4, TractorRank::NINE),
             vec![
                 TractorRank::TWO,
                 TractorRank::FIVE,
@@ -783,15 +1111,9 @@ mod tests {
 
     #[test]
     fn settlement_advances_rank_until_final_target() {
-        let removed = tractor_rank_mask(&[
-            TractorRank::THREE,
-            TractorRank::FOUR,
-            TractorRank::SIX,
-            TractorRank::SEVEN,
-        ]);
         let mut state = test_state();
         state.rules.final_target_rank = TractorRank::NINE;
-        state.rules.removed_rank_mask = removed;
+        state.rules.removed_rank_count = 4;
         state.rules.target_rank = TractorRank::EIGHT;
         state.phase = TractorPhase::Settlement;
 
@@ -819,8 +1141,9 @@ mod tests {
             bottom_card_count: 8,
             deck_count: 2,
             final_target_rank: TractorRank::A,
-            removed_rank_mask: 0,
+            removed_rank_count: 0,
             target_rank: TractorRank::A,
+            trump_suit: None,
         };
         state.dealer_position = 0;
         state.current_position = 0;

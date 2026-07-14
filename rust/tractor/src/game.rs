@@ -2,9 +2,10 @@ use std::{collections::HashMap, sync::Arc};
 
 use serde_json::{Value, json};
 use share_type_public::{
-    CommonEvent, GameId, Routes, TractorRank, WsCode, WsResponseCode,
+    CommonEvent, GameId, Routes, TractorRank, TractorRoutes, TractorWsCode, WsCode, WsResponseCode,
     games::tractor::{
-        WsTractorDealEvent, WsTractorPlayEvent, WsTractorPlayRequest, WsTractorSettlementEvent,
+        WsTractorBottomBuriedEvent, WsTractorBuryBottomRequest, WsTractorDeclareTrumpRequest,
+        WsTractorHandEvent, WsTractorPlayEvent, WsTractorPlayRequest, WsTractorSettlementEvent,
     },
 };
 use tokio::sync::Mutex;
@@ -16,7 +17,7 @@ use ws_common::{
 use crate::{
     game_setting::{
         KEY_BLOOD_ENABLED, KEY_BLOOD_SCORE_PER_UNIT, KEY_BLOOD_START_SCORE, KEY_BOTTOM_CARD_COUNT,
-        KEY_DECK_COUNT, KEY_PLAY_TIME, KEY_REMOVED_RANK_MASK, KEY_TARGET_RANK,
+        KEY_DECK_COUNT, KEY_PLAY_TIME, KEY_REMOVED_RANK_COUNT, KEY_TARGET_RANK,
         build_tractor_settings,
     },
     game_state::{
@@ -59,9 +60,148 @@ impl TractorGameHandler {
             final_target_rank: tractor_rank_from_setting_index(
                 configs.get(KEY_TARGET_RANK).copied().unwrap_or(12),
             ),
-            removed_rank_mask: configs.get(KEY_REMOVED_RANK_MASK).copied().unwrap_or(0),
+            removed_rank_count: configs
+                .get(KEY_REMOVED_RANK_COUNT)
+                .copied()
+                .unwrap_or(0)
+                .clamp(0, 9) as usize,
             target_rank: TractorRank::TWO,
+            trump_suit: None,
         }
+    }
+
+    fn push_private_event<T: serde::Serialize>(
+        dispatch: &mut Dispatch,
+        recipient: SessionId,
+        code: TractorWsCode,
+        payload: T,
+    ) {
+        dispatch.messages.push(Delivery {
+            recipient,
+            payload: OutboundPayload::Event(CommonEvent {
+                code: code as i32,
+                data: serde_json::to_value(payload).unwrap_or(Value::Null),
+            }),
+        });
+    }
+
+    fn handle_declare_trump(
+        &self,
+        room_service: &mut RoomService,
+        session_id: SessionId,
+        data: Value,
+    ) -> Dispatch {
+        let route = TractorRoutes::DECLARE_TRUMP as i32;
+        let Some(position) = room_service.session_position(session_id) else {
+            return room_service.error_response(session_id, route, WsResponseCode::NOT_LOGIN);
+        };
+        let Some(room_key) = room_service.room_key_of(session_id) else {
+            return room_service.error_response(session_id, route, WsResponseCode::NOT_LOGIN);
+        };
+        let Ok(payload) = RoomService::parse_payload::<WsTractorDeclareTrumpRequest>(data) else {
+            return room_service.error_response(session_id, route, WsResponseCode::ERROR_FORMAT);
+        };
+        let Some(state) = self.state(&room_key) else {
+            return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
+        };
+        let (declaration, snapshot) = {
+            let mut state = state.lock().unwrap();
+            let Ok(declaration) = state.declare_trump(position, payload.cards) else {
+                return room_service.error_response(
+                    session_id,
+                    route,
+                    WsResponseCode::NO_PERMISSION,
+                );
+            };
+            (declaration, state.snapshot())
+        };
+        let mut dispatch = Dispatch::default();
+        room_service.broadcast(
+            &room_key,
+            TractorWsCode::TRUMP_DECLARED as i32,
+            declaration,
+            &mut dispatch,
+        );
+        room_service.broadcast(
+            &room_key,
+            WsCode::TABLE_SNAPSHOT as i32,
+            snapshot,
+            &mut dispatch,
+        );
+        room_service.push_ok_response(&mut dispatch, session_id, route);
+        dispatch
+    }
+
+    fn handle_bury_bottom(
+        &self,
+        room_service: &mut RoomService,
+        session_id: SessionId,
+        data: Value,
+    ) -> Dispatch {
+        let route = TractorRoutes::BURY_BOTTOM as i32;
+        let Some(position) = room_service.session_position(session_id) else {
+            return room_service.error_response(session_id, route, WsResponseCode::NOT_LOGIN);
+        };
+        let Some(room_key) = room_service.room_key_of(session_id) else {
+            return room_service.error_response(session_id, route, WsResponseCode::NOT_LOGIN);
+        };
+        let Ok(payload) = RoomService::parse_payload::<WsTractorBuryBottomRequest>(data) else {
+            return room_service.error_response(session_id, route, WsResponseCode::ERROR_FORMAT);
+        };
+        let Some(state) = self.state(&room_key) else {
+            return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
+        };
+        let (event, hand, snapshot) = {
+            let mut state = state.lock().unwrap();
+            if state.bury_bottom(position, payload.cards).is_err() {
+                return room_service.error_response(
+                    session_id,
+                    route,
+                    WsResponseCode::NO_PERMISSION,
+                );
+            }
+            let play_time = room_service
+                .room_configs(&room_key)
+                .unwrap_or_default()
+                .get(KEY_PLAY_TIME)
+                .copied()
+                .unwrap_or(30)
+                .max(1) as u32;
+            state.set_turn_countdown(play_time);
+            (
+                WsTractorBottomBuriedEvent {
+                    position: position as i32,
+                    name: state.player_name(position),
+                    bottom_card_count: state.rules.bottom_card_count as i32,
+                },
+                state.hands.get(&position).cloned().unwrap_or_default(),
+                state.snapshot(),
+            )
+        };
+        let mut dispatch = Dispatch::default();
+        room_service.broadcast(
+            &room_key,
+            TractorWsCode::BOTTOM_BURIED as i32,
+            event,
+            &mut dispatch,
+        );
+        Self::push_private_event(
+            &mut dispatch,
+            session_id,
+            TractorWsCode::HAND_UPDATED,
+            WsTractorHandEvent {
+                position: position as i32,
+                cards: hand,
+            },
+        );
+        room_service.broadcast(
+            &room_key,
+            WsCode::TABLE_SNAPSHOT as i32,
+            snapshot,
+            &mut dispatch,
+        );
+        room_service.push_ok_response(&mut dispatch, session_id, route);
+        dispatch
     }
 
     fn handle_play(
@@ -139,17 +279,20 @@ impl TractorGameHandler {
             &mut dispatch,
         );
         if finished {
-            let settlement = {
+            let (settlement, trump_suit) = {
                 let s = state.lock().unwrap();
                 let score = s.settlement_score();
-                WsTractorSettlementEvent {
-                    winner_positions: s.winner_positions(),
-                    score,
-                    blood_units: s.rules.blood_units(score),
-                    target_rank: s.rules.target_rank,
-                    match_finished: s.match_finished(),
-                    next_target_rank: s.next_target_rank(),
-                }
+                (
+                    WsTractorSettlementEvent {
+                        winner_positions: s.winner_positions(),
+                        score,
+                        blood_units: s.rules.blood_units(score),
+                        target_rank: s.rules.target_rank,
+                        match_finished: s.match_finished(),
+                        next_target_rank: s.next_target_rank(),
+                    },
+                    s.rules.trump_suit,
+                )
             };
             crate::official::settle_round(
                 room_service,
@@ -157,6 +300,7 @@ impl TractorGameHandler {
                 &settlement.winner_positions,
                 settlement.score,
                 settlement.target_rank,
+                trump_suit,
             );
             room_service.broadcast(
                 &room_key,
@@ -218,8 +362,6 @@ impl TractorGameHandler {
         };
         let configs = room_service.room_configs(&room_key).unwrap_or_default();
         let rules = Self::configs_to_rules(&configs);
-        let play_time = configs.get(KEY_PLAY_TIME).copied().unwrap_or(30).max(1) as u32;
-
         let mut game_state = TractorGameState::from_common(Arc::clone(&common));
         if game_state.deal_new_round(rules).is_err() {
             return room_service.error_response(
@@ -228,7 +370,7 @@ impl TractorGameHandler {
                 WsResponseCode::NOT_IN_RANGE,
             );
         }
-        game_state.set_turn_countdown(play_time);
+        game_state.set_turn_countdown(0);
         let state = Arc::new(std::sync::Mutex::new(game_state));
         room_service.set_room_game_state(
             &room_key,
@@ -254,38 +396,9 @@ impl TractorGameHandler {
 
         crate::official::create_match(room_service, &room_key);
         room_service.broadcast(&room_key, WsCode::START as i32, json!({}), &mut dispatch);
-        self.push_private_deals(&room_key, room_service, &state, &mut dispatch);
         self.push_table_snapshot(&room_key, room_service, &state, &mut dispatch);
         room_service.push_ok_response(&mut dispatch, session_id, Routes::START as i32);
         dispatch
-    }
-
-    fn push_private_deals(
-        &self,
-        room_key: &str,
-        room_service: &RoomService,
-        state: &TractorStateHandle,
-        dispatch: &mut Dispatch,
-    ) {
-        let members = room_service.room_members(room_key);
-        let s = state.lock().unwrap();
-        for (session_id, _, position, _) in members {
-            let payload = WsTractorDealEvent {
-                position: position as i32,
-                cards: s.hands.get(&position).cloned().unwrap_or_default(),
-                deck_count: s.rules.deck_count as i32,
-                hand_count: s.hand_count() as i32,
-                bottom_card_count: s.bottom_cards.len() as i32,
-                target_rank: s.rules.target_rank,
-            };
-            dispatch.messages.push(Delivery {
-                recipient: session_id,
-                payload: OutboundPayload::Event(CommonEvent {
-                    code: WsCode::DEAL as i32,
-                    data: serde_json::to_value(payload).unwrap_or(Value::Null),
-                }),
-            });
-        }
     }
 
     fn push_table_snapshot(
@@ -337,6 +450,12 @@ impl GameHandler for TractorGameHandler {
             r if r == Routes::START as i32 => self.handle_start(room_service, session_id),
             r if r == Routes::PLAY as i32 => {
                 self.handle_play(room_service, session_id, request.data)
+            }
+            r if r == TractorRoutes::DECLARE_TRUMP as i32 => {
+                self.handle_declare_trump(room_service, session_id, request.data)
+            }
+            r if r == TractorRoutes::BURY_BOTTOM as i32 => {
+                self.handle_bury_bottom(room_service, session_id, request.data)
             }
             _ => {
                 room_service.error_response(session_id, request.route, WsResponseCode::NOT_IN_RANGE)
@@ -395,6 +514,7 @@ mod tests {
         let state = handler.state("room").expect("tractor state");
         {
             let mut s = state.lock().unwrap();
+            s.phase = share_type_public::TractorPhase::Play;
             s.hands.insert(0, vec![4]);
             s.hands.insert(1, vec![13]);
             s.hands.insert(2, vec![5]);
@@ -473,7 +593,7 @@ mod tests {
     }
 
     #[test]
-    fn start_deals_equal_private_hands() {
+    fn start_prepares_incremental_deal_instead_of_exposing_full_hands() {
         let handler = TractorGameHandler::default();
         let mut room = RoomService::default();
         for session_id in 1..=4 {
@@ -485,22 +605,23 @@ mod tests {
             );
         }
         let dispatch = handler.handle_start(&mut room, 1);
-        let deals: Vec<_> = dispatch
+        let deal_events = dispatch
             .messages
             .iter()
-            .filter_map(|message| match &message.payload {
-                OutboundPayload::Event(event) if event.code == WsCode::DEAL as i32 => {
-                    serde_json::from_value::<WsTractorDealEvent>(event.data.clone()).ok()
-                }
-                _ => None,
+            .filter(|message| {
+                matches!(
+                    &message.payload,
+                    OutboundPayload::Event(event) if event.code == WsCode::DEAL as i32
+                )
             })
-            .collect();
-        assert_eq!(deals.len(), 4);
-        assert!(
-            deals
-                .iter()
-                .all(|deal| deal.hand_count == deals[0].hand_count)
-        );
+            .count();
+        assert_eq!(deal_events, 0);
+        let state = handler.state("room").expect("tractor state");
+        let state = state.lock().unwrap();
+        assert_eq!(state.phase, share_type_public::TractorPhase::Deal);
+        assert!(state.hands.values().all(Vec::is_empty));
+        assert!(state.total_deal_count > 0);
+        assert_eq!(state.deal_queue.len(), state.total_deal_count);
     }
 
     #[test]
