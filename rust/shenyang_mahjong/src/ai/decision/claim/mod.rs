@@ -24,6 +24,51 @@ use gang_choice::choose_gang_claim;
 use peng_choice::choose_peng_claim;
 
 const MIN_WALL_TILES_FOR_CAPPED_HU_CHASE: usize = 4;
+pub(in crate::ai::decision) const CAPPED_HU_CHASE_MIN_WALL_HIT_PROBABILITY: f64 = 2.0 / 3.0;
+const EXPECTED_OPPONENT_COUNT: usize = 3;
+const UNKNOWN_OPPONENT_HAND_COUNT: usize = 13;
+
+pub(in crate::ai::decision) fn capped_hu_chase_wall_hit_probability(
+    table: &AiPublicTable,
+    position: usize,
+    live_wait_copies: i32,
+) -> f64 {
+    if live_wait_copies <= 0 || table.wall_count == 0 {
+        return 0.0;
+    }
+    let mut observed_opponents = 0usize;
+    let mut opponent_hand_tiles = 0usize;
+    for (_, seat) in table
+        .seats
+        .iter()
+        .filter(|(seat_position, _)| **seat_position != position)
+    {
+        observed_opponents += 1;
+        opponent_hand_tiles = opponent_hand_tiles.saturating_add(seat.hand_count);
+    }
+    let missing_opponents = EXPECTED_OPPONENT_COUNT.saturating_sub(observed_opponents);
+    opponent_hand_tiles = opponent_hand_tiles
+        .saturating_add(missing_opponents.saturating_mul(UNKNOWN_OPPONENT_HAND_COUNT));
+
+    let unseen_tiles = table.wall_count.saturating_add(opponent_hand_tiles);
+    let target_tiles = (live_wait_copies as usize).min(unseen_tiles);
+    let wall_tiles = table.wall_count.min(unseen_tiles);
+    if target_tiles == 0 || wall_tiles == 0 {
+        return 0.0;
+    }
+    let non_target_tiles = unseen_tiles - target_tiles;
+    if wall_tiles > non_target_tiles {
+        return 1.0;
+    }
+
+    // Hypergeometric miss chance for exposing the whole remaining wall.
+    let mut miss_probability = 1.0;
+    for draw_index in 0..wall_tiles {
+        miss_probability *=
+            (non_target_tiles - draw_index) as f64 / (unseen_tiles - draw_index) as f64;
+    }
+    1.0 - miss_probability
+}
 
 pub fn choose_claim_from_view(
     hand: &[i32],
@@ -197,6 +242,8 @@ pub(in crate::ai::decision) fn should_pass_hu_for_capped_live_wait(
         .sum::<i32>();
 
     capped_wait_copies >= 3
+        && capped_hu_chase_wall_hit_probability(table, position, capped_wait_copies)
+            >= CAPPED_HU_CHASE_MIN_WALL_HIT_PROBABILITY
 }
 
 pub fn should_pass_self_draw_hu_from_view(

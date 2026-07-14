@@ -979,6 +979,46 @@ mod tests {
     }
 
     #[test]
+    fn away_position_takes_late_low_fan_self_draw_when_capped_wait_is_unlikely() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_away(0);
+        state.dealer_position = 1;
+        state.wall = vec![37; 4];
+        state.discards.insert(1, vec![16]);
+        state
+            .hands
+            .insert(0, vec![13, 14, 15, 15, 16, 16, 16, 17, 28, 28, 28]);
+        state
+            .hands
+            .insert(1, vec![2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5]);
+        state
+            .hands
+            .insert(2, vec![5, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7, 8, 8]);
+        state
+            .hands
+            .insert(3, vec![8, 8, 9, 9, 9, 9, 11, 11, 11, 11, 12, 12, 12]);
+        state.melds.insert(0, vec![test_peng_meld(1)]);
+        state.last_drawn_tile = Some(16);
+        let configs = HashMap::from([("max_fan".to_owned(), 2)]);
+        let mut dispatch = Dispatch::default();
+
+        assert!(maybe_play_ai_turn(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &configs,
+            &mut dispatch,
+        ));
+
+        let settlement = state.settlement.as_ref().expect("settlement");
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert_eq!(settlement.winner_positions, vec![0]);
+        assert_eq!(settlement.win_tile, Some(16));
+        assert!(settlement.is_self_draw);
+        assert!(state.discards.get(&0).unwrap().is_empty());
+    }
+
+    #[test]
     fn away_position_takes_low_fan_self_draw_without_full_wall_cycle() {
         let mut state = playable_state();
         state.base.lock().unwrap().mark_away(0);
