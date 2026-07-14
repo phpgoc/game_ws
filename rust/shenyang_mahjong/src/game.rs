@@ -252,7 +252,7 @@ fn position_has_impossible_known_tile_count(
             || state.melds.get(&position).is_some_and(|melds| {
                 melds
                     .iter()
-                    .filter(|meld| meld_primary_tile(meld).is_some() || is_chi_meld(meld))
+                    .filter(|meld| meld_shape_is_valid(meld))
                     .any(|meld| meld.tiles.contains(&tile))
             });
         owns_tile && has_impossible_known_tile_count(state, tile)
@@ -267,6 +267,7 @@ fn can_claim_hu_with_configs(
 ) -> bool {
     if has_impossible_known_tile_count(state, tile)
         || position_has_impossible_known_tile_count(state, position)
+        || !position_meld_shapes_are_valid(state, position)
         || !position_meld_sources_are_valid(state, position)
     {
         return false;
@@ -321,7 +322,7 @@ fn known_tile_count(state: &ShenyangMahjongLoopState, tile: i32) -> usize {
                 .filter(|meld| {
                     meld_source_is_valid_for_positions(meld, *position, &player_positions)
                 })
-                .filter(|meld| meld_primary_tile(meld).is_some() || is_chi_meld(meld))
+                .filter(|meld| meld_shape_is_valid(meld))
                 .flat_map(|meld| meld.tiles.iter().copied())
                 .filter(|known_tile| *known_tile == tile)
                 .count()
@@ -706,6 +707,7 @@ pub(crate) fn can_self_draw_hu_with_configs(
         || !position_owns_last_drawn_tile(state, position)
         || state.claim_window.is_some()
         || position_has_impossible_known_tile_count(state, position)
+        || !position_meld_shapes_are_valid(state, position)
         || !position_meld_sources_are_valid(state, position)
     {
         return false;
@@ -730,6 +732,7 @@ pub(crate) fn can_self_gang(
         || state.wall_count() == 0
         || !position_has_discardable_tile_count(state, position)
         || position_has_impossible_known_tile_count(state, position)
+        || !position_meld_shapes_are_valid(state, position)
         || !position_meld_sources_are_valid(state, position)
     {
         return false;
@@ -955,7 +958,7 @@ fn public_unavailable_tiles_for_winner(
         for meld in melds
             .iter()
             .filter(|meld| meld_source_is_valid_for_positions(meld, *position, &player_positions))
-            .filter(|meld| meld_primary_tile(meld).is_some() || is_chi_meld(meld))
+            .filter(|meld| meld_shape_is_valid(meld))
         {
             tiles.extend(
                 meld.tiles
@@ -1022,8 +1025,12 @@ fn is_chi_meld(meld: &WsShenyangMahjongMeld) -> bool {
         && b + 1 == c
 }
 
+fn meld_shape_is_valid(meld: &WsShenyangMahjongMeld) -> bool {
+    meld_primary_tile(meld).is_some() || is_chi_meld(meld)
+}
+
 fn is_open_meld(meld: &WsShenyangMahjongMeld) -> bool {
-    meld.from_position.is_some() && (meld_primary_tile(meld).is_some() || is_chi_meld(meld))
+    meld.from_position.is_some() && meld_shape_is_valid(meld)
 }
 
 fn meld_source_is_valid_for_position(
@@ -1047,6 +1054,13 @@ fn position_meld_sources_are_valid(state: &ShenyangMahjongLoopState, position: u
     })
 }
 
+fn position_meld_shapes_are_valid(state: &ShenyangMahjongLoopState, position: usize) -> bool {
+    state
+        .melds
+        .get(&position)
+        .is_none_or(|melds| melds.iter().all(meld_shape_is_valid))
+}
+
 fn position_has_virtual_tile_count(
     state: &ShenyangMahjongLoopState,
     position: usize,
@@ -1061,7 +1075,7 @@ fn position_has_virtual_tile_count(
         .map(|melds| {
             melds
                 .iter()
-                .filter(|meld| meld_primary_tile(meld).is_some() || is_chi_meld(meld))
+                .filter(|meld| meld_shape_is_valid(meld))
                 .count()
         })
         .unwrap_or_default();
@@ -1075,6 +1089,7 @@ fn position_has_claimable_tile_count(state: &ShenyangMahjongLoopState, position:
 fn position_can_claim_meld(state: &ShenyangMahjongLoopState, position: usize) -> bool {
     position_has_claimable_tile_count(state, position)
         && !position_has_impossible_known_tile_count(state, position)
+        && position_meld_shapes_are_valid(state, position)
         && position_meld_sources_are_valid(state, position)
 }
 
@@ -1104,6 +1119,7 @@ pub(crate) fn perform_discard(
         || !position_has_discardable_tile_count(state, position)
         || !is_valid_tile(tile)
         || position_has_impossible_known_tile_count(state, position)
+        || !position_meld_shapes_are_valid(state, position)
         || !position_meld_sources_are_valid(state, position)
     {
         return false;
@@ -1972,7 +1988,7 @@ fn winner_has_impossible_known_tile_count(
         let owns_tile = hand_tiles.contains(&tile)
             || melds
                 .iter()
-                .filter(|meld| meld_primary_tile(meld).is_some() || is_chi_meld(meld))
+                .filter(|meld| meld_shape_is_valid(meld))
                 .any(|meld| meld.tiles.contains(&tile));
         let known_count =
             known_tile_count(state, tile) + usize::from(unrepresented_claimed_tile == Some(tile));
@@ -3240,6 +3256,27 @@ mod tests {
     }
 
     #[test]
+    fn claim_options_reject_player_with_malformed_owned_meld() {
+        let mut state = playable_state();
+        state.discards.insert(0, vec![3]);
+        state
+            .hands
+            .insert(1, vec![3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35]);
+        state.melds.insert(
+            1,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::PENG,
+                vec![9, 9],
+                Some(0),
+            )],
+        );
+
+        let options = build_claim_options(&state, 3, 0, &relaxed_configs());
+
+        assert!(!options.iter().any(|option| option.position == 1));
+    }
+
+    #[test]
     fn claim_options_ignore_melds_with_invalid_sources_for_known_tile_count() {
         let mut state = playable_state();
         state.discards.insert(0, vec![3]);
@@ -3913,6 +3950,43 @@ mod tests {
                 ShenyangMahjongMeldKind::PENG,
                 vec![3, 3, 3],
                 Some(0),
+            )],
+        );
+        state.wall = vec![36];
+        state.last_drawn_tile = Some(4);
+        let original_hand = state.hands.get(&0).cloned().unwrap();
+        let mut dispatch = Dispatch::default();
+
+        assert!(!perform_discard(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+            0,
+            4,
+        ));
+
+        assert_eq!(state.hands.get(&0), Some(&original_hand));
+        assert!(state.discards.get(&0).unwrap().is_empty());
+        assert_eq!(state.wall, vec![36]);
+        assert!(dispatch.messages.is_empty());
+    }
+
+    #[test]
+    fn perform_discard_rejects_malformed_owned_meld() {
+        let mut state = playable_state();
+        state.current_position = 0;
+        state.discards.insert(0, Vec::new());
+        state
+            .hands
+            .insert(0, vec![4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 31, 32, 33, 34]);
+        state.melds.insert(
+            0,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::PENG,
+                vec![3, 3],
+                Some(1),
             )],
         );
         state.wall = vec![36];
@@ -6915,6 +6989,45 @@ mod tests {
         ));
         assert_eq!(state.hands.get(&0), Some(&original_hand));
         assert!(state.melds.get(&0).is_none_or(Vec::is_empty));
+        assert_eq!(state.wall, vec![35]);
+        assert!(dispatch.messages.is_empty());
+    }
+
+    #[test]
+    fn self_gang_rejects_malformed_owned_meld() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(0, vec![3, 3, 3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31]);
+        state.melds.insert(
+            0,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::PENG,
+                vec![9, 9],
+                Some(1),
+            )],
+        );
+        state.wall = vec![35];
+        state.last_drawn_tile = Some(3);
+        let original_hand = state.hands.get(&0).cloned().unwrap();
+        let mut dispatch = Dispatch::default();
+
+        assert!(!can_self_gang(&state, 0, 3));
+        assert!(!perform_self_gang(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+            0,
+            3,
+        ));
+        assert_eq!(state.hands.get(&0), Some(&original_hand));
+        let melds = state.melds.get(&0).unwrap();
+        assert_eq!(melds.len(), 1);
+        assert_eq!(melds[0].kind, ShenyangMahjongMeldKind::PENG);
+        assert_eq!(melds[0].tiles, vec![9, 9]);
+        assert_eq!(melds[0].from_position, Some(1));
         assert_eq!(state.wall, vec![35]);
         assert!(dispatch.messages.is_empty());
     }
