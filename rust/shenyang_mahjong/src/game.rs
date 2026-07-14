@@ -1070,6 +1070,7 @@ pub(crate) fn perform_discard(
         || !position_has_discardable_tile_count(state, position)
         || !is_valid_tile(tile)
         || position_has_impossible_known_tile_count(state, position)
+        || !position_meld_sources_are_valid(state, position)
     {
         return false;
     }
@@ -3830,6 +3831,43 @@ mod tests {
             &mut dispatch,
             0,
             3,
+        ));
+
+        assert_eq!(state.hands.get(&0), Some(&original_hand));
+        assert!(state.discards.get(&0).unwrap().is_empty());
+        assert_eq!(state.wall, vec![36]);
+        assert!(dispatch.messages.is_empty());
+    }
+
+    #[test]
+    fn perform_discard_rejects_self_sourced_open_meld() {
+        let mut state = playable_state();
+        state.current_position = 0;
+        state.discards.insert(0, Vec::new());
+        state
+            .hands
+            .insert(0, vec![4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 31]);
+        state.melds.insert(
+            0,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::PENG,
+                vec![3, 3, 3],
+                Some(0),
+            )],
+        );
+        state.wall = vec![36];
+        state.last_drawn_tile = Some(4);
+        let original_hand = state.hands.get(&0).cloned().unwrap();
+        let mut dispatch = Dispatch::default();
+
+        assert!(!perform_discard(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+            0,
+            4,
         ));
 
         assert_eq!(state.hands.get(&0), Some(&original_hand));
