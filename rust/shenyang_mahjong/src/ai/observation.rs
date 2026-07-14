@@ -1,4 +1,6 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+
+use share_type_public::games::shenyang_mahjong::{ShenyangMahjongMeldKind, WsShenyangMahjongMeld};
 
 use crate::game_state::ShenyangMahjongLoopState;
 
@@ -26,7 +28,21 @@ pub struct AiSeatView {
     pub position: usize,
     pub hand_count: usize,
     pub discards: Vec<i32>,
-    pub melds: Vec<share_type_public::games::shenyang_mahjong::WsShenyangMahjongMeld>,
+    pub melds: Vec<WsShenyangMahjongMeld>,
+}
+
+fn meld_source_is_valid_for_public_view(
+    meld: &WsShenyangMahjongMeld,
+    position: usize,
+    player_positions: &HashSet<usize>,
+) -> bool {
+    match (meld.kind, meld.from_position) {
+        (ShenyangMahjongMeldKind::GANG, None) => true,
+        (_, Some(source)) => usize::try_from(source)
+            .ok()
+            .is_some_and(|source| source != position && player_positions.contains(&source)),
+        _ => false,
+    }
 }
 
 pub fn build_public_table_with_configs(
@@ -34,6 +50,7 @@ pub fn build_public_table_with_configs(
     configs: &HashMap<String, i32>,
 ) -> AiPublicTable {
     let players = state.players_snapshot();
+    let player_positions = players.keys().copied().collect::<HashSet<_>>();
     let mut seats = HashMap::new();
     for (position, _) in players {
         seats.insert(
@@ -46,7 +63,16 @@ pub fn build_public_table_with_configs(
                     .map(|hand| hand.len())
                     .unwrap_or(0),
                 discards: state.discards.get(&position).cloned().unwrap_or_default(),
-                melds: state.melds.get(&position).cloned().unwrap_or_default(),
+                melds: state
+                    .melds
+                    .get(&position)
+                    .into_iter()
+                    .flatten()
+                    .filter(|meld| {
+                        meld_source_is_valid_for_public_view(meld, position, &player_positions)
+                    })
+                    .cloned()
+                    .collect(),
             },
         );
     }
@@ -66,5 +92,64 @@ pub fn build_public_table_with_configs(
         chi_opens_door: configs.get("chi_opens_door").copied().unwrap_or(1) == 1,
         claim_window,
         seats,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use share_type_public::games::shenyang_mahjong::{
+        ShenyangMahjongMeldKind, WsShenyangMahjongMeld,
+    };
+    use ws_common::CommonGameState;
+
+    use super::*;
+
+    #[test]
+    fn public_table_filters_melds_with_invalid_source_positions() {
+        let base = Arc::new(Mutex::new(CommonGameState::default()));
+        {
+            let mut common = base.lock().unwrap();
+            for position in 0..4 {
+                common.add_player(position, position as u64 + 1, &format!("P{position}"));
+            }
+        }
+        let mut state = ShenyangMahjongLoopState::new(base);
+        state.melds.insert(
+            1,
+            vec![
+                test_meld(ShenyangMahjongMeldKind::PENG, 3, Some(0)),
+                test_meld(ShenyangMahjongMeldKind::GANG, 4, None),
+                test_meld(ShenyangMahjongMeldKind::PENG, 5, Some(1)),
+                test_meld(ShenyangMahjongMeldKind::PENG, 6, None),
+                test_meld(ShenyangMahjongMeldKind::PENG, 7, Some(-1)),
+                test_meld(ShenyangMahjongMeldKind::PENG, 8, Some(9)),
+            ],
+        );
+
+        let table = build_public_table_with_configs(&state, &HashMap::new());
+        let melds = &table.seats.get(&1).expect("seat 1").melds;
+
+        assert_eq!(melds.len(), 2);
+        assert_eq!(melds[0].from_position, Some(0));
+        assert_eq!(melds[1].from_position, None);
+    }
+
+    fn test_meld(
+        kind: ShenyangMahjongMeldKind,
+        tile: i32,
+        from_position: Option<i32>,
+    ) -> WsShenyangMahjongMeld {
+        let tile_count = if kind == ShenyangMahjongMeldKind::GANG {
+            4
+        } else {
+            3
+        };
+        WsShenyangMahjongMeld {
+            kind,
+            tiles: vec![tile; tile_count],
+            from_position,
+        }
     }
 }
