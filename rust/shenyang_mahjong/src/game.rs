@@ -673,6 +673,13 @@ pub(crate) fn claim_window_matches_source(
     state: &ShenyangMahjongLoopState,
     claim_window: &ClaimWindowState,
 ) -> bool {
+    if state.current_position != claim_window.from_position
+        || !state
+            .players_snapshot()
+            .contains_key(&claim_window.from_position)
+    {
+        return false;
+    }
     match claim_window.kind {
         ClaimWindowKind::Discard => {
             discard_claim_matches_source(state, claim_window.tile, claim_window.from_position)
@@ -1596,7 +1603,6 @@ pub(crate) fn resolve_claim_window(
     if is_rob_gang {
         if !claim_matches_source {
             state.claim_window = None;
-            state.current_position = claim_window.from_position;
             state.set_turn_countdown(current_play_time(configs));
             state.set_action_received(false);
             push_phase_change(
@@ -1784,7 +1790,6 @@ pub(crate) fn resolve_claim_window(
     }
 
     state.claim_window = None;
-    state.current_position = claim_window.from_position;
     advance_to_next_turn(room_service, room_key, state, configs, dispatch);
 }
 
@@ -5961,6 +5966,72 @@ mod tests {
         assert_eq!(state.current_position, 1);
         assert_eq!(state.discards.get(&0), Some(&vec![4]));
         assert!(state.melds.get(&1).is_none_or(Vec::is_empty));
+        assert!(state.hands.get(&1).unwrap().contains(&36));
+    }
+
+    #[test]
+    fn claim_window_rejects_unknown_source_with_matching_discard() {
+        let mut state = playable_state();
+        state.discards.insert(9, vec![3]);
+        let claim_window = ClaimWindowState {
+            tile: 3,
+            from_position: 9,
+            kind: ClaimWindowKind::Discard,
+            eligible_positions: vec![1],
+            responses: HashMap::new(),
+        };
+
+        assert!(!claim_window_matches_source(&state, &claim_window));
+    }
+
+    #[test]
+    fn claim_window_rejects_non_current_source_with_matching_discard() {
+        let mut state = playable_state();
+        state.current_position = 0;
+        state.discards.insert(1, vec![3]);
+        let claim_window = ClaimWindowState {
+            tile: 3,
+            from_position: 1,
+            kind: ClaimWindowKind::Discard,
+            eligible_positions: vec![2],
+            responses: HashMap::new(),
+        };
+
+        assert!(!claim_window_matches_source(&state, &claim_window));
+    }
+
+    #[test]
+    fn resolve_claim_window_recovers_from_unknown_source() {
+        let mut state = playable_state();
+        state.current_position = 0;
+        state
+            .hands
+            .insert(1, vec![3, 3, 5, 6, 7, 11, 12, 13, 21, 22, 23, 31, 35]);
+        state.discards.insert(9, vec![3]);
+        state.wall = vec![36];
+        state.claim_window = Some(ClaimWindowState {
+            tile: 3,
+            from_position: 9,
+            kind: ClaimWindowKind::Discard,
+            eligible_positions: vec![1],
+            responses: HashMap::from([(1, ClaimResponse::Peng)]),
+        });
+        let original_hand = state.hands.get(&1).cloned().unwrap();
+        let mut dispatch = Dispatch::default();
+
+        resolve_claim_window(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+        );
+
+        assert!(state.claim_window.is_none());
+        assert_eq!(state.current_position, 1);
+        assert_eq!(state.discards.get(&9), Some(&vec![3]));
+        assert!(state.melds.get(&1).is_none_or(Vec::is_empty));
+        assert_eq!(state.hands.get(&1).unwrap().len(), original_hand.len() + 1);
         assert!(state.hands.get(&1).unwrap().contains(&36));
     }
 
