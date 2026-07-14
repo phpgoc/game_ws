@@ -200,6 +200,15 @@ pub(in crate::ai::decision) fn choose_public_defense_discard_from_candidates(
     best.map(|(_, tile)| tile)
 }
 
+pub(in crate::ai::decision) fn has_late_defense_known_safe_candidate(
+    hand: &[i32],
+    table: &AiPublicTable,
+) -> bool {
+    unique_tiles(hand)
+        .into_iter()
+        .any(|tile| late_defense_known_safe_candidate(hand, table, tile))
+}
+
 fn late_defense_known_safe_candidate(hand: &[i32], table: &AiPublicTable, tile: i32) -> bool {
     let own_tile_count = hand.iter().filter(|item| **item == tile).count();
     public_discard_count(table, tile) > 0

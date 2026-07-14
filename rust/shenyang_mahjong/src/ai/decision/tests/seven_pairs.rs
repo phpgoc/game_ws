@@ -592,6 +592,27 @@ fn discard_sets_seven_pairs_wait_away_from_public_middle_tile() {
 }
 
 #[test]
+fn late_six_pair_hand_breaks_public_pair_instead_of_setting_unsafe_wait() {
+    let mut table = table_with_discards(1, vec![1]);
+    table.wall_count = FINAL_DEFENSE_WALL_COUNT;
+    let hand = vec![1, 1, 2, 2, 5, 9, 11, 11, 12, 12, 21, 21, 22, 22];
+
+    assert_eq!(pair_count(&hand), 6);
+    assert!(should_keep_pairs_for_seven_pairs_discard(
+        &hand,
+        &[],
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+    ));
+    assert_eq!(public_discard_count(&table, 1), 1);
+    assert_eq!(
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(1)
+    );
+}
+
+#[test]
 fn discard_sets_seven_pairs_wait_on_live_wind_before_middle_tile() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 21, 21, 22, 22, 31];

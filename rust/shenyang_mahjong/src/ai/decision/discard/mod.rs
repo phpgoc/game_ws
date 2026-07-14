@@ -46,6 +46,15 @@ fn choose_discard_from_view_inner(
     if !must_discard && is_complete_win_for_table(hand, melds, table, win_rule) {
         return None;
     }
+    if is_late_defense_round(table) && has_late_defense_known_safe_candidate(hand, table) {
+        if let Some(tile) = choose_late_ready_discard(hand, melds, table, position, win_rule) {
+            return Some(tile);
+        }
+        if should_keep_pairs_for_seven_pairs_discard(hand, melds, table, position, win_rule) {
+            return choose_late_defense_discard_preserving_pairs(hand, table, position);
+        }
+        return choose_late_defense_discard(hand, table, position);
+    }
     if let Some(tile) = choose_seven_pairs_wait_discard(hand, melds, table, position, win_rule) {
         return Some(tile);
     }
