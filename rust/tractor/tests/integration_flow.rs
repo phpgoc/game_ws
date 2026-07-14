@@ -1,8 +1,13 @@
-use std::{net::TcpListener, time::Duration};
+use std::{
+    net::TcpListener,
+    time::{Duration, Instant},
+};
 
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
-use share_type_public::{GameId, Routes, WsCode, WsResponseCode};
+use share_type_public::{
+    GameId, Routes, TractorPhase, TractorRoutes, TractorWsCode, WsCode, WsResponseCode,
+};
 use tokio::net::TcpListener as TokioTcpListener;
 use tokio_tungstenite::{WebSocketStream, connect_async, tungstenite::Message};
 use tractor::game::TractorGameHandler;
@@ -85,7 +90,7 @@ async fn send_request(client: &mut Client, route: i32, data: Value) {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn tractor_four_players_can_start_custom_three_deck_room() {
+async fn tractor_incremental_deal_compact_deck_and_bury_flow() {
     let port = free_port();
     let listen_addr = format!("127.0.0.1:{port}");
     let url = format!("ws://{listen_addr}");
@@ -122,11 +127,14 @@ async fn tractor_four_players_can_start_custom_three_deck_room() {
         Routes::SETTING as i32,
         json!({
             "current_configs": {
-                "deck_count": 3,
+                "deck_count": 2,
                 "blood_enabled": 1,
                 "blood_start_score": 80,
                 "blood_score_per_unit": 40,
                 "target_rank": 12,
+                "removed_rank_count": 3,
+                "first_deal_time": 1000,
+                "deal_time": 500,
                 "play_time": 10
             }
         }),
@@ -138,37 +146,79 @@ async fn tractor_four_players_can_start_custom_three_deck_room() {
     })
     .await;
 
+    let started_at = Instant::now();
     send_request(&mut a, Routes::START as i32, json!({})).await;
 
-    let mut deals = Vec::new();
-    for client in [&mut a, &mut b, &mut c, &mut d] {
-        let deal = recv_until(client, "tractor deal", |value| {
-            value.get("code").and_then(Value::as_i64) == Some(WsCode::DEAL as i64)
-        })
-        .await;
-        deals.push(deal);
-    }
-    let hand_counts: Vec<i64> = deals
+    let mut dealt_cards = Vec::new();
+    let bottom = loop {
+        let value = recv_json(&mut a, "incremental deal and bottom").await;
+        match value.get("code").and_then(Value::as_i64) {
+            Some(code) if code == WsCode::DEAL as i64 => {
+                let cards = value["data"]["cards"].as_array().expect("deal cards");
+                assert_eq!(cards.len(), 1, "deal must be incremental");
+                dealt_cards.push(cards[0].as_i64().expect("card") as i32);
+            }
+            Some(code) if code == TractorWsCode::BOTTOM_CARDS as i64 => break value,
+            _ => {}
+        }
+    };
+    assert!(started_at.elapsed() >= Duration::from_millis(650));
+    assert_eq!(dealt_cards.len(), 19);
+    assert!(
+        dealt_cards
+            .iter()
+            .all(|card| ![3, 4, 6].contains(&card_rank(*card)))
+    );
+    let bottom_cards = bottom["data"]["cards"]
+        .as_array()
+        .expect("bottom cards")
         .iter()
-        .map(|deal| deal["data"]["hand_count"].as_i64().expect("hand count"))
-        .collect();
-    assert!(hand_counts.iter().all(|count| *count == hand_counts[0]));
-    assert!(hand_counts[0] > 0);
-    assert_eq!(deals[0]["data"]["deck_count"], json!(3));
-    assert_eq!(deals[0]["data"]["bottom_card_count"], json!(10));
-    assert_eq!(deals[0]["data"]["target_rank"], json!(2));
+        .map(|card| card.as_i64().expect("bottom card") as i32)
+        .collect::<Vec<_>>();
+    assert_eq!(bottom_cards.len(), 8);
+    assert_eq!(bottom["data"]["required_count"], json!(8));
 
-    let snapshot = recv_until(&mut a, "table snapshot", |value| {
+    send_request(
+        &mut a,
+        TractorRoutes::BURY_BOTTOM as i32,
+        json!({ "cards": bottom_cards }),
+    )
+    .await;
+    let snapshot = recv_until(&mut a, "play snapshot", |value| {
         value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+            && value["data"]["phase"] == json!(TractorPhase::Play as i8)
     })
     .await;
-    assert_eq!(snapshot["data"]["deck_count"], json!(3));
+    recv_until(&mut a, "bury response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(TractorRoutes::BURY_BOTTOM as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+    assert_eq!(snapshot["data"]["deck_count"], json!(2));
     assert_eq!(snapshot["data"]["target_rank"], json!(2));
     assert_eq!(snapshot["data"]["final_target_rank"], json!(14));
+    assert_eq!(snapshot["data"]["removed_rank_count"], json!(3));
     assert_eq!(snapshot["data"]["blood_enabled"], json!(true));
-    assert_eq!(snapshot["data"]["bottom_card_count"], json!(10));
+    assert_eq!(snapshot["data"]["bottom_card_count"], json!(8));
     assert_eq!(snapshot["data"]["blood_start_score"], json!(80));
     assert_eq!(snapshot["data"]["blood_score_per_unit"], json!(40));
+    assert_eq!(snapshot["data"]["dealt_count"], json!(76));
+    assert_eq!(snapshot["data"]["total_deal_count"], json!(76));
+    assert_eq!(
+        snapshot["data"]["player_hand_counts"][0]["hand_count"],
+        json!(19)
+    );
 
     server.abort();
+}
+
+fn card_rank(card: i32) -> i32 {
+    let base = ((card - 1) % 100) + 1;
+    if base <= 52 {
+        ((base - 1) % 13) + 2
+    } else if base == 53 {
+        16
+    } else {
+        17
+    }
 }
