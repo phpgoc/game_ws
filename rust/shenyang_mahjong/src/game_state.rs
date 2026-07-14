@@ -7,7 +7,7 @@ use share_type_public::games::shenyang_mahjong::{
 };
 use ws_common::{CommonGameState, GameState, SessionId};
 
-use crate::rules::{remove_tiles, sort_tiles};
+use crate::rules::{is_valid_meld, remove_tiles, sort_tiles};
 
 const WALL_SEED_ENV: &str = "SHENYANG_MAHJONG_WALL_SEED";
 
@@ -172,6 +172,48 @@ impl ShenyangMahjongLoopState {
         self.base.lock().unwrap().action_received
     }
 
+    fn known_tile_counts(&self) -> [usize; 38] {
+        let player_positions = self
+            .players_snapshot()
+            .keys()
+            .copied()
+            .collect::<HashSet<_>>();
+        let mut counts = [0usize; 38];
+        for tile in self
+            .hands
+            .values()
+            .flat_map(|hand| hand.iter().copied())
+            .chain(
+                self.discards
+                    .values()
+                    .flat_map(|discards| discards.iter().copied()),
+            )
+            .filter(|tile| SHENYANG_MAHJONG_TILE_KINDS.contains(tile))
+        {
+            counts[tile as usize] += 1;
+        }
+        for (position, melds) in &self.melds {
+            for tile in melds
+                .iter()
+                .filter(|meld| {
+                    meld_source_is_valid_for_positions(meld, *position, &player_positions)
+                })
+                .filter(|meld| is_valid_meld(meld))
+                .flat_map(|meld| meld.tiles.iter().copied())
+            {
+                counts[tile as usize] += 1;
+            }
+        }
+        counts
+    }
+
+    pub(crate) fn known_tile_count(&self, tile: i32) -> usize {
+        if !SHENYANG_MAHJONG_TILE_KINDS.contains(&tile) {
+            return 0;
+        }
+        self.known_tile_counts()[tile as usize]
+    }
+
     pub fn deal_new_round(&mut self) {
         self.phase = ShenyangMahjongPhase::Play;
         self.claim_window = None;
@@ -222,7 +264,7 @@ impl ShenyangMahjongLoopState {
     pub fn draw_for_position(&mut self, position: usize) -> Option<i32> {
         let tile = loop {
             let tile = self.wall.pop()?;
-            if SHENYANG_MAHJONG_TILE_KINDS.contains(&tile) {
+            if SHENYANG_MAHJONG_TILE_KINDS.contains(&tile) && self.known_tile_count(tile) < 4 {
                 break tile;
             }
         };
@@ -440,10 +482,22 @@ impl ShenyangMahjongLoopState {
     }
 
     pub fn wall_count(&self) -> usize {
-        self.wall
+        let known_counts = self.known_tile_counts();
+        let mut wall_counts = [0usize; 38];
+        for tile in self
+            .wall
             .iter()
+            .copied()
             .filter(|tile| SHENYANG_MAHJONG_TILE_KINDS.contains(tile))
-            .count()
+        {
+            wall_counts[tile as usize] += 1;
+        }
+        SHENYANG_MAHJONG_TILE_KINDS
+            .into_iter()
+            .map(|tile| {
+                wall_counts[tile as usize].min(4usize.saturating_sub(known_counts[tile as usize]))
+            })
+            .sum()
     }
 }
 
@@ -560,6 +614,30 @@ mod tests {
 
         assert_eq!(state.draw_for_position(0), Some(35));
         assert_eq!(state.hands.get(&0), Some(&vec![35]));
+        assert!(state.wall.is_empty());
+        assert_eq!(state.wall_count(), 0);
+        assert_eq!(state.last_drawn_tile, Some(35));
+    }
+
+    #[test]
+    fn wall_count_ignores_impossible_fifth_wall_copy() {
+        let mut state = state_with_players();
+        state.hands.insert(0, vec![3, 3, 3, 3]);
+        state.wall = vec![3, 35];
+
+        assert_eq!(state.wall_count(), 1);
+    }
+
+    #[test]
+    fn draw_skips_impossible_fifth_wall_copy() {
+        let mut state = state_with_players();
+        state.hands.insert(0, vec![3, 3, 3, 3]);
+        state.wall = vec![35, 3];
+
+        assert_eq!(state.draw_for_position(0), Some(35));
+        let hand = state.hands.get(&0).expect("hand");
+        assert_eq!(hand.iter().filter(|tile| **tile == 3).count(), 4);
+        assert!(hand.contains(&35));
         assert!(state.wall.is_empty());
         assert_eq!(state.wall_count(), 0);
         assert_eq!(state.last_drawn_tile, Some(35));

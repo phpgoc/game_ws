@@ -222,8 +222,8 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use share_type_public::games::shenyang_mahjong::{
-        ShenyangMahjongMeldKind, ShenyangMahjongPhase, WsShenyangMahjongMeld,
-        WsShenyangMahjongScoreChange,
+        SHENYANG_MAHJONG_TILE_KINDS, ShenyangMahjongMeldKind, ShenyangMahjongPhase,
+        WsShenyangMahjongMeld, WsShenyangMahjongScoreChange,
     };
     use ws_common::CommonGameState;
 
@@ -876,7 +876,12 @@ mod tests {
             .hands
             .insert(0, vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 35, 35, 35]);
         state.discards.insert(1, vec![35]);
-        state.wall = vec![37; 24];
+        state.wall = SHENYANG_MAHJONG_TILE_KINDS
+            .into_iter()
+            .filter(|tile| !matches!(tile, 35 | 37))
+            .take(23)
+            .chain(std::iter::once(37))
+            .collect();
         state.claim_window = Some(ClaimWindowState {
             tile: 35,
             from_position: 1,

@@ -308,39 +308,7 @@ fn discard_claim_matches_source(
 }
 
 fn known_tile_count(state: &ShenyangMahjongLoopState, tile: i32) -> usize {
-    let player_positions = state
-        .players_snapshot()
-        .keys()
-        .copied()
-        .collect::<HashSet<_>>();
-    let hand_count = state
-        .hands
-        .values()
-        .flat_map(|hand| hand.iter().copied())
-        .filter(|known_tile| *known_tile == tile)
-        .count();
-    let discard_count = state
-        .discards
-        .values()
-        .flat_map(|discards| discards.iter().copied())
-        .filter(|known_tile| *known_tile == tile)
-        .count();
-    let meld_count: usize = state
-        .melds
-        .iter()
-        .map(|(position, melds)| {
-            melds
-                .iter()
-                .filter(|meld| {
-                    meld_source_is_valid_for_positions(meld, *position, &player_positions)
-                })
-                .filter(|meld| meld_shape_is_valid(meld))
-                .flat_map(|meld| meld.tiles.iter().copied())
-                .filter(|known_tile| *known_tile == tile)
-                .count()
-        })
-        .sum();
-    hand_count + discard_count + meld_count
+    state.known_tile_count(tile)
 }
 
 #[cfg(test)]
@@ -3111,6 +3079,25 @@ mod tests {
             .hands
             .insert(1, vec![3, 3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31]);
         state.wall = vec![99, -1];
+
+        let options = build_claim_options(&state, 3, 0, &HashMap::new());
+        let player = options
+            .iter()
+            .find(|option| option.position == 1)
+            .expect("player should still be able to peng");
+
+        assert!(player.can_peng);
+        assert!(!player.can_gang);
+    }
+
+    #[test]
+    fn claim_options_hide_gang_when_only_impossible_fifth_wall_copy_remains() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![3, 3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31]);
+        state.discards.insert(2, vec![9, 9, 9, 9]);
+        state.wall = vec![9];
 
         let options = build_claim_options(&state, 3, 0, &HashMap::new());
         let player = options
