@@ -4,6 +4,7 @@ use share_type_public::{GameParam, GameParamRange, settings::GameParamEnum};
 use ws_common::GameSettings;
 
 pub const KEY_AWAY_TIME: &str = "away_time";
+pub const KEY_AI_ACTION_TIME: &str = "ai_action_time";
 pub const KEY_BLOOD_ENABLED: &str = "blood_enabled";
 pub const KEY_BLOOD_SCORE_PER_UNIT: &str = "blood_score_per_unit";
 pub const KEY_BLOOD_START_SCORE: &str = "blood_start_score";
@@ -106,6 +107,14 @@ pub fn build_tractor_settings() -> (GameSettings, HashMap<String, GameParam>) {
             }),
         ),
         (
+            KEY_AI_ACTION_TIME.into(),
+            GameParam::Range(GameParamRange {
+                default: 1_000,
+                min: 20,
+                max: 3_000,
+            }),
+        ),
+        (
             KEY_AWAY_TIME.into(),
             GameParam::Range(GameParamRange {
                 default: 5,
@@ -157,6 +166,7 @@ mod tests {
         let (settings, params) = build_tractor_settings();
         assert!(settings.values[KEY_FIRST_DEAL_TIME] > settings.values[KEY_DEAL_TIME]);
         assert_eq!(settings.values[KEY_REMOVED_RANK_COUNT], 0);
+        assert_eq!(settings.values[KEY_AI_ACTION_TIME], 1_000);
         let GameParam::Range(removed) = &params[KEY_REMOVED_RANK_COUNT] else {
             panic!("removed rank count must be a range");
         };

@@ -16,7 +16,8 @@ use ws_common::{
 
 use crate::{
     game_setting::{
-        KEY_AWAY_TIME, KEY_DEAL_TIME, KEY_FIRST_DEAL_TIME, KEY_PLAY_TIME, KEY_SETTLEMENT_TIME,
+        KEY_AI_ACTION_TIME, KEY_AWAY_TIME, KEY_DEAL_TIME, KEY_FIRST_DEAL_TIME, KEY_PLAY_TIME,
+        KEY_SETTLEMENT_TIME,
     },
     game_state::{TractorGameState, TractorStateHandle},
 };
@@ -334,6 +335,27 @@ fn settlement_time(configs: &HashMap<String, i32>) -> u64 {
         .max(1) as u64
 }
 
+fn action_loop_delay(configs: &HashMap<String, i32>, state: &TractorGameState) -> Duration {
+    if state.phase == TractorPhase::Settlement {
+        return Duration::ZERO;
+    }
+    let controlled = match state.phase {
+        TractorPhase::Bury => state.is_ai_controlled_position(state.dealer_position),
+        TractorPhase::Play => state.is_ai_controlled_position(state.current_position),
+        _ => false,
+    };
+    if controlled {
+        return Duration::from_millis(
+            configs
+                .get(KEY_AI_ACTION_TIME)
+                .copied()
+                .unwrap_or(1_000)
+                .max(1) as u64,
+        );
+    }
+    Duration::from_secs(1)
+}
+
 fn deal_step_delay(configs: &HashMap<String, i32>, state: &TractorGameState) -> Duration {
     let key = if state.round_index == 0 {
         KEY_FIRST_DEAL_TIME
@@ -401,7 +423,11 @@ pub(crate) fn start_game_loop(
                     if !dispatch.messages.is_empty() {
                         deliver(dispatch, &senders).await;
                     }
-                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    let delay = {
+                        let guard = state.lock().unwrap();
+                        action_loop_delay(&configs, &guard)
+                    };
+                    tokio::time::sleep(delay).await;
                 }
                 TractorPhase::Play => {
                     let dispatch = {
@@ -411,7 +437,11 @@ pub(crate) fn start_game_loop(
                     if !dispatch.messages.is_empty() {
                         deliver(dispatch, &senders).await;
                     }
-                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    let delay = {
+                        let guard = state.lock().unwrap();
+                        action_loop_delay(&configs, &guard)
+                    };
+                    tokio::time::sleep(delay).await;
                 }
                 TractorPhase::Settlement => {
                     tokio::time::sleep(Duration::from_secs(settlement_time(&configs))).await;
@@ -506,6 +536,22 @@ mod tests {
             state.round_index = 1;
             assert_eq!(deal_step_delay(&configs, &state), Duration::from_millis(20));
         }
+    }
+
+    #[test]
+    fn ai_action_delay_is_milliseconds_without_accelerating_human_turns() {
+        let state = test_state_with_ai_leader();
+        let configs = HashMap::from([(KEY_AI_ACTION_TIME.to_owned(), 75)]);
+        let mut state = state.lock().unwrap();
+
+        assert_eq!(
+            action_loop_delay(&configs, &state),
+            Duration::from_millis(75)
+        );
+        state.current_position = 1;
+        assert_eq!(action_loop_delay(&configs, &state), Duration::from_secs(1));
+        state.phase = TractorPhase::Settlement;
+        assert_eq!(action_loop_delay(&configs, &state), Duration::ZERO);
     }
 
     fn test_state_with_ai_leader() -> TractorStateHandle {
