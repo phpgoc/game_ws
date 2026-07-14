@@ -69,8 +69,9 @@ fn choose_discard_from_view_inner(
     }
 
     let preserve_early_piao_pairs = has_early_piao_singleton_discard(hand, melds, table, position);
-    let mut best_allowed: Option<(f64, i32)> = None;
-    let mut best_any: Option<(f64, i32)> = None;
+    let speed_first_wait = table.dealer_position == position;
+    let mut best_allowed: Option<(i32, f64, i32)> = None;
+    let mut best_any: Option<(i32, f64, i32)> = None;
     for tile in unique_tiles(hand) {
         let count = hand.iter().filter(|&&item| item == tile).count();
         if preserve_early_piao_pairs && count >= 2 {
@@ -122,12 +123,17 @@ fn choose_discard_from_view_inner(
             + closed_opponent_threat_discard_bias(table, position, tile, count)
             + late_defense_discard_bias(table, position, tile);
         let combined = score + discard_bias + pressure;
+        let ready_live_tiles = if speed_first_wait {
+            ready_live_tile_count_after_discard(&next, melds, table, position, win_rule, tile)
+        } else {
+            0
+        };
+        let candidate = (ready_live_tiles, combined, tile);
         match best_any {
-            None => best_any = Some((combined, tile)),
-            Some((best_score, best_tile)) => {
-                let better = combined.partial_cmp(&best_score) == Some(Ordering::Greater);
-                if better || (combined == best_score && tile < best_tile) {
-                    best_any = Some((combined, tile));
+            None => best_any = Some(candidate),
+            Some(best) => {
+                if discard_candidate_is_better(candidate, best) {
+                    best_any = Some(candidate);
                 }
             }
         }
@@ -135,14 +141,20 @@ fn choose_discard_from_view_inner(
             continue;
         }
         match best_allowed {
-            None => best_allowed = Some((combined, tile)),
-            Some((best_score, best_tile)) => {
-                let better = combined.partial_cmp(&best_score) == Some(Ordering::Greater);
-                if better || (combined == best_score && tile < best_tile) {
-                    best_allowed = Some((combined, tile));
+            None => best_allowed = Some(candidate),
+            Some(best) => {
+                if discard_candidate_is_better(candidate, best) {
+                    best_allowed = Some(candidate);
                 }
             }
         }
     }
-    best_allowed.or(best_any).map(|(_, tile)| tile)
+    best_allowed.or(best_any).map(|(_, _, tile)| tile)
+}
+
+fn discard_candidate_is_better(candidate: (i32, f64, i32), current: (i32, f64, i32)) -> bool {
+    candidate.0 > current.0
+        || (candidate.0 == current.0
+            && (candidate.1.partial_cmp(&current.1) == Some(Ordering::Greater)
+                || (candidate.1 == current.1 && candidate.2 < current.2)))
 }

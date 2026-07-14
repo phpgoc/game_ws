@@ -210,6 +210,43 @@ pub(in crate::ai::decision) fn ready_tile_score_after_discard(
     )
 }
 
+pub(in crate::ai::decision) fn ready_live_tile_count_after_discard(
+    hand_after_discard: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+    discarded_tile: i32,
+) -> i32 {
+    if hand_after_discard.len() % 3 != 1 {
+        return 0;
+    }
+    SHENYANG_MAHJONG_TILE_KINDS
+        .into_iter()
+        .map(|tile| {
+            let remaining = remaining_tile_count_with_melds_after_discards(
+                hand_after_discard,
+                melds,
+                table,
+                position,
+                tile,
+                &[discarded_tile],
+            );
+            if remaining <= 0 {
+                return 0;
+            }
+            let mut next = hand_after_discard.to_vec();
+            next.push(tile);
+            next.sort_unstable();
+            if is_complete_win_for_table(&next, melds, table, win_rule) {
+                remaining
+            } else {
+                0
+            }
+        })
+        .sum()
+}
+
 pub(in crate::ai::decision) fn ready_tile_score_with_simulated_discards(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
