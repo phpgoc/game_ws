@@ -354,6 +354,20 @@ fn public_melds_for_position(
         .collect()
 }
 
+pub(crate) fn public_discards_for_position(
+    state: &ShenyangMahjongLoopState,
+    position: usize,
+) -> Vec<i32> {
+    state
+        .discards
+        .get(&position)
+        .into_iter()
+        .flatten()
+        .copied()
+        .filter(|tile| is_valid_tile(*tile))
+        .collect()
+}
+
 pub(crate) fn build_settlement_event_with_configs(
     state: &ShenyangMahjongLoopState,
     configs: &HashMap<String, i32>,
@@ -384,7 +398,7 @@ pub(crate) fn build_settlement_event_with_configs(
             position: *position as i32,
             name,
             hand_tiles,
-            discards: state.discards.get(position).cloned().unwrap_or_default(),
+            discards: public_discards_for_position(state, *position),
             melds: public_melds_for_position(state, *position, &player_positions),
         });
     }
@@ -453,7 +467,7 @@ pub(crate) fn build_table_snapshot_event_with_configs(
                 .get(&position)
                 .map(|hand| hand.len())
                 .unwrap_or(0) as i32,
-            discards: state.discards.get(&position).cloned().unwrap_or_default(),
+            discards: public_discards_for_position(state, position),
             melds: public_melds_for_position(state, position, &player_positions),
         });
     }
@@ -9981,6 +9995,31 @@ mod tests {
         assert_eq!(public_melds[0].tiles, vec![4, 4, 4]);
         assert_eq!(settlement_melds.len(), 1);
         assert_eq!(settlement_melds[0].tiles, vec![4, 4, 4]);
+    }
+
+    #[test]
+    fn table_and_settlement_snapshots_filter_invalid_discards() {
+        let mut state = playable_state();
+        state.discards.insert(1, vec![3, 99, 35, -1]);
+        state.enter_settlement(Vec::new(), None, None, false);
+
+        let snapshot = build_table_snapshot_event_with_configs(&state, 0, &relaxed_configs());
+        let public_discards = &snapshot
+            .players
+            .iter()
+            .find(|player| player.position == 1)
+            .expect("public seat 1")
+            .discards;
+        let settlement = snapshot.settlement.expect("settlement");
+        let settlement_discards = &settlement
+            .players
+            .iter()
+            .find(|player| player.position == 1)
+            .expect("settlement seat 1")
+            .discards;
+
+        assert_eq!(public_discards, &vec![3, 35]);
+        assert_eq!(settlement_discards, &vec![3, 35]);
     }
 
     #[test]

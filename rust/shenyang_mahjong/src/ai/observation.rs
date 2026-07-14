@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use share_type_public::games::shenyang_mahjong::WsShenyangMahjongMeld;
 
+use crate::game::public_discards_for_position;
 use crate::game_state::{ShenyangMahjongLoopState, meld_source_is_valid_for_positions};
 use crate::rules::is_valid_meld;
 
@@ -49,7 +50,7 @@ pub fn build_public_table_with_configs(
                     .get(&position)
                     .map(|hand| hand.len())
                     .unwrap_or(0),
-                discards: state.discards.get(&position).cloned().unwrap_or_default(),
+                discards: public_discards_for_position(state, position),
                 melds: state
                     .melds
                     .get(&position)
@@ -159,6 +160,23 @@ mod tests {
 
         assert_eq!(melds.len(), 1);
         assert_eq!(melds[0].tiles, vec![4, 4, 4]);
+    }
+
+    #[test]
+    fn public_table_filters_invalid_discards() {
+        let base = Arc::new(Mutex::new(CommonGameState::default()));
+        {
+            let mut common = base.lock().unwrap();
+            for position in 0..4 {
+                common.add_player(position, position as u64 + 1, &format!("P{position}"));
+            }
+        }
+        let mut state = ShenyangMahjongLoopState::new(base);
+        state.discards.insert(1, vec![3, 99, 35, -1]);
+
+        let table = build_public_table_with_configs(&state, &HashMap::new());
+
+        assert_eq!(table.seats.get(&1).expect("seat 1").discards, vec![3, 35]);
     }
 
     fn test_meld(
