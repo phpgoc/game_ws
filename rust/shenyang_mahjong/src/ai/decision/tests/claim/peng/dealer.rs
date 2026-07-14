@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn dealer_claim_chi_takes_early_basic_ready_for_speed() {
+fn dealer_claim_chi_waits_until_half_round_for_basic_ready() {
     let mut table = table_with_discards(3, Vec::new());
     table.dealer_position = 0;
     table.claim_window = Some(AiClaimView {
@@ -13,6 +13,12 @@ fn dealer_claim_chi_takes_early_basic_ready_for_speed() {
     let hand = vec![1, 2, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35];
 
     assert!(!is_mid_opening_round(&table));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Pass)
+    );
+
+    table.wall_count = LATE_PRESSURE_WALL_COUNT;
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Chi {

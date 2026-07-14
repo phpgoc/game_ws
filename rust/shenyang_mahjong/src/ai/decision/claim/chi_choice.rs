@@ -26,6 +26,9 @@ pub(super) fn choose_chi_claim(
     if current_ready_score > 0.0 {
         return Some(AiClaimChoice::Pass);
     }
+    if !is_late_round(table) {
+        return Some(AiClaimChoice::Pass);
+    }
 
     let defensive_open = should_claim_chi_to_open_broken_hand_for_defense(
         hand,
