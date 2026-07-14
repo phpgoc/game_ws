@@ -325,6 +325,21 @@ pub(crate) fn build_settlement_event(
     build_settlement_event_with_configs(state, &HashMap::new())
 }
 
+fn public_melds_for_position(
+    state: &ShenyangMahjongLoopState,
+    position: usize,
+    player_positions: &HashSet<usize>,
+) -> Vec<WsShenyangMahjongMeld> {
+    state
+        .melds
+        .get(&position)
+        .into_iter()
+        .flatten()
+        .filter(|meld| meld_source_is_valid_for_positions(meld, position, player_positions))
+        .cloned()
+        .collect()
+}
+
 pub(crate) fn build_settlement_event_with_configs(
     state: &ShenyangMahjongLoopState,
     configs: &HashMap<String, i32>,
@@ -334,6 +349,7 @@ pub(crate) fn build_settlement_event_with_configs(
     let mut snapshots = Vec::new();
     let mut positions: Vec<usize> = players.keys().copied().collect();
     positions.sort_unstable();
+    let player_positions = positions.iter().copied().collect::<HashSet<_>>();
     let score_changes = settlement_score_changes_for_state(state, &positions, settlement, configs);
     let winner_positions =
         positive_winner_positions_from_scores(settlement, &score_changes).collect::<Vec<_>>();
@@ -355,7 +371,7 @@ pub(crate) fn build_settlement_event_with_configs(
             name,
             hand_tiles,
             discards: state.discards.get(position).cloned().unwrap_or_default(),
-            melds: state.melds.get(position).cloned().unwrap_or_default(),
+            melds: public_melds_for_position(state, *position, &player_positions),
         });
     }
 
@@ -408,6 +424,7 @@ pub(crate) fn build_table_snapshot_event_with_configs(
     let players = state.players_snapshot();
     let mut positions: Vec<usize> = players.keys().copied().collect();
     positions.sort_unstable();
+    let player_positions = positions.iter().copied().collect::<HashSet<_>>();
     let mut snapshots = Vec::new();
 
     for position in positions {
@@ -423,7 +440,7 @@ pub(crate) fn build_table_snapshot_event_with_configs(
                 .map(|hand| hand.len())
                 .unwrap_or(0) as i32,
             discards: state.discards.get(&position).cloned().unwrap_or_default(),
-            melds: state.melds.get(&position).cloned().unwrap_or_default(),
+            melds: public_melds_for_position(state, position, &player_positions),
         });
     }
 
@@ -9503,6 +9520,56 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![(0, -4), (1, 4), (2, 0), (3, 0)]
         );
+    }
+
+    #[test]
+    fn table_snapshot_filters_melds_with_invalid_source_positions() {
+        let mut state = playable_state();
+        state.melds.insert(
+            1,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::PENG,
+                vec![3, 3, 3],
+                Some(1),
+            )],
+        );
+        state.melds.insert(
+            2,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::PENG,
+                vec![4, 4, 4],
+                Some(3),
+            )],
+        );
+        state.enter_settlement(Vec::new(), None, None, false);
+
+        let snapshot = build_table_snapshot_event_with_configs(&state, 0, &relaxed_configs());
+        let public_invalid = snapshot
+            .players
+            .iter()
+            .find(|player| player.position == 1)
+            .expect("public seat 1");
+        let public_valid = snapshot
+            .players
+            .iter()
+            .find(|player| player.position == 2)
+            .expect("public seat 2");
+        let settlement = snapshot.settlement.expect("settlement");
+        let settlement_invalid = settlement
+            .players
+            .iter()
+            .find(|player| player.position == 1)
+            .expect("settlement seat 1");
+        let settlement_valid = settlement
+            .players
+            .iter()
+            .find(|player| player.position == 2)
+            .expect("settlement seat 2");
+
+        assert!(public_invalid.melds.is_empty());
+        assert_eq!(public_valid.melds.len(), 1);
+        assert!(settlement_invalid.melds.is_empty());
+        assert_eq!(settlement_valid.melds.len(), 1);
     }
 
     #[test]
