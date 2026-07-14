@@ -70,7 +70,7 @@ cargo check -p shenyang_mahjong -p holdem -p tractor
 cargo test -p tractor
 ```
 
-拖拉机房间开始后会锁定设置。当前主要设置包括：`deck_count`（几副牌）、`removed_rank_count`（按 `3/4/6/7/8/9/J/Q/A` 的顺序删掉前 N 个点数，`0` 表示不删）、`first_deal_time`（首局发牌总时间，毫秒）、`deal_time`（后续局发牌总时间，毫秒）、`ai_action_time`（AI/托管行动间隔，毫秒）、`target_rank`（最终目标 rank）、`blood_enabled` / `blood_start_score` / `blood_score_per_unit`（喝血相关）。拖拉机采用逐张发牌，发牌过程中可亮主/反主；发完后庄家收底并扣回相同张数，随后进入出牌。
+拖拉机房间开始后会锁定设置。当前主要设置包括：`deck_count`（几副牌）、`removed_rank_count`（按 `3/4/6/7/8/9/J/Q/A` 的顺序删掉前 N 个点数，`0` 表示不删）、`first_deal_time`（首局发牌总时间，毫秒）、`deal_time`（后续局发牌总时间，毫秒）、`ai_action_time`（AI/托管行动间隔，毫秒）、`target_rank`（最终目标 rank）、`blood_enabled` / `blood_start_score` / `blood_score_per_unit`（喝血相关）。首局发牌中由所有玩家抢主/反主并决定首庄；第二局起只由既定庄家选择主花色。发完后庄家收底并扣回相同张数，随后进入出牌。
 
 ## 发布 Rust WS 服务端
 
