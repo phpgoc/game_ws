@@ -527,21 +527,55 @@ impl TractorGameState {
                 // AI is only the fallback when no human has declared. Waiting
                 // until the final card preserves the full first-round counter
                 // window and prevents an AI buzzer counter.
-                let best_ai_declaration = self
+                let current_strength = self
                     .declaration
-                    .is_none()
-                    .then(|| {
-                        self.active_positions()
-                            .into_iter()
-                            .filter(|position| self.is_ai_controlled_position(*position))
-                            .filter_map(|position| {
-                                self.auto_declaration_cards(position)
-                                    .map(|cards| (position, cards))
-                            })
-                            .max_by_key(|(_, cards)| cards.len())
+                    .as_ref()
+                    .map(|declaration| declaration.strength)
+                    .unwrap_or_default();
+                let ai_positions: Vec<_> = self
+                    .active_positions()
+                    .into_iter()
+                    .filter(|position| self.is_ai_controlled_position(*position))
+                    .collect();
+                let assessed = ai_positions
+                    .iter()
+                    .filter_map(|position| {
+                        crate::ai::declaration_decision(self, *position, current_strength, false)
+                            .map(|decision| (*position, decision))
                     })
-                    .flatten();
-                if let Some((position, cards)) = best_ai_declaration {
+                    .max_by(|(_, left), (_, right)| {
+                        left.cards.len().cmp(&right.cards.len()).then_with(|| {
+                            left.assessment
+                                .success_probability
+                                .total_cmp(&right.assessment.success_probability)
+                        })
+                    });
+                // If everybody passed, pick the best AI candidate as a final
+                // table fallback so a single level card is not an automatic
+                // personal bid, while the round still always gets a dealer.
+                let best_ai_declaration = assessed.or_else(|| {
+                    self.declaration
+                        .is_none()
+                        .then(|| {
+                            ai_positions
+                                .iter()
+                                .filter_map(|position| {
+                                    crate::ai::declaration_decision(self, *position, 0, true)
+                                        .map(|decision| (*position, decision))
+                                })
+                                .max_by(|(_, left), (_, right)| {
+                                    left.assessment
+                                        .success_probability
+                                        .total_cmp(&right.assessment.success_probability)
+                                        .then_with(|| {
+                                            left.assessment.score.cmp(&right.assessment.score)
+                                        })
+                                })
+                        })
+                        .flatten()
+                });
+                if let Some((position, decision)) = best_ai_declaration {
+                    let cards = decision.cards;
                     auto_declaration = self.declare_trump(position, cards).ok();
                 }
                 if let Some(declaration) = &self.declaration {
@@ -639,59 +673,17 @@ impl TractorGameState {
     }
 
     pub fn preferred_dealer_trump_suit(&self) -> TractorSuit {
-        const SUITS: [TractorSuit; 4] = [
-            TractorSuit::SPADE,
-            TractorSuit::HEART,
-            TractorSuit::CLUB,
-            TractorSuit::DIAMOND,
-        ];
-        let hand = self
-            .hands
-            .get(&self.dealer_position)
-            .map(Vec::as_slice)
-            .unwrap_or_default();
-        SUITS
-            .into_iter()
-            .max_by_key(|suit| {
-                let cards: Vec<_> = hand
-                    .iter()
-                    .copied()
-                    .filter(|card| card_suit(*card) == Some(*suit as i32))
-                    .collect();
-                let mut identities: HashMap<i32, usize> = HashMap::new();
-                for card in &cards {
-                    *identities.entry(base_card(*card)).or_default() += 1;
-                }
-                let pairs = identities.values().map(|count| count / 2).sum::<usize>();
-                let high_cards = cards.iter().map(|card| card_rank(*card)).sum::<i32>();
-                (
-                    cards.len(),
-                    pairs,
-                    high_cards,
-                    std::cmp::Reverse(*suit as i32),
-                )
-            })
-            .unwrap_or(TractorSuit::SPADE)
+        crate::ai::best_trump_suit(self, self.dealer_position)
     }
 
     pub fn auto_declaration_cards(&self, position: usize) -> Option<Vec<i32>> {
-        let hand = self.hands.get(&position)?;
-        let mut by_base: HashMap<i32, Vec<i32>> = HashMap::new();
-        for card in hand
-            .iter()
-            .filter(|card| card_rank(**card) == self.rules.target_rank as i32)
-        {
-            by_base.entry(base_card(*card)).or_default().push(*card);
-        }
         let current_strength = self
             .declaration
             .as_ref()
             .map(|declaration| declaration.strength)
             .unwrap_or_default();
-        by_base
-            .into_values()
-            .filter(|cards| cards.len() as i32 > current_strength)
-            .max_by_key(Vec::len)
+        crate::ai::declaration_decision(self, position, current_strength, false)
+            .map(|decision| decision.cards)
     }
 
     pub fn dealer_bottom_cards(&self) -> Option<Vec<i32>> {
@@ -720,20 +712,7 @@ impl TractorGameState {
         if self.phase != TractorPhase::Bury {
             return None;
         }
-        let mut cards = self.hands.get(&self.dealer_position)?.clone();
-        cards.sort_by_key(|card| {
-            (
-                is_trump_card(*card, &self.rules),
-                card_score(*card) > 0,
-                tractor_card_value(*card, &self.rules, None),
-            )
-        });
-        Some(
-            cards
-                .into_iter()
-                .take(self.rules.bottom_card_count)
-                .collect(),
-        )
+        crate::ai::choose_bury(self)
     }
 
     pub fn deal_new_round(&mut self, mut rules: TractorRules) -> Result<(), &'static str> {
@@ -1069,7 +1048,7 @@ mod tests {
     }
 
     #[test]
-    fn final_deal_ai_fallback_does_not_counter_a_human_declaration() {
+    fn strong_ai_pair_can_counter_a_human_single_after_hand_evaluation() {
         let mut state = test_state();
         state.phase = TractorPhase::Deal;
         state.round_index = 0;
@@ -1086,13 +1065,13 @@ mod tests {
             state.deal_next_card().expect("deal the final card");
 
         assert!(finished);
-        assert!(auto_declaration.is_none());
+        assert_eq!(auto_declaration.as_ref().map(|item| item.strength), Some(2));
         assert_eq!(
             state.declaration.as_ref().map(|item| item.position),
-            Some(0)
+            Some(1)
         );
-        assert_eq!(state.dealer_position, 0);
-        assert_eq!(state.rules.trump_suit, Some(TractorSuit::HEART));
+        assert_eq!(state.dealer_position, 1);
+        assert_eq!(state.rules.trump_suit, Some(TractorSuit::SPADE));
         assert_eq!(state.phase, TractorPhase::Bury);
     }
 

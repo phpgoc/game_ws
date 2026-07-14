@@ -5,6 +5,8 @@
 //! low). The AI adds combo-aware leading: it looks for tractors and pairs, and
 //! decides whether to probe with a low card or cash a guaranteed winner.
 
+mod bid;
+mod bury;
 mod knowledge;
 
 use crate::{
@@ -15,6 +17,9 @@ use crate::{
 };
 
 use self::knowledge::PublicKnowledge;
+
+pub(crate) use bid::{best_trump_suit, declaration_decision};
+pub(crate) use bury::choose_bury;
 
 pub fn decide(state: &TractorGameState, position: usize) -> Option<Vec<i32>> {
     let hand = state.hands.get(&position)?;
