@@ -70,6 +70,20 @@ pub(super) fn pure_one_suit_plan_score(hand: &[i32], melds: &[WsShenyangMahjongM
     }
 }
 
+fn has_pending_main_suit_claim_opportunity(
+    table: &AiPublicTable,
+    position: usize,
+    main_suit: i32,
+) -> bool {
+    table.claim_window.as_ref().is_some_and(|claim| {
+        claim.from_position != position
+            && claim.eligible_positions.contains(&position)
+            && is_suited(claim.tile)
+            && tile_suit(claim.tile) == main_suit
+            && claim_tile_already_visible(table, claim.tile)
+    })
+}
+
 pub(super) fn pure_one_suit_plan_score_for_context(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -83,7 +97,14 @@ pub(super) fn pure_one_suit_plan_score_for_context(
     let Some((main_suit, _, blockers)) = pure_one_suit_shape(hand, melds) else {
         return 0.0;
     };
-    if live_tile_count_for_suit(hand, table, main_suit) < blockers as i32 {
+    let pending_claim = usize::from(has_pending_main_suit_claim_opportunity(
+        table, position, main_suit,
+    ));
+    let required_main_suit_tiles = blockers.saturating_add(usize::from(hand.len() % 3 == 1));
+    if table.wall_count.saturating_add(pending_claim) < required_main_suit_tiles
+        || live_tile_count_for_suit(hand, table, main_suit) + (pending_claim as i32)
+            < required_main_suit_tiles as i32
+    {
         return 0.0;
     }
     if table.max_fan.is_some_and(|max_fan| max_fan <= 1) && missing_suits(hand, melds).is_empty() {

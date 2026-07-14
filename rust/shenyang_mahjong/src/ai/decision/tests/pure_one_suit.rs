@@ -279,6 +279,45 @@ fn pure_one_suit_plan_requires_enough_live_tiles_for_blockers() {
 }
 
 #[test]
+fn pure_one_suit_plan_requires_enough_wall_tiles_for_blockers() {
+    let hand = vec![1, 1, 2, 2, 3, 3, 4, 4, 11, 12, 21, 31, 35];
+    let (_, _, blockers) = pure_one_suit_shape(&hand, &[]).expect("pure shape");
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = blockers;
+
+    assert_eq!(blockers, 5);
+    assert!(pure_one_suit_plan_score(&hand, &[]) > 0.0);
+    assert_eq!(
+        pure_one_suit_plan_score_for_context(&hand, &[], &table, 0),
+        0.0
+    );
+
+    table.wall_count = blockers + 1;
+    assert!(pure_one_suit_plan_score_for_context(&hand, &[], &table, 0) > 0.0);
+}
+
+#[test]
+fn pure_one_suit_plan_only_counts_visible_main_suit_claim_opportunity() {
+    let hand = vec![1, 1, 2, 2, 3, 3, 4, 4, 11, 12, 21, 31, 35];
+    let mut forged_table = table_with_discards(1, Vec::new());
+    forged_table.wall_count = 5;
+    forged_table.claim_window = Some(AiClaimView {
+        tile: 4,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+
+    assert_eq!(
+        pure_one_suit_plan_score_for_context(&hand, &[], &forged_table, 0),
+        0.0
+    );
+
+    let mut valid_table = forged_table.clone();
+    valid_table.seats.get_mut(&1).unwrap().discards.push(4);
+    assert!(pure_one_suit_plan_score_for_context(&hand, &[], &valid_table, 0) > 0.0);
+}
+
+#[test]
 fn non_dealer_relaxed_pure_one_suit_plan_can_break_three_suits() {
     let mut table = table_with_discards(1, Vec::new());
     table.dealer_position = 1;
