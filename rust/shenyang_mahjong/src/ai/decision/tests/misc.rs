@@ -143,14 +143,35 @@ fn late_broken_basic_discard_follows_public_tile_for_weak_recoverable_hand() {
 }
 
 #[test]
-fn late_ready_discard_still_preserves_wait_over_safe_tile() {
+fn late_ready_discard_breaks_wait_for_public_safe_tile() {
     let mut table = table_with_discards(1, vec![5]);
     table.wall_count = 16;
     let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 31, 31, 32];
 
     assert_eq!(
+        ready_live_tile_count_after_discard(
+            &remove_n_tiles(&hand, 5, 1),
+            &[],
+            &table,
+            0,
+            WIN_RULE_RELAXED,
+            5,
+        ),
+        0
+    );
+    assert!(
+        ready_live_tile_count_after_discard(
+            &remove_n_tiles(&hand, 32, 1),
+            &[],
+            &table,
+            0,
+            WIN_RULE_RELAXED,
+            32,
+        ) > 0
+    );
+    assert_eq!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
-        Some(32)
+        Some(5)
     );
 }
 

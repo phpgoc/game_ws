@@ -52,12 +52,10 @@ fn choose_discard_from_view_inner(
     if let Some(tile) = choose_piao_single_wait_discard(hand, melds, table, position, win_rule) {
         return Some(tile);
     }
-    if let Some(tile) = choose_late_ready_discard(hand, melds, table, position, win_rule) {
-        return Some(tile);
-    }
-    if is_late_defense_round(table)
-        && best_ready_score_after_discard(hand, melds, table, position, win_rule) <= 0.0
-    {
+    if is_late_defense_round(table) {
+        if let Some(tile) = choose_late_ready_discard(hand, melds, table, position, win_rule) {
+            return Some(tile);
+        }
         if should_keep_pairs_for_seven_pairs_discard(hand, melds, table, position, win_rule) {
             return choose_late_defense_discard_preserving_pairs(hand, table, position);
         }
