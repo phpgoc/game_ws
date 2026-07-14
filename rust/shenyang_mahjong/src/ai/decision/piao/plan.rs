@@ -51,7 +51,7 @@ fn piao_tile_acquisition_costs(
     position: usize,
     tile: i32,
     pending_claim_tile: Option<i32>,
-) -> (Option<usize>, Option<usize>) {
+) -> (Option<usize>, Option<usize>, Option<usize>) {
     let own_count = hand.iter().filter(|item| **item == tile).count();
     let available =
         remaining_tile_count_with_melds_after_discards(hand, melds, table, position, tile, &[])
@@ -61,7 +61,12 @@ fn piao_tile_acquisition_costs(
         let required = target_count.saturating_sub(own_count);
         (required <= available).then_some(required)
     };
-    (cost_for(2), cost_for(3))
+    let open_triplet_required = 1 + 2usize.saturating_sub(own_count);
+    (
+        cost_for(2),
+        cost_for(3),
+        (open_triplet_required <= available).then_some(open_triplet_required),
+    )
 }
 
 fn minimum_acquisitions_for_piao_shape(
@@ -75,35 +80,69 @@ fn minimum_acquisitions_for_piao_shape(
         return None;
     }
     let needed_triplets = 4 - meld_groups;
+    let door_is_open = has_door_opening_meld(melds, table);
+    if !door_is_open && needed_triplets == 0 {
+        return None;
+    }
     let pending_claim_tile = pending_piao_claim_tile(melds, table, position);
     let tile_costs = SHENYANG_MAHJONG_TILE_KINDS
         .into_iter()
         .map(|tile| {
-            let (pair_cost, triplet_cost) =
+            let (pair_cost, triplet_cost, open_triplet_cost) =
                 piao_tile_acquisition_costs(hand, melds, table, position, tile, pending_claim_tile);
-            (tile, pair_cost, triplet_cost)
+            (tile, pair_cost, triplet_cost, open_triplet_cost)
         })
         .collect::<Vec<_>>();
     let mut best = None;
-    for (pair_tile, pair_cost, _) in &tile_costs {
+    for (pair_tile, pair_cost, _, _) in &tile_costs {
         let Some(pair_cost) = pair_cost else {
             continue;
         };
         let mut triplet_costs = tile_costs
             .iter()
-            .filter(|(tile, _, _)| tile != pair_tile)
-            .filter_map(|(_, _, triplet_cost)| *triplet_cost)
+            .filter(|(tile, _, _, _)| tile != pair_tile)
+            .filter_map(|(tile, _, triplet_cost, _)| triplet_cost.map(|cost| (*tile, cost)))
             .collect::<Vec<_>>();
-        if triplet_costs.len() < needed_triplets {
+        triplet_costs.sort_unstable_by_key(|(_, cost)| *cost);
+        if door_is_open {
+            if triplet_costs.len() < needed_triplets {
+                continue;
+            }
+            let total = *pair_cost
+                + triplet_costs
+                    .iter()
+                    .take(needed_triplets)
+                    .map(|(_, cost)| *cost)
+                    .sum::<usize>();
+            best = Some(best.map_or(total, |current: usize| current.min(total)));
             continue;
         }
-        triplet_costs.sort_unstable();
-        let total = *pair_cost
-            + triplet_costs
-                .into_iter()
-                .take(needed_triplets)
+
+        for (open_tile, _, _, open_triplet_cost) in &tile_costs {
+            if open_tile == pair_tile {
+                continue;
+            }
+            let Some(open_triplet_cost) = open_triplet_cost else {
+                continue;
+            };
+            let remaining_triplets = needed_triplets - 1;
+            let mut normal_count = 0;
+            let normal_cost = triplet_costs
+                .iter()
+                .filter(|(tile, _)| tile != open_tile)
+                .take(remaining_triplets)
+                .map(|(_, cost)| {
+                    normal_count += 1;
+                    *cost
+                })
                 .sum::<usize>();
-        best = Some(best.map_or(total, |current: usize| current.min(total)));
+            if normal_count < remaining_triplets {
+                continue;
+            }
+            let follow_up_draw = usize::from(*pair_cost + normal_cost == 0);
+            let total = *pair_cost + *open_triplet_cost + normal_cost + follow_up_draw;
+            best = Some(best.map_or(total, |current: usize| current.min(total)));
+        }
     }
     best
 }

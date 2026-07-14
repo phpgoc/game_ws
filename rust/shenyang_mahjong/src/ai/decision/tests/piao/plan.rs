@@ -194,6 +194,44 @@ fn closed_piao_candidate_stops_when_wall_cannot_complete_missing_triplets() {
     assert!(piao_plan_score(&hand, &[]) > 0.0);
     assert_eq!(piao_plan_score_for_context(&hand, &[], &table, 0), 0.0);
     assert!(!is_closed_early_piao_candidate(&hand, &[], &table, 0));
+
+    table.wall_count = 3;
+    assert!(piao_plan_score_for_context(&hand, &[], &table, 0) > 0.0);
+    assert!(is_closed_early_piao_candidate(&hand, &[], &table, 0));
+}
+
+#[test]
+fn complete_closed_piao_shape_reserves_claim_and_follow_up_draw_to_open() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 1;
+    let hand = vec![1, 1, 1, 2, 2, 2, 11, 11, 11, 21, 21, 21, 31, 31];
+
+    assert_eq!(piao_committed_group_count(&hand, &[]), 4);
+    assert!(piao_plan_score(&hand, &[]) > 0.0);
+    assert_eq!(piao_plan_score_for_context(&hand, &[], &table, 0), 0.0);
+    assert!(!is_closed_early_piao_candidate(&hand, &[], &table, 0));
+
+    table.wall_count = 2;
+    assert!(piao_plan_score_for_context(&hand, &[], &table, 0) > 0.0);
+    assert!(is_closed_early_piao_candidate(&hand, &[], &table, 0));
+}
+
+#[test]
+fn four_concealed_gang_groups_cannot_open_for_piao() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.seats.get_mut(&0).unwrap().melds = vec![
+        test_concealed_gang_meld(1),
+        test_concealed_gang_meld(11),
+        test_concealed_gang_meld(21),
+        test_concealed_gang_meld(31),
+    ];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![35, 35];
+
+    assert!(!has_door_opening_meld(melds, &table));
+    assert_eq!(piao_threat_level(melds), 4);
+    assert!(piao_plan_score(&hand, melds) > 0.0);
+    assert_eq!(piao_plan_score_for_context(&hand, melds, &table, 0), 0.0);
 }
 
 #[test]
