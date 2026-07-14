@@ -478,27 +478,34 @@ pub(crate) fn build_table_snapshot_event_with_configs(
             None
         },
         settlement: build_settlement_event_with_configs(state, configs),
-        claim_window: state.claim_window.as_ref().map(|window| {
-            let event = match window.kind {
-                ClaimWindowKind::Discard => build_claim_window_event(
-                    state,
-                    window.tile,
-                    window.from_position,
-                    state.turn_countdown() as i32,
-                    configs,
-                ),
-                ClaimWindowKind::RobGang => build_rob_gang_claim_window_event(
-                    state,
-                    window.tile,
-                    window.from_position,
-                    state.turn_countdown() as i32,
-                    configs,
-                ),
-            };
-            let can_respond = window.eligible_positions.contains(&viewer_position)
-                && !window.responses.contains_key(&viewer_position);
-            claim_window_event_for_viewer(&event, viewer_position, can_respond)
-        }),
+        claim_window: state
+            .claim_window
+            .as_ref()
+            .filter(|window| {
+                state.phase == ShenyangMahjongPhase::Play
+                    && claim_window_matches_source(state, window)
+            })
+            .map(|window| {
+                let event = match window.kind {
+                    ClaimWindowKind::Discard => build_claim_window_event(
+                        state,
+                        window.tile,
+                        window.from_position,
+                        state.turn_countdown() as i32,
+                        configs,
+                    ),
+                    ClaimWindowKind::RobGang => build_rob_gang_claim_window_event(
+                        state,
+                        window.tile,
+                        window.from_position,
+                        state.turn_countdown() as i32,
+                        configs,
+                    ),
+                };
+                let can_respond = window.eligible_positions.contains(&viewer_position)
+                    && !window.responses.contains_key(&viewer_position);
+                claim_window_event_for_viewer(&event, viewer_position, can_respond)
+            }),
     }
 }
 
@@ -9902,6 +9909,43 @@ mod tests {
 
         assert!(player.away);
         assert!(!player.is_ai);
+    }
+
+    #[test]
+    fn table_snapshot_hides_claim_window_with_invalid_source() {
+        let mut state = playable_state();
+        state.current_position = 0;
+        state.discards.insert(9, vec![3]);
+        state.claim_window = Some(ClaimWindowState {
+            tile: 3,
+            from_position: 9,
+            kind: ClaimWindowKind::Discard,
+            eligible_positions: vec![1],
+            responses: HashMap::new(),
+        });
+
+        let snapshot = build_table_snapshot_event_with_configs(&state, 1, &relaxed_configs());
+
+        assert!(snapshot.claim_window.is_none());
+    }
+
+    #[test]
+    fn table_snapshot_hides_claim_window_outside_play_phase() {
+        let mut state = playable_state();
+        state.current_position = 0;
+        state.discards.insert(0, vec![3]);
+        state.claim_window = Some(ClaimWindowState {
+            tile: 3,
+            from_position: 0,
+            kind: ClaimWindowKind::Discard,
+            eligible_positions: vec![1],
+            responses: HashMap::new(),
+        });
+        state.phase = ShenyangMahjongPhase::Settlement;
+
+        let snapshot = build_table_snapshot_event_with_configs(&state, 1, &relaxed_configs());
+
+        assert!(snapshot.claim_window.is_none());
     }
 
     #[test]
