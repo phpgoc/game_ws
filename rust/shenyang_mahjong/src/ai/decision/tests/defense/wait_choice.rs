@@ -88,3 +88,23 @@ fn capped_non_dealer_prefers_more_live_copies_over_depleted_wait_kinds() {
         Some(19)
     );
 }
+
+#[test]
+fn late_non_dealer_prefers_public_discard_that_keeps_ready() {
+    let mut table = table_with_discards(1, vec![24, 24, 24, 27]);
+    table.wall_count = FINAL_DEFENSE_WALL_COUNT;
+    let hand = vec![2, 3, 4, 19, 19, 19, 21, 22, 23, 25, 26, 27, 27, 29];
+
+    assert_ne!(table.dealer_position, 0);
+    assert_eq!(table.max_fan, None);
+    assert_eq!(public_discard_count(&table, 27), 1);
+    let after_27 = remove_n_tiles(&hand, 27, 1);
+    assert_eq!(
+        ready_live_tile_count_after_discard(&after_27, &[], &table, 0, WIN_RULE_RELAXED, 27,),
+        3
+    );
+    assert_eq!(
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        Some(27)
+    );
+}

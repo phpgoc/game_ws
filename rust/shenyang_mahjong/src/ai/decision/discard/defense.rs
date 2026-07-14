@@ -59,6 +59,65 @@ pub(in crate::ai::decision) fn choose_late_defense_discard(
     choose_late_defense_discard_from_candidates(hand, table, position, unique_tiles(hand))
 }
 
+pub(in crate::ai::decision) fn choose_late_ready_discard(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+) -> Option<i32> {
+    if !is_late_defense_round(table) {
+        return None;
+    }
+    let ready_candidates = unique_tiles(hand)
+        .into_iter()
+        .filter_map(|tile| {
+            let next = remove_n_tiles(hand, tile, 1);
+            let live_tiles =
+                ready_live_tile_count_after_discard(&next, melds, table, position, win_rule, tile);
+            (live_tiles > 0).then_some((tile, live_tiles))
+        })
+        .collect::<Vec<_>>();
+    if ready_candidates.is_empty() {
+        return None;
+    }
+
+    let safe_ready_candidates = ready_candidates
+        .iter()
+        .copied()
+        .filter(|(tile, _)| late_defense_known_safe_candidate(hand, table, *tile))
+        .collect::<Vec<_>>();
+    let candidates = if safe_ready_candidates.is_empty() {
+        if unique_tiles(hand)
+            .into_iter()
+            .any(|tile| late_defense_known_safe_candidate(hand, table, tile))
+        {
+            return None;
+        }
+        ready_candidates
+    } else {
+        safe_ready_candidates
+    };
+
+    let mut best: Option<(i32, f64, i32)> = None;
+    for (tile, live_tiles) in candidates {
+        let own_tile_count = hand.iter().filter(|item| **item == tile).count();
+        let safety = late_defense_tile_safety_score(table, position, tile, own_tile_count);
+        match best {
+            None => best = Some((live_tiles, safety, tile)),
+            Some((best_live_tiles, best_safety, best_tile)) => {
+                if live_tiles > best_live_tiles
+                    || (live_tiles == best_live_tiles
+                        && (safety > best_safety || (safety == best_safety && tile < best_tile)))
+                {
+                    best = Some((live_tiles, safety, tile));
+                }
+            }
+        }
+    }
+    best.map(|(_, _, tile)| tile)
+}
+
 pub(in crate::ai::decision) fn choose_late_defense_discard_from_candidates(
     hand: &[i32],
     table: &AiPublicTable,
