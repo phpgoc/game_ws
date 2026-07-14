@@ -295,6 +295,11 @@ fn discard_claim_matches_source(
 }
 
 fn known_tile_count(state: &ShenyangMahjongLoopState, tile: i32) -> usize {
+    let player_positions = state
+        .players_snapshot()
+        .keys()
+        .copied()
+        .collect::<HashSet<_>>();
     let hand_count = state
         .hands
         .values()
@@ -307,14 +312,21 @@ fn known_tile_count(state: &ShenyangMahjongLoopState, tile: i32) -> usize {
         .flat_map(|discards| discards.iter().copied())
         .filter(|known_tile| *known_tile == tile)
         .count();
-    let meld_count = state
+    let meld_count: usize = state
         .melds
-        .values()
-        .flat_map(|melds| melds.iter())
-        .filter(|meld| meld_primary_tile(meld).is_some() || is_chi_meld(meld))
-        .flat_map(|meld| meld.tiles.iter().copied())
-        .filter(|known_tile| *known_tile == tile)
-        .count();
+        .iter()
+        .map(|(position, melds)| {
+            melds
+                .iter()
+                .filter(|meld| {
+                    meld_source_is_valid_for_positions(meld, *position, &player_positions)
+                })
+                .filter(|meld| meld_primary_tile(meld).is_some() || is_chi_meld(meld))
+                .flat_map(|meld| meld.tiles.iter().copied())
+                .filter(|known_tile| *known_tile == tile)
+                .count()
+        })
+        .sum();
     hand_count + discard_count + meld_count
 }
 
@@ -927,6 +939,11 @@ fn public_unavailable_tiles_for_winner(
     state: &ShenyangMahjongLoopState,
     winner: usize,
 ) -> Vec<i32> {
+    let player_positions = state
+        .players_snapshot()
+        .keys()
+        .copied()
+        .collect::<HashSet<_>>();
     let mut tiles = Vec::new();
     for discards in state.discards.values() {
         tiles.extend(discards.iter().copied().filter(|tile| is_valid_tile(*tile)));
@@ -937,6 +954,7 @@ fn public_unavailable_tiles_for_winner(
         }
         for meld in melds
             .iter()
+            .filter(|meld| meld_source_is_valid_for_positions(meld, *position, &player_positions))
             .filter(|meld| meld_primary_tile(meld).is_some() || is_chi_meld(meld))
         {
             tiles.extend(
@@ -3216,6 +3234,32 @@ mod tests {
             .iter()
             .find(|option| option.position == 1)
             .expect("malformed meld should not block legal claim options");
+
+        assert_eq!(known_tile_count(&state, 3), 3);
+        assert!(player.can_peng);
+    }
+
+    #[test]
+    fn claim_options_ignore_melds_with_invalid_sources_for_known_tile_count() {
+        let mut state = playable_state();
+        state.discards.insert(0, vec![3]);
+        state
+            .hands
+            .insert(1, vec![3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35]);
+        state.melds.insert(
+            2,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::PENG,
+                vec![3, 3, 3],
+                Some(2),
+            )],
+        );
+
+        let options = build_claim_options(&state, 3, 0, &relaxed_configs());
+        let player = options
+            .iter()
+            .find(|option| option.position == 1)
+            .expect("invalid-source meld should not block legal claim options");
 
         assert_eq!(known_tile_count(&state, 3), 3);
         assert!(player.can_peng);
@@ -7845,6 +7889,60 @@ mod tests {
         assert_eq!(
             winner_hand_fan_with_rule(&state, settlement, 1, WIN_RULE_SHENYANG_BASIC),
             2
+        );
+    }
+
+    #[test]
+    fn settlement_fan_ignores_invalid_source_melds_for_single_wait() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![2, 3, 21, 22, 23, 25, 25, 31, 31, 31]);
+        state.melds.insert(
+            1,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::CHI,
+                vec![11, 12, 13],
+                Some(0),
+            )],
+        );
+        state.melds.insert(
+            2,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::GANG,
+                vec![4, 4, 4, 4],
+                Some(2),
+            )],
+        );
+        state.enter_settlement_with_reverse_win(
+            vec![1],
+            Some(0),
+            Some(1),
+            false,
+            false,
+            false,
+            false,
+        );
+        let settlement = state.settlement.as_ref().expect("settlement");
+        let hand_tiles = winner_final_hand_tiles(&state, settlement, 1);
+        let melds = state.melds.get(&1).map(Vec::as_slice).unwrap_or(&[]);
+        let public_unavailable = public_unavailable_tiles_for_winner(&state, 1);
+
+        assert_eq!(
+            public_unavailable.iter().filter(|tile| **tile == 4).count(),
+            0
+        );
+        assert!(!is_single_wait_win_with_known_unavailable_tiles(
+            &hand_tiles,
+            melds,
+            settlement.win_tile,
+            WIN_RULE_SHENYANG_BASIC,
+            true,
+            &public_unavailable
+        ));
+        assert_eq!(
+            winner_hand_fan_with_rule(&state, settlement, 1, WIN_RULE_SHENYANG_BASIC),
+            1
         );
     }
 
