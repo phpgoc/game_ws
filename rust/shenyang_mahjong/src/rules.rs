@@ -623,7 +623,7 @@ fn is_unique_complete_wait_with_known_unavailable_tiles_and_open_rule(
     waits.len() == 1 && waits[0] == win_tile
 }
 
-fn is_valid_meld(meld: &WsShenyangMahjongMeld) -> bool {
+pub(crate) fn is_valid_meld(meld: &WsShenyangMahjongMeld) -> bool {
     is_triplet_meld(meld) || is_sequence_meld(meld)
 }
 

@@ -30,7 +30,7 @@ use crate::rules::{
     WIN_RULE_SHENYANG_BASIC, can_chi, can_concealed_gang, can_gang, can_peng,
     is_complete_win_with_melds_and_open_rule, is_piao_hu_win, is_pure_one_suit_win,
     is_seven_pairs_win, is_single_wait_shape_with_known_unavailable_tiles_and_open_rule,
-    shenyang_score_concealed_dragon_triplet_fan, shenyang_score_four_gui_yi_fan,
+    is_valid_meld, shenyang_score_concealed_dragon_triplet_fan, shenyang_score_four_gui_yi_fan,
     shenyang_score_meld_fan, tiles_in_hand, win_rule_from_configs,
 };
 
@@ -349,6 +349,7 @@ fn public_melds_for_position(
         .into_iter()
         .flatten()
         .filter(|meld| meld_source_is_valid_for_positions(meld, position, player_positions))
+        .filter(|meld| meld_shape_is_valid(meld))
         .cloned()
         .collect()
 }
@@ -1026,7 +1027,7 @@ fn is_chi_meld(meld: &WsShenyangMahjongMeld) -> bool {
 }
 
 fn meld_shape_is_valid(meld: &WsShenyangMahjongMeld) -> bool {
-    meld_primary_tile(meld).is_some() || is_chi_meld(meld)
+    is_valid_meld(meld)
 }
 
 fn is_open_meld(meld: &WsShenyangMahjongMeld) -> bool {
@@ -9781,6 +9782,39 @@ mod tests {
         assert_eq!(public_valid.melds.len(), 1);
         assert!(settlement_invalid.melds.is_empty());
         assert_eq!(settlement_valid.melds.len(), 1);
+    }
+
+    #[test]
+    fn table_snapshot_filters_malformed_meld_shapes() {
+        let mut state = playable_state();
+        state.melds.insert(
+            1,
+            vec![
+                build_meld(ShenyangMahjongMeldKind::PENG, vec![3, 3], Some(0)),
+                build_meld(ShenyangMahjongMeldKind::PENG, vec![4, 4, 4], Some(2)),
+            ],
+        );
+        state.enter_settlement(Vec::new(), None, None, false);
+
+        let snapshot = build_table_snapshot_event_with_configs(&state, 0, &relaxed_configs());
+        let public_melds = &snapshot
+            .players
+            .iter()
+            .find(|player| player.position == 1)
+            .expect("public seat 1")
+            .melds;
+        let settlement = snapshot.settlement.as_ref().expect("settlement");
+        let settlement_melds = &settlement
+            .players
+            .iter()
+            .find(|player| player.position == 1)
+            .expect("settlement seat 1")
+            .melds;
+
+        assert_eq!(public_melds.len(), 1);
+        assert_eq!(public_melds[0].tiles, vec![4, 4, 4]);
+        assert_eq!(settlement_melds.len(), 1);
+        assert_eq!(settlement_melds[0].tiles, vec![4, 4, 4]);
     }
 
     #[test]

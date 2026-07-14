@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use share_type_public::games::shenyang_mahjong::WsShenyangMahjongMeld;
 
 use crate::game_state::{ShenyangMahjongLoopState, meld_source_is_valid_for_positions};
+use crate::rules::is_valid_meld;
 
 #[derive(Debug, Clone)]
 pub struct AiClaimView {
@@ -57,6 +58,7 @@ pub fn build_public_table_with_configs(
                     .filter(|meld| {
                         meld_source_is_valid_for_positions(meld, position, &player_positions)
                     })
+                    .filter(|meld| is_valid_meld(meld))
                     .cloned()
                     .collect(),
             },
@@ -123,6 +125,40 @@ mod tests {
         assert_eq!(melds[0].from_position, Some(0));
         assert_eq!(melds[1].from_position, None);
         assert_eq!(melds[2].from_position, Some(0));
+    }
+
+    #[test]
+    fn public_table_filters_malformed_meld_shapes() {
+        let base = Arc::new(Mutex::new(CommonGameState::default()));
+        {
+            let mut common = base.lock().unwrap();
+            for position in 0..4 {
+                common.add_player(position, position as u64 + 1, &format!("P{position}"));
+            }
+        }
+        let mut state = ShenyangMahjongLoopState::new(base);
+        state.melds.insert(
+            1,
+            vec![
+                WsShenyangMahjongMeld {
+                    kind: ShenyangMahjongMeldKind::PENG,
+                    tiles: vec![3, 3],
+                    from_position: Some(0),
+                },
+                WsShenyangMahjongMeld {
+                    kind: ShenyangMahjongMeldKind::CHI,
+                    tiles: vec![11, 11, 12],
+                    from_position: Some(0),
+                },
+                test_meld(ShenyangMahjongMeldKind::PENG, 4, Some(2)),
+            ],
+        );
+
+        let table = build_public_table_with_configs(&state, &HashMap::new());
+        let melds = &table.seats.get(&1).expect("seat 1").melds;
+
+        assert_eq!(melds.len(), 1);
+        assert_eq!(melds[0].tiles, vec![4, 4, 4]);
     }
 
     fn test_meld(
