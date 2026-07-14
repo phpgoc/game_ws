@@ -69,7 +69,9 @@ fn choose_discard_from_view_inner(
     }
 
     let preserve_early_piao_pairs = has_early_piao_singleton_discard(hand, melds, table, position);
-    let speed_first_wait = table.dealer_position == position;
+    let speed_first_wait = table.dealer_position == position
+        || ready_visible_fan_reaches_cap(hand, melds, table, position, win_rule)
+        || ready_visible_fan_exceeds_half_cap(hand, melds, table, position, win_rule);
     let mut best_allowed: Option<(i32, f64, i32)> = None;
     let mut best_any: Option<(i32, f64, i32)> = None;
     for tile in unique_tiles(hand) {
