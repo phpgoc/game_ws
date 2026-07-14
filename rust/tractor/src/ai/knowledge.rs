@@ -117,6 +117,30 @@ impl PublicKnowledge {
             .all(|position| self.known_void(position, group))
     }
 
+    pub(crate) fn throw_success_probability(&self, state: &TractorGameState, cards: &[i32]) -> f64 {
+        let Some(components) = combo::throw_components(cards, &state.rules) else {
+            return 0.0;
+        };
+        components.into_iter().fold(1.0, |probability, component| {
+            let Some(lead) = combo::classify(&component, &state.rules) else {
+                return 0.0;
+            };
+            let Some(value) = combo::combo_win_value(&component, &lead, &state.rules) else {
+                return 0.0;
+            };
+            // A throw is challenged by every other seat, including our
+            // partner. Trick-control estimates intentionally ignore a partner
+            // overtaking us, but throw legality cannot do that.
+            probability
+                * self.control_probability_against(
+                    state,
+                    &lead,
+                    value,
+                    self.other_positions().collect(),
+                )
+        })
+    }
+
     /// Estimate the chance that no opponent can legally overtake this lead.
     /// The calculation uses unseen-card hypergeometric probabilities and known
     /// voids. Correlated threats are combined conservatively, so borderline
@@ -129,6 +153,88 @@ impl PublicKnowledge {
             return 0.0;
         };
 
+        self.control_probability_against(state, &lead, lead_value, self.enemy_positions().collect())
+    }
+
+    /// Probability that `cards`, played now by `position`, will remain winning
+    /// after every seat that has not acted in this trick responds.
+    pub(crate) fn candidate_hold_probability(
+        &self,
+        state: &TractorGameState,
+        position: usize,
+        cards: &[i32],
+    ) -> f64 {
+        let Some(lead_play) = state.current_trick.first() else {
+            return self.lead_control_probability(state, cards);
+        };
+        let Some(lead) = combo::classify(&lead_play.cards, &state.rules) else {
+            return 0.0;
+        };
+        let Some(value) = combo::combo_win_value(cards, &lead, &state.rules) else {
+            return 0.0;
+        };
+        let already_played: HashSet<usize> = state
+            .current_trick
+            .iter()
+            .filter_map(|played| usize::try_from(played.position).ok())
+            .chain(std::iter::once(position))
+            .collect();
+        let future_opponents = self
+            .active_positions
+            .iter()
+            .copied()
+            .filter(|other| !already_played.contains(other))
+            .filter(|other| !same_team(*other, position))
+            .collect();
+        self.control_probability_against(state, &lead, value, future_opponents)
+    }
+
+    pub(crate) fn current_winner_hold_probability(&self, state: &TractorGameState) -> f64 {
+        let Some(winner) = combo::trick_winner(&state.current_trick, &state.rules) else {
+            return 0.0;
+        };
+        let Some(lead_play) = state.current_trick.first() else {
+            return 0.0;
+        };
+        let Some(lead) = combo::classify(&lead_play.cards, &state.rules) else {
+            return 0.0;
+        };
+        let Some(winning_play) = state
+            .current_trick
+            .iter()
+            .find(|played| played.position == winner as i32)
+        else {
+            return 0.0;
+        };
+        let Some(value) = combo::combo_win_value(&winning_play.cards, &lead, &state.rules) else {
+            return 0.0;
+        };
+        let already_played: HashSet<usize> = state
+            .current_trick
+            .iter()
+            .filter_map(|played| usize::try_from(played.position).ok())
+            .collect();
+        let future_opponents = self
+            .active_positions
+            .iter()
+            .copied()
+            .filter(|other| !already_played.contains(other))
+            .filter(|other| !same_team(*other, winner))
+            .collect();
+        self.control_probability_against(state, &lead, value, future_opponents)
+    }
+
+    fn control_probability_against(
+        &self,
+        state: &TractorGameState,
+        lead: &combo::Combo,
+        value_to_beat: i32,
+        opponents: Vec<usize>,
+    ) -> f64 {
+        if opponents.is_empty() {
+            return 1.0;
+        }
+
         let mut threat_keys = HashSet::new();
         let threats: Vec<Vec<i32>> = combo::enumerate_leads(&self.unseen_cards, &state.rules)
             .into_iter()
@@ -136,8 +242,8 @@ impl PublicKnowledge {
                 combo::classify(candidate, &state.rules).map(|combo| combo.kind) == Some(lead.kind)
             })
             .filter(|candidate| {
-                combo::combo_win_value(candidate, &lead, &state.rules)
-                    .is_some_and(|value| value > lead_value)
+                combo::combo_win_value(candidate, lead, &state.rules)
+                    .is_some_and(|value| value > value_to_beat)
             })
             .filter(|candidate| {
                 let mut key: Vec<_> = candidate.iter().map(|card| base_card(*card)).collect();
@@ -150,13 +256,20 @@ impl PublicKnowledge {
         for threat in threats {
             let threat_group = combo::play_suit(&threat, &state.rules);
             let mut no_position_has_threat = 1.0;
-            for opponent in self.enemy_positions() {
+            for opponent in opponents.iter().copied() {
+                // A remembered void is a hard ownership constraint, not merely
+                // a hint about what the player may follow. Do not assign that
+                // player a higher card from a group they have exhausted.
+                let holds_probability = if self.known_void(opponent, threat_group) {
+                    0.0
+                } else {
+                    self.probability_player_holds(opponent, &threat)
+                };
                 let can_use_probability = if threat_group.is_none() && lead.suit.is_some() {
                     self.probability_player_void(opponent, lead.suit, state)
                 } else {
                     1.0
                 };
-                let holds_probability = self.probability_player_holds(opponent, &threat);
                 no_position_has_threat *=
                     1.0 - (can_use_probability * holds_probability).clamp(0.0, 1.0);
             }
@@ -171,6 +284,13 @@ impl PublicKnowledge {
             .iter()
             .copied()
             .filter(|position| !same_team(*position, self.viewer))
+    }
+
+    fn other_positions(&self) -> impl Iterator<Item = usize> + '_ {
+        self.active_positions
+            .iter()
+            .copied()
+            .filter(|position| *position != self.viewer)
     }
 
     fn probability_player_void(
@@ -200,12 +320,14 @@ impl PublicKnowledge {
         for card in cards {
             *requirements.entry(base_card(*card)).or_default() += 1;
         }
-        requirements
+        let requirements: Vec<_> = requirements
             .into_iter()
-            .fold(1.0, |probability, (base, needed)| {
+            .map(|(base, needed)| {
                 let available = self.remaining_by_base.get(&base).copied().unwrap_or(0);
-                probability * hypergeom_at_least(self.unseen_cards.len(), available, draws, needed)
+                (available, needed)
             })
+            .collect();
+        multivariate_hypergeom_at_least(self.unseen_cards.len(), draws, &requirements)
     }
 }
 
@@ -249,26 +371,63 @@ fn hypergeom_exact_zero(population: usize, successes: usize, draws: usize) -> f6
     })
 }
 
-fn hypergeom_at_least(population: usize, successes: usize, draws: usize, required: usize) -> f64 {
-    if required == 0 {
-        return 1.0;
-    }
-    if successes < required || draws < required || draws > population {
+/// Exact probability that one hand contains every requested base-card count.
+/// The requested identities are disjoint categories, so a small convolution
+/// avoids the independence error caused by multiplying separate marginals.
+fn multivariate_hypergeom_at_least(
+    population: usize,
+    draws: usize,
+    requirements: &[(usize, usize)],
+) -> f64 {
+    if draws > population
+        || requirements
+            .iter()
+            .any(|(available, required)| available < required)
+        || requirements
+            .iter()
+            .map(|(_, required)| required)
+            .sum::<usize>()
+            > draws
+    {
         return 0.0;
     }
-    let max_hits = successes.min(draws);
-    (required..=max_hits)
-        .map(|hits| {
-            let misses = draws - hits;
-            if misses > population.saturating_sub(successes) {
-                return 0.0;
+
+    let category_total = requirements
+        .iter()
+        .map(|(available, _)| *available)
+        .sum::<usize>();
+    if category_total > population {
+        return 0.0;
+    }
+    let mut ways_by_hits = vec![0.0; draws + 1];
+    ways_by_hits[0] = 1.0;
+    for (available, required) in requirements.iter().copied() {
+        let mut next = vec![0.0; draws + 1];
+        for already in 0..=draws {
+            if ways_by_hits[already] == 0.0 {
+                continue;
             }
-            (log_choose(successes, hits) + log_choose(population - successes, misses)
-                - log_choose(population, draws))
-            .exp()
+            for hits in required..=available.min(draws - already) {
+                next[already + hits] += ways_by_hits[already] * log_choose(available, hits).exp();
+            }
+        }
+        ways_by_hits = next;
+    }
+
+    let background = population - category_total;
+    let favourable = ways_by_hits
+        .into_iter()
+        .enumerate()
+        .filter_map(|(hits, ways)| {
+            let misses = draws.checked_sub(hits)?;
+            (misses <= background).then_some(ways * log_choose(background, misses).exp())
         })
-        .sum::<f64>()
-        .clamp(0.0, 1.0)
+        .sum::<f64>();
+    let total = log_choose(population, draws).exp();
+    if total == 0.0 || !total.is_finite() {
+        return 0.0;
+    }
+    (favourable / total).clamp(0.0, 1.0)
 }
 
 fn log_choose(n: usize, k: usize) -> f64 {
@@ -384,5 +543,54 @@ mod tests {
         let knowledge = PublicKnowledge::from_state(&state, 0);
         assert!(knowledge.known_void(1, Some(0)));
         assert!(!knowledge.known_void(2, Some(0)));
+    }
+
+    #[test]
+    fn known_void_player_is_not_assigned_a_higher_card_in_that_suit() {
+        let mut state = state();
+        state.hands.insert(0, vec![53, 153, 20, 21]);
+        for position in 1..4 {
+            state.hands.insert(position, vec![30, 31, 32, 33]);
+        }
+        state.completed_tricks = vec![vec![
+            WsTractorPlayedCards {
+                position: 0,
+                name: "u0".to_owned(),
+                cards: vec![18],
+            },
+            WsTractorPlayedCards {
+                position: 1,
+                name: "u1".to_owned(),
+                cards: vec![1],
+            },
+        ]];
+        let before =
+            PublicKnowledge::from_state(&state, 0).lead_control_probability(&state, &[53, 153]);
+        // Keep the exact same exposed cards and hand counts, changing only
+        // which group was led. Position 1 is now known void in trumps.
+        state.completed_tricks = vec![vec![
+            WsTractorPlayedCards {
+                position: 0,
+                name: "u0".to_owned(),
+                cards: vec![1],
+            },
+            WsTractorPlayedCards {
+                position: 1,
+                name: "u1".to_owned(),
+                cards: vec![18],
+            },
+        ]];
+        let after =
+            PublicKnowledge::from_state(&state, 0).lead_control_probability(&state, &[53, 153]);
+
+        assert!(after > before, "before={before} after={after}");
+    }
+
+    #[test]
+    fn multi_card_holding_probability_uses_joint_hypergeometric_math() {
+        // Draw two from A,A,B,B. Four of the six equally likely hands contain
+        // at least one A and one B.
+        let probability = multivariate_hypergeom_at_least(4, 2, &[(2, 1), (2, 1)]);
+        assert!((probability - 2.0 / 3.0).abs() < 1e-12);
     }
 }

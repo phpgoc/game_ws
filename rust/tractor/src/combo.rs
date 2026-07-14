@@ -2,10 +2,11 @@
 //!
 //! The trump group is made of every card of the current target rank plus both
 //! jokers; all other cards are "plain" and belong to their natural suit. A legal
-//! play is a single group of one of three shapes:
+//! play is a single group of one of four shapes:
 //!   - Single: one card.
 //!   - Pair:   two identical cards (same base card, regardless of deck copy).
 //!   - Tractor: two or more consecutive pairs in the same group (连对).
+//!   - Throw: multiple same-group components released together (甩牌).
 //!
 //! Pairs are matched by card *identity* (base card), never by rank alone, so
 //! `5♠ + 5♥` is two singles, not a pair.
@@ -24,6 +25,12 @@ pub enum ComboKind {
     Pair,
     /// A run of `n` consecutive pairs (n >= 2), so `2 * n` cards.
     Tractor(usize),
+    /// A same-group composite lead. `pairs` records the minimum pair structure
+    /// followers must preserve when they have it.
+    Throw {
+        cards: usize,
+        pairs: usize,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -39,6 +46,7 @@ impl ComboKind {
             ComboKind::Single => 1,
             ComboKind::Pair => 2,
             ComboKind::Tractor(n) => 2 * n,
+            ComboKind::Throw { cards, .. } => cards,
         }
     }
 }
@@ -131,30 +139,113 @@ pub fn classify(cards: &[i32], rules: &TractorRules) -> Option<Combo> {
     }
 
     let counts = identity_counts(cards);
-    // A pair / tractor is made only of full identity-pairs.
-    if !counts.values().all(|count| *count == 2) {
-        return None;
-    }
-    if counts.len() == 1 {
+    if cards.len() == 2 && counts.len() == 1 {
         return Some(Combo {
             kind: ComboKind::Pair,
             suit,
         });
     }
 
-    let mut positions: Vec<i32> = counts
-        .keys()
-        .map(|base| pair_position(*base, rules))
-        .collect();
-    positions.sort_unstable();
-    // Distinct, strictly consecutive pair positions => tractor.
-    if positions.windows(2).all(|w| w[1] == w[0] + 1) {
-        return Some(Combo {
-            kind: ComboKind::Tractor(positions.len()),
-            suit,
-        });
+    if counts.values().all(|count| *count == 2) {
+        let mut positions: Vec<i32> = counts
+            .keys()
+            .map(|base| pair_position(*base, rules))
+            .collect();
+        positions.sort_unstable();
+        // Distinct, strictly consecutive pair positions => tractor.
+        if positions.windows(2).all(|w| w[1] == w[0] + 1) {
+            return Some(Combo {
+                kind: ComboKind::Tractor(positions.len()),
+                suit,
+            });
+        }
     }
-    None
+
+    Some(Combo {
+        kind: ComboKind::Throw {
+            cards: cards.len(),
+            pairs: counts.values().map(|count| count / 2).sum(),
+        },
+        suit,
+    })
+}
+
+/// Decompose a throw into maximal tractors, remaining pairs and singles. The
+/// weakest beatable component is the card group forced out when a throw fails.
+pub fn throw_components(cards: &[i32], rules: &TractorRules) -> Option<Vec<Vec<i32>>> {
+    let classified = classify(cards, rules)?;
+    if !matches!(classified.kind, ComboKind::Throw { .. }) {
+        return None;
+    }
+
+    let mut by_base: HashMap<i32, Vec<i32>> = HashMap::new();
+    for card in cards {
+        by_base.entry(base_card(*card)).or_default().push(*card);
+    }
+    let mut pairs_by_position: HashMap<i32, Vec<Vec<i32>>> = HashMap::new();
+    let mut singles = Vec::new();
+    for (base, mut copies) in by_base {
+        copies.sort_unstable();
+        while copies.len() >= 2 {
+            let pair = vec![copies.remove(0), copies.remove(0)];
+            pairs_by_position
+                .entry(pair_position(base, rules))
+                .or_default()
+                .push(pair);
+        }
+        singles.extend(copies);
+    }
+
+    let mut components = Vec::new();
+    loop {
+        let mut positions: Vec<_> = pairs_by_position
+            .iter()
+            .filter(|(_, pairs)| !pairs.is_empty())
+            .map(|(position, _)| *position)
+            .collect();
+        positions.sort_unstable();
+        let mut best_run: Vec<i32> = Vec::new();
+        let mut current: Vec<i32> = Vec::new();
+        for position in positions {
+            if current
+                .last()
+                .is_some_and(|previous| position == *previous + 1)
+            {
+                current.push(position);
+            } else {
+                if current.len() > best_run.len() {
+                    best_run = current;
+                }
+                current = vec![position];
+            }
+        }
+        if current.len() > best_run.len() {
+            best_run = current;
+        }
+        if best_run.len() < 2 {
+            break;
+        }
+        let mut tractor = Vec::new();
+        for position in best_run {
+            if let Some(pair) = pairs_by_position.get_mut(&position).and_then(Vec::pop) {
+                tractor.extend(pair);
+            }
+        }
+        components.push(tractor);
+    }
+    for pairs in pairs_by_position.into_values() {
+        components.extend(pairs);
+    }
+    components.extend(singles.into_iter().map(|card| vec![card]));
+    components.sort_by_key(|component| {
+        combo_win_value(
+            component,
+            &classify(component, rules).expect("throw component is valid"),
+            rules,
+        )
+        .unwrap_or_default()
+    });
+    Some(components)
 }
 
 /// Ranking value of a played combo *if* it can beat the current lead, else
@@ -269,6 +360,7 @@ pub fn follow_is_legal(hand: &[i32], cards: &[i32], lead: &Combo, rules: &Tracto
         ComboKind::Single => 0,
         ComboKind::Pair => 1,
         ComboKind::Tractor(n) => n,
+        ComboKind::Throw { pairs, .. } => pairs,
     };
     if required_pairs > 0 {
         let pairs_in_hand = count_group_pairs(hand, lead_suit, rules);
@@ -348,7 +440,137 @@ pub fn enumerate_leads(hand: &[i32], rules: &TractorRules) -> Vec<Vec<i32>> {
             start = end + 1;
         }
         let _ = group;
+
+        // Useful throw candidates: every two-pair combination plus the full
+        // set of pairs in this group. This covers A-pair/Q-pair judgements
+        // without enumerating the exponential power set of a 52-card hand.
+        if pairs.len() >= 2 {
+            for left in 0..pairs.len() {
+                for right in (left + 1)..pairs.len() {
+                    let mut cards = pairs[left].1.clone();
+                    cards.extend_from_slice(&pairs[right].1);
+                    if matches!(
+                        classify(&cards, rules).map(|combo| combo.kind),
+                        Some(ComboKind::Throw { .. })
+                    ) {
+                        out.push(cards);
+                    }
+                }
+            }
+            let mut all_pairs = Vec::new();
+            for (_, pair) in &pairs {
+                all_pairs.extend_from_slice(pair);
+            }
+            if matches!(
+                classify(&all_pairs, rules).map(|combo| combo.kind),
+                Some(ComboKind::Throw { .. })
+            ) && !out.contains(&all_pairs)
+            {
+                out.push(all_pairs);
+            }
+        }
     }
+    out
+}
+
+/// Enumerate strategically distinct legal replies to a lead. Same-shape
+/// winners come from [`enumerate_leads`]; when a player cannot reproduce the
+/// shape, bounded subset enumeration also exposes alternative legal discards
+/// (for example avoiding a five while following a pair with two singles).
+pub fn enumerate_follows(hand: &[i32], lead: &Combo, rules: &TractorRules) -> Vec<Vec<i32>> {
+    const SUBSET_LIMIT: usize = 4_096;
+
+    let mut out = Vec::new();
+    if let Some(cards) = forced_follow(hand, lead, rules) {
+        out.push(cards);
+    }
+    for cards in enumerate_leads(hand, rules) {
+        if classify(&cards, rules).map(|combo| combo.kind) == Some(lead.kind)
+            && follow_is_legal(hand, &cards, lead, rules)
+            && !out.contains(&cards)
+        {
+            out.push(cards);
+        }
+    }
+
+    let lead_len = lead.kind.card_count();
+    let group: Vec<_> = hand
+        .iter()
+        .copied()
+        .filter(|card| card_in_group(*card, lead.suit, rules))
+        .collect();
+    let outside: Vec<_> = hand
+        .iter()
+        .copied()
+        .filter(|card| !card_in_group(*card, lead.suit, rules))
+        .collect();
+    let group_count = group.len().min(lead_len);
+    let outside_count = lead_len - group_count;
+    let subset_count = capped_choose(group.len(), group_count, SUBSET_LIMIT)
+        .saturating_mul(capped_choose(outside.len(), outside_count, SUBSET_LIMIT));
+    if subset_count <= SUBSET_LIMIT {
+        let group_subsets = combinations(&group, group_count);
+        let outside_subsets = combinations(&outside, outside_count);
+        for group_cards in &group_subsets {
+            for outside_cards in &outside_subsets {
+                let mut cards = Vec::with_capacity(lead_len);
+                cards.extend_from_slice(group_cards);
+                cards.extend_from_slice(outside_cards);
+                if follow_is_legal(hand, &cards, lead, rules) && !out.contains(&cards) {
+                    out.push(cards);
+                }
+            }
+        }
+    }
+    out
+}
+
+fn capped_choose(n: usize, k: usize, cap: usize) -> usize {
+    if k > n {
+        return cap.saturating_add(1);
+    }
+    let k = k.min(n - k);
+    let mut result = 1usize;
+    for index in 0..k {
+        result = result
+            .saturating_mul(n - index)
+            .checked_div(index + 1)
+            .unwrap_or(cap.saturating_add(1));
+        if result > cap {
+            return cap.saturating_add(1);
+        }
+    }
+    result
+}
+
+fn combinations(cards: &[i32], count: usize) -> Vec<Vec<i32>> {
+    fn visit(
+        cards: &[i32],
+        count: usize,
+        start: usize,
+        current: &mut Vec<i32>,
+        out: &mut Vec<Vec<i32>>,
+    ) {
+        if current.len() == count {
+            out.push(current.clone());
+            return;
+        }
+        let needed = count - current.len();
+        if cards.len().saturating_sub(start) < needed {
+            return;
+        }
+        for index in start..=cards.len() - needed {
+            current.push(cards[index]);
+            visit(cards, count, index + 1, current, out);
+            current.pop();
+        }
+    }
+
+    if count > cards.len() {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    visit(cards, count, 0, &mut Vec::with_capacity(count), &mut out);
     out
 }
 
@@ -372,6 +594,7 @@ pub fn forced_follow(hand: &[i32], lead: &Combo, rules: &TractorRules) -> Option
         ComboKind::Single => 0,
         ComboKind::Pair => 1,
         ComboKind::Tractor(n) => n,
+        ComboKind::Throw { pairs, .. } => pairs,
     };
     let mut group_pairs: Vec<Vec<i32>> = {
         let group: Vec<i32> = remaining
@@ -481,8 +704,11 @@ mod tests {
             classify(&[2, 102, 3, 103], &rules).map(|c| c.kind),
             Some(ComboKind::Tractor(2))
         ));
-        // rank3² + rank5² leaves a gap: two pairs, not a tractor.
-        assert!(classify(&[2, 102, 4, 104], &rules).is_none());
+        // rank3² + rank5² leaves a gap: a two-pair throw, not a tractor.
+        assert_eq!(
+            classify(&[2, 102, 4, 104], &rules).map(|combo| combo.kind),
+            Some(ComboKind::Throw { cards: 4, pairs: 2 })
+        );
     }
 
     #[test]
@@ -588,5 +814,32 @@ mod tests {
         assert!(has_tractor);
         assert!(has_pair);
         assert!(leads.iter().any(|cards| cards == &vec![20]));
+    }
+
+    #[test]
+    fn ace_pair_and_queen_pair_form_throw_with_weak_pair_first() {
+        let rules = rules(TractorRank::TWO);
+        let cards = vec![13, 113, 11, 111];
+        assert_eq!(
+            classify(&cards, &rules).map(|combo| combo.kind),
+            Some(ComboKind::Throw { cards: 4, pairs: 2 })
+        );
+        let components = throw_components(&cards, &rules).expect("throw components");
+        assert_eq!(components, vec![vec![11, 111], vec![13, 113]]);
+    }
+
+    #[test]
+    fn follow_candidates_include_point_avoiding_single_combinations() {
+        let rules = rules(TractorRank::TWO);
+        let lead = classify(&[8, 108], &rules).expect("pair lead");
+        let candidates = enumerate_follows(&[4, 5, 6], &lead, &rules);
+
+        assert!(candidates.contains(&vec![4, 5]));
+        assert!(candidates.contains(&vec![5, 6]));
+        assert!(
+            candidates
+                .iter()
+                .all(|cards| follow_is_legal(&[4, 5, 6], cards, &lead, &rules))
+        );
     }
 }

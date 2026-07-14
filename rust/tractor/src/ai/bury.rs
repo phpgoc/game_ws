@@ -37,11 +37,16 @@ struct SuitProfile {
 }
 
 pub(crate) fn choose_bury(state: &TractorGameState) -> Option<Vec<i32>> {
-    bury_decision(state).map(|decision| {
-        let BuryDecision { cards, mode } = decision;
-        let _runs_long_suit = matches!(mode, BuryMode::RunLongSuit(_));
-        cards
-    })
+    match bury_decision(state)? {
+        BuryDecision {
+            cards,
+            mode: BuryMode::ProtectBottom,
+        }
+        | BuryDecision {
+            cards,
+            mode: BuryMode::RunLongSuit(_),
+        } => Some(cards),
+    }
 }
 
 pub(crate) fn bury_decision(state: &TractorGameState) -> Option<BuryDecision> {
@@ -317,6 +322,27 @@ mod tests {
         );
         let decision = bury_decision(&state).expect("bury decision");
         assert_eq!(decision.mode, BuryMode::RunLongSuit(1));
+        assert!(
+            decision
+                .cards
+                .iter()
+                .all(|card| card_suit(*card) != Some(1))
+        );
+    }
+
+    #[test]
+    fn run_long_suit_plan_accepts_bottom_points_to_preserve_control() {
+        let state = state(
+            vec![
+                53, 1, 13, // limited trump
+                15, 115, 16, 116, 17, 117, 18, 118, 19, 119, // dominant hearts
+                31, 32, 43, // only off-route exit; 43 is a five
+            ],
+            3,
+        );
+        let decision = bury_decision(&state).expect("bury decision");
+        assert_eq!(decision.mode, BuryMode::RunLongSuit(1));
+        assert!(decision.cards.iter().any(|card| card_score(*card) > 0));
         assert!(
             decision
                 .cards

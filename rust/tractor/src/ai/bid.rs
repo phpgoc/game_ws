@@ -86,8 +86,14 @@ pub(crate) fn declaration_decision(
             cards.sort_unstable();
             let suit = card_suit(cards[0]).and_then(suit_from_index)?;
             let assessment = assess_trump(state, position, suit);
-            let threshold = declaration_threshold(cards.len(), current_strength > 0);
-            (forced || assessment.success_probability >= threshold)
+            // The end-of-deal fallback may be slightly more adventurous, but
+            // it must not turn into "show any lone level card". Passing and
+            // playing no-suit trump is preferable to volunteering a clearly
+            // weak contract.
+            let fallback_discount = if forced { 0.04 } else { 0.0 };
+            let threshold =
+                declaration_threshold(cards.len(), current_strength > 0) - fallback_discount;
+            (assessment.success_probability >= threshold)
                 .then_some(DeclarationDecision { cards, assessment })
         })
         .max_by(|left, right| {
@@ -264,7 +270,7 @@ mod tests {
     fn a_lone_level_card_does_not_force_a_weak_declaration() {
         let state = state(vec![1, 15, 16, 17, 18, 29, 30, 31, 32, 42, 43, 44, 45, 46]);
         assert!(declaration_decision(&state, 0, 0, false).is_none());
-        assert!(declaration_decision(&state, 0, 0, true).is_some());
+        assert!(declaration_decision(&state, 0, 0, true).is_none());
     }
 
     #[test]

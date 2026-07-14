@@ -359,6 +359,34 @@ impl TractorGameState {
         combo::trick_winner(&trick, &self.rules) == Some(position)
     }
 
+    fn failed_throw_component(&self, position: usize, cards: &[i32]) -> Option<Vec<i32>> {
+        let components = combo::throw_components(cards, &self.rules)?;
+        components
+            .into_iter()
+            .filter(|component| {
+                let Some(lead) = combo::classify(component, &self.rules) else {
+                    return false;
+                };
+                let Some(value) = combo::combo_win_value(component, &lead, &self.rules) else {
+                    return false;
+                };
+                self.active_positions()
+                    .into_iter()
+                    // Throw validation is a table rule, not a team-control
+                    // decision: a higher component at any of the other three
+                    // seats makes the proposed throw fail.
+                    .filter(|other| *other != position)
+                    .flat_map(|other| self.legal_follows(other, &lead))
+                    .filter_map(|reply| combo::combo_win_value(&reply, &lead, &self.rules))
+                    .any(|reply_value| reply_value > value)
+            })
+            .min_by_key(|component| {
+                let lead = combo::classify(component, &self.rules)
+                    .expect("throw component remains classifiable");
+                combo::combo_win_value(component, &lead, &self.rules).unwrap_or_default()
+            })
+    }
+
     /// A safe, rules-correct auto play used for timed-out humans and as the AI
     /// fallback. Leads the lowest single; when following, beats an opponent with
     /// the smallest winning play, feeds points to a winning partner, and
@@ -433,21 +461,7 @@ impl TractorGameState {
         let Some(hand) = self.hands.get(&position) else {
             return Vec::new();
         };
-        let mut out: Vec<Vec<i32>> = Vec::new();
-        // The rules-correct minimum play is always legal.
-        if let Some(base) = combo::forced_follow(hand, lead, &self.rules) {
-            out.push(base);
-        }
-        // Enrich with every same-shape combo the hand can form; keep only legal ones.
-        for cards in combo::enumerate_leads(hand, &self.rules) {
-            if combo::classify(&cards, &self.rules).map(|c| c.kind) == Some(lead.kind)
-                && combo::follow_is_legal(hand, &cards, lead, &self.rules)
-                && !out.contains(&cards)
-            {
-                out.push(cards);
-            }
-        }
-        out
+        combo::enumerate_follows(hand, lead, &self.rules)
     }
 
     fn deal_current_round(&mut self) -> Result<(), &'static str> {
@@ -524,9 +538,9 @@ impl TractorGameState {
         let mut auto_declaration = None;
         if finished {
             if self.round_index == 0 {
-                // AI is only the fallback when no human has declared. Waiting
-                // until the final card preserves the full first-round counter
-                // window and prevents an AI buzzer counter.
+                // Evaluate AI contracts from the completed first-round hand.
+                // Existing declarations set the counter strength; an AI still
+                // has to clear the probability threshold before overtaking it.
                 let current_strength = self
                     .declaration
                     .as_ref()
@@ -550,9 +564,10 @@ impl TractorGameState {
                                 .total_cmp(&right.assessment.success_probability)
                         })
                     });
-                // If everybody passed, pick the best AI candidate as a final
-                // table fallback so a single level card is not an automatic
-                // personal bid, while the round still always gets a dealer.
+                // If everybody passed, let a marginal-but-credible AI hand use
+                // a slightly lower final threshold. A weak lone level card is
+                // still a pass; the initial dealer and no-suit trump remain a
+                // valid outcome under the table rules.
                 let best_ai_declaration = assessed.or_else(|| {
                     self.declaration
                         .is_none()
@@ -832,7 +847,7 @@ impl TractorGameState {
         &mut self,
         position: usize,
         name: String,
-        cards: Vec<i32>,
+        mut cards: Vec<i32>,
     ) -> Result<WsTractorPlayedCards, &'static str> {
         if self.phase != TractorPhase::Play || self.current_position != position || cards.is_empty()
         {
@@ -841,12 +856,19 @@ impl TractorGameState {
         let hand = self.hands.get(&position).cloned().unwrap_or_default();
         match self.lead_combo() {
             None => {
-                // Leading: must be a well-formed single / pair / tractor in hand.
-                if combo::classify(&cards, &self.rules).is_none() {
+                // Leading: singles, pairs, tractors and same-group throws are
+                // accepted. A challenged throw is reduced by the referee to its
+                // weakest beatable component before any card leaves the hand.
+                let Some(proposed) = combo::classify(&cards, &self.rules) else {
                     return Err("invalid play shape");
-                }
+                };
                 if !candidate_in_hand(&hand, &cards) {
                     return Err("card not in hand");
+                }
+                if matches!(proposed.kind, crate::combo::ComboKind::Throw { .. })
+                    && let Some(fallback) = self.failed_throw_component(position, &cards)
+                {
+                    cards = fallback;
                 }
             }
             Some(lead) => {
@@ -1072,6 +1094,27 @@ mod tests {
         );
         assert_eq!(state.dealer_position, 1);
         assert_eq!(state.rules.trump_suit, Some(TractorSuit::SPADE));
+        assert_eq!(state.phase, TractorPhase::Bury);
+    }
+
+    #[test]
+    fn weak_ai_single_passes_at_end_of_first_deal() {
+        let mut state = test_state();
+        state.phase = TractorPhase::Deal;
+        state.round_index = 0;
+        state.rules.target_rank = TractorRank::TWO;
+        state.hands.insert(1, vec![1]);
+        state.deal_queue.push_back((2, 3));
+        state.base.lock().unwrap().mark_ai_position(1);
+
+        let (_, _, finished, auto_declaration) =
+            state.deal_next_card().expect("deal the final card");
+
+        assert!(finished);
+        assert!(auto_declaration.is_none());
+        assert!(state.declaration.is_none());
+        assert_eq!(state.dealer_position, 0);
+        assert_eq!(state.rules.trump_suit, None);
         assert_eq!(state.phase, TractorPhase::Bury);
     }
 
@@ -1363,6 +1406,42 @@ mod tests {
 
         // Position 1's higher suit-0 tractor takes the trick.
         assert_eq!(state.last_trick_winner, Some(1));
+    }
+
+    #[test]
+    fn failed_ace_queen_pair_throw_forces_out_queen_pair() {
+        let mut state = test_state();
+        state.rules.target_rank = TractorRank::TWO;
+        state.hands.insert(0, vec![13, 113, 11, 111]);
+        state.hands.insert(1, vec![12, 112, 20, 21]);
+        state.hands.insert(2, vec![30, 31, 32, 33]);
+        state.hands.insert(3, vec![42, 43, 44, 45]);
+
+        let played = state
+            .play_cards(0, "u0".to_owned(), vec![13, 113, 11, 111])
+            .expect("throw is resolved by referee");
+
+        assert_eq!(played.cards, vec![11, 111]);
+        assert_eq!(state.current_trick[0].cards, vec![11, 111]);
+        assert_eq!(state.hands[&0], vec![13, 113]);
+    }
+
+    #[test]
+    fn partner_higher_pair_also_breaks_a_throw() {
+        let mut state = test_state();
+        state.rules.target_rank = TractorRank::TWO;
+        state.hands.insert(0, vec![13, 113, 11, 111]);
+        state.hands.insert(1, vec![20, 21, 22, 23]);
+        // Position 2 is the thrower's partner, but table validation must still
+        // notice that their K pair can beat the proposed Q component.
+        state.hands.insert(2, vec![12, 112, 30, 31]);
+        state.hands.insert(3, vec![42, 43, 44, 45]);
+
+        let played = state
+            .play_cards(0, "u0".to_owned(), vec![13, 113, 11, 111])
+            .expect("throw is resolved by referee");
+
+        assert_eq!(played.cards, vec![11, 111]);
     }
 
     #[test]
