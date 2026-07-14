@@ -680,7 +680,9 @@ pub(crate) fn claim_window_matches_source(
     state: &ShenyangMahjongLoopState,
     claim_window: &ClaimWindowState,
 ) -> bool {
-    if state.current_position != claim_window.from_position
+    if !is_valid_tile(claim_window.tile)
+        || has_impossible_known_tile_count(state, claim_window.tile)
+        || state.current_position != claim_window.from_position
         || !state
             .players_snapshot()
             .contains_key(&claim_window.from_position)
@@ -6008,6 +6010,40 @@ mod tests {
     }
 
     #[test]
+    fn claim_window_rejects_invalid_tile_with_matching_discard() {
+        let mut state = playable_state();
+        state.current_position = 0;
+        state.discards.insert(0, vec![99]);
+        let claim_window = ClaimWindowState {
+            tile: 99,
+            from_position: 0,
+            kind: ClaimWindowKind::Discard,
+            eligible_positions: vec![1],
+            responses: HashMap::new(),
+        };
+
+        assert!(!claim_window_matches_source(&state, &claim_window));
+    }
+
+    #[test]
+    fn claim_window_rejects_impossible_fifth_copy_with_matching_discard() {
+        let mut state = playable_state();
+        state.current_position = 0;
+        state.discards.insert(0, vec![3]);
+        state.hands.insert(1, vec![3, 3, 3, 3]);
+        let claim_window = ClaimWindowState {
+            tile: 3,
+            from_position: 0,
+            kind: ClaimWindowKind::Discard,
+            eligible_positions: vec![1],
+            responses: HashMap::new(),
+        };
+
+        assert!(has_impossible_known_tile_count(&state, 3));
+        assert!(!claim_window_matches_source(&state, &claim_window));
+    }
+
+    #[test]
     fn resolve_claim_window_recovers_from_unknown_source() {
         let mut state = playable_state();
         state.current_position = 0;
@@ -9919,6 +9955,24 @@ mod tests {
         state.claim_window = Some(ClaimWindowState {
             tile: 3,
             from_position: 9,
+            kind: ClaimWindowKind::Discard,
+            eligible_positions: vec![1],
+            responses: HashMap::new(),
+        });
+
+        let snapshot = build_table_snapshot_event_with_configs(&state, 1, &relaxed_configs());
+
+        assert!(snapshot.claim_window.is_none());
+    }
+
+    #[test]
+    fn table_snapshot_hides_claim_window_with_invalid_tile() {
+        let mut state = playable_state();
+        state.current_position = 0;
+        state.discards.insert(0, vec![99]);
+        state.claim_window = Some(ClaimWindowState {
+            tile: 99,
+            from_position: 0,
             kind: ClaimWindowKind::Discard,
             eligible_positions: vec![1],
             responses: HashMap::new(),
