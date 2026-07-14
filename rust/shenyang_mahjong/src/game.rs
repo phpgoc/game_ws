@@ -3105,6 +3105,24 @@ mod tests {
     }
 
     #[test]
+    fn claim_options_hide_gang_when_only_invalid_wall_tiles_remain() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![3, 3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31]);
+        state.wall = vec![99, -1];
+
+        let options = build_claim_options(&state, 3, 0, &HashMap::new());
+        let player = options
+            .iter()
+            .find(|option| option.position == 1)
+            .expect("player should still be able to peng");
+
+        assert!(player.can_peng);
+        assert!(!player.can_gang);
+    }
+
+    #[test]
     fn claim_options_reject_public_fifth_copy_used_by_winner() {
         let mut state = playable_state();
         state

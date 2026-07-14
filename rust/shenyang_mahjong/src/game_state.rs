@@ -220,7 +220,12 @@ impl ShenyangMahjongLoopState {
     }
 
     pub fn draw_for_position(&mut self, position: usize) -> Option<i32> {
-        let tile = self.wall.pop()?;
+        let tile = loop {
+            let tile = self.wall.pop()?;
+            if SHENYANG_MAHJONG_TILE_KINDS.contains(&tile) {
+                break tile;
+            }
+        };
         let hand = self.hands.entry(position).or_default();
         hand.push(tile);
         sort_tiles(hand);
@@ -435,7 +440,10 @@ impl ShenyangMahjongLoopState {
     }
 
     pub fn wall_count(&self) -> usize {
-        self.wall.len()
+        self.wall
+            .iter()
+            .filter(|tile| SHENYANG_MAHJONG_TILE_KINDS.contains(tile))
+            .count()
     }
 }
 
@@ -535,6 +543,26 @@ mod tests {
             ShenyangMahjongLoopState::shuffle_wall_with_seed(2026070401),
             ShenyangMahjongLoopState::shuffle_wall_with_seed(2026070402)
         );
+    }
+
+    #[test]
+    fn wall_count_ignores_invalid_wall_tiles() {
+        let mut state = state_with_players();
+        state.wall = vec![35, 99, -1];
+
+        assert_eq!(state.wall_count(), 1);
+    }
+
+    #[test]
+    fn draw_skips_invalid_wall_tiles() {
+        let mut state = state_with_players();
+        state.wall = vec![35, 99, -1];
+
+        assert_eq!(state.draw_for_position(0), Some(35));
+        assert_eq!(state.hands.get(&0), Some(&vec![35]));
+        assert!(state.wall.is_empty());
+        assert_eq!(state.wall_count(), 0);
+        assert_eq!(state.last_drawn_tile, Some(35));
     }
 
     fn state_with_players() -> ShenyangMahjongLoopState {
