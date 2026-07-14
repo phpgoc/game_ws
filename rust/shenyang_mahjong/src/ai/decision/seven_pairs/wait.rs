@@ -144,8 +144,10 @@ fn seven_pairs_wait_tile_score_with_simulated_discards(
     if remaining <= 0.0 {
         return -240.0 - public_discards * 12.0;
     }
-    if seven_pairs_regular_wait_reaches_cap(table) {
-        return remaining * 6.0 + seven_pairs_wait_shape_tiebreaker(wait_tile)
+    let speed_first = table.dealer_position == position || is_late_defense_round(table);
+    if speed_first || seven_pairs_regular_wait_reaches_cap(table) {
+        let remaining_weight = if speed_first { 14.0 } else { 6.0 };
+        return remaining * remaining_weight + seven_pairs_wait_shape_tiebreaker(wait_tile)
             - public_discards * 12.0;
     }
     let shape = if is_wind(wait_tile) {

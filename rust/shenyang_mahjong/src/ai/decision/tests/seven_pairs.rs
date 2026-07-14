@@ -625,6 +625,35 @@ fn discard_sets_seven_pairs_wait_on_live_terminal_before_middle_tile() {
 }
 
 #[test]
+fn speed_first_seven_pairs_wait_prefers_three_live_middle_copies_over_two_terminals() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.dealer_position = 0;
+    table.wall_count = 70;
+    table.seats.get_mut(&1).unwrap().melds = vec![test_chi_meld(7)];
+    let hand = vec![1, 1, 2, 2, 5, 9, 11, 11, 12, 12, 21, 21, 22, 22];
+    let middle_wait = remove_n_tiles(&hand, 9, 1);
+    let terminal_wait = remove_n_tiles(&hand, 5, 1);
+
+    assert_eq!(remaining_tile_count(&middle_wait, &table, 0, 5), 3);
+    assert_eq!(remaining_tile_count(&terminal_wait, &table, 0, 9), 2);
+    assert!(
+        seven_pairs_wait_tile_score(5, &middle_wait, &table, 0)
+            > seven_pairs_wait_tile_score(9, &terminal_wait, &table, 0)
+    );
+    assert_eq!(
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(9)
+    );
+
+    table.dealer_position = 3;
+    table.wall_count = FINAL_DEFENSE_WALL_COUNT;
+    assert!(
+        seven_pairs_wait_tile_score(5, &middle_wait, &table, 0)
+            > seven_pairs_wait_tile_score(9, &terminal_wait, &table, 0)
+    );
+}
+
+#[test]
 fn discard_sets_seven_pairs_wait_by_breaking_dead_triplet_wait() {
     let table = table_with_discards(1, vec![31]);
     let hand = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 21, 21, 31, 31, 31];
