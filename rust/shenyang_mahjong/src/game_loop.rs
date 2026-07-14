@@ -51,6 +51,10 @@ fn settlement_should_stop(state: &Arc<std::sync::Mutex<ShenyangMahjongLoopState>
     state.players_snapshot().len() != 4 || state.stop_requested()
 }
 
+fn should_resolve_timed_out_claims(state: &ShenyangMahjongLoopState) -> bool {
+    state.turn_countdown() == 0 && state.claim_window.is_some()
+}
+
 pub(crate) fn start_game_loop(
     room_key: String,
     state: Arc<std::sync::Mutex<ShenyangMahjongLoopState>>,
@@ -148,8 +152,8 @@ pub(crate) fn start_game_loop(
                             break;
                         }
                         if guard.turn_countdown() == 0 {
-                            if let Some(claim_window) = &guard.claim_window {
-                                should_resolve_claims = !claim_window.eligible_positions.is_empty();
+                            if guard.claim_window.is_some() {
+                                should_resolve_claims = should_resolve_timed_out_claims(&guard);
                             } else {
                                 should_auto_discard =
                                     auto_discard_tile(&guard, guard.current_position)
@@ -296,5 +300,21 @@ mod tests {
         state.last_drawn_tile = Some(2);
 
         assert_eq!(auto_discard_tile(&state, 0), Some(2));
+    }
+
+    #[test]
+    fn timed_out_empty_claim_window_is_resolved() {
+        let base = Arc::new(Mutex::new(CommonGameState::default()));
+        let mut state = ShenyangMahjongLoopState::new(base);
+        state.claim_window = Some(crate::game_state::ClaimWindowState {
+            tile: 3,
+            from_position: 0,
+            kind: crate::game_state::ClaimWindowKind::Discard,
+            eligible_positions: Vec::new(),
+            responses: HashMap::new(),
+        });
+        state.set_turn_countdown(0);
+
+        assert!(should_resolve_timed_out_claims(&state));
     }
 }

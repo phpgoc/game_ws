@@ -676,12 +676,39 @@ fn rob_gang_claim_matches_source(
     can_added_gang(hand, melds, tile)
 }
 
+fn claim_window_participants_are_valid(
+    state: &ShenyangMahjongLoopState,
+    claim_window: &ClaimWindowState,
+) -> bool {
+    let player_positions = state
+        .players_snapshot()
+        .keys()
+        .copied()
+        .collect::<HashSet<_>>();
+    let eligible_positions = claim_window
+        .eligible_positions
+        .iter()
+        .copied()
+        .collect::<HashSet<_>>();
+
+    !eligible_positions.is_empty()
+        && eligible_positions.len() == claim_window.eligible_positions.len()
+        && eligible_positions.iter().all(|position| {
+            *position != claim_window.from_position && player_positions.contains(position)
+        })
+        && claim_window
+            .responses
+            .keys()
+            .all(|position| eligible_positions.contains(position))
+}
+
 pub(crate) fn claim_window_matches_source(
     state: &ShenyangMahjongLoopState,
     claim_window: &ClaimWindowState,
 ) -> bool {
     if !is_valid_tile(claim_window.tile)
         || has_impossible_known_tile_count(state, claim_window.tile)
+        || !claim_window_participants_are_valid(state, claim_window)
         || state.current_position != claim_window.from_position
         || !state
             .players_snapshot()
@@ -6044,6 +6071,31 @@ mod tests {
     }
 
     #[test]
+    fn claim_window_rejects_malformed_participants() {
+        let mut state = playable_state();
+        state.current_position = 0;
+        state.discards.insert(0, vec![3]);
+
+        for (eligible_positions, responses) in [
+            (vec![], HashMap::new()),
+            (vec![0], HashMap::new()),
+            (vec![1, 1], HashMap::new()),
+            (vec![1, 9], HashMap::new()),
+            (vec![1], HashMap::from([(2, ClaimResponse::Pass)])),
+        ] {
+            let claim_window = ClaimWindowState {
+                tile: 3,
+                from_position: 0,
+                kind: ClaimWindowKind::Discard,
+                eligible_positions,
+                responses,
+            };
+
+            assert!(!claim_window_matches_source(&state, &claim_window));
+        }
+    }
+
+    #[test]
     fn resolve_claim_window_recovers_from_unknown_source() {
         let mut state = playable_state();
         state.current_position = 0;
@@ -9975,6 +10027,24 @@ mod tests {
             from_position: 0,
             kind: ClaimWindowKind::Discard,
             eligible_positions: vec![1],
+            responses: HashMap::new(),
+        });
+
+        let snapshot = build_table_snapshot_event_with_configs(&state, 1, &relaxed_configs());
+
+        assert!(snapshot.claim_window.is_none());
+    }
+
+    #[test]
+    fn table_snapshot_hides_claim_window_with_malformed_participants() {
+        let mut state = playable_state();
+        state.current_position = 0;
+        state.discards.insert(0, vec![3]);
+        state.claim_window = Some(ClaimWindowState {
+            tile: 3,
+            from_position: 0,
+            kind: ClaimWindowKind::Discard,
+            eligible_positions: vec![1, 9],
             responses: HashMap::new(),
         });
 
