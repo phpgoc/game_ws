@@ -22,7 +22,7 @@ use crate::game_loop::start_game_loop;
 use crate::game_setting::build_shenyang_mahjong_settings;
 use crate::game_state::{
     ClaimResponse, ClaimWindowKind, ClaimWindowState, ShenyangMahjongGameState,
-    ShenyangMahjongLoopState, build_meld,
+    ShenyangMahjongLoopState, build_meld, meld_source_is_valid_for_positions,
 };
 #[cfg(test)]
 use crate::rules::is_single_wait_shape_with_rule;
@@ -996,13 +996,12 @@ fn meld_source_is_valid_for_position(
     position: usize,
     meld: &WsShenyangMahjongMeld,
 ) -> bool {
-    match (meld.kind, meld.from_position) {
-        (ShenyangMahjongMeldKind::GANG, None) => true,
-        (_, Some(source)) => usize::try_from(source).ok().is_some_and(|source| {
-            source != position && state.players_snapshot().contains_key(&source)
-        }),
-        _ => false,
-    }
+    let player_positions = state
+        .players_snapshot()
+        .keys()
+        .copied()
+        .collect::<HashSet<_>>();
+    meld_source_is_valid_for_positions(meld, position, &player_positions)
 }
 
 fn position_meld_sources_are_valid(state: &ShenyangMahjongLoopState, position: usize) -> bool {
@@ -6481,6 +6480,31 @@ mod tests {
     }
 
     #[test]
+    fn self_draw_hu_rejects_chi_from_non_previous_position() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(0, vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+        state.melds.insert(
+            0,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::CHI,
+                vec![1, 2, 3],
+                Some(1),
+            )],
+        );
+        state.last_drawn_tile = Some(35);
+        let configs = HashMap::from([("win_rule".to_owned(), WIN_RULE_SHENYANG_BASIC)]);
+
+        assert!(is_complete_win_with_configs(
+            state.hands.get(&0).unwrap(),
+            state.melds.get(&0).unwrap(),
+            &configs
+        ));
+        assert!(!can_self_draw_hu_with_configs(&state, 0, &configs));
+    }
+
+    #[test]
     fn self_draw_hu_rejects_complete_open_hand_without_draw() {
         let mut state = playable_state();
         state
@@ -6740,7 +6764,7 @@ mod tests {
             vec![build_meld(
                 ShenyangMahjongMeldKind::CHI,
                 vec![2, 3, 4],
-                Some(1),
+                Some(3),
             )],
         );
         state.last_drawn_tile = Some(8);
@@ -6755,7 +6779,7 @@ mod tests {
             vec![build_meld(
                 ShenyangMahjongMeldKind::CHI,
                 vec![1, 2, 3],
-                Some(1),
+                Some(3),
             )],
         );
         state.last_drawn_tile = Some(35);
@@ -7938,8 +7962,8 @@ mod tests {
             1,
             vec![
                 build_meld(ShenyangMahjongMeldKind::CHI, vec![1, 2, 3], Some(0)),
-                build_meld(ShenyangMahjongMeldKind::CHI, vec![11, 12, 13], Some(2)),
-                build_meld(ShenyangMahjongMeldKind::CHI, vec![21, 22, 23], Some(3)),
+                build_meld(ShenyangMahjongMeldKind::CHI, vec![11, 12, 13], Some(0)),
+                build_meld(ShenyangMahjongMeldKind::CHI, vec![21, 22, 23], Some(0)),
                 build_meld(ShenyangMahjongMeldKind::PENG, vec![31, 31, 31], Some(0)),
             ],
         );
@@ -8198,7 +8222,7 @@ mod tests {
             vec![build_meld(
                 ShenyangMahjongMeldKind::CHI,
                 vec![21, 22, 23],
-                Some(2),
+                Some(0),
             )],
         );
         state.enter_settlement_with_reverse_win(
@@ -8234,7 +8258,7 @@ mod tests {
             vec![build_meld(
                 ShenyangMahjongMeldKind::CHI,
                 vec![21, 22, 23],
-                Some(2),
+                Some(0),
             )],
         );
         state.enter_settlement(vec![1], Some(0), Some(4), false);
@@ -8264,7 +8288,7 @@ mod tests {
             vec![build_meld(
                 ShenyangMahjongMeldKind::CHI,
                 vec![21, 22, 23],
-                Some(2),
+                Some(0),
             )],
         );
         closed_payer_state.enter_settlement_with_reverse_win(
@@ -8315,7 +8339,7 @@ mod tests {
                 vec![build_meld(
                     ShenyangMahjongMeldKind::CHI,
                     vec![21, 22, 23],
-                    Some(2),
+                    Some(0),
                 )],
             );
             invalid_source_state.enter_settlement_with_reverse_win(
@@ -8367,7 +8391,7 @@ mod tests {
             vec![build_meld(
                 ShenyangMahjongMeldKind::CHI,
                 vec![21, 22, 23],
-                Some(2),
+                Some(0),
             )],
         );
         malformed_open_payer_state.enter_settlement_with_reverse_win(
@@ -8418,7 +8442,7 @@ mod tests {
             vec![build_meld(
                 ShenyangMahjongMeldKind::CHI,
                 vec![21, 22, 23],
-                Some(2),
+                Some(0),
             )],
         );
         invalid_tile_open_payer_state.enter_settlement_with_reverse_win(
@@ -8459,7 +8483,7 @@ mod tests {
             vec![build_meld(
                 ShenyangMahjongMeldKind::CHI,
                 vec![1, 2, 3],
-                Some(1),
+                Some(3),
             )],
         );
         open_payer_state.melds.insert(
@@ -8467,7 +8491,7 @@ mod tests {
             vec![build_meld(
                 ShenyangMahjongMeldKind::CHI,
                 vec![21, 22, 23],
-                Some(2),
+                Some(0),
             )],
         );
         open_payer_state.enter_settlement_with_reverse_win(
@@ -8928,7 +8952,7 @@ mod tests {
             vec![build_meld(
                 ShenyangMahjongMeldKind::CHI,
                 vec![21, 22, 23],
-                Some(2),
+                Some(0),
             )],
         );
         state.melds.insert(3, vec![open_peng_meld(34, 2)]);

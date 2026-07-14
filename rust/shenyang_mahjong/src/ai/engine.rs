@@ -914,7 +914,7 @@ mod tests {
             vec![WsShenyangMahjongMeld {
                 kind: ShenyangMahjongMeldKind::CHI,
                 tiles: vec![2, 3, 4],
-                from_position: Some(1),
+                from_position: Some(3),
             }],
         );
         state.last_drawn_tile = Some(8);

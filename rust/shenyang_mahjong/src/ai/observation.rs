@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
-use share_type_public::games::shenyang_mahjong::{ShenyangMahjongMeldKind, WsShenyangMahjongMeld};
+use share_type_public::games::shenyang_mahjong::WsShenyangMahjongMeld;
 
-use crate::game_state::ShenyangMahjongLoopState;
+use crate::game_state::{ShenyangMahjongLoopState, meld_source_is_valid_for_positions};
 
 #[derive(Debug, Clone)]
 pub struct AiClaimView {
@@ -31,20 +31,6 @@ pub struct AiSeatView {
     pub melds: Vec<WsShenyangMahjongMeld>,
 }
 
-fn meld_source_is_valid_for_public_view(
-    meld: &WsShenyangMahjongMeld,
-    position: usize,
-    player_positions: &HashSet<usize>,
-) -> bool {
-    match (meld.kind, meld.from_position) {
-        (ShenyangMahjongMeldKind::GANG, None) => true,
-        (_, Some(source)) => usize::try_from(source)
-            .ok()
-            .is_some_and(|source| source != position && player_positions.contains(&source)),
-        _ => false,
-    }
-}
-
 pub fn build_public_table_with_configs(
     state: &ShenyangMahjongLoopState,
     configs: &HashMap<String, i32>,
@@ -69,7 +55,7 @@ pub fn build_public_table_with_configs(
                     .into_iter()
                     .flatten()
                     .filter(|meld| {
-                        meld_source_is_valid_for_public_view(meld, position, &player_positions)
+                        meld_source_is_valid_for_positions(meld, position, &player_positions)
                     })
                     .cloned()
                     .collect(),
@@ -125,15 +111,18 @@ mod tests {
                 test_meld(ShenyangMahjongMeldKind::PENG, 6, None),
                 test_meld(ShenyangMahjongMeldKind::PENG, 7, Some(-1)),
                 test_meld(ShenyangMahjongMeldKind::PENG, 8, Some(9)),
+                test_meld(ShenyangMahjongMeldKind::CHI, 11, Some(0)),
+                test_meld(ShenyangMahjongMeldKind::CHI, 21, Some(2)),
             ],
         );
 
         let table = build_public_table_with_configs(&state, &HashMap::new());
         let melds = &table.seats.get(&1).expect("seat 1").melds;
 
-        assert_eq!(melds.len(), 2);
+        assert_eq!(melds.len(), 3);
         assert_eq!(melds[0].from_position, Some(0));
         assert_eq!(melds[1].from_position, None);
+        assert_eq!(melds[2].from_position, Some(0));
     }
 
     fn test_meld(
@@ -141,14 +130,14 @@ mod tests {
         tile: i32,
         from_position: Option<i32>,
     ) -> WsShenyangMahjongMeld {
-        let tile_count = if kind == ShenyangMahjongMeldKind::GANG {
-            4
-        } else {
-            3
+        let tiles = match kind {
+            ShenyangMahjongMeldKind::GANG => vec![tile; 4],
+            ShenyangMahjongMeldKind::PENG => vec![tile; 3],
+            ShenyangMahjongMeldKind::CHI => vec![tile, tile + 1, tile + 2],
         };
         WsShenyangMahjongMeld {
             kind,
-            tiles: vec![tile; tile_count],
+            tiles,
             from_position,
         }
     }

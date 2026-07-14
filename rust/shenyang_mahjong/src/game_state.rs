@@ -94,6 +94,32 @@ pub fn build_meld(
     }
 }
 
+pub(crate) fn meld_source_is_valid_for_positions(
+    meld: &WsShenyangMahjongMeld,
+    position: usize,
+    player_positions: &HashSet<usize>,
+) -> bool {
+    match (meld.kind, meld.from_position) {
+        (ShenyangMahjongMeldKind::GANG, None) => true,
+        (_, Some(source)) => usize::try_from(source).ok().is_some_and(|source| {
+            source != position
+                && player_positions.contains(&source)
+                && (meld.kind != ShenyangMahjongMeldKind::CHI
+                    || next_player_position(source, player_positions) == Some(position))
+        }),
+        _ => false,
+    }
+}
+
+fn next_player_position(current: usize, player_positions: &HashSet<usize>) -> Option<usize> {
+    player_positions
+        .iter()
+        .copied()
+        .filter(|position| *position > current)
+        .min()
+        .or_else(|| player_positions.iter().copied().min())
+}
+
 pub fn claim_action_to_play_action(response: &ClaimResponse) -> ShenyangMahjongAction {
     match response {
         ClaimResponse::Pass => ShenyangMahjongAction::PASS,
