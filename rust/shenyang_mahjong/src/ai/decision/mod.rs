@@ -30,9 +30,9 @@ use share_type_public::games::shenyang_mahjong::{
 };
 
 use crate::rules::{
-    WIN_RULE_SHENYANG_BASIC, can_chi, can_gang, can_peng, is_complete_win_with_melds_and_open_rule,
-    is_piao_hu_win, is_pure_one_suit_win, is_seven_pairs_win,
-    is_single_wait_shape_with_known_unavailable_tiles_and_open_rule,
+    WIN_RULE_SHENYANG_BASIC, can_chi, can_gang, can_peng, has_edge_wait_decomposition,
+    is_complete_win_with_melds_and_open_rule, is_piao_hu_win, is_pure_one_suit_win,
+    is_seven_pairs_win, is_single_wait_shape_with_known_unavailable_tiles_and_open_rule,
     shenyang_score_concealed_dragon_triplet_fan, shenyang_score_four_gui_yi_fan,
     shenyang_score_meld_fan, sort_tiles,
 };

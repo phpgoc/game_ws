@@ -246,6 +246,32 @@ fn non_dealer_can_choose_single_wait_for_extra_fan_before_late_round() {
 }
 
 #[test]
+fn non_dealer_can_choose_edge_wait_for_extra_fan() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(11), test_chi_meld(21)];
+    let hand = vec![1, 1, 2, 4, 4, 6, 7, 8];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let edge_wait = remove_n_tiles(&hand, 1, 1);
+    let closed_middle_wait = remove_n_tiles(&hand, 4, 1);
+
+    assert!(
+        ready_tile_score_after_discard(&edge_wait, melds, &table, 0, WIN_RULE_SHENYANG_BASIC, 1,)
+            > ready_tile_score_after_discard(
+                &closed_middle_wait,
+                melds,
+                &table,
+                0,
+                WIN_RULE_SHENYANG_BASIC,
+                4,
+            )
+    );
+    assert_eq!(
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(1)
+    );
+}
+
+#[test]
 fn open_meld_filter_ignores_malformed_melds() {
     let malformed_peng = WsShenyangMahjongMeld {
         kind: ShenyangMahjongMeldKind::PENG,

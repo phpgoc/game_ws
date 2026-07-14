@@ -1,5 +1,7 @@
 use super::*;
 
+const EDGE_WAIT_BONUS: f64 = 10.0;
+
 pub(in crate::ai::decision) fn estimated_four_gui_yi_fan(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -289,8 +291,13 @@ pub(in crate::ai::decision) fn fan_wait_bias(
     } else {
         0.0
     };
+    let edge_wait_bonus = if has_edge_wait_decomposition(win_hand, win_tile) {
+        EDGE_WAIT_BONUS
+    } else {
+        0.0
+    };
     let live_wait_scale = if remaining == 2 { 0.45 } else { 1.0 };
-    (62.0 + terminal_or_honor_bonus)
+    (62.0 + terminal_or_honor_bonus + edge_wait_bonus)
         * live_wait_scale
         * pressured_open_wait_scale(table, position, melds)
 }

@@ -318,6 +318,71 @@ fn estimated_fan_counts_terminal_single_wait_once() {
 }
 
 #[test]
+fn fan_wait_bias_rewards_edge_wait_decomposition() {
+    let table = table_with_discards(1, Vec::new());
+    let melds = vec![test_peng_meld(11), test_chi_meld(21)];
+    let edge_win = vec![1, 2, 3, 4, 4, 6, 7, 8];
+    let closed_middle_win = vec![1, 1, 2, 3, 4, 6, 7, 8];
+
+    assert!(has_edge_wait_decomposition(&edge_win, 3));
+    assert!(!has_edge_wait_decomposition(&closed_middle_win, 3));
+    let edge_score = fan_wait_bias(
+        &edge_win,
+        &melds,
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+        3,
+        4,
+        &[],
+    );
+    let closed_middle_score = fan_wait_bias(
+        &closed_middle_win,
+        &melds,
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+        3,
+        4,
+        &[],
+    );
+
+    assert!(edge_score > closed_middle_score);
+
+    let mut speed_first_table = table.clone();
+    speed_first_table.dealer_position = 0;
+    assert_eq!(
+        fan_wait_bias(
+            &edge_win,
+            &melds,
+            &speed_first_table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+            3,
+            4,
+            &[],
+        ),
+        0.0
+    );
+
+    speed_first_table.dealer_position = 1;
+    speed_first_table.wall_count = FINAL_DEFENSE_WALL_COUNT;
+    assert_eq!(
+        fan_wait_bias(
+            &edge_win,
+            &melds,
+            &speed_first_table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+            3,
+            4,
+            &[],
+        ),
+        0.0
+    );
+}
+
+#[test]
 fn estimated_fan_counts_terminal_single_wait_when_public_discards_exhaust_other_wait() {
     let table = table_with_discards(1, vec![4, 4, 4, 4]);
     let hand_after_discard = vec![2, 3, 21, 22, 23, 25, 25, 31, 31, 31];

@@ -355,7 +355,7 @@ fn is_dragon_tile(tile: i32) -> bool {
     matches!(tile, 35..=37)
 }
 
-fn is_edge_wait(tiles: &[i32], win_tile: i32) -> bool {
+pub(crate) fn has_edge_wait_decomposition(tiles: &[i32], win_tile: i32) -> bool {
     if !is_suited_tile(win_tile) {
         return false;
     }
@@ -513,7 +513,7 @@ pub fn is_single_wait_shape_with_known_unavailable_tiles_and_open_rule(
     is_seven_pairs_single_wait(tiles, win_tile)
         || is_pair_single_wait(tiles, win_tile)
         || is_closed_middle_wait(tiles, win_tile)
-        || is_edge_wait(tiles, win_tile)
+        || has_edge_wait_decomposition(tiles, win_tile)
         || is_terminal_tile(win_tile)
         || is_honor_tile(win_tile)
 }
