@@ -69,7 +69,7 @@ pub(in crate::ai::decision) fn closed_opponent_threat_discard_bias(
         .filter(|(seat_position, seat)| {
             **seat_position != position && is_closed_opponent_threat_candidate(seat, table)
         })
-        .map(|(_, seat)| {
+        .map(|(seat_position, seat)| {
             let base = if is_dragon(tile) {
                 -13.0
             } else if is_wind(tile) {
@@ -86,6 +86,7 @@ pub(in crate::ai::decision) fn closed_opponent_threat_discard_bias(
                 * closed_hand_count_pressure_scale(seat)
                 * closed_route_commitment_scale(seat)
                 * closed_suit_shedding_scale(seat, tile)
+                * dealer_opponent_threat_scale(table, *seat_position)
         })
         .sum()
 }

@@ -59,15 +59,16 @@ pub(in crate::ai::decision) fn pure_one_suit_threat_discard_bias(
         .seats
         .iter()
         .filter(|(seat_position, _)| **seat_position != position)
-        .filter_map(|(_, seat)| {
+        .filter_map(|(seat_position, seat)| {
             let (threat_suit, known_melds) = pure_one_suit_threat_suit(seat)?;
             (threat_suit == suit && !seat_has_open_meld_tile(seat, tile)).then_some((
+                *seat_position,
                 seat,
                 known_melds,
                 threat_suit,
             ))
         })
-        .map(|(seat, known_melds, threat_suit)| {
+        .map(|(seat_position, seat, known_melds, threat_suit)| {
             let base = if tile_is_terminal(tile) { 7.0 } else { 10.0 };
             let pair_penalty = pure_one_suit_threat_pair_penalty(tile, own_tile_count);
             let meld_pressure = pure_one_suit_threat_meld_pressure(known_melds);
@@ -90,6 +91,7 @@ pub(in crate::ai::decision) fn pure_one_suit_threat_discard_bias(
             -((base + pair_penalty) * meld_pressure * late_pressure * hand_pressure * discard_scale
                 - exposed_discount)
                 .max(2.0)
+                * dealer_opponent_threat_scale(table, seat_position)
         })
         .sum()
 }

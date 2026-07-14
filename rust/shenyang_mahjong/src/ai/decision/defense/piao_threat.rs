@@ -18,6 +18,7 @@ pub(in crate::ai::decision) fn opponent_threat_discard_bias(
         if piao_threat_cannot_satisfy_three_suits(&seat.melds, seat.hand_count) {
             continue;
         }
+        let dealer_scale = dealer_opponent_threat_scale(table, *seat_position);
         let threat_seat_discard_count = seat
             .discards
             .iter()
@@ -63,7 +64,8 @@ pub(in crate::ai::decision) fn opponent_threat_discard_bias(
                 + missing_suit_wait_penalty)
                 - public_discount)
                 .max(10.0)
-                * late_multiplier;
+                * late_multiplier
+                * dealer_scale;
             continue;
         }
         let terminal_or_honor_need_penalty = piao_terminal_or_honor_need_penalty(&seat.melds, tile);
@@ -90,7 +92,8 @@ pub(in crate::ai::decision) fn opponent_threat_discard_bias(
             + piao_wait_suit_penalty
             + terminal_or_honor_need_penalty)
             * late_multiplier
-            * exposure_scale;
+            * exposure_scale
+            * dealer_scale;
     }
     bias
 }

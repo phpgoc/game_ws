@@ -1,5 +1,6 @@
 mod broken_public;
 mod closed_threat;
+mod dealer;
 mod missing_suit;
 mod piao_threat;
 mod public_safety;

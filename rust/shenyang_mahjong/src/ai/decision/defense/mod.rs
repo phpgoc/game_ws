@@ -15,3 +15,14 @@ pub(super) use missing_suit::*;
 pub(super) use piao_threat::*;
 pub(super) use public_safety::*;
 pub(super) use pure_threat::*;
+
+pub(in crate::ai::decision) fn dealer_opponent_threat_scale(
+    table: &AiPublicTable,
+    seat_position: usize,
+) -> f64 {
+    if seat_position == table.dealer_position {
+        1.2
+    } else {
+        1.0
+    }
+}
