@@ -132,6 +132,7 @@ pub(in crate::ai::decision) fn should_pass_hu_for_capped_live_wait(
         return false;
     };
     if table.dealer_position == position
+        || dealer_opponent_has_major_threat(table, position)
         || table.wall_count < MIN_WALL_TILES_FOR_CAPPED_HU_CHASE
         || hand.len() % 3 != 1
     {
