@@ -342,12 +342,17 @@ fn hu_takes_one_fan_short_against_threatening_dealer() {
     sort_tiles(&mut win_hand);
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
 
-    assert!(dealer_opponent_has_major_threat(&table, 0));
+    assert!(dealer_opponent_has_major_threat(
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+    ));
     let mut non_dealer_threat_table = table.clone();
     non_dealer_threat_table.dealer_position = 3;
     assert!(!dealer_opponent_has_major_threat(
         &non_dealer_threat_table,
         0,
+        WIN_RULE_SHENYANG_BASIC,
     ));
     assert!(should_pass_hu_for_capped_live_wait(
         &hand,
@@ -377,6 +382,92 @@ fn hu_takes_one_fan_short_against_threatening_dealer() {
     assert!(!should_pass_self_draw_hu_from_view(
         &win_hand,
         &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+        16,
+    ));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Hu)
+    );
+}
+
+#[test]
+fn hu_takes_one_fan_short_against_long_closed_dealer() {
+    let mut table = table_with_discards(1, vec![31, 32, 33, 34, 35, 16]);
+    table.wall_count = FINAL_DEFENSE_WALL_COUNT;
+    table.max_fan = Some(2);
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
+    table.seats.get_mut(&0).unwrap().discards = vec![16];
+    table.seats.get_mut(&1).unwrap().hand_count = 13;
+    table.claim_window = Some(AiClaimView {
+        tile: 16,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![13, 14, 15, 15, 16, 16, 17, 28, 28, 28];
+    let mut win_hand = hand.clone();
+    win_hand.push(16);
+    sort_tiles(&mut win_hand);
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+
+    assert!(dealer_opponent_has_major_threat(
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+    ));
+    assert!(!dealer_opponent_has_major_threat(
+        &table,
+        0,
+        WIN_RULE_RELAXED,
+    ));
+    assert!(should_pass_hu_for_capped_live_wait(
+        &hand,
+        &win_hand,
+        melds,
+        &table,
+        0,
+        WIN_RULE_RELAXED,
+        16,
+    ));
+    let mut non_dealer_threat_table = table.clone();
+    non_dealer_threat_table.dealer_position = 3;
+    assert!(!dealer_opponent_has_major_threat(
+        &non_dealer_threat_table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+    ));
+    assert!(should_pass_hu_for_capped_live_wait(
+        &hand,
+        &win_hand,
+        melds,
+        &non_dealer_threat_table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+        16,
+    ));
+    assert!(!should_pass_hu_for_capped_live_wait(
+        &hand,
+        &win_hand,
+        melds,
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+        16,
+    ));
+
+    let mut self_draw_table = table.clone();
+    self_draw_table.claim_window = None;
+    self_draw_table.seats.get_mut(&1).unwrap().discards = vec![31, 32, 33, 34, 35, 36];
+    assert!(dealer_opponent_has_major_threat(
+        &self_draw_table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+    ));
+    assert!(!should_pass_self_draw_hu_from_view(
+        &win_hand,
+        &self_draw_table,
         0,
         WIN_RULE_SHENYANG_BASIC,
         16,

@@ -314,3 +314,43 @@ fn closed_opponent_threat_starts_before_final_defense() {
     assert!(mid_round_bias < 0.0);
     assert!(mid_round_bias > late_defense_bias);
 }
+
+#[test]
+fn closed_major_threat_requires_late_committed_unopened_route() {
+    let mut committed = table_with_discards(1, vec![1, 2, 3, 4, 5, 6]);
+    committed.wall_count = LATE_PRESSURE_WALL_COUNT;
+    committed.seats.get_mut(&1).unwrap().hand_count = 13;
+
+    assert!(closed_opponent_has_major_threat(
+        committed.seats.get(&1).unwrap(),
+        &committed,
+    ));
+
+    let mut early = committed.clone();
+    early.wall_count = LATE_PRESSURE_WALL_COUNT + 1;
+    assert!(!closed_opponent_has_major_threat(
+        early.seats.get(&1).unwrap(),
+        &early,
+    ));
+
+    let mut short_history = committed.clone();
+    short_history.seats.get_mut(&1).unwrap().discards.pop();
+    assert!(!closed_opponent_has_major_threat(
+        short_history.seats.get(&1).unwrap(),
+        &short_history,
+    ));
+
+    let mut opened = committed.clone();
+    opened.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(9)];
+    assert!(!closed_opponent_has_major_threat(
+        opened.seats.get(&1).unwrap(),
+        &opened,
+    ));
+
+    let mut invalid_history = committed.clone();
+    invalid_history.seats.get_mut(&1).unwrap().discards = vec![97, 98, 99, 100, 101, 102];
+    assert!(!closed_opponent_has_major_threat(
+        invalid_history.seats.get(&1).unwrap(),
+        &invalid_history,
+    ));
+}

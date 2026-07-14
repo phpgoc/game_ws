@@ -1,5 +1,7 @@
 use super::*;
 
+const MAJOR_CLOSED_THREAT_MIN_DISCARDS: usize = 6;
+
 pub(in crate::ai::decision) fn closed_hand_count_pressure_scale(seat: &AiSeatView) -> f64 {
     let concealed_gangs = seat
         .melds
@@ -157,4 +159,24 @@ pub(in crate::ai::decision) fn is_closed_opponent_threat_candidate(
 ) -> bool {
     !has_door_opening_meld(&seat.melds, table)
         && (seat.hand_count >= 10 || (seat.hand_count > 0 && has_concealed_gang_meld(&seat.melds)))
+}
+
+pub(in crate::ai::decision) fn closed_opponent_has_major_threat(
+    seat: &AiSeatView,
+    table: &AiPublicTable,
+) -> bool {
+    if !is_late_round(table) || !is_closed_opponent_threat_candidate(seat, table) {
+        return false;
+    }
+    let valid_discard_count = seat
+        .discards
+        .iter()
+        .filter(|tile| is_valid_tile(**tile))
+        .count();
+    valid_discard_count >= MAJOR_CLOSED_THREAT_MIN_DISCARDS
+        && seat
+            .melds
+            .iter()
+            .filter(|meld| is_valid_meld(meld))
+            .all(|meld| meld.kind == ShenyangMahjongMeldKind::GANG && meld.from_position.is_none())
 }

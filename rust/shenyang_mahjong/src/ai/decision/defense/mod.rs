@@ -30,6 +30,7 @@ pub(in crate::ai::decision) fn dealer_opponent_threat_scale(
 pub(in crate::ai::decision) fn dealer_opponent_has_major_threat(
     table: &AiPublicTable,
     position: usize,
+    win_rule: i32,
 ) -> bool {
     if position == table.dealer_position {
         return false;
@@ -40,5 +41,7 @@ pub(in crate::ai::decision) fn dealer_opponent_has_major_threat(
     let piao_threat = piao_threat_level(&dealer.melds) >= 3
         && has_open_meld(&dealer.melds)
         && !piao_threat_cannot_satisfy_three_suits(&dealer.melds, dealer.hand_count);
-    piao_threat || pure_one_suit_threat_suit(dealer).is_some()
+    let closed_threat =
+        win_rule == WIN_RULE_SHENYANG_BASIC && closed_opponent_has_major_threat(dealer, table);
+    piao_threat || pure_one_suit_threat_suit(dealer).is_some() || closed_threat
 }
