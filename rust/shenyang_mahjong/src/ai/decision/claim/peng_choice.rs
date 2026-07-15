@@ -155,7 +155,10 @@ pub(super) fn choose_peng_claim(
     {
         return Some(AiClaimChoice::Peng);
     }
-    if win_rule == WIN_RULE_SHENYANG_BASIC && table.dealer_position == position {
+    if win_rule == WIN_RULE_SHENYANG_BASIC
+        && (table.dealer_position == position
+            || dealer_opponent_has_major_threat(table, position, win_rule))
+    {
         return Some(AiClaimChoice::Peng);
     }
     if piao_plan_score_for_context(hand, current_melds, table, position, win_rule) >= 32.0 {

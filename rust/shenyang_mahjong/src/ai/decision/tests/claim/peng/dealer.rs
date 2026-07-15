@@ -190,3 +190,46 @@ fn one_fan_capped_claim_peng_uses_dragon_pair_for_speed_over_five_pairs() {
         Some(AiClaimChoice::Peng)
     );
 }
+
+#[test]
+fn threatening_dealer_uses_dealer_speed_threshold_for_marginal_peng() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.seats.get_mut(&0).unwrap().melds = vec![test_chi_meld(1)];
+    table.claim_window = Some(AiClaimView {
+        tile: 15,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![11, 13, 14, 15, 15, 21, 22, 23, 35, 35];
+
+    assert_eq!(
+        ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        0.0
+    );
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Pass)
+    );
+
+    table.dealer_position = 0;
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Peng)
+    );
+
+    table.dealer_position = 1;
+    table.seats.get_mut(&1).unwrap().hand_count = 4;
+    table.seats.get_mut(&1).unwrap().melds =
+        vec![test_peng_meld(3), test_peng_meld(14), test_peng_meld(25)];
+    assert!(dealer_opponent_has_major_threat(
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Peng)
+    );
+}
