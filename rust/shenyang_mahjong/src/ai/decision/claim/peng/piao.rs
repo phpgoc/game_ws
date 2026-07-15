@@ -47,6 +47,7 @@ pub(in crate::ai::decision) fn should_claim_ready_piao_peng_for_shou_ba_yi(
 ) -> bool {
     if current_ready_score <= 0.0
         || table.dealer_position == position
+        || dealer_opponent_has_major_threat(table, position, win_rule)
         || is_late_defense_round(table)
         || piao_plan_is_capped(table)
         || !can_peng(hand, tile)

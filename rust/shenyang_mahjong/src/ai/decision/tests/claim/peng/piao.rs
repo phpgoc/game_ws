@@ -167,6 +167,67 @@ fn ready_piao_claim_peng_takes_fourth_plain_meld_for_shou_ba_yi() {
 }
 
 #[test]
+fn ready_piao_passes_shou_ba_yi_peng_against_threatening_dealer() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.seats.get_mut(&0).unwrap().melds =
+        vec![test_peng_meld(1), test_peng_meld(11), test_peng_meld(21)];
+    table.claim_window = Some(AiClaimView {
+        tile: 5,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    table.seats.get_mut(&1).unwrap().hand_count = 7;
+    table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(23), test_peng_meld(24)];
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![5, 5, 6, 8];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+
+    table.dealer_position = 3;
+    let current_ready_score = ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC);
+    assert!(!dealer_opponent_has_major_threat(
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+    ));
+    assert!(should_claim_ready_piao_peng_for_shou_ba_yi(
+        &hand,
+        melds,
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+        5,
+        1,
+        current_ready_score,
+    ));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Peng)
+    );
+
+    table.dealer_position = 1;
+    let threatened_ready_score = ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC);
+    assert!(dealer_opponent_has_major_threat(
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+    ));
+    assert!(!should_claim_ready_piao_peng_for_shou_ba_yi(
+        &hand,
+        melds,
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+        5,
+        1,
+        threatened_ready_score,
+    ));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Pass)
+    );
+}
+
+#[test]
 fn relaxed_claim_peng_takes_closed_early_piao_candidate_over_sequence_shape() {
     let mut table = table_with_discards(1, Vec::new());
     table.claim_window = Some(AiClaimView {
