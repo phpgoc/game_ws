@@ -23,6 +23,34 @@ fn late_defense_can_follow_exposed_terminal_over_live_wind() {
 }
 
 #[test]
+fn late_defense_keeps_public_honor_above_repeated_own_suited_discard() {
+    let mut table = table_with_discards(1, vec![31, 6, 9]);
+    table.wall_count = 16;
+    table.seats.get_mut(&0).unwrap().discards = vec![5, 5, 5];
+    let hand = vec![5, 31];
+
+    assert_eq!(public_discard_count(&table, 5), 3);
+    assert_eq!(own_previous_discard_count(&table, 0, 5), 3);
+    assert_eq!(public_discard_count(&table, 31), 1);
+    assert!(
+        late_defense_tile_safety_priority(&table, 31, 1)
+            > late_defense_tile_safety_priority(&table, 5, 1)
+    );
+    assert!(
+        late_defense_tile_safety_priority(&table, 5, 1)
+            > late_defense_tile_safety_priority(&table, 6, 1)
+    );
+    assert!(
+        late_defense_tile_safety_priority(&table, 6, 1)
+            > late_defense_tile_safety_priority(&table, 9, 1)
+    );
+    assert_eq!(
+        choose_late_defense_discard_from_candidates(&hand, &table, 0, vec![5, 31]),
+        Some(31)
+    );
+}
+
+#[test]
 fn late_defense_avoids_breaking_cold_terminal_pair_against_closed_opponent() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 16;

@@ -124,7 +124,7 @@ pub(in crate::ai::decision) fn choose_late_defense_discard_from_candidates(
     position: usize,
     candidates: Vec<i32>,
 ) -> Option<i32> {
-    let mut best: Option<(f64, i32)> = None;
+    let mut best: Option<(u8, f64, i32)> = None;
     let safe_candidates = candidates
         .iter()
         .copied()
@@ -138,17 +138,21 @@ pub(in crate::ai::decision) fn choose_late_defense_discard_from_candidates(
 
     for tile in candidates {
         let own_tile_count = hand.iter().filter(|item| **item == tile).count();
+        let priority = late_defense_tile_safety_priority(table, tile, own_tile_count);
         let score = late_defense_tile_safety_score(table, position, tile, own_tile_count);
         match best {
-            None => best = Some((score, tile)),
-            Some((best_score, best_tile)) => {
-                if score > best_score || (score == best_score && tile < best_tile) {
-                    best = Some((score, tile));
+            None => best = Some((priority, score, tile)),
+            Some((best_priority, best_score, best_tile)) => {
+                if priority > best_priority
+                    || (priority == best_priority
+                        && (score > best_score || (score == best_score && tile < best_tile)))
+                {
+                    best = Some((priority, score, tile));
                 }
             }
         }
     }
-    best.map(|(_, tile)| tile)
+    best.map(|(_, _, tile)| tile)
 }
 
 pub(in crate::ai::decision) fn choose_late_defense_discard_preserving_pairs(
