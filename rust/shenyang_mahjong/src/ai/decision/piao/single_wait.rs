@@ -129,7 +129,9 @@ fn piao_single_wait_tile_score_with_simulated_discards(
         .filter(|max_fan| *max_fan > 0)
         .map(|max_fan| estimated_fan.min(max_fan))
         .unwrap_or(estimated_fan);
-    let speed_first = table.dealer_position == position || is_late_defense_round(table);
+    let speed_first = table.dealer_position == position
+        || dealer_opponent_has_major_threat(table, position, win_rule)
+        || is_late_defense_round(table);
     let remaining_weight = if speed_first { 14.0 } else { 7.0 };
     let fan_weight = if speed_first { 2.0 } else { 7.0 };
     let wait_shape_bias = if table

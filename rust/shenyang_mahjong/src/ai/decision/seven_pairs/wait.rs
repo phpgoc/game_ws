@@ -32,8 +32,9 @@ pub(in crate::ai::decision) fn choose_seven_pairs_wait_discard(
             let wait_tile = single_tile(&next)?;
             let own_tile_count = hand.iter().filter(|item| **item == tile).count();
             Some((
-                seven_pairs_wait_tile_score_after_discard(wait_tile, &next, table, position, tile)
-                    + wait_setting_discard_safety_adjustment(table, position, tile, own_tile_count),
+                seven_pairs_wait_tile_score_after_discard(
+                    wait_tile, &next, table, position, win_rule, tile,
+                ) + wait_setting_discard_safety_adjustment(table, position, tile, own_tile_count),
                 tile,
             ))
         })
@@ -105,6 +106,7 @@ pub(in crate::ai::decision) fn seven_pairs_wait_tile_score(
         hand_after_discard,
         table,
         position,
+        false,
         &[],
     )
 }
@@ -114,6 +116,7 @@ pub(in crate::ai::decision) fn seven_pairs_wait_tile_score_after_discard(
     hand_after_discard: &[i32],
     table: &AiPublicTable,
     position: usize,
+    win_rule: i32,
     discarded_tile: i32,
 ) -> f64 {
     seven_pairs_wait_tile_score_with_simulated_discards(
@@ -121,6 +124,7 @@ pub(in crate::ai::decision) fn seven_pairs_wait_tile_score_after_discard(
         hand_after_discard,
         table,
         position,
+        dealer_opponent_has_major_threat(table, position, win_rule),
         &[discarded_tile],
     )
 }
@@ -130,6 +134,7 @@ fn seven_pairs_wait_tile_score_with_simulated_discards(
     hand_after_discard: &[i32],
     table: &AiPublicTable,
     position: usize,
+    dealer_threat_speed_first: bool,
     simulated_discards: &[i32],
 ) -> f64 {
     let public_discards = public_discard_count(table, wait_tile) as f64;
@@ -144,7 +149,9 @@ fn seven_pairs_wait_tile_score_with_simulated_discards(
     if remaining <= 0.0 {
         return -240.0 - public_discards * 12.0;
     }
-    let speed_first = table.dealer_position == position || is_late_defense_round(table);
+    let speed_first = table.dealer_position == position
+        || dealer_threat_speed_first
+        || is_late_defense_round(table);
     if speed_first || seven_pairs_regular_wait_reaches_cap(table) {
         let remaining_weight = if speed_first { 14.0 } else { 6.0 };
         return remaining * remaining_weight + seven_pairs_wait_shape_tiebreaker(wait_tile)

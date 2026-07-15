@@ -88,3 +88,42 @@ fn major_dealer_threat_disables_single_wait_fan_bias() {
         baseline
     );
 }
+
+#[test]
+fn seven_pairs_prefers_live_middle_wait_against_major_dealer_threat() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.seats.get_mut(&1).unwrap().hand_count = 7;
+    table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(23), test_peng_meld(24)];
+    table.seats.insert(
+        2,
+        AiSeatView {
+            position: 2,
+            hand_count: 10,
+            discards: Vec::new(),
+            melds: vec![test_chi_meld(1)],
+        },
+    );
+    let hand = vec![1, 2, 2, 3, 3, 11, 11, 12, 12, 15, 16, 16, 26, 26];
+
+    table.dealer_position = 2;
+    assert!(!dealer_opponent_has_major_threat(
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+    ));
+    assert_eq!(
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(15)
+    );
+
+    table.dealer_position = 1;
+    assert!(dealer_opponent_has_major_threat(
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+    ));
+    assert_eq!(
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(1)
+    );
+}

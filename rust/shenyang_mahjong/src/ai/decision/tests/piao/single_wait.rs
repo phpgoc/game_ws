@@ -66,6 +66,43 @@ fn dealer_piao_single_wait_still_prefers_wider_middle_wait() {
 }
 
 #[test]
+fn threatening_dealer_increases_piao_live_wait_priority() {
+    let mut table = table_with_discards(1, vec![31]);
+    table.wall_count = 32;
+    table.seats.get_mut(&0).unwrap().melds = vec![
+        test_peng_meld(1),
+        test_peng_meld(11),
+        test_peng_meld(21),
+        test_peng_meld(32),
+    ];
+    let dealer = table.seats.get_mut(&1).unwrap();
+    dealer.hand_count = 4;
+    dealer.melds = vec![test_peng_meld(3), test_peng_meld(14), test_peng_meld(25)];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+
+    table.dealer_position = 3;
+    let regular_live_advantage =
+        piao_single_wait_tile_score(5, &[5], melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
+            - piao_single_wait_tile_score(31, &[31], melds, &table, 0, WIN_RULE_SHENYANG_BASIC);
+    assert!(!dealer_opponent_has_major_threat(
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+    ));
+
+    table.dealer_position = 1;
+    let threatened_live_advantage =
+        piao_single_wait_tile_score(5, &[5], melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
+            - piao_single_wait_tile_score(31, &[31], melds, &table, 0, WIN_RULE_SHENYANG_BASIC);
+    assert!(dealer_opponent_has_major_threat(
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+    ));
+    assert!(threatened_live_advantage > regular_live_advantage);
+}
+
+#[test]
 fn discard_after_four_piao_melds_keeps_live_single_wait() {
     let mut table = table_with_discards(1, vec![36, 36, 36]);
     table.seats.get_mut(&0).unwrap().melds = vec![
