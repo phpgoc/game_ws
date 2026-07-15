@@ -69,7 +69,13 @@ pub(in crate::ai::decision) fn three_suits_discard_bias(
             tile,
             win_rule,
         )
-        && pure_one_suit_plan_score_for_context(hand_after_discard, melds, table, position) > 0.0
+        && pure_one_suit_plan_score_for_context(
+            hand_after_discard,
+            melds,
+            table,
+            position,
+            win_rule,
+        ) > 0.0
     {
         return 0.0;
     }
@@ -127,7 +133,8 @@ pub(in crate::ai::decision) fn violates_basic_heng_discard(
     ) {
         return false;
     }
-    pure_one_suit_plan_score_for_context(hand_after_discard, melds, table, position) <= 0.0
+    pure_one_suit_plan_score_for_context(hand_after_discard, melds, table, position, win_rule)
+        <= 0.0
 }
 
 pub(in crate::ai::decision) fn violates_basic_terminal_or_honor_discard(
@@ -155,7 +162,9 @@ pub(in crate::ai::decision) fn violates_basic_terminal_or_honor_discard(
     ) {
         return false;
     }
-    if pure_one_suit_plan_score_for_context(hand_after_discard, melds, table, position) > 0.0 {
+    if pure_one_suit_plan_score_for_context(hand_after_discard, melds, table, position, win_rule)
+        > 0.0
+    {
         return false;
     }
     if table.max_fan.is_some_and(|max_fan| max_fan <= 1) {
@@ -209,5 +218,6 @@ pub(in crate::ai::decision) fn violates_basic_three_suits_discard(
     if table.max_fan.is_some_and(|max_fan| max_fan <= 1) {
         return true;
     }
-    pure_one_suit_plan_score_for_context(hand_after_discard, melds, table, position) <= 0.0
+    pure_one_suit_plan_score_for_context(hand_after_discard, melds, table, position, win_rule)
+        <= 0.0
 }

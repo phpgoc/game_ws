@@ -89,6 +89,7 @@ pub(in crate::ai::decision) fn should_claim_opening_gang_for_basic_hand(
             position,
             win_rule,
         )
-        && pure_one_suit_plan_score_for_context(hand, current_melds, table, position) <= 0.0
+        && pure_one_suit_plan_score_for_context(hand, current_melds, table, position, win_rule)
+            <= 0.0
         && piao_plan_score_for_context(hand, current_melds, table, position, win_rule) < 22.0
 }

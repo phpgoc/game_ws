@@ -22,7 +22,8 @@ pub(in crate::ai::decision) fn should_claim_peng_for_basic_heng_and_opening(
             position,
             win_rule,
         )
-        || pure_one_suit_plan_score_for_context(hand, current_melds, table, position) > 0.0
+        || pure_one_suit_plan_score_for_context(hand, current_melds, table, position, win_rule)
+            > 0.0
     {
         return false;
     }
@@ -66,7 +67,8 @@ pub(in crate::ai::decision) fn should_claim_peng_to_open_capped_basic_route(
             position,
             win_rule,
         )
-        || pure_one_suit_plan_score_for_context(hand, current_melds, table, position) > 0.0
+        || pure_one_suit_plan_score_for_context(hand, current_melds, table, position, win_rule)
+            > 0.0
         || piao_plan_score_for_context(hand, current_melds, table, position, win_rule) >= 22.0
     {
         return false;
@@ -112,7 +114,8 @@ pub(in crate::ai::decision) fn should_claim_peng_to_open_mid_basic_hand(
             position,
             win_rule,
         )
-        || pure_one_suit_plan_score_for_context(hand, current_melds, table, position) > 0.0
+        || pure_one_suit_plan_score_for_context(hand, current_melds, table, position, win_rule)
+            > 0.0
     {
         return false;
     }
@@ -151,7 +154,8 @@ pub(in crate::ai::decision) fn should_pass_closed_basic_peng_to_preserve_sequenc
         && has_triplet_like_group(hand, current_melds)
         && tile_is_middle_of_sequence(hand, tile)
         && piao_plan_score_for_context(hand, current_melds, table, position, win_rule) < 22.0
-        && pure_one_suit_plan_score_for_context(hand, current_melds, table, position) <= 0.0
+        && pure_one_suit_plan_score_for_context(hand, current_melds, table, position, win_rule)
+            <= 0.0
         && !should_open_broken_closed_hand_for_defense(
             hand,
             current_melds,

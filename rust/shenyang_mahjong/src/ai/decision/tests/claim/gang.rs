@@ -430,7 +430,9 @@ fn claim_gang_passes_pure_plan_when_gang_only_reaches_basic_ready() {
     sort_tiles(&mut after_claim);
     let melds = vec![claim_gang_meld(1, 1)];
 
-    assert!(pure_one_suit_plan_score_for_context(&hand, &[], &table, 0) > 0.0);
+    assert!(
+        pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0
+    );
     assert!(ready_tile_score(&after_claim, &melds, &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0);
     assert!(!ready_has_pure_one_suit_win(
         &after_claim,
@@ -623,7 +625,7 @@ fn claim_gang_takes_open_plain_gang_when_it_reaches_ready() {
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
 
     assert_eq!(
-        pure_one_suit_plan_score_for_context(&hand, melds, &table, 0),
+        pure_one_suit_plan_score_for_context(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC,),
         0.0
     );
     assert!(claim_gang_from_discard_reaches_ready(

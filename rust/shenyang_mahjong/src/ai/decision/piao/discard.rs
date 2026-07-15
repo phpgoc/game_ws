@@ -56,7 +56,8 @@ pub(in crate::ai::decision) fn piao_discard_bias(
         return 0.0;
     }
     let count = hand.iter().filter(|item| **item == tile).count();
-    let pure_one_suit_score = pure_one_suit_plan_score_for_context(hand, melds, table, position);
+    let pure_one_suit_score =
+        pure_one_suit_plan_score_for_context(hand, melds, table, position, win_rule);
     let committed_groups = piao_committed_group_count(hand, melds);
     let only_terminal_or_honor = (is_honor(tile) || tile_is_terminal(tile))
         && count == 1

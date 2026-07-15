@@ -14,7 +14,7 @@ pub(super) fn choose_peng_claim(
     if !can_peng(hand, tile) {
         return None;
     }
-    if pure_one_suit_plan_score_for_context(hand, current_melds, table, position) > 0.0 {
+    if pure_one_suit_plan_score_for_context(hand, current_melds, table, position, win_rule) > 0.0 {
         return Some(AiClaimChoice::Pass);
     }
     if should_claim_capped_dragon_peng_over_five_pairs(

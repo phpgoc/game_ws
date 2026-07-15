@@ -38,7 +38,8 @@ pub(super) fn choose_chi_claim(
         win_rule,
     );
     let pure_chi_suit =
-        (pure_one_suit_plan_score_for_context(hand, current_melds, table, position) > 0.0)
+        (pure_one_suit_plan_score_for_context(hand, current_melds, table, position, win_rule)
+            > 0.0)
             .then(|| dominant_pure_suit(hand, current_melds))
             .flatten();
     let mut best_ready_chi: Option<(f64, f64, Vec<i32>)> = None;

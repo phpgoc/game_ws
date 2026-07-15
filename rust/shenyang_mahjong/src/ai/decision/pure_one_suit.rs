@@ -28,11 +28,13 @@ pub(super) fn pure_one_suit_discard_bias(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
+    win_rule: i32,
 ) -> f64 {
-    let current_score = pure_one_suit_plan_score_for_context(hand, melds, table, position);
+    let current_score =
+        pure_one_suit_plan_score_for_context(hand, melds, table, position, win_rule);
     let after_discard = remove_n_tiles(hand, tile, 1);
     let after_score = if after_discard.len() + 1 == hand.len() {
-        pure_one_suit_plan_score_for_context(&after_discard, melds, table, position)
+        pure_one_suit_plan_score_for_context(&after_discard, melds, table, position, win_rule)
     } else {
         0.0
     };
@@ -89,6 +91,7 @@ pub(super) fn pure_one_suit_plan_score_for_context(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
+    win_rule: i32,
 ) -> f64 {
     let score = pure_one_suit_plan_score(hand, melds);
     if score <= 0.0 {
@@ -129,7 +132,9 @@ pub(super) fn pure_one_suit_plan_score_for_context(
     if capped_open_basic_route_visible_fan_reaches_cap(hand, melds, table) {
         return 0.0;
     }
-    if table.dealer_position != position {
+    let marginal_closed_plan_against_dealer_threat =
+        valid_meld_count(melds) == 0 && dealer_opponent_has_major_threat(table, position, win_rule);
+    if table.dealer_position != position && !marginal_closed_plan_against_dealer_threat {
         return score;
     }
     pure_one_suit_shape(hand, melds)

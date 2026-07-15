@@ -376,7 +376,15 @@ fn self_gang_passes_pure_plan_when_gang_only_reaches_basic_ready() {
     sort_tiles(&mut after_gang);
     let melds = vec![test_chi_meld(2), test_concealed_gang_meld(1)];
 
-    assert!(pure_one_suit_plan_score_for_context(&hand, current_melds, &table, 0) > 0.0);
+    assert!(
+        pure_one_suit_plan_score_for_context(
+            &hand,
+            current_melds,
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+        ) > 0.0
+    );
     assert!(
         best_ready_score_after_discard(&hand, current_melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
             > 0.0

@@ -11,7 +11,7 @@ pub(in crate::ai::decision) fn should_claim_chi_to_open_broken_hand_for_defense(
         || has_open_meld(melds)
         || !is_late_round(table)
         || should_preserve_seven_pairs_plan_for_context(hand, melds, table, position, win_rule)
-        || pure_one_suit_plan_score_for_context(hand, melds, table, position) > 0.0
+        || pure_one_suit_plan_score_for_context(hand, melds, table, position, win_rule) > 0.0
         || piao_plan_score_for_context(hand, melds, table, position, win_rule) >= 22.0
     {
         return false;

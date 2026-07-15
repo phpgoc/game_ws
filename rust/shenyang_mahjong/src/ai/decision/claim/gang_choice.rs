@@ -12,7 +12,7 @@ pub(super) fn choose_gang_claim(
     if table.wall_count == 0 || !can_gang(hand, tile) {
         return None;
     }
-    if pure_one_suit_plan_score_for_context(hand, current_melds, table, position) > 0.0
+    if pure_one_suit_plan_score_for_context(hand, current_melds, table, position, win_rule) > 0.0
         && !should_claim_ready_pure_one_suit_gang_from_discard(
             hand,
             current_melds,

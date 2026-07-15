@@ -83,7 +83,8 @@ pub(super) fn self_gang_score(
 ) -> f64 {
     let is_added_gang = has_peng_meld(melds, tile);
     let is_ready = best_ready_score_after_discard(hand, melds, table, position, win_rule) > 0.0;
-    let pure_one_suit_score = pure_one_suit_plan_score_for_context(hand, melds, table, position);
+    let pure_one_suit_score =
+        pure_one_suit_plan_score_for_context(hand, melds, table, position, win_rule);
     let piao_score = piao_plan_score_for_context(hand, melds, table, position, win_rule);
     if pure_one_suit_score > 0.0 {
         if is_honor(tile) || !is_main_pure_suit_tile(hand, melds, tile) || !is_ready {

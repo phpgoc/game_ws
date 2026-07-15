@@ -433,7 +433,7 @@ fn claim_chi_preserves_pure_one_suit_plan_from_off_suit_chi() {
     let claim = table.claim_window.clone().unwrap();
     let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 8, 9, 11, 12, 35];
 
-    assert!(pure_one_suit_plan_score_for_context(&hand, &[], &table, 0) > 0.0);
+    assert!(pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_RELAXED,) > 0.0);
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
         Some(AiClaimChoice::Pass)

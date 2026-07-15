@@ -11,7 +11,8 @@ pub(in crate::ai::decision) fn should_peng_to_preserve_four_gui_yi_from_discard(
 ) -> bool {
     if !should_preserve_four_gui_yi(tile)
         || !can_gang(hand, tile)
-        || pure_one_suit_plan_score_for_context(hand, current_melds, table, position) > 0.0
+        || pure_one_suit_plan_score_for_context(hand, current_melds, table, position, win_rule)
+            > 0.0
     {
         return false;
     }

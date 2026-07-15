@@ -149,7 +149,10 @@ fn claim_peng_passes_open_main_suit_pure_one_suit_even_when_it_reaches_ready() {
     let hand = vec![1, 2, 2, 3, 3, 3, 3, 4, 4, 7];
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
 
-    assert!(pure_one_suit_plan_score_for_context(&hand, melds, &table, 0) > 0.0);
+    assert!(
+        pure_one_suit_plan_score_for_context(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
+            > 0.0
+    );
     assert_eq!(
         ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
         0.0

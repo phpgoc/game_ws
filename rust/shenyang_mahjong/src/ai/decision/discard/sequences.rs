@@ -36,7 +36,7 @@ pub(in crate::ai::decision) fn incomplete_sequence_discard_bias(
         || should_lock_seven_pairs_plan(hand, melds, table, position, win_rule)
         || is_closed_early_piao_candidate(hand, melds, table, position, win_rule)
         || piao_plan_score_for_context(hand, melds, table, position, win_rule) >= 20.0
-        || pure_one_suit_plan_score_for_context(hand, melds, table, position) > 0.0
+        || pure_one_suit_plan_score_for_context(hand, melds, table, position, win_rule) > 0.0
     {
         return 0.0;
     }
@@ -65,7 +65,7 @@ pub(in crate::ai::decision) fn pinghu_sequence_route_discard_bias(
         || should_lock_seven_pairs_plan(hand, melds, table, position, win_rule)
         || is_closed_early_piao_candidate(hand, melds, table, position, win_rule)
         || piao_plan_score_for_context(hand, melds, table, position, win_rule) >= 20.0
-        || pure_one_suit_plan_score_for_context(hand, melds, table, position) > 0.0
+        || pure_one_suit_plan_score_for_context(hand, melds, table, position, win_rule) > 0.0
         || best_ready_score_after_discard(hand, melds, table, position, win_rule) > 0.0
         || pinghu_sequence_route_tile_count(hand) < 5
     {

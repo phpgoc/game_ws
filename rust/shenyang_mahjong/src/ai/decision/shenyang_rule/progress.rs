@@ -32,7 +32,7 @@ pub(in crate::ai::decision) fn shenyang_rule_progress_score(
     {
         return 0.0;
     }
-    let pure_score = pure_one_suit_plan_score_for_context(hand, melds, table, position);
+    let pure_score = pure_one_suit_plan_score_for_context(hand, melds, table, position, win_rule);
     if pure_score > 0.0 {
         return pure_score;
     }

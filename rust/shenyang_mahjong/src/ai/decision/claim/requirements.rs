@@ -97,6 +97,12 @@ pub(in crate::ai::decision) fn claim_leaves_unrecoverable_terminal_or_honor(
         let after_discard = remove_n_tiles(&next, discard, 1);
         has_terminal_or_honor_with_extra(&after_discard, &melds, None)
             || live_terminal_or_honor_count_after_discard(&after_discard, table, discard) > 0
-            || pure_one_suit_plan_score_for_context(&after_discard, &melds, table, position) > 0.0
+            || pure_one_suit_plan_score_for_context(
+                &after_discard,
+                &melds,
+                table,
+                position,
+                win_rule,
+            ) > 0.0
     })
 }
