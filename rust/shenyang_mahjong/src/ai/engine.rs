@@ -7,12 +7,13 @@ use crate::game::{
     perform_self_draw_hu, perform_self_gang, resolve_claim_window,
 };
 use crate::game_state::{ClaimResponse, ClaimWindowKind, ShenyangMahjongLoopState};
-use crate::rules::{is_complete_win_with_melds, win_rule_from_configs};
+use crate::rules::win_rule_from_configs;
 
 use super::decision::{
     AiClaimChoice, choose_claim_from_view, choose_discard_from_view,
     choose_forced_discard_from_view, choose_self_gang_from_view,
-    claim_known_tile_counts_are_possible, should_pass_self_draw_hu_from_view,
+    claim_known_tile_counts_are_possible, is_complete_win_for_table,
+    should_pass_self_draw_hu_from_view,
 };
 use super::observation::{AiClaimView, AiPublicTable, build_public_table_with_configs};
 
@@ -209,7 +210,7 @@ fn claim_hu_is_complete(
         .map(|seat| seat.melds.as_slice())
         .unwrap_or(&[]);
     claim_known_tile_counts_are_possible(hand, melds, claim, table)
-        && is_complete_win_with_melds(&win_hand, melds, win_rule)
+        && is_complete_win_for_table(&win_hand, melds, table, win_rule)
 }
 
 #[cfg(test)]
@@ -226,8 +227,8 @@ mod tests {
     use crate::game::build_settlement_event_with_configs;
     use crate::game_state::ClaimWindowState;
     use crate::rules::{
-        WIN_RULE_RELAXED, WIN_RULE_SHENYANG_BASIC, is_complete_win_with_melds,
-        win_rule_from_configs,
+        ShenyangMahjongWinRules, WIN_RULE_RELAXED, WIN_RULE_SHENYANG_BASIC,
+        is_complete_win_with_melds, is_complete_win_with_melds_for_rules,
     };
 
     #[test]
@@ -519,7 +520,7 @@ mod tests {
         seed: u64,
     ) {
         let settlement = state.settlement.as_ref().expect("AI round settlement");
-        let win_rule = win_rule_from_configs(configs);
+        let rules = ShenyangMahjongWinRules::from_configs(configs);
         for winner in &settlement.winner_positions {
             let mut hand = state.hands.get(winner).cloned().unwrap_or_default();
             if !settlement.is_self_draw
@@ -531,7 +532,7 @@ mod tests {
             let melds = state.melds.get(winner).map(Vec::as_slice).unwrap_or(&[]);
 
             assert!(
-                is_complete_win_with_melds(&hand, melds, win_rule),
+                is_complete_win_with_melds_for_rules(&hand, melds, rules),
                 "seed {seed} winner {winner} should have a legal Shenyang Mahjong hand: hand={hand:?}, melds={melds:?}, settlement={settlement:?}"
             );
         }

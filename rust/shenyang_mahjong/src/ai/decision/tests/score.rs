@@ -69,6 +69,41 @@ fn ready_score_counts_chi_as_opening_meld() {
 }
 
 #[test]
+fn ready_score_allows_closed_dragon_pair_win_when_first_chi_disabled() {
+    let mut table = table_with_discards(1, Vec::new());
+    let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 35];
+    let mut win_hand = hand.clone();
+    win_hand.push(35);
+    sort_tiles(&mut win_hand);
+
+    assert_eq!(
+        ready_tile_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        0.0
+    );
+    assert_eq!(
+        estimated_visible_fan_without_wait_for_table(
+            &win_hand,
+            &[],
+            &table,
+            WIN_RULE_SHENYANG_BASIC
+        ),
+        0
+    );
+
+    table.allow_first_chi = false;
+    assert!(ready_tile_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0);
+    assert_eq!(
+        estimated_visible_fan_without_wait_for_table(
+            &win_hand,
+            &[],
+            &table,
+            WIN_RULE_SHENYANG_BASIC
+        ),
+        1
+    );
+}
+
+#[test]
 fn ready_score_does_not_double_count_visible_claim_tile_in_projected_meld() {
     let mut table = table_with_discards(1, vec![3]);
     table.dealer_position = 0;

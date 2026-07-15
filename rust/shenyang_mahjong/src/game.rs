@@ -27,9 +27,10 @@ use crate::game_state::{
 #[cfg(test)]
 use crate::rules::is_single_wait_shape_with_rule;
 use crate::rules::{
-    WIN_RULE_SHENYANG_BASIC, can_chi, can_concealed_gang, can_gang, can_peng,
-    is_complete_win_with_melds, is_piao_hu_win, is_pure_one_suit_win, is_seven_pairs_win,
-    is_single_wait_shape_with_known_unavailable_tiles, is_valid_meld,
+    ShenyangMahjongWinRules, WIN_RULE_SHENYANG_BASIC, can_chi, can_concealed_gang, can_gang,
+    can_peng, is_complete_win_with_melds, is_complete_win_with_melds_for_rules, is_piao_hu_win,
+    is_pure_one_suit_win, is_seven_pairs_win,
+    is_single_wait_shape_with_known_unavailable_tiles_for_rules, is_valid_meld,
     shenyang_score_concealed_dragon_triplet_fan, shenyang_score_four_gui_yi_fan,
     shenyang_score_meld_fan, tiles_in_hand, win_rule_from_configs,
 };
@@ -113,7 +114,11 @@ fn is_complete_win_with_configs(
     melds: &[WsShenyangMahjongMeld],
     configs: &HashMap<String, i32>,
 ) -> bool {
-    is_complete_win_with_melds(tiles, melds, win_rule_from_configs(configs))
+    is_complete_win_with_melds_for_rules(
+        tiles,
+        melds,
+        ShenyangMahjongWinRules::from_configs(configs),
+    )
 }
 
 pub(crate) fn allow_multi_hu(configs: &HashMap<String, i32>) -> bool {
@@ -918,17 +923,17 @@ fn is_shou_ba_yi(
     hand_tiles: &[i32],
     melds: &[WsShenyangMahjongMeld],
     win_tile: Option<i32>,
-    win_rule: i32,
+    rules: ShenyangMahjongWinRules,
     known_unavailable_tiles: &[i32],
 ) -> bool {
     pattern == ShenyangMahjongWinPattern::PiaoHu
         && melds.len() == 4
         && hand_tiles.len() == 2
-        && is_single_wait_win_with_known_unavailable_tiles(
+        && is_single_wait_win_with_known_unavailable_tiles_for_rules(
             hand_tiles,
             melds,
             win_tile,
-            win_rule,
+            rules,
             known_unavailable_tiles,
         )
 }
@@ -946,6 +951,7 @@ fn is_single_wait_win(
     is_single_wait_shape_with_rule(hand_tiles, melds, win_tile, win_rule)
 }
 
+#[cfg(test)]
 fn is_single_wait_win_with_known_unavailable_tiles(
     hand_tiles: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -953,14 +959,30 @@ fn is_single_wait_win_with_known_unavailable_tiles(
     win_rule: i32,
     known_unavailable_tiles: &[i32],
 ) -> bool {
-    let Some(win_tile) = win_tile else {
-        return false;
-    };
-    is_single_wait_shape_with_known_unavailable_tiles(
+    is_single_wait_win_with_known_unavailable_tiles_for_rules(
         hand_tiles,
         melds,
         win_tile,
-        win_rule,
+        ShenyangMahjongWinRules::new(win_rule),
+        known_unavailable_tiles,
+    )
+}
+
+fn is_single_wait_win_with_known_unavailable_tiles_for_rules(
+    hand_tiles: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    win_tile: Option<i32>,
+    rules: ShenyangMahjongWinRules,
+    known_unavailable_tiles: &[i32],
+) -> bool {
+    let Some(win_tile) = win_tile else {
+        return false;
+    };
+    is_single_wait_shape_with_known_unavailable_tiles_for_rules(
+        hand_tiles,
+        melds,
+        win_tile,
+        rules,
         known_unavailable_tiles,
     )
 }
@@ -2009,11 +2031,26 @@ fn winner_hand_fan(
     winner_hand_fan_with_rule(state, settlement, winner, crate::rules::WIN_RULE_RELAXED)
 }
 
+#[cfg(test)]
 fn winner_hand_fan_with_rule(
     state: &ShenyangMahjongLoopState,
     settlement: &crate::game_state::SettlementState,
     winner: usize,
     win_rule: i32,
+) -> i32 {
+    winner_hand_fan_with_rules(
+        state,
+        settlement,
+        winner,
+        ShenyangMahjongWinRules::new(win_rule),
+    )
+}
+
+fn winner_hand_fan_with_rules(
+    state: &ShenyangMahjongLoopState,
+    settlement: &crate::game_state::SettlementState,
+    winner: usize,
+    rules: ShenyangMahjongWinRules,
 ) -> i32 {
     if !settlement_winner_has_valid_win_tile(state, settlement, winner)
         || winner_has_impossible_known_tile_count(state, settlement, winner)
@@ -2023,10 +2060,10 @@ fn winner_hand_fan_with_rule(
     }
     let hand_tiles = winner_final_hand_tiles(state, settlement, winner);
     let melds = state.melds.get(&winner).map(Vec::as_slice).unwrap_or(&[]);
-    if !is_complete_win_with_melds(&hand_tiles, melds, win_rule) {
+    if !is_complete_win_with_melds_for_rules(&hand_tiles, melds, rules) {
         return 0;
     }
-    let pattern = winner_pattern_with_rule(&hand_tiles, melds, win_rule);
+    let pattern = winner_pattern(&hand_tiles, melds);
     let known_unavailable_tiles = public_unavailable_tiles_for_winner(state, winner);
     let mut fan = win_pattern_base_fan(pattern);
     fan += shenyang_score_meld_fan(melds);
@@ -2040,11 +2077,11 @@ fn winner_hand_fan_with_rule(
     if settlement_is_haidilao(state, settlement) {
         fan += 1;
     }
-    if is_single_wait_win_with_known_unavailable_tiles(
+    if is_single_wait_win_with_known_unavailable_tiles_for_rules(
         &hand_tiles,
         melds,
         settlement.win_tile,
-        win_rule,
+        rules,
         &known_unavailable_tiles,
     ) {
         fan += 1;
@@ -2054,7 +2091,7 @@ fn winner_hand_fan_with_rule(
         &hand_tiles,
         melds,
         settlement.win_tile,
-        win_rule,
+        rules,
         &known_unavailable_tiles,
     ) {
         fan += 1;
@@ -2068,7 +2105,12 @@ fn winner_hand_fan_with_configs(
     winner: usize,
     configs: &HashMap<String, i32>,
 ) -> i32 {
-    winner_hand_fan_with_rule(state, settlement, winner, win_rule_from_configs(configs))
+    winner_hand_fan_with_rules(
+        state,
+        settlement,
+        winner,
+        ShenyangMahjongWinRules::from_configs(configs),
+    )
 }
 
 fn winner_pattern(
@@ -3379,6 +3421,29 @@ mod tests {
         let options = build_claim_options(&state, 35, 0, &configs);
 
         assert!(!options.iter().any(|option| option.position == 1));
+    }
+
+    #[test]
+    fn claim_options_allow_closed_dragon_pair_win_when_first_chi_disabled() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 35]);
+        let default_configs = HashMap::from([("win_rule".to_owned(), 1)]);
+        let disabled_configs = HashMap::from([
+            ("win_rule".to_owned(), 1),
+            ("allow_first_chi".to_owned(), 0),
+        ]);
+
+        let default_options = build_claim_options(&state, 35, 0, &default_configs);
+        let disabled_options = build_claim_options(&state, 35, 0, &disabled_configs);
+
+        assert!(!default_options.iter().any(|option| option.position == 1));
+        assert!(
+            disabled_options
+                .iter()
+                .any(|option| option.position == 1 && option.can_hu)
+        );
     }
 
     #[test]
@@ -7366,6 +7431,24 @@ mod tests {
     }
 
     #[test]
+    fn self_draw_hu_allows_closed_dragon_pair_win_when_first_chi_disabled() {
+        let mut state = playable_state();
+        state.current_position = 0;
+        state
+            .hands
+            .insert(0, vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 35, 35]);
+        state.last_drawn_tile = Some(35);
+        let default_configs = HashMap::from([("win_rule".to_owned(), 1)]);
+        let disabled_configs = HashMap::from([
+            ("win_rule".to_owned(), 1),
+            ("allow_first_chi".to_owned(), 0),
+        ]);
+
+        assert!(!can_self_draw_hu_with_configs(&state, 0, &default_configs));
+        assert!(can_self_draw_hu_with_configs(&state, 0, &disabled_configs));
+    }
+
+    #[test]
     fn self_draw_last_wall_tile_counts_haidilao_without_gang_draw() {
         let mut state = playable_state();
         state
@@ -8262,6 +8345,34 @@ mod tests {
         assert_eq!(
             winner_hand_fan_with_rule(&state, settlement, 1, WIN_RULE_SHENYANG_BASIC),
             0
+        );
+    }
+
+    #[test]
+    fn settlement_fan_counts_configured_closed_dragon_pair_win_as_standard() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 35, 35]);
+        state.enter_settlement(vec![1], None, None, true);
+        let settlement = state.settlement.as_ref().expect("settlement");
+        let default_configs = HashMap::from([("win_rule".to_owned(), 1)]);
+        let disabled_configs = HashMap::from([
+            ("win_rule".to_owned(), 1),
+            ("allow_first_chi".to_owned(), 0),
+        ]);
+
+        assert_eq!(
+            winner_hand_fan_with_configs(&state, settlement, 1, &default_configs),
+            0
+        );
+        assert_eq!(
+            winner_hand_fan_with_configs(&state, settlement, 1, &disabled_configs),
+            1
+        );
+        assert_eq!(
+            winner_pattern(state.hands.get(&1).unwrap(), &[]),
+            ShenyangMahjongWinPattern::Standard
         );
     }
 

@@ -30,13 +30,17 @@ use share_type_public::games::shenyang_mahjong::{
 };
 
 use crate::rules::{
-    WIN_RULE_SHENYANG_BASIC, can_chi, can_gang, can_peng, has_edge_wait_decomposition,
-    is_complete_win_with_melds, is_piao_hu_win, is_pure_one_suit_win, is_seven_pairs_win,
-    is_single_wait_shape_with_known_unavailable_tiles, shenyang_score_concealed_dragon_triplet_fan,
-    shenyang_score_four_gui_yi_fan, shenyang_score_meld_fan, sort_tiles,
+    ShenyangMahjongWinRules, WIN_RULE_SHENYANG_BASIC, can_chi, can_gang, can_peng,
+    has_edge_wait_decomposition, is_complete_win_with_melds_for_rules, is_piao_hu_win,
+    is_pure_one_suit_win, is_seven_pairs_win,
+    is_single_wait_shape_with_known_unavailable_tiles_for_rules,
+    shenyang_score_concealed_dragon_triplet_fan, shenyang_score_four_gui_yi_fan,
+    shenyang_score_meld_fan, sort_tiles,
 };
 #[cfg(test)]
-use crate::rules::{has_triplet_in_standard_decomposition, is_complete_win};
+use crate::rules::{
+    has_triplet_in_standard_decomposition, is_complete_win, is_complete_win_with_melds,
+};
 
 use super::observation::{AiClaimView, AiPublicTable, AiSeatView};
 #[cfg(test)]
@@ -112,28 +116,38 @@ pub(in crate::ai::decision) fn has_door_opening_meld(
     has_open_meld(melds)
 }
 
-pub(in crate::ai::decision) fn is_complete_win_for_table(
+pub(in crate::ai::decision) fn win_rules_for_table(
+    table: &AiPublicTable,
+    win_rule: i32,
+) -> ShenyangMahjongWinRules {
+    ShenyangMahjongWinRules {
+        win_rule,
+        allow_closed_dragon_pair_win: !table.allow_first_chi,
+    }
+}
+
+pub(crate) fn is_complete_win_for_table(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
-    _table: &AiPublicTable,
+    table: &AiPublicTable,
     win_rule: i32,
 ) -> bool {
-    is_complete_win_with_melds(hand, melds, win_rule)
+    is_complete_win_with_melds_for_rules(hand, melds, win_rules_for_table(table, win_rule))
 }
 
 pub(in crate::ai::decision) fn is_single_wait_shape_for_table(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
     win_tile: i32,
-    _table: &AiPublicTable,
+    table: &AiPublicTable,
     win_rule: i32,
     known_unavailable_tiles: &[i32],
 ) -> bool {
-    is_single_wait_shape_with_known_unavailable_tiles(
+    is_single_wait_shape_with_known_unavailable_tiles_for_rules(
         hand,
         melds,
         win_tile,
-        win_rule,
+        win_rules_for_table(table, win_rule),
         known_unavailable_tiles,
     )
 }

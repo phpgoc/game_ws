@@ -116,10 +116,11 @@ fn piao_single_wait_tile_score_with_simulated_discards(
 
     let known_unavailable_tiles =
         known_unavailable_tiles_with_simulated_discards(table, position, melds, simulated_discards);
-    let estimated_fan = estimated_fan_with_known_unavailable_wait(
+    let estimated_fan = estimated_fan_with_known_unavailable_wait_for_table(
         &win_hand,
         melds,
         wait_tile,
+        table,
         win_rule,
         &known_unavailable_tiles,
     );

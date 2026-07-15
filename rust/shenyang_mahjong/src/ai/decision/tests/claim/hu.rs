@@ -721,6 +721,29 @@ fn claim_hu_counts_chi_as_opening_meld() {
 }
 
 #[test]
+fn claim_hu_allows_closed_dragon_pair_win_when_first_chi_disabled() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.claim_window = Some(AiClaimView {
+        tile: 35,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 35];
+
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Pass)
+    );
+
+    table.allow_first_chi = false;
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Hu)
+    );
+}
+
+#[test]
 fn claim_hu_still_wins_during_final_defense() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 16;

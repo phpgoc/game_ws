@@ -69,10 +69,11 @@ fn ready_hand_visible_fan_reaches_cap_with_simulated_discards(
                 next.push(tile);
                 next.sort_unstable();
                 is_complete_win_for_table(&next, melds, table, win_rule)
-                    && estimated_fan_with_known_unavailable_wait(
+                    && estimated_fan_with_known_unavailable_wait_for_table(
                         &next,
                         melds,
                         tile,
+                        table,
                         win_rule,
                         &known_unavailable_tiles,
                     ) >= max_fan
@@ -391,10 +392,11 @@ fn ready_hand_visible_fan_exceeds_half_cap_with_simulated_discards(
                 next.push(tile);
                 next.sort_unstable();
                 is_complete_win_for_table(&next, melds, table, win_rule)
-                    && estimated_fan_with_known_unavailable_wait(
+                    && estimated_fan_with_known_unavailable_wait_for_table(
                         &next,
                         melds,
                         tile,
+                        table,
                         win_rule,
                         &known_unavailable_tiles,
                     ) * 2
