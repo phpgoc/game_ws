@@ -103,7 +103,9 @@ pub(in crate::ai::decision) fn four_gui_yi_discard_bias(
     {
         return 0.0;
     }
-    if dealer_opponent_has_major_threat(table, position, win_rule) {
+    if table.dealer_position == position
+        || dealer_opponent_has_major_threat(table, position, win_rule)
+    {
         return 0.0;
     }
 

@@ -157,6 +157,7 @@ pub(super) fn self_gang_score(
         if loses_four_gui_yi
             && visible_fan_gain <= 0
             && !keeps_pure_one_suit_ready
+            && table.dealer_position != position
             && !dealer_opponent_has_major_threat(table, position, win_rule)
         {
             return f64::NEG_INFINITY;

@@ -709,6 +709,12 @@ fn self_gang_preserves_added_four_gui_yi_when_gang_breaks_ready_hand() {
         choose_self_gang_from_view(&hand, &[3], &table, 0, WIN_RULE_SHENYANG_BASIC),
         None
     );
+
+    table.dealer_position = 0;
+    assert_eq!(
+        choose_self_gang_from_view(&hand, &[3], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        None
+    );
 }
 
 #[test]
@@ -741,6 +747,12 @@ fn self_gang_stops_preserving_four_gui_yi_against_threatening_dealer() {
     assert_eq!(
         choose_self_gang_from_view(&keeps_ready, &[31], &table, 0, WIN_RULE_SHENYANG_BASIC,),
         None
+    );
+
+    table.dealer_position = 0;
+    assert_eq!(
+        choose_self_gang_from_view(&keeps_ready, &[31], &table, 0, WIN_RULE_SHENYANG_BASIC,),
+        Some(31)
     );
 
     table.dealer_position = 1;

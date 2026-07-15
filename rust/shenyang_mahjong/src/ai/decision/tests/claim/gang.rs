@@ -680,9 +680,9 @@ fn capped_open_basic_route_delays_plain_gang_before_ready() {
 }
 
 #[test]
-fn claim_gang_penges_to_preserve_four_gui_yi_when_peng_stays_ready() {
+fn non_dealer_claim_gang_penges_to_preserve_four_gui_yi_when_peng_stays_ready() {
     let mut table = table_with_discards(1, Vec::new());
-    table.dealer_position = 0;
+    table.dealer_position = 3;
     table.seats.get_mut(&0).unwrap().melds = vec![test_chi_meld(11)];
     table.claim_window = Some(AiClaimView {
         tile: 4,
@@ -695,6 +695,21 @@ fn claim_gang_penges_to_preserve_four_gui_yi_when_peng_stays_ready() {
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Peng)
+    );
+
+    table.dealer_position = 0;
+    assert!(!should_peng_to_preserve_four_gui_yi_from_discard(
+        &hand,
+        table.seats.get(&0).unwrap().melds.as_slice(),
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+        4,
+        1,
+    ));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Gang)
     );
 }
 

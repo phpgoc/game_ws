@@ -396,6 +396,13 @@ fn discard_preserves_ready_four_gui_yi_route() {
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(2)
     );
+
+    let mut dealer_table = table.clone();
+    dealer_table.dealer_position = 0;
+    assert_eq!(
+        four_gui_yi_discard_bias(&hand, 2, melds, &dealer_table, 0, WIN_RULE_SHENYANG_BASIC,),
+        0.0
+    );
 }
 
 #[test]
