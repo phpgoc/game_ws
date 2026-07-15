@@ -242,7 +242,8 @@ fn seven_pairs_plan_ignores_malformed_melds_but_rejects_valid_melds() {
     );
 
     let wait_hand = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 12, 13, 13, 31, 5];
-    let base_wait_bias = seven_pairs_wait_discard_bias(&wait_hand, 5, &[], &table, 0);
+    let base_wait_bias =
+        seven_pairs_wait_discard_bias(&wait_hand, 5, &[], &table, 0, WIN_RULE_SHENYANG_BASIC);
     assert!(base_wait_bias > 0.0);
     assert_eq!(
         seven_pairs_wait_discard_bias(
@@ -255,11 +256,19 @@ fn seven_pairs_plan_ignores_malformed_melds_but_rejects_valid_melds() {
             }],
             &table,
             0,
+            WIN_RULE_SHENYANG_BASIC,
         ),
         base_wait_bias
     );
     assert_eq!(
-        seven_pairs_wait_discard_bias(&wait_hand, 5, &[test_peng_meld(21)], &table, 0),
+        seven_pairs_wait_discard_bias(
+            &wait_hand,
+            5,
+            &[test_peng_meld(21)],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+        ),
         0.0
     );
 }
@@ -658,8 +667,8 @@ fn speed_first_seven_pairs_wait_prefers_three_live_middle_copies_over_two_termin
     assert_eq!(remaining_tile_count(&middle_wait, &table, 0, 5), 3);
     assert_eq!(remaining_tile_count(&terminal_wait, &table, 0, 9), 2);
     assert!(
-        seven_pairs_wait_tile_score(5, &middle_wait, &table, 0)
-            > seven_pairs_wait_tile_score(9, &terminal_wait, &table, 0)
+        seven_pairs_wait_tile_score(5, &middle_wait, &table, 0, WIN_RULE_SHENYANG_BASIC)
+            > seven_pairs_wait_tile_score(9, &terminal_wait, &table, 0, WIN_RULE_SHENYANG_BASIC,)
     );
     assert_eq!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
@@ -669,8 +678,8 @@ fn speed_first_seven_pairs_wait_prefers_three_live_middle_copies_over_two_termin
     table.dealer_position = 3;
     table.wall_count = FINAL_DEFENSE_WALL_COUNT;
     assert!(
-        seven_pairs_wait_tile_score(5, &middle_wait, &table, 0)
-            > seven_pairs_wait_tile_score(9, &terminal_wait, &table, 0)
+        seven_pairs_wait_tile_score(5, &middle_wait, &table, 0, WIN_RULE_SHENYANG_BASIC)
+            > seven_pairs_wait_tile_score(9, &terminal_wait, &table, 0, WIN_RULE_SHENYANG_BASIC,)
     );
 }
 
@@ -683,8 +692,8 @@ fn discard_sets_seven_pairs_wait_by_breaking_dead_triplet_wait() {
 
     assert_eq!(remaining_tile_count(&dead_wind_wait, &table, 0, 31), 0);
     assert!(
-        seven_pairs_wait_tile_score(5, &live_middle_wait, &table, 0)
-            > seven_pairs_wait_tile_score(31, &dead_wind_wait, &table, 0)
+        seven_pairs_wait_tile_score(5, &live_middle_wait, &table, 0, WIN_RULE_SHENYANG_BASIC,)
+            > seven_pairs_wait_tile_score(31, &dead_wind_wait, &table, 0, WIN_RULE_SHENYANG_BASIC,)
     );
     assert_eq!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
@@ -699,8 +708,8 @@ fn seven_pairs_wait_score_prefers_live_middle_over_public_wind() {
     let middle_wait = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 21, 21, 22, 22];
 
     assert!(
-        seven_pairs_wait_tile_score(5, &middle_wait, &table, 0)
-            > seven_pairs_wait_tile_score(31, &wind_wait, &table, 0)
+        seven_pairs_wait_tile_score(5, &middle_wait, &table, 0, WIN_RULE_SHENYANG_BASIC)
+            > seven_pairs_wait_tile_score(31, &wind_wait, &table, 0, WIN_RULE_SHENYANG_BASIC,)
     );
 }
 
@@ -714,8 +723,8 @@ fn seven_pairs_wait_score_rejects_dead_exposed_wind_wait() {
 
     assert_eq!(remaining_tile_count(&wind_wait, &table, 0, 31), 0);
     assert!(
-        seven_pairs_wait_tile_score(5, &middle_wait, &table, 0)
-            > seven_pairs_wait_tile_score(31, &wind_wait, &table, 0)
+        seven_pairs_wait_tile_score(5, &middle_wait, &table, 0, WIN_RULE_SHENYANG_BASIC)
+            > seven_pairs_wait_tile_score(31, &wind_wait, &table, 0, WIN_RULE_SHENYANG_BASIC,)
     );
     assert_eq!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),

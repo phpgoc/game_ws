@@ -61,6 +61,7 @@ pub(in crate::ai::decision) fn seven_pairs_wait_discard_bias(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
+    win_rule: i32,
 ) -> f64 {
     if valid_meld_count(melds) > 0 || hand.len() != 14 || pair_count(hand) != 6 {
         return 0.0;
@@ -79,7 +80,7 @@ pub(in crate::ai::decision) fn seven_pairs_wait_discard_bias(
         return 0.0;
     };
     let own_tile_count = hand.iter().filter(|item| **item == tile).count();
-    18.0 + seven_pairs_wait_tile_score(wait_tile, &next, table, position)
+    18.0 + seven_pairs_wait_tile_score(wait_tile, &next, table, position, win_rule)
         + wait_setting_discard_safety_adjustment(table, position, tile, own_tile_count)
 }
 
@@ -100,13 +101,14 @@ pub(in crate::ai::decision) fn seven_pairs_wait_tile_score(
     hand_after_discard: &[i32],
     table: &AiPublicTable,
     position: usize,
+    win_rule: i32,
 ) -> f64 {
     seven_pairs_wait_tile_score_with_simulated_discards(
         wait_tile,
         hand_after_discard,
         table,
         position,
-        false,
+        win_rule,
         &[],
     )
 }
@@ -124,7 +126,7 @@ pub(in crate::ai::decision) fn seven_pairs_wait_tile_score_after_discard(
         hand_after_discard,
         table,
         position,
-        dealer_opponent_has_major_threat(table, position, win_rule),
+        win_rule,
         &[discarded_tile],
     )
 }
@@ -134,7 +136,7 @@ fn seven_pairs_wait_tile_score_with_simulated_discards(
     hand_after_discard: &[i32],
     table: &AiPublicTable,
     position: usize,
-    dealer_threat_speed_first: bool,
+    win_rule: i32,
     simulated_discards: &[i32],
 ) -> f64 {
     let public_discards = public_discard_count(table, wait_tile) as f64;
@@ -150,7 +152,7 @@ fn seven_pairs_wait_tile_score_with_simulated_discards(
         return -240.0 - public_discards * 12.0;
     }
     let speed_first = table.dealer_position == position
-        || dealer_threat_speed_first
+        || dealer_opponent_has_major_threat(table, position, win_rule)
         || is_late_defense_round(table);
     if speed_first || seven_pairs_regular_wait_reaches_cap(table) {
         let remaining_weight = if speed_first { 14.0 } else { 6.0 };

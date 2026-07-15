@@ -104,6 +104,8 @@ fn seven_pairs_prefers_live_middle_wait_against_major_dealer_threat() {
         },
     );
     let hand = vec![1, 2, 2, 3, 3, 11, 11, 12, 12, 15, 16, 16, 26, 26];
+    let terminal_wait = remove_n_tiles(&hand, 15, 1);
+    let middle_wait = remove_n_tiles(&hand, 1, 1);
 
     table.dealer_position = 2;
     assert!(!dealer_opponent_has_major_threat(
@@ -111,6 +113,14 @@ fn seven_pairs_prefers_live_middle_wait_against_major_dealer_threat() {
         0,
         WIN_RULE_SHENYANG_BASIC,
     ));
+    assert!(
+        seven_pairs_wait_tile_score(1, &terminal_wait, &table, 0, WIN_RULE_SHENYANG_BASIC,)
+            > seven_pairs_wait_tile_score(15, &middle_wait, &table, 0, WIN_RULE_SHENYANG_BASIC,)
+    );
+    assert!(
+        seven_pairs_wait_discard_bias(&hand, 15, &[], &table, 0, WIN_RULE_SHENYANG_BASIC,)
+            > seven_pairs_wait_discard_bias(&hand, 1, &[], &table, 0, WIN_RULE_SHENYANG_BASIC,)
+    );
     assert_eq!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(15)
@@ -122,6 +132,14 @@ fn seven_pairs_prefers_live_middle_wait_against_major_dealer_threat() {
         0,
         WIN_RULE_SHENYANG_BASIC,
     ));
+    assert!(
+        seven_pairs_wait_tile_score(15, &middle_wait, &table, 0, WIN_RULE_SHENYANG_BASIC,)
+            > seven_pairs_wait_tile_score(1, &terminal_wait, &table, 0, WIN_RULE_SHENYANG_BASIC,)
+    );
+    assert!(
+        seven_pairs_wait_discard_bias(&hand, 1, &[], &table, 0, WIN_RULE_SHENYANG_BASIC,)
+            > seven_pairs_wait_discard_bias(&hand, 15, &[], &table, 0, WIN_RULE_SHENYANG_BASIC,)
+    );
     assert_eq!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(1)

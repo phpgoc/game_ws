@@ -119,7 +119,7 @@ fn choose_discard_from_view_inner(
             + basic_heng_seed_discard_bias(hand, tile, melds, win_rule)
             + capped_spare_dragon_discard_bias(hand, tile, melds, table)
             + seven_pairs_plan_discard_bias(hand, tile, melds, table, position, win_rule)
-            + seven_pairs_wait_discard_bias(hand, tile, melds, table, position)
+            + seven_pairs_wait_discard_bias(hand, tile, melds, table, position, win_rule)
             + four_gui_yi_discard_bias(hand, tile, melds, table, position, win_rule)
             + pure_one_suit_discard_bias(hand, tile, melds, table, position)
             + complete_sequence_discard_bias(hand, tile, melds, table, position)

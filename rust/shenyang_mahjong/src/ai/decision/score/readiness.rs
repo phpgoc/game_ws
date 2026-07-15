@@ -292,7 +292,7 @@ pub(in crate::ai::decision) fn ready_tile_score_with_simulated_discards(
                 &known_unavailable_tiles,
             );
             if melds.is_empty() && is_seven_pairs_wait_shape(hand) && is_seven_pairs_win(&next) {
-                score += seven_pairs_wait_tile_score(tile, hand, table, position);
+                score += seven_pairs_wait_tile_score(tile, hand, table, position, win_rule);
             }
         }
     }
