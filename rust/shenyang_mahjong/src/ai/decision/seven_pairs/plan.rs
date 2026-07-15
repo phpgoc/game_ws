@@ -92,7 +92,9 @@ pub(in crate::ai::decision) fn should_lock_seven_pairs_plan(
     if capped_basic_route_foundation_visible_fan_reaches_cap(hand, melds, table, win_rule) {
         return false;
     }
-    if table.dealer_position == position && has_basic_normal_route_foundation(hand, melds, win_rule)
+    if (table.dealer_position == position
+        || dealer_opponent_has_major_threat(table, position, win_rule))
+        && has_basic_normal_route_foundation(hand, melds, win_rule)
     {
         return false;
     }

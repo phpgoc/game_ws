@@ -75,6 +75,76 @@ fn claim_peng_preserves_five_pairs_even_with_three_suits() {
 }
 
 #[test]
+fn threatening_dealer_stops_marginal_five_pair_chase() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.claim_window = Some(AiClaimView {
+        tile: 21,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    table.seats.get_mut(&1).unwrap().hand_count = 4;
+    table.seats.get_mut(&1).unwrap().melds =
+        vec![test_peng_meld(3), test_peng_meld(14), test_peng_meld(25)];
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![1, 1, 2, 2, 11, 11, 12, 21, 21, 22, 31, 35, 35];
+
+    table.dealer_position = 3;
+    assert!(!dealer_opponent_has_major_threat(
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+    ));
+    assert!(should_lock_seven_pairs_plan(
+        &hand,
+        &[],
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+    ));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Pass)
+    );
+
+    table.dealer_position = 1;
+    assert!(dealer_opponent_has_major_threat(
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+    ));
+    assert!(!should_lock_seven_pairs_plan(
+        &hand,
+        &[],
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+    ));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Peng)
+    );
+
+    let six_pair_hand = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 12, 21, 21, 31];
+    assert!(should_lock_seven_pairs_plan(
+        &six_pair_hand,
+        &[],
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+    ));
+
+    let missing_suit_hand = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 12, 31, 32, 33];
+    assert!(!missing_suits(&missing_suit_hand, &[]).is_empty());
+    assert!(should_lock_seven_pairs_plan(
+        &missing_suit_hand,
+        &[],
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+    ));
+}
+
+#[test]
 fn claim_peng_preserves_quad_as_two_pairs_seven_pairs_route() {
     let mut table = table_with_discards(1, Vec::new());
     table.claim_window = Some(AiClaimView {
