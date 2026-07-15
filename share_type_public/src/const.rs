@@ -3,9 +3,10 @@ use typeshare::typeshare;
 
 #[typeshare]
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
 #[allow(non_camel_case_types)]
 pub enum GameId {
+    #[default]
     ALL = 0,
     LANDLORD = 1,
     SHENYANG_MAHJONG = 2,
@@ -14,12 +15,6 @@ pub enum GameId {
     OPEN_HOLD_EM = 5,
     SHORT_DECK_HOLD_EM = 6,
     OMAHA_HOLD_EM = 7,
-}
-
-impl Default for GameId {
-    fn default() -> Self {
-        Self::ALL
-    }
 }
 
 impl From<GameId> for i32 {

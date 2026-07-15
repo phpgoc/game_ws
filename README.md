@@ -9,6 +9,7 @@
 - `rust/landlord/`: 斗地主 Rust 服务端。
 - `rust/shenyang_mahjong/`: 沈阳麻将 Rust 服务端。
 - `rust/holdem/`: Hold'em 系列 Rust 服务端，承载德州、明牌德州、短牌德州和奥马哈。
+- `rust/p2p/`: 独立的两人 WebRTC 信令服务与 STUN/TURN 临时凭证签发器，不依赖其他游戏 crate。
 - `android/`: 通用 Android 前台服务壳，当前使用 NDK 运行 `rust/landlord`。
 
 ## 依赖
@@ -46,7 +47,14 @@ cargo run -p landlord -- --host 0.0.0.0 --port 9001
 cargo run -p shenyang_mahjong -- --host 0.0.0.0 --port 9002
 cargo run -p holdem -- --host 0.0.0.0 --port 9003
 cargo run -p tractor -- --host 0.0.0.0 --port 9004
+P2P_TURN_SECRET='replace-with-a-long-random-secret' \
+P2P_TURN_PUBLIC_IP='203.0.113.10' \
+cargo run -p p2p -- --host 0.0.0.0 --port 9005
 ```
+
+`p2p` 会在同一 Rust 进程内监听 UDP 3478 提供 STUN/TURN，并使用 UDP
+49160-49200 作为 relay 端口；不依赖外部 coturn。局域网运行可以省略
+`P2P_TURN_PUBLIC_IP` 自动选择本机地址，公网 NAT 部署必须配置公网 IP 和端口映射。
 
 也可以在本目录运行：
 
@@ -66,8 +74,9 @@ cargo run -p landlord -- --host 0.0.0.0 --port 9001
 ```sh
 cargo check -p landlord
 cargo test -p landlord
-cargo check -p shenyang_mahjong -p holdem -p tractor
+cargo check -p shenyang_mahjong -p holdem -p tractor -p p2p
 cargo test -p tractor
+cargo test -p p2p
 ```
 
 拖拉机房间开始后会锁定设置。当前主要设置包括：`deck_count`（几副牌）、`removed_rank_count`（按 `3/4/6/7/8/9/J/Q/A` 的顺序删掉前 N 个点数，`0` 表示不删）、`first_deal_time`（首局发牌总时间，毫秒）、`deal_time`（后续局发牌总时间，毫秒）、`ai_action_time`（AI/托管行动间隔，毫秒）、`target_rank`（最终目标 rank）、`blood_enabled` / `blood_start_score` / `blood_score_per_unit`（喝血相关）。首局发牌中由所有玩家抢主/反主并决定首庄；第二局起只由既定庄家选择主花色。发完后庄家收底并扣回相同张数，随后进入出牌。
@@ -94,7 +103,8 @@ cargo build --release --target x86_64-unknown-linux-musl \
   -p landlord \
   -p shenyang_mahjong \
   -p holdem \
-  -p tractor
+  -p tractor \
+  -p p2p
 ```
 
 产物位置：
@@ -104,6 +114,7 @@ target/x86_64-unknown-linux-musl/release/landlord
 target/x86_64-unknown-linux-musl/release/shenyang_mahjong
 target/x86_64-unknown-linux-musl/release/holdem
 target/x86_64-unknown-linux-musl/release/tractor
+target/x86_64-unknown-linux-musl/release/p2p
 ```
 
 构建时如果看到 `dropping unsupported crate type cdylib`，可以忽略。服务端二进制仍会正常生成。
@@ -132,7 +143,8 @@ cargo build --release --target x86_64-unknown-linux-musl \
   -p landlord \
   -p shenyang_mahjong \
   -p holdem \
-  -p tractor
+  -p tractor \
+  -p p2p
 ```
 
 也可以写进本机 `~/.cargo/config.toml`，这样以后不用每次传环境变量：
@@ -155,7 +167,8 @@ cargo build --release --target x86_64-pc-windows-msvc `
   -p landlord `
   -p shenyang_mahjong `
   -p holdem `
-  -p tractor
+  -p tractor `
+  -p p2p
 Remove-Item Env:RUSTFLAGS
 ```
 
@@ -166,6 +179,7 @@ target\x86_64-pc-windows-msvc\release\landlord.exe
 target\x86_64-pc-windows-msvc\release\shenyang_mahjong.exe
 target\x86_64-pc-windows-msvc\release\holdem.exe
 target\x86_64-pc-windows-msvc\release\tractor.exe
+target\x86_64-pc-windows-msvc\release\p2p.exe
 ```
 
 ### 维护约束
