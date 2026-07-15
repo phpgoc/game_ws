@@ -186,8 +186,7 @@ fn late_open_hand_avoids_live_tile_against_four_piao_melds() {
         dealer_position: 0,
         wall_count: 31,
         max_fan: Some(4),
-        allow_chi: true,
-        chi_opens_door: true,
+        allow_first_chi: true,
         claim_window: None,
         seats,
     };

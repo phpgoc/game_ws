@@ -185,12 +185,11 @@ pub(in crate::ai::decision) fn should_pass_hu_for_capped_live_wait(
     }
 
     let current_known_unavailable = known_unavailable_tiles_for_claimed_win(table, position, tile);
-    let current_fan = estimated_fan_with_known_unavailable_wait_and_open_rule(
+    let current_fan = estimated_fan_with_known_unavailable_wait(
         win_hand,
         melds,
         tile,
         win_rule,
-        table.chi_opens_door,
         &current_known_unavailable,
     );
     if current_fan != max_fan - 1 {
@@ -229,12 +228,11 @@ pub(in crate::ai::decision) fn should_pass_hu_for_capped_live_wait(
             next.push(wait_tile);
             next.sort_unstable();
             let reaches_cap = is_complete_win_for_table(&next, melds, table, win_rule)
-                && estimated_fan_with_known_unavailable_wait_and_open_rule(
+                && estimated_fan_with_known_unavailable_wait(
                     &next,
                     melds,
                     wait_tile,
                     win_rule,
-                    table.chi_opens_door,
                     &pass_known_unavailable,
                 ) >= max_fan;
             if reaches_cap { remaining } else { 0 }

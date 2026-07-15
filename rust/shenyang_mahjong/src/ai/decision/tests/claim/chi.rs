@@ -21,10 +21,10 @@ fn claim_chi_can_fill_missing_third_suit() {
 }
 
 #[test]
-fn claim_chi_passes_when_disabled() {
+fn claim_chi_blocks_only_first_chi_when_configured() {
     let mut table = table_with_discards(3, Vec::new());
     table.wall_count = 40;
-    table.allow_chi = false;
+    table.allow_first_chi = false;
     table.claim_window = Some(AiClaimView {
         tile: 22,
         from_position: 3,
@@ -36,6 +36,15 @@ fn claim_chi_passes_when_disabled() {
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
         Some(AiClaimChoice::Pass)
+    );
+
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
+    let opened_hand = vec![4, 5, 6, 11, 12, 13, 21, 23, 31, 35];
+    assert_eq!(
+        choose_claim_from_view(&opened_hand, &claim, &table, 0, WIN_RULE_RELAXED),
+        Some(AiClaimChoice::Chi {
+            consume_tiles: vec![21, 23]
+        })
     );
 }
 
@@ -129,51 +138,6 @@ fn claim_chi_can_use_claim_tile_as_low_edge() {
         Some(AiClaimChoice::Chi {
             consume_tiles: vec![2, 3]
         })
-    );
-}
-
-#[test]
-fn claim_chi_does_not_fake_open_door_when_configured_off() {
-    let mut table = table_with_discards(3, Vec::new());
-    table.wall_count = 40;
-    table.chi_opens_door = false;
-    table.claim_window = Some(AiClaimView {
-        tile: 3,
-        from_position: 3,
-        eligible_positions: vec![0],
-    });
-    let claim = table.claim_window.clone().unwrap();
-    let hand = vec![1, 2, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35];
-
-    assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(AiClaimChoice::Pass)
-    );
-}
-
-#[test]
-fn relaxed_claim_chi_does_not_fake_defensive_open_when_configured_off() {
-    let mut table = table_with_discards(3, Vec::new());
-    table.wall_count = 52;
-    table.chi_opens_door = false;
-    table.claim_window = Some(AiClaimView {
-        tile: 3,
-        from_position: 3,
-        eligible_positions: vec![0],
-    });
-    let claim = table.claim_window.clone().unwrap();
-    let hand = vec![1, 1, 2, 5, 8, 11, 14, 17, 21, 24, 31, 32, 33];
-
-    assert!(!should_claim_chi_to_open_broken_hand_for_defense(
-        &hand,
-        &[],
-        &table,
-        0,
-        WIN_RULE_RELAXED
-    ));
-    assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
-        Some(AiClaimChoice::Pass)
     );
 }
 

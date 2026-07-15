@@ -90,8 +90,6 @@ fn late_defense_chi_only_closed_opponent_blocks_missing_suit_read_when_chi_does_
     );
 
     assert!(opponent_missing_suit_safety_bias(&table, 0, 5) > 0.0);
-    table.chi_opens_door = false;
-    assert_eq!(opponent_missing_suit_safety_bias(&table, 0, 5), 0.0);
 }
 
 #[test]

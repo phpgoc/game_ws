@@ -58,18 +58,13 @@ fn ready_score_counts_projected_meld_tiles_as_dead() {
 }
 
 #[test]
-fn ready_score_respects_whether_chi_opens_door() {
-    let mut table = table_with_discards(1, Vec::new());
+fn ready_score_counts_chi_as_opening_meld() {
+    let table = table_with_discards(1, Vec::new());
     let melds = vec![test_chi_meld(1)];
     let hand = vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35];
 
     assert!(ready_tile_score(&hand, &melds, &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0);
 
-    table.chi_opens_door = false;
-    assert_eq!(
-        ready_tile_score(&hand, &melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        0.0
-    );
     assert!(ready_tile_score(&hand, &melds, &table, 0, WIN_RULE_RELAXED) > 0.0);
 }
 
@@ -264,13 +259,23 @@ fn fan_wait_bias_stops_piao_shou_ba_yi_when_visible_fan_exceeds_half_cap() {
 }
 
 #[test]
-fn estimated_visible_fan_requires_open_meld_for_piao() {
+fn estimated_visible_fan_accepts_closed_piao_with_dragon_pair() {
     let closed_triplet_hand = vec![1, 1, 1, 11, 11, 11, 21, 21, 21, 31, 31, 31, 35, 35];
 
     assert_eq!(
         estimated_visible_fan_without_wait(&closed_triplet_hand, &[], WIN_RULE_RELAXED),
-        1
+        3
     );
+    assert_eq!(
+        estimated_visible_fan_without_wait(&closed_triplet_hand, &[], WIN_RULE_SHENYANG_BASIC),
+        3
+    );
+}
+
+#[test]
+fn estimated_visible_fan_rejects_closed_piao_with_non_dragon_pair() {
+    let closed_triplet_hand = vec![1, 1, 1, 11, 11, 11, 21, 21, 21, 31, 31, 35, 35, 35];
+
     assert_eq!(
         estimated_visible_fan_without_wait(&closed_triplet_hand, &[], WIN_RULE_SHENYANG_BASIC),
         0

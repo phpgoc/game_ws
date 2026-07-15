@@ -19,8 +19,7 @@ pub struct AiPublicTable {
     pub dealer_position: usize,
     pub wall_count: usize,
     pub max_fan: Option<i32>,
-    pub allow_chi: bool,
-    pub chi_opens_door: bool,
+    pub allow_first_chi: bool,
     pub claim_window: Option<AiClaimView>,
     pub seats: HashMap<usize, AiSeatView>,
 }
@@ -77,8 +76,7 @@ pub fn build_public_table_with_configs(
         dealer_position: state.dealer_position,
         wall_count: state.wall_count(),
         max_fan: configs.get("max_fan").copied().filter(|fan| *fan > 0),
-        allow_chi: configs.get("allow_chi").copied().unwrap_or(1) == 1,
-        chi_opens_door: configs.get("chi_opens_door").copied().unwrap_or(1) == 1,
+        allow_first_chi: configs.get("allow_first_chi").copied().unwrap_or(1) == 1,
         claim_window,
         seats,
     }

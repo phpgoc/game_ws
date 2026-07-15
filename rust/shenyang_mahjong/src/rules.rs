@@ -160,6 +160,23 @@ fn can_form_triplets_with_pair(tiles: &[i32]) -> bool {
     })
 }
 
+fn can_form_triplets_with_dragon_pair(tiles: &[i32]) -> bool {
+    if tiles.len() % 3 != 2 {
+        return false;
+    }
+    let counts = tile_counts(tiles);
+    dragon_pair_tiles().into_iter().any(|pair_tile| {
+        counts[pair_tile as usize] >= 2
+            && SHENYANG_MAHJONG_TILE_KINDS.into_iter().all(|tile| {
+                let mut count = counts[tile as usize];
+                if tile == pair_tile {
+                    count -= 2;
+                }
+                count % 3 == 0
+            })
+    })
+}
+
 pub fn can_gang(hand: &[i32], target_tile: i32) -> bool {
     if !is_valid_tile(target_tile) || !has_valid_tile_multiplicity(hand) {
         return false;
@@ -229,13 +246,7 @@ pub(crate) fn has_dragon_pair_as_standard_pair(tiles: &[i32]) -> bool {
 }
 
 fn has_open_meld(melds: &[WsShenyangMahjongMeld]) -> bool {
-    has_open_meld_with_chi_rule(melds, true)
-}
-
-fn has_open_meld_with_chi_rule(melds: &[WsShenyangMahjongMeld], chi_opens_door: bool) -> bool {
-    melds
-        .iter()
-        .any(|meld| is_open_meld(meld) && (chi_opens_door || !is_sequence_meld(meld)))
+    melds.iter().any(is_open_meld)
 }
 
 fn has_terminal_or_honor(tiles: &[i32]) -> bool {
@@ -324,20 +335,10 @@ pub fn is_complete_win(tiles: &[i32], meld_count: usize) -> bool {
     is_standard_win(tiles)
 }
 
-#[cfg(test)]
 pub fn is_complete_win_with_melds(
     tiles: &[i32],
     melds: &[WsShenyangMahjongMeld],
     win_rule: i32,
-) -> bool {
-    is_complete_win_with_melds_and_open_rule(tiles, melds, win_rule, true)
-}
-
-pub fn is_complete_win_with_melds_and_open_rule(
-    tiles: &[i32],
-    melds: &[WsShenyangMahjongMeld],
-    win_rule: i32,
-    chi_opens_door: bool,
 ) -> bool {
     if melds.iter().any(|meld| !is_valid_meld(meld)) || !is_complete_win(tiles, melds.len()) {
         return false;
@@ -348,7 +349,7 @@ pub fn is_complete_win_with_melds_and_open_rule(
     if win_rule != WIN_RULE_SHENYANG_BASIC {
         return true;
     }
-    satisfies_shenyang_basic_win_with_open_rule(tiles, melds, chi_opens_door)
+    satisfies_shenyang_basic_win(tiles, melds)
 }
 
 fn is_dragon_tile(tile: i32) -> bool {
@@ -388,17 +389,16 @@ fn is_pair_single_wait(tiles: &[i32], win_tile: i32) -> bool {
 }
 
 pub fn is_piao_hu_win(tiles: &[i32], melds: &[WsShenyangMahjongMeld]) -> bool {
-    if !has_open_meld(melds)
-        || !is_complete_win(tiles, melds.len())
-        || melds.iter().any(|meld| !is_triplet_meld(meld))
-    {
+    if !is_complete_win(tiles, melds.len()) || melds.iter().any(|meld| !is_triplet_meld(meld)) {
         return false;
     }
     let all_tiles = all_tiles_with_melds(tiles, melds);
     if !has_valid_tile_multiplicity(&all_tiles) {
         return false;
     }
-    has_three_suits(&all_tiles)
+    let has_required_opening = has_open_meld(melds) || can_form_triplets_with_dragon_pair(tiles);
+    has_required_opening
+        && has_three_suits(&all_tiles)
         && has_terminal_or_honor(&all_tiles)
         && can_form_triplets_with_pair(tiles)
 }
@@ -469,7 +469,6 @@ pub fn is_single_wait_shape(tiles: &[i32], melds: &[WsShenyangMahjongMeld], win_
     is_single_wait_shape_with_known_unavailable_tiles(tiles, melds, win_tile, WIN_RULE_RELAXED, &[])
 }
 
-#[cfg(test)]
 pub fn is_single_wait_shape_with_known_unavailable_tiles(
     tiles: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -477,35 +476,14 @@ pub fn is_single_wait_shape_with_known_unavailable_tiles(
     win_rule: i32,
     known_unavailable_tiles: &[i32],
 ) -> bool {
-    is_single_wait_shape_with_known_unavailable_tiles_and_open_rule(
-        tiles,
-        melds,
-        win_tile,
-        win_rule,
-        true,
-        known_unavailable_tiles,
-    )
-}
-
-pub fn is_single_wait_shape_with_known_unavailable_tiles_and_open_rule(
-    tiles: &[i32],
-    melds: &[WsShenyangMahjongMeld],
-    win_tile: i32,
-    win_rule: i32,
-    chi_opens_door: bool,
-    known_unavailable_tiles: &[i32],
-) -> bool {
-    if !is_complete_win_with_melds_and_open_rule(tiles, melds, win_rule, chi_opens_door)
-        || !tiles.contains(&win_tile)
-    {
+    if !is_complete_win_with_melds(tiles, melds, win_rule) || !tiles.contains(&win_tile) {
         return false;
     }
-    if !is_unique_complete_wait_with_known_unavailable_tiles_and_open_rule(
+    if !is_unique_complete_wait_with_known_unavailable_tiles(
         tiles,
         melds,
         win_tile,
         win_rule,
-        chi_opens_door,
         known_unavailable_tiles,
     ) {
         return false;
@@ -596,12 +574,11 @@ fn is_unique_complete_wait(tiles: &[i32], melds: &[WsShenyangMahjongMeld], win_t
     waits.len() == 1 && waits[0] == win_tile
 }
 
-fn is_unique_complete_wait_with_known_unavailable_tiles_and_open_rule(
+fn is_unique_complete_wait_with_known_unavailable_tiles(
     tiles: &[i32],
     melds: &[WsShenyangMahjongMeld],
     win_tile: i32,
     win_rule: i32,
-    chi_opens_door: bool,
     known_unavailable_tiles: &[i32],
 ) -> bool {
     let Some(index) = tiles.iter().position(|tile| *tile == win_tile) else {
@@ -617,7 +594,7 @@ fn is_unique_complete_wait_with_known_unavailable_tiles_and_open_rule(
             let mut test = base.clone();
             test.push(*tile);
             test.sort_unstable();
-            is_complete_win_with_melds_and_open_rule(&test, melds, win_rule, chi_opens_door)
+            is_complete_win_with_melds(&test, melds, win_rule)
         })
         .collect::<Vec<_>>();
     waits.len() == 1 && waits[0] == win_tile
@@ -660,16 +637,7 @@ fn same_suit(a: i32, b: i32) -> bool {
     a / 10 == b / 10
 }
 
-#[allow(dead_code)]
 pub fn satisfies_shenyang_basic_win(tiles: &[i32], melds: &[WsShenyangMahjongMeld]) -> bool {
-    satisfies_shenyang_basic_win_with_open_rule(tiles, melds, true)
-}
-
-pub fn satisfies_shenyang_basic_win_with_open_rule(
-    tiles: &[i32],
-    melds: &[WsShenyangMahjongMeld],
-    chi_opens_door: bool,
-) -> bool {
     if melds.iter().any(|meld| !is_valid_meld(meld)) {
         return false;
     }
@@ -686,7 +654,10 @@ pub fn satisfies_shenyang_basic_win_with_open_rule(
     if is_pure_one_suit_tiles(&all_tiles) {
         return true;
     }
-    if !has_open_meld_with_chi_rule(melds, chi_opens_door) {
+    if is_piao_hu_win(tiles, melds) {
+        return true;
+    }
+    if !has_open_meld(melds) {
         return false;
     }
     let has_triplet_or_dragon_pair = melds.iter().any(is_triplet_meld)
@@ -799,12 +770,9 @@ mod tests {
     use super::{
         WIN_RULE_RELAXED, WIN_RULE_SHENYANG_BASIC, can_chi, can_concealed_gang, can_gang, can_peng,
         has_triplet_in_standard_decomposition, is_complete_win, is_complete_win_with_melds,
-        is_complete_win_with_melds_and_open_rule, is_piao_hu_win, is_pure_one_suit_win,
-        is_seven_pairs_win, is_single_wait_shape,
-        is_single_wait_shape_with_known_unavailable_tiles,
-        is_single_wait_shape_with_known_unavailable_tiles_and_open_rule,
-        is_single_wait_shape_with_rule, is_standard_win, is_unique_complete_wait, is_win,
-        satisfies_shenyang_basic_win, satisfies_shenyang_basic_win_with_open_rule,
+        is_piao_hu_win, is_pure_one_suit_win, is_seven_pairs_win, is_single_wait_shape,
+        is_single_wait_shape_with_known_unavailable_tiles, is_single_wait_shape_with_rule,
+        is_standard_win, is_unique_complete_wait, is_win, satisfies_shenyang_basic_win,
         win_rule_from_configs,
     };
 
@@ -961,7 +929,7 @@ mod tests {
     }
 
     #[test]
-    fn piao_hu_rejects_closed_triplet_hand_without_open_meld() {
+    fn piao_hu_accepts_closed_triplet_hand_with_dragon_pair() {
         let tiles = vec![1, 1, 1, 11, 11, 11, 21, 21, 21, 35, 35];
         let melds = vec![meld(
             ShenyangMahjongMeldKind::GANG,
@@ -970,8 +938,22 @@ mod tests {
         )];
 
         assert!(is_complete_win(&tiles, melds.len()));
-        assert!(!is_piao_hu_win(&tiles, &melds));
-        assert!(!satisfies_shenyang_basic_win(&tiles, &melds));
+        assert!(is_piao_hu_win(&tiles, &melds));
+        assert!(satisfies_shenyang_basic_win(&tiles, &melds));
+        assert!(is_complete_win_with_melds(
+            &tiles,
+            &melds,
+            WIN_RULE_SHENYANG_BASIC
+        ));
+    }
+
+    #[test]
+    fn piao_hu_rejects_closed_triplet_hand_with_non_dragon_pair() {
+        let tiles = vec![1, 1, 1, 11, 11, 11, 21, 21, 21, 31, 31, 35, 35, 35];
+
+        assert!(is_complete_win(&tiles, 0));
+        assert!(!is_piao_hu_win(&tiles, &[]));
+        assert!(!satisfies_shenyang_basic_win(&tiles, &[]));
     }
 
     #[test]
@@ -1212,7 +1194,7 @@ mod tests {
     }
 
     #[test]
-    fn shenyang_basic_can_configure_whether_chi_opens_door() {
+    fn shenyang_basic_always_counts_chi_as_opening_meld() {
         let tiles = vec![1, 1, 1, 2, 3, 4, 21, 22, 23, 8, 8];
         let melds = vec![meld(
             ShenyangMahjongMeldKind::CHI,
@@ -1220,23 +1202,11 @@ mod tests {
             Some(1),
         )];
 
-        assert!(satisfies_shenyang_basic_win_with_open_rule(
-            &tiles, &melds, true
-        ));
-        assert!(!satisfies_shenyang_basic_win_with_open_rule(
-            &tiles, &melds, false
-        ));
-        assert!(is_complete_win_with_melds_and_open_rule(
+        assert!(satisfies_shenyang_basic_win(&tiles, &melds));
+        assert!(is_complete_win_with_melds(
             &tiles,
             &melds,
-            WIN_RULE_SHENYANG_BASIC,
-            true
-        ));
-        assert!(!is_complete_win_with_melds_and_open_rule(
-            &tiles,
-            &melds,
-            WIN_RULE_SHENYANG_BASIC,
-            false
+            WIN_RULE_SHENYANG_BASIC
         ));
     }
 
@@ -1490,30 +1460,17 @@ mod tests {
     }
 
     #[test]
-    fn single_wait_shape_respects_whether_chi_opens_door() {
+    fn single_wait_shape_counts_chi_as_opening_meld() {
         let tiles = vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35];
         let melds = vec![meld(ShenyangMahjongMeldKind::CHI, vec![1, 2, 3], Some(1))];
 
-        assert!(
-            is_single_wait_shape_with_known_unavailable_tiles_and_open_rule(
-                &tiles,
-                &melds,
-                35,
-                WIN_RULE_SHENYANG_BASIC,
-                true,
-                &[],
-            )
-        );
-        assert!(
-            !is_single_wait_shape_with_known_unavailable_tiles_and_open_rule(
-                &tiles,
-                &melds,
-                35,
-                WIN_RULE_SHENYANG_BASIC,
-                false,
-                &[],
-            )
-        );
+        assert!(is_single_wait_shape_with_known_unavailable_tiles(
+            &tiles,
+            &melds,
+            35,
+            WIN_RULE_SHENYANG_BASIC,
+            &[],
+        ));
     }
 
     #[test]

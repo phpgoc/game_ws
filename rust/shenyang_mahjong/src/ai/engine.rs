@@ -7,7 +7,7 @@ use crate::game::{
     perform_self_draw_hu, perform_self_gang, resolve_claim_window,
 };
 use crate::game_state::{ClaimResponse, ClaimWindowKind, ShenyangMahjongLoopState};
-use crate::rules::{is_complete_win_with_melds_and_open_rule, win_rule_from_configs};
+use crate::rules::{is_complete_win_with_melds, win_rule_from_configs};
 
 use super::decision::{
     AiClaimChoice, choose_claim_from_view, choose_discard_from_view,
@@ -209,12 +209,7 @@ fn claim_hu_is_complete(
         .map(|seat| seat.melds.as_slice())
         .unwrap_or(&[]);
     claim_known_tile_counts_are_possible(hand, melds, claim, table)
-        && is_complete_win_with_melds_and_open_rule(
-            &win_hand,
-            melds,
-            win_rule,
-            table.chi_opens_door,
-        )
+        && is_complete_win_with_melds(&win_hand, melds, win_rule)
 }
 
 #[cfg(test)]
@@ -231,7 +226,7 @@ mod tests {
     use crate::game::build_settlement_event_with_configs;
     use crate::game_state::ClaimWindowState;
     use crate::rules::{
-        WIN_RULE_RELAXED, WIN_RULE_SHENYANG_BASIC, is_complete_win_with_melds_and_open_rule,
+        WIN_RULE_RELAXED, WIN_RULE_SHENYANG_BASIC, is_complete_win_with_melds,
         win_rule_from_configs,
     };
 
@@ -525,8 +520,6 @@ mod tests {
     ) {
         let settlement = state.settlement.as_ref().expect("AI round settlement");
         let win_rule = win_rule_from_configs(configs);
-        let chi_opens_door = configs.get("chi_opens_door").copied().unwrap_or(1) == 1;
-
         for winner in &settlement.winner_positions {
             let mut hand = state.hands.get(winner).cloned().unwrap_or_default();
             if !settlement.is_self_draw
@@ -538,7 +531,7 @@ mod tests {
             let melds = state.melds.get(winner).map(Vec::as_slice).unwrap_or(&[]);
 
             assert!(
-                is_complete_win_with_melds_and_open_rule(&hand, melds, win_rule, chi_opens_door),
+                is_complete_win_with_melds(&hand, melds, win_rule),
                 "seed {seed} winner {winner} should have a legal Shenyang Mahjong hand: hand={hand:?}, melds={melds:?}, settlement={settlement:?}"
             );
         }
@@ -844,11 +837,10 @@ mod tests {
         state.last_drawn_tile = None;
         let mut dispatch = Dispatch::default();
 
-        assert!(is_complete_win_with_melds_and_open_rule(
+        assert!(is_complete_win_with_melds(
             state.hands.get(&0).unwrap(),
             state.melds.get(&0).unwrap(),
             WIN_RULE_RELAXED,
-            true,
         ));
         assert!(!can_self_draw_hu_with_configs(
             &state,

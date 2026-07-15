@@ -92,23 +92,21 @@ fn claimed_fourth_copy_keeps_seven_pairs_single_wait_fan() {
         0
     );
     assert_eq!(
-        estimated_fan_with_known_unavailable_wait_and_open_rule(
+        estimated_fan_with_known_unavailable_wait(
             &win_hand,
             &[],
             1,
             WIN_RULE_SHENYANG_BASIC,
-            table.chi_opens_door,
             &public_unavailable,
         ),
         5
     );
     assert_eq!(
-        estimated_fan_with_known_unavailable_wait_and_open_rule(
+        estimated_fan_with_known_unavailable_wait(
             &win_hand,
             &[],
             1,
             WIN_RULE_SHENYANG_BASIC,
-            table.chi_opens_door,
             &claimed_unavailable,
         ),
         6
@@ -164,12 +162,11 @@ fn claim_hu_does_not_double_count_visible_tile_to_create_capped_wait() {
         WIN_RULE_SHENYANG_BASIC
     ));
     assert_eq!(
-        estimated_fan_with_known_unavailable_wait_and_open_rule(
+        estimated_fan_with_known_unavailable_wait(
             &current_win,
             melds,
             16,
             WIN_RULE_SHENYANG_BASIC,
-            table.chi_opens_door,
             &current_known_unavailable,
         ),
         1
@@ -186,12 +183,11 @@ fn claim_hu_does_not_double_count_visible_tile_to_create_capped_wait() {
         3
     );
     assert_eq!(
-        estimated_fan_with_known_unavailable_wait_and_open_rule(
+        estimated_fan_with_known_unavailable_wait(
             &capped_wait_win,
             melds,
             13,
             WIN_RULE_SHENYANG_BASIC,
-            table.chi_opens_door,
             &pass_known_unavailable,
         ),
         1
@@ -226,12 +222,11 @@ fn self_draw_hu_can_pass_one_fan_short_when_capped_wait_is_live() {
         known_unavailable_tiles_with_simulated_discards(&table, 0, melds, &pass_simulated_discards);
 
     assert_eq!(
-        estimated_fan_with_known_unavailable_wait_and_open_rule(
+        estimated_fan_with_known_unavailable_wait(
             &win_hand,
             melds,
             16,
             WIN_RULE_SHENYANG_BASIC,
-            table.chi_opens_door,
             &[],
         ),
         1
@@ -248,12 +243,11 @@ fn self_draw_hu_can_pass_one_fan_short_when_capped_wait_is_live() {
         3
     );
     assert_eq!(
-        estimated_fan_with_known_unavailable_wait_and_open_rule(
+        estimated_fan_with_known_unavailable_wait(
             &capped_wait_win,
             melds,
             13,
             WIN_RULE_SHENYANG_BASIC,
-            table.chi_opens_door,
             &pass_known_unavailable,
         ),
         2
@@ -597,12 +591,11 @@ fn claim_hu_takes_when_current_fan_exceeds_half_cap() {
         known_unavailable_tiles_with_simulated_discards(&table, 0, melds, &pass_simulated_discards);
 
     assert_eq!(
-        estimated_fan_with_known_unavailable_wait_and_open_rule(
+        estimated_fan_with_known_unavailable_wait(
             &current_win,
             melds,
             16,
             WIN_RULE_RELAXED,
-            table.chi_opens_door,
             &current_known_unavailable,
         ),
         5
@@ -619,12 +612,11 @@ fn claim_hu_takes_when_current_fan_exceeds_half_cap() {
         3
     );
     assert_eq!(
-        estimated_fan_with_known_unavailable_wait_and_open_rule(
+        estimated_fan_with_known_unavailable_wait(
             &capped_wait_win,
             melds,
             13,
             WIN_RULE_RELAXED,
-            table.chi_opens_door,
             &pass_known_unavailable,
         ),
         6
@@ -711,7 +703,7 @@ fn dealer_self_draw_hu_takes_one_fan_short_instead_of_chasing_cap() {
 }
 
 #[test]
-fn claim_hu_respects_whether_chi_opens_door() {
+fn claim_hu_counts_chi_as_opening_meld() {
     let mut table = table_with_discards(1, Vec::new());
     table.claim_window = Some(AiClaimView {
         tile: 35,
@@ -725,12 +717,6 @@ fn claim_hu_respects_whether_chi_opens_door() {
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Hu)
-    );
-
-    table.chi_opens_door = false;
-    assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(AiClaimChoice::Pass)
     );
 }
 

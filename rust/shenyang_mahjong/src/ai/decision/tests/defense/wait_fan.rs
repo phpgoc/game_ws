@@ -49,8 +49,7 @@ fn mid_round_open_hand_does_not_chase_wait_fan_with_live_terminal_discard() {
         dealer_position: 0,
         wall_count: 37,
         max_fan: Some(4),
-        allow_chi: true,
-        chi_opens_door: true,
+        allow_first_chi: true,
         claim_window: None,
         seats,
     };
@@ -70,12 +69,8 @@ fn fan_wait_bias_stops_when_visible_fan_exceeds_half_cap() {
     let melds = vec![test_gang_meld(35)];
     let win_hand = vec![2, 2, 5, 6, 7, 11, 12, 13, 21, 22, 23];
 
-    let visible_fan = estimated_visible_fan_without_wait_and_open_rule(
-        &win_hand,
-        &melds,
-        WIN_RULE_SHENYANG_BASIC,
-        table.chi_opens_door,
-    );
+    let visible_fan =
+        estimated_visible_fan_without_wait(&win_hand, &melds, WIN_RULE_SHENYANG_BASIC);
     assert_eq!(visible_fan, 3);
     assert!(visible_fan * 2 > table.max_fan.unwrap());
 

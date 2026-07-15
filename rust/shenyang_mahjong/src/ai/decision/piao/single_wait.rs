@@ -116,12 +116,11 @@ fn piao_single_wait_tile_score_with_simulated_discards(
 
     let known_unavailable_tiles =
         known_unavailable_tiles_with_simulated_discards(table, position, melds, simulated_discards);
-    let estimated_fan = estimated_fan_with_known_unavailable_wait_and_open_rule(
+    let estimated_fan = estimated_fan_with_known_unavailable_wait(
         &win_hand,
         melds,
         wait_tile,
         win_rule,
-        table.chi_opens_door,
         &known_unavailable_tiles,
     );
     let capped_fan = table

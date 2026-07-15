@@ -24,27 +24,19 @@ fn closed_opponent_threat_counts_concealed_gang_as_closed() {
 }
 
 #[test]
-fn closed_opponent_threat_counts_chi_only_as_closed_when_chi_does_not_open_door() {
-    let mut closed_chi = table_with_discards(1, Vec::new());
-    closed_chi.wall_count = 16;
-    closed_chi.chi_opens_door = false;
-    let seat = closed_chi.seats.get_mut(&1).unwrap();
+fn closed_opponent_threat_counts_chi_as_opening_meld() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 16;
+    let seat = table.seats.get_mut(&1).unwrap();
     seat.hand_count = 10;
     seat.melds = vec![test_chi_meld(1)];
 
-    let mut open_chi = closed_chi.clone();
-    open_chi.chi_opens_door = true;
-
-    assert!(has_open_meld(&closed_chi.seats.get(&1).unwrap().melds));
-    assert!(!has_door_opening_meld(
-        &closed_chi.seats.get(&1).unwrap().melds,
-        &closed_chi
+    assert!(has_open_meld(&table.seats.get(&1).unwrap().melds));
+    assert!(has_door_opening_meld(
+        &table.seats.get(&1).unwrap().melds,
+        &table
     ));
-    assert!(closed_opponent_threat_discard_bias(&closed_chi, 0, 32, 1) < 0.0);
-    assert_eq!(
-        closed_opponent_threat_discard_bias(&open_chi, 0, 32, 1),
-        0.0
-    );
+    assert_eq!(closed_opponent_threat_discard_bias(&table, 0, 32, 1), 0.0);
 }
 
 #[test]
