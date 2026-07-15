@@ -13,7 +13,7 @@ pub(in crate::ai::decision) fn should_pass_peng_for_open_pure_defense(
         || !is_mid_broken_hand_defense_round(table)
         || should_preserve_seven_pairs_plan_for_context(hand, melds, table, position, win_rule)
         || pure_one_suit_plan_score_for_context(hand, melds, table, position) > 0.0
-        || piao_plan_score_for_context(hand, melds, table, position) >= 22.0
+        || piao_plan_score_for_context(hand, melds, table, position, win_rule) >= 22.0
     {
         return false;
     }

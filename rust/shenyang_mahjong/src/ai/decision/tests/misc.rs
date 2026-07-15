@@ -120,7 +120,10 @@ fn late_broken_basic_discard_follows_public_tile_for_weak_recoverable_hand() {
         pure_one_suit_plan_score_for_context(&hand, &[], &table, 0),
         0.0
     );
-    assert_eq!(piao_plan_score_for_context(&hand, &[], &table, 0), 0.0);
+    assert_eq!(
+        piao_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        0.0
+    );
     assert_eq!(
         best_ready_score_after_discard(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
         0.0

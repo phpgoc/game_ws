@@ -20,7 +20,7 @@ pub(super) fn choose_chi_claim(
     {
         return Some(AiClaimChoice::Pass);
     }
-    if should_preserve_piao_plan_for_chi(hand, current_melds, table, position) {
+    if should_preserve_piao_plan_for_chi(hand, current_melds, table, position, win_rule) {
         return Some(AiClaimChoice::Pass);
     }
     if current_ready_score > 0.0 {

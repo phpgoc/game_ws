@@ -6,7 +6,7 @@ fn discard_four_pair_piao_candidate_clears_single_dragon_before_wind() {
     let hand = vec![1, 1, 4, 4, 11, 11, 12, 13, 21, 21, 22, 23, 31, 35];
 
     assert_eq!(pair_count(&hand), 4);
-    assert!(piao_plan_score_for_context(&hand, &[], &table, 0) > 0.0);
+    assert!(piao_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0);
     assert_eq!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(35)
@@ -102,7 +102,13 @@ fn discard_preserves_three_pair_piao_candidate_over_public_pair_tile() {
     table.wall_count = 36;
     let hand = vec![1, 1, 4, 5, 6, 11, 11, 12, 13, 14, 21, 21, 22, 23];
 
-    assert!(is_closed_early_piao_candidate(&hand, &[], &table, 0));
+    assert!(is_closed_early_piao_candidate(
+        &hand,
+        &[],
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC
+    ));
     let chosen = choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC);
     assert!(
         !matches!(chosen, Some(1 | 11 | 21)),
@@ -127,8 +133,14 @@ fn discard_three_pair_piao_candidate_still_prefers_wind_before_single_dragon() {
     let hand = vec![1, 1, 4, 5, 11, 11, 12, 13, 21, 21, 22, 23, 31, 35];
 
     assert_eq!(pair_count(&hand), 3);
-    assert!(is_closed_early_piao_candidate(&hand, &[], &table, 0));
-    assert!(piao_plan_score_for_context(&hand, &[], &table, 0) > 0.0);
+    assert!(is_closed_early_piao_candidate(
+        &hand,
+        &[],
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert!(piao_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0);
     assert_eq!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(31)

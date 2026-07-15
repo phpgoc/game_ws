@@ -78,7 +78,8 @@ fn choose_discard_from_view_inner(
         }
     }
 
-    let preserve_early_piao_pairs = has_early_piao_singleton_discard(hand, melds, table, position);
+    let preserve_early_piao_pairs =
+        has_early_piao_singleton_discard(hand, melds, table, position, win_rule);
     let speed_first_wait = table.dealer_position == position
         || ready_visible_fan_reaches_cap(hand, melds, table, position, win_rule)
         || ready_visible_fan_exceeds_half_cap(hand, melds, table, position, win_rule);
@@ -115,14 +116,14 @@ fn choose_discard_from_view_inner(
         ) + terminal_or_honor_discard_bias(
             &next, melds, table, position, tile, win_rule,
         ) + piao_discard_bias(hand, tile, melds, table, position, win_rule)
-            + early_piao_candidate_discard_bias(hand, tile, melds, table, position)
+            + early_piao_candidate_discard_bias(hand, tile, melds, table, position, win_rule)
             + basic_heng_seed_discard_bias(hand, tile, melds, win_rule)
             + capped_spare_dragon_discard_bias(hand, tile, melds, table)
             + seven_pairs_plan_discard_bias(hand, tile, melds, table, position, win_rule)
             + seven_pairs_wait_discard_bias(hand, tile, melds, table, position, win_rule)
             + four_gui_yi_discard_bias(hand, tile, melds, table, position, win_rule)
             + pure_one_suit_discard_bias(hand, tile, melds, table, position)
-            + complete_sequence_discard_bias(hand, tile, melds, table, position)
+            + complete_sequence_discard_bias(hand, tile, melds, table, position, win_rule)
             + incomplete_sequence_discard_bias(hand, tile, melds, table, position, win_rule)
             + pinghu_sequence_route_discard_bias(hand, tile, melds, table, position, win_rule)
             + mid_round_public_discard_bias(table, position, tile)

@@ -105,7 +105,7 @@ fn claim_gang_penges_committed_piao_plan_when_gang_only_reaches_basic_ready() {
     let mut after_melds = melds.to_vec();
     after_melds.push(claim_gang_meld(21, 1));
 
-    assert!(piao_plan_score_for_context(&hand, melds, &table, 0) >= 22.0);
+    assert!(piao_plan_score_for_context(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC) >= 22.0);
     assert!(
         ready_tile_score(
             &after_claim,
@@ -154,7 +154,7 @@ fn claim_gang_takes_committed_piao_plan_when_gang_reaches_piao_ready() {
     let mut after_melds = melds.to_vec();
     after_melds.push(claim_gang_meld(21, 1));
 
-    assert!(piao_plan_score_for_context(&hand, melds, &table, 0) >= 22.0);
+    assert!(piao_plan_score_for_context(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC) >= 22.0);
     assert!(ready_has_piao_win(
         &after_claim,
         &after_melds,
@@ -223,7 +223,13 @@ fn claim_gang_penges_closed_early_piao_candidate() {
     let claim = table.claim_window.clone().unwrap();
     let hand = vec![1, 1, 1, 4, 5, 6, 11, 11, 12, 13, 21, 21, 22];
 
-    assert!(is_closed_early_piao_candidate(&hand, &[], &table, 0));
+    assert!(is_closed_early_piao_candidate(
+        &hand,
+        &[],
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC
+    ));
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Peng)

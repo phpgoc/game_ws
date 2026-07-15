@@ -23,7 +23,8 @@ fn self_gang_allows_dragon_gang_after_opening_basic_hand() {
             &hand,
             table.seats.get(&0).unwrap().melds.as_slice(),
             &table,
-            0
+            0,
+            WIN_RULE_SHENYANG_BASIC
         ),
         0.0
     );
@@ -56,7 +57,7 @@ fn self_gang_delays_open_piao_dragon_gang_until_ready() {
     let hand = vec![2, 5, 8, 11, 14, 17, 21, 35, 35, 35, 35];
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
 
-    assert!(piao_plan_score_for_context(&hand, melds, &table, 0) >= 22.0);
+    assert!(piao_plan_score_for_context(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC) >= 22.0);
     assert_eq!(
         best_ready_score_after_discard(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
         0.0
@@ -78,7 +79,7 @@ fn self_gang_passes_committed_piao_plan_when_gang_only_reaches_basic_ready() {
     let mut after_melds = melds.to_vec();
     after_melds.push(test_concealed_gang_meld(21));
 
-    assert!(piao_plan_score_for_context(&hand, melds, &table, 0) >= 22.0);
+    assert!(piao_plan_score_for_context(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC) >= 22.0);
     assert!(best_ready_score_after_discard(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0);
     assert!(
         ready_tile_score(
@@ -113,7 +114,7 @@ fn self_gang_allows_committed_piao_plan_when_gang_reaches_piao_ready() {
     let mut after_melds = melds.to_vec();
     after_melds.push(test_concealed_gang_meld(21));
 
-    assert!(piao_plan_score_for_context(&hand, melds, &table, 0) >= 22.0);
+    assert!(piao_plan_score_for_context(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC) >= 22.0);
     assert!(ready_has_piao_win(
         &after_gang,
         &after_melds,
@@ -275,7 +276,10 @@ fn self_gang_delays_added_plain_gang_before_ready() {
         best_ready_score_after_discard(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
         0.0
     );
-    assert_eq!(piao_plan_score_for_context(&hand, melds, &table, 0), 0.0);
+    assert_eq!(
+        piao_plan_score_for_context(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        0.0
+    );
     assert_eq!(
         choose_self_gang_from_view(&hand, &[9], &table, 0, WIN_RULE_SHENYANG_BASIC),
         None

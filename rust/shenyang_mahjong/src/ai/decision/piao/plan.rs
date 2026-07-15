@@ -190,6 +190,7 @@ pub(in crate::ai::decision) fn piao_plan_score_for_context(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
+    win_rule: i32,
 ) -> f64 {
     let score = piao_plan_score(hand, melds);
     if score <= 0.0
@@ -197,22 +198,16 @@ pub(in crate::ai::decision) fn piao_plan_score_for_context(
         || piao_plan_is_capped(table)
         || !has_piao_route_basics(hand, melds)
         || capped_open_basic_route_visible_fan_reaches_cap(hand, melds, table)
-        || capped_basic_route_foundation_visible_fan_exceeds_half_cap(
-            hand,
-            melds,
-            table,
-            WIN_RULE_SHENYANG_BASIC,
-        )
-        || capped_basic_route_foundation_visible_fan_reaches_cap(
-            hand,
-            melds,
-            table,
-            WIN_RULE_SHENYANG_BASIC,
-        )
+        || capped_basic_route_foundation_visible_fan_exceeds_half_cap(hand, melds, table, win_rule)
+        || capped_basic_route_foundation_visible_fan_reaches_cap(hand, melds, table, win_rule)
     {
         return 0.0;
     }
-    if table.dealer_position == position && score < 40.0 {
+    let marginal_closed_plan_against_dealer_threat =
+        valid_meld_count(melds) == 0 && dealer_opponent_has_major_threat(table, position, win_rule);
+    if score < 40.0
+        && (table.dealer_position == position || marginal_closed_plan_against_dealer_threat)
+    {
         score * 0.35
     } else {
         score
@@ -266,23 +261,15 @@ pub(in crate::ai::decision) fn is_closed_early_piao_candidate(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
+    win_rule: i32,
 ) -> bool {
     valid_meld_count(melds) == 0
         && pair_count(hand) >= 3
         && piao_plan_has_enough_group_opportunities(hand, melds, table, position)
         && table.dealer_position != position
+        && !dealer_opponent_has_major_threat(table, position, win_rule)
         && !piao_plan_is_capped(table)
-        && !capped_basic_route_foundation_visible_fan_exceeds_half_cap(
-            hand,
-            melds,
-            table,
-            WIN_RULE_SHENYANG_BASIC,
-        )
-        && !capped_basic_route_foundation_visible_fan_reaches_cap(
-            hand,
-            melds,
-            table,
-            WIN_RULE_SHENYANG_BASIC,
-        )
+        && !capped_basic_route_foundation_visible_fan_exceeds_half_cap(hand, melds, table, win_rule)
+        && !capped_basic_route_foundation_visible_fan_reaches_cap(hand, melds, table, win_rule)
         && has_piao_route_basics(hand, melds)
 }

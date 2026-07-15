@@ -5,12 +5,14 @@ pub(in crate::ai::decision) fn should_preserve_piao_plan_for_chi(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
+    win_rule: i32,
 ) -> bool {
     if melds.iter().any(is_sequence_meld) {
         return false;
     }
-    let score = piao_plan_score_for_context(hand, melds, table, position);
-    let early_piao_candidate = is_closed_early_piao_candidate(hand, melds, table, position);
+    let score = piao_plan_score_for_context(hand, melds, table, position, win_rule);
+    let early_piao_candidate =
+        is_closed_early_piao_candidate(hand, melds, table, position, win_rule);
     if !early_piao_candidate && score <= 0.0 {
         return false;
     }
@@ -28,7 +30,7 @@ pub(in crate::ai::decision) fn should_preserve_pinghu_sequence_over_peng(
     if !is_suited(tile)
         || is_dragon(tile)
         || table.dealer_position == position
-        || piao_plan_score_for_context(hand, melds, table, position) >= 22.0
+        || piao_plan_score_for_context(hand, melds, table, position, win_rule) >= 22.0
         || !has_triplet_or_dragon_pair(hand, melds)
         || !tile_is_middle_of_sequence(hand, tile)
     {

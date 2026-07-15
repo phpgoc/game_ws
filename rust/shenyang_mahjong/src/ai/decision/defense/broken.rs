@@ -28,7 +28,7 @@ pub(in crate::ai::decision) fn should_open_broken_closed_hand_for_defense(
     }
     if should_preserve_seven_pairs_plan_for_context(hand, melds, table, position, win_rule)
         || pure_one_suit_plan_score_for_context(hand, melds, table, position) > 0.0
-        || piao_plan_score_for_context(hand, melds, table, position) >= 22.0
+        || piao_plan_score_for_context(hand, melds, table, position, win_rule) >= 22.0
     {
         return false;
     }
@@ -89,7 +89,7 @@ pub(in crate::ai::decision) fn should_use_broken_hand_public_defense_discard(
     }
     if should_lock_seven_pairs_plan(hand, melds, table, position, win_rule)
         || pure_one_suit_plan_score_for_context(hand, melds, table, position) > 0.0
-        || piao_plan_score_for_context(hand, melds, table, position) >= 22.0
+        || piao_plan_score_for_context(hand, melds, table, position, win_rule) >= 22.0
     {
         return false;
     }

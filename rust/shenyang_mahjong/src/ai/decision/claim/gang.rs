@@ -25,10 +25,10 @@ pub(in crate::ai::decision) fn should_claim_gang_from_discard(
         tile,
         from_position,
     );
-    let committed_piao_plan = piao_plan_score_for_context(hand, current_melds, table, position)
-        >= 22.0
-        && piao_threat_level(current_melds) > 0
-        && piao_committed_group_count(hand, current_melds) >= 3;
+    let committed_piao_plan =
+        piao_plan_score_for_context(hand, current_melds, table, position, win_rule) >= 22.0
+            && piao_threat_level(current_melds) > 0
+            && piao_committed_group_count(hand, current_melds) >= 3;
     if committed_piao_plan {
         return claim_gang_from_discard_reaches_piao_ready(
             hand,
@@ -63,7 +63,7 @@ pub(in crate::ai::decision) fn should_claim_gang_from_discard(
         return true;
     }
 
-    if piao_plan_score_for_context(hand, current_melds, table, position) >= 22.0 {
+    if piao_plan_score_for_context(hand, current_melds, table, position, win_rule) >= 22.0 {
         return reaches_ready;
     }
     reaches_ready
@@ -81,7 +81,7 @@ pub(in crate::ai::decision) fn should_claim_opening_gang_for_basic_hand(
         && !has_door_opening_meld(current_melds, table)
         && can_gang(hand, tile)
         && !table.max_fan.is_some_and(|max_fan| max_fan <= 1)
-        && !is_closed_early_piao_candidate(hand, current_melds, table, position)
+        && !is_closed_early_piao_candidate(hand, current_melds, table, position, win_rule)
         && !should_preserve_seven_pairs_plan_for_context(
             hand,
             current_melds,
@@ -90,5 +90,5 @@ pub(in crate::ai::decision) fn should_claim_opening_gang_for_basic_hand(
             win_rule,
         )
         && pure_one_suit_plan_score_for_context(hand, current_melds, table, position) <= 0.0
-        && piao_plan_score_for_context(hand, current_melds, table, position) < 22.0
+        && piao_plan_score_for_context(hand, current_melds, table, position, win_rule) < 22.0
 }

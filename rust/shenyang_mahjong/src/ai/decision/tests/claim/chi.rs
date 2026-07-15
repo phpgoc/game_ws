@@ -319,7 +319,8 @@ fn claim_chi_passes_for_open_triplet_two_pair_piao_route_even_when_chi_reaches_r
         &hand,
         table.seats.get(&0).unwrap().melds.as_slice(),
         &table,
-        0
+        0,
+        WIN_RULE_RELAXED
     ));
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),

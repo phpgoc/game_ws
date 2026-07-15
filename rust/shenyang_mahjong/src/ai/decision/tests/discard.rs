@@ -213,8 +213,8 @@ fn discard_preserves_edge_of_complete_sequence() {
 
     assert!(tile_is_part_of_complete_sequence(&hand, 4));
     assert!(
-        complete_sequence_discard_bias(&hand, 4, &[], &table, 0)
-            < complete_sequence_discard_bias(&hand, 8, &[], &table, 0)
+        complete_sequence_discard_bias(&hand, 4, &[], &table, 0, WIN_RULE_RELAXED)
+            < complete_sequence_discard_bias(&hand, 8, &[], &table, 0, WIN_RULE_RELAXED)
     );
     assert_eq!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
@@ -261,8 +261,8 @@ fn discard_preserves_middle_of_complete_sequence() {
     let hand = vec![4, 5, 6, 8, 11, 11, 11, 19, 19, 19, 21, 21, 22, 22];
 
     assert!(
-        complete_sequence_discard_bias(&hand, 5, &[], &table, 0)
-            < complete_sequence_discard_bias(&hand, 8, &[], &table, 0)
+        complete_sequence_discard_bias(&hand, 5, &[], &table, 0, WIN_RULE_RELAXED)
+            < complete_sequence_discard_bias(&hand, 8, &[], &table, 0, WIN_RULE_RELAXED)
     );
     assert_eq!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),

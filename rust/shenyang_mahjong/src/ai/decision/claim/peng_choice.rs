@@ -158,7 +158,7 @@ pub(super) fn choose_peng_claim(
     if win_rule == WIN_RULE_SHENYANG_BASIC && table.dealer_position == position {
         return Some(AiClaimChoice::Peng);
     }
-    if piao_plan_score_for_context(hand, current_melds, table, position) >= 32.0 {
+    if piao_plan_score_for_context(hand, current_melds, table, position, win_rule) >= 32.0 {
         return Some(AiClaimChoice::Peng);
     }
 
@@ -210,7 +210,7 @@ pub(in crate::ai::decision) fn required_peng_gain(
     if win_rule == WIN_RULE_SHENYANG_BASIC && !has_triplet_or_dragon_pair(hand, current_melds) {
         required_gain -= 3.0;
     }
-    if piao_plan_score_for_context(hand, current_melds, table, position) >= 22.0 {
+    if piao_plan_score_for_context(hand, current_melds, table, position, win_rule) >= 22.0 {
         required_gain -= 7.0;
     }
     if win_rule == WIN_RULE_SHENYANG_BASIC {
