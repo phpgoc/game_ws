@@ -84,7 +84,9 @@ pub(super) fn self_gang_score(
     let is_added_gang = has_peng_meld(melds, tile);
     let is_ready = best_ready_score_after_discard(hand, melds, table, position, win_rule) > 0.0;
     let speed_first_concealed_gang = !is_added_gang
-        && (table.dealer_position == position || table.max_fan.is_some_and(|max_fan| max_fan <= 1));
+        && (table.dealer_position == position
+            || table.max_fan.is_some_and(|max_fan| max_fan <= 1)
+            || dealer_opponent_has_major_threat(table, position, win_rule));
     let pure_one_suit_score =
         pure_one_suit_plan_score_for_context(hand, melds, table, position, win_rule);
     let piao_score = piao_plan_score_for_context(hand, melds, table, position, win_rule);

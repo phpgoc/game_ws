@@ -11,7 +11,9 @@ pub(in crate::ai::decision) fn should_claim_gang_from_discard(
 ) -> bool {
     let current_ready_score = ready_tile_score(hand, current_melds, table, position, win_rule);
     let speed_first_unready = current_ready_score <= 0.0
-        && (table.dealer_position == position || table.max_fan.is_some_and(|max_fan| max_fan <= 1));
+        && (table.dealer_position == position
+            || table.max_fan.is_some_and(|max_fan| max_fan <= 1)
+            || dealer_opponent_has_major_threat(table, position, win_rule));
     if ready_visible_fan_reaches_cap(hand, current_melds, table, position, win_rule) {
         return false;
     }

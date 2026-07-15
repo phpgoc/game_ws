@@ -161,6 +161,19 @@ fn dealer_takes_unready_discard_gang_that_preserves_committed_piao() {
         Some(AiClaimChoice::Peng)
     );
 
+    table.seats.get_mut(&1).unwrap().hand_count = 4;
+    table.seats.get_mut(&1).unwrap().melds =
+        vec![test_peng_meld(3), test_peng_meld(14), test_peng_meld(25)];
+    assert!(dealer_opponent_has_major_threat(
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Gang)
+    );
+
     table.dealer_position = 0;
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),

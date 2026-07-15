@@ -86,6 +86,19 @@ fn dealer_takes_unready_concealed_gang_that_preserves_committed_piao() {
         None
     );
 
+    table.seats.get_mut(&1).unwrap().hand_count = 4;
+    table.seats.get_mut(&1).unwrap().melds =
+        vec![test_peng_meld(3), test_peng_meld(14), test_peng_meld(25)];
+    assert!(dealer_opponent_has_major_threat(
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert_eq!(
+        choose_self_gang_from_view(&hand, &[21], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(21)
+    );
+
     table.dealer_position = 0;
     assert_eq!(
         choose_self_gang_from_view(&hand, &[21], &table, 0, WIN_RULE_SHENYANG_BASIC),
