@@ -97,6 +97,7 @@ pub(super) fn choose_peng_claim(
         current_melds,
         table,
         position,
+        win_rule,
         tile,
         from_position,
     ) {

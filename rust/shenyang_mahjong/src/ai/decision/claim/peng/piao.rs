@@ -5,12 +5,14 @@ pub(in crate::ai::decision) fn should_claim_peng_for_closed_early_piao_candidate
     current_melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
+    win_rule: i32,
     tile: i32,
     from_position: usize,
 ) -> bool {
     let pairs = pair_count(hand);
     if valid_meld_count(current_melds) > 0
         || table.dealer_position == position
+        || dealer_opponent_has_major_threat(table, position, win_rule)
         || piao_plan_is_capped(table)
         || !(3..=4).contains(&pairs)
         || !can_peng(hand, tile)
