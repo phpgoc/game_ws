@@ -382,6 +382,10 @@ fn capped_basic_foundation_disables_redundant_closed_piao_plan() {
         0.0
     );
     assert_eq!(
+        piao_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_RELAXED),
+        0.0
+    );
+    assert_eq!(
         early_piao_candidate_discard_bias(&hand, 1, &[], &table, 0, WIN_RULE_SHENYANG_BASIC,),
         0.0
     );
