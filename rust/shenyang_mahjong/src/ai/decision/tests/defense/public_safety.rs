@@ -33,16 +33,13 @@ fn late_defense_keeps_public_honor_above_repeated_own_suited_discard() {
     assert_eq!(own_previous_discard_count(&table, 0, 5), 3);
     assert_eq!(public_discard_count(&table, 31), 1);
     assert!(
-        late_defense_tile_safety_priority(&table, 31, 1)
-            > late_defense_tile_safety_priority(&table, 5, 1)
+        defense_tile_safety_priority(&table, 31, 1) > defense_tile_safety_priority(&table, 5, 1)
     );
     assert!(
-        late_defense_tile_safety_priority(&table, 5, 1)
-            > late_defense_tile_safety_priority(&table, 6, 1)
+        defense_tile_safety_priority(&table, 5, 1) > defense_tile_safety_priority(&table, 6, 1)
     );
     assert!(
-        late_defense_tile_safety_priority(&table, 6, 1)
-            > late_defense_tile_safety_priority(&table, 9, 1)
+        defense_tile_safety_priority(&table, 6, 1) > defense_tile_safety_priority(&table, 9, 1)
     );
     assert_eq!(
         choose_late_defense_discard_from_candidates(&hand, &table, 0, vec![5, 31]),

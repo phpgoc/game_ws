@@ -92,14 +92,11 @@ pub(in crate::ai::decision) fn late_defense_tile_fully_accounted(
     exposed_meld_tile_count(table, tile) + own_tile_count >= 4
 }
 
-pub(in crate::ai::decision) fn late_defense_tile_safety_priority(
+pub(in crate::ai::decision) fn defense_tile_safety_priority(
     table: &AiPublicTable,
     tile: i32,
     own_tile_count: usize,
 ) -> u8 {
-    if !is_late_defense_round(table) {
-        return 0;
-    }
     if late_defense_tile_fully_accounted(table, tile, own_tile_count) {
         return 5;
     }

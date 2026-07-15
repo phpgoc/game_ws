@@ -102,7 +102,7 @@ pub(in crate::ai::decision) fn choose_late_ready_discard(
     let mut best: Option<(i32, u8, f64, i32)> = None;
     for (tile, live_tiles) in candidates {
         let own_tile_count = hand.iter().filter(|item| **item == tile).count();
-        let priority = late_defense_tile_safety_priority(table, tile, own_tile_count);
+        let priority = defense_tile_safety_priority(table, tile, own_tile_count);
         let safety = late_defense_tile_safety_score(table, position, tile, own_tile_count);
         match best {
             None => best = Some((live_tiles, priority, safety, tile)),
@@ -142,7 +142,7 @@ pub(in crate::ai::decision) fn choose_late_defense_discard_from_candidates(
 
     for tile in candidates {
         let own_tile_count = hand.iter().filter(|item| **item == tile).count();
-        let priority = late_defense_tile_safety_priority(table, tile, own_tile_count);
+        let priority = defense_tile_safety_priority(table, tile, own_tile_count);
         let score = late_defense_tile_safety_score(table, position, tile, own_tile_count);
         match best {
             None => best = Some((priority, score, tile)),
@@ -191,21 +191,43 @@ pub(in crate::ai::decision) fn choose_public_defense_discard_from_candidates(
     win_rule: i32,
     candidates: Vec<i32>,
 ) -> Option<i32> {
-    let mut best: Option<(f64, i32)> = None;
+    let common_own_tile_count = candidates
+        .first()
+        .map(|tile| hand.iter().filter(|item| **item == *tile).count());
+    let use_safety_priority = common_own_tile_count.is_some_and(|count| {
+        candidates
+            .iter()
+            .all(|tile| hand.iter().filter(|item| **item == *tile).count() == count)
+    });
+    let mut best: Option<(bool, u8, f64, i32)> = None;
     for tile in candidates {
         let own_tile_count = hand.iter().filter(|item| **item == tile).count();
+        let requirement_bias =
+            basic_heng_recovery_public_defense_bias(hand, melds, table, position, tile, win_rule);
+        let preserves_basic_heng_recovery = requirement_bias >= 0.0;
+        let priority = if use_safety_priority {
+            defense_tile_safety_priority(table, tile, own_tile_count)
+        } else {
+            0
+        };
         let score = public_defense_tile_safety_score(table, position, tile, own_tile_count)
-            + basic_heng_recovery_public_defense_bias(hand, melds, table, position, tile, win_rule);
+            + requirement_bias;
         match best {
-            None => best = Some((score, tile)),
-            Some((best_score, best_tile)) => {
-                if score > best_score || (score == best_score && tile < best_tile) {
-                    best = Some((score, tile));
+            None => best = Some((preserves_basic_heng_recovery, priority, score, tile)),
+            Some((best_preserves_heng, best_priority, best_score, best_tile)) => {
+                if (preserves_basic_heng_recovery && !best_preserves_heng)
+                    || (preserves_basic_heng_recovery == best_preserves_heng
+                        && (priority > best_priority
+                            || (priority == best_priority
+                                && (score > best_score
+                                    || (score == best_score && tile < best_tile)))))
+                {
+                    best = Some((preserves_basic_heng_recovery, priority, score, tile));
                 }
             }
         }
     }
-    best.map(|(_, tile)| tile)
+    best.map(|(_, _, _, tile)| tile)
 }
 
 pub(in crate::ai::decision) fn has_late_defense_known_safe_candidate(
