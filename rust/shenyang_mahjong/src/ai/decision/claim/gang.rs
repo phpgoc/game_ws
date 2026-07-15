@@ -34,15 +34,16 @@ pub(in crate::ai::decision) fn should_claim_gang_from_discard(
             && piao_threat_level(current_melds) > 0
             && piao_committed_group_count(hand, current_melds) >= 3;
     if committed_piao_plan {
-        return claim_gang_from_discard_reaches_piao_ready(
-            hand,
-            current_melds,
-            table,
-            position,
-            win_rule,
-            tile,
-            from_position,
-        );
+        return speed_first_unready
+            || claim_gang_from_discard_reaches_piao_ready(
+                hand,
+                current_melds,
+                table,
+                position,
+                win_rule,
+                tile,
+                from_position,
+            );
     }
     if current_ready_score > 0.0 {
         return reaches_ready;

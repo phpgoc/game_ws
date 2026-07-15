@@ -69,6 +69,31 @@ fn self_gang_delays_open_piao_dragon_gang_until_ready() {
 }
 
 #[test]
+fn dealer_takes_unready_concealed_gang_that_preserves_committed_piao() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![2, 5, 8, 11, 11, 11, 21, 21, 21, 21, 35];
+
+    assert!(piao_plan_score_for_context(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC) >= 40.0);
+    assert!(piao_committed_group_count(&hand, melds) >= 3);
+    assert_eq!(
+        best_ready_score_after_discard(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        0.0
+    );
+    assert_eq!(
+        choose_self_gang_from_view(&hand, &[21], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        None
+    );
+
+    table.dealer_position = 0;
+    assert_eq!(
+        choose_self_gang_from_view(&hand, &[21], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(21)
+    );
+}
+
+#[test]
 fn self_gang_passes_committed_piao_plan_when_gang_only_reaches_basic_ready() {
     let mut table = table_with_discards(1, Vec::new());
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];

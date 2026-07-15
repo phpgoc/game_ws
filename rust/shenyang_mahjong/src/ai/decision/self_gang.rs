@@ -91,6 +91,7 @@ pub(super) fn self_gang_score(
     let speed_first_pure_concealed_gang = pure_one_suit_score > 0.0
         && speed_first_concealed_gang
         && is_main_pure_suit_tile(hand, melds, tile);
+    let speed_first_piao_concealed_gang = piao_score >= 22.0 && speed_first_concealed_gang;
     if pure_one_suit_score > 0.0 {
         if is_honor(tile)
             || !is_main_pure_suit_tile(hand, melds, tile)
@@ -118,7 +119,12 @@ pub(super) fn self_gang_score(
     if !is_ready && !is_dragon(tile) && !speed_first_concealed_gang {
         return f64::NEG_INFINITY;
     }
-    if !is_added_gang && !is_ready && is_dragon(tile) && has_open_meld(melds) && piao_score >= 22.0
+    if !is_added_gang
+        && !is_ready
+        && is_dragon(tile)
+        && has_open_meld(melds)
+        && piao_score >= 22.0
+        && !speed_first_piao_concealed_gang
     {
         return f64::NEG_INFINITY;
     }
@@ -156,7 +162,7 @@ pub(super) fn self_gang_score(
         && piao_committed_group_count(hand, melds) >= 3;
     let keeps_piao_ready =
         committed_piao_plan && ready_has_piao_win(&next, &next_melds, table, position, win_rule);
-    if committed_piao_plan && !keeps_piao_ready {
+    if committed_piao_plan && !keeps_piao_ready && !speed_first_piao_concealed_gang {
         return f64::NEG_INFINITY;
     }
     if is_ready && after_ready_score <= 0.0 {

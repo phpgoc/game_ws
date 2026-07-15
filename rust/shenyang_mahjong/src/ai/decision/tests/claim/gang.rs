@@ -138,6 +138,37 @@ fn claim_gang_penges_committed_piao_plan_when_gang_only_reaches_basic_ready() {
 }
 
 #[test]
+fn dealer_takes_unready_discard_gang_that_preserves_committed_piao() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
+    table.claim_window = Some(AiClaimView {
+        tile: 21,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![2, 5, 8, 11, 11, 11, 21, 21, 21, 35];
+
+    assert!(piao_plan_score_for_context(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC) >= 40.0);
+    assert!(piao_committed_group_count(&hand, melds) >= 3);
+    assert_eq!(
+        ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        0.0
+    );
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Peng)
+    );
+
+    table.dealer_position = 0;
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Gang)
+    );
+}
+
+#[test]
 fn claim_gang_takes_committed_piao_plan_when_gang_reaches_piao_ready() {
     let mut table = table_with_discards(1, Vec::new());
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
