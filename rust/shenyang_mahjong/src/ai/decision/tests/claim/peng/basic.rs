@@ -123,6 +123,27 @@ fn claim_peng_preserves_closed_mid_basic_sequence_when_heng_exists() {
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Pass)
     );
+
+    table.seats.get_mut(&1).unwrap().hand_count = 4;
+    table.seats.get_mut(&1).unwrap().melds =
+        vec![test_peng_meld(3), test_peng_meld(14), test_peng_meld(25)];
+    assert!(dealer_opponent_has_major_threat(
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert!(!should_pass_closed_basic_peng_to_preserve_sequence(
+        &hand,
+        &[],
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+        5,
+    ));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Peng)
+    );
 }
 
 #[test]

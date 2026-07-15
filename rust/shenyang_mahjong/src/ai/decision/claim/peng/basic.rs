@@ -147,6 +147,7 @@ pub(in crate::ai::decision) fn should_pass_closed_basic_peng_to_preserve_sequenc
     win_rule == WIN_RULE_SHENYANG_BASIC
         && !has_door_opening_meld(current_melds, table)
         && table.dealer_position != position
+        && !dealer_opponent_has_major_threat(table, position, win_rule)
         && !table.max_fan.is_some_and(|max_fan| max_fan <= 1)
         && !is_late_round(table)
         && can_peng(hand, tile)
