@@ -9,13 +9,17 @@ pub(in crate::ai::decision) fn should_claim_gang_from_discard(
     tile: i32,
     from_position: usize,
 ) -> bool {
+    let current_ready_score = ready_tile_score(hand, current_melds, table, position, win_rule);
+    let speed_first_unready = current_ready_score <= 0.0
+        && (table.dealer_position == position || table.max_fan.is_some_and(|max_fan| max_fan <= 1));
     if ready_visible_fan_reaches_cap(hand, current_melds, table, position, win_rule) {
         return false;
     }
-    if capped_open_basic_route_visible_fan_reaches_cap(hand, current_melds, table) {
+    if !speed_first_unready
+        && capped_open_basic_route_visible_fan_reaches_cap(hand, current_melds, table)
+    {
         return false;
     }
-    let current_ready_score = ready_tile_score(hand, current_melds, table, position, win_rule);
     let reaches_ready = claim_gang_from_discard_reaches_ready(
         hand,
         current_melds,
@@ -43,10 +47,10 @@ pub(in crate::ai::decision) fn should_claim_gang_from_discard(
     if current_ready_score > 0.0 {
         return reaches_ready;
     }
+    if speed_first_unready {
+        return true;
+    }
     if is_dragon(tile) {
-        if table.max_fan.is_some_and(|max_fan| max_fan <= 1) {
-            return reaches_ready;
-        }
         return true;
     }
     if should_claim_opening_gang_for_basic_hand(

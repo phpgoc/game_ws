@@ -53,7 +53,7 @@ fn claim_gang_takes_dragon_gang_to_open_basic_hand_before_ready() {
 }
 
 #[test]
-fn one_fan_capped_claim_gang_penges_dragon_for_speed_before_ready() {
+fn one_fan_capped_claim_gang_takes_dragon_for_replacement_draw() {
     let mut table = table_with_discards(1, Vec::new());
     table.max_fan = Some(1);
     table.claim_window = Some(AiClaimView {
@@ -66,7 +66,7 @@ fn one_fan_capped_claim_gang_penges_dragon_for_speed_before_ready() {
 
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(AiClaimChoice::Peng)
+        Some(AiClaimChoice::Gang)
     );
 }
 
@@ -190,6 +190,12 @@ fn claim_gang_delays_open_plain_gang_when_not_ready() {
     let hand = vec![4, 5, 6, 9, 9, 9, 11, 12, 14, 21];
 
     assert_ne!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Gang)
+    );
+
+    table.dealer_position = 0;
+    assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Gang)
     );
