@@ -99,23 +99,27 @@ pub(in crate::ai::decision) fn choose_late_ready_discard(
         safe_ready_candidates
     };
 
-    let mut best: Option<(i32, f64, i32)> = None;
+    let mut best: Option<(i32, u8, f64, i32)> = None;
     for (tile, live_tiles) in candidates {
         let own_tile_count = hand.iter().filter(|item| **item == tile).count();
+        let priority = late_defense_tile_safety_priority(table, tile, own_tile_count);
         let safety = late_defense_tile_safety_score(table, position, tile, own_tile_count);
         match best {
-            None => best = Some((live_tiles, safety, tile)),
-            Some((best_live_tiles, best_safety, best_tile)) => {
+            None => best = Some((live_tiles, priority, safety, tile)),
+            Some((best_live_tiles, best_priority, best_safety, best_tile)) => {
                 if live_tiles > best_live_tiles
                     || (live_tiles == best_live_tiles
-                        && (safety > best_safety || (safety == best_safety && tile < best_tile)))
+                        && (priority > best_priority
+                            || (priority == best_priority
+                                && (safety > best_safety
+                                    || (safety == best_safety && tile < best_tile)))))
                 {
-                    best = Some((live_tiles, safety, tile));
+                    best = Some((live_tiles, priority, safety, tile));
                 }
             }
         }
     }
-    best.map(|(_, _, tile)| tile)
+    best.map(|(_, _, _, tile)| tile)
 }
 
 pub(in crate::ai::decision) fn choose_late_defense_discard_from_candidates(

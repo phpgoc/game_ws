@@ -108,3 +108,30 @@ fn late_non_dealer_prefers_public_discard_that_keeps_ready() {
         Some(27)
     );
 }
+
+#[test]
+fn late_ready_equal_live_waits_prefer_public_honor_over_repeated_suited_discard() {
+    let mut table = table_with_discards(1, vec![1, 1, 1, 31, 3, 3, 6, 6]);
+    table.wall_count = FINAL_DEFENSE_WALL_COUNT;
+    table.seats.get_mut(&0).unwrap().discards = vec![5, 5, 5];
+    let hand = vec![1, 2, 3, 4, 5, 11, 12, 13, 21, 22, 23, 31, 31, 31];
+    let after_five = remove_n_tiles(&hand, 5, 1);
+    let after_honor = remove_n_tiles(&hand, 31, 1);
+
+    assert_eq!(
+        ready_live_tile_count_after_discard(&after_five, &[], &table, 0, WIN_RULE_RELAXED, 5,),
+        3
+    );
+    assert_eq!(
+        ready_live_tile_count_after_discard(&after_honor, &[], &table, 0, WIN_RULE_RELAXED, 31,),
+        3
+    );
+    assert_eq!(
+        choose_late_ready_discard(&hand, &[], &table, 0, WIN_RULE_RELAXED),
+        Some(31)
+    );
+    assert_eq!(
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        Some(31)
+    );
+}
