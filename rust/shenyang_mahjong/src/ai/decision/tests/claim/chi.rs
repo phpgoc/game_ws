@@ -533,3 +533,94 @@ fn dealer_claim_chi_passes_before_half_for_broken_hand() {
         Some(AiClaimChoice::Pass)
     );
 }
+
+#[test]
+fn threatening_dealer_makes_post_chi_discard_choose_wider_wait() {
+    let mut table = table_with_discards(3, Vec::new());
+    table.wall_count = 30;
+    table.seats.insert(
+        1,
+        AiSeatView {
+            position: 1,
+            hand_count: 13,
+            discards: vec![1, 9, 19, 29, 31, 32],
+            melds: Vec::new(),
+        },
+    );
+    let hand = vec![4, 5, 7, 11, 12, 13, 18, 19, 21, 22, 23, 35, 35];
+    table.claim_window = Some(AiClaimView {
+        tile: 17,
+        from_position: 3,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+
+    table.dealer_position = 3;
+    assert!(!dealer_opponent_has_major_threat(
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Chi {
+            consume_tiles: vec![18, 19]
+        })
+    );
+    table.dealer_position = 1;
+    assert!(dealer_opponent_has_major_threat(
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Chi {
+            consume_tiles: vec![18, 19]
+        })
+    );
+
+    table.claim_window = None;
+    table.seats.get_mut(&0).unwrap().melds = vec![WsShenyangMahjongMeld {
+        kind: ShenyangMahjongMeldKind::CHI,
+        tiles: vec![17, 18, 19],
+        from_position: Some(3),
+    }];
+    let post_chi_hand = vec![4, 5, 7, 11, 12, 13, 21, 22, 23, 35, 35];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let narrow_wait = remove_n_tiles(&post_chi_hand, 4, 1);
+    let wide_wait = remove_n_tiles(&post_chi_hand, 7, 1);
+    assert_eq!(
+        ready_live_tile_count_after_discard(
+            &narrow_wait,
+            melds,
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+            4,
+        ),
+        4
+    );
+    assert_eq!(
+        ready_live_tile_count_after_discard(
+            &wide_wait,
+            melds,
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+            7,
+        ),
+        8
+    );
+
+    table.dealer_position = 3;
+    assert_eq!(
+        choose_discard_from_view(&post_chi_hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(4)
+    );
+    table.dealer_position = 1;
+    assert_eq!(
+        choose_discard_from_view(&post_chi_hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(7)
+    );
+}
