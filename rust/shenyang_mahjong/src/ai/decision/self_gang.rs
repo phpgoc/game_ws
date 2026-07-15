@@ -88,8 +88,14 @@ pub(super) fn self_gang_score(
     let pure_one_suit_score =
         pure_one_suit_plan_score_for_context(hand, melds, table, position, win_rule);
     let piao_score = piao_plan_score_for_context(hand, melds, table, position, win_rule);
+    let speed_first_pure_concealed_gang = pure_one_suit_score > 0.0
+        && speed_first_concealed_gang
+        && is_main_pure_suit_tile(hand, melds, tile);
     if pure_one_suit_score > 0.0 {
-        if is_honor(tile) || !is_main_pure_suit_tile(hand, melds, tile) || !is_ready {
+        if is_honor(tile)
+            || !is_main_pure_suit_tile(hand, melds, tile)
+            || (!is_ready && !speed_first_pure_concealed_gang)
+        {
             return f64::NEG_INFINITY;
         }
     }
@@ -142,7 +148,7 @@ pub(super) fn self_gang_score(
     let after_ready_score = ready_tile_score(&next, &next_melds, table, position, win_rule);
     let keeps_pure_one_suit_ready = pure_one_suit_score > 0.0
         && ready_has_pure_one_suit_win(&next, &next_melds, table, position, win_rule);
-    if pure_one_suit_score > 0.0 && !keeps_pure_one_suit_ready {
+    if pure_one_suit_score > 0.0 && !keeps_pure_one_suit_ready && !speed_first_pure_concealed_gang {
         return f64::NEG_INFINITY;
     }
     let committed_piao_plan = piao_score >= 22.0

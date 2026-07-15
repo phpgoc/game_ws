@@ -422,6 +422,40 @@ fn self_gang_delays_main_suit_added_gang_when_pure_one_suit_plan_not_ready() {
 }
 
 #[test]
+fn speed_first_concealed_gang_preserves_unready_pure_one_suit_plan() {
+    let mut table = table_with_discards(1, Vec::new());
+    let hand = vec![1, 1, 1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 31, 32];
+
+    assert!(
+        pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0
+    );
+    assert_eq!(
+        best_ready_score_after_discard(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        0.0
+    );
+    assert_eq!(
+        choose_self_gang_from_view(&hand, &[1], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        None
+    );
+
+    table.dealer_position = 0;
+    assert_eq!(
+        choose_self_gang_from_view(&hand, &[1], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(1)
+    );
+
+    table.dealer_position = 1;
+    table.max_fan = Some(1);
+    assert!(
+        pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0
+    );
+    assert_eq!(
+        choose_self_gang_from_view(&hand, &[1], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(1)
+    );
+}
+
+#[test]
 fn non_dealer_delays_closed_dragon_gang_but_dealer_takes_replacement_draw() {
     let mut table = table_with_discards(1, Vec::new());
     let hand = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 35, 35, 35, 35, 31];
