@@ -399,6 +399,35 @@ fn discard_preserves_ready_four_gui_yi_route() {
 }
 
 #[test]
+fn threatening_dealer_disables_four_gui_yi_discard_bias() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(2)];
+    table.seats.get_mut(&1).unwrap().hand_count = 7;
+    table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(23), test_peng_meld(24)];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![2, 3, 4, 11, 12, 13, 21, 22, 23, 35, 36];
+
+    table.dealer_position = 3;
+    assert!(!dealer_opponent_has_major_threat(
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert!(four_gui_yi_discard_bias(&hand, 2, melds, &table, 0, WIN_RULE_SHENYANG_BASIC,) < 0.0);
+
+    table.dealer_position = 1;
+    assert!(dealer_opponent_has_major_threat(
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert_eq!(
+        four_gui_yi_discard_bias(&hand, 2, melds, &table, 0, WIN_RULE_SHENYANG_BASIC,),
+        0.0
+    );
+}
+
+#[test]
 fn discard_preserves_ready_hand_instead_of_breaking_wait() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 31, 31, 32];

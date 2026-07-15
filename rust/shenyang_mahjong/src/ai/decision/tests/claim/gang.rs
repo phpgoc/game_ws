@@ -699,6 +699,61 @@ fn claim_gang_penges_to_preserve_four_gui_yi_when_peng_stays_ready() {
 }
 
 #[test]
+fn claim_gang_stops_preserving_four_gui_yi_against_threatening_dealer() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.seats.get_mut(&0).unwrap().melds = vec![test_chi_meld(11)];
+    table.seats.get_mut(&1).unwrap().hand_count = 7;
+    table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(23), test_peng_meld(24)];
+    table.claim_window = Some(AiClaimView {
+        tile: 4,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![2, 2, 2, 4, 4, 4, 5, 21, 21, 21];
+
+    table.dealer_position = 3;
+    assert!(!dealer_opponent_has_major_threat(
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert!(should_peng_to_preserve_four_gui_yi_from_discard(
+        &hand,
+        table.seats.get(&0).unwrap().melds.as_slice(),
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+        4,
+        1,
+    ));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Peng)
+    );
+
+    table.dealer_position = 1;
+    assert!(dealer_opponent_has_major_threat(
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert!(!should_peng_to_preserve_four_gui_yi_from_discard(
+        &hand,
+        table.seats.get(&0).unwrap().melds.as_slice(),
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+        4,
+        1,
+    ));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Gang)
+    );
+}
+
+#[test]
 fn capped_claim_gang_does_not_peng_to_preserve_redundant_four_gui_yi() {
     let mut table = table_with_discards(1, Vec::new());
     table.dealer_position = 0;

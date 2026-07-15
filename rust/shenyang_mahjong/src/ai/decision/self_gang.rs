@@ -154,7 +154,11 @@ pub(super) fn self_gang_score(
             estimated_four_gui_yi_fan(hand, melds) > estimated_four_gui_yi_fan(&next, &next_melds);
         let visible_fan_gain = estimated_visible_bonus_fan(&next, &next_melds)
             - estimated_visible_bonus_fan(hand, melds);
-        if loses_four_gui_yi && visible_fan_gain <= 0 && !keeps_pure_one_suit_ready {
+        if loses_four_gui_yi
+            && visible_fan_gain <= 0
+            && !keeps_pure_one_suit_ready
+            && !dealer_opponent_has_major_threat(table, position, win_rule)
+        {
             return f64::NEG_INFINITY;
         }
     }

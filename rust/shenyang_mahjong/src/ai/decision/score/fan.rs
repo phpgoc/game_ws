@@ -103,6 +103,9 @@ pub(in crate::ai::decision) fn four_gui_yi_discard_bias(
     {
         return 0.0;
     }
+    if dealer_opponent_has_major_threat(table, position, win_rule) {
+        return 0.0;
+    }
 
     let fan_loss = (current_four_gui_yi - after_four_gui_yi) as f64;
     if ready_tile_score_after_discard(&next, melds, table, position, win_rule, tile) > 0.0 {

@@ -724,6 +724,66 @@ fn self_gang_preserves_added_four_gui_yi_when_added_gang_has_no_fan_gain() {
 }
 
 #[test]
+fn self_gang_stops_preserving_four_gui_yi_against_threatening_dealer() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(31)];
+    table.seats.get_mut(&1).unwrap().hand_count = 7;
+    table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(23), test_peng_meld(24)];
+    let keeps_ready = vec![1, 2, 4, 5, 6, 11, 12, 13, 21, 21, 31];
+    let breaks_ready = vec![1, 2, 4, 5, 7, 11, 12, 13, 21, 21, 31];
+
+    table.dealer_position = 3;
+    assert!(!dealer_opponent_has_major_threat(
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert_eq!(
+        choose_self_gang_from_view(&keeps_ready, &[31], &table, 0, WIN_RULE_SHENYANG_BASIC,),
+        None
+    );
+
+    table.dealer_position = 1;
+    assert!(dealer_opponent_has_major_threat(
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    assert!(has_virtual_tile_count(&keeps_ready, melds, 14));
+    assert!(position_known_tile_counts_are_possible(
+        &keeps_ready,
+        melds,
+        &table
+    ));
+    assert!(can_self_gang_candidate(&keeps_ready, melds, 31));
+    assert!(
+        best_ready_score_after_discard(&keeps_ready, melds, &table, 0, WIN_RULE_SHENYANG_BASIC,)
+            > 0.0
+    );
+    let current_score =
+        best_score_after_forced_discard(&keeps_ready, melds, &table, 0, WIN_RULE_SHENYANG_BASIC);
+    let gang_score = self_gang_score(
+        31,
+        &keeps_ready,
+        melds,
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+        current_score,
+    );
+    assert!(gang_score >= 0.0, "unexpected gang score: {gang_score}");
+    assert_eq!(
+        choose_self_gang_from_view(&keeps_ready, &[31], &table, 0, WIN_RULE_SHENYANG_BASIC,),
+        Some(31)
+    );
+    assert_eq!(
+        choose_self_gang_from_view(&breaks_ready, &[31], &table, 0, WIN_RULE_SHENYANG_BASIC,),
+        None
+    );
+}
+
+#[test]
 fn self_gang_preserves_locked_seven_pairs_plan() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 1, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 31];
