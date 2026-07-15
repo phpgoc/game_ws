@@ -27,3 +27,64 @@ fn dealer_identity_increases_existing_opponent_threats() {
     let closed_non_dealer_bias = closed_opponent_threat_discard_bias(&closed_table, 0, 5, 1);
     assert!(closed_dealer_bias < closed_non_dealer_bias);
 }
+
+#[test]
+fn major_dealer_threat_disables_single_wait_fan_bias() {
+    let mut table = table_with_discards(1, Vec::new());
+    let melds = vec![test_peng_meld(31)];
+    let win_hand = vec![2, 2, 5, 6, 7, 11, 12, 13, 21, 22, 23];
+
+    let baseline = fan_wait_bias(
+        &win_hand,
+        &melds,
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+        6,
+        4,
+        &[],
+    );
+    assert!(baseline > 0.0);
+
+    let dealer = table.seats.get_mut(&1).unwrap();
+    dealer.hand_count = 4;
+    dealer.melds = vec![test_peng_meld(3), test_peng_meld(14), test_peng_meld(25)];
+    assert!(dealer_opponent_has_major_threat(
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+    ));
+    assert_eq!(
+        fan_wait_bias(
+            &win_hand,
+            &melds,
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+            6,
+            4,
+            &[],
+        ),
+        0.0
+    );
+
+    table.dealer_position = 3;
+    assert!(!dealer_opponent_has_major_threat(
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+    ));
+    assert_eq!(
+        fan_wait_bias(
+            &win_hand,
+            &melds,
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+            6,
+            4,
+            &[],
+        ),
+        baseline
+    );
+}

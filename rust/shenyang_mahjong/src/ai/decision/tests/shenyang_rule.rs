@@ -246,6 +246,37 @@ fn non_dealer_can_choose_single_wait_for_extra_fan_before_late_round() {
 }
 
 #[test]
+fn non_dealer_prefers_wider_wait_against_threatening_dealer() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(31)];
+    let dealer = table.seats.get_mut(&1).unwrap();
+    dealer.hand_count = 4;
+    dealer.melds = vec![test_peng_meld(3), test_peng_meld(14), test_peng_meld(25)];
+    let hand = vec![2, 2, 4, 5, 7, 11, 12, 13, 21, 22, 23];
+
+    assert!(dealer_opponent_has_major_threat(
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+    ));
+    assert_eq!(
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(7)
+    );
+
+    table.dealer_position = 3;
+    assert!(!dealer_opponent_has_major_threat(
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+    ));
+    assert_eq!(
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(4)
+    );
+}
+
+#[test]
 fn non_dealer_can_choose_edge_wait_for_extra_fan() {
     let mut table = table_with_discards(1, Vec::new());
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(11), test_chi_meld(21)];

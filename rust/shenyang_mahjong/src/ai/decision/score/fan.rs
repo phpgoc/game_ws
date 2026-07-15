@@ -237,6 +237,7 @@ pub(in crate::ai::decision) fn fan_wait_bias(
     known_unavailable_tiles: &[i32],
 ) -> f64 {
     if table.dealer_position == position
+        || dealer_opponent_has_major_threat(table, position, win_rule)
         || is_late_defense_round(table)
         || !is_single_wait_shape_for_table(
             win_hand,
