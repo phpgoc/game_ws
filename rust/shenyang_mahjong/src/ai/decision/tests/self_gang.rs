@@ -227,7 +227,7 @@ fn self_gang_rejects_unrelated_public_fifth_copy() {
 }
 
 #[test]
-fn one_fan_capped_self_gang_delays_dragon_before_ready() {
+fn one_fan_capped_self_gang_takes_concealed_dragon_for_replacement_draw() {
     let mut table = table_with_discards(1, Vec::new());
     table.max_fan = Some(1);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
@@ -235,7 +235,7 @@ fn one_fan_capped_self_gang_delays_dragon_before_ready() {
 
     assert_eq!(
         choose_self_gang_from_view(&hand, &[35], &table, 0, WIN_RULE_SHENYANG_BASIC),
-        None
+        Some(35)
     );
 }
 
@@ -512,14 +512,18 @@ fn relaxed_self_gang_delays_closed_plain_gang_before_ready() {
 }
 
 #[test]
-fn one_fan_capped_self_gang_delays_closed_plain_before_ready() {
+fn one_fan_capped_self_gang_takes_closed_plain_for_replacement_draw() {
     let mut table = table_with_discards(1, Vec::new());
     table.max_fan = Some(1);
     let hand = vec![3, 3, 3, 3, 4, 6, 8, 11, 13, 15, 21, 24, 27, 31];
 
     assert_eq!(
         choose_self_gang_from_view(&hand, &[3], &table, 0, WIN_RULE_RELAXED),
-        None
+        Some(3)
+    );
+    assert_eq!(
+        choose_self_gang_from_view(&hand, &[3], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(3)
     );
 }
 

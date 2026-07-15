@@ -83,6 +83,8 @@ pub(super) fn self_gang_score(
 ) -> f64 {
     let is_added_gang = has_peng_meld(melds, tile);
     let is_ready = best_ready_score_after_discard(hand, melds, table, position, win_rule) > 0.0;
+    let speed_first_concealed_gang = !is_added_gang
+        && (table.dealer_position == position || table.max_fan.is_some_and(|max_fan| max_fan <= 1));
     let pure_one_suit_score =
         pure_one_suit_plan_score_for_context(hand, melds, table, position, win_rule);
     let piao_score = piao_plan_score_for_context(hand, melds, table, position, win_rule);
@@ -97,13 +99,17 @@ pub(super) fn self_gang_score(
     if is_ready && ready_visible_fan_exceeds_half_cap(hand, melds, table, position, win_rule) {
         return f64::NEG_INFINITY;
     }
-    if !is_ready && capped_open_basic_route_visible_fan_reaches_cap(hand, melds, table) {
+    if !is_ready
+        && !speed_first_concealed_gang
+        && capped_open_basic_route_visible_fan_reaches_cap(hand, melds, table)
+    {
         return f64::NEG_INFINITY;
     }
-    if !is_ready && table.max_fan.is_some_and(|max_fan| max_fan <= 1) {
+    if !is_ready && !speed_first_concealed_gang && table.max_fan.is_some_and(|max_fan| max_fan <= 1)
+    {
         return f64::NEG_INFINITY;
     }
-    if !is_ready && !is_dragon(tile) && (is_added_gang || table.dealer_position != position) {
+    if !is_ready && !is_dragon(tile) && !speed_first_concealed_gang {
         return f64::NEG_INFINITY;
     }
     if !is_added_gang && !is_ready && is_dragon(tile) && has_open_meld(melds) && piao_score >= 22.0
@@ -113,7 +119,7 @@ pub(super) fn self_gang_score(
     if !is_added_gang
         && !is_ready
         && win_rule == WIN_RULE_SHENYANG_BASIC
-        && table.dealer_position != position
+        && !speed_first_concealed_gang
         && (!is_dragon(tile) || !has_door_opening_meld(melds, table))
     {
         return f64::NEG_INFINITY;
@@ -194,7 +200,7 @@ pub(super) fn self_gang_score(
     if is_ready && has_open_meld(melds) {
         score = score.max(6.0);
     }
-    if table.dealer_position == position && !is_ready && !is_added_gang {
+    if speed_first_concealed_gang && !is_ready {
         score = score.max(4.0);
     }
     if is_dragon(tile) {
