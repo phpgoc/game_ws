@@ -103,7 +103,7 @@ pub(super) fn self_gang_score(
     if !is_ready && table.max_fan.is_some_and(|max_fan| max_fan <= 1) {
         return f64::NEG_INFINITY;
     }
-    if !is_ready && !is_dragon(tile) {
+    if !is_ready && !is_dragon(tile) && (is_added_gang || table.dealer_position != position) {
         return f64::NEG_INFINITY;
     }
     if !is_added_gang && !is_ready && is_dragon(tile) && has_open_meld(melds) && piao_score >= 22.0
@@ -113,6 +113,7 @@ pub(super) fn self_gang_score(
     if !is_added_gang
         && !is_ready
         && win_rule == WIN_RULE_SHENYANG_BASIC
+        && table.dealer_position != position
         && (!is_dragon(tile) || !has_door_opening_meld(melds, table))
     {
         return f64::NEG_INFINITY;
@@ -192,6 +193,9 @@ pub(super) fn self_gang_score(
     }
     if is_ready && has_open_meld(melds) {
         score = score.max(6.0);
+    }
+    if table.dealer_position == position && !is_ready && !is_added_gang {
+        score = score.max(4.0);
     }
     if is_dragon(tile) {
         score = score.max(12.0);

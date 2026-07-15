@@ -1,14 +1,14 @@
 use super::*;
 
 #[test]
-fn dealer_self_gang_delays_closed_plain_gang_before_opening_basic_hand() {
+fn dealer_self_gang_takes_closed_plain_gang_for_replacement_draw() {
     let mut table = table_with_discards(1, Vec::new());
     table.dealer_position = 0;
     let hand = vec![3, 3, 3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31];
 
     assert_eq!(
         choose_self_gang_from_view(&hand, &[3], &table, 0, WIN_RULE_SHENYANG_BASIC),
-        None
+        Some(3)
     );
 }
 
@@ -284,6 +284,12 @@ fn self_gang_delays_added_plain_gang_before_ready() {
         choose_self_gang_from_view(&hand, &[9], &table, 0, WIN_RULE_SHENYANG_BASIC),
         None
     );
+
+    table.dealer_position = 0;
+    assert_eq!(
+        choose_self_gang_from_view(&hand, &[9], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        None
+    );
 }
 
 #[test]
@@ -416,13 +422,19 @@ fn self_gang_delays_main_suit_added_gang_when_pure_one_suit_plan_not_ready() {
 }
 
 #[test]
-fn self_gang_delays_closed_dragon_gang_before_opening_basic_hand() {
-    let table = table_with_discards(1, Vec::new());
+fn non_dealer_delays_closed_dragon_gang_but_dealer_takes_replacement_draw() {
+    let mut table = table_with_discards(1, Vec::new());
     let hand = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 35, 35, 35, 35, 31];
 
     assert_eq!(
         choose_self_gang_from_view(&hand, &[35], &table, 0, WIN_RULE_SHENYANG_BASIC),
         None
+    );
+
+    table.dealer_position = 0;
+    assert_eq!(
+        choose_self_gang_from_view(&hand, &[35], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(35)
     );
 }
 
@@ -480,7 +492,7 @@ fn self_gang_allows_same_closed_plain_gang_when_opening_is_not_required() {
 
 #[test]
 fn relaxed_self_gang_delays_closed_plain_gang_before_ready() {
-    let table = table_with_discards(1, Vec::new());
+    let mut table = table_with_discards(1, Vec::new());
     let hand = vec![3, 3, 3, 3, 4, 6, 8, 11, 13, 15, 21, 24, 27, 31];
 
     assert_eq!(
@@ -490,6 +502,12 @@ fn relaxed_self_gang_delays_closed_plain_gang_before_ready() {
     assert_eq!(
         choose_self_gang_from_view(&hand, &[3], &table, 0, WIN_RULE_RELAXED),
         None
+    );
+
+    table.dealer_position = 0;
+    assert_eq!(
+        choose_self_gang_from_view(&hand, &[3], &table, 0, WIN_RULE_RELAXED),
+        Some(3)
     );
 }
 
