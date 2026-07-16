@@ -2985,6 +2985,43 @@ mod tests {
     }
 
     #[test]
+    fn wind_xi_gang_last_replacement_win_is_haidilao_not_gang_draw() {
+        let mut state = playable_state();
+        state.current_position = 1;
+        state
+            .hands
+            .insert(1, vec![1, 2, 3, 11, 12, 13, 22, 23, 31, 32, 33, 34, 35, 35]);
+        state.melds.insert(1, Vec::new());
+        state.last_drawn_tile = Some(34);
+        state.wall = vec![24];
+        state.xi_gang_options.insert(1, vec![vec![31, 32, 33, 34]]);
+        let mut dispatch = Dispatch::default();
+
+        assert!(perform_xi_gang(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+            1,
+            &[31, 32, 33, 34],
+        ));
+        assert!(can_self_draw_hu_with_configs(&state, 1, &relaxed_configs()));
+        perform_self_draw_hu(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+            1,
+        );
+
+        let settlement = state.settlement.as_ref().expect("settlement");
+        assert!(settlement.is_haidilao);
+        assert!(!settlement.is_gang_draw);
+    }
+
+    #[test]
     fn two_xi_gangs_stack_two_fan_and_keep_hand_closed() {
         let mut state = playable_state();
         state.current_position = 1;
@@ -3493,6 +3530,25 @@ mod tests {
 
         let options = build_claim_options(&state, 3, 0, &configs);
 
+        assert!(
+            options
+                .iter()
+                .all(|option| option.position != 1 || option.chi_options.is_empty())
+        );
+
+        state
+            .hands
+            .insert(1, vec![1, 2, 4, 5, 6, 11, 12, 13, 21, 31]);
+        state.melds.insert(
+            1,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::XI_GANG,
+                vec![35, 36, 37],
+                None,
+            )],
+        );
+
+        let options = build_claim_options(&state, 3, 0, &configs);
         assert!(
             options
                 .iter()
