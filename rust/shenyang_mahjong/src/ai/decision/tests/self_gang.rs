@@ -628,6 +628,19 @@ fn half_capped_unready_self_gang_takes_projected_cap() {
 }
 
 #[test]
+fn half_capped_closed_basic_self_gang_still_prioritizes_opening() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.dealer_position = 3;
+    table.max_fan = Some(3);
+    let hand = vec![1, 4, 7, 9, 9, 9, 9, 11, 14, 17, 21, 24, 27, 31];
+
+    assert_eq!(
+        choose_self_gang_from_view(&hand, &[9], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        None
+    );
+}
+
+#[test]
 fn self_gang_skips_plain_gang_when_concealed_dragon_triplet_caps_ready_hand() {
     let mut table = table_with_discards(1, Vec::new());
     table.max_fan = Some(2);

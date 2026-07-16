@@ -114,10 +114,11 @@ pub(super) fn self_gang_score(
         return f64::NEG_INFINITY;
     };
     let is_ready = best_ready_score_after_discard(hand, melds, table, position, win_rule) > 0.0;
-    let projected_capped_visible_fan =
-        capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table, win_rule)
-            && !capped_normal_route_visible_fan_reaches_cap(hand, melds, table, win_rule)
-            && capped_normal_route_visible_fan_reaches_cap(&next, &next_melds, table, win_rule);
+    let projected_capped_visible_fan = (win_rule != WIN_RULE_SHENYANG_BASIC
+        || has_door_opening_meld(melds, table))
+        && capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table, win_rule)
+        && !capped_normal_route_visible_fan_reaches_cap(hand, melds, table, win_rule)
+        && capped_normal_route_visible_fan_reaches_cap(&next, &next_melds, table, win_rule);
     let speed_first_concealed_gang = !is_added_gang
         && (table.dealer_position == position
             || table.max_fan.is_some_and(|max_fan| max_fan <= 1)
