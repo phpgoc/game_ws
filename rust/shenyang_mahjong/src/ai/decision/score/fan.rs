@@ -124,6 +124,9 @@ pub(in crate::ai::decision) fn four_gui_yi_discard_bias(
     if current_four_gui_yi <= 0 {
         return 0.0;
     }
+    if capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table, win_rule) {
+        return 0.0;
+    }
     let next = remove_n_tiles(hand, tile, 1);
     if next.len() + 1 != hand.len() {
         return 0.0;

@@ -67,6 +67,27 @@ fn capped_discard_does_not_preserve_redundant_four_gui_yi() {
 }
 
 #[test]
+fn half_capped_discard_does_not_preserve_four_gui_yi() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.max_fan = Some(3);
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(2)];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![2, 3, 4, 11, 12, 13, 21, 22, 23, 35, 36];
+
+    assert_eq!(estimated_four_gui_yi_fan(&hand, melds), 1);
+    assert!(capped_normal_route_visible_fan_exceeds_half_cap(
+        &hand,
+        melds,
+        &table,
+        WIN_RULE_RELAXED
+    ));
+    assert_eq!(
+        four_gui_yi_discard_bias(&hand, 2, melds, &table, 0, WIN_RULE_RELAXED),
+        0.0
+    );
+}
+
+#[test]
 fn capped_open_basic_route_discards_redundant_single_dragon() {
     let mut table = table_with_discards(1, Vec::new());
     table.max_fan = Some(2);
