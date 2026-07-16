@@ -70,12 +70,11 @@ fn choose_discard_from_view_inner(
         }
         return choose_late_defense_discard(hand, table, position);
     }
-    if should_use_broken_hand_public_defense_discard(hand, melds, table, position, win_rule) {
-        if let Some(tile) =
+    if should_use_broken_hand_public_defense_discard(hand, melds, table, position, win_rule)
+        && let Some(tile) =
             choose_broken_hand_public_defense_discard(hand, melds, table, position, win_rule)
-        {
-            return Some(tile);
-        }
+    {
+        return Some(tile);
     }
 
     let preserve_early_piao_pairs =
@@ -105,7 +104,7 @@ fn choose_discard_from_view_inner(
         let pressure = estimate_pressure_for_tile(table, position, tile);
         let neigh = neighbor_count(hand, tile);
         let discard_bias = match (count, is_honor(tile), tile_is_terminal(tile), neigh) {
-            (c, true, _, _) if c == 1 => honor_discard_bias(hand, tile),
+            (1, true, _, _) => honor_discard_bias(hand, tile),
             (1, _, true, 0) => 4.8,
             (1, _, _, 0) => isolated_suited_singleton_discard_bias(tile),
             (2, _, _, _) => pair_discard_bias(hand),

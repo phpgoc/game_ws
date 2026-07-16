@@ -25,14 +25,11 @@ pub(in crate::ai::decision) fn tile_is_core_closed_middle_wait_member(
     }
     [-2, 2].into_iter().any(|offset| {
         let other = tile + offset;
-        is_suited(other)
-            && tile_suit(other) == tile_suit(tile)
-            && hand.iter().any(|item| *item == other)
-            && {
-                let low_rank = tile_rank(tile).min(tile_rank(other));
-                let high_rank = tile_rank(tile).max(tile_rank(other));
-                matches!((low_rank, high_rank), (3, 5) | (4, 6) | (5, 7))
-            }
+        is_suited(other) && tile_suit(other) == tile_suit(tile) && hand.contains(&other) && {
+            let low_rank = tile_rank(tile).min(tile_rank(other));
+            let high_rank = tile_rank(tile).max(tile_rank(other));
+            matches!((low_rank, high_rank), (3, 5) | (4, 6) | (5, 7))
+        }
     })
 }
 
@@ -42,14 +39,11 @@ pub(in crate::ai::decision) fn tile_is_core_two_sided_wait_member(hand: &[i32], 
     }
     [-1, 1].into_iter().any(|offset| {
         let other = tile + offset;
-        is_suited(other)
-            && tile_suit(other) == tile_suit(tile)
-            && hand.iter().any(|item| *item == other)
-            && {
-                let low_rank = tile_rank(tile).min(tile_rank(other));
-                let high_rank = tile_rank(tile).max(tile_rank(other));
-                matches!((low_rank, high_rank), (3, 4) | (4, 5) | (5, 6) | (6, 7))
-            }
+        is_suited(other) && tile_suit(other) == tile_suit(tile) && hand.contains(&other) && {
+            let low_rank = tile_rank(tile).min(tile_rank(other));
+            let high_rank = tile_rank(tile).max(tile_rank(other));
+            matches!((low_rank, high_rank), (3, 4) | (4, 5) | (5, 6) | (6, 7))
+        }
     })
 }
 
@@ -59,7 +53,7 @@ pub(in crate::ai::decision) fn tile_is_middle_of_sequence(hand: &[i32], tile: i3
     }
     let left = tile - 1;
     let right = tile + 1;
-    hand.iter().any(|item| *item == left) && hand.iter().any(|item| *item == right)
+    hand.contains(&left) && hand.contains(&right)
 }
 
 pub(in crate::ai::decision) fn tile_is_part_of_complete_sequence(hand: &[i32], tile: i32) -> bool {
@@ -73,7 +67,7 @@ pub(in crate::ai::decision) fn tile_is_part_of_complete_sequence(hand: &[i32], t
     (min_start..=max_start).any(|start| {
         (start..start + 3).all(|sequence_rank| {
             let sequence_tile = suit * 10 + sequence_rank;
-            hand.iter().any(|item| *item == sequence_tile)
+            hand.contains(&sequence_tile)
         })
     })
 }

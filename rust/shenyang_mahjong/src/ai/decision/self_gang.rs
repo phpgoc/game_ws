@@ -94,13 +94,12 @@ pub(super) fn self_gang_score(
         && speed_first_concealed_gang
         && is_main_pure_suit_tile(hand, melds, tile);
     let speed_first_piao_concealed_gang = piao_score >= 22.0 && speed_first_concealed_gang;
-    if pure_one_suit_score > 0.0 {
-        if is_honor(tile)
+    if pure_one_suit_score > 0.0
+        && (is_honor(tile)
             || !is_main_pure_suit_tile(hand, melds, tile)
-            || (!is_ready && !speed_first_pure_concealed_gang)
-        {
-            return f64::NEG_INFINITY;
-        }
+            || (!is_ready && !speed_first_pure_concealed_gang))
+    {
+        return f64::NEG_INFINITY;
     }
     if is_ready && ready_visible_fan_reaches_cap(hand, melds, table, position, win_rule) {
         return f64::NEG_INFINITY;

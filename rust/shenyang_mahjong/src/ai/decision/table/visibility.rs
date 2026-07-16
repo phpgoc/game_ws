@@ -169,7 +169,7 @@ pub(in crate::ai::decision) fn public_discard_seat_count(
     table
         .seats
         .values()
-        .filter(|seat| seat.discards.iter().any(|discard| *discard == tile))
+        .filter(|seat| seat.discards.contains(&tile))
         .count()
 }
 

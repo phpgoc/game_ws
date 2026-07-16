@@ -32,13 +32,11 @@ fn pending_piao_claim_tile(
         .get(&position)
         .map(|seat| {
             valid_meld_tiles(&seat.melds)
-                .into_iter()
                 .filter(|tile| *tile == claim.tile)
                 .count()
         })
         .unwrap_or(0);
     let projected_meld_tile_count = valid_meld_tiles(melds)
-        .into_iter()
         .filter(|tile| *tile == claim.tile)
         .count();
     (projected_meld_tile_count <= current_meld_tile_count).then_some(claim.tile)
