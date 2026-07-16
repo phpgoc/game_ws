@@ -860,6 +860,24 @@ pub(crate) fn shenyang_score_wait_fan(
     )
 }
 
+pub(crate) fn shenyang_score_visible_win_fan(
+    hand_tiles: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    win_tile: Option<i32>,
+    rules: ShenyangMahjongWinRules,
+    known_unavailable_tiles: &[i32],
+) -> i32 {
+    if !is_complete_win_with_melds_for_rules(hand_tiles, melds, rules) {
+        return 0;
+    }
+
+    shenyang_win_pattern_base_fan(shenyang_win_pattern(hand_tiles, melds))
+        + shenyang_score_meld_fan(melds)
+        + shenyang_score_concealed_dragon_triplet_fan(hand_tiles)
+        + shenyang_score_four_gui_yi_fan(hand_tiles, melds)
+        + shenyang_score_wait_fan(hand_tiles, melds, win_tile, rules, known_unavailable_tiles)
+}
+
 pub(crate) fn shenyang_score_four_gui_yi_fan(
     hand_tiles: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -963,8 +981,9 @@ mod tests {
         is_piao_hu_win, is_pure_one_suit_win, is_seven_pairs_win, is_single_wait_shape,
         is_single_wait_shape_with_known_unavailable_tiles, is_single_wait_shape_with_rule,
         is_standard_win, is_unique_complete_wait, is_win, satisfies_shenyang_basic_win,
-        satisfies_shenyang_basic_win_for_rules, shenyang_score_wait_fan, shenyang_win_pattern,
-        shenyang_win_pattern_base_fan, win_rule_from_configs,
+        satisfies_shenyang_basic_win_for_rules, shenyang_score_visible_win_fan,
+        shenyang_score_wait_fan, shenyang_win_pattern, shenyang_win_pattern_base_fan,
+        win_rule_from_configs,
     };
 
     #[test]
@@ -1226,6 +1245,31 @@ mod tests {
             1
         );
         assert_eq!(shenyang_score_wait_fan(&standard, &[], None, rules, &[]), 0);
+    }
+
+    #[test]
+    fn shared_visible_win_fan_combines_pattern_meld_and_wait_scoring() {
+        let melds = vec![
+            meld(ShenyangMahjongMeldKind::PENG, vec![1, 1, 1], Some(0)),
+            meld(ShenyangMahjongMeldKind::GANG, vec![11, 11, 11, 11], Some(1)),
+            meld(ShenyangMahjongMeldKind::GANG, vec![21, 21, 21, 21], None),
+            meld(ShenyangMahjongMeldKind::PENG, vec![31, 31, 31], Some(2)),
+        ];
+        let hand = vec![35, 35];
+        let rules = ShenyangMahjongWinRules::new(WIN_RULE_RELAXED);
+
+        assert_eq!(
+            shenyang_score_visible_win_fan(&hand, &melds, Some(35), rules, &[]),
+            8
+        );
+        assert_eq!(
+            shenyang_score_visible_win_fan(&hand, &melds, None, rules, &[]),
+            6
+        );
+        assert_eq!(
+            shenyang_score_visible_win_fan(&[1, 2, 3], &[], Some(3), rules, &[]),
+            0
+        );
     }
 
     #[test]

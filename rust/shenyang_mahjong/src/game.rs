@@ -27,14 +27,13 @@ use crate::game_state::{
 use crate::rules::{
     ShenyangMahjongWinRules, WIN_RULE_SHENYANG_BASIC, XI_GANG_WINDS, can_chi, can_concealed_gang,
     can_gang, can_peng, is_complete_win_with_melds, is_complete_win_with_melds_for_rules,
-    is_valid_meld, is_xi_gang_tiles, shenyang_score_concealed_dragon_triplet_fan,
-    shenyang_score_four_gui_yi_fan, shenyang_score_meld_fan, shenyang_score_wait_fan,
-    shenyang_win_pattern, shenyang_win_pattern_base_fan, tiles_in_hand, win_rule_from_configs,
+    is_valid_meld, is_xi_gang_tiles, shenyang_score_visible_win_fan, shenyang_win_pattern,
+    tiles_in_hand, win_rule_from_configs,
 };
 #[cfg(test)]
 use crate::rules::{
     is_seven_pairs_win, is_single_wait_shape_with_known_unavailable_tiles_for_rules,
-    is_single_wait_shape_with_rule,
+    is_single_wait_shape_with_rule, shenyang_score_four_gui_yi_fan, shenyang_score_meld_fan,
 };
 
 pub(crate) type LoopStateHandle = Arc<std::sync::Mutex<ShenyangMahjongLoopState>>;
@@ -927,6 +926,7 @@ fn finish_added_gang(
     true
 }
 
+#[cfg(test)]
 fn four_gui_yi_fan(hand_tiles: &[i32], melds: &[WsShenyangMahjongMeld]) -> i32 {
     shenyang_score_four_gui_yi_fan(hand_tiles, melds)
 }
@@ -2177,11 +2177,14 @@ fn winner_hand_fan_with_rules(
     if !is_complete_win_with_melds_for_rules(&hand_tiles, melds, rules) {
         return 0;
     }
-    let pattern = shenyang_win_pattern(&hand_tiles, melds);
     let known_unavailable_tiles = public_unavailable_tiles_for_winner(state, winner);
-    let mut fan = shenyang_win_pattern_base_fan(pattern);
-    fan += shenyang_score_meld_fan(melds);
-    fan += shenyang_score_concealed_dragon_triplet_fan(&hand_tiles);
+    let mut fan = shenyang_score_visible_win_fan(
+        &hand_tiles,
+        melds,
+        settlement.win_tile,
+        rules,
+        &known_unavailable_tiles,
+    );
     if settlement_is_reverse_win(state, settlement) {
         fan += 1;
     }
@@ -2191,14 +2194,7 @@ fn winner_hand_fan_with_rules(
     if settlement_is_haidilao(state, settlement) {
         fan += 1;
     }
-    fan += shenyang_score_wait_fan(
-        &hand_tiles,
-        melds,
-        settlement.win_tile,
-        rules,
-        &known_unavailable_tiles,
-    );
-    fan + four_gui_yi_fan(&hand_tiles, melds)
+    fan
 }
 
 fn winner_hand_fan_with_configs(

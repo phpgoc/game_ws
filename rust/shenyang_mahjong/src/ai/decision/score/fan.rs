@@ -150,11 +150,7 @@ fn estimated_visible_fan_without_wait_for_rules(
     melds: &[WsShenyangMahjongMeld],
     rules: ShenyangMahjongWinRules,
 ) -> i32 {
-    if !is_complete_win_with_melds_for_rules(win_hand, melds, rules) {
-        return 0;
-    }
-    let base = shenyang_win_pattern_base_fan(shenyang_win_pattern(win_hand, melds));
-    base + estimated_visible_bonus_fan(win_hand, melds)
+    shenyang_score_visible_win_fan(win_hand, melds, None, rules, &[])
 }
 
 #[cfg(test)]
@@ -208,14 +204,13 @@ fn estimated_fan_with_known_unavailable_wait_for_rules(
     rules: ShenyangMahjongWinRules,
     known_unavailable_tiles: &[i32],
 ) -> i32 {
-    let wait_fan = shenyang_score_wait_fan(
+    shenyang_score_visible_win_fan(
         win_hand,
         melds,
         Some(win_tile),
         rules,
         known_unavailable_tiles,
-    );
-    estimated_visible_fan_without_wait_for_rules(win_hand, melds, rules) + wait_fan
+    )
 }
 
 pub(in crate::ai::decision) fn pressured_open_wait_scale(
