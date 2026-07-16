@@ -24,6 +24,16 @@ enum AutoBroadcastEvent {
 
 type CallLandlordTransition = (Option<(String, Vec<i32>)>, Option<usize>, bool);
 
+fn room_matches_common(
+    room_service: &RoomService,
+    room_key: &str,
+    expected_common: &Arc<std::sync::Mutex<ws_common::CommonGameState>>,
+) -> bool {
+    room_service
+        .room_common_state(room_key)
+        .is_some_and(|current| Arc::ptr_eq(&current, expected_common))
+}
+
 /// Build a Dispatch that sends an event to all room members.
 fn dispatch_all(
     room_key: &str,
@@ -101,6 +111,7 @@ async fn handle_call_landlord_phase(
     configs: &std::collections::HashMap<String, i32>,
     room_service: &Arc<Mutex<RoomService>>,
     senders: &SessionSenders,
+    expected_common: &Arc<std::sync::Mutex<ws_common::CommonGameState>>,
 ) {
     if loop_should_stop(state) {
         return;
@@ -169,6 +180,9 @@ async fn handle_call_landlord_phase(
     }
 
     let rs = room_service.lock().await;
+    if !room_matches_common(&rs, room_key, expected_common) {
+        return;
+    }
     let mut dispatch = Vec::new();
     if phase_changed {
         let s = state.lock().unwrap();
@@ -214,6 +228,7 @@ async fn handle_play_phase(
     room_key: &str,
     room_service: &Arc<Mutex<RoomService>>,
     senders: &SessionSenders,
+    expected_common: &Arc<std::sync::Mutex<ws_common::CommonGameState>>,
 ) -> bool {
     if loop_should_stop(state) {
         return true;
@@ -282,6 +297,9 @@ async fn handle_play_phase(
 
     if let Some(position) = next_turn_position {
         let rs = room_service.lock().await;
+        if !room_matches_common(&rs, room_key, expected_common) {
+            return true;
+        }
         let countdown = state.lock().unwrap().turn_countdown();
         let dispatch = dispatch_all(
             room_key,
@@ -298,6 +316,9 @@ async fn handle_play_phase(
 
     if game_over {
         let rs = room_service.lock().await;
+        if !room_matches_common(&rs, room_key, expected_common) {
+            return true;
+        }
         let mut dispatch = Vec::new();
         {
             let s = state.lock().unwrap();
@@ -376,6 +397,7 @@ async fn handle_play_phase(
         crate::official::settle_round(
             room_service,
             room_key,
+            expected_common,
             landlord_position,
             is_landlord_win,
             score,
@@ -394,8 +416,11 @@ async fn handle_settlement_phase(
     configs: &std::collections::HashMap<String, i32>,
     room_service: &Arc<Mutex<RoomService>>,
     senders: &SessionSenders,
+    expected_common: &Arc<std::sync::Mutex<ws_common::CommonGameState>>,
 ) -> bool {
-    // 人数仍是 3 且没有断线玩家，才等待结算后进入下一局；否则结束循环。
+    // A disconnected seat stays in the roster and is auto-played as away.
+    // Common requests stop only when a player really quits or the final
+    // connected human leaves, so a partial disconnect must not end the loop.
     if settlement_should_stop(state) {
         return true;
     }
@@ -412,13 +437,16 @@ async fn handle_settlement_phase(
         if s.phase != LandlordPhase::Settlement {
             return false;
         }
-        if s.stop_requested() || s.players_snapshot().len() != 3 || s.has_disconnected_players() {
+        if s.stop_requested() || s.players_snapshot().len() != 3 {
             return true;
         }
         s.redeal();
         (s.phase as i32, s.current_position as i32)
     };
     let rs = room_service.lock().await;
+    if !room_matches_common(&rs, room_key, expected_common) {
+        return true;
+    }
     let dispatch = dispatch_all(
         room_key,
         WsCode::CHANGE_PHASE as i32,
@@ -443,6 +471,7 @@ async fn handle_start_phase(
     room_service: &Arc<Mutex<RoomService>>,
     senders: &SessionSenders,
     configs: &std::collections::HashMap<String, i32>,
+    expected_common: &Arc<std::sync::Mutex<ws_common::CommonGameState>>,
 ) -> bool {
     // 1. Deal cards inside lock
     let deal_data: Vec<(usize, Vec<i32>, String)>;
@@ -467,6 +496,9 @@ async fn handle_start_phase(
 
     // 2. Send events (outside lock)
     let rs = room_service.lock().await;
+    if !room_matches_common(&rs, room_key, expected_common) {
+        return true;
+    }
     let mut dispatch = Vec::new();
     for (pos, hand, name) in &deal_data {
         dispatch.extend(dispatch_to_position(
@@ -501,6 +533,9 @@ async fn handle_start_phase(
         )
     };
     let rs = room_service.lock().await;
+    if !room_matches_common(&rs, room_key, expected_common) {
+        return true;
+    }
     let mut dispatch = dispatch_all(
         room_key,
         WsCode::CHANGE_PHASE as i32,
@@ -627,7 +662,43 @@ async fn send_dispatch(dispatch: Vec<Delivery>, senders: &SessionSenders) {
 
 fn settlement_should_stop(state: &Arc<std::sync::Mutex<LandlordLoopState>>) -> bool {
     let s = state.lock().unwrap();
-    s.stop_requested() || s.players_snapshot().len() != 3 || s.has_disconnected_players()
+    s.stop_requested() || s.players_snapshot().len() != 3
+}
+
+/// Promote disconnected seats to away immediately instead of waiting for the
+/// normal human timeout. The current turn keeps any shorter remaining timeout,
+/// but is capped to `away_time` as soon as the loop observes the disconnect.
+fn synchronize_disconnected_players(
+    state: &mut LandlordLoopState,
+    configs: &std::collections::HashMap<String, i32>,
+) -> Vec<usize> {
+    if !matches!(
+        state.phase,
+        LandlordPhase::CallLandlord | LandlordPhase::Play
+    ) {
+        return Vec::new();
+    }
+
+    let disconnected_positions = state
+        .players_snapshot()
+        .keys()
+        .copied()
+        .filter(|position| state.is_disconnected(*position))
+        .collect::<Vec<_>>();
+    let newly_away = disconnected_positions
+        .iter()
+        .copied()
+        .filter(|position| state.mark_away(*position))
+        .collect::<Vec<_>>();
+
+    if !state.action_received() && state.is_disconnected(state.current_position) {
+        let away_time = configs.get("away_time").copied().unwrap_or(5).max(0) as u32;
+        if state.turn_countdown() > away_time {
+            state.set_turn_countdown(away_time);
+        }
+    }
+
+    newly_away
 }
 
 async fn sleep_or_stop(
@@ -656,6 +727,7 @@ pub(crate) fn start_game_loop(
     loop_states: Arc<std::sync::Mutex<HashMap<String, Arc<std::sync::Mutex<LandlordLoopState>>>>>,
 ) {
     tokio::spawn(async move {
+        let expected_common = { Arc::clone(&state.lock().unwrap().base) };
         let sorted_positions: Vec<usize> = {
             let s = state.lock().unwrap();
             let mut p: Vec<usize> = s.players_snapshot().keys().copied().collect();
@@ -665,17 +737,51 @@ pub(crate) fn start_game_loop(
 
         // Read configs once; they won't change mid-game.
         let configs: std::collections::HashMap<String, i32> = {
-            room_service
-                .lock()
-                .await
-                .room_configs(&room_key)
-                .unwrap_or_default()
+            let room_service = room_service.lock().await;
+            if room_matches_common(&room_service, &room_key, &expected_common) {
+                room_service.room_configs(&room_key).unwrap_or_default()
+            } else {
+                HashMap::new()
+            }
         };
 
         loop {
             if state.lock().unwrap().stop_requested() {
                 break;
             }
+            let room_is_current = {
+                let room_service = room_service.lock().await;
+                room_matches_common(&room_service, &room_key, &expected_common)
+            };
+            if !room_is_current {
+                break;
+            }
+
+            let disconnected_away_positions = {
+                let mut state = state.lock().unwrap();
+                synchronize_disconnected_players(&mut state, &configs)
+            };
+            if !disconnected_away_positions.is_empty() {
+                let room_service = room_service.lock().await;
+                if !room_matches_common(&room_service, &room_key, &expected_common) {
+                    break;
+                }
+                let mut dispatch = Vec::new();
+                for position in disconnected_away_positions {
+                    dispatch.extend(dispatch_all(
+                        &room_key,
+                        WsCode::AWAY as i32,
+                        serde_json::to_value(WsPositionEvent {
+                            position: position as i32,
+                        })
+                        .unwrap_or_default(),
+                        &room_service,
+                    ));
+                }
+                drop(room_service);
+                send_dispatch(dispatch, &senders).await;
+            }
+
             let paused = { state.lock().unwrap().is_paused() };
             if paused {
                 if sleep_or_stop(&state, Duration::from_secs(1)).await {
@@ -707,6 +813,7 @@ pub(crate) fn start_game_loop(
                         &room_service,
                         &senders,
                         &configs,
+                        &expected_common,
                     )
                     .await;
                     if should_stop {
@@ -756,6 +863,9 @@ pub(crate) fn start_game_loop(
                     }
                     if away_position.is_some() || auto_event.is_some() {
                         let rs = room_service.lock().await;
+                        if !room_matches_common(&rs, &room_key, &expected_common) {
+                            break;
+                        }
                         let mut dispatch = Vec::new();
                         if let Some(position) = away_position {
                             dispatch.extend(dispatch_all(
@@ -806,6 +916,7 @@ pub(crate) fn start_game_loop(
                                 &configs,
                                 &room_service,
                                 &senders,
+                                &expected_common,
                             )
                             .await;
                         }
@@ -817,6 +928,7 @@ pub(crate) fn start_game_loop(
                                 &room_key,
                                 &room_service,
                                 &senders,
+                                &expected_common,
                             )
                             .await;
                         }
@@ -824,8 +936,15 @@ pub(crate) fn start_game_loop(
                     }
                 }
                 LandlordPhase::Settlement => {
-                    if handle_settlement_phase(&room_key, &state, &configs, &room_service, &senders)
-                        .await
+                    if handle_settlement_phase(
+                        &room_key,
+                        &state,
+                        &configs,
+                        &room_service,
+                        &senders,
+                        &expected_common,
+                    )
+                    .await
                     {
                         break;
                     }
@@ -834,11 +953,10 @@ pub(crate) fn start_game_loop(
         }
 
         // Cleanup
-        let common = { Arc::clone(&state.lock().unwrap().base) };
         room_service
             .lock()
             .await
-            .clear_room_game_state_if_same(&room_key, &common);
+            .clear_room_game_state_if_same(&room_key, &expected_common);
         let mut states = loop_states.lock().unwrap();
         if states
             .get(&room_key)
@@ -856,11 +974,12 @@ fn turn_timeout(
     state: &LandlordLoopState,
     configs: &std::collections::HashMap<String, i32>,
 ) -> u32 {
-    let away_time = configs.get("away_time").copied().unwrap_or(5) as u32;
-    let play_time = configs.get("play_time").copied().unwrap_or(30) as u32;
+    let away_time = configs.get("away_time").copied().unwrap_or(5).max(0) as u32;
+    let play_time = configs.get("play_time").copied().unwrap_or(30).max(0) as u32;
     if state.is_ai_position(state.current_position) {
         1
-    } else if state.is_away(state.current_position) {
+    } else if state.is_away(state.current_position) || state.is_disconnected(state.current_position)
+    {
         away_time
     } else {
         play_time
@@ -934,5 +1053,36 @@ mod tests {
         assert_eq!(turn_timeout(&state, &configs), 35);
         state.mark_away(0);
         assert_eq!(turn_timeout(&state, &configs), 4);
+    }
+
+    #[test]
+    fn disconnected_human_is_immediately_away_and_uses_away_timeout() {
+        let mut state = state_with_ai(2);
+        let configs = HashMap::from([("away_time".to_owned(), 4), ("play_time".to_owned(), 35)]);
+        state.phase = LandlordPhase::CallLandlord;
+        state.current_position = 0;
+        state.set_turn_countdown(35);
+        state.base.lock().unwrap().mark_disconnected(0);
+
+        let newly_away = synchronize_disconnected_players(&mut state, &configs);
+
+        assert_eq!(newly_away, vec![0]);
+        assert!(state.is_away(0));
+        assert_eq!(state.turn_countdown(), 4);
+        assert_eq!(turn_timeout(&state, &configs), 4);
+        assert!(synchronize_disconnected_players(&mut state, &configs).is_empty());
+    }
+
+    #[test]
+    fn settlement_continues_with_a_disconnected_seat_until_common_requests_stop() {
+        let mut state = state_with_ai(2);
+        state.phase = LandlordPhase::Settlement;
+        state.base.lock().unwrap().mark_disconnected(0);
+        let state = Arc::new(Mutex::new(state));
+
+        assert!(!settlement_should_stop(&state));
+
+        state.lock().unwrap().request_stop();
+        assert!(settlement_should_stop(&state));
     }
 }

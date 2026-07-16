@@ -124,6 +124,10 @@ impl LandlordLoopState {
         self.base.lock().unwrap().is_ai_position(pos)
     }
 
+    pub fn is_disconnected(&self, pos: usize) -> bool {
+        self.base.lock().unwrap().is_disconnected(pos)
+    }
+
     pub fn is_paused(&self) -> bool {
         self.base.lock().unwrap().paused
     }

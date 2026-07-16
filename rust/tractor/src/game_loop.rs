@@ -24,6 +24,47 @@ use crate::{
 
 type StateRegistry = Arc<std::sync::Mutex<HashMap<String, TractorStateHandle>>>;
 
+fn room_uses_common_state(
+    room: &RoomService,
+    room_key: &str,
+    common: &Arc<std::sync::Mutex<ws_common::CommonGameState>>,
+) -> bool {
+    room.room_common_state(room_key)
+        .is_some_and(|current| Arc::ptr_eq(&current, common))
+}
+
+fn remove_registered_state_if_same(
+    states: &StateRegistry,
+    room_key: &str,
+    state: &TractorStateHandle,
+) {
+    let mut states = states.lock().unwrap();
+    if states
+        .get(room_key)
+        .is_some_and(|current| Arc::ptr_eq(current, state))
+    {
+        states.remove(room_key);
+    }
+}
+
+fn stop_requested(state: &TractorStateHandle) -> bool {
+    let common = { Arc::clone(&state.lock().unwrap().base) };
+    common.lock().unwrap().stop_requested()
+}
+
+async fn sleep_or_stop(state: &TractorStateHandle, duration: Duration) -> bool {
+    let mut remaining = duration.as_millis();
+    while remaining > 0 {
+        if stop_requested(state) {
+            return true;
+        }
+        let step = remaining.min(100) as u64;
+        tokio::time::sleep(Duration::from_millis(step)).await;
+        remaining -= u128::from(step);
+    }
+    stop_requested(state)
+}
+
 fn build_auto_dispatch(
     room_key: &str,
     room_service: &RoomService,
@@ -379,11 +420,16 @@ pub(crate) fn start_game_loop(
     states: StateRegistry,
 ) {
     tokio::spawn(async move {
-        let configs = room_service
-            .lock()
-            .await
-            .room_configs(&room_key)
-            .unwrap_or_default();
+        let common = { Arc::clone(&state.lock().unwrap().base) };
+        let configs = {
+            let room = room_service.lock().await;
+            if !room_uses_common_state(&room, &room_key, &common) {
+                drop(room);
+                remove_registered_state_if_same(&states, &room_key, &state);
+                return;
+            }
+            room.room_configs(&room_key).unwrap_or_default()
+        };
 
         loop {
             let (stop_requested, paused) = {
@@ -395,7 +441,9 @@ pub(crate) fn start_game_loop(
                 break;
             }
             if paused {
-                tokio::time::sleep(Duration::from_secs(1)).await;
+                if sleep_or_stop(&state, Duration::from_secs(1)).await {
+                    break;
+                }
                 continue;
             }
 
@@ -408,16 +456,24 @@ pub(crate) fn start_game_loop(
                     };
                     let dispatch = {
                         let room = room_service.lock().await;
+                        if !room_uses_common_state(&room, &room_key, &common) {
+                            break;
+                        }
                         build_deal_dispatch(&room_key, &room, &state, &configs)
                     };
                     if !dispatch.messages.is_empty() {
                         deliver(dispatch, &senders).await;
                     }
-                    tokio::time::sleep(delay).await;
+                    if sleep_or_stop(&state, delay).await {
+                        break;
+                    }
                 }
                 TractorPhase::Bury => {
                     let dispatch = {
                         let room = room_service.lock().await;
+                        if !room_uses_common_state(&room, &room_key, &common) {
+                            break;
+                        }
                         build_auto_bury_dispatch(&room_key, &room, &state, &configs)
                     };
                     if !dispatch.messages.is_empty() {
@@ -427,11 +483,16 @@ pub(crate) fn start_game_loop(
                         let guard = state.lock().unwrap();
                         action_loop_delay(&configs, &guard)
                     };
-                    tokio::time::sleep(delay).await;
+                    if sleep_or_stop(&state, delay).await {
+                        break;
+                    }
                 }
                 TractorPhase::Play => {
                     let dispatch = {
                         let room = room_service.lock().await;
+                        if !room_uses_common_state(&room, &room_key, &common) {
+                            break;
+                        }
                         build_auto_dispatch(&room_key, &room, &state, &configs)
                     };
                     if !dispatch.messages.is_empty() {
@@ -441,10 +502,14 @@ pub(crate) fn start_game_loop(
                         let guard = state.lock().unwrap();
                         action_loop_delay(&configs, &guard)
                     };
-                    tokio::time::sleep(delay).await;
+                    if sleep_or_stop(&state, delay).await {
+                        break;
+                    }
                 }
                 TractorPhase::Settlement => {
-                    tokio::time::sleep(Duration::from_secs(settlement_time(&configs))).await;
+                    if sleep_or_stop(&state, Duration::from_secs(settlement_time(&configs))).await {
+                        break;
+                    }
                     let (advanced, snapshot) = {
                         let mut guard = state.lock().unwrap();
                         if guard.phase != TractorPhase::Settlement {
@@ -465,6 +530,9 @@ pub(crate) fn start_game_loop(
                         let mut dispatch = Dispatch::default();
                         {
                             let room = room_service.lock().await;
+                            if !room_uses_common_state(&room, &room_key, &common) {
+                                break;
+                            }
                             room.broadcast(
                                 &room_key,
                                 WsCode::START as i32,
@@ -477,17 +545,18 @@ pub(crate) fn start_game_loop(
                     }
                 }
                 _ => {
-                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    if sleep_or_stop(&state, Duration::from_secs(1)).await {
+                        break;
+                    }
                 }
             }
         }
 
-        let common = { Arc::clone(&state.lock().unwrap().base) };
         room_service
             .lock()
             .await
             .clear_room_game_state_if_same(&room_key, &common);
-        states.lock().unwrap().remove(&room_key);
+        remove_registered_state_if_same(&states, &room_key, &state);
     });
 }
 
@@ -516,6 +585,30 @@ mod tests {
         assert_eq!(guard.current_trick[0].cards, vec![1]);
         assert!(!guard.hands.get(&0).unwrap().contains(&1));
         assert!(guard.hands.get(&0).unwrap().contains(&53));
+    }
+
+    #[test]
+    fn old_loop_cleanup_does_not_remove_recreated_room_state() {
+        let old = Arc::new(StdMutex::new(TractorGameState::from_common(Arc::new(
+            StdMutex::new(CommonGameState::default()),
+        ))));
+        let current = Arc::new(StdMutex::new(TractorGameState::from_common(Arc::new(
+            StdMutex::new(CommonGameState::default()),
+        ))));
+        let states = Arc::new(StdMutex::new(HashMap::from([(
+            "same-name".to_string(),
+            Arc::clone(&current),
+        )])));
+
+        remove_registered_state_if_same(&states, "same-name", &old);
+
+        assert!(
+            states
+                .lock()
+                .unwrap()
+                .get("same-name")
+                .is_some_and(|state| Arc::ptr_eq(state, &current))
+        );
     }
 
     #[test]

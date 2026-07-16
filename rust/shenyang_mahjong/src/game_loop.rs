@@ -51,6 +51,35 @@ fn settlement_should_stop(state: &Arc<std::sync::Mutex<ShenyangMahjongLoopState>
     state.players_snapshot().len() != 4 || state.stop_requested()
 }
 
+fn room_uses_common_state(
+    room: &RoomService,
+    room_key: &str,
+    common: &Arc<std::sync::Mutex<ws_common::CommonGameState>>,
+) -> bool {
+    room.room_common_state(room_key)
+        .is_some_and(|current| Arc::ptr_eq(&current, common))
+}
+
+fn loop_stop_requested(state: &Arc<std::sync::Mutex<ShenyangMahjongLoopState>>) -> bool {
+    state.lock().unwrap().stop_requested()
+}
+
+async fn sleep_or_stop(
+    state: &Arc<std::sync::Mutex<ShenyangMahjongLoopState>>,
+    duration: Duration,
+) -> bool {
+    let mut remaining = duration.as_millis();
+    while remaining > 0 {
+        if loop_stop_requested(state) {
+            return true;
+        }
+        let step = remaining.min(100) as u64;
+        tokio::time::sleep(Duration::from_millis(step)).await;
+        remaining -= u128::from(step);
+    }
+    loop_stop_requested(state)
+}
+
 fn should_resolve_timed_out_claims(state: &ShenyangMahjongLoopState) -> bool {
     state.turn_countdown() == 0 && state.claim_window.is_some()
 }
@@ -89,6 +118,7 @@ pub(crate) fn start_game_loop(
     loop_states: LoopStateRegistry,
 ) {
     tokio::spawn(async move {
+        let common = { Arc::clone(&state.lock().unwrap().base) };
         let configs: HashMap<String, i32> = room_service
             .lock()
             .await
@@ -96,8 +126,13 @@ pub(crate) fn start_game_loop(
             .unwrap_or_default();
 
         loop {
+            if loop_stop_requested(&state) {
+                break;
+            }
             if state.lock().unwrap().is_paused() {
-                tokio::time::sleep(Duration::from_secs(1)).await;
+                if sleep_or_stop(&state, Duration::from_secs(1)).await {
+                    break;
+                }
                 continue;
             }
             let phase = { state.lock().unwrap().phase };
@@ -114,6 +149,9 @@ pub(crate) fn start_game_loop(
                     let mut dispatch = ws_common::Dispatch::default();
                     {
                         let room = room_service.lock().await;
+                        if !room_uses_common_state(&room, &room_key, &common) {
+                            break;
+                        }
                         let guard = state.lock().unwrap();
                         push_phase_change(
                             &room,
@@ -138,7 +176,9 @@ pub(crate) fn start_game_loop(
                     deliver(dispatch, &senders).await;
                 }
                 ShenyangMahjongPhase::Play => {
-                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    if sleep_or_stop(&state, Duration::from_secs(1)).await {
+                        break;
+                    }
                     if state.lock().unwrap().is_paused() {
                         continue;
                     }
@@ -146,6 +186,9 @@ pub(crate) fn start_game_loop(
                     let mut ai_dispatch = ws_common::Dispatch::default();
                     let ai_acted = {
                         let room = room_service.lock().await;
+                        if !room_uses_common_state(&room, &room_key, &common) {
+                            break;
+                        }
                         let mut guard = state.lock().unwrap();
                         if maybe_resolve_ai_claims(
                             &room,
@@ -193,6 +236,9 @@ pub(crate) fn start_game_loop(
                         let mut dispatch = ws_common::Dispatch::default();
                         {
                             let room = room_service.lock().await;
+                            if !room_uses_common_state(&room, &room_key, &common) {
+                                break;
+                            }
                             let mut guard = state.lock().unwrap();
                             if let Some(claim_window) = guard.claim_window.as_mut() {
                                 for position in claim_window.eligible_positions.clone() {
@@ -218,6 +264,9 @@ pub(crate) fn start_game_loop(
                         let mut dispatch = ws_common::Dispatch::default();
                         {
                             let room = room_service.lock().await;
+                            if !room_uses_common_state(&room, &room_key, &common) {
+                                break;
+                            }
                             let mut guard = state.lock().unwrap();
                             if guard.current_position != position || guard.claim_window.is_some() {
                                 continue;
@@ -251,8 +300,9 @@ pub(crate) fn start_game_loop(
                     if settlement_should_stop(&state) {
                         break;
                     }
-                    tokio::time::sleep(Duration::from_secs(settlement_time(&configs))).await;
-                    if settlement_should_stop(&state) {
+                    if sleep_or_stop(&state, Duration::from_secs(settlement_time(&configs))).await
+                        || settlement_should_stop(&state)
+                    {
                         break;
                     }
                     {
@@ -262,6 +312,9 @@ pub(crate) fn start_game_loop(
                     let mut dispatch = ws_common::Dispatch::default();
                     {
                         let room = room_service.lock().await;
+                        if !room_uses_common_state(&room, &room_key, &common) {
+                            break;
+                        }
                         let guard = state.lock().unwrap();
                         push_phase_change(
                             &room,
@@ -290,7 +343,6 @@ pub(crate) fn start_game_loop(
             }
         };
         if should_cleanup {
-            let common = { Arc::clone(&state.lock().unwrap().base) };
             room_service
                 .lock()
                 .await

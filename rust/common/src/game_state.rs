@@ -61,13 +61,6 @@ pub trait GameState: Send {
         false
     }
 
-    /// Whether removing a room member should stop the running game loop.
-    /// Round-based games generally stop when anyone quits; games that support
-    /// spectators and mid-hand departures can keep the current hand running.
-    fn quit_stops_game(&self) -> bool {
-        true
-    }
-
     fn clear_away(&mut self) {
         self.shared_common_state().lock().unwrap().clear_away();
     }

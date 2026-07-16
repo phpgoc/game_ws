@@ -86,12 +86,19 @@ pub fn create_match(_room_service: &mut RoomService, _room_key: &str) {}
 pub async fn settle_round(
     room_service: &tokio::sync::Mutex<RoomService>,
     room_key: &str,
+    expected_common: &std::sync::Arc<std::sync::Mutex<ws_common::CommonGameState>>,
     landlord_position: Option<usize>,
     landlord_win: bool,
     score: u32,
 ) {
     let (game_match_id, landlord_user_id) = {
         let room = room_service.lock().await;
+        let Some(current_common) = room.room_common_state(room_key) else {
+            return;
+        };
+        if !std::sync::Arc::ptr_eq(&current_common, expected_common) {
+            return;
+        }
         let Some(game_match_id) = room.room_official_match_id(room_key) else {
             return;
         };
@@ -124,6 +131,7 @@ pub async fn settle_round(
 pub async fn settle_round(
     _room_service: &tokio::sync::Mutex<RoomService>,
     _room_key: &str,
+    _expected_common: &std::sync::Arc<std::sync::Mutex<ws_common::CommonGameState>>,
     _landlord_position: Option<usize>,
     _landlord_win: bool,
     _score: u32,

@@ -1262,6 +1262,11 @@ impl RoomService {
         let mut name = session.name.clone().unwrap_or_default();
         let mut position = session.position.take();
         let mut recipients = Vec::new();
+        // `disconnect` removes the current session before reaching here. AI
+        // players and disconnected roster entries do not have live sessions,
+        // so they must not keep an otherwise abandoned room alive.
+        let has_connected_human = !self.connected_session_ids(&room_key).is_empty();
+        let mut should_remove_room = false;
 
         if let Some(entry) = self.rooms.get_mut(&room_key) {
             let players = entry.state.players();
@@ -1274,34 +1279,59 @@ impl RoomService {
                     name = player_name.clone();
                 }
             }
-            let Some(pos) = position else {
-                return;
-            };
-            entry.state.mark_disconnected(pos);
-            recipients.extend(
-                entry
-                    .state
-                    .players()
-                    .values()
-                    .filter_map(|(sid, _)| (*sid != session_id).then_some(*sid)),
-            );
-            let event = CommonEvent {
-                code: WsCode::JOIN as i32,
-                data: serde_json::to_value(share_type_public::WsMemberInfo {
-                    name,
-                    avatar_url: entry.state.player_avatar(pos),
-                    position: pos as i32,
-                    is_active: false,
-                    is_ai: false,
-                })
-                .unwrap_or(Value::Null),
-            };
-            for recipient in recipients {
-                dispatch.messages.push(Delivery {
-                    recipient,
-                    payload: OutboundPayload::Event(event.clone()),
-                });
+
+            if let Some(pos) = position {
+                entry.state.mark_disconnected(pos);
             }
+
+            if !has_connected_human {
+                entry.state.set_turn_countdown(0);
+                entry.state.request_stop();
+                should_remove_room = true;
+            }
+
+            if should_remove_room {
+                // There is nobody connected to receive an inactive-member
+                // event. Remove the entry immediately so the room name can be
+                // reused while the old loop observes `stop_requested`.
+                dlog!(
+                    tracing::Level::WARN,
+                    "All human sessions disconnected from room '{}'; removing room",
+                    room_key
+                );
+            } else {
+                let Some(pos) = position else {
+                    return;
+                };
+                recipients.extend(
+                    entry
+                        .state
+                        .players()
+                        .values()
+                        .filter_map(|(sid, _)| (*sid != session_id).then_some(*sid)),
+                );
+                let event = CommonEvent {
+                    code: WsCode::JOIN as i32,
+                    data: serde_json::to_value(share_type_public::WsMemberInfo {
+                        name,
+                        avatar_url: entry.state.player_avatar(pos),
+                        position: pos as i32,
+                        is_active: false,
+                        is_ai: false,
+                    })
+                    .unwrap_or(Value::Null),
+                };
+                for recipient in recipients {
+                    dispatch.messages.push(Delivery {
+                        recipient,
+                        payload: OutboundPayload::Event(event.clone()),
+                    });
+                }
+            }
+        }
+
+        if should_remove_room {
+            self.rooms.remove(&room_key);
         }
     }
 
@@ -1406,7 +1436,6 @@ impl RoomService {
 
         let mut recipients = Vec::new();
         if let Some(entry) = self.rooms.get_mut(&room_key) {
-            let quit_stops_game = entry.state.quit_stops_game();
             let players = entry.state.players();
             let mut position = session.position.take();
             if position.is_none()
@@ -1423,10 +1452,11 @@ impl RoomService {
             }
             recipients.extend(entry.state.players().values().map(|(sid, _)| *sid));
             let room_is_empty = entry.state.players().is_empty();
-            if quit_stops_game || room_is_empty {
-                entry.state.set_turn_countdown(0);
-                entry.state.request_stop();
-            }
+            // `/quit` is a permanent departure and always terminates the
+            // current game loop. A normal disconnect follows the separate
+            // away/reconnect path in `mark_disconnected`.
+            entry.state.set_turn_countdown(0);
+            entry.state.request_stop();
             // 如果房间里没人了，删除房间
             if room_is_empty {
                 dlog!(
@@ -2247,6 +2277,177 @@ mod tests {
             _ => false,
         });
         assert!(joined);
+    }
+
+    #[test]
+    fn disconnect_removes_room_only_after_last_connected_human_leaves() {
+        let mut service = RoomService::default();
+        let _ = join_room(&mut service, 1, "u1", "disconnect-room", GameId::LANDLORD);
+        let _ = join_room(&mut service, 2, "u2", "disconnect-room", GameId::LANDLORD);
+        let common = service
+            .room_common_state("disconnect-room")
+            .expect("room common state");
+        common.lock().unwrap().turn_countdown = 37;
+
+        let first_disconnect = service.disconnect(1);
+
+        assert!(service.room_exists("disconnect-room"));
+        assert_eq!(service.connected_session_ids("disconnect-room"), vec![2]);
+        {
+            let common = common.lock().unwrap();
+            assert!(common.is_disconnected(0));
+            assert!(!common.stop_requested());
+            assert_eq!(common.turn_countdown, 37);
+        }
+        assert!(first_disconnect.messages.iter().any(|message| {
+            message.recipient == 2
+                && matches!(
+                    &message.payload,
+                    OutboundPayload::Event(event)
+                        if event.code == WsCode::JOIN as i32
+                            && event.data.get("is_active").and_then(Value::as_bool)
+                                == Some(false)
+                )
+        }));
+
+        let last_disconnect = service.disconnect(2);
+
+        assert!(last_disconnect.messages.is_empty());
+        assert!(!service.room_exists("disconnect-room"));
+        assert_eq!(service.room_count(), 0);
+        let common = common.lock().unwrap();
+        assert!(common.is_disconnected(1));
+        assert!(common.stop_requested());
+        assert_eq!(common.turn_countdown, 0);
+        // A normal disconnect retains seats in the old state so a game loop
+        // can treat it as away/AI takeover until the room is terminated.
+        assert_eq!(common.players.len(), 2);
+    }
+
+    #[test]
+    fn ai_players_do_not_keep_room_alive_after_last_human_disconnects() {
+        let mut service = RoomService::default();
+        let _ = join_room(
+            &mut service,
+            1,
+            "owner",
+            "ai-disconnect-room",
+            GameId::LANDLORD,
+        );
+        let added = common_request(
+            &mut service,
+            1,
+            GameId::LANDLORD,
+            Routes::ADD_AI,
+            serde_json::json!({ "count": 2 }),
+        );
+        assert!(has_response(&added, Routes::ADD_AI, WsResponseCode::OK));
+        let common = service
+            .room_common_state("ai-disconnect-room")
+            .expect("room common state");
+
+        let _ = service.disconnect(1);
+
+        assert!(!service.room_exists("ai-disconnect-room"));
+        let common = common.lock().unwrap();
+        assert!(common.stop_requested());
+        assert_eq!(common.players.len(), 3);
+        assert_eq!(common.ai_positions.len(), 2);
+    }
+
+    #[test]
+    fn last_disconnect_releases_name_and_old_cleanup_cannot_clear_recreated_room() {
+        let mut service = RoomService::default();
+        let _ = join_room(
+            &mut service,
+            1,
+            "old-owner",
+            "recreated-room",
+            GameId::LANDLORD,
+        );
+        let old_common = service
+            .room_common_state("recreated-room")
+            .expect("old room common state");
+
+        let _ = service.disconnect(1);
+        assert!(!service.room_exists("recreated-room"));
+
+        let recreated = join_room(
+            &mut service,
+            2,
+            "new-owner",
+            "recreated-room",
+            GameId::LANDLORD,
+        );
+        assert!(has_response(
+            &recreated,
+            Routes::JOIN,
+            WsResponseCode::JOINED
+        ));
+        let new_common = service
+            .room_common_state("recreated-room")
+            .expect("new room common state");
+        assert!(!Arc::ptr_eq(&old_common, &new_common));
+        assert!(old_common.lock().unwrap().stop_requested());
+        assert!(!new_common.lock().unwrap().stop_requested());
+
+        service.set_room_game_state(
+            "recreated-room",
+            Box::new(NoAcceptState {
+                common: Arc::clone(&new_common),
+            }),
+        );
+        // Simulate the old loop's final cleanup after a new room with the same
+        // name has already been created.
+        service.clear_room_game_state_if_same("recreated-room", &old_common);
+
+        let rejected = join_room(
+            &mut service,
+            3,
+            "late-player",
+            "recreated-room",
+            GameId::LANDLORD,
+        );
+        assert!(has_response(
+            &rejected,
+            Routes::JOIN,
+            WsResponseCode::NO_PERMISSION
+        ));
+        assert!(Arc::ptr_eq(
+            &service
+                .room_common_state("recreated-room")
+                .expect("current room common state"),
+            &new_common
+        ));
+    }
+
+    #[test]
+    fn quit_permanently_removes_player_and_always_requests_loop_stop() {
+        let mut service = RoomService::default();
+        let _ = join_room(&mut service, 1, "quitter", "quit-room", GameId::LANDLORD);
+        let _ = join_room(&mut service, 2, "remaining", "quit-room", GameId::LANDLORD);
+        let common = service
+            .room_common_state("quit-room")
+            .expect("room common state");
+        common.lock().unwrap().turn_countdown = 29;
+
+        let quit = common_request(
+            &mut service,
+            1,
+            GameId::LANDLORD,
+            Routes::QUIT,
+            serde_json::json!({}),
+        );
+
+        assert!(has_response(&quit, Routes::QUIT, WsResponseCode::OK));
+        assert!(service.room_exists("quit-room"));
+        assert_eq!(service.room_key_of(1), None);
+        assert_eq!(service.session_position(1), None);
+        let common = common.lock().unwrap();
+        assert!(common.stop_requested());
+        assert_eq!(common.turn_countdown, 0);
+        assert_eq!(common.players.len(), 1);
+        assert!(!common.players.values().any(|(_, name)| name == "quitter"));
     }
 
     #[test]

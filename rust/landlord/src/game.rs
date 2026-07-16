@@ -25,6 +25,22 @@ pub struct LandlordGameHandler {
 type LoopStateHandle = Arc<std::sync::Mutex<LandlordLoopState>>;
 type LoopStateRegistry = Arc<std::sync::Mutex<HashMap<String, LoopStateHandle>>>;
 
+fn loop_state_matches_common(
+    loop_state: &LoopStateHandle,
+    common: &Arc<std::sync::Mutex<ws_common::CommonGameState>>,
+) -> bool {
+    let state = loop_state.lock().unwrap();
+    Arc::ptr_eq(&state.base, common)
+}
+
+fn running_loop_state_matches_common(
+    loop_state: &LoopStateHandle,
+    common: &Arc<std::sync::Mutex<ws_common::CommonGameState>>,
+) -> bool {
+    let state = loop_state.lock().unwrap();
+    Arc::ptr_eq(&state.base, common) && !state.stop_requested()
+}
+
 fn join_succeeded(dispatch: &Dispatch, session_id: SessionId) -> bool {
     dispatch.messages.iter().any(|message| {
         if message.recipient != session_id {
@@ -111,18 +127,14 @@ impl LandlordGameHandler {
         // Prevent re-starting if the current room loop is already running.
         // If an old room with the same key left a stale loop_state, remove it.
         if let Some(existing) = self.loop_state(&room_key) {
-            let same_state = {
-                let s = existing.lock().unwrap();
-                Arc::ptr_eq(&s.base, &shared_common_state)
-            };
-            if same_state {
+            if loop_state_matches_common(&existing, &shared_common_state) {
                 return room_service.error_response(
                     session_id,
                     Routes::START as i32,
                     WsResponseCode::NO_PERMISSION,
                 );
             }
-            self.loop_states.lock().unwrap().remove(&room_key);
+            self.remove_loop_state_if_same(&room_key, &existing);
         }
         let loop_state = Arc::new(std::sync::Mutex::new(LandlordLoopState::new(Arc::clone(
             &shared_common_state,
@@ -162,6 +174,37 @@ impl LandlordGameHandler {
 
     fn loop_state(&self, room_key: &str) -> Option<LoopStateHandle> {
         self.loop_states.lock().unwrap().get(room_key).cloned()
+    }
+
+    /// Resolve a loop only when it belongs to the room entry that currently
+    /// owns this key. A just-removed room may leave its async loop in the
+    /// registry briefly while a new room with the same name is already live.
+    fn current_loop_state(
+        &self,
+        room_service: &RoomService,
+        room_key: &str,
+    ) -> Option<LoopStateHandle> {
+        let loop_state = self.loop_state(room_key)?;
+        let Some(common) = room_service.room_common_state(room_key) else {
+            self.remove_loop_state_if_same(room_key, &loop_state);
+            return None;
+        };
+        if running_loop_state_matches_common(&loop_state, &common) {
+            Some(loop_state)
+        } else {
+            self.remove_loop_state_if_same(room_key, &loop_state);
+            None
+        }
+    }
+
+    fn remove_loop_state_if_same(&self, room_key: &str, expected: &LoopStateHandle) {
+        let mut states = self.loop_states.lock().unwrap();
+        if states
+            .get(room_key)
+            .is_some_and(|current| Arc::ptr_eq(current, expected))
+        {
+            states.remove(room_key);
+        }
     }
 
     fn prune_stopped_loop_states(&self) {
@@ -205,7 +248,7 @@ impl LandlordGameHandler {
 
         let score: u8 = payload.score;
 
-        let Some(loop_state) = self.loop_state(&room_key) else {
+        let Some(loop_state) = self.current_loop_state(room_service, &room_key) else {
             return room_service.error_response(
                 session_id,
                 LandlordRoutes::CALL_LANDLORD as i32,
@@ -310,7 +353,7 @@ impl LandlordGameHandler {
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default();
 
-        let Some(loop_state) = self.loop_state(&room_key) else {
+        let Some(loop_state) = self.current_loop_state(room_service, &room_key) else {
             return room_service.error_response(
                 session_id,
                 Routes::PLAY as i32,
@@ -387,7 +430,7 @@ impl GameHandler for LandlordGameHandler {
         let Some(room_key) = room_service.room_key_of(session_id) else {
             return;
         };
-        let Some(loop_state) = self.loop_state(&room_key) else {
+        let Some(loop_state) = self.current_loop_state(room_service, &room_key) else {
             return;
         };
 
@@ -493,5 +536,31 @@ impl GameHandler for LandlordGameHandler {
     fn set_context(&mut self, senders: SessionSenders, room_service: Arc<Mutex<RoomService>>) {
         self.senders = Some(senders);
         self.room_service = Some(room_service);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use ws_common::CommonGameState;
+
+    use super::*;
+
+    #[test]
+    fn loop_state_identity_requires_the_exact_room_common_arc() {
+        let current_common = Arc::new(Mutex::new(CommonGameState::new()));
+        let same_common = Arc::clone(&current_common);
+        let replacement_common = Arc::new(Mutex::new(CommonGameState::new()));
+        let loop_state = Arc::new(Mutex::new(LandlordLoopState::new(current_common)));
+
+        assert!(loop_state_matches_common(&loop_state, &same_common));
+        assert!(!loop_state_matches_common(&loop_state, &replacement_common));
+
+        loop_state.lock().unwrap().request_stop();
+        assert!(!running_loop_state_matches_common(
+            &loop_state,
+            &same_common
+        ));
     }
 }

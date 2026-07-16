@@ -36,8 +36,7 @@ pub struct HoldemGameHandler {
 type StateRegistry = Arc<std::sync::Mutex<HashMap<String, HoldemStateHandle>>>;
 
 /// Room-facing state used while a hand is active.  Human JOIN remains open,
-/// while settings, AI management, and seat swaps stay locked.  Current-hand
-/// seats remain reserved even if their player explicitly quits.
+/// while settings, AI management, and seat swaps stay locked.
 struct ActiveHoldemRoomState {
     common: Arc<std::sync::Mutex<CommonGameState>>,
     hand_positions: HashSet<usize>,
@@ -54,10 +53,6 @@ impl GameState for ActiveHoldemRoomState {
 
     fn position_reserved_for_join(&self, position: usize) -> bool {
         self.hand_positions.contains(&position)
-    }
-
-    fn quit_stops_game(&self) -> bool {
-        false
     }
 
     fn shared_common_state(&self) -> Arc<std::sync::Mutex<CommonGameState>> {
@@ -276,8 +271,9 @@ impl HoldemGameHandler {
             let settlement = settle_hand(state);
             crate::official::settle_round(room_service, room_key);
             room_service.broadcast(room_key, WsCode::GAME_OVER as i32, settlement, dispatch);
-            self.states.lock().unwrap().remove(room_key);
-            room_service.clear_room_game_state(room_key);
+            let common = Self::common_state(state);
+            self.remove_registered_state_if_same(room_key, state);
+            room_service.clear_room_game_state_if_same(room_key, &common);
             return;
         }
 
@@ -343,6 +339,11 @@ impl HoldemGameHandler {
         state: &HoldemStateHandle,
         dispatch: &mut Dispatch,
     ) {
+        if !Self::state_matches_room(room_service, room_key, state)
+            || Self::state_stop_requested(state)
+        {
+            return;
+        }
         if room_service.is_room_paused(room_key) {
             return;
         }
@@ -361,7 +362,10 @@ impl HoldemGameHandler {
                         .is_none_or(|(_, room_name)| room_name != hand_name)
                 });
                 let is_ai_position = base.is_ai_position(position);
-                let should_auto = player_left || is_ai_position || base.is_away(position);
+                let should_auto = player_left
+                    || is_ai_position
+                    || base.is_away(position)
+                    || base.is_disconnected(position);
                 drop(base);
                 if should_auto {
                     Some((
@@ -495,7 +499,7 @@ impl HoldemGameHandler {
                 WsResponseCode::ERROR_FORMAT,
             );
         };
-        let Some(state) = self.state(&room_key) else {
+        let Some(state) = self.current_state(room_service, &room_key) else {
             return room_service.error_response(
                 session_id,
                 Routes::PLAY as i32,
@@ -560,13 +564,6 @@ impl HoldemGameHandler {
                 WsResponseCode::NOT_LOGIN,
             );
         };
-        if self.state(&room_key).is_some() {
-            return room_service.error_response(
-                session_id,
-                Routes::START as i32,
-                WsResponseCode::NO_PERMISSION,
-            );
-        }
         if !room_service.room_is_ready_to_start(&room_key) {
             return room_service.error_response(
                 session_id,
@@ -574,13 +571,36 @@ impl HoldemGameHandler {
                 WsResponseCode::NOT_IN_RANGE,
             );
         }
-        let Some(common) = room_service.room_common_state(&room_key) else {
+        let Some(mut common) = room_service.room_common_state(&room_key) else {
             return room_service.error_response(
                 session_id,
                 Routes::START as i32,
                 WsResponseCode::NO_PERMISSION,
             );
         };
+        if common.lock().unwrap().stop_requested() {
+            let Some(next_common) = room_service.reset_room_common_state_for_new_game(&room_key)
+            else {
+                return room_service.error_response(
+                    session_id,
+                    Routes::START as i32,
+                    WsResponseCode::NO_PERMISSION,
+                );
+            };
+            common = next_common;
+        }
+        if let Some(existing) = self.state(&room_key) {
+            if Arc::ptr_eq(&Self::common_state(&existing), &common) {
+                return room_service.error_response(
+                    session_id,
+                    Routes::START as i32,
+                    WsResponseCode::NO_PERMISSION,
+                );
+            }
+            if self.remove_registered_state_if_same(&room_key, &existing) {
+                self.auto_strategies.lock().unwrap().remove(&room_key);
+            }
+        }
         let configs = room_service.room_configs(&room_key).unwrap_or_default();
         let variant = room_service
             .room_game_id(&room_key)
@@ -794,6 +814,78 @@ impl HoldemGameHandler {
     fn state(&self, room_key: &str) -> Option<HoldemStateHandle> {
         self.states.lock().unwrap().get(room_key).cloned()
     }
+
+    fn common_state(state: &HoldemStateHandle) -> Arc<std::sync::Mutex<CommonGameState>> {
+        Arc::clone(&state.lock().unwrap().base)
+    }
+
+    fn state_matches_room(
+        room_service: &RoomService,
+        room_key: &str,
+        state: &HoldemStateHandle,
+    ) -> bool {
+        let Some(current) = room_service.room_common_state(room_key) else {
+            return false;
+        };
+        Arc::ptr_eq(&current, &Self::common_state(state))
+    }
+
+    fn state_stop_requested(state: &HoldemStateHandle) -> bool {
+        let common = Self::common_state(state);
+        common.lock().unwrap().stop_requested()
+    }
+
+    fn current_state(
+        &self,
+        room_service: &RoomService,
+        room_key: &str,
+    ) -> Option<HoldemStateHandle> {
+        let state = self.state(room_key)?;
+        (Self::state_matches_room(room_service, room_key, &state)
+            && !Self::state_stop_requested(&state))
+        .then_some(state)
+    }
+
+    fn remove_registered_state_if_same(
+        &self,
+        room_key: &str,
+        expected: &HoldemStateHandle,
+    ) -> bool {
+        let mut states = self.states.lock().unwrap();
+        let is_same = states
+            .get(room_key)
+            .is_some_and(|current| Arc::ptr_eq(current, expected));
+        if is_same {
+            states.remove(room_key);
+        }
+        is_same
+    }
+
+    fn prune_stopped_states(&self, room_service: &mut RoomService) {
+        let states: Vec<_> = self
+            .states
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(room_key, state)| (room_key.clone(), Arc::clone(state)))
+            .collect();
+        let stopped: Vec<_> = states
+            .into_iter()
+            .filter_map(|(room_key, state)| {
+                Self::state_stop_requested(&state).then(|| {
+                    let common = Self::common_state(&state);
+                    (room_key, state, common)
+                })
+            })
+            .collect();
+
+        for (room_key, state, common) in stopped {
+            if self.remove_registered_state_if_same(&room_key, &state) {
+                self.auto_strategies.lock().unwrap().remove(&room_key);
+            }
+            room_service.clear_room_game_state_if_same(&room_key, &common);
+        }
+    }
 }
 
 impl Default for HoldemGameHandler {
@@ -817,13 +909,16 @@ impl GameHandler for HoldemGameHandler {
         request: &ClientRequest,
         dispatch: &mut Dispatch,
     ) {
+        if matches!(request.route, r if r == Routes::QUIT as i32 || r == Routes::DISBAND as i32) {
+            self.prune_stopped_states(room_service);
+        }
         if request.route != Routes::JOIN as i32 || !join_succeeded(dispatch, session_id) {
             return;
         }
         let Some(room_key) = room_service.room_key_of(session_id) else {
             return;
         };
-        let Some(state) = self.state(&room_key) else {
+        let Some(state) = self.current_state(room_service, &room_key) else {
             return;
         };
         self.push_table_snapshot(room_service, session_id, &state, dispatch);
@@ -886,18 +981,25 @@ impl GameHandler for HoldemGameHandler {
                 let mut dispatch = Dispatch::default();
                 let mut stale_rooms = Vec::new();
                 for (room_key, state) in rooms {
-                    if !room.room_exists(&room_key) {
-                        stale_rooms.push(room_key);
+                    let common = HoldemGameHandler::common_state(&state);
+                    let is_current = room
+                        .room_common_state(&room_key)
+                        .is_some_and(|current| Arc::ptr_eq(&current, &common));
+                    let stop_requested = common.lock().unwrap().stop_requested();
+                    if !is_current || stop_requested {
+                        if stop_requested {
+                            room.clear_room_game_state_if_same(&room_key, &common);
+                        }
+                        stale_rooms.push((room_key, state));
                         continue;
                     }
                     handler.auto_tick(&mut room, &room_key, &state, &mut dispatch);
                 }
                 if !stale_rooms.is_empty() {
-                    let mut states = handler.states.lock().unwrap();
-                    let mut strategies = handler.auto_strategies.lock().unwrap();
-                    for room_key in stale_rooms {
-                        states.remove(&room_key);
-                        strategies.remove(&room_key);
+                    for (room_key, state) in stale_rooms {
+                        if handler.remove_registered_state_if_same(&room_key, &state) {
+                            handler.auto_strategies.lock().unwrap().remove(&room_key);
+                        }
                     }
                 }
                 if dispatch.messages.is_empty() {
@@ -978,6 +1080,51 @@ mod tests {
         let action = action.expect("AI position should produce a PLAY event via smart AI module");
         assert_eq!(action.action, TexasHoldEmAction::RAISE);
         assert!(action.committed >= 30);
+    }
+
+    #[test]
+    fn disconnected_current_player_is_auto_controlled_without_full_turn_timeout() {
+        let handler = HoldemGameHandler::default();
+        let mut room = RoomService::default();
+        for session_id in 1..=2 {
+            room.handle_common_request(
+                session_id,
+                &join_request(&format!("u{session_id}")),
+                handler.game_id(),
+                || handler.build_room_settings(),
+            );
+        }
+        let _ = handler.handle_start(&mut room, 1);
+        let state = handler.state("room").expect("active holdem state");
+        let (position, session_id) = {
+            let mut state = state.lock().unwrap();
+            state.set_turn_countdown(20);
+            let position = state.current_position;
+            let session_id = state
+                .base
+                .lock()
+                .unwrap()
+                .players
+                .get(&position)
+                .expect("current player")
+                .0;
+            (position, session_id)
+        };
+
+        let _ = room.disconnect(session_id);
+        assert!(room.room_exists("room"));
+        let mut dispatch = Dispatch::default();
+        handler.auto_tick(&mut room, "room", &state, &mut dispatch);
+
+        assert!(dispatch.messages.iter().any(|message| {
+            matches!(
+                &message.payload,
+                OutboundPayload::Event(event) if event.code == WsCode::PLAY as i32
+            )
+        }));
+        let state = state.lock().unwrap();
+        assert!(state.folded.contains(&position) || state.acted.contains(&position));
+        assert_ne!(state.turn_countdown(), 19);
     }
 
     #[test]
@@ -1191,7 +1338,7 @@ mod tests {
     }
 
     #[test]
-    fn current_hand_positions_remain_reserved_after_quit() {
+    fn quit_stops_active_hand_and_allows_a_fresh_start() {
         let mut handler = HoldemGameHandler::default();
         let mut room = RoomService::default();
         for session_id in 1..=2 {
@@ -1205,24 +1352,116 @@ mod tests {
         handler.handle_start(&mut room, 1);
         let state = handler.state("room").expect("active hand");
         state.lock().unwrap().set_turn_countdown(17);
+        let common = HoldemGameHandler::common_state(&state);
 
-        room.handle_common_request(
-            2,
-            &ClientRequest {
-                route: Routes::QUIT as i32,
-                data: Value::Null,
-            },
-            handler.game_id(),
-            || handler.build_room_settings(),
-        );
-        assert_eq!(state.lock().unwrap().turn_countdown(), 17);
-        let common = state.lock().unwrap().base.clone();
-        assert!(!common.lock().unwrap().stop_requested());
+        let request = ClientRequest {
+            route: Routes::QUIT as i32,
+            data: Value::Null,
+        };
+        let mut dispatch = room
+            .handle_common_request(2, &request, handler.game_id(), || {
+                handler.build_room_settings()
+            })
+            .expect("common QUIT dispatch");
+        handler.after_common_request(&mut room, 2, &request, &mut dispatch);
+
+        assert_eq!(state.lock().unwrap().turn_countdown(), 0);
+        assert!(common.lock().unwrap().stop_requested());
+        assert!(handler.state("room").is_none());
+
         let joined = join_with_hook(&mut handler, &mut room, 3, "u3");
-        assert_eq!(join_response(&joined, 3).self_position, 2);
-        let snapshot = table_snapshot(&joined, 3);
-        assert!(!snapshot.is_participating);
-        assert!(snapshot.my_cards.is_empty());
+        assert_eq!(join_response(&joined, 3).self_position, 1);
+        let restarted = handler.handle_start(&mut room, 1);
+        assert_response_code(&restarted, 1, Routes::START, WsResponseCode::OK);
+        let restarted_state = handler.state("room").expect("restarted hand");
+        assert!(!Arc::ptr_eq(
+            &common,
+            &HoldemGameHandler::common_state(&restarted_state)
+        ));
+    }
+
+    #[test]
+    fn last_disconnect_releases_name_and_stale_state_does_not_block_recreation() {
+        let mut handler = HoldemGameHandler::default();
+        let mut room = RoomService::default();
+        for session_id in 1..=2 {
+            join_with_hook(
+                &mut handler,
+                &mut room,
+                session_id,
+                &format!("old{session_id}"),
+            );
+        }
+        handler.handle_start(&mut room, 1);
+        let old_state = handler.state("room").expect("old active hand");
+        let old_common = HoldemGameHandler::common_state(&old_state);
+
+        room.disconnect(1);
+        assert!(room.room_exists("room"));
+        room.disconnect(2);
+        assert!(!room.room_exists("room"));
+        assert!(old_common.lock().unwrap().stop_requested());
+
+        let first_join = join_with_hook(&mut handler, &mut room, 3, "new3");
+        assert!(first_join.messages.iter().all(|message| {
+            !matches!(
+                &message.payload,
+                OutboundPayload::Event(event) if event.code == WsCode::TABLE_SNAPSHOT as i32
+            )
+        }));
+        join_with_hook(&mut handler, &mut room, 4, "new4");
+        let new_common = room
+            .room_common_state("room")
+            .expect("new room common state");
+        assert!(!Arc::ptr_eq(&old_common, &new_common));
+
+        let restarted = handler.handle_start(&mut room, 3);
+        assert_response_code(&restarted, 3, Routes::START, WsResponseCode::OK);
+        let current = handler.state("room").expect("new active hand");
+        assert!(!Arc::ptr_eq(&old_state, &current));
+        assert!(Arc::ptr_eq(
+            &new_common,
+            &HoldemGameHandler::common_state(&current)
+        ));
+    }
+
+    #[test]
+    fn stale_same_name_state_cannot_tick_a_different_room_instance() {
+        let mut handler = HoldemGameHandler::default();
+        let mut old_room = RoomService::default();
+        for session_id in 1..=2 {
+            join_with_hook(
+                &mut handler,
+                &mut old_room,
+                session_id,
+                &format!("old{session_id}"),
+            );
+        }
+        handler.handle_start(&mut old_room, 1);
+        let old_state = handler.state("room").expect("old active hand");
+        old_state.lock().unwrap().set_turn_countdown(7);
+
+        let mut new_room = RoomService::default();
+        for session_id in 10..=11 {
+            join_with_hook(
+                &mut handler,
+                &mut new_room,
+                session_id,
+                &format!("new{session_id}"),
+            );
+        }
+        let mut dispatch = Dispatch::default();
+        handler.auto_tick(&mut new_room, "room", &old_state, &mut dispatch);
+        assert!(dispatch.messages.is_empty());
+        assert_eq!(old_state.lock().unwrap().turn_countdown(), 7);
+
+        let restarted = handler.handle_start(&mut new_room, 10);
+        assert_response_code(&restarted, 10, Routes::START, WsResponseCode::OK);
+        let current = handler.state("room").expect("new active hand");
+        assert!(!Arc::ptr_eq(&old_state, &current));
+        assert!(HoldemGameHandler::state_matches_room(
+            &new_room, "room", &current
+        ));
     }
 
     fn join_request(name: &str) -> ClientRequest {

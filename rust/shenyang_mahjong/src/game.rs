@@ -2184,7 +2184,7 @@ impl ShenyangMahjongGameHandler {
                 WsResponseCode::ERROR_FORMAT,
             );
         };
-        let Some(loop_state) = self.loop_state(&room_key) else {
+        let Some(loop_state) = self.current_loop_state(room_service, &room_key) else {
             return room_service.error_response(
                 session_id,
                 Routes::PLAY as i32,
@@ -2488,13 +2488,25 @@ impl ShenyangMahjongGameHandler {
                 WsResponseCode::NOT_IN_RANGE,
             );
         }
-        let Some(shared_common_state) = room_service.room_common_state(&room_key) else {
+        let Some(mut shared_common_state) = room_service.room_common_state(&room_key) else {
             return room_service.error_response(
                 session_id,
                 Routes::START as i32,
                 WsResponseCode::NO_PERMISSION,
             );
         };
+        if shared_common_state.lock().unwrap().stop_requested() {
+            let Some(next_common_state) =
+                room_service.reset_room_common_state_for_new_game(&room_key)
+            else {
+                return room_service.error_response(
+                    session_id,
+                    Routes::START as i32,
+                    WsResponseCode::NO_PERMISSION,
+                );
+            };
+            shared_common_state = next_common_state;
+        }
 
         if let Some(existing) = self.loop_state(&room_key) {
             let same_state = {
@@ -2557,6 +2569,18 @@ impl ShenyangMahjongGameHandler {
         self.loop_states.lock().unwrap().get(room_key).cloned()
     }
 
+    fn current_loop_state(
+        &self,
+        room_service: &RoomService,
+        room_key: &str,
+    ) -> Option<LoopStateHandle> {
+        let state = self.loop_state(room_key)?;
+        let state_common = Arc::clone(&state.lock().unwrap().base);
+        let room_common = room_service.room_common_state(room_key)?;
+        let is_running = !state_common.lock().unwrap().stop_requested();
+        (is_running && Arc::ptr_eq(&state_common, &room_common)).then_some(state)
+    }
+
     fn prune_stopped_loop_states(&self, room_service: &mut RoomService) {
         let stopped = {
             let mut states = self.loop_states.lock().unwrap();
@@ -2608,7 +2632,7 @@ impl GameHandler for ShenyangMahjongGameHandler {
         let Some(position) = room_service.session_position(session_id) else {
             return;
         };
-        let Some(loop_state) = self.loop_state(&room_key) else {
+        let Some(loop_state) = self.current_loop_state(room_service, &room_key) else {
             return;
         };
         let configs = room_service.room_configs(&room_key).unwrap_or_default();
@@ -5709,6 +5733,155 @@ mod tests {
 
         assert!(joined);
         assert_eq!(room_service.session_position(3), Some(2));
+    }
+
+    #[test]
+    fn stale_same_name_loop_state_does_not_block_recreated_room_start() {
+        let mut room_service = RoomService::default();
+        let join = |room: &mut RoomService, session_id: SessionId, prefix: &str| {
+            room.handle_common_request(
+                session_id,
+                &ClientRequest {
+                    route: Routes::JOIN as i32,
+                    data: serde_json::json!({
+                        "name": format!("{prefix}-{session_id}"),
+                        "password": "same-name",
+                        "game_id": GameId::SHENYANG_MAHJONG as i32
+                    }),
+                },
+                GameId::SHENYANG_MAHJONG,
+                build_shenyang_mahjong_settings,
+            )
+        };
+        for session_id in 1..=4 {
+            let _ = join(&mut room_service, session_id, "old");
+        }
+        let old_common = room_service
+            .room_common_state("same-name")
+            .expect("old room common state");
+        let old_loop_state = Arc::new(StdMutex::new(ShenyangMahjongLoopState::new(
+            Arc::clone(&old_common),
+        )));
+        room_service.set_room_game_state(
+            "same-name",
+            Box::new(ShenyangMahjongGameState::from_loop_state(Arc::clone(
+                &old_loop_state,
+            ))),
+        );
+        let mut handler = ShenyangMahjongGameHandler::default();
+        handler
+            .loop_states
+            .lock()
+            .unwrap()
+            .insert("same-name".to_string(), Arc::clone(&old_loop_state));
+
+        for session_id in 1..=4 {
+            let _ = room_service.disconnect(session_id);
+        }
+        assert!(!room_service.room_exists("same-name"));
+        assert!(old_common.lock().unwrap().stop_requested());
+
+        for session_id in 5..=8 {
+            let _ = join(&mut room_service, session_id, "new");
+        }
+        let recreated_common = room_service
+            .room_common_state("same-name")
+            .expect("recreated room common state");
+        assert!(!Arc::ptr_eq(&old_common, &recreated_common));
+        assert!(
+            handler
+                .current_loop_state(&room_service, "same-name")
+                .is_none()
+        );
+
+        let started = handler.handle_start(&mut room_service, 5);
+
+        assert_eq!(
+            response_code(&started, 5, Routes::START),
+            Some(WsResponseCode::OK as i32)
+        );
+        let new_state = handler
+            .loop_state("same-name")
+            .expect("new mahjong loop state");
+        let new_common = Arc::clone(&new_state.lock().unwrap().base);
+        assert!(Arc::ptr_eq(
+            &new_common,
+            &room_service
+                .room_common_state("same-name")
+                .expect("current room common state")
+        ));
+        assert!(!Arc::ptr_eq(&old_common, &new_common));
+    }
+
+    #[test]
+    fn pregame_quit_does_not_poison_the_next_start() {
+        let mut room_service = RoomService::default();
+        let mut handler = ShenyangMahjongGameHandler::default();
+        for session_id in 1..=4 {
+            let _ = room_service.handle_common_request(
+                session_id,
+                &ClientRequest {
+                    route: Routes::JOIN as i32,
+                    data: serde_json::json!({
+                        "name": format!("P{session_id}"),
+                        "password": "pregame-quit",
+                        "game_id": GameId::SHENYANG_MAHJONG as i32
+                    }),
+                },
+                GameId::SHENYANG_MAHJONG,
+                build_shenyang_mahjong_settings,
+            );
+        }
+        let quit_request = ClientRequest {
+            route: Routes::QUIT as i32,
+            data: Value::Null,
+        };
+        let mut quit_dispatch = room_service
+            .handle_common_request(
+                2,
+                &quit_request,
+                GameId::SHENYANG_MAHJONG,
+                build_shenyang_mahjong_settings,
+            )
+            .expect("common quit route");
+        handler.after_common_request(
+            &mut room_service,
+            2,
+            &quit_request,
+            &mut quit_dispatch,
+        );
+        assert!(
+            room_service
+                .room_common_state("pregame-quit")
+                .expect("stopped pregame state")
+                .lock()
+                .unwrap()
+                .stop_requested()
+        );
+        let _ = room_service.handle_common_request(
+            5,
+            &ClientRequest {
+                route: Routes::JOIN as i32,
+                data: serde_json::json!({
+                    "name": "P5",
+                    "password": "pregame-quit",
+                    "game_id": GameId::SHENYANG_MAHJONG as i32
+                }),
+            },
+            GameId::SHENYANG_MAHJONG,
+            build_shenyang_mahjong_settings,
+        );
+
+        let started = handler.handle_start(&mut room_service, 1);
+
+        assert_eq!(
+            response_code(&started, 1, Routes::START),
+            Some(WsResponseCode::OK as i32)
+        );
+        let state = handler
+            .loop_state("pregame-quit")
+            .expect("started loop state");
+        assert!(!state.lock().unwrap().stop_requested());
     }
 
     #[test]

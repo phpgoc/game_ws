@@ -102,7 +102,7 @@ impl TractorGameHandler {
         let Ok(payload) = RoomService::parse_payload::<WsTractorDeclareTrumpRequest>(data) else {
             return room_service.error_response(session_id, route, WsResponseCode::ERROR_FORMAT);
         };
-        let Some(state) = self.state(&room_key) else {
+        let Some(state) = self.current_state(room_service, &room_key) else {
             return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
         };
         let (declaration, snapshot) = {
@@ -149,7 +149,7 @@ impl TractorGameHandler {
         let Ok(payload) = RoomService::parse_payload::<WsTractorBuryBottomRequest>(data) else {
             return room_service.error_response(session_id, route, WsResponseCode::ERROR_FORMAT);
         };
-        let Some(state) = self.state(&room_key) else {
+        let Some(state) = self.current_state(room_service, &room_key) else {
             return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
         };
         let (event, hand, snapshot) = {
@@ -221,7 +221,7 @@ impl TractorGameHandler {
         let Ok(payload) = RoomService::parse_payload::<WsTractorSelectTrumpRequest>(data) else {
             return room_service.error_response(session_id, route, WsResponseCode::ERROR_FORMAT);
         };
-        let Some(state) = self.state(&room_key) else {
+        let Some(state) = self.current_state(room_service, &room_key) else {
             return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
         };
         let (declaration, snapshot) = {
@@ -279,7 +279,7 @@ impl TractorGameHandler {
                 WsResponseCode::ERROR_FORMAT,
             );
         };
-        let Some(state) = self.state(&room_key) else {
+        let Some(state) = self.current_state(room_service, &room_key) else {
             return room_service.error_response(
                 session_id,
                 Routes::PLAY as i32,
@@ -394,12 +394,30 @@ impl TractorGameHandler {
                 WsResponseCode::NOT_IN_RANGE,
             );
         }
-        if self.state(&room_key).is_some() {
+        let Some(room_common) = room_service.room_common_state(&room_key) else {
             return room_service.error_response(
                 session_id,
                 Routes::START as i32,
                 WsResponseCode::NO_PERMISSION,
             );
+        };
+        if let Some(existing) = self.state(&room_key) {
+            let existing_common = Arc::clone(&existing.lock().unwrap().base);
+            let existing_stopped = existing_common.lock().unwrap().stop_requested();
+            if Arc::ptr_eq(&existing_common, &room_common) && !existing_stopped {
+                return room_service.error_response(
+                    session_id,
+                    Routes::START as i32,
+                    WsResponseCode::NO_PERMISSION,
+                );
+            }
+            let mut states = self.states.lock().unwrap();
+            if states
+                .get(&room_key)
+                .is_some_and(|current| Arc::ptr_eq(current, &existing))
+            {
+                states.remove(&room_key);
+            }
         }
         let Some(common) = room_service.reset_room_common_state_for_new_game(&room_key) else {
             return room_service.error_response(
@@ -463,6 +481,47 @@ impl TractorGameHandler {
     fn state(&self, room_key: &str) -> Option<TractorStateHandle> {
         self.states.lock().unwrap().get(room_key).cloned()
     }
+
+    fn current_state(
+        &self,
+        room_service: &RoomService,
+        room_key: &str,
+    ) -> Option<TractorStateHandle> {
+        let state = self.state(room_key)?;
+        let state_common = Arc::clone(&state.lock().unwrap().base);
+        let room_common = room_service.room_common_state(room_key)?;
+        let is_running = !state_common.lock().unwrap().stop_requested();
+        (is_running && Arc::ptr_eq(&state_common, &room_common)).then_some(state)
+    }
+
+    fn remove_state_if_same(&self, room_key: &str, expected: &TractorStateHandle) -> bool {
+        let mut states = self.states.lock().unwrap();
+        let is_same = states
+            .get(room_key)
+            .is_some_and(|current| Arc::ptr_eq(current, expected));
+        if is_same {
+            states.remove(room_key);
+        }
+        is_same
+    }
+
+    fn prune_stopped_states(&self, room_service: &mut RoomService) {
+        let states = self
+            .states
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(room_key, state)| (room_key.clone(), Arc::clone(state)))
+            .collect::<Vec<_>>();
+        for (room_key, state) in states {
+            let common = Arc::clone(&state.lock().unwrap().base);
+            if !common.lock().unwrap().stop_requested() {
+                continue;
+            }
+            self.remove_state_if_same(&room_key, &state);
+            room_service.clear_room_game_state_if_same(&room_key, &common);
+        }
+    }
 }
 
 impl Default for TractorGameHandler {
@@ -476,6 +535,18 @@ impl Default for TractorGameHandler {
 }
 
 impl GameHandler for TractorGameHandler {
+    fn after_common_request(
+        &mut self,
+        room_service: &mut RoomService,
+        _session_id: SessionId,
+        request: &ClientRequest,
+        _dispatch: &mut Dispatch,
+    ) {
+        if matches!(request.route, r if r == Routes::QUIT as i32 || r == Routes::DISBAND as i32) {
+            self.prune_stopped_states(room_service);
+        }
+    }
+
     fn build_game_state(&self) -> Box<dyn ws_common::GameState> {
         Box::new(ws_common::SharedGameState::new())
     }
@@ -698,5 +769,117 @@ mod tests {
             )
         });
         assert!(rejected);
+    }
+
+    #[test]
+    fn stale_same_name_state_does_not_block_recreated_room_start() {
+        let handler = TractorGameHandler::default();
+        let mut room = RoomService::default();
+        for session_id in 1..=4 {
+            room.handle_common_request(
+                session_id,
+                &join_request(&format!("old-{session_id}")),
+                handler.game_id(),
+                || handler.build_room_settings(),
+            );
+        }
+        let _ = handler.handle_start(&mut room, 1);
+        let old_state = handler.state("room").expect("old tractor state");
+        let old_common = Arc::clone(&old_state.lock().unwrap().base);
+
+        for session_id in 1..=4 {
+            let _ = room.disconnect(session_id);
+        }
+        assert!(!room.room_exists("room"));
+        assert!(old_common.lock().unwrap().stop_requested());
+
+        for session_id in 5..=8 {
+            room.handle_common_request(
+                session_id,
+                &join_request(&format!("new-{session_id}")),
+                handler.game_id(),
+                || handler.build_room_settings(),
+            );
+        }
+        let recreated_common = room
+            .room_common_state("room")
+            .expect("recreated room common state");
+        assert!(!Arc::ptr_eq(&old_common, &recreated_common));
+
+        let dispatch = handler.handle_start(&mut room, 5);
+
+        assert!(dispatch.messages.iter().any(|message| {
+            matches!(
+                &message.payload,
+                OutboundPayload::Response(ws_common::RequestResponse::WithoutData(response))
+                    if response.route == Routes::START as i32
+                        && response.code as i32 == WsResponseCode::OK as i32
+            )
+        }));
+        let new_state = handler.state("room").expect("new tractor state");
+        let new_common = Arc::clone(&new_state.lock().unwrap().base);
+        assert!(Arc::ptr_eq(
+            &new_common,
+            &room
+                .room_common_state("room")
+                .expect("current room common state")
+        ));
+        assert!(!Arc::ptr_eq(&old_common, &new_common));
+    }
+
+    #[test]
+    fn quit_stops_active_match_and_does_not_block_restart() {
+        let mut handler = TractorGameHandler::default();
+        let mut room = RoomService::default();
+        for session_id in 1..=4 {
+            room.handle_common_request(
+                session_id,
+                &join_request(&format!("u{session_id}")),
+                handler.game_id(),
+                || handler.build_room_settings(),
+            );
+        }
+        let _ = handler.handle_start(&mut room, 1);
+        let old_state = handler.state("room").expect("active tractor state");
+        let old_common = Arc::clone(&old_state.lock().unwrap().base);
+
+        let quit_request = ClientRequest {
+            route: Routes::QUIT as i32,
+            data: Value::Null,
+        };
+        let mut quit = room
+            .handle_common_request(2, &quit_request, handler.game_id(), || {
+                handler.build_room_settings()
+            })
+            .expect("common quit route");
+        handler.after_common_request(&mut room, 2, &quit_request, &mut quit);
+        assert!(quit.messages.iter().any(|message| {
+            matches!(
+                &message.payload,
+                OutboundPayload::Response(ws_common::RequestResponse::WithoutData(response))
+                    if response.route == Routes::QUIT as i32
+                        && response.code as i32 == WsResponseCode::OK as i32
+            )
+        }));
+        assert!(old_common.lock().unwrap().stop_requested());
+        assert!(handler.current_state(&room, "room").is_none());
+
+        room.handle_common_request(5, &join_request("u5"), handler.game_id(), || {
+            handler.build_room_settings()
+        });
+        let restarted = handler.handle_start(&mut room, 1);
+
+        assert!(restarted.messages.iter().any(|message| {
+            matches!(
+                &message.payload,
+                OutboundPayload::Response(ws_common::RequestResponse::WithoutData(response))
+                    if response.route == Routes::START as i32
+                        && response.code as i32 == WsResponseCode::OK as i32
+            )
+        }));
+        let new_state = handler.state("room").expect("restarted tractor state");
+        let new_common = Arc::clone(&new_state.lock().unwrap().base);
+        assert!(!Arc::ptr_eq(&old_common, &new_common));
+        assert!(!new_common.lock().unwrap().stop_requested());
     }
 }
