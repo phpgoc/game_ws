@@ -54,21 +54,30 @@ fn deterministic_ai_rounds_finish_with_legal_public_information_decisions() {
 #[test]
 fn evolved_ai_beats_a_fixed_greedy_baseline_with_rotated_roles() {
     let mut evolved_wins = 0;
+    let mut evolved_landlord_wins = 0;
+    let mut evolved_farmer_wins = 0;
     let mut matches = 0;
     for seed in 1..=12 {
         let landlord = (seed as usize - 1) % POSITIONS.len();
 
         let mut evolved_landlord = prepared_play_state(seed, landlord);
         let winner = play_mixed_match(&mut evolved_landlord, landlord, true, seed);
-        evolved_wins += usize::from(winner == landlord);
+        let won = usize::from(winner == landlord);
+        evolved_wins += won;
+        evolved_landlord_wins += won;
         matches += 1;
 
         let mut evolved_farmers = prepared_play_state(seed, landlord);
         let winner = play_mixed_match(&mut evolved_farmers, landlord, false, seed);
-        evolved_wins += usize::from(winner != landlord);
+        let won = usize::from(winner != landlord);
+        evolved_wins += won;
+        evolved_farmer_wins += won;
         matches += 1;
     }
 
+    eprintln!(
+        "belief AI vs greedy: {evolved_wins}/{matches} (landlord {evolved_landlord_wins}/12, farmers {evolved_farmer_wins}/12)"
+    );
     assert!(
         evolved_wins * 4 >= matches * 3,
         "evolved AI won only {evolved_wins}/{matches} fixed matches against the greedy baseline"
@@ -78,23 +87,32 @@ fn evolved_ai_beats_a_fixed_greedy_baseline_with_rotated_roles() {
 #[test]
 fn search_ai_beats_the_same_team_heuristic_without_search() {
     let mut search_wins = 0;
+    let mut search_landlord_wins = 0;
+    let mut search_farmer_wins = 0;
     let mut matches = 0;
-    for seed in 101..=112 {
+    for seed in 101..=124 {
         let landlord = (seed as usize - 1) % POSITIONS.len();
 
         let mut search_landlord = prepared_play_state(seed, landlord);
         let winner = play_policy_match(&mut search_landlord, landlord, true, seed);
-        search_wins += usize::from(winner == landlord);
+        let won = usize::from(winner == landlord);
+        search_wins += won;
+        search_landlord_wins += won;
         matches += 1;
 
         let mut search_farmers = prepared_play_state(seed, landlord);
         let winner = play_policy_match(&mut search_farmers, landlord, false, seed);
-        search_wins += usize::from(winner != landlord);
+        let won = usize::from(winner != landlord);
+        search_wins += won;
+        search_farmer_wins += won;
         matches += 1;
     }
 
+    eprintln!(
+        "belief search vs strong heuristic: {search_wins}/{matches} (landlord {search_landlord_wins}/24, farmers {search_farmer_wins}/24)"
+    );
     assert!(
-        search_wins * 2 > matches,
+        search_wins * 3 >= matches * 2,
         "belief search won only {search_wins}/{matches} matches against its strong heuristic ablation"
     );
 }

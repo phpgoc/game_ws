@@ -9,8 +9,8 @@ use super::{
 
 const SEARCH_CARD_LIMIT: usize = 14;
 const ROLLOUT_CARD_LIMIT: usize = 30;
-const SEARCH_WORLD_LIMIT: usize = 6;
-const SEARCH_NODE_BUDGET_PER_ACTION: usize = 18_000;
+const SEARCH_WORLD_LIMIT: usize = 4;
+const SEARCH_NODE_BUDGET_PER_ACTION: usize = 8_000;
 
 pub(super) fn choose_endgame_play(
     observation: &AiObservation,

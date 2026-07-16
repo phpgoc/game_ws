@@ -66,9 +66,9 @@ fn raw_hand_strength(hand: &[i32]) -> f64 {
 fn bid_for_strength(strength: f64) -> u8 {
     // 手牌越整齐、控制牌越多，拿三张底牌后的收益越高。
     match strength {
-        value if value >= 15.0 => 3,
-        value if value >= 10.0 => 2,
-        value if value >= 6.5 => 1,
+        value if value >= 18.0 => 3,
+        value if value >= 12.5 => 2,
+        value if value >= 8.5 => 1,
         _ => 0,
     }
 }

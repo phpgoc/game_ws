@@ -1,6 +1,16 @@
-use std::collections::{BTreeMap, HashSet};
+use std::{
+    cell::RefCell,
+    collections::{BTreeMap, HashMap, HashSet},
+};
 
 use crate::core::play::{Combo, ComboKind, card_rank, classify};
+
+const LOOKAHEAD_TURN_CARD_LIMIT: usize = 10;
+const LOOKAHEAD_TURN_CACHE_LIMIT: usize = 50_000;
+
+thread_local! {
+    static LOOKAHEAD_TURN_CACHE: RefCell<HashMap<u64, usize>> = RefCell::new(HashMap::new());
+}
 
 #[derive(Clone, Debug)]
 pub struct Candidate {
@@ -58,6 +68,13 @@ pub fn estimate_turns_from_candidates(hand: &[i32], candidates: &[Candidate]) ->
 }
 
 fn estimate_turns_with_candidates(hand: &[i32], initial_candidates: Option<&[Candidate]>) -> usize {
+    if hand.len() <= LOOKAHEAD_TURN_CARD_LIMIT {
+        return lookahead_turns(hand);
+    }
+    greedy_turns(hand, initial_candidates)
+}
+
+fn greedy_turns(hand: &[i32], initial_candidates: Option<&[Candidate]>) -> usize {
     let mut remaining = hand.to_vec();
     let mut turns = 0;
     while !remaining.is_empty() {
@@ -93,6 +110,52 @@ fn estimate_turns_with_candidates(hand: &[i32], initial_candidates: Option<&[Can
         turns += 1;
     }
     turns
+}
+
+fn lookahead_turns(hand: &[i32]) -> usize {
+    if hand.is_empty() {
+        return 0;
+    }
+    let key = rank_count_key(hand);
+    if let Some(cached) = LOOKAHEAD_TURN_CACHE.with(|cache| cache.borrow().get(&key).copied()) {
+        return cached;
+    }
+
+    let candidates = all_candidates(hand);
+    let mut best = greedy_turns(hand, Some(&candidates));
+    for candidate in candidates {
+        if candidate.cards.len() == hand.len() {
+            best = 1;
+            break;
+        }
+        let mut remaining = hand.to_vec();
+        for card in &candidate.cards {
+            if let Some(index) = remaining.iter().position(|held| held == card) {
+                remaining.remove(index);
+            }
+        }
+        best = best.min(1 + greedy_turns(&remaining, None));
+        if best == 2 {
+            // 不是一次能走完已经在上方排除，二手是当前状态的理论下界。
+            break;
+        }
+    }
+    LOOKAHEAD_TURN_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if cache.len() >= LOOKAHEAD_TURN_CACHE_LIMIT {
+            cache.clear();
+        }
+        cache.insert(key, best);
+    });
+    best
+}
+
+fn rank_count_key(hand: &[i32]) -> u64 {
+    let mut counts = [0_u8; 18];
+    for &card in hand {
+        counts[card_rank(card) as usize] += 1;
+    }
+    (3..=17).fold(0_u64, |key, rank| key * 5 + u64::from(counts[rank]))
 }
 
 fn add_triple_attachments(
@@ -347,5 +410,14 @@ mod tests {
                 .iter()
                 .any(|candidate| candidate.combo.kind == ComboKind::FourWithTwoPairs)
         );
+    }
+
+    #[test]
+    fn lookahead_turn_estimate_finds_a_non_greedy_partition() {
+        let hand = vec![1, 14, 15, 29, 33, 40, 45, 50, 53, 54];
+
+        assert_eq!(super::greedy_turns(&hand, None), 7);
+        assert_eq!(super::lookahead_turns(&hand), 6);
+        assert_eq!(super::estimate_turns(&hand), 6);
     }
 }

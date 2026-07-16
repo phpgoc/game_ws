@@ -422,6 +422,7 @@ mod tests {
     use share_type_public::LandlordPhase;
 
     use crate::ai::{AiObservation, tests::state_with_hands};
+    use crate::game_state::LandlordPlayRecord;
 
     use crate::core::play::ComboKind;
 
@@ -538,5 +539,99 @@ mod tests {
 
         let cards = choose_play(&observation);
         assert_eq!(cards, vec![2, 3, 4, 5, 6]);
+    }
+
+    #[test]
+    fn farmer_avoids_leading_a_known_winning_pair_to_two_card_landlord() {
+        let mut state = state_with_hands(&[
+            (0, vec![2, 15]), // 地主只剩一对 4
+            (1, vec![5, 6, 7, 8]),
+            (2, vec![1, 14, 3, 4]), // 农民有一对 3 和更安全的单牌
+        ]);
+        state.phase = LandlordPhase::Play;
+        state.landlord_position = Some(0);
+        state.current_position = 2;
+        state.last_play_position = 2;
+        state.hidden_cards = vec![2, 15, 54];
+        state.play_history.push(LandlordPlayRecord {
+            position: 0,
+            cards: vec![54],
+            benchmark: Vec::new(),
+        });
+        let observation = AiObservation::from_state(&state, 2).expect("observation");
+
+        let cards = choose_play(&observation);
+        assert_ne!(
+            crate::core::play::classify(&cards).unwrap().kind,
+            ComboKind::Pair
+        );
+    }
+
+    #[test]
+    fn landlord_uses_a_bomb_instead_of_letting_one_card_runner_regain_lead() {
+        let observation = play_observation(
+            0,
+            0,
+            &[
+                (0, vec![1, 14, 27, 40, 2]),
+                (1, vec![3, 4, 5, 6]),
+                (2, vec![7]),
+            ],
+            2,
+            vec![12], // 农民主跑刚出 A，地主没有普通牌能压
+        );
+
+        assert_eq!(choose_play(&observation), vec![1, 14, 27, 40]);
+    }
+
+    #[test]
+    fn support_farmer_bombs_teammate_only_to_stop_a_certain_landlord_finish() {
+        let mut state = state_with_hands(&[
+            (0, vec![13]),
+            (1, vec![3, 4, 5]),
+            (2, vec![1, 14, 27, 40, 2]),
+        ]);
+        state.phase = LandlordPhase::Play;
+        state.landlord_position = Some(0);
+        state.current_position = 2;
+        state.last_play_position = 1;
+        state.last_play = vec![11]; // 队友出 K，地主已知最后一张是 2
+        state.hidden_cards = vec![13, 53, 54];
+        state.play_history.extend([
+            LandlordPlayRecord {
+                position: 0,
+                cards: vec![53, 54],
+                benchmark: Vec::new(),
+            },
+            LandlordPlayRecord {
+                position: 1,
+                cards: vec![11],
+                benchmark: Vec::new(),
+            },
+        ]);
+        let observation = AiObservation::from_state(&state, 2).expect("observation");
+
+        assert_eq!(choose_play(&observation), vec![1, 14, 27, 40]);
+    }
+
+    #[test]
+    fn ordinary_lead_keeps_the_rocket_together() {
+        let observation = play_observation(
+            0,
+            0,
+            &[
+                (0, vec![53, 54, 1, 2, 3, 4, 5, 8]),
+                (1, vec![6, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]),
+                (2, vec![19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]),
+            ],
+            0,
+            Vec::new(),
+        );
+
+        let cards = choose_play(&observation);
+        assert!(
+            !cards.contains(&53) && !cards.contains(&54),
+            "split rocket: {cards:?}"
+        );
     }
 }

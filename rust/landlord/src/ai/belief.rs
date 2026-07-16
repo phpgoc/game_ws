@@ -9,10 +9,11 @@ use super::{
 
 const FIRST_RANK: u8 = 3;
 const LAST_RANK: u8 = 17;
-const BELIEF_WORLD_COUNT: usize = 48;
+const BELIEF_WORLD_COUNT: usize = 24;
 const PASS_CAN_BEAT_LIKELIHOOD: f64 = 0.18;
 const NON_MINIMAL_RESPONSE_LIKELIHOOD: f64 = 0.58;
 const UNNECESSARY_POWER_PLAY_LIKELIHOOD: f64 = 0.16;
+const RECENT_BEHAVIOR_EVIDENCE_PER_PLAYER: usize = 12;
 
 #[derive(Clone, Debug)]
 struct WeightedHandSample {
@@ -686,26 +687,26 @@ fn world_likelihood(
     combo_cache: &mut HashMap<u64, Vec<Combo>>,
 ) -> f64 {
     let mut weight = bidding_likelihood(observation, hands);
-    for (record_index, record) in observation.play_history.iter().enumerate() {
-        let Some(current_hand) = hands.get(&record.position) else {
+    let mut reconstructed_hands = hands.clone();
+    let mut evidence_counts = HashMap::<usize, usize>::new();
+    for record in observation.play_history.iter().rev() {
+        let Some(hand_at_action) = reconstructed_hands.get_mut(&record.position) else {
             continue;
         };
-        let mut hand_at_action = current_hand.clone();
-        hand_at_action.extend(
-            observation.play_history[record_index + 1..]
-                .iter()
-                .filter(|later| later.position == record.position)
-                .flat_map(|later| later.cards.iter().copied()),
-        );
         hand_at_action.extend(&record.cards);
-        let key = rank_count_key(&hand_at_action);
+        let evidence_count = evidence_counts.entry(record.position).or_default();
+        if *evidence_count >= RECENT_BEHAVIOR_EVIDENCE_PER_PLAYER {
+            continue;
+        }
+        *evidence_count += 1;
+        let key = rank_count_key(hand_at_action);
         let combos = combo_cache.entry(key).or_insert_with(|| {
-            all_candidates(&hand_at_action)
+            all_candidates(hand_at_action)
                 .into_iter()
                 .map(|candidate| candidate.combo)
                 .collect()
         });
-        weight *= play_choice_likelihood(record, &hand_at_action, combos);
+        weight *= play_choice_likelihood(record, hand_at_action, combos);
     }
     weight
 }
