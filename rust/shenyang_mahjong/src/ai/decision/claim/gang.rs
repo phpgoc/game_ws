@@ -1,5 +1,27 @@
 use super::*;
 
+fn claim_gang_projects_capped_visible_fan(
+    hand: &[i32],
+    current_melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    win_rule: i32,
+    tile: i32,
+    from_position: usize,
+) -> bool {
+    if !capped_normal_route_visible_fan_exceeds_half_cap(hand, current_melds, table, win_rule)
+        || capped_normal_route_visible_fan_reaches_cap(hand, current_melds, table, win_rule)
+    {
+        return false;
+    }
+    let next_hand = remove_n_tiles(hand, tile, 3);
+    if next_hand.len() + 3 != hand.len() {
+        return false;
+    }
+    let mut next_melds = current_melds.to_vec();
+    next_melds.push(claim_gang_meld(tile, from_position));
+    capped_normal_route_visible_fan_reaches_cap(&next_hand, &next_melds, table, win_rule)
+}
+
 pub(in crate::ai::decision) fn should_claim_gang_from_discard(
     hand: &[i32],
     current_melds: &[WsShenyangMahjongMeld],
@@ -10,10 +32,19 @@ pub(in crate::ai::decision) fn should_claim_gang_from_discard(
     from_position: usize,
 ) -> bool {
     let current_ready_score = ready_tile_score(hand, current_melds, table, position, win_rule);
+    let projected_capped_visible_fan = claim_gang_projects_capped_visible_fan(
+        hand,
+        current_melds,
+        table,
+        win_rule,
+        tile,
+        from_position,
+    );
     let speed_first_unready = current_ready_score <= 0.0
         && (table.dealer_position == position
             || table.max_fan.is_some_and(|max_fan| max_fan <= 1)
-            || dealer_opponent_has_major_threat(table, position, win_rule));
+            || dealer_opponent_has_major_threat(table, position, win_rule)
+            || projected_capped_visible_fan);
     if ready_visible_fan_reaches_cap(hand, current_melds, table, position, win_rule) {
         return false;
     }
