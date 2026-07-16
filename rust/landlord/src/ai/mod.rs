@@ -2,6 +2,7 @@ mod belief;
 mod bidding;
 mod candidates;
 mod playing;
+mod search;
 #[cfg(test)]
 mod simulation;
 

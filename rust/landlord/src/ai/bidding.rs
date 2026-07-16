@@ -12,7 +12,15 @@ pub(super) fn choose_bid(observation: &AiObservation) -> u8 {
     {
         return 0;
     }
-    let desired = desired_bid(&observation.hand);
+    let opponent_pressure = observation
+        .call_history
+        .iter()
+        .filter(|(position, _)| *position != observation.position)
+        .map(|(_, score)| *score)
+        .max()
+        .unwrap_or(0) as f64
+        * 0.35;
+    let desired = desired_bid(&observation.hand, opponent_pressure);
     if desired > observation.current_score {
         desired
     } else {
@@ -20,13 +28,13 @@ pub(super) fn choose_bid(observation: &AiObservation) -> u8 {
     }
 }
 
-fn desired_bid(hand: &[i32]) -> u8 {
+fn desired_bid(hand: &[i32], opponent_pressure: f64) -> u8 {
     let grouped = rank_counts(hand);
     let rocket = grouped.get(&16) == Some(&1) && grouped.get(&17) == Some(&1);
     let bombs = grouped.values().filter(|count| **count == 4).count();
     let turns = estimate_turns(hand).max(1);
 
-    let mut strength = 0.0;
+    let mut strength = expected_bottom_gain(hand) * 0.45 - opponent_pressure;
     if rocket {
         strength += 7.0;
     } else {
@@ -47,6 +55,60 @@ fn desired_bid(hand: &[i32]) -> u8 {
     }
 }
 
+fn expected_bottom_gain(hand: &[i32]) -> f64 {
+    const SAMPLES: usize = 20;
+
+    let held = hand
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>();
+    let unknown = (1..=54)
+        .filter(|card| !held.contains(card))
+        .collect::<Vec<_>>();
+    if unknown.len() < 3 {
+        return 0.0;
+    }
+    let base_turns = estimate_turns(hand);
+    let seed = hand.iter().fold(0xA076_1D64_78BD_642F_u64, |seed, card| {
+        seed.rotate_left(7) ^ (*card as u64).wrapping_mul(0xE703_7ED1_A0B4_28DB)
+    });
+    let total_gain = (0..SAMPLES)
+        .map(|sample_index| {
+            let mut cards = unknown.clone();
+            shuffle(
+                &mut cards,
+                seed ^ (sample_index as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
+            );
+            let bottom = &cards[..3];
+            let mut with_bottom = hand.to_vec();
+            with_bottom.extend_from_slice(bottom);
+            let combined_turns = estimate_turns(&with_bottom);
+            let structure_gain = (base_turns + 3).saturating_sub(combined_turns) as f64 * 1.1;
+            let control_gain = bottom
+                .iter()
+                .map(|card| match card_rank(*card) {
+                    17 => 3.0,
+                    16 => 2.3,
+                    15 => 1.55,
+                    14 => 0.65,
+                    _ => 0.0,
+                })
+                .sum::<f64>();
+            structure_gain + control_gain
+        })
+        .sum::<f64>();
+    total_gain / SAMPLES as f64
+}
+
+fn shuffle(cards: &mut [i32], mut state: u64) {
+    for index in (1..cards.len()).rev() {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        cards.swap(index, (state >> 32) as usize % (index + 1));
+    }
+}
+
 fn rank_counts(cards: &[i32]) -> BTreeMap<u8, usize> {
     let mut counts = BTreeMap::new();
     for &card in cards {
@@ -61,7 +123,7 @@ mod tests {
 
     use crate::ai::{AiObservation, tests::state_with_hands};
 
-    use super::choose_bid;
+    use super::{choose_bid, expected_bottom_gain};
 
     fn observation(hand: Vec<i32>, current_score: u8) -> AiObservation {
         let mut state = state_with_hands(&[(0, hand), (1, vec![2, 3, 4]), (2, vec![5, 6, 7])]);
@@ -91,5 +153,15 @@ mod tests {
         let first = choose_bid(&observation(medium.clone(), 0));
         assert!(first > 0);
         assert_eq!(choose_bid(&observation(medium, first)), 0);
+    }
+
+    #[test]
+    fn bottom_card_expectation_is_deterministic_and_non_negative() {
+        let hand = vec![53, 13, 26, 1, 14, 27, 2, 15, 28, 3, 16, 4, 17, 5, 18, 6, 19];
+        let left = expected_bottom_gain(&hand);
+        let right = expected_bottom_gain(&hand);
+
+        assert!(left >= 0.0);
+        assert!((left - right).abs() < f64::EPSILON);
     }
 }

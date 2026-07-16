@@ -164,7 +164,7 @@ pub fn classify(cards: &[i32]) -> Option<Combo> {
         .filter_map(|(r, c)| if *c == 2 { Some(*r) } else { None })
         .collect();
     if len >= 6
-        && len % 2 == 0
+        && len.is_multiple_of(2)
         && pair_ranks.len() * 2 == len
         && pair_ranks.iter().all(|r| *r < 15)
         && is_consecutive(&pair_ranks)
@@ -220,25 +220,25 @@ pub fn classify(cards: &[i32]) -> Option<Combo> {
         }
     }
 
-    if len == 6 {
-        if let Some((rank, _)) = groups.iter().find(|(_, c)| *c == 4) {
+    if len == 6
+        && let Some((rank, _)) = groups.iter().find(|(_, c)| *c == 4)
+    {
+        return Some(Combo {
+            kind: ComboKind::FourWithTwoSingles,
+            main_rank: *rank,
+            sequence_len: 1,
+        });
+    }
+    if len == 8
+        && let Some((rank, _)) = groups.iter().find(|(_, c)| *c == 4)
+    {
+        let pair_cnt = groups.iter().filter(|(_, c)| *c == 2).count();
+        if pair_cnt == 2 {
             return Some(Combo {
-                kind: ComboKind::FourWithTwoSingles,
+                kind: ComboKind::FourWithTwoPairs,
                 main_rank: *rank,
                 sequence_len: 1,
             });
-        }
-    }
-    if len == 8 {
-        if let Some((rank, _)) = groups.iter().find(|(_, c)| *c == 4) {
-            let pair_cnt = groups.iter().filter(|(_, c)| *c == 2).count();
-            if pair_cnt == 2 {
-                return Some(Combo {
-                    kind: ComboKind::FourWithTwoPairs,
-                    main_rank: *rank,
-                    sequence_len: 1,
-                });
-            }
         }
     }
 

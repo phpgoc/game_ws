@@ -22,6 +22,8 @@ enum AutoBroadcastEvent {
     Play(WsPlayEvent),
 }
 
+type CallLandlordTransition = (Option<(String, Vec<i32>)>, Option<usize>, bool);
+
 /// Build a Dispatch that sends an event to all room members.
 fn dispatch_all(
     room_key: &str,
@@ -103,11 +105,7 @@ async fn handle_call_landlord_phase(
     if loop_should_stop(state) {
         return;
     }
-    let (open_hidden_event, next_turn_position, phase_changed): (
-        Option<(String, Vec<i32>)>,
-        Option<usize>,
-        bool,
-    ) = {
+    let (open_hidden_event, next_turn_position, phase_changed): CallLandlordTransition = {
         let mut s = state.lock().unwrap();
         let current_idx = sorted_positions
             .iter()

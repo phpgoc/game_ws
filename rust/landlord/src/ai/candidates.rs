@@ -50,10 +50,27 @@ pub fn all_candidates(hand: &[i32]) -> Vec<Candidate> {
 /// 用公开牌型做快速的剩余手数估计。它不是穷举求最优解，
 /// 但会优先完整牌型并避免过早拆炸弹，适合每个 AI 回合实时调用。
 pub fn estimate_turns(hand: &[i32]) -> usize {
+    estimate_turns_with_candidates(hand, None)
+}
+
+pub fn estimate_turns_from_candidates(hand: &[i32], candidates: &[Candidate]) -> usize {
+    estimate_turns_with_candidates(hand, Some(candidates))
+}
+
+fn estimate_turns_with_candidates(hand: &[i32], initial_candidates: Option<&[Candidate]>) -> usize {
     let mut remaining = hand.to_vec();
     let mut turns = 0;
     while !remaining.is_empty() {
-        let candidates = all_candidates(&remaining);
+        let generated = if turns == 0 && initial_candidates.is_some() {
+            None
+        } else {
+            Some(all_candidates(&remaining))
+        };
+        let candidates = if turns == 0 {
+            initial_candidates.unwrap_or_else(|| generated.as_deref().unwrap_or_default())
+        } else {
+            generated.as_deref().unwrap_or_default()
+        };
         let Some(best) = candidates.iter().max_by_key(|candidate| {
             let finishes = usize::from(candidate.cards.len() == remaining.len());
             let bomb_penalty = usize::from(matches!(

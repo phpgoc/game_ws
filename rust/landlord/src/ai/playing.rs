@@ -5,6 +5,7 @@ use crate::core::play::{ComboKind, can_beat, card_rank, classify};
 use super::{
     AiObservation, CardBelief, Relationship,
     candidates::{Candidate, all_candidates, estimate_turns},
+    search::choose_endgame_play,
 };
 
 pub(super) fn choose_play(observation: &AiObservation) -> Vec<i32> {
@@ -29,6 +30,10 @@ pub(super) fn choose_play(observation: &AiObservation) -> Vec<i32> {
                     .is_some_and(|previous| can_beat(&candidate.combo, previous))
         })
         .collect::<Vec<_>>();
+    candidates.retain(|candidate| {
+        candidate.combo.kind != ComboKind::TripleSingle
+            || uses_lowest_triple_single_kicker(&observation.hand, candidate)
+    });
     if candidates.is_empty() {
         return Vec::new();
     }
@@ -41,13 +46,26 @@ pub(super) fn choose_play(observation: &AiObservation) -> Vec<i32> {
     }
 
     let belief = CardBelief::from_observation(observation);
+    let previous_relationship = observation.relationship_to(observation.last_play_position);
+    if !leading
+        && previous_relationship == Relationship::Ally
+        && observation
+            .next_position(observation.position)
+            .and_then(|position| observation.hand_sizes.get(&position))
+            .is_none_or(|cards| *cards > 2)
+    {
+        return Vec::new();
+    }
+    if let Some(cards) = choose_endgame_play(observation, &belief, &candidates, leading) {
+        return cards;
+    }
+    let farmer_runner = belief.farmer_runner_position(observation);
     if leading {
-        return choose_lead(observation, &belief, candidates);
+        return choose_lead(observation, &belief, candidates, farmer_runner);
     }
 
-    let previous_relationship = observation.relationship_to(observation.last_play_position);
     if previous_relationship == Relationship::Ally {
-        return choose_over_ally_if_required(observation, &belief, &candidates)
+        return choose_over_ally_if_required(observation, &belief, &candidates, farmer_runner)
             .map(|candidate| candidate.cards.clone())
             .unwrap_or_default();
     }
@@ -76,15 +94,23 @@ pub(super) fn choose_play(observation: &AiObservation) -> Vec<i32> {
         return Vec::new();
     }
 
-    best_candidate(observation, &belief, &candidates, false, urgent)
-        .map(|candidate| candidate.cards.clone())
-        .unwrap_or_default()
+    best_candidate(
+        observation,
+        &belief,
+        &candidates,
+        false,
+        urgent,
+        farmer_runner,
+    )
+    .map(|candidate| candidate.cards.clone())
+    .unwrap_or_default()
 }
 
 fn choose_lead(
     observation: &AiObservation,
     belief: &CardBelief,
     mut candidates: Vec<Candidate>,
+    farmer_runner: Option<usize>,
 ) -> Vec<i32> {
     if let Some(next) = observation.next_position(observation.position) {
         let next_cards = observation
@@ -118,7 +144,7 @@ fn choose_lead(
         }
     }
 
-    best_candidate(observation, belief, &candidates, true, false)
+    best_candidate(observation, belief, &candidates, true, false, farmer_runner)
         .map(|candidate| candidate.cards.clone())
         .unwrap_or_default()
 }
@@ -127,6 +153,7 @@ fn choose_over_ally_if_required<'a>(
     observation: &AiObservation,
     belief: &CardBelief,
     candidates: &'a [Candidate],
+    farmer_runner: Option<usize>,
 ) -> Option<&'a Candidate> {
     let next = observation.next_position(observation.position)?;
     if observation.relationship_to(next) != Relationship::Enemy
@@ -141,9 +168,16 @@ fn choose_over_ally_if_required<'a>(
     }
     let previous = classify(&observation.last_play)?;
     let previous_risk = belief.probability_enemies_can_beat(&previous);
-    let candidate = best_candidate(observation, belief, candidates, false, true)?;
+    let candidate = best_candidate(observation, belief, candidates, false, true, farmer_runner)?;
     let candidate_risk = belief.probability_enemies_can_beat(&candidate.combo);
-    (candidate_risk + 0.15 < previous_risk).then_some(candidate)
+    let improvement_required = if farmer_runner == Some(observation.last_play_position) {
+        0.28
+    } else if farmer_runner == Some(observation.position) {
+        0.08
+    } else {
+        0.15
+    };
+    (candidate_risk + improvement_required < previous_risk).then_some(candidate)
 }
 
 fn best_candidate<'a>(
@@ -152,16 +186,25 @@ fn best_candidate<'a>(
     candidates: &'a [Candidate],
     leading: bool,
     urgent: bool,
+    farmer_runner: Option<usize>,
 ) -> Option<&'a Candidate> {
-    candidates.iter().max_by(|left, right| {
-        candidate_score(observation, belief, left, leading, urgent).total_cmp(&candidate_score(
-            observation,
-            belief,
-            right,
-            leading,
-            urgent,
-        ))
-    })
+    candidates
+        .iter()
+        .map(|candidate| {
+            (
+                candidate,
+                candidate_score(
+                    observation,
+                    belief,
+                    candidate,
+                    leading,
+                    urgent,
+                    farmer_runner,
+                ),
+            )
+        })
+        .max_by(|(_, left_score), (_, right_score)| left_score.total_cmp(right_score))
+        .map(|(candidate, _)| candidate)
 }
 
 fn candidate_score(
@@ -170,6 +213,7 @@ fn candidate_score(
     candidate: &Candidate,
     leading: bool,
     urgent: bool,
+    farmer_runner: Option<usize>,
 ) -> f64 {
     let mut remaining = observation.hand.clone();
     remove_cards(&mut remaining, &candidate.cards);
@@ -228,10 +272,52 @@ fn candidate_score(
     if risk < 0.05 {
         score += 8.0;
     }
+    if let Some(runner) = farmer_runner {
+        if runner == observation.position {
+            // 主跑农民优先减少后续手数，支援农民则保留大牌和炸弹负责夺回牌权。
+            score += candidate.cards.len() as f64 * 1.5 - turns as f64 * 2.5;
+        } else {
+            let control_cards_spent = candidate
+                .cards
+                .iter()
+                .filter(|card| card_rank(**card) >= 15 || belief.rank_is_control(card_rank(**card)))
+                .count() as f64;
+            score -= if urgent {
+                control_cards_spent * 1.5
+            } else {
+                control_cards_spent * 6.0
+            };
+            if leading
+                && observation.next_position(observation.position) == Some(runner)
+                && matches!(candidate.combo.kind, ComboKind::Single | ComboKind::Pair)
+                && let Some(ally) = belief.opponents.get(&runner)
+            {
+                score += ally.probability_can_beat(&candidate.combo) * 18.0;
+                score -= candidate.combo.main_rank as f64 * 0.35;
+            }
+        }
+    }
     if remaining.is_empty() {
         score += 10_000.0;
     }
     score
+}
+
+fn uses_lowest_triple_single_kicker(hand: &[i32], candidate: &Candidate) -> bool {
+    let body_rank = candidate.combo.main_rank;
+    let Some(kicker_rank) = candidate
+        .cards
+        .iter()
+        .map(|card| card_rank(*card))
+        .find(|rank| *rank != body_rank)
+    else {
+        return false;
+    };
+    hand.iter()
+        .map(|card| card_rank(*card))
+        .filter(|rank| *rank != body_rank)
+        .min()
+        == Some(kicker_rank)
 }
 
 fn lead_single_score(belief: &CardBelief, candidate: &Candidate) -> f64 {
@@ -261,7 +347,9 @@ mod tests {
 
     use crate::ai::{AiObservation, tests::state_with_hands};
 
-    use super::choose_play;
+    use crate::core::play::ComboKind;
+
+    use super::{all_candidates, choose_play, uses_lowest_triple_single_kicker};
 
     fn play_observation(
         position: usize,
@@ -325,5 +413,26 @@ mod tests {
             Vec::new(),
         );
         assert_eq!(choose_play(&observation), vec![1]);
+    }
+
+    #[test]
+    fn triple_single_always_uses_the_lowest_available_kicker() {
+        let hand = vec![1, 3, 16, 29, 7]; // 单 3、三张 5、单 9
+        let candidates = all_candidates(&hand);
+        let low = candidates
+            .iter()
+            .find(|candidate| {
+                candidate.combo.kind == ComboKind::TripleSingle && candidate.cards.contains(&1)
+            })
+            .expect("low kicker candidate");
+        let high = candidates
+            .iter()
+            .find(|candidate| {
+                candidate.combo.kind == ComboKind::TripleSingle && candidate.cards.contains(&7)
+            })
+            .expect("high kicker candidate");
+
+        assert!(uses_lowest_triple_single_kicker(&hand, low));
+        assert!(!uses_lowest_triple_single_kicker(&hand, high));
     }
 }
