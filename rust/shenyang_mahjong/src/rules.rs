@@ -824,7 +824,8 @@ pub(crate) fn shenyang_score_four_gui_yi_fan(
     for meld in melds.iter().filter(|meld| match meld.kind {
         ShenyangMahjongMeldKind::PENG => is_triplet_meld(meld),
         ShenyangMahjongMeldKind::CHI => is_sequence_meld(meld),
-        ShenyangMahjongMeldKind::GANG | ShenyangMahjongMeldKind::XI_GANG => false,
+        ShenyangMahjongMeldKind::XI_GANG => is_xi_gang_meld(meld),
+        ShenyangMahjongMeldKind::GANG => false,
     }) {
         for tile in meld.tiles.iter().copied() {
             *counts.entry(tile).or_default() += 1;
@@ -1104,6 +1105,24 @@ mod tests {
         ];
 
         assert_eq!(super::shenyang_score_meld_fan(&melds), 2);
+    }
+
+    #[test]
+    fn four_gui_yi_counts_tile_exposed_by_xi_gang() {
+        let melds = vec![
+            meld(ShenyangMahjongMeldKind::XI_GANG, vec![35, 36, 37], None),
+            meld(ShenyangMahjongMeldKind::CHI, vec![1, 2, 3], Some(1)),
+            meld(ShenyangMahjongMeldKind::CHI, vec![11, 12, 13], Some(2)),
+        ];
+        let hand = vec![21, 21, 37, 37, 37];
+
+        assert!(is_complete_win_with_melds(
+            &hand,
+            &melds,
+            WIN_RULE_SHENYANG_BASIC,
+        ));
+        assert_eq!(super::shenyang_score_meld_fan(&melds), 1);
+        assert_eq!(super::shenyang_score_four_gui_yi_fan(&hand, &melds), 1);
     }
 
     #[test]
