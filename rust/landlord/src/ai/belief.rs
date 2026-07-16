@@ -11,6 +11,8 @@ const FIRST_RANK: u8 = 3;
 const LAST_RANK: u8 = 17;
 const BELIEF_WORLD_COUNT: usize = 48;
 const PASS_CAN_BEAT_LIKELIHOOD: f64 = 0.18;
+const NON_MINIMAL_RESPONSE_LIKELIHOOD: f64 = 0.58;
+const UNNECESSARY_POWER_PLAY_LIKELIHOOD: f64 = 0.16;
 
 #[derive(Clone, Debug)]
 struct WeightedHandSample {
@@ -24,6 +26,14 @@ struct WeightedHandSample {
 pub(super) struct BeliefWorld {
     pub hands: BTreeMap<usize, Vec<i32>>,
     pub weight: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FarmerRunnerEstimate {
+    pub position: usize,
+    /// 0 表示两名农民几乎无法区分，1 表示所有加权牌局都支持同一个主跑。
+    pub confidence: f64,
+    pub expected_turns: f64,
 }
 
 #[derive(Clone, Debug)]
@@ -157,6 +167,18 @@ impl OpponentEstimate {
         -self.expected_turns_to_finish() * 12.0 - self.hand_size as f64
             + high_card_strength
             + self.probability_has_bomb_or_rocket() * 3.0
+    }
+
+    fn probability_stronger_than(&self, strength: f64, wins_ties: bool) -> f64 {
+        self.samples
+            .iter()
+            .filter(|sample| {
+                let sampled = sampled_runner_strength(sample);
+                sampled > strength || (wins_ties && sampled.total_cmp(&strength).is_eq())
+            })
+            .map(|sample| sample.weight)
+            .sum::<f64>()
+            .clamp(0.0, 1.0)
     }
 
     fn probability_has_combo(&self, predicate: impl Fn(&Combo) -> bool) -> f64 {
@@ -419,25 +441,74 @@ impl CardBelief {
         ((rank + 1)..=LAST_RANK).all(|higher| self.remaining_outside_hand[higher as usize] == 0)
     }
 
-    pub fn farmer_runner_position(&self, observation: &AiObservation) -> Option<usize> {
+    pub fn farmer_runner(&self, observation: &AiObservation) -> Option<FarmerRunnerEstimate> {
         let landlord = observation.landlord_position?;
-        if observation.position == landlord {
-            return None;
-        }
-        let ally = observation
+        let farmers = observation
             .positions
             .iter()
             .copied()
-            .find(|position| *position != landlord && *position != observation.position)?;
-        let own_strength = known_runner_strength(&observation.hand);
-        let ally_strength = self.opponents.get(&ally)?.runner_strength();
-        if own_strength > ally_strength
-            || (own_strength.total_cmp(&ally_strength).is_eq() && observation.position < ally)
-        {
-            Some(observation.position)
+            .filter(|position| *position != landlord)
+            .collect::<Vec<_>>();
+        let [left, right] = farmers.as_slice() else {
+            return None;
+        };
+
+        let probability_left_runs = if observation.position == *left {
+            let own_strength = known_runner_strength(&observation.hand);
+            let right_estimate = self.opponents.get(right)?;
+            1.0 - right_estimate.probability_stronger_than(own_strength, *right < *left)
+        } else if observation.position == *right {
+            let own_strength = known_runner_strength(&observation.hand);
+            self.opponents
+                .get(left)?
+                .probability_stronger_than(own_strength, *left < *right)
         } else {
-            Some(ally)
-        }
+            let left_estimate = self.opponents.get(left)?;
+            let right_estimate = self.opponents.get(right)?;
+            if left_estimate.samples.len() != right_estimate.samples.len()
+                || left_estimate.samples.is_empty()
+            {
+                if left_estimate.runner_strength() >= right_estimate.runner_strength() {
+                    1.0
+                } else {
+                    0.0
+                }
+            } else {
+                left_estimate
+                    .samples
+                    .iter()
+                    .zip(&right_estimate.samples)
+                    .filter(|(left_sample, right_sample)| {
+                        let left_strength = sampled_runner_strength(left_sample);
+                        let right_strength = sampled_runner_strength(right_sample);
+                        left_strength > right_strength
+                            || (*left < *right && left_strength.total_cmp(&right_strength).is_eq())
+                    })
+                    .map(|(left_sample, _)| left_sample.weight)
+                    .sum::<f64>()
+                    .clamp(0.0, 1.0)
+            }
+        };
+        let (position, probability) = if probability_left_runs >= 0.5 {
+            (*left, probability_left_runs)
+        } else {
+            (*right, 1.0 - probability_left_runs)
+        };
+        let expected_turns = if position == observation.position {
+            estimate_turns(&observation.hand) as f64
+        } else {
+            self.opponents.get(&position)?.expected_turns_to_finish()
+        };
+        Some(FarmerRunnerEstimate {
+            position,
+            confidence: ((probability - 0.5) * 2.0).clamp(0.0, 1.0),
+            expected_turns,
+        })
+    }
+
+    pub fn farmer_runner_position(&self, observation: &AiObservation) -> Option<usize> {
+        self.farmer_runner(observation)
+            .map(|runner| runner.position)
     }
 }
 
@@ -459,21 +530,70 @@ fn known_runner_strength(hand: &[i32]) -> f64 {
         + (bomb_count as f64 + f64::from(has_rocket)) * 3.0
 }
 
+fn sampled_runner_strength(sample: &WeightedHandSample) -> f64 {
+    let high_card_strength = f64::from(sample.rank_counts[17]) * 4.0
+        + f64::from(sample.rank_counts[16]) * 3.0
+        + f64::from(sample.rank_counts[15]) * 0.8
+        + f64::from(sample.rank_counts[14]) * 0.25;
+    let has_rocket = sample.rank_counts[16] == 1 && sample.rank_counts[17] == 1;
+    let bomb_count = (FIRST_RANK..=15)
+        .filter(|rank| sample.rank_counts[*rank as usize] == 4)
+        .count();
+    -(sample.estimated_turns as f64) * 12.0
+        - sample
+            .rank_counts
+            .iter()
+            .map(|count| *count as usize)
+            .sum::<usize>() as f64
+        + high_card_strength
+        + (bomb_count as f64 + f64::from(has_rocket)) * 3.0
+}
+
 fn sample_worlds(
     observation: &AiObservation,
-    certain_cards: &HashMap<usize, Vec<i32>>,
+    _certain_cards: &HashMap<usize, Vec<i32>>,
     played_ids: &HashSet<i32>,
 ) -> Vec<BeliefWorld> {
-    let own_ids = observation.hand.iter().copied().collect::<HashSet<_>>();
-    let certain_ids = certain_cards
+    let mut own_original = observation.hand.clone();
+    own_original.extend(
+        observation
+            .play_history
+            .iter()
+            .filter(|record| record.position == observation.position)
+            .flat_map(|record| record.cards.iter().copied()),
+    );
+    own_original.sort_unstable();
+
+    let mut known_original = HashMap::<usize, Vec<i32>>::new();
+    for record in &observation.play_history {
+        if record.position != observation.position {
+            known_original
+                .entry(record.position)
+                .or_default()
+                .extend(&record.cards);
+        }
+    }
+    if let Some(landlord) = observation.landlord_position
+        && landlord != observation.position
+    {
+        known_original
+            .entry(landlord)
+            .or_default()
+            .extend(&observation.hidden_cards);
+    }
+    for cards in known_original.values_mut() {
+        cards.sort_unstable();
+        cards.dedup();
+    }
+
+    let own_ids = own_original.iter().copied().collect::<HashSet<_>>();
+    let certain_ids = known_original
         .values()
         .flatten()
         .copied()
         .collect::<HashSet<_>>();
     let unknown_cards = (1..=54)
-        .filter(|card| {
-            !own_ids.contains(card) && !played_ids.contains(card) && !certain_ids.contains(card)
-        })
+        .filter(|card| !own_ids.contains(card) && !certain_ids.contains(card))
         .collect::<Vec<_>>();
     let opponents = observation
         .positions
@@ -481,22 +601,32 @@ fn sample_worlds(
         .copied()
         .filter(|position| *position != observation.position)
         .collect::<Vec<_>>();
+    let original_hand_sizes = opponents
+        .iter()
+        .map(|position| {
+            let played = observation
+                .play_history
+                .iter()
+                .filter(|record| record.position == *position)
+                .map(|record| record.cards.len())
+                .sum::<usize>();
+            (
+                *position,
+                observation.hand_sizes.get(position).copied().unwrap_or(0) + played,
+            )
+        })
+        .collect::<HashMap<_, _>>();
     let required_unknown = opponents
         .iter()
         .map(|position| {
-            observation
-                .hand_sizes
-                .get(position)
-                .copied()
-                .unwrap_or(0)
-                .saturating_sub(certain_cards.get(position).map(Vec::len).unwrap_or(0))
+            original_hand_sizes[position]
+                .saturating_sub(known_original.get(position).map(Vec::len).unwrap_or(0))
         })
         .sum::<usize>();
     if required_unknown > unknown_cards.len() {
         return Vec::new();
     }
 
-    let minimum_rank_evidence = triple_single_minimum_rank_evidence(observation, certain_cards);
     let seed = observation_seed(observation);
     let mut worlds = Vec::with_capacity(BELIEF_WORLD_COUNT);
     let mut combo_cache = HashMap::<u64, Vec<Combo>>::new();
@@ -504,20 +634,16 @@ fn sample_worlds(
         let sample_seed = seed ^ (sample_index as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
         let Some(hands) = sample_conditioned_hands(
             observation,
-            certain_cards,
+            &known_original,
+            &original_hand_sizes,
             &unknown_cards,
             &opponents,
-            &minimum_rank_evidence,
+            played_ids,
             sample_seed,
         ) else {
             continue;
         };
-        let weight = world_likelihood(
-            observation,
-            &hands,
-            &minimum_rank_evidence,
-            &mut combo_cache,
-        );
+        let weight = world_likelihood(observation, &hands, &mut combo_cache);
         worlds.push(BeliefWorld { hands, weight });
     }
     worlds
@@ -525,59 +651,30 @@ fn sample_worlds(
 
 fn sample_conditioned_hands(
     observation: &AiObservation,
-    certain_cards: &HashMap<usize, Vec<i32>>,
+    known_original: &HashMap<usize, Vec<i32>>,
+    original_hand_sizes: &HashMap<usize, usize>,
     unknown_cards: &[i32],
     opponents: &[usize],
-    minimum_rank_evidence: &HashMap<usize, u8>,
+    played_ids: &HashSet<i32>,
     seed: u64,
 ) -> Option<BTreeMap<usize, Vec<i32>>> {
     let mut pool = unknown_cards.to_vec();
     shuffle_cards(&mut pool, seed);
 
-    // 所有下界都是“牌点至少为 N”的嵌套约束。先给下界最高的玩家发牌，
-    // 可以在约束可满足时避免普通拒绝采样把整批样本全部浪费掉。
-    let mut allocation_order = opponents.to_vec();
-    allocation_order.sort_by(|left, right| {
-        minimum_rank_evidence
-            .get(right)
-            .copied()
-            .unwrap_or(FIRST_RANK)
-            .cmp(
-                &minimum_rank_evidence
-                    .get(left)
-                    .copied()
-                    .unwrap_or(FIRST_RANK),
-            )
-            .then(left.cmp(right))
-    });
-
     let mut hands = BTreeMap::new();
-    for position in allocation_order {
-        let minimum_rank = minimum_rank_evidence
-            .get(&position)
-            .copied()
-            .unwrap_or(FIRST_RANK);
-        let mut hand = certain_cards.get(&position).cloned().unwrap_or_default();
-        if hand.iter().any(|card| card_rank(*card) < minimum_rank) {
+    for &position in opponents {
+        let mut hand = known_original.get(&position).cloned().unwrap_or_default();
+        let original_size = original_hand_sizes.get(&position).copied().unwrap_or(0);
+        let unknown_slots = original_size.saturating_sub(hand.len());
+        if unknown_slots > pool.len() {
             return None;
         }
-        let hand_size = observation.hand_sizes.get(&position).copied().unwrap_or(0);
-        let unknown_slots = hand_size.saturating_sub(hand.len());
-        let mut selected = Vec::with_capacity(unknown_slots);
-        let mut remaining = Vec::with_capacity(pool.len().saturating_sub(unknown_slots));
-        for card in pool {
-            if selected.len() < unknown_slots && card_rank(card) >= minimum_rank {
-                selected.push(card);
-            } else {
-                remaining.push(card);
-            }
-        }
-        if selected.len() != unknown_slots {
-            return None;
-        }
-        pool = remaining;
-        hand.extend(selected);
+        hand.extend(pool.drain(..unknown_slots));
+        hand.retain(|card| !played_ids.contains(card));
         hand.sort_unstable();
+        if hand.len() != observation.hand_sizes.get(&position).copied().unwrap_or(0) {
+            return None;
+        }
         hands.insert(position, hand);
     }
     Some(hands)
@@ -586,51 +683,146 @@ fn sample_conditioned_hands(
 fn world_likelihood(
     observation: &AiObservation,
     hands: &BTreeMap<usize, Vec<i32>>,
-    minimum_rank_evidence: &HashMap<usize, u8>,
     combo_cache: &mut HashMap<u64, Vec<Combo>>,
 ) -> f64 {
-    for (&position, &minimum_rank) in minimum_rank_evidence {
-        if hands
-            .get(&position)
-            .is_some_and(|hand| hand.iter().any(|card| card_rank(*card) < minimum_rank))
-        {
-            return 0.0;
-        }
-    }
-
-    let mut weight = 1.0;
+    let mut weight = bidding_likelihood(observation, hands);
     for (record_index, record) in observation.play_history.iter().enumerate() {
-        if !record.cards.is_empty() {
-            continue;
-        }
-        let Some(benchmark) = classify(&record.benchmark) else {
-            continue;
-        };
         let Some(current_hand) = hands.get(&record.position) else {
             continue;
         };
-        let mut hand_at_pass = current_hand.clone();
-        hand_at_pass.extend(
+        let mut hand_at_action = current_hand.clone();
+        hand_at_action.extend(
             observation.play_history[record_index + 1..]
                 .iter()
                 .filter(|later| later.position == record.position)
                 .flat_map(|later| later.cards.iter().copied()),
         );
-        let key = rank_count_key(&hand_at_pass);
+        hand_at_action.extend(&record.cards);
+        let key = rank_count_key(&hand_at_action);
         let combos = combo_cache.entry(key).or_insert_with(|| {
-            all_candidates(&hand_at_pass)
+            all_candidates(&hand_at_action)
                 .into_iter()
                 .map(|candidate| candidate.combo)
                 .collect()
         });
-        if combos
-            .iter()
-            .any(|candidate| can_beat(candidate, &benchmark))
-        {
-            weight *= PASS_CAN_BEAT_LIKELIHOOD;
-        }
+        weight *= play_choice_likelihood(record, &hand_at_action, combos);
     }
     weight
+}
+
+fn bidding_likelihood(observation: &AiObservation, hands: &BTreeMap<usize, Vec<i32>>) -> f64 {
+    let mut weight = 1.0;
+    let mut running_score = 0_u8;
+    for (call_index, &(position, actual)) in observation.call_history.iter().enumerate() {
+        let pressure = observation.call_history[..call_index]
+            .iter()
+            .filter(|(other, _)| *other != position)
+            .map(|(_, score)| *score)
+            .max()
+            .unwrap_or(0) as f64
+            * 0.35;
+        if let Some(current_hand) = hands.get(&position) {
+            let mut original_hand = current_hand.clone();
+            original_hand.extend(
+                observation
+                    .play_history
+                    .iter()
+                    .filter(|record| record.position == position)
+                    .flat_map(|record| record.cards.iter().copied()),
+            );
+            if observation.landlord_position == Some(position) {
+                for bottom in &observation.hidden_cards {
+                    if let Some(index) = original_hand.iter().position(|card| card == bottom) {
+                        original_hand.remove(index);
+                    }
+                }
+            }
+            let desired = super::bidding::approximate_desired_bid(&original_hand, pressure);
+            let predicted = if desired > running_score { desired } else { 0 };
+            weight *= match predicted.abs_diff(actual) {
+                0 => 1.0,
+                1 => 0.58,
+                2 => 0.24,
+                _ => 0.10,
+            };
+        }
+        running_score = running_score.max(actual);
+    }
+    weight
+}
+
+fn play_choice_likelihood(
+    record: &crate::game_state::LandlordPlayRecord,
+    hand_at_action: &[i32],
+    combos: &[Combo],
+) -> f64 {
+    let benchmark = classify(&record.benchmark);
+    if record.cards.is_empty() {
+        return if benchmark.as_ref().is_some_and(|benchmark| {
+            combos
+                .iter()
+                .any(|candidate| can_beat(candidate, benchmark))
+        }) {
+            PASS_CAN_BEAT_LIKELIHOOD
+        } else {
+            1.0
+        };
+    }
+
+    let Some(played) = classify(&record.cards) else {
+        return 1.0;
+    };
+    let mut likelihood = 1.0;
+    let legal_responses = combos
+        .iter()
+        .filter(|candidate| {
+            benchmark
+                .as_ref()
+                .is_none_or(|benchmark| can_beat(candidate, benchmark))
+        })
+        .collect::<Vec<_>>();
+    let played_is_power = matches!(played.kind, ComboKind::Bomb | ComboKind::Rocket);
+    if played_is_power
+        && record.cards.len() < hand_at_action.len()
+        && legal_responses
+            .iter()
+            .any(|candidate| !matches!(candidate.kind, ComboKind::Bomb | ComboKind::Rocket))
+    {
+        likelihood *= UNNECESSARY_POWER_PLAY_LIKELIHOOD;
+    }
+    if let Some(minimum_rank) = legal_responses
+        .iter()
+        .filter(|candidate| {
+            candidate.kind == played.kind && candidate.sequence_len == played.sequence_len
+        })
+        .map(|candidate| candidate.main_rank)
+        .min()
+        && played.main_rank > minimum_rank
+    {
+        likelihood *=
+            NON_MINIMAL_RESPONSE_LIKELIHOOD.powi(i32::from(played.main_rank - minimum_rank).min(4));
+    }
+
+    if played.kind == ComboKind::TripleSingle {
+        let mut played_counts = [0_u8; 18];
+        for &card in &record.cards {
+            played_counts[card_rank(card) as usize] += 1;
+        }
+        let body_rank = played.main_rank;
+        let kicker_rank = (FIRST_RANK..=LAST_RANK).find(|rank| played_counts[*rank as usize] == 1);
+        let lowest_available = hand_at_action
+            .iter()
+            .map(|card| card_rank(*card))
+            .filter(|rank| *rank != body_rank)
+            .min();
+        if let (Some(kicker), Some(lowest)) = (kicker_rank, lowest_available)
+            && lowest < kicker
+        {
+            // 这是行为偏好，不是牌面事实；真人或更深搜索都可能有意保留小牌。
+            likelihood *= NON_MINIMAL_RESPONSE_LIKELIHOOD;
+        }
+    }
+    likelihood
 }
 
 fn rank_count_key(hand: &[i32]) -> u64 {
@@ -643,52 +835,6 @@ fn rank_count_key(hand: &[i32]) -> u64 {
     })
 }
 
-fn triple_single_minimum_rank_evidence(
-    observation: &AiObservation,
-    certain_cards: &HashMap<usize, Vec<i32>>,
-) -> HashMap<usize, u8> {
-    let mut evidence = HashMap::<usize, u8>::new();
-    for (record_index, record) in observation.play_history.iter().enumerate() {
-        if record.cards.is_empty() {
-            continue;
-        }
-        let Some(combo) = classify(&record.cards) else {
-            continue;
-        };
-        if combo.kind != ComboKind::TripleSingle {
-            continue;
-        }
-        let mut counts = HashMap::<u8, usize>::new();
-        for &card in &record.cards {
-            *counts.entry(card_rank(card)).or_default() += 1;
-        }
-        let Some(kicker_rank) = counts
-            .into_iter()
-            .find_map(|(rank, count)| (count == 1).then_some(rank))
-        else {
-            continue;
-        };
-        let later_lower_card_was_played = observation.play_history[record_index + 1..]
-            .iter()
-            .filter(|later| later.position == record.position)
-            .flat_map(|later| later.cards.iter())
-            .any(|card| card_rank(*card) < kicker_rank);
-        let certain_current_lower_card_exists = certain_cards
-            .get(&record.position)
-            .is_some_and(|cards| cards.iter().any(|card| card_rank(*card) < kicker_rank));
-        if later_lower_card_was_played || certain_current_lower_card_exists {
-            // 公开事实已经证明该玩家这一次没有遵守“最小牌作带牌”的策略，
-            // 不能让一条被反证的行为模型清空全部可能牌局。
-            continue;
-        }
-        evidence
-            .entry(record.position)
-            .and_modify(|minimum| *minimum = (*minimum).max(kicker_rank))
-            .or_insert(kicker_rank);
-    }
-    evidence
-}
-
 fn observation_seed(observation: &AiObservation) -> u64 {
     let mut seed = 0xD1B5_4A32_D192_ED03_u64;
     let mut mix = |value: u64| {
@@ -698,36 +844,44 @@ fn observation_seed(observation: &AiObservation) -> u64 {
             .wrapping_add(seed >> 2);
     };
     mix(observation.position as u64);
-    for &card in &observation.hand {
+    let mut original_hand = observation.hand.clone();
+    original_hand.extend(
+        observation
+            .play_history
+            .iter()
+            .filter(|record| record.position == observation.position)
+            .flat_map(|record| record.cards.iter().copied()),
+    );
+    original_hand.sort_unstable();
+    for card in original_hand {
         mix(card as u64);
     }
-    for (&position, &size) in &observation.hand_sizes {
-        mix(((position as u64) << 32) | size as u64);
+    for &position in &observation.positions {
+        let played = observation
+            .play_history
+            .iter()
+            .filter(|record| record.position == position)
+            .map(|record| record.cards.len())
+            .sum::<usize>();
+        let original_size = observation.hand_sizes.get(&position).copied().unwrap_or(0) + played;
+        mix(((position as u64) << 32) | original_size as u64);
     }
     for &card in &observation.hidden_cards {
         mix(card as u64);
     }
-    for record in observation
-        .play_history
-        .iter()
-        .filter(|record| !record.cards.is_empty())
-    {
-        mix(record.position as u64);
-        for &card in &record.cards {
-            mix(card as u64);
-        }
+    for &(position, score) in &observation.call_history {
+        mix(((position as u64) << 8) | u64::from(score));
     }
     seed
 }
 
-fn shuffle_cards(cards: &mut [i32], mut state: u64) {
-    for index in (1..cards.len()).rev() {
-        state = state
-            .wrapping_add(0x9E37_79B9_7F4A_7C15)
-            .wrapping_mul(0xBF58_476D_1CE4_E5B9);
-        let offset = (state ^ (state >> 30)) as usize % (index + 1);
-        cards.swap(index, offset);
-    }
+fn shuffle_cards(cards: &mut [i32], state: u64) {
+    cards.sort_unstable_by_key(|card| {
+        let mut value = state ^ (*card as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        value = (value ^ (value >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        value = (value ^ (value >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        (value ^ (value >> 31), *card)
+    });
 }
 
 fn full_rank_counts() -> [u8; 18] {
@@ -891,28 +1045,57 @@ mod tests {
     }
 
     #[test]
-    fn triple_single_kicker_is_a_hard_floor_for_remaining_cards() {
-        let mut state = state_with_hands(&[
-            (0, vec![10, 23, 36]),
-            (1, vec![11, 24, 37]),
-            (2, vec![12, 25, 38]),
-        ]);
-        state.phase = LandlordPhase::Play;
-        state.landlord_position = Some(0);
-        state.play_history.push(LandlordPlayRecord {
+    fn triple_single_kicker_is_soft_behavior_evidence_not_a_hard_fact() {
+        let record = LandlordPlayRecord {
             position: 1,
             cards: vec![1, 14, 27, 6], // 333 带 8
             benchmark: Vec::new(),
-        });
-        let observation = AiObservation::from_state(&state, 0).expect("observation");
-        let belief = CardBelief::from_observation(&observation);
+        };
+        let with_lower = vec![1, 14, 27, 6, 2];
+        let without_lower = vec![1, 14, 27, 6, 9];
+        let with_lower_combos = all_candidates(&with_lower)
+            .into_iter()
+            .map(|candidate| candidate.combo)
+            .collect::<Vec<_>>();
+        let without_lower_combos = all_candidates(&without_lower)
+            .into_iter()
+            .map(|candidate| candidate.combo)
+            .collect::<Vec<_>>();
 
-        assert!(!belief.worlds.is_empty());
+        let lower_likelihood = play_choice_likelihood(&record, &with_lower, &with_lower_combos);
+        let clean_likelihood =
+            play_choice_likelihood(&record, &without_lower, &without_lower_combos);
+        assert!(lower_likelihood > 0.0);
+        assert!(lower_likelihood < clean_likelihood);
+    }
+
+    #[test]
+    fn a_three_point_bid_weights_strong_hidden_hands_more_highly() {
+        let mut state = state_with_hands(&[
+            (0, vec![1]),
+            (1, vec![2]),
+            (
+                2,
+                vec![3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 20, 21, 22, 23, 24, 25, 26],
+            ),
+        ]);
+        state.phase = LandlordPhase::Play;
+        state.landlord_position = Some(0);
+        state.call_history = vec![(0, 3), (1, 0), (2, 0)];
+        let observation = AiObservation::from_state(&state, 2).expect("observation");
+        let strong = vec![
+            53, 54, 13, 26, 39, 52, 1, 14, 27, 40, 2, 15, 3, 16, 4, 17, 5,
+        ];
+        let weak = vec![1, 2, 3, 4, 5, 6, 14, 16, 18, 20, 28, 30, 32, 34, 42, 44, 46];
+        let filler = vec![
+            7, 8, 9, 10, 11, 12, 19, 21, 22, 23, 24, 25, 29, 31, 33, 35, 37,
+        ];
+
+        let strong_world = BTreeMap::from([(0, strong), (1, filler.clone())]);
+        let weak_world = BTreeMap::from([(0, weak), (1, filler)]);
         assert!(
-            belief
-                .worlds
-                .iter()
-                .all(|world| { world.hands[&1].iter().all(|card| card_rank(*card) >= 8) })
+            bidding_likelihood(&observation, &strong_world)
+                > bidding_likelihood(&observation, &weak_world)
         );
     }
 
@@ -957,5 +1140,24 @@ mod tests {
         let observation = AiObservation::from_state(&ally_runs, 1).expect("observation");
         let belief = CardBelief::from_observation(&observation);
         assert_eq!(belief.farmer_runner_position(&observation), Some(2));
+    }
+
+    #[test]
+    fn landlord_also_identifies_the_more_urgent_farmer_runner() {
+        let mut state = state_with_hands(&[
+            (0, vec![1, 2, 3, 4, 5, 6]),
+            (1, vec![53]),
+            (2, vec![7, 8, 9, 10, 11, 12, 13, 14]),
+        ]);
+        state.phase = LandlordPhase::Play;
+        state.landlord_position = Some(0);
+        let observation = AiObservation::from_state(&state, 0).expect("observation");
+        let runner = CardBelief::from_observation(&observation)
+            .farmer_runner(&observation)
+            .expect("runner estimate");
+
+        assert_eq!(runner.position, 1);
+        assert!(runner.confidence > 0.9);
+        assert!((runner.expected_turns - 1.0).abs() < 1e-9);
     }
 }

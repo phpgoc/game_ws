@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 
 use share_type_public::LandlordPhase;
 
-pub use belief::{CardBelief, OpponentEstimate};
+pub use belief::{CardBelief, FarmerRunnerEstimate, OpponentEstimate};
 
 use crate::game_state::{LandlordLoopState, LandlordPlayRecord};
 

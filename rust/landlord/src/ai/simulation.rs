@@ -6,7 +6,7 @@ use ws_common::CommonGameState;
 use crate::{
     ai::{
         AiObservation, CardBelief, Relationship, candidates::all_candidates, choose_bid,
-        choose_play,
+        choose_play, playing::choose_heuristic_play,
     },
     core::play::{ComboKind, can_beat, classify},
     game_state::{LandlordLoopState, LandlordPlayRecord},
@@ -72,6 +72,30 @@ fn evolved_ai_beats_a_fixed_greedy_baseline_with_rotated_roles() {
     assert!(
         evolved_wins * 4 >= matches * 3,
         "evolved AI won only {evolved_wins}/{matches} fixed matches against the greedy baseline"
+    );
+}
+
+#[test]
+fn search_ai_beats_the_same_team_heuristic_without_search() {
+    let mut search_wins = 0;
+    let mut matches = 0;
+    for seed in 101..=112 {
+        let landlord = (seed as usize - 1) % POSITIONS.len();
+
+        let mut search_landlord = prepared_play_state(seed, landlord);
+        let winner = play_policy_match(&mut search_landlord, landlord, true, seed);
+        search_wins += usize::from(winner == landlord);
+        matches += 1;
+
+        let mut search_farmers = prepared_play_state(seed, landlord);
+        let winner = play_policy_match(&mut search_farmers, landlord, false, seed);
+        search_wins += usize::from(winner != landlord);
+        matches += 1;
+    }
+
+    assert!(
+        search_wins * 2 > matches,
+        "belief search won only {search_wins}/{matches} matches against its strong heuristic ablation"
     );
 }
 
@@ -250,6 +274,71 @@ fn play_mixed_match(
         }
     }
     panic!("mixed-policy round {seed} did not finish within the action limit");
+}
+
+fn play_policy_match(
+    state: &mut LandlordLoopState,
+    landlord: usize,
+    search_controls_landlord: bool,
+    seed: u64,
+) -> usize {
+    for action in 1..=180 {
+        let position = state.current_position;
+        let uses_search = (position == landlord) == search_controls_landlord;
+        let cards = if uses_search {
+            choose_play(state, position)
+        } else {
+            let observation = AiObservation::from_state(state, position).expect("observation");
+            choose_heuristic_play(&observation)
+        };
+        assert!(
+            validate_play_request(state, position, &cards),
+            "illegal policy-ablation play in round {seed}, action {action}, position {position}: {cards:?}"
+        );
+        apply_simulated_play(state, position, cards);
+        if state.hands[&position].is_empty() {
+            return position;
+        }
+        advance_simulated_turn(state, position);
+    }
+    panic!("policy-ablation round {seed} did not finish within the action limit");
+}
+
+fn apply_simulated_play(state: &mut LandlordLoopState, position: usize, cards: Vec<i32>) {
+    let benchmark = if state.last_play.is_empty() || state.last_play_position == position {
+        Vec::new()
+    } else {
+        state.last_play.clone()
+    };
+    state.play_history.push(LandlordPlayRecord {
+        position,
+        cards: cards.clone(),
+        benchmark,
+    });
+    if cards.is_empty() {
+        return;
+    }
+    state.last_play_position = position;
+    state.last_play = cards.clone();
+    let hand = state.hands.get_mut(&position).expect("current hand");
+    for card in cards {
+        let index = hand
+            .iter()
+            .position(|candidate| *candidate == card)
+            .expect("policy only plays held cards");
+        hand.remove(index);
+    }
+}
+
+fn advance_simulated_turn(state: &mut LandlordLoopState, position: usize) {
+    let index = POSITIONS
+        .iter()
+        .position(|candidate| *candidate == position)
+        .expect("current position");
+    state.current_position = POSITIONS[(index + 1) % POSITIONS.len()];
+    if state.last_play_position == state.current_position {
+        state.last_play.clear();
+    }
 }
 
 fn greedy_baseline_play(state: &LandlordLoopState, position: usize) -> Vec<i32> {

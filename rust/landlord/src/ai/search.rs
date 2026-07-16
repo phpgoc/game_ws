@@ -145,14 +145,108 @@ fn distinct_search_worlds(observation: &AiObservation, belief: &CardBelief) -> V
             });
         }
     }
-    worlds.sort_by(|left, right| {
+    if worlds.len() <= SEARCH_WORLD_LIMIT {
+        return worlds;
+    }
+
+    // 直接取概率最高的前几个样本，在开局近似均匀时会退化成“按牌编码取前几个”，
+    // 对高低牌分布产生系统偏差。用加权最远点选代表牌局，再把所有样本概率聚合
+    // 到最近代表，能同时保留常见牌局和少数但战术差异很大的炸弹/控制牌牌局。
+    let total_weight = worlds.iter().map(|world| world.weight).sum::<f64>();
+    let first = worlds
+        .iter()
+        .enumerate()
+        .max_by(|(left_index, left), (right_index, right)| {
+            left.weight
+                .total_cmp(&right.weight)
+                .then_with(|| right_index.cmp(left_index))
+        })
+        .map(|(index, _)| index)
+        .unwrap_or(0);
+    let mut selected = vec![first];
+    while selected.len() < SEARCH_WORLD_LIMIT {
+        let Some(next) = worlds
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| !selected.contains(index))
+            .max_by(|(left_index, left), (right_index, right)| {
+                representative_score(left, &worlds, &selected, total_weight)
+                    .total_cmp(&representative_score(
+                        right,
+                        &worlds,
+                        &selected,
+                        total_weight,
+                    ))
+                    .then_with(|| right_index.cmp(left_index))
+            })
+            .map(|(index, _)| index)
+        else {
+            break;
+        };
+        selected.push(next);
+    }
+
+    let mut representatives = selected
+        .iter()
+        .map(|index| {
+            let mut representative = worlds[*index].clone();
+            representative.weight = 0.0;
+            representative
+        })
+        .collect::<Vec<_>>();
+    for world in worlds {
+        let nearest = representatives
+            .iter()
+            .enumerate()
+            .min_by_key(|(_, representative)| world_distance(&world, representative))
+            .map(|(index, _)| index)
+            .unwrap_or(0);
+        representatives[nearest].weight += world.weight;
+    }
+    representatives.sort_by(|left, right| {
         right
             .weight
             .total_cmp(&left.weight)
             .then(left.signature.cmp(&right.signature))
     });
-    worlds.truncate(SEARCH_WORLD_LIMIT);
-    worlds
+    representatives
+}
+
+fn representative_score(
+    candidate: &SearchWorld,
+    worlds: &[SearchWorld],
+    selected: &[usize],
+    total_weight: f64,
+) -> f64 {
+    let minimum_distance = selected
+        .iter()
+        .map(|index| world_distance(candidate, &worlds[*index]))
+        .min()
+        .unwrap_or(0) as f64;
+    let relative_weight = if total_weight > 0.0 {
+        candidate.weight / total_weight
+    } else {
+        0.0
+    };
+    minimum_distance * (0.25 + relative_weight)
+}
+
+fn world_distance(left: &SearchWorld, right: &SearchWorld) -> usize {
+    left.signature
+        .iter()
+        .zip(&right.signature)
+        .map(|(&left_hand, &right_hand)| encoded_hand_distance(left_hand, right_hand))
+        .sum()
+}
+
+fn encoded_hand_distance(mut left: u64, mut right: u64) -> usize {
+    let mut distance = 0;
+    for _ in 3..=17 {
+        distance += (left % 5).abs_diff(right % 5) as usize;
+        left /= 5;
+        right /= 5;
+    }
+    distance
 }
 
 #[derive(Clone)]
