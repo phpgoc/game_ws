@@ -79,6 +79,7 @@ pub struct RuntimeConfig {
 pub struct RuntimeStats {
     room_service: Arc<Mutex<RoomService>>,
     senders: SessionSenders,
+    listen_addr: SocketAddr,
 }
 
 pub struct RuntimeStopHandle {
@@ -307,13 +308,17 @@ where
     let listener = TcpListener::bind(&config.listen_addr)
         .await
         .with_context(|| format!("bind {} failed", config.listen_addr))?;
-    info!(service = config.service_name, listen = %format!(" ws://{}", config.listen_addr), "ws server started");
+    let listen_addr = listener
+        .local_addr()
+        .context("read websocket listen address")?;
+    info!(service = config.service_name, listen = %format!(" ws://{listen_addr}"), "ws server started");
 
     let senders: SessionSenders = Arc::new(Mutex::new(HashMap::new()));
     let room_service = Arc::new(Mutex::new(RoomService::default()));
     let stats = RuntimeStats {
         room_service: Arc::clone(&room_service),
         senders: Arc::clone(&senders),
+        listen_addr,
     };
     let game_handler = Arc::new(Mutex::new(handler));
 
@@ -374,6 +379,10 @@ pub fn runtime_stop_channel() -> (RuntimeStopHandle, StopSignal) {
 }
 
 impl RuntimeStats {
+    pub fn listen_addr(&self) -> SocketAddr {
+        self.listen_addr
+    }
+
     pub async fn client_count(&self) -> usize {
         self.senders.lock().await.len()
     }

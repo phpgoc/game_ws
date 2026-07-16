@@ -103,6 +103,48 @@ impl P2pServiceConfig {
         )?;
         Ok(Self { ice, turn })
     }
+
+    pub fn for_lan_embedded(turn_port: u16, turn_secret: String) -> anyhow::Result<Self> {
+        let public_ip = detect_local_ip().unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
+        let bind_ip = if public_ip.is_ipv4() {
+            IpAddr::V4(Ipv4Addr::UNSPECIFIED)
+        } else {
+            IpAddr::V6(Ipv6Addr::UNSPECIFIED)
+        };
+        let turn = EmbeddedTurnConfig::new(
+            SocketAddr::new(bind_ip, turn_port),
+            public_ip,
+            bind_ip,
+            DEFAULT_RELAY_MIN_PORT,
+            DEFAULT_RELAY_MAX_PORT,
+            DEFAULT_REALM.to_owned(),
+            turn_secret.clone(),
+            DEFAULT_TTL_SECONDS,
+        )?;
+        let ice = embedded_ice_config(&turn, turn_port)?;
+        Ok(Self { ice, turn })
+    }
+
+    pub fn ice_for_bound_turn(&self, listen_addr: SocketAddr) -> anyhow::Result<IceServiceConfig> {
+        if self.turn.listen_addr.port() == 0 {
+            embedded_ice_config(&self.turn, listen_addr.port())
+        } else {
+            Ok(self.ice.clone())
+        }
+    }
+}
+
+fn embedded_ice_config(
+    turn: &EmbeddedTurnConfig,
+    turn_port: u16,
+) -> anyhow::Result<IceServiceConfig> {
+    let host = ice_host(turn.public_ip);
+    IceServiceConfig::new(
+        vec![format!("stun:{host}:{turn_port}")],
+        vec![format!("turn:{host}:{turn_port}?transport=udp")],
+        turn.turn_secret.clone(),
+        turn.credential_ttl_seconds,
+    )
 }
 
 impl EmbeddedTurnConfig {
@@ -304,6 +346,29 @@ mod tests {
                 600,
             )
             .is_err()
+        );
+    }
+
+    #[test]
+    fn lan_embedded_config_replaces_auto_port_in_ice_urls() {
+        let config = P2pServiceConfig::for_lan_embedded(0, "embedded-lan-turn-secret".to_owned())
+            .expect("LAN embedded config");
+        let ice = config
+            .ice_for_bound_turn("0.0.0.0:45678".parse().expect("listen address"))
+            .expect("ICE config with bound port");
+        let event = ice.issue_event_at(7, 0, 1_000).expect("ICE event");
+
+        assert!(
+            event.ice_servers[0]
+                .urls
+                .iter()
+                .all(|url| url.ends_with(":45678"))
+        );
+        assert!(
+            event.ice_servers[1]
+                .urls
+                .iter()
+                .all(|url| url.ends_with(":45678?transport=udp"))
         );
     }
 }

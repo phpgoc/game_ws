@@ -1,6 +1,9 @@
 use std::time::Duration;
 
-use ws_common::{RuntimeConfig, run_game_server_with_cli};
+use ws_common::{
+    RuntimeConfig, RuntimeStats, StopSignal, run_game_server_with_cli,
+    run_room_runtime_until_stopped_with_ready,
+};
 
 use crate::game::TractorGameHandler;
 
@@ -24,4 +27,18 @@ pub fn tractor_runtime_config(service_name: &'static str, listen_addr: String) -
         idle_timeout: TRACTOR_IDLE_TIMEOUT,
         heartbeat_interval: TRACTOR_HEARTBEAT_INTERVAL,
     }
+}
+
+pub async fn run_tractor_runtime_until_stopped_with_ready(
+    listen_addr: String,
+    stop_signal: StopSignal,
+    ready: std::sync::mpsc::SyncSender<RuntimeStats>,
+) -> anyhow::Result<RuntimeStats> {
+    run_room_runtime_until_stopped_with_ready(
+        tractor_runtime_config(TRACTOR_SERVICE_NAME, listen_addr),
+        TractorGameHandler::default(),
+        stop_signal,
+        ready,
+    )
+    .await
 }

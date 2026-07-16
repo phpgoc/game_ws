@@ -1,7 +1,6 @@
-use std::{process, time::Duration};
+use std::process;
 
-use shenyang_mahjong::game::ShenyangMahjongGameHandler;
-use ws_common::run_game_server_with_cli;
+use shenyang_mahjong::server::run_shenyang_mahjong_server_with_cli;
 
 #[tokio::main]
 async fn main() {
@@ -15,10 +14,5 @@ async fn run() -> anyhow::Result<()> {
     #[cfg(feature = "official")]
     data::init().await?;
 
-    run_game_server_with_cli(
-        "shenyang_mahjong",
-        Duration::from_secs(120),
-        ShenyangMahjongGameHandler::default(),
-    )
-    .await
+    run_shenyang_mahjong_server_with_cli().await
 }

@@ -1,9 +1,12 @@
-use std::{env, time::Duration};
+use std::{env, sync::mpsc::SyncSender, time::Duration};
 
 use tokio::net::TcpListener;
+use tokio::sync::watch;
 
 use crate::{
-    config::P2pServiceConfig, runtime::run_p2p_listener, turn_server::start_embedded_turn,
+    config::P2pServiceConfig,
+    runtime::{P2pRuntimeStats, run_p2p_listener, run_p2p_listener_until_stopped},
+    turn_server::start_embedded_turn,
 };
 
 pub const P2P_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(20);
@@ -24,21 +27,57 @@ pub async fn run_p2p_server_with_cli() -> anyhow::Result<()> {
 pub async fn run_p2p_server(listen_addr: &str, config: P2pServiceConfig) -> anyhow::Result<()> {
     let listener = TcpListener::bind(&listen_addr).await?;
     let turn_server = start_embedded_turn(&config.turn).await?;
-    println!("{P2P_SERVICE_NAME} signaling server listening on ws://{listen_addr}");
+    let ice = config.ice_for_bound_turn(turn_server.listen_addr())?;
+    println!(
+        "{P2P_SERVICE_NAME} signaling server listening on ws://{}",
+        listener.local_addr()?
+    );
     println!(
         "{P2P_SERVICE_NAME} embedded STUN/TURN listening on udp://{} (advertised IP {})",
         turn_server.listen_addr(),
         config.turn.public_ip
     );
-    let result = run_p2p_listener(
-        listener,
-        config.ice,
-        P2P_IDLE_TIMEOUT,
-        P2P_HEARTBEAT_INTERVAL,
-    )
-    .await;
+    let result = run_p2p_listener(listener, ice, P2P_IDLE_TIMEOUT, P2P_HEARTBEAT_INTERVAL).await;
     turn_server.close().await?;
     result
+}
+
+pub async fn run_p2p_server_on_listener_until_stopped(
+    listener: TcpListener,
+    config: P2pServiceConfig,
+    stop_signal: watch::Receiver<bool>,
+    ready: SyncSender<P2pRuntimeStats>,
+) -> anyhow::Result<P2pRuntimeStats> {
+    let listen_addr = listener.local_addr()?;
+    let turn_server = start_embedded_turn(&config.turn).await?;
+    let turn_addr = turn_server.listen_addr();
+    let ice = config.ice_for_bound_turn(turn_addr)?;
+    println!("{P2P_SERVICE_NAME} signaling server listening on ws://{listen_addr}");
+    println!(
+        "{P2P_SERVICE_NAME} embedded STUN/TURN listening on udp://{turn_addr} (advertised IP {})",
+        config.turn.public_ip
+    );
+
+    let result = run_p2p_listener_until_stopped(
+        listener,
+        ice,
+        P2P_IDLE_TIMEOUT,
+        P2P_HEARTBEAT_INTERVAL,
+        stop_signal,
+        Some(ready),
+    )
+    .await;
+    let close_result = turn_server.close().await;
+    match result {
+        Ok(stats) => {
+            close_result?;
+            Ok(stats)
+        }
+        Err(error) => {
+            let _ = close_result;
+            Err(error)
+        }
+    }
 }
 
 fn parse_listen_addr() -> anyhow::Result<String> {

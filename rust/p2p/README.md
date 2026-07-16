@@ -53,3 +53,13 @@ Wi-Fi lock/唤醒锁。蜂窝网络常有 CGNAT，因此“监听成功”不表
 
 TURN 不能匿名开放。服务默认只接受信令服务签发的短期凭证，并限制 relay 端口范围；
 部署者仍应在系统防火墙中只开放信令、3478 和指定 relay 范围。
+
+## Tauri 内置模式
+
+`web` 的 `embedded-p2p-server` feature 会复用本 crate，但不使用上述固定控制端口：
+
+- TCP WebSocket 信令监听 `0.0.0.0:0`，由系统原子选择端口；
+- UDP STUN/TURN 控制监听 `0.0.0.0:0`，绑定成功后再生成包含实际端口的 ICE 配置；
+- relay allocation 仍从 `49160-49200` 中动态选择尚未占用的 UDP 端口。
+
+控制端口可以完全无竞态地自动选择；relay 端口必须在建立 TURN allocation 时才按需绑定，因此它的约束是可用范围容量与防火墙/NAT，而不是启动阶段寻找单个空闲端口。内置模式会为每次进程启动生成随机 TURN 密钥，并在停止 P2P Server 时一并关闭 signaling 连接与 TURN 服务。

@@ -3,7 +3,8 @@ use std::{
     net::SocketAddr,
     sync::{
         Arc,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicU64, AtomicUsize, Ordering},
+        mpsc::SyncSender,
     },
     time::Duration,
 };
@@ -17,7 +18,8 @@ use share_type_public::{
 };
 use tokio::{
     net::{TcpListener, TcpStream},
-    sync::{Mutex, mpsc},
+    sync::{Mutex, mpsc, watch},
+    task::JoinSet,
 };
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 
@@ -61,6 +63,39 @@ struct SignalingState {
     memberships: HashMap<SessionId, Membership>,
 }
 
+#[derive(Clone)]
+pub struct P2pRuntimeStats {
+    state: Arc<Mutex<SignalingState>>,
+    client_count: Arc<AtomicUsize>,
+}
+
+impl P2pRuntimeStats {
+    pub fn client_count(&self) -> usize {
+        self.client_count.load(Ordering::Relaxed)
+    }
+
+    pub async fn room_count(&self) -> usize {
+        self.state.lock().await.rooms.len()
+    }
+}
+
+struct ClientCountGuard {
+    client_count: Arc<AtomicUsize>,
+}
+
+impl ClientCountGuard {
+    fn new(client_count: Arc<AtomicUsize>) -> Self {
+        client_count.fetch_add(1, Ordering::Relaxed);
+        Self { client_count }
+    }
+}
+
+impl Drop for ClientCountGuard {
+    fn drop(&mut self) {
+        self.client_count.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
 struct Delivery {
     sender: Sender,
     message: Message,
@@ -80,30 +115,84 @@ pub async fn run_p2p_listener(
     idle_timeout: Duration,
     heartbeat_interval: Duration,
 ) -> anyhow::Result<()> {
+    let (_stop_tx, stop_rx) = watch::channel(false);
+    run_p2p_listener_until_stopped(
+        listener,
+        ice_config,
+        idle_timeout,
+        heartbeat_interval,
+        stop_rx,
+        None,
+    )
+    .await
+    .map(|_| ())
+}
+
+pub async fn run_p2p_listener_until_stopped(
+    listener: TcpListener,
+    ice_config: IceServiceConfig,
+    idle_timeout: Duration,
+    heartbeat_interval: Duration,
+    mut stop_signal: watch::Receiver<bool>,
+    ready: Option<SyncSender<P2pRuntimeStats>>,
+) -> anyhow::Result<P2pRuntimeStats> {
     let state = Arc::new(Mutex::new(SignalingState::default()));
+    let client_count = Arc::new(AtomicUsize::new(0));
+    let stats = P2pRuntimeStats {
+        state: Arc::clone(&state),
+        client_count: Arc::clone(&client_count),
+    };
     let ice_config = Arc::new(ice_config);
     let session_sequence = Arc::new(AtomicU64::new(1));
-    loop {
-        let (stream, peer) = listener.accept().await?;
-        let session_id = session_sequence.fetch_add(1, Ordering::Relaxed);
-        let state = Arc::clone(&state);
-        let ice_config = Arc::clone(&ice_config);
-        tokio::spawn(async move {
-            if let Err(error) = handle_connection(
-                stream,
-                peer,
-                session_id,
-                state,
-                ice_config,
-                idle_timeout,
-                heartbeat_interval,
-            )
-            .await
-            {
-                eprintln!("p2p connection {session_id} ({peer}) failed: {error:#}");
-            }
-        });
+    let mut connections = JoinSet::new();
+    if let Some(ready) = ready {
+        let _ = ready.send(stats.clone());
     }
+
+    loop {
+        tokio::select! {
+            _ = wait_for_stop(&mut stop_signal) => break,
+            accepted = listener.accept() => {
+                let (stream, peer) = accepted?;
+                let session_id = session_sequence.fetch_add(1, Ordering::Relaxed);
+                let state = Arc::clone(&state);
+                let ice_config = Arc::clone(&ice_config);
+                let count_guard = ClientCountGuard::new(Arc::clone(&client_count));
+                connections.spawn(async move {
+                    let _count_guard = count_guard;
+                    if let Err(error) = handle_connection(
+                        stream,
+                        peer,
+                        session_id,
+                        state,
+                        ice_config,
+                        idle_timeout,
+                        heartbeat_interval,
+                    )
+                    .await
+                    {
+                        eprintln!("p2p connection {session_id} ({peer}) failed: {error:#}");
+                    }
+                });
+            }
+            Some(result) = connections.join_next(), if !connections.is_empty() => {
+                if let Err(error) = result {
+                    eprintln!("p2p connection task failed: {error}");
+                }
+            }
+        }
+    }
+
+    connections.abort_all();
+    while connections.join_next().await.is_some() {}
+    Ok(stats)
+}
+
+async fn wait_for_stop(stop_signal: &mut watch::Receiver<bool>) {
+    if *stop_signal.borrow() {
+        return;
+    }
+    let _ = stop_signal.changed().await;
 }
 
 #[allow(clippy::too_many_arguments)]
