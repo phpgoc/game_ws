@@ -17,8 +17,8 @@ fn capped_discard_clears_spare_single_dragon_when_basic_route_is_ready() {
         ready_tile_score(&after_middle, melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
     );
     assert!(
-        capped_spare_dragon_discard_bias(&hand, 35, melds, &table)
-            > capped_spare_dragon_discard_bias(&hand, 8, melds, &table)
+        capped_spare_dragon_discard_bias(&hand, 35, melds, &table, WIN_RULE_SHENYANG_BASIC)
+            > capped_spare_dragon_discard_bias(&hand, 8, melds, &table, WIN_RULE_SHENYANG_BASIC)
     );
     assert_eq!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
@@ -102,8 +102,8 @@ fn capped_open_basic_route_discards_redundant_single_dragon() {
         &table
     ));
     assert!(
-        capped_spare_dragon_discard_bias(&hand, 36, melds, &table)
-            > capped_spare_dragon_discard_bias(&hand, 5, melds, &table)
+        capped_spare_dragon_discard_bias(&hand, 36, melds, &table, WIN_RULE_SHENYANG_BASIC)
+            > capped_spare_dragon_discard_bias(&hand, 5, melds, &table, WIN_RULE_SHENYANG_BASIC)
     );
     assert_eq!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
@@ -372,6 +372,36 @@ fn discard_preserves_only_terminal_or_honor_for_basic_rule() {
     assert_ne!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(1)
+    );
+}
+
+#[test]
+fn relaxed_capped_route_discards_redundant_single_dragon() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.max_fan = Some(2);
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(35)];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 36];
+    let after_dragon = remove_n_tiles(&hand, 36, 1);
+
+    assert!(!capped_open_basic_route_visible_fan_reaches_cap(
+        &after_dragon,
+        melds,
+        &table
+    ));
+    assert!(capped_normal_route_visible_fan_reaches_cap(
+        &after_dragon,
+        melds,
+        &table,
+        WIN_RULE_RELAXED
+    ));
+    assert!(
+        capped_spare_dragon_discard_bias(&hand, 36, melds, &table, WIN_RULE_RELAXED)
+            > capped_spare_dragon_discard_bias(&hand, 11, melds, &table, WIN_RULE_RELAXED)
+    );
+    assert_eq!(
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        Some(36)
     );
 }
 
