@@ -1876,10 +1876,22 @@ mod tests {
     }
 
     #[test]
-    fn only_owner_can_remove_ai_and_only_before_start() {
+    fn only_owner_can_manage_ai_and_only_before_start() {
         let mut service = RoomService::default();
         let _ = join_room(&mut service, 1, "owner", "remove-room", GameId::LANDLORD);
         let _ = join_room(&mut service, 2, "member", "remove-room", GameId::LANDLORD);
+        let member_add = common_request(
+            &mut service,
+            2,
+            GameId::LANDLORD,
+            Routes::ADD_AI,
+            serde_json::json!({ "count": 1 }),
+        );
+        assert!(has_response(
+            &member_add,
+            Routes::ADD_AI,
+            WsResponseCode::NO_PERMISSION
+        ));
         let _ = common_request(
             &mut service,
             1,
@@ -1937,6 +1949,38 @@ mod tests {
             WsResponseCode::NO_PERMISSION
         ));
         assert!(common.lock().unwrap().is_ai_position(2));
+
+        let mut started_service = RoomService::default();
+        let _ = join_room(
+            &mut started_service,
+            10,
+            "owner",
+            "started-add-room",
+            GameId::LANDLORD,
+        );
+        let started_room_key = started_service.room_key_of(10).expect("room key");
+        let started_common = started_service
+            .room_common_state(&started_room_key)
+            .expect("common state");
+        started_service.set_room_game_state(
+            &started_room_key,
+            Box::new(NoAcceptState {
+                common: Arc::clone(&started_common),
+            }),
+        );
+        let started_add = common_request(
+            &mut started_service,
+            10,
+            GameId::LANDLORD,
+            Routes::ADD_AI,
+            serde_json::json!({ "count": 1 }),
+        );
+        assert!(has_response(
+            &started_add,
+            Routes::ADD_AI,
+            WsResponseCode::NO_PERMISSION
+        ));
+        assert_eq!(started_common.lock().unwrap().players.len(), 1);
     }
 
     #[test]
