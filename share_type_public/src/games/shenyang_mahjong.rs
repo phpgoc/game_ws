@@ -20,6 +20,7 @@ pub enum ShenyangMahjongAction {
     HU = 5,
     PASS = 6,
     GANG = 7,
+    XI_GANG = 8,
 }
 
 #[typeshare]
@@ -30,6 +31,7 @@ pub enum ShenyangMahjongMeldKind {
     CHI = 1,
     PENG = 2,
     GANG = 3,
+    XI_GANG = 4,
 }
 
 #[typeshare]
@@ -102,6 +104,8 @@ pub struct WsShenyangMahjongPlayEvent {
     pub target_tile: Option<i32>,
     pub from_position: Option<i32>,
     pub wall_count: i32,
+    #[serde(default)]
+    pub xi_gang_options: Vec<Vec<i32>>,
 }
 
 #[typeshare]
@@ -178,6 +182,8 @@ pub struct WsShenyangMahjongTableSnapshotEvent {
     #[serde(default)]
     pub settlement: Option<WsShenyangMahjongSettlementEvent>,
     pub claim_window: Option<WsShenyangMahjongClaimWindowEvent>,
+    #[serde(default)]
+    pub xi_gang_options: Vec<Vec<i32>>,
 }
 
 #[typeshare]

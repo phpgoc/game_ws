@@ -40,6 +40,43 @@ fn closed_opponent_threat_counts_chi_as_opening_meld() {
 }
 
 #[test]
+fn closed_opponent_threat_keeps_xi_gang_closed() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 16;
+    {
+        let seat = table.seats.get_mut(&1).unwrap();
+        seat.hand_count = 7;
+        seat.discards = vec![1, 2, 3, 11, 12, 13];
+        seat.melds = vec![
+            WsShenyangMahjongMeld {
+                kind: ShenyangMahjongMeldKind::XI_GANG,
+                tiles: vec![31, 32, 33, 34],
+                from_position: None,
+            },
+            WsShenyangMahjongMeld {
+                kind: ShenyangMahjongMeldKind::XI_GANG,
+                tiles: vec![35, 36, 37],
+                from_position: None,
+            },
+        ];
+    }
+
+    assert!(!has_door_opening_meld(
+        &table.seats.get(&1).unwrap().melds,
+        &table,
+    ));
+    assert!(is_closed_opponent_threat_candidate(
+        table.seats.get(&1).unwrap(),
+        &table,
+    ));
+    assert!(closed_opponent_has_major_threat(
+        table.seats.get(&1).unwrap(),
+        &table,
+    ));
+    assert!(closed_opponent_threat_discard_bias(&table, 0, 29, 1) < 0.0);
+}
+
+#[test]
 fn closed_opponent_threat_counts_short_hand_after_concealed_gang() {
     let mut short_closed = table_with_discards(1, Vec::new());
     short_closed.wall_count = 16;
@@ -74,9 +111,7 @@ fn closed_opponent_threat_ignores_malformed_concealed_gang_pressure() {
         from_position: None,
     }];
 
-    assert!(!has_concealed_gang_meld(
-        &malformed.seats.get(&1).unwrap().melds
-    ));
+    assert!(!is_closed_meld(&malformed.seats.get(&1).unwrap().melds[0]));
     assert_eq!(
         closed_hand_count_pressure_scale(malformed.seats.get(&1).unwrap()),
         closed_hand_count_pressure_scale(baseline.seats.get(&1).unwrap())

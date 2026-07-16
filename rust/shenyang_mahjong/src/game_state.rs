@@ -7,7 +7,7 @@ use share_type_public::games::shenyang_mahjong::{
 };
 use ws_common::{CommonGameState, GameState, SessionId};
 
-use crate::rules::{is_valid_meld, remove_tiles, sort_tiles};
+use crate::rules::{XI_GANG_WINDS, is_valid_meld, remove_tiles, sort_tiles, xi_gang_options};
 
 const WALL_SEED_ENV: &str = "SHENYANG_MAHJONG_WALL_SEED";
 
@@ -75,6 +75,8 @@ pub struct ShenyangMahjongLoopState {
     pub claim_window: Option<ClaimWindowState>,
     pub last_drawn_tile: Option<i32>,
     pub pending_gang_draw: bool,
+    pub first_normal_draw_positions: HashSet<usize>,
+    pub xi_gang_options: HashMap<usize, Vec<Vec<i32>>>,
     pub settlement: Option<SettlementState>,
     wall_seed_base: Option<u64>,
     wall_round_index: u64,
@@ -100,7 +102,7 @@ pub(crate) fn meld_source_is_valid_for_positions(
     player_positions: &HashSet<usize>,
 ) -> bool {
     match (meld.kind, meld.from_position) {
-        (ShenyangMahjongMeldKind::GANG, None) => true,
+        (ShenyangMahjongMeldKind::GANG | ShenyangMahjongMeldKind::XI_GANG, None) => true,
         (_, Some(source)) => usize::try_from(source).ok().is_some_and(|source| {
             source != position
                 && player_positions.contains(&source)
@@ -219,6 +221,8 @@ impl ShenyangMahjongLoopState {
         self.claim_window = None;
         self.last_drawn_tile = None;
         self.pending_gang_draw = false;
+        self.first_normal_draw_positions.clear();
+        self.xi_gang_options.clear();
         self.settlement = None;
         let seed = self.next_wall_seed();
         self.wall = Self::shuffle_wall_with_seed(seed);
@@ -277,6 +281,44 @@ impl ShenyangMahjongLoopState {
         Some(tile)
     }
 
+    pub fn draw_for_next_turn(&mut self, position: usize) -> Option<i32> {
+        let tile = self.draw_for_position(position)?;
+        if position != self.dealer_position && self.first_normal_draw_positions.insert(position) {
+            let can_draw_replacement = self.has_drawable_wall_tile();
+            let mut options = self
+                .hands
+                .get(&position)
+                .map(|hand| xi_gang_options(hand))
+                .unwrap_or_default();
+            options.retain(|option| option.as_slice() != XI_GANG_WINDS || can_draw_replacement);
+            if options.is_empty() {
+                self.xi_gang_options.remove(&position);
+            } else {
+                self.xi_gang_options.insert(position, options);
+            }
+        }
+        Some(tile)
+    }
+
+    pub fn xi_gang_options_for_position(&self, position: usize) -> Vec<Vec<i32>> {
+        self.xi_gang_options
+            .get(&position)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    pub fn clear_xi_gang_options(&mut self, position: usize) {
+        self.xi_gang_options.remove(&position);
+    }
+
+    pub fn has_drawable_wall_tile(&self) -> bool {
+        let counts = self.known_tile_counts();
+        self.wall
+            .iter()
+            .rev()
+            .any(|tile| SHENYANG_MAHJONG_TILE_KINDS.contains(tile) && counts[*tile as usize] < 4)
+    }
+
     pub fn enter_settlement(
         &mut self,
         winner_positions: Vec<usize>,
@@ -309,6 +351,7 @@ impl ShenyangMahjongLoopState {
         self.claim_window = None;
         self.last_drawn_tile = None;
         self.pending_gang_draw = false;
+        self.xi_gang_options.clear();
         self.settlement = Some(SettlementState {
             winner_positions,
             from_position,
@@ -359,6 +402,8 @@ impl ShenyangMahjongLoopState {
             claim_window: None,
             last_drawn_tile: None,
             pending_gang_draw: false,
+            first_normal_draw_positions: HashSet::new(),
+            xi_gang_options: HashMap::new(),
             settlement: None,
             wall_seed_base: wall_seed_base_from_env(),
             wall_round_index: 0,
@@ -418,6 +463,8 @@ impl ShenyangMahjongLoopState {
         self.claim_window = None;
         self.last_drawn_tile = None;
         self.pending_gang_draw = false;
+        self.first_normal_draw_positions.clear();
+        self.xi_gang_options.clear();
         self.settlement = None;
         self.set_action_received(false);
         self.set_turn_countdown(0);
@@ -641,6 +688,68 @@ mod tests {
         assert!(state.wall.is_empty());
         assert_eq!(state.wall_count(), 0);
         assert_eq!(state.last_drawn_tile, Some(35));
+    }
+
+    #[test]
+    fn first_non_dealer_normal_draw_freezes_xi_gang_options() {
+        let mut state = state_with_players();
+        state.dealer_position = 0;
+        state
+            .hands
+            .insert(1, vec![1, 2, 3, 4, 5, 6, 7, 31, 32, 33, 34, 35, 36]);
+        state.wall = vec![9, 37];
+
+        assert_eq!(state.draw_for_next_turn(1), Some(37));
+        assert_eq!(
+            state.xi_gang_options_for_position(1),
+            vec![vec![31, 32, 33, 34], vec![35, 36, 37]]
+        );
+        assert!(state.first_normal_draw_positions.contains(&1));
+    }
+
+    #[test]
+    fn replacement_draw_does_not_create_a_late_xi_gang_option() {
+        let mut state = state_with_players();
+        state.dealer_position = 0;
+        state
+            .hands
+            .insert(1, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 35, 36]);
+        state.wall = vec![37, 21];
+
+        assert_eq!(state.draw_for_next_turn(1), Some(21));
+        assert!(state.xi_gang_options_for_position(1).is_empty());
+        assert_eq!(state.draw_for_position(1), Some(37));
+        assert!(state.xi_gang_options_for_position(1).is_empty());
+    }
+
+    #[test]
+    fn last_wall_draw_filters_wind_xi_gang_that_cannot_replace() {
+        let mut state = state_with_players();
+        state.dealer_position = 0;
+        state
+            .hands
+            .insert(1, vec![1, 2, 3, 4, 5, 6, 7, 31, 32, 33, 34, 35, 36]);
+        state.wall = vec![37];
+
+        assert_eq!(state.draw_for_next_turn(1), Some(37));
+        assert_eq!(
+            state.xi_gang_options_for_position(1),
+            vec![vec![35, 36, 37]]
+        );
+    }
+
+    #[test]
+    fn dealer_never_receives_a_xi_gang_window() {
+        let mut state = state_with_players();
+        state.dealer_position = 0;
+        state
+            .hands
+            .insert(0, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 31, 32, 33]);
+        state.wall = vec![34];
+
+        assert_eq!(state.draw_for_next_turn(0), Some(34));
+        assert!(state.xi_gang_options_for_position(0).is_empty());
+        assert!(!state.first_normal_draw_positions.contains(&0));
     }
 
     fn state_with_players() -> ShenyangMahjongLoopState {

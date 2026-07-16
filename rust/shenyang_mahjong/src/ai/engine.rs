@@ -3,15 +3,16 @@ use std::collections::HashMap;
 use ws_common::{Dispatch, RoomService};
 
 use crate::game::{
-    can_self_draw_hu_with_configs, can_self_gang, claim_window_matches_source, perform_discard,
-    perform_self_draw_hu, perform_self_gang, resolve_claim_window,
+    can_declare_xi_gang, can_self_draw_hu_with_configs, can_self_gang, claim_window_matches_source,
+    perform_discard, perform_self_draw_hu, perform_self_gang, perform_xi_gang,
+    resolve_claim_window,
 };
 use crate::game_state::{ClaimResponse, ClaimWindowKind, ShenyangMahjongLoopState};
 use crate::rules::win_rule_from_configs;
 
 use super::decision::{
     AiClaimChoice, choose_claim_from_view, choose_discard_from_view,
-    choose_forced_discard_from_view, choose_self_gang_from_view,
+    choose_forced_discard_from_view, choose_self_gang_from_view, choose_xi_gang_from_view,
     claim_known_tile_counts_are_possible, is_complete_win_for_table,
     should_pass_self_draw_hu_from_view,
 };
@@ -64,6 +65,24 @@ pub fn maybe_play_ai_turn(
         return false;
     }
     let win_rule = win_rule_from_configs(configs);
+    let xi_gang_options = state.xi_gang_options_for_position(position);
+    if !xi_gang_options.is_empty() {
+        let table = build_public_table_with_configs(state, configs);
+        if let Some(tiles) =
+            choose_xi_gang_from_view(&hand, &xi_gang_options, &table, position, win_rule)
+            && can_declare_xi_gang(state, position, &tiles)
+        {
+            return perform_xi_gang(
+                room_service,
+                room_key,
+                state,
+                configs,
+                dispatch,
+                position,
+                &tiles,
+            );
+        }
+    }
     if can_self_draw_hu_with_configs(state, position, configs) {
         let table = build_public_table_with_configs(state, configs);
         if let Some(win_tile) = state.last_drawn_tile
@@ -1207,6 +1226,36 @@ mod tests {
         assert!(total_discards > 0);
         assert_seeded_settlement_winners_are_legal(&state, &HashMap::new(), 2026070402);
         assert_seeded_settlement_event_is_consistent(&state, &HashMap::new(), 2026070402);
+    }
+
+    #[test]
+    fn ai_turn_actively_declares_available_xi_gang() {
+        let mut state = playable_state();
+        state.current_position = 1;
+        state.base.lock().unwrap().mark_ai_position(1);
+        state
+            .hands
+            .insert(1, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 35, 36, 37]);
+        state.melds.insert(1, Vec::new());
+        state.discards.insert(1, Vec::new());
+        state.last_drawn_tile = Some(37);
+        state.xi_gang_options.insert(1, vec![vec![35, 36, 37]]);
+        let mut dispatch = Dispatch::default();
+
+        assert!(maybe_play_ai_turn(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::new(),
+            &mut dispatch,
+        ));
+
+        assert_eq!(state.melds.get(&1).unwrap().len(), 1);
+        assert_eq!(
+            state.melds.get(&1).unwrap()[0].kind,
+            ShenyangMahjongMeldKind::XI_GANG
+        );
+        assert!(state.discards.get(&1).unwrap().is_empty());
     }
 
     #[test]

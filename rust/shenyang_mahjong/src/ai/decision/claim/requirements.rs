@@ -46,7 +46,7 @@ pub(in crate::ai::decision) fn claim_leaves_unrecoverable_missing_suit(
     let (remove_count, claimed_meld) = match kind {
         ShenyangMahjongMeldKind::PENG => (2, claim_peng_meld(tile, from_position)),
         ShenyangMahjongMeldKind::GANG => (3, claim_gang_meld(tile, from_position)),
-        ShenyangMahjongMeldKind::CHI => return false,
+        ShenyangMahjongMeldKind::CHI | ShenyangMahjongMeldKind::XI_GANG => return false,
     };
     let mut next = remove_n_tiles(hand, tile, remove_count);
     if next.len() + remove_count != hand.len() || next.is_empty() {
@@ -83,7 +83,7 @@ pub(in crate::ai::decision) fn claim_leaves_unrecoverable_terminal_or_honor(
     let (remove_count, claimed_meld) = match kind {
         ShenyangMahjongMeldKind::PENG => (2, claim_peng_meld(tile, from_position)),
         ShenyangMahjongMeldKind::GANG => (3, claim_gang_meld(tile, from_position)),
-        ShenyangMahjongMeldKind::CHI => return false,
+        ShenyangMahjongMeldKind::CHI | ShenyangMahjongMeldKind::XI_GANG => return false,
     };
     let mut next = remove_n_tiles(hand, tile, remove_count);
     if next.len() + remove_count != hand.len() || next.is_empty() {

@@ -1,5 +1,7 @@
 use share_type_public::games::shenyang_mahjong::{ShenyangMahjongMeldKind, WsShenyangMahjongMeld};
 
+use crate::rules::is_xi_gang_tiles;
+
 use super::tile::{is_suited, is_valid_tile, tile_suit};
 
 pub(super) fn claim_gang_meld(tile: i32, from_position: usize) -> WsShenyangMahjongMeld {
@@ -18,11 +20,15 @@ pub(super) fn claim_peng_meld(tile: i32, from_position: usize) -> WsShenyangMahj
     }
 }
 
-pub(super) fn has_concealed_gang_meld(melds: &[WsShenyangMahjongMeld]) -> bool {
-    melds
-        .iter()
-        .filter(|meld| meld.kind == ShenyangMahjongMeldKind::GANG && meld.from_position.is_none())
-        .any(is_triplet_like_meld)
+pub(super) fn is_closed_meld(meld: &WsShenyangMahjongMeld) -> bool {
+    (meld.kind == ShenyangMahjongMeldKind::GANG
+        && meld.from_position.is_none()
+        && meld_primary_tile(meld).is_some())
+        || is_xi_gang_meld(meld)
+}
+
+pub(super) fn has_closed_meld(melds: &[WsShenyangMahjongMeld]) -> bool {
+    melds.iter().any(is_closed_meld)
 }
 
 pub(super) fn has_open_meld(melds: &[WsShenyangMahjongMeld]) -> bool {
@@ -40,7 +46,9 @@ pub(super) fn is_open_peng_meld(meld: &WsShenyangMahjongMeld, tile: i32) -> bool
 }
 
 pub(super) fn is_open_meld(meld: &WsShenyangMahjongMeld) -> bool {
-    meld.from_position.is_some() && is_valid_meld(meld)
+    meld.kind != ShenyangMahjongMeldKind::XI_GANG
+        && meld.from_position.is_some()
+        && is_valid_meld(meld)
 }
 
 pub(super) fn is_sequence_meld(meld: &WsShenyangMahjongMeld) -> bool {
@@ -58,7 +66,13 @@ pub(super) fn is_sequence_meld(meld: &WsShenyangMahjongMeld) -> bool {
 }
 
 pub(super) fn is_triplet_like_meld(meld: &WsShenyangMahjongMeld) -> bool {
-    meld_primary_tile(meld).is_some()
+    meld_primary_tile(meld).is_some() || is_xi_gang_meld(meld)
+}
+
+pub(super) fn is_xi_gang_meld(meld: &WsShenyangMahjongMeld) -> bool {
+    meld.kind == ShenyangMahjongMeldKind::XI_GANG
+        && meld.from_position.is_none()
+        && is_xi_gang_tiles(&meld.tiles)
 }
 
 pub(super) fn is_valid_meld(meld: &WsShenyangMahjongMeld) -> bool {
@@ -81,7 +95,7 @@ pub(super) fn meld_primary_tile(meld: &WsShenyangMahjongMeld) -> Option<i32> {
     let expected_len = match meld.kind {
         ShenyangMahjongMeldKind::PENG => 3,
         ShenyangMahjongMeldKind::GANG => 4,
-        ShenyangMahjongMeldKind::CHI => return None,
+        ShenyangMahjongMeldKind::CHI | ShenyangMahjongMeldKind::XI_GANG => return None,
     };
     if meld.tiles.len() != expected_len {
         return None;

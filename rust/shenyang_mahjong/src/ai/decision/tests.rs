@@ -8,6 +8,7 @@ mod score;
 mod self_gang;
 mod seven_pairs;
 mod shenyang_rule;
+mod xi_gang;
 
 use std::collections::HashMap;
 

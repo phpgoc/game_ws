@@ -16,6 +16,7 @@ mod table;
 mod tests;
 mod tile;
 mod types;
+mod xi_gang;
 
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -24,6 +25,7 @@ pub use claim::{choose_claim_from_view, should_pass_self_draw_hu_from_view};
 pub use discard::{choose_discard_from_view, choose_forced_discard_from_view};
 pub use self_gang::choose_self_gang_from_view;
 pub use types::AiClaimChoice;
+pub use xi_gang::choose_xi_gang_from_view;
 
 use share_type_public::games::shenyang_mahjong::{
     SHENYANG_MAHJONG_TILE_KINDS, ShenyangMahjongMeldKind, WsShenyangMahjongMeld,
@@ -57,8 +59,8 @@ use hand::{
     tile_is_middle_of_sequence, tile_is_part_of_complete_sequence, tile_is_weak_edge_wait_terminal,
 };
 use meld::{
-    claim_gang_meld, claim_peng_meld, has_concealed_gang_meld, has_open_meld, has_peng_meld,
-    has_virtual_tile_count, is_open_meld, is_open_peng_meld, is_sequence_meld,
+    claim_gang_meld, claim_peng_meld, has_closed_meld, has_open_meld, has_peng_meld,
+    has_virtual_tile_count, is_closed_meld, is_open_meld, is_open_peng_meld, is_sequence_meld,
     is_triplet_like_meld, is_valid_meld, meld_primary_tile, promoted_added_gang_melds,
     valid_meld_count, valid_meld_tiles,
 };

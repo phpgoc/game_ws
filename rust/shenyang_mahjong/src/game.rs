@@ -27,10 +27,10 @@ use crate::game_state::{
 #[cfg(test)]
 use crate::rules::is_single_wait_shape_with_rule;
 use crate::rules::{
-    ShenyangMahjongWinRules, WIN_RULE_SHENYANG_BASIC, can_chi, can_concealed_gang, can_gang,
-    can_peng, is_complete_win_with_melds, is_complete_win_with_melds_for_rules, is_piao_hu_win,
-    is_pure_one_suit_win, is_seven_pairs_win,
-    is_single_wait_shape_with_known_unavailable_tiles_for_rules, is_valid_meld,
+    ShenyangMahjongWinRules, WIN_RULE_SHENYANG_BASIC, XI_GANG_WINDS, can_chi, can_concealed_gang,
+    can_gang, can_peng, is_complete_win_with_melds, is_complete_win_with_melds_for_rules,
+    is_piao_hu_win, is_pure_one_suit_win, is_seven_pairs_win,
+    is_single_wait_shape_with_known_unavailable_tiles_for_rules, is_valid_meld, is_xi_gang_tiles,
     shenyang_score_concealed_dragon_triplet_fan, shenyang_score_four_gui_yi_fan,
     shenyang_score_meld_fan, tiles_in_hand, win_rule_from_configs,
 };
@@ -80,7 +80,7 @@ pub(crate) fn advance_to_next_turn(
     dispatch: &mut Dispatch,
 ) {
     let next_position = state.next_position(state.current_position);
-    if let Some(tile) = state.draw_for_position(next_position) {
+    if let Some(tile) = state.draw_for_next_turn(next_position) {
         state.set_turn_countdown(current_play_time(configs));
         push_draw_events(room_service, room_key, state, dispatch, next_position, tile);
         push_phase_change(
@@ -517,6 +517,14 @@ pub(crate) fn build_table_snapshot_event_with_configs(
                     && !window.responses.contains_key(&viewer_position);
                 claim_window_event_for_viewer(&event, viewer_position, can_respond)
             }),
+        xi_gang_options: if state.phase == ShenyangMahjongPhase::Play
+            && state.current_position == viewer_position
+            && state.claim_window.is_none()
+        {
+            state.xi_gang_options_for_position(viewer_position)
+        } else {
+            Vec::new()
+        },
     }
 }
 
@@ -742,10 +750,16 @@ pub(crate) fn can_self_draw_hu(state: &ShenyangMahjongLoopState, position: usize
 fn position_owns_last_drawn_tile(state: &ShenyangMahjongLoopState, position: usize) -> bool {
     state.last_drawn_tile.is_some_and(|last_drawn_tile| {
         is_valid_tile(last_drawn_tile)
-            && state
+            && (state
                 .hands
                 .get(&position)
                 .is_some_and(|hand| hand.contains(&last_drawn_tile))
+                || state.melds.get(&position).is_some_and(|melds| {
+                    melds.iter().any(|meld| {
+                        meld.kind == ShenyangMahjongMeldKind::XI_GANG
+                            && meld.tiles.contains(&last_drawn_tile)
+                    })
+                }))
     })
 }
 
@@ -904,6 +918,7 @@ fn finish_added_gang(
             target_tile: Some(target_tile),
             from_position,
             wall_count: state.wall_count() as i32,
+            xi_gang_options: Vec::new(),
         },
     );
     draw_after_gang_or_settle(room_service, room_key, state, configs, dispatch, position);
@@ -1051,7 +1066,7 @@ fn meld_primary_tile(meld: &WsShenyangMahjongMeld) -> Option<i32> {
     let expected_len = match meld.kind {
         ShenyangMahjongMeldKind::PENG => 3,
         ShenyangMahjongMeldKind::GANG => 4,
-        ShenyangMahjongMeldKind::CHI => return None,
+        ShenyangMahjongMeldKind::CHI | ShenyangMahjongMeldKind::XI_GANG => return None,
     };
     if meld.tiles.len() != expected_len {
         return None;
@@ -1164,6 +1179,7 @@ pub(crate) fn perform_discard(
     if !state.remove_tiles_from_hand(position, &[tile]) {
         return false;
     }
+    state.clear_xi_gang_options(position);
     state.discards.entry(position).or_default().push(tile);
     state.last_drawn_tile = None;
     state.pending_gang_draw = false;
@@ -1180,6 +1196,7 @@ pub(crate) fn perform_discard(
             target_tile: Some(tile),
             from_position: None,
             wall_count: state.wall_count() as i32,
+            xi_gang_options: Vec::new(),
         },
     );
 
@@ -1231,6 +1248,7 @@ pub(crate) fn perform_self_draw_hu(
             target_tile: state.last_drawn_tile,
             from_position: None,
             wall_count: state.wall_count() as i32,
+            xi_gang_options: Vec::new(),
         },
     );
     let win_tile = state.last_drawn_tile;
@@ -1343,9 +1361,83 @@ pub(crate) fn perform_self_gang(
             target_tile: Some(target_tile),
             from_position: None,
             wall_count: state.wall_count() as i32,
+            xi_gang_options: Vec::new(),
         },
     );
     draw_after_gang_or_settle(room_service, room_key, state, configs, dispatch, position);
+    true
+}
+
+pub(crate) fn can_declare_xi_gang(
+    state: &ShenyangMahjongLoopState,
+    position: usize,
+    tiles: &[i32],
+) -> bool {
+    let mut tiles = tiles.to_vec();
+    tiles.sort_unstable();
+    state.phase == ShenyangMahjongPhase::Play
+        && state.current_position == position
+        && position != state.dealer_position
+        && state.claim_window.is_none()
+        && position_has_discardable_tile_count(state, position)
+        && position_hand_tiles_are_valid(state, position)
+        && !position_has_impossible_known_tile_count(state, position)
+        && position_meld_shapes_are_valid(state, position)
+        && position_meld_sources_are_valid(state, position)
+        && is_xi_gang_tiles(&tiles)
+        && state
+            .xi_gang_options_for_position(position)
+            .contains(&tiles)
+        && state
+            .hands
+            .get(&position)
+            .is_some_and(|hand| tiles_in_hand(hand, &tiles))
+        && (tiles.as_slice() != XI_GANG_WINDS || state.has_drawable_wall_tile())
+}
+
+pub(crate) fn perform_xi_gang(
+    room_service: &RoomService,
+    room_key: &str,
+    state: &mut ShenyangMahjongLoopState,
+    configs: &HashMap<String, i32>,
+    dispatch: &mut Dispatch,
+    position: usize,
+    tiles: &[i32],
+) -> bool {
+    let mut tiles = tiles.to_vec();
+    tiles.sort_unstable();
+    if !can_declare_xi_gang(state, position, &tiles)
+        || !state.remove_tiles_from_hand(position, &tiles)
+    {
+        return false;
+    }
+
+    state.melds.entry(position).or_default().push(build_meld(
+        ShenyangMahjongMeldKind::XI_GANG,
+        tiles.clone(),
+        None,
+    ));
+    if let Some(options) = state.xi_gang_options.get_mut(&position) {
+        options.retain(|option| option != &tiles);
+        if options.is_empty() {
+            state.xi_gang_options.remove(&position);
+        }
+    }
+
+    let replacement_tile = if tiles.as_slice() == XI_GANG_WINDS {
+        let Some(tile) = state.draw_for_position(position) else {
+            return false;
+        };
+        Some(tile)
+    } else {
+        None
+    };
+    state.current_position = position;
+    state.set_turn_countdown(current_play_time(configs));
+    push_xi_gang_events(state, dispatch, position, &tiles);
+    if let Some(tile) = replacement_tile {
+        push_draw_events(room_service, room_key, state, dispatch, position, tile);
+    }
     true
 }
 
@@ -1355,6 +1447,36 @@ fn position_has_open_meld(state: &ShenyangMahjongLoopState, position: usize) -> 
             meld_source_is_valid_for_position(state, position, meld) && is_open_meld(meld)
         })
     })
+}
+
+fn push_xi_gang_events(
+    state: &ShenyangMahjongLoopState,
+    dispatch: &mut Dispatch,
+    position: usize,
+    tiles: &[i32],
+) {
+    let name = state.player_name(position);
+    for (member_position, (session_id, _)) in state.players_snapshot() {
+        push_direct_event(
+            dispatch,
+            session_id,
+            WsCode::PLAY as i32,
+            WsShenyangMahjongPlayEvent {
+                name: name.clone(),
+                position: position as i32,
+                action: ShenyangMahjongAction::XI_GANG,
+                tiles: tiles.to_vec(),
+                target_tile: None,
+                from_position: None,
+                wall_count: state.wall_count() as i32,
+                xi_gang_options: if member_position == position {
+                    state.xi_gang_options_for_position(position)
+                } else {
+                    Vec::new()
+                },
+            },
+        );
+    }
 }
 
 pub(crate) fn push_direct_event<T: serde::Serialize>(
@@ -1401,6 +1523,11 @@ pub(crate) fn push_draw_events(
                 target_tile: is_drawing_player.then_some(tile),
                 from_position: None,
                 wall_count: state.wall_count() as i32,
+                xi_gang_options: if is_drawing_player {
+                    state.xi_gang_options_for_position(position)
+                } else {
+                    Vec::new()
+                },
             },
         );
     }
@@ -1590,6 +1717,7 @@ pub(crate) fn resolve_claim_window(
                     target_tile: Some(claim_window.tile),
                     from_position: Some(claim_window.from_position as i32),
                     wall_count: state.wall_count() as i32,
+                    xi_gang_options: Vec::new(),
                 },
             );
         }
@@ -1682,6 +1810,7 @@ pub(crate) fn resolve_claim_window(
                             target_tile: Some(claim_window.tile),
                             from_position: Some(claim_window.from_position as i32),
                             wall_count: state.wall_count() as i32,
+                            xi_gang_options: Vec::new(),
                         },
                     );
                     push_phase_change(
@@ -1726,6 +1855,7 @@ pub(crate) fn resolve_claim_window(
                             target_tile: Some(claim_window.tile),
                             from_position: Some(claim_window.from_position as i32),
                             wall_count: state.wall_count() as i32,
+                            xi_gang_options: Vec::new(),
                         },
                     );
                     if let Some(tile) = state.draw_for_position(winner) {
@@ -1780,6 +1910,7 @@ pub(crate) fn resolve_claim_window(
                     target_tile: Some(claim_window.tile),
                     from_position: Some(claim_window.from_position as i32),
                     wall_count: state.wall_count() as i32,
+                    xi_gang_options: Vec::new(),
                 },
             );
             push_phase_change(
@@ -2013,10 +2144,18 @@ fn settlement_winner_has_valid_win_tile(
 ) -> bool {
     match settlement.win_tile {
         Some(win_tile) if !is_valid_tile(win_tile) => false,
-        Some(win_tile) if settlement.is_self_draw => state
-            .hands
-            .get(&winner)
-            .is_some_and(|hand| hand.contains(&win_tile)),
+        Some(win_tile) if settlement.is_self_draw => {
+            state
+                .hands
+                .get(&winner)
+                .is_some_and(|hand| hand.contains(&win_tile))
+                || state.melds.get(&winner).is_some_and(|melds| {
+                    melds.iter().any(|meld| {
+                        meld.kind == ShenyangMahjongMeldKind::XI_GANG
+                            && meld.tiles.contains(&win_tile)
+                    })
+                })
+        }
         Some(_) => true,
         None => settlement.is_self_draw,
     }
@@ -2424,6 +2563,23 @@ impl ShenyangMahjongGameHandler {
                             );
                         }
                     }
+                    ShenyangMahjongAction::XI_GANG => {
+                        if !perform_xi_gang(
+                            room_service,
+                            &room_key,
+                            &mut state,
+                            &configs,
+                            &mut dispatch,
+                            position,
+                            &payload.tiles,
+                        ) {
+                            return room_service.error_response(
+                                session_id,
+                                Routes::PLAY as i32,
+                                WsResponseCode::NO_PERMISSION,
+                            );
+                        }
+                    }
                     _ => {
                         return room_service.error_response(
                             session_id,
@@ -2691,7 +2847,8 @@ mod tests {
 
     #[test]
     fn draw_event_hides_tile_from_other_players() {
-        let state = playable_state();
+        let mut state = playable_state();
+        state.xi_gang_options.insert(1, vec![vec![35, 36, 37]]);
         let mut dispatch = Dispatch::default();
 
         push_draw_events(
@@ -2717,11 +2874,155 @@ mod tests {
             if message.recipient == 2 {
                 assert_eq!(event.tiles, vec![35]);
                 assert_eq!(event.target_tile, Some(35));
+                assert_eq!(event.xi_gang_options, vec![vec![35, 36, 37]]);
             } else {
                 assert!(event.tiles.is_empty());
                 assert_eq!(event.target_tile, None);
+                assert!(event.xi_gang_options.is_empty());
             }
         }
+    }
+
+    #[test]
+    fn table_snapshot_exposes_xi_gang_options_only_to_current_player() {
+        let mut state = playable_state();
+        state.current_position = 1;
+        state.xi_gang_options.insert(1, vec![vec![35, 36, 37]]);
+
+        let owner = build_table_snapshot_event_with_configs(&state, 1, &HashMap::new());
+        let opponent = build_table_snapshot_event_with_configs(&state, 0, &HashMap::new());
+
+        assert_eq!(owner.xi_gang_options, vec![vec![35, 36, 37]]);
+        assert!(opponent.xi_gang_options.is_empty());
+    }
+
+    #[test]
+    fn dragon_xi_gang_is_exposed_without_opening_or_replacement_draw() {
+        let mut state = playable_state();
+        state.current_position = 1;
+        state
+            .hands
+            .insert(1, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 35, 36, 37]);
+        state.melds.insert(1, Vec::new());
+        state.last_drawn_tile = Some(37);
+        state.wall = vec![34];
+        state.xi_gang_options.insert(1, vec![vec![35, 36, 37]]);
+        let mut dispatch = Dispatch::default();
+
+        assert!(perform_xi_gang(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+            1,
+            &[37, 35, 36],
+        ));
+
+        assert_eq!(state.wall, vec![34]);
+        assert_eq!(state.last_drawn_tile, Some(37));
+        assert_eq!(state.hands.get(&1).unwrap().len(), 11);
+        assert_eq!(state.melds.get(&1).unwrap().len(), 1);
+        assert_eq!(
+            state.melds.get(&1).unwrap()[0].kind,
+            ShenyangMahjongMeldKind::XI_GANG
+        );
+        assert!(!position_has_open_meld(&state, 1));
+        assert!(state.xi_gang_options_for_position(1).is_empty());
+        assert!(can_self_draw_hu_with_configs(&state, 1, &relaxed_configs()));
+
+        perform_self_draw_hu(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+            1,
+        );
+        let settlement = state.settlement.as_ref().expect("settlement");
+        assert!(!settlement.is_gang_draw);
+        assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
+    }
+
+    #[test]
+    fn wind_xi_gang_draws_replacement_without_creating_gang_draw() {
+        let mut state = playable_state();
+        state.current_position = 1;
+        state
+            .hands
+            .insert(1, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 35, 31, 32, 33, 34]);
+        state.melds.insert(1, Vec::new());
+        state.last_drawn_tile = Some(34);
+        state.pending_gang_draw = true;
+        state.wall = vec![36];
+        state.xi_gang_options.insert(1, vec![vec![31, 32, 33, 34]]);
+        let mut dispatch = Dispatch::default();
+
+        assert!(perform_xi_gang(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::new(),
+            &mut dispatch,
+            1,
+            &[31, 32, 33, 34],
+        ));
+
+        assert!(state.wall.is_empty());
+        assert_eq!(state.last_drawn_tile, Some(36));
+        assert!(!state.pending_gang_draw);
+        assert_eq!(state.hands.get(&1).unwrap().len(), 11);
+        assert!(state.hands.get(&1).unwrap().contains(&36));
+        assert!(!position_has_open_meld(&state, 1));
+        assert!(dispatch.messages.iter().any(|message| {
+            matches!(
+                &message.payload,
+                OutboundPayload::Event(event)
+                    if event.code == WsCode::PLAY as i32
+                        && event.data.get("action") == Some(&json!(ShenyangMahjongAction::XI_GANG as i32))
+            )
+        }));
+    }
+
+    #[test]
+    fn two_xi_gangs_stack_two_fan_and_keep_hand_closed() {
+        let mut state = playable_state();
+        state.current_position = 1;
+        state
+            .hands
+            .insert(1, vec![1, 2, 3, 11, 12, 13, 21, 31, 32, 33, 34, 35, 36, 37]);
+        state.melds.insert(1, Vec::new());
+        state.last_drawn_tile = Some(37);
+        state.wall = vec![22];
+        state
+            .xi_gang_options
+            .insert(1, vec![vec![31, 32, 33, 34], vec![35, 36, 37]]);
+        let mut dispatch = Dispatch::default();
+
+        assert!(perform_xi_gang(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::new(),
+            &mut dispatch,
+            1,
+            &[31, 32, 33, 34],
+        ));
+        assert!(perform_xi_gang(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::new(),
+            &mut dispatch,
+            1,
+            &[35, 36, 37],
+        ));
+
+        let melds = state.melds.get(&1).unwrap();
+        assert_eq!(melds.len(), 2);
+        assert_eq!(shenyang_score_meld_fan(melds), 2);
+        assert!(!position_has_open_meld(&state, 1));
+        assert_eq!(state.hands.get(&1).unwrap().len(), 8);
     }
 
     #[test]
@@ -4432,6 +4733,51 @@ mod tests {
         assert_eq!(meld.kind, ShenyangMahjongMeldKind::GANG);
         assert_eq!(meld.tiles, vec![3, 3, 3, 3]);
         assert_eq!(meld.from_position, Some(0));
+    }
+
+    #[test]
+    fn play_request_declares_only_frozen_first_draw_xi_gang_option() {
+        let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
+        {
+            let mut state = loop_state.lock().unwrap();
+            state.phase = ShenyangMahjongPhase::Play;
+            state.current_position = 1;
+            state
+                .hands
+                .insert(1, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 35, 36, 37]);
+            for position in 0..4 {
+                state.discards.insert(position, Vec::new());
+                state.melds.insert(position, Vec::new());
+            }
+            state.last_drawn_tile = Some(37);
+            state.wall = vec![34];
+            state.xi_gang_options.insert(1, vec![vec![35, 36, 37]]);
+        }
+
+        let response = handler.handle_game_request(
+            &mut room_service,
+            2,
+            play_request(ShenyangMahjongAction::XI_GANG, vec![37, 35, 36], None, None),
+        );
+        assert_eq!(
+            response_code(&response, 2, Routes::PLAY),
+            Some(WsResponseCode::OK as i32)
+        );
+        {
+            let state = loop_state.lock().unwrap();
+            assert_eq!(state.melds.get(&1).unwrap().len(), 1);
+            assert!(state.xi_gang_options_for_position(1).is_empty());
+        }
+
+        let duplicate = handler.handle_game_request(
+            &mut room_service,
+            2,
+            play_request(ShenyangMahjongAction::XI_GANG, vec![35, 36, 37], None, None),
+        );
+        assert_eq!(
+            response_code(&duplicate, 2, Routes::PLAY),
+            Some(WsResponseCode::NO_PERMISSION as i32)
+        );
     }
 
     #[test]

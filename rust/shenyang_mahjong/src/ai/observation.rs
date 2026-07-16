@@ -186,6 +186,7 @@ mod tests {
             ShenyangMahjongMeldKind::GANG => vec![tile; 4],
             ShenyangMahjongMeldKind::PENG => vec![tile; 3],
             ShenyangMahjongMeldKind::CHI => vec![tile, tile + 1, tile + 2],
+            ShenyangMahjongMeldKind::XI_GANG => vec![31, 32, 33, 34],
         };
         WsShenyangMahjongMeld {
             kind,
