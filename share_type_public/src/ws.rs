@@ -14,6 +14,12 @@ pub struct WsAddAiRequest {
     pub count: i32,
 }
 
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsRemoveAiRequest {
+    pub position: i32,
+}
+
 /// 首个 JOIN 建房后的房主参数响应，以及 SWAP 成房主时的响应。
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]

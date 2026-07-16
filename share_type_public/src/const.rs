@@ -59,6 +59,7 @@ pub enum Routes {
     SWAP = 14,
     ADD_AI = 15,
     AUTO_STRATEGY = 16,
+    REMOVE_AI = 17,
 
     DEAL = 20,
     PLAY = 21,

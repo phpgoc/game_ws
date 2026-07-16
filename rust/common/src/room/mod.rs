@@ -9,7 +9,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use share_type_public::{
     CommonEvent, GameId, GameParam, Routes, WsAddAiRequest, WsCode, WsJoinRequest,
-    WsMessageRequest, WsPositionEvent, WsResponseCode, WsSwapPositionPayload,
+    WsMessageRequest, WsPositionEvent, WsRemoveAiRequest, WsResponseCode, WsSwapPositionPayload,
     WsWithoutDataResponse,
     ws::WsResponse,
     ws::{WsMessageEvent, WsNameEvent},
@@ -437,6 +437,81 @@ impl RoomService {
         dispatch
     }
 
+    fn handle_remove_ai_request(&mut self, session_id: SessionId, data: Value) -> Dispatch {
+        let mut dispatch = Dispatch::default();
+        if !self.require_room_membership(session_id, Routes::REMOVE_AI as i32, &mut dispatch) {
+            return dispatch;
+        }
+        if self.session_position(session_id) != Some(0) {
+            return self.error_response(
+                session_id,
+                Routes::REMOVE_AI as i32,
+                WsResponseCode::NO_PERMISSION,
+            );
+        }
+        let Some(room_key) = self.room_key_of(session_id) else {
+            return self.error_response(
+                session_id,
+                Routes::REMOVE_AI as i32,
+                WsResponseCode::NOT_LOGIN,
+            );
+        };
+        let Ok(payload) = Self::parse_payload::<WsRemoveAiRequest>(data) else {
+            return self.error_response(
+                session_id,
+                Routes::REMOVE_AI as i32,
+                WsResponseCode::ERROR_FORMAT,
+            );
+        };
+        let Ok(position) = usize::try_from(payload.position) else {
+            return self.error_response(
+                session_id,
+                Routes::REMOVE_AI as i32,
+                WsResponseCode::NOT_IN_RANGE,
+            );
+        };
+
+        let ai_name = {
+            let Some(entry) = self.rooms.get(&room_key) else {
+                return self.error_response(
+                    session_id,
+                    Routes::REMOVE_AI as i32,
+                    WsResponseCode::NOT_LOGIN,
+                );
+            };
+            if !entry.state.can_accept_players()
+                || position >= entry.max_players
+                || !entry.state.is_ai_position(position)
+            {
+                return self.error_response(
+                    session_id,
+                    Routes::REMOVE_AI as i32,
+                    WsResponseCode::NO_PERMISSION,
+                );
+            }
+            let Some((_, name)) = entry.state.players().get(&position).cloned() else {
+                return self.error_response(
+                    session_id,
+                    Routes::REMOVE_AI as i32,
+                    WsResponseCode::NO_PERMISSION,
+                );
+            };
+            name
+        };
+
+        if let Some(entry) = self.rooms.get_mut(&room_key) {
+            entry.state.remove_player(position);
+        }
+        self.broadcast(
+            &room_key,
+            WsCode::QUIT as i32,
+            WsNameEvent { name: ai_name },
+            &mut dispatch,
+        );
+        self.push_ok_response(&mut dispatch, session_id, Routes::REMOVE_AI as i32);
+        dispatch
+    }
+
     fn handle_back_request(&mut self, session_id: SessionId) -> Dispatch {
         let mut dispatch = Dispatch::default();
         if !self.require_room_membership(session_id, Routes::BACK as i32, &mut dispatch) {
@@ -527,6 +602,9 @@ impl RoomService {
             r if r == Routes::BACK as i32 => Some(self.handle_back_request(session_id)),
             r if r == Routes::ADD_AI as i32 => {
                 Some(self.handle_add_ai_request(session_id, request.data.clone()))
+            }
+            r if r == Routes::REMOVE_AI as i32 => {
+                Some(self.handle_remove_ai_request(session_id, request.data.clone()))
             }
             r if r == Routes::SWAP as i32 => {
                 Some(self.handle_swap_request(session_id, request.data.clone()))
@@ -1630,6 +1708,7 @@ mod tests {
         sync::{Arc, Mutex},
     };
 
+    use serde_json::Value;
     use share_type_public::{
         GameId, GameParam, GameParamRange, Routes, WsCode, WsRequest, WsResponseCode,
     };
@@ -1640,6 +1719,61 @@ mod tests {
 
     struct NoAcceptState {
         common: Arc<Mutex<CommonGameState>>,
+    }
+
+    fn common_request(
+        service: &mut RoomService,
+        session_id: u64,
+        game_id: GameId,
+        route: Routes,
+        data: serde_json::Value,
+    ) -> Dispatch {
+        service
+            .handle_common_request(
+                session_id,
+                &WsRequest {
+                    route: route as i32,
+                    data,
+                },
+                game_id,
+                settings,
+            )
+            .expect("common route")
+    }
+
+    fn join_room(
+        service: &mut RoomService,
+        session_id: u64,
+        name: &str,
+        room_key: &str,
+        game_id: GameId,
+    ) -> Dispatch {
+        common_request(
+            service,
+            session_id,
+            game_id,
+            Routes::JOIN,
+            serde_json::json!({
+                "name": name,
+                "password": room_key,
+                "game_id": game_id as i32
+            }),
+        )
+    }
+
+    fn has_response(dispatch: &Dispatch, route: Routes, code: WsResponseCode) -> bool {
+        dispatch
+            .messages
+            .iter()
+            .any(|message| match &message.payload {
+                OutboundPayload::Response(RequestResponse::WithoutData(response)) => {
+                    response.route == route as i32 && response.code as i32 == code as i32
+                }
+                OutboundPayload::Response(RequestResponse::WithData(response)) => {
+                    response.route == route as i32 && response.code as i32 == code as i32
+                }
+                OutboundPayload::Event(_) => false,
+            })
     }
 
     #[test]
@@ -1658,6 +1792,151 @@ mod tests {
             service.next_ai_name("mahjong-room", GameId::SHENYANG_MAHJONG, 1),
             "AI 1"
         );
+    }
+
+    #[test]
+    fn every_non_p2p_game_id_can_add_ai_through_common_room_service() {
+        for game_id in [
+            GameId::LANDLORD,
+            GameId::SHENYANG_MAHJONG,
+            GameId::TEXAS_HOLD_EM,
+            GameId::TRACTOR,
+            GameId::OPEN_HOLD_EM,
+            GameId::SHORT_DECK_HOLD_EM,
+            GameId::OMAHA_HOLD_EM,
+        ] {
+            let mut service = RoomService::default();
+            let room_key = format!("ai-room-{}", game_id as i32);
+            let joined = join_room(&mut service, 1, "owner", &room_key, game_id);
+            assert!(has_response(&joined, Routes::JOIN, WsResponseCode::JOINED));
+
+            let added = common_request(
+                &mut service,
+                1,
+                game_id,
+                Routes::ADD_AI,
+                serde_json::json!({ "count": 1 }),
+            );
+
+            assert!(has_response(&added, Routes::ADD_AI, WsResponseCode::OK));
+            let common = service
+                .room_common_state(&room_key)
+                .expect("room common state");
+            let common = common.lock().unwrap();
+            assert_eq!(common.players.len(), 2);
+            assert_eq!(common.ai_positions.len(), 1);
+        }
+    }
+
+    #[test]
+    fn ai_counts_toward_capacity_and_removal_frees_the_seat_for_a_human() {
+        let mut service = RoomService::default();
+        let _ = join_room(&mut service, 1, "owner", "capacity-room", GameId::LANDLORD);
+        let added = common_request(
+            &mut service,
+            1,
+            GameId::LANDLORD,
+            Routes::ADD_AI,
+            serde_json::json!({ "count": 2 }),
+        );
+        assert!(has_response(&added, Routes::ADD_AI, WsResponseCode::OK));
+
+        let full_join = join_room(&mut service, 2, "human", "capacity-room", GameId::LANDLORD);
+        assert!(has_response(
+            &full_join,
+            Routes::JOIN,
+            WsResponseCode::NO_PERMISSION
+        ));
+        assert_eq!(service.session_position(2), None);
+
+        let removed = common_request(
+            &mut service,
+            1,
+            GameId::LANDLORD,
+            Routes::REMOVE_AI,
+            serde_json::json!({ "position": 1 }),
+        );
+        assert!(has_response(
+            &removed,
+            Routes::REMOVE_AI,
+            WsResponseCode::OK
+        ));
+        assert!(removed.messages.iter().any(|message| {
+            matches!(
+                &message.payload,
+                OutboundPayload::Event(event)
+                    if event.code == WsCode::QUIT as i32
+                        && event.data.get("name").and_then(Value::as_str) == Some("AI 1")
+            )
+        }));
+
+        let joined = join_room(&mut service, 2, "human", "capacity-room", GameId::LANDLORD);
+        assert!(has_response(&joined, Routes::JOIN, WsResponseCode::JOINED));
+        assert_eq!(service.session_position(2), Some(1));
+    }
+
+    #[test]
+    fn only_owner_can_remove_ai_and_only_before_start() {
+        let mut service = RoomService::default();
+        let _ = join_room(&mut service, 1, "owner", "remove-room", GameId::LANDLORD);
+        let _ = join_room(&mut service, 2, "member", "remove-room", GameId::LANDLORD);
+        let _ = common_request(
+            &mut service,
+            1,
+            GameId::LANDLORD,
+            Routes::ADD_AI,
+            serde_json::json!({ "count": 1 }),
+        );
+
+        let member_remove = common_request(
+            &mut service,
+            2,
+            GameId::LANDLORD,
+            Routes::REMOVE_AI,
+            serde_json::json!({ "position": 2 }),
+        );
+        assert!(has_response(
+            &member_remove,
+            Routes::REMOVE_AI,
+            WsResponseCode::NO_PERMISSION
+        ));
+
+        let human_remove = common_request(
+            &mut service,
+            1,
+            GameId::LANDLORD,
+            Routes::REMOVE_AI,
+            serde_json::json!({ "position": 1 }),
+        );
+        assert!(has_response(
+            &human_remove,
+            Routes::REMOVE_AI,
+            WsResponseCode::NO_PERMISSION
+        ));
+
+        let room_key = service.room_key_of(1).expect("room key");
+        let common = service
+            .room_common_state(&room_key)
+            .expect("room common state");
+        service.set_room_game_state(
+            &room_key,
+            Box::new(NoAcceptState {
+                common: Arc::clone(&common),
+            }),
+        );
+        let started_remove = common_request(
+            &mut service,
+            1,
+            GameId::LANDLORD,
+            Routes::REMOVE_AI,
+            serde_json::json!({ "position": 2 }),
+        );
+        assert!(has_response(
+            &started_remove,
+            Routes::REMOVE_AI,
+            WsResponseCode::NO_PERMISSION
+        ));
+        assert!(common.lock().unwrap().is_ai_position(2));
     }
 
     #[test]
