@@ -196,18 +196,8 @@ pub(in crate::ai::decision) fn piao_plan_score_for_context(
         || piao_plan_is_capped(table)
         || !has_piao_route_basics(hand, melds)
         || capped_open_basic_route_visible_fan_reaches_cap(hand, melds, table)
-        || capped_basic_route_foundation_visible_fan_exceeds_half_cap(
-            hand,
-            melds,
-            table,
-            WIN_RULE_SHENYANG_BASIC,
-        )
-        || capped_basic_route_foundation_visible_fan_reaches_cap(
-            hand,
-            melds,
-            table,
-            WIN_RULE_SHENYANG_BASIC,
-        )
+        || capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table, win_rule)
+        || capped_normal_route_visible_fan_reaches_cap(hand, melds, table, win_rule)
     {
         return 0.0;
     }
@@ -277,17 +267,7 @@ pub(in crate::ai::decision) fn is_closed_early_piao_candidate(
         && table.dealer_position != position
         && !dealer_opponent_has_major_threat(table, position, win_rule)
         && !piao_plan_is_capped(table)
-        && !capped_basic_route_foundation_visible_fan_exceeds_half_cap(
-            hand,
-            melds,
-            table,
-            WIN_RULE_SHENYANG_BASIC,
-        )
-        && !capped_basic_route_foundation_visible_fan_reaches_cap(
-            hand,
-            melds,
-            table,
-            WIN_RULE_SHENYANG_BASIC,
-        )
+        && !capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table, win_rule)
+        && !capped_normal_route_visible_fan_reaches_cap(hand, melds, table, win_rule)
         && has_piao_route_basics(hand, melds)
 }

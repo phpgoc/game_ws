@@ -136,6 +136,23 @@ fn one_fan_relaxed_room_does_not_chase_missing_suit_pure_plan() {
 }
 
 #[test]
+fn two_fan_relaxed_room_does_not_chase_bonus_capped_pure_plan() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.max_fan = Some(2);
+    let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 31, 35, 35, 35];
+
+    assert!(pure_one_suit_plan_score(&hand, &[]) > 0.0);
+    assert_eq!(estimated_visible_bonus_fan(&hand, &[]), 1);
+    assert_eq!(
+        pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_RELAXED),
+        0.0
+    );
+    assert!(
+        pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0
+    );
+}
+
+#[test]
 fn dealer_can_chase_overwhelming_pure_one_suit_shape() {
     let mut table = table_with_discards(1, Vec::new());
     table.dealer_position = 0;

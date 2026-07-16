@@ -455,6 +455,48 @@ fn dealer_does_not_lock_five_pairs_when_basic_route_is_viable() {
 }
 
 #[test]
+fn relaxed_dealer_does_not_lock_five_pairs() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.dealer_position = 0;
+    let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 31, 32, 33];
+
+    assert_eq!(pair_count(&hand), 5);
+    assert!(!has_basic_normal_route_foundation(
+        &hand,
+        &[],
+        WIN_RULE_RELAXED
+    ));
+    assert!(!should_lock_seven_pairs_plan(
+        &hand,
+        &[],
+        &table,
+        0,
+        WIN_RULE_RELAXED
+    ));
+}
+
+#[test]
+fn two_fan_relaxed_room_does_not_lock_bonus_capped_five_pairs() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.max_fan = Some(2);
+    let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 31, 35, 35, 35];
+
+    assert_eq!(pair_count(&hand), 5);
+    assert_eq!(estimated_visible_bonus_fan(&hand, &[]), 1);
+    assert!(!should_lock_seven_pairs_plan(
+        &hand,
+        &[],
+        &table,
+        0,
+        WIN_RULE_RELAXED
+    ));
+    assert_eq!(
+        seven_pairs_plan_score(&hand, &[], &table, 0, WIN_RULE_RELAXED),
+        0.0
+    );
+}
+
+#[test]
 fn discard_keeps_pairs_for_basic_seven_pairs_plan_when_missing_suit() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 12, 31, 35, 36, 37];

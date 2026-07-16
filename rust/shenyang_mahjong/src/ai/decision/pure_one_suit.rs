@@ -115,20 +115,10 @@ pub(super) fn pure_one_suit_plan_score_for_context(
     {
         return 0.0;
     }
-    if capped_basic_route_foundation_visible_fan_exceeds_half_cap(
-        hand,
-        melds,
-        table,
-        WIN_RULE_SHENYANG_BASIC,
-    ) {
+    if capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table, win_rule) {
         return 0.0;
     }
-    if capped_basic_route_foundation_visible_fan_reaches_cap(
-        hand,
-        melds,
-        table,
-        WIN_RULE_SHENYANG_BASIC,
-    ) {
+    if capped_normal_route_visible_fan_reaches_cap(hand, melds, table, win_rule) {
         return 0.0;
     }
     if capped_open_basic_route_visible_fan_reaches_cap(hand, melds, table) {
