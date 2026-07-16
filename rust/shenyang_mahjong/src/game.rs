@@ -10333,6 +10333,33 @@ mod tests {
     }
 
     #[test]
+    fn settlement_self_draw_counts_xi_gang_payer_as_closed() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(2, vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35, 35]);
+        state.melds.insert(
+            1,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::XI_GANG,
+                vec![31, 32, 33, 34],
+                None,
+            )],
+        );
+        state.enter_settlement(vec![2], None, Some(35), true);
+
+        let settlement = state.settlement.as_ref().expect("settlement");
+
+        assert_eq!(
+            settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &HashMap::new())
+                .into_iter()
+                .map(|change| (change.position, change.score))
+                .collect::<Vec<_>>(),
+            vec![(0, -8), (1, -7), (2, 22), (3, -7)]
+        );
+    }
+
+    #[test]
     fn settlement_self_draw_uses_single_closed_fan_when_any_payer_opened() {
         let mut state = playable_state();
         state
