@@ -2,6 +2,8 @@ mod belief;
 mod bidding;
 mod candidates;
 mod playing;
+#[cfg(test)]
+mod simulation;
 
 use std::collections::BTreeMap;
 
