@@ -1259,6 +1259,49 @@ mod tests {
     }
 
     #[test]
+    fn ai_turn_declares_both_xi_gangs_in_order() {
+        let mut state = playable_state();
+        state.current_position = 1;
+        state.base.lock().unwrap().mark_ai_position(1);
+        state
+            .hands
+            .insert(1, vec![1, 2, 3, 11, 12, 13, 21, 31, 32, 33, 34, 35, 36, 37]);
+        state.melds.insert(1, Vec::new());
+        state.discards.insert(1, Vec::new());
+        state.last_drawn_tile = Some(37);
+        state.wall = vec![22];
+        state
+            .xi_gang_options
+            .insert(1, vec![vec![31, 32, 33, 34], vec![35, 36, 37]]);
+        let mut dispatch = Dispatch::default();
+
+        assert!(maybe_play_ai_turn(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::new(),
+            &mut dispatch,
+        ));
+        assert_eq!(state.melds.get(&1).unwrap().len(), 1);
+        assert_eq!(state.wall_count(), 0);
+        assert_eq!(
+            state.xi_gang_options_for_position(1),
+            vec![vec![35, 36, 37]]
+        );
+
+        assert!(maybe_play_ai_turn(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::new(),
+            &mut dispatch,
+        ));
+        assert_eq!(state.melds.get(&1).unwrap().len(), 2);
+        assert!(state.xi_gang_options_for_position(1).is_empty());
+        assert!(state.discards.get(&1).unwrap().is_empty());
+    }
+
+    #[test]
     fn four_ai_positions_settle_multiple_seeded_rounds() {
         for seed in [2026070403, 2026070404, 2026070405] {
             let state = run_seeded_ai_round(seed, 260);

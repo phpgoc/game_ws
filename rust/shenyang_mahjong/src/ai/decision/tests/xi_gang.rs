@@ -47,7 +47,7 @@ fn ai_preserves_multiple_dragon_pairs_over_dragon_xi_gang() {
 }
 
 #[test]
-fn ai_preserves_locked_seven_pairs_over_wind_xi_gang() {
+fn ai_declares_wind_xi_gang_even_from_locked_seven_pairs() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 31, 32, 33, 34];
 
@@ -66,12 +66,12 @@ fn ai_preserves_locked_seven_pairs_over_wind_xi_gang() {
             0,
             WIN_RULE_SHENYANG_BASIC,
         ),
-        None
+        Some(vec![31, 32, 33, 34])
     );
 }
 
 #[test]
-fn ai_preserves_live_pure_one_suit_plan_over_dragon_xi_gang() {
+fn ai_declares_dragon_xi_gang_even_from_live_pure_one_suit_plan() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 31, 32, 33, 35, 36, 37];
 
@@ -86,8 +86,30 @@ fn ai_preserves_live_pure_one_suit_plan_over_dragon_xi_gang() {
             0,
             WIN_RULE_SHENYANG_BASIC,
         ),
-        None
+        Some(vec![35, 36, 37])
     );
+}
+
+#[test]
+fn double_xi_gang_discard_keeps_only_tile_of_third_suit() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.seats.get_mut(&0).unwrap().melds = vec![
+        WsShenyangMahjongMeld {
+            kind: ShenyangMahjongMeldKind::XI_GANG,
+            tiles: vec![31, 32, 33, 34],
+            from_position: None,
+        },
+        WsShenyangMahjongMeld {
+            kind: ShenyangMahjongMeldKind::XI_GANG,
+            tiles: vec![35, 36, 37],
+            from_position: None,
+        },
+    ];
+    let hand = vec![1, 2, 3, 4, 11, 12, 13, 21];
+
+    let discard = choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC)
+        .expect("double xi gang hand should choose a discard");
+    assert_ne!(discard, 21);
 }
 
 #[test]

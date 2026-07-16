@@ -6,7 +6,7 @@ pub fn choose_xi_gang_from_view(
     candidate_options: &[Vec<i32>],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
+    _win_rule: i32,
 ) -> Option<Vec<i32>> {
     let melds = table
         .seats
@@ -15,8 +15,6 @@ pub fn choose_xi_gang_from_view(
         .unwrap_or(&[]);
     if !has_virtual_tile_count(hand, melds, 14)
         || !position_known_tile_counts_are_possible(hand, melds, table)
-        || should_lock_seven_pairs_plan(hand, melds, table, position, win_rule)
-        || pure_one_suit_plan_score_for_context(hand, melds, table, position, win_rule) > 0.0
     {
         return None;
     }
