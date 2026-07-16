@@ -120,6 +120,22 @@ fn capped_pure_one_suit_route_can_discard_last_honor_when_suits_are_missing() {
 }
 
 #[test]
+fn one_fan_relaxed_room_does_not_chase_missing_suit_pure_plan() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.max_fan = Some(1);
+    let hand = vec![2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 8, 8, 12];
+
+    assert!(pure_one_suit_plan_score(&hand, &[]) > 0.0);
+    assert_eq!(
+        pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_RELAXED),
+        0.0
+    );
+    assert!(
+        pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0
+    );
+}
+
+#[test]
 fn dealer_can_chase_overwhelming_pure_one_suit_shape() {
     let mut table = table_with_discards(1, Vec::new());
     table.dealer_position = 0;
