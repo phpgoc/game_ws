@@ -28,7 +28,8 @@ pub use types::AiClaimChoice;
 pub use xi_gang::choose_xi_gang_from_view;
 
 use share_type_public::games::shenyang_mahjong::{
-    SHENYANG_MAHJONG_TILE_KINDS, ShenyangMahjongMeldKind, WsShenyangMahjongMeld,
+    SHENYANG_MAHJONG_TILE_KINDS, ShenyangMahjongMeldKind, ShenyangMahjongWinPattern,
+    WsShenyangMahjongMeld,
 };
 
 use crate::rules::{
@@ -37,7 +38,8 @@ use crate::rules::{
     is_pure_one_suit_win, is_seven_pairs_win,
     is_single_wait_shape_with_known_unavailable_tiles_for_rules,
     shenyang_score_concealed_dragon_triplet_fan, shenyang_score_four_gui_yi_fan,
-    shenyang_score_meld_fan, shenyang_score_visible_win_fan, sort_tiles,
+    shenyang_score_meld_fan, shenyang_score_visible_win_fan, shenyang_win_pattern_base_fan,
+    sort_tiles,
 };
 #[cfg(test)]
 use crate::rules::{
@@ -87,14 +89,6 @@ use tile::{
     unique_tiles,
 };
 
-pub(crate) fn position_known_tile_counts_are_possible(
-    hand: &[i32],
-    melds: &[WsShenyangMahjongMeld],
-    table: &AiPublicTable,
-) -> bool {
-    table::position_known_tile_counts_are_possible(hand, melds, table)
-}
-
 pub(crate) fn claim_known_tile_counts_are_possible(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -116,16 +110,6 @@ pub(in crate::ai::decision) fn has_door_opening_meld(
     _table: &AiPublicTable,
 ) -> bool {
     has_open_meld(melds)
-}
-
-pub(in crate::ai::decision) fn win_rules_for_table(
-    table: &AiPublicTable,
-    win_rule: i32,
-) -> ShenyangMahjongWinRules {
-    ShenyangMahjongWinRules {
-        win_rule,
-        allow_closed_dragon_pair_win: !table.allow_first_chi,
-    }
 }
 
 pub(crate) fn is_complete_win_for_table(
@@ -152,4 +136,22 @@ pub(in crate::ai::decision) fn is_single_wait_shape_for_table(
         win_rules_for_table(table, win_rule),
         known_unavailable_tiles,
     )
+}
+
+pub(crate) fn position_known_tile_counts_are_possible(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+) -> bool {
+    table::position_known_tile_counts_are_possible(hand, melds, table)
+}
+
+pub(in crate::ai::decision) fn win_rules_for_table(
+    table: &AiPublicTable,
+    win_rule: i32,
+) -> ShenyangMahjongWinRules {
+    ShenyangMahjongWinRules {
+        win_rule,
+        allow_closed_dragon_pair_win: !table.allow_first_chi,
+    }
 }

@@ -16,42 +16,6 @@ pub(super) fn can_self_gang_candidate(
     (hand_count == 4 && peng_meld_count == 0) || (hand_count == 1 && peng_meld_count == 1)
 }
 
-pub(in crate::ai::decision) fn self_gang_known_tile_count_is_possible(
-    hand: &[i32],
-    table: &AiPublicTable,
-    tile: i32,
-) -> bool {
-    hand.iter().filter(|item| **item == tile).count() + visible_tile_count(table, tile) as usize
-        <= 4
-}
-
-fn projected_self_gang_state(
-    hand: &[i32],
-    melds: &[WsShenyangMahjongMeld],
-    tile: i32,
-    is_added_gang: bool,
-) -> Option<(Vec<i32>, Vec<WsShenyangMahjongMeld>)> {
-    let remove_count = if is_added_gang { 1 } else { 4 };
-    let mut next_hand = remove_n_tiles(hand, tile, remove_count);
-    if next_hand.len() + remove_count != hand.len() {
-        return None;
-    }
-    sort_tiles(&mut next_hand);
-    let mut next_melds = if is_added_gang {
-        promoted_added_gang_melds(melds, tile)
-    } else {
-        melds.to_vec()
-    };
-    if !is_added_gang {
-        next_melds.push(WsShenyangMahjongMeld {
-            kind: ShenyangMahjongMeldKind::GANG,
-            tiles: vec![tile, tile, tile, tile],
-            from_position: None,
-        });
-    }
-    Some((next_hand, next_melds))
-}
-
 pub fn choose_self_gang_from_view(
     hand: &[i32],
     candidate_tiles: &[i32],
@@ -99,6 +63,42 @@ pub fn choose_self_gang_from_view(
     best.and_then(|(score, tile)| (score >= 0.0).then_some(tile))
 }
 
+fn projected_self_gang_state(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    tile: i32,
+    is_added_gang: bool,
+) -> Option<(Vec<i32>, Vec<WsShenyangMahjongMeld>)> {
+    let remove_count = if is_added_gang { 1 } else { 4 };
+    let mut next_hand = remove_n_tiles(hand, tile, remove_count);
+    if next_hand.len() + remove_count != hand.len() {
+        return None;
+    }
+    sort_tiles(&mut next_hand);
+    let mut next_melds = if is_added_gang {
+        promoted_added_gang_melds(melds, tile)
+    } else {
+        melds.to_vec()
+    };
+    if !is_added_gang {
+        next_melds.push(WsShenyangMahjongMeld {
+            kind: ShenyangMahjongMeldKind::GANG,
+            tiles: vec![tile, tile, tile, tile],
+            from_position: None,
+        });
+    }
+    Some((next_hand, next_melds))
+}
+
+pub(in crate::ai::decision) fn self_gang_known_tile_count_is_possible(
+    hand: &[i32],
+    table: &AiPublicTable,
+    tile: i32,
+) -> bool {
+    hand.iter().filter(|item| **item == tile).count() + visible_tile_count(table, tile) as usize
+        <= 4
+}
+
 pub(super) fn self_gang_score(
     tile: i32,
     hand: &[i32],
@@ -114,11 +114,21 @@ pub(super) fn self_gang_score(
         return f64::NEG_INFINITY;
     };
     let is_ready = best_ready_score_after_discard(hand, melds, table, position, win_rule) > 0.0;
-    let projected_capped_visible_fan = (win_rule != WIN_RULE_SHENYANG_BASIC
+    let piao_score = piao_plan_score_for_context(hand, melds, table, position, win_rule);
+    let committed_piao_plan = piao_score >= 22.0
+        && piao_threat_level(melds) > 0
+        && piao_committed_group_count(hand, melds) >= 3;
+    let normal_route_projects_cap = (win_rule != WIN_RULE_SHENYANG_BASIC
         || has_door_opening_meld(melds, table))
         && capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table, win_rule)
         && !capped_normal_route_visible_fan_reaches_cap(hand, melds, table, win_rule)
         && capped_normal_route_visible_fan_reaches_cap(&next, &next_melds, table, win_rule);
+    let piao_route_projects_cap = (win_rule != WIN_RULE_SHENYANG_BASIC
+        || has_door_opening_meld(melds, table))
+        && committed_piao_plan
+        && has_piao_route_basics(&next, &next_melds)
+        && capped_piao_route_visible_fan_projects_cap(hand, melds, &next, &next_melds, table);
+    let projected_capped_visible_fan = normal_route_projects_cap || piao_route_projects_cap;
     let speed_first_concealed_gang = !is_added_gang
         && (table.dealer_position == position
             || table.max_fan.is_some_and(|max_fan| max_fan <= 1)
@@ -126,7 +136,6 @@ pub(super) fn self_gang_score(
             || projected_capped_visible_fan);
     let pure_one_suit_score =
         pure_one_suit_plan_score_for_context(hand, melds, table, position, win_rule);
-    let piao_score = piao_plan_score_for_context(hand, melds, table, position, win_rule);
     let speed_first_pure_concealed_gang = pure_one_suit_score > 0.0
         && speed_first_concealed_gang
         && is_main_pure_suit_tile(hand, melds, tile);
@@ -181,9 +190,6 @@ pub(super) fn self_gang_score(
     if pure_one_suit_score > 0.0 && !keeps_pure_one_suit_ready && !speed_first_pure_concealed_gang {
         return f64::NEG_INFINITY;
     }
-    let committed_piao_plan = piao_score >= 22.0
-        && piao_threat_level(melds) > 0
-        && piao_committed_group_count(hand, melds) >= 3;
     let keeps_piao_ready =
         committed_piao_plan && ready_has_piao_win(&next, &next_melds, table, position, win_rule);
     if committed_piao_plan && !keeps_piao_ready && !speed_first_piao_concealed_gang {
