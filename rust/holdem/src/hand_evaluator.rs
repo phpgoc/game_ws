@@ -47,10 +47,10 @@ pub fn evaluate_five(cards: &[i32; 5]) -> EvaluatedHand {
         .all(|card| card_suit(*card) == card_suit(cards[0]));
     let straight = straight_high(ranks.clone());
 
-    if flush && straight.is_some() {
+    if flush && let Some(straight_high) = straight {
         return EvaluatedHand {
             category: 8,
-            ranks: vec![straight.unwrap()],
+            ranks: vec![straight_high],
             name: "straight_flush",
         };
     }
