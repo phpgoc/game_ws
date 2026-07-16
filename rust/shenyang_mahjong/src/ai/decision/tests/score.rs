@@ -104,6 +104,38 @@ fn ready_score_allows_closed_dragon_pair_win_when_first_chi_disabled() {
 }
 
 #[test]
+fn ready_score_keeps_closed_dragon_pair_route_after_xi_gang() {
+    let mut table = table_with_discards(1, Vec::new());
+    let xi_gang = WsShenyangMahjongMeld {
+        kind: ShenyangMahjongMeldKind::XI_GANG,
+        tiles: vec![31, 32, 33, 34],
+        from_position: None,
+    };
+    table.seats.get_mut(&0).unwrap().melds = vec![xi_gang];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 35];
+    let mut win_hand = hand.clone();
+    win_hand.push(35);
+    sort_tiles(&mut win_hand);
+
+    assert_eq!(
+        ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        0.0
+    );
+    table.allow_first_chi = false;
+    assert!(ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0);
+    assert_eq!(
+        estimated_visible_fan_without_wait_for_table(
+            &win_hand,
+            melds,
+            &table,
+            WIN_RULE_SHENYANG_BASIC
+        ),
+        2
+    );
+}
+
+#[test]
 fn ready_score_does_not_double_count_visible_claim_tile_in_projected_meld() {
     let mut table = table_with_discards(1, vec![3]);
     table.dealer_position = 0;

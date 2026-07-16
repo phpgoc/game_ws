@@ -789,7 +789,7 @@ pub fn satisfies_shenyang_basic_win_for_rules(
         return true;
     }
     if rules.allow_closed_dragon_pair_win
-        && melds.is_empty()
+        && melds.iter().all(is_xi_gang_meld)
         && can_form_sequences_with_dragon_pair(tiles)
     {
         return has_three_suits(&all_tiles) && has_terminal_or_honor(&all_tiles);
@@ -1610,6 +1610,37 @@ mod tests {
         assert!(!satisfies_shenyang_basic_win(&tiles, &[]));
         assert!(satisfies_shenyang_basic_win_for_rules(&tiles, &[], rules));
         assert!(is_complete_win_with_melds_for_rules(&tiles, &[], rules));
+    }
+
+    #[test]
+    fn closed_dragon_pair_exception_ignores_only_xi_gang_melds() {
+        let tiles = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 35, 35];
+        let xi_gang = vec![meld(
+            ShenyangMahjongMeldKind::XI_GANG,
+            vec![31, 32, 33, 34],
+            None,
+        )];
+        let concealed_gang = vec![meld(
+            ShenyangMahjongMeldKind::GANG,
+            vec![31, 31, 31, 31],
+            None,
+        )];
+        let rules = ShenyangMahjongWinRules {
+            win_rule: WIN_RULE_SHENYANG_BASIC,
+            allow_closed_dragon_pair_win: true,
+        };
+
+        assert!(satisfies_shenyang_basic_win_for_rules(
+            &tiles, &xi_gang, rules
+        ));
+        assert!(is_complete_win_with_melds_for_rules(
+            &tiles, &xi_gang, rules
+        ));
+        assert!(!satisfies_shenyang_basic_win_for_rules(
+            &tiles,
+            &concealed_gang,
+            rules
+        ));
     }
 
     #[test]

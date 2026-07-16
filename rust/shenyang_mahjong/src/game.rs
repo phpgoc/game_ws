@@ -7791,6 +7791,32 @@ mod tests {
     }
 
     #[test]
+    fn self_draw_closed_dragon_pair_win_stays_available_after_xi_gang() {
+        let mut state = playable_state();
+        state.current_position = 1;
+        state
+            .hands
+            .insert(1, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 35, 35]);
+        state.melds.insert(
+            1,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::XI_GANG,
+                vec![31, 32, 33, 34],
+                None,
+            )],
+        );
+        state.last_drawn_tile = Some(35);
+        let default_configs = HashMap::from([("win_rule".to_owned(), 1)]);
+        let disabled_configs = HashMap::from([
+            ("win_rule".to_owned(), 1),
+            ("allow_first_chi".to_owned(), 0),
+        ]);
+
+        assert!(!can_self_draw_hu_with_configs(&state, 1, &default_configs));
+        assert!(can_self_draw_hu_with_configs(&state, 1, &disabled_configs));
+    }
+
+    #[test]
     fn self_draw_last_wall_tile_counts_haidilao_without_gang_draw() {
         let mut state = playable_state();
         state
