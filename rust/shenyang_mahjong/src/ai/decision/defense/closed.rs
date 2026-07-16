@@ -28,18 +28,24 @@ pub(in crate::ai::decision) fn closed_hand_count_pressure_scale(seat: &AiSeatVie
     f64::max(gang_scale, hand_count_scale)
 }
 
-pub(in crate::ai::decision) fn closed_route_commitment_scale(seat: &AiSeatView) -> f64 {
-    let valid_discards = seat
+pub(in crate::ai::decision) fn closed_opponent_has_major_threat(
+    seat: &AiSeatView,
+    table: &AiPublicTable,
+) -> bool {
+    if !is_late_round(table) || !is_closed_opponent_threat_candidate(seat, table) {
+        return false;
+    }
+    let valid_discard_count = seat
         .discards
         .iter()
         .filter(|tile| is_valid_tile(**tile))
         .count();
-    match valid_discards {
-        0..=2 => 0.85,
-        3..=5 => 1.0,
-        6..=8 => 1.12,
-        _ => 1.25,
-    }
+    valid_discard_count >= MAJOR_CLOSED_THREAT_MIN_DISCARDS
+        && seat
+            .melds
+            .iter()
+            .filter(|meld| is_valid_meld(meld))
+            .all(is_closed_meld)
 }
 
 pub(in crate::ai::decision) fn closed_opponent_threat_discard_bias(
@@ -90,6 +96,20 @@ pub(in crate::ai::decision) fn closed_opponent_threat_discard_bias(
                 * dealer_opponent_threat_scale(table, *seat_position)
         })
         .sum()
+}
+
+pub(in crate::ai::decision) fn closed_route_commitment_scale(seat: &AiSeatView) -> f64 {
+    let valid_discards = seat
+        .discards
+        .iter()
+        .filter(|tile| is_valid_tile(**tile))
+        .count();
+    match valid_discards {
+        0..=2 => 0.85,
+        3..=5 => 1.0,
+        6..=8 => 1.12,
+        _ => 1.25,
+    }
 }
 
 pub(in crate::ai::decision) fn closed_suit_shedding_scale(seat: &AiSeatView, tile: i32) -> f64 {
@@ -158,24 +178,4 @@ pub(in crate::ai::decision) fn is_closed_opponent_threat_candidate(
 ) -> bool {
     !has_door_opening_meld(&seat.melds, table)
         && (seat.hand_count >= 10 || (seat.hand_count > 0 && has_closed_meld(&seat.melds)))
-}
-
-pub(in crate::ai::decision) fn closed_opponent_has_major_threat(
-    seat: &AiSeatView,
-    table: &AiPublicTable,
-) -> bool {
-    if !is_late_round(table) || !is_closed_opponent_threat_candidate(seat, table) {
-        return false;
-    }
-    let valid_discard_count = seat
-        .discards
-        .iter()
-        .filter(|tile| is_valid_tile(**tile))
-        .count();
-    valid_discard_count >= MAJOR_CLOSED_THREAT_MIN_DISCARDS
-        && seat
-            .melds
-            .iter()
-            .filter(|meld| is_valid_meld(meld))
-            .all(is_closed_meld)
 }

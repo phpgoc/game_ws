@@ -33,7 +33,40 @@ fn claim_gang_projects_capped_visible_fan(
             &next_melds,
             table,
         );
-    normal_route_projects_cap || piao_route_projects_cap
+    let pure_one_suit_route_projects_cap = has_established_pure_one_suit_route(hand, current_melds)
+        && has_established_pure_one_suit_route(&next_hand, &next_melds)
+        && capped_pure_one_suit_route_visible_fan_projects_cap(
+            hand,
+            current_melds,
+            &next_hand,
+            &next_melds,
+            table,
+        );
+    normal_route_projects_cap || piao_route_projects_cap || pure_one_suit_route_projects_cap
+}
+
+pub(in crate::ai::decision) fn claim_gang_projects_capped_pure_one_suit_fan(
+    hand: &[i32],
+    current_melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    tile: i32,
+    from_position: usize,
+) -> bool {
+    let next_hand = remove_n_tiles(hand, tile, 3);
+    if next_hand.len() + 3 != hand.len() {
+        return false;
+    }
+    let mut next_melds = current_melds.to_vec();
+    next_melds.push(claim_gang_meld(tile, from_position));
+    has_established_pure_one_suit_route(hand, current_melds)
+        && has_established_pure_one_suit_route(&next_hand, &next_melds)
+        && capped_pure_one_suit_route_visible_fan_projects_cap(
+            hand,
+            current_melds,
+            &next_hand,
+            &next_melds,
+            table,
+        )
 }
 
 pub(in crate::ai::decision) fn should_claim_gang_from_discard(

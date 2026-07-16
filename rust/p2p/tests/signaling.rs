@@ -8,6 +8,30 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async, tungsten
 
 type Client = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
+async fn read_until(client: &mut Client, predicate: impl Fn(&Value) -> bool) -> Value {
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while let Some(frame) = client.next().await {
+            let frame = frame.expect("websocket frame");
+            if let Message::Text(text) = frame {
+                let value: Value = serde_json::from_str(&text).expect("JSON response");
+                if predicate(&value) {
+                    return value;
+                }
+            }
+        }
+        panic!("websocket closed before matching response");
+    })
+    .await
+    .expect("matching response timeout")
+}
+
+async fn send_json(client: &mut Client, value: Value) {
+    client
+        .send(Message::Text(value.to_string().into()))
+        .await
+        .expect("send request");
+}
+
 #[tokio::test]
 async fn websocket_clients_join_signal_and_leave() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
@@ -83,28 +107,4 @@ async fn websocket_clients_join_signal_and_leave() {
 
     first.close(None).await.expect("close first");
     server.abort();
-}
-
-async fn send_json(client: &mut Client, value: Value) {
-    client
-        .send(Message::Text(value.to_string().into()))
-        .await
-        .expect("send request");
-}
-
-async fn read_until(client: &mut Client, predicate: impl Fn(&Value) -> bool) -> Value {
-    tokio::time::timeout(Duration::from_secs(3), async {
-        while let Some(frame) = client.next().await {
-            let frame = frame.expect("websocket frame");
-            if let Message::Text(text) = frame {
-                let value: Value = serde_json::from_str(&text).expect("JSON response");
-                if predicate(&value) {
-                    return value;
-                }
-            }
-        }
-        panic!("websocket closed before matching response");
-    })
-    .await
-    .expect("matching response timeout")
 }

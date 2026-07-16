@@ -12,6 +12,21 @@ use ws_common::{CommonGameState, GameState};
 
 use crate::combo::{self, Combo};
 
+/// Ranks removed by the room's compact-deck setting, in order. Scoring ranks
+/// (5, 10 and K), 2 and jokers are deliberately retained. Thus 3 removes
+/// 3/4/6 and 4 removes 3/4/6/7, matching the room setting shown to users.
+pub const REMOVABLE_RANKS: [TractorRank; 9] = [
+    TractorRank::THREE,
+    TractorRank::FOUR,
+    TractorRank::SIX,
+    TractorRank::SEVEN,
+    TractorRank::EIGHT,
+    TractorRank::NINE,
+    TractorRank::J,
+    TractorRank::Q,
+    TractorRank::A,
+];
+
 pub const TRACTOR_RANKS: [TractorRank; 13] = [
     TractorRank::TWO,
     TractorRank::THREE,
@@ -25,21 +40,6 @@ pub const TRACTOR_RANKS: [TractorRank; 13] = [
     TractorRank::J,
     TractorRank::Q,
     TractorRank::K,
-    TractorRank::A,
-];
-
-/// Ranks removed by the room's compact-deck setting, in order. Scoring ranks
-/// (5, 10 and K), 2 and jokers are deliberately retained. Thus 3 removes
-/// 3/4/6 and 4 removes 3/4/6/7, matching the room setting shown to users.
-pub const REMOVABLE_RANKS: [TractorRank; 9] = [
-    TractorRank::THREE,
-    TractorRank::FOUR,
-    TractorRank::SIX,
-    TractorRank::SEVEN,
-    TractorRank::EIGHT,
-    TractorRank::NINE,
-    TractorRank::J,
-    TractorRank::Q,
     TractorRank::A,
 ];
 
@@ -134,6 +134,11 @@ pub fn build_tractor_deck_with_removed_ranks(
     cards
 }
 
+fn candidate_in_hand(hand: &[i32], cards: &[i32]) -> bool {
+    let mut available = hand.to_vec();
+    remove_cards_from_hand(&mut available, cards).is_ok()
+}
+
 pub(crate) fn card_rank(card: i32) -> i32 {
     let base = base_card(card);
     if base <= 52 {
@@ -156,16 +161,6 @@ pub(crate) fn card_score(card: i32) -> i32 {
 pub(crate) fn card_suit(card: i32) -> Option<i32> {
     let base = base_card(card);
     (base <= 52).then_some((base - 1) / 13)
-}
-
-pub(crate) fn tractor_suit_from_index(suit: i32) -> Option<TractorSuit> {
-    match suit {
-        0 => Some(TractorSuit::SPADE),
-        1 => Some(TractorSuit::HEART),
-        2 => Some(TractorSuit::CLUB),
-        3 => Some(TractorSuit::DIAMOND),
-        _ => None,
-    }
 }
 
 fn first_match_rank(removed_rank_count: usize, final_target_rank: TractorRank) -> TractorRank {
@@ -212,11 +207,6 @@ fn rank_is_removed(removed_rank_count: usize, rank: TractorRank) -> bool {
         .any(|item| *item == rank)
 }
 
-fn candidate_in_hand(hand: &[i32], cards: &[i32]) -> bool {
-    let mut available = hand.to_vec();
-    remove_cards_from_hand(&mut available, cards).is_ok()
-}
-
 fn remove_cards_from_hand(hand: &mut Vec<i32>, cards: &[i32]) -> Result<(), &'static str> {
     let mut indexes = Vec::with_capacity(cards.len());
     for card in cards {
@@ -236,13 +226,21 @@ fn remove_cards_from_hand(hand: &mut Vec<i32>, cards: &[i32]) -> Result<(), &'st
     Ok(())
 }
 
-fn team_positions(position: usize) -> [usize; 2] {
-    [position, (position + 2) % 4]
+pub fn removed_tractor_ranks(removed_rank_count: usize) -> Vec<TractorRank> {
+    REMOVABLE_RANKS
+        .iter()
+        .take(removed_rank_count.min(REMOVABLE_RANKS.len()))
+        .copied()
+        .collect()
 }
 
 /// Two seats are partners when they sit across from each other (0&2, 1&3).
 pub(crate) fn same_team(a: usize, b: usize) -> bool {
     a % 2 == b % 2
+}
+
+fn team_positions(position: usize) -> [usize; 2] {
+    [position, (position + 2) % 4]
 }
 
 pub(crate) fn tractor_card_value(card: i32, rules: &TractorRules, lead_suit: Option<i32>) -> i32 {
@@ -277,14 +275,6 @@ pub fn tractor_rank_from_setting_index(index: i32) -> TractorRank {
         .unwrap_or(TractorRank::A)
 }
 
-pub fn removed_tractor_ranks(removed_rank_count: usize) -> Vec<TractorRank> {
-    REMOVABLE_RANKS
-        .iter()
-        .take(removed_rank_count.min(REMOVABLE_RANKS.len()))
-        .copied()
-        .collect()
-}
-
 pub fn tractor_rank_path(
     removed_rank_count: usize,
     final_target_rank: TractorRank,
@@ -302,6 +292,16 @@ pub fn tractor_rank_path(
         out.push(TractorRank::TWO);
     }
     out
+}
+
+pub(crate) fn tractor_suit_from_index(suit: i32) -> Option<TractorSuit> {
+    match suit {
+        0 => Some(TractorSuit::SPADE),
+        1 => Some(TractorSuit::HEART),
+        2 => Some(TractorSuit::CLUB),
+        3 => Some(TractorSuit::DIAMOND),
+        _ => None,
+    }
 }
 
 impl TractorGameState {
@@ -343,10 +343,32 @@ impl TractorGameState {
             .sum()
     }
 
-    /// Classify the established lead combo of the current trick, if any.
-    pub(crate) fn lead_combo(&self) -> Option<Combo> {
-        let lead = self.current_trick.first()?;
-        combo::classify(&lead.cards, &self.rules)
+    pub fn auto_declaration_cards(&self, position: usize) -> Option<Vec<i32>> {
+        let current_strength = self
+            .declaration
+            .as_ref()
+            .map(|declaration| declaration.strength)
+            .unwrap_or_default();
+        crate::ai::declaration_decision(self, position, current_strength, false)
+            .map(|decision| decision.cards)
+    }
+
+    pub fn bury_bottom(&mut self, position: usize, cards: Vec<i32>) -> Result<(), &'static str> {
+        if self.phase != TractorPhase::Bury || position != self.dealer_position {
+            return Err("not dealer bury turn");
+        }
+        if cards.len() != self.rules.bottom_card_count {
+            return Err("wrong bottom card count");
+        }
+        if self.round_index > 0 && self.rules.trump_suit.is_none() {
+            return Err("dealer must select trump first");
+        }
+        remove_cards_from_hand(self.hands.entry(position).or_default(), &cards)?;
+        self.bottom_cards = cards;
+        self.phase = TractorPhase::Play;
+        self.current_position = self.dealer_position;
+        self.base.lock().unwrap().action_received = false;
+        Ok(())
     }
 
     fn candidate_would_win(&self, position: usize, cards: &[i32]) -> bool {
@@ -359,32 +381,11 @@ impl TractorGameState {
         combo::trick_winner(&trick, &self.rules) == Some(position)
     }
 
-    fn failed_throw_component(&self, position: usize, cards: &[i32]) -> Option<Vec<i32>> {
-        let components = combo::throw_components(cards, &self.rules)?;
-        components
-            .into_iter()
-            .filter(|component| {
-                let Some(lead) = combo::classify(component, &self.rules) else {
-                    return false;
-                };
-                let Some(value) = combo::combo_win_value(component, &lead, &self.rules) else {
-                    return false;
-                };
-                self.active_positions()
-                    .into_iter()
-                    // Throw validation is a table rule, not a team-control
-                    // decision: a higher component at any of the other three
-                    // seats makes the proposed throw fail.
-                    .filter(|other| *other != position)
-                    .flat_map(|other| self.legal_follows(other, &lead))
-                    .filter_map(|reply| combo::combo_win_value(&reply, &lead, &self.rules))
-                    .any(|reply_value| reply_value > value)
-            })
-            .min_by_key(|component| {
-                let lead = combo::classify(component, &self.rules)
-                    .expect("throw component remains classifiable");
-                combo::combo_win_value(component, &lead, &self.rules).unwrap_or_default()
-            })
+    pub fn choose_auto_bury(&self) -> Option<Vec<i32>> {
+        if self.phase != TractorPhase::Bury {
+            return None;
+        }
+        crate::ai::choose_bury(self)
     }
 
     /// A safe, rules-correct auto play used for timed-out humans and as the AI
@@ -455,15 +456,6 @@ impl TractorGameState {
         candidates.into_iter().next()
     }
 
-    /// All legal follow plays for `position` against the given lead. The lead
-    /// combo must already be established.
-    pub(crate) fn legal_follows(&self, position: usize, lead: &Combo) -> Vec<Vec<i32>> {
-        let Some(hand) = self.hands.get(&position) else {
-            return Vec::new();
-        };
-        combo::enumerate_follows(hand, lead, &self.rules)
-    }
-
     fn deal_current_round(&mut self) -> Result<(), &'static str> {
         let positions = self.active_positions();
         if positions.len() != 4 {
@@ -519,6 +511,22 @@ impl TractorGameState {
         }
         self.base.lock().unwrap().action_received = false;
         Ok(())
+    }
+
+    pub fn deal_new_round(&mut self, mut rules: TractorRules) -> Result<(), &'static str> {
+        rules.deck_count = rules.deck_count.clamp(2, 4);
+        rules.blood_score_per_unit = rules.blood_score_per_unit.max(1);
+        let positions = self.active_positions();
+        if positions.len() != 4 {
+            return Err("Tractor requires exactly 4 players");
+        }
+        rules.removed_rank_count = rules.removed_rank_count.min(REMOVABLE_RANKS.len());
+        rules.target_rank = first_match_rank(rules.removed_rank_count, rules.final_target_rank);
+        rules.trump_suit = None;
+        self.rules = rules;
+        self.dealer_position = positions[0];
+        self.round_index = 0;
+        self.deal_current_round()
     }
 
     /// Deal exactly one public-progress/private-card step. The final step moves
@@ -617,6 +625,10 @@ impl TractorGameState {
         Some((position, card, finished, auto_declaration))
     }
 
+    pub fn dealer_bottom_cards(&self) -> Option<Vec<i32>> {
+        (self.phase == TractorPhase::Bury).then(|| self.bottom_cards.clone())
+    }
+
     pub fn declare_trump(
         &mut self,
         position: usize,
@@ -663,87 +675,32 @@ impl TractorGameState {
         Ok(declaration)
     }
 
-    pub fn select_dealer_trump(
-        &mut self,
-        position: usize,
-        suit: TractorSuit,
-    ) -> Result<WsTractorTrumpDeclaration, &'static str> {
-        if self.round_index == 0 || self.phase != TractorPhase::Deal {
-            return Err("dealer selects trump only in later deal phases");
-        }
-        if position != self.dealer_position {
-            return Err("only dealer selects trump");
-        }
-        let declaration = WsTractorTrumpDeclaration {
-            position: position as i32,
-            name: self.player_name(position),
-            cards: Vec::new(),
-            trump_suit: suit,
-            strength: 0,
-            target_rank: self.rules.target_rank,
-        };
-        self.rules.trump_suit = Some(suit);
-        self.declaration = Some(declaration.clone());
-        Ok(declaration)
-    }
-
-    pub fn preferred_dealer_trump_suit(&self) -> TractorSuit {
-        crate::ai::best_trump_suit(self, self.dealer_position)
-    }
-
-    pub fn auto_declaration_cards(&self, position: usize) -> Option<Vec<i32>> {
-        let current_strength = self
-            .declaration
-            .as_ref()
-            .map(|declaration| declaration.strength)
-            .unwrap_or_default();
-        crate::ai::declaration_decision(self, position, current_strength, false)
-            .map(|decision| decision.cards)
-    }
-
-    pub fn dealer_bottom_cards(&self) -> Option<Vec<i32>> {
-        (self.phase == TractorPhase::Bury).then(|| self.bottom_cards.clone())
-    }
-
-    pub fn bury_bottom(&mut self, position: usize, cards: Vec<i32>) -> Result<(), &'static str> {
-        if self.phase != TractorPhase::Bury || position != self.dealer_position {
-            return Err("not dealer bury turn");
-        }
-        if cards.len() != self.rules.bottom_card_count {
-            return Err("wrong bottom card count");
-        }
-        if self.round_index > 0 && self.rules.trump_suit.is_none() {
-            return Err("dealer must select trump first");
-        }
-        remove_cards_from_hand(self.hands.entry(position).or_default(), &cards)?;
-        self.bottom_cards = cards;
-        self.phase = TractorPhase::Play;
-        self.current_position = self.dealer_position;
-        self.base.lock().unwrap().action_received = false;
-        Ok(())
-    }
-
-    pub fn choose_auto_bury(&self) -> Option<Vec<i32>> {
-        if self.phase != TractorPhase::Bury {
-            return None;
-        }
-        crate::ai::choose_bury(self)
-    }
-
-    pub fn deal_new_round(&mut self, mut rules: TractorRules) -> Result<(), &'static str> {
-        rules.deck_count = rules.deck_count.clamp(2, 4);
-        rules.blood_score_per_unit = rules.blood_score_per_unit.max(1);
-        let positions = self.active_positions();
-        if positions.len() != 4 {
-            return Err("Tractor requires exactly 4 players");
-        }
-        rules.removed_rank_count = rules.removed_rank_count.min(REMOVABLE_RANKS.len());
-        rules.target_rank = first_match_rank(rules.removed_rank_count, rules.final_target_rank);
-        rules.trump_suit = None;
-        self.rules = rules;
-        self.dealer_position = positions[0];
-        self.round_index = 0;
-        self.deal_current_round()
+    fn failed_throw_component(&self, position: usize, cards: &[i32]) -> Option<Vec<i32>> {
+        let components = combo::throw_components(cards, &self.rules)?;
+        components
+            .into_iter()
+            .filter(|component| {
+                let Some(lead) = combo::classify(component, &self.rules) else {
+                    return false;
+                };
+                let Some(value) = combo::combo_win_value(component, &lead, &self.rules) else {
+                    return false;
+                };
+                self.active_positions()
+                    .into_iter()
+                    // Throw validation is a table rule, not a team-control
+                    // decision: a higher component at any of the other three
+                    // seats makes the proposed throw fail.
+                    .filter(|other| *other != position)
+                    .flat_map(|other| self.legal_follows(other, &lead))
+                    .filter_map(|reply| combo::combo_win_value(&reply, &lead, &self.rules))
+                    .any(|reply_value| reply_value > value)
+            })
+            .min_by_key(|component| {
+                let lead = combo::classify(component, &self.rules)
+                    .expect("throw component remains classifiable");
+                combo::combo_win_value(component, &lead, &self.rules).unwrap_or_default()
+            })
     }
 
     pub fn from_common(base: Arc<Mutex<CommonGameState>>) -> Self {
@@ -794,6 +751,21 @@ impl TractorGameState {
 
     pub fn is_finished(&self) -> bool {
         !self.hands.is_empty() && self.hands.values().all(Vec::is_empty)
+    }
+
+    /// Classify the established lead combo of the current trick, if any.
+    pub(crate) fn lead_combo(&self) -> Option<Combo> {
+        let lead = self.current_trick.first()?;
+        combo::classify(&lead.cards, &self.rules)
+    }
+
+    /// All legal follow plays for `position` against the given lead. The lead
+    /// combo must already be established.
+    pub(crate) fn legal_follows(&self, position: usize, lead: &Combo) -> Vec<Vec<i32>> {
+        let Some(hand) = self.hands.get(&position) else {
+            return Vec::new();
+        };
+        combo::enumerate_follows(hand, lead, &self.rules)
     }
 
     pub fn match_finished(&self) -> bool {
@@ -919,11 +891,39 @@ impl TractorGameState {
         self.base.lock().unwrap().player_name(position)
     }
 
+    pub fn preferred_dealer_trump_suit(&self) -> TractorSuit {
+        crate::ai::best_trump_suit(self, self.dealer_position)
+    }
+
     pub fn remaining_hand_count(&self, position: usize) -> i32 {
         self.hands
             .get(&position)
             .map(|cards| cards.len() as i32)
             .unwrap_or_default()
+    }
+
+    pub fn select_dealer_trump(
+        &mut self,
+        position: usize,
+        suit: TractorSuit,
+    ) -> Result<WsTractorTrumpDeclaration, &'static str> {
+        if self.round_index == 0 || self.phase != TractorPhase::Deal {
+            return Err("dealer selects trump only in later deal phases");
+        }
+        if position != self.dealer_position {
+            return Err("only dealer selects trump");
+        }
+        let declaration = WsTractorTrumpDeclaration {
+            position: position as i32,
+            name: self.player_name(position),
+            cards: Vec::new(),
+            trump_suit: suit,
+            strength: 0,
+            target_rank: self.rules.target_rank,
+        };
+        self.rules.trump_suit = Some(suit);
+        self.declaration = Some(declaration.clone());
+        Ok(declaration)
     }
 
     pub fn set_turn_countdown(&mut self, countdown: u32) {
@@ -1027,165 +1027,6 @@ mod tests {
     }
 
     #[test]
-    fn compact_deck_count_removes_the_documented_non_scoring_ranks() {
-        assert_eq!(build_tractor_deck_with_removed_ranks(2, 0).len(), 108);
-        let ranks = |count| {
-            build_tractor_deck_with_removed_ranks(2, count)
-                .into_iter()
-                .map(card_rank)
-                .collect::<Vec<_>>()
-        };
-        let removed_three = ranks(3);
-        assert!(!removed_three.iter().any(|rank| [3, 4, 6].contains(rank)));
-        assert!(removed_three.contains(&7));
-        assert!(removed_three.contains(&5));
-        assert!(removed_three.contains(&10));
-        assert!(removed_three.contains(&13));
-
-        let removed_four = ranks(4);
-        assert!(!removed_four.iter().any(|rank| [3, 4, 6, 7].contains(rank)));
-        assert!(removed_four.contains(&8));
-    }
-
-    #[test]
-    fn stronger_level_card_declaration_sets_first_dealer_and_trump_suit() {
-        let mut state = test_state();
-        state.phase = TractorPhase::Deal;
-        state.round_index = 0;
-        state.rules.target_rank = TractorRank::THREE;
-        state.hands.insert(1, vec![2, 102]);
-        state.hands.insert(2, vec![15]);
-
-        let first = state.declare_trump(2, vec![15]).expect("single heart 3");
-        assert_eq!(first.trump_suit, TractorSuit::HEART);
-        assert_eq!(state.dealer_position, 2);
-        assert!(state.declare_trump(1, vec![2]).is_err());
-
-        let counter = state
-            .declare_trump(1, vec![2, 102])
-            .expect("pair of spade 3 counters single");
-        assert_eq!(counter.strength, 2);
-        assert_eq!(state.rules.trump_suit, Some(TractorSuit::SPADE));
-        assert_eq!(state.dealer_position, 1);
-    }
-
-    #[test]
-    fn strong_ai_pair_can_counter_a_human_single_after_hand_evaluation() {
-        let mut state = test_state();
-        state.phase = TractorPhase::Deal;
-        state.round_index = 0;
-        state.rules.target_rank = TractorRank::TWO;
-        state.hands.insert(0, vec![14]);
-        state.hands.insert(1, vec![1, 101]);
-        state.deal_queue.push_back((2, 3));
-        state.base.lock().unwrap().mark_ai_position(1);
-
-        state
-            .declare_trump(0, vec![14])
-            .expect("human declares a single heart 2");
-        let (_, _, finished, auto_declaration) =
-            state.deal_next_card().expect("deal the final card");
-
-        assert!(finished);
-        assert_eq!(auto_declaration.as_ref().map(|item| item.strength), Some(2));
-        assert_eq!(
-            state.declaration.as_ref().map(|item| item.position),
-            Some(1)
-        );
-        assert_eq!(state.dealer_position, 1);
-        assert_eq!(state.rules.trump_suit, Some(TractorSuit::SPADE));
-        assert_eq!(state.phase, TractorPhase::Bury);
-    }
-
-    #[test]
-    fn weak_ai_single_passes_at_end_of_first_deal() {
-        let mut state = test_state();
-        state.phase = TractorPhase::Deal;
-        state.round_index = 0;
-        state.rules.target_rank = TractorRank::TWO;
-        state.hands.insert(1, vec![1]);
-        state.deal_queue.push_back((2, 3));
-        state.base.lock().unwrap().mark_ai_position(1);
-
-        let (_, _, finished, auto_declaration) =
-            state.deal_next_card().expect("deal the final card");
-
-        assert!(finished);
-        assert!(auto_declaration.is_none());
-        assert!(state.declaration.is_none());
-        assert_eq!(state.dealer_position, 0);
-        assert_eq!(state.rules.trump_suit, None);
-        assert_eq!(state.phase, TractorPhase::Bury);
-    }
-
-    #[test]
-    fn later_round_trump_is_selected_only_by_the_established_dealer() {
-        let mut state = test_state();
-        state.phase = TractorPhase::Deal;
-        state.round_index = 1;
-        state.dealer_position = 2;
-        state.rules.target_rank = TractorRank::FIVE;
-        state.hands.insert(0, vec![4]);
-        state.hands.insert(2, vec![14, 15, 16, 114, 115]);
-
-        assert!(state.declare_trump(0, vec![4]).is_err());
-        assert!(state.select_dealer_trump(1, TractorSuit::SPADE).is_err());
-        assert_eq!(state.preferred_dealer_trump_suit(), TractorSuit::HEART);
-
-        let selection = state
-            .select_dealer_trump(2, TractorSuit::CLUB)
-            .expect("dealer chooses freely");
-        assert!(selection.cards.is_empty());
-        assert_eq!(selection.strength, 0);
-        assert_eq!(selection.position, 2);
-        assert_eq!(state.rules.trump_suit, Some(TractorSuit::CLUB));
-    }
-
-    #[test]
-    fn later_round_cannot_bury_before_trump_is_selected() {
-        let mut state = test_state();
-        state.phase = TractorPhase::Bury;
-        state.round_index = 1;
-        state.dealer_position = 0;
-        state.rules.bottom_card_count = 2;
-        state.rules.trump_suit = None;
-        state.hands.insert(0, vec![2, 3, 4, 5]);
-
-        assert!(state.bury_bottom(0, vec![2, 3]).is_err());
-        state.rules.trump_suit = Some(TractorSuit::DIAMOND);
-        state.bury_bottom(0, vec![2, 3]).expect("selected first");
-    }
-
-    #[test]
-    fn incremental_deal_gives_bottom_to_dealer_then_requires_equal_bury() {
-        let mut state = test_state();
-        let mut rules = state.rules.clone();
-        rules.target_rank = TractorRank::TWO;
-        state.deal_new_round(rules).expect("prepare round");
-        while state.phase == TractorPhase::Deal {
-            state.deal_next_card().expect("next card");
-        }
-        assert_eq!(state.phase, TractorPhase::Bury);
-        let dealer_count = state.remaining_hand_count(state.dealer_position) as usize;
-        assert_eq!(
-            dealer_count,
-            state.hand_count() + state.rules.bottom_card_count
-        );
-        let bottom = state.choose_auto_bury().expect("automatic bottom");
-        assert_eq!(bottom.len(), state.rules.bottom_card_count);
-        state
-            .bury_bottom(state.dealer_position, bottom)
-            .expect("bury exact count");
-        assert_eq!(state.phase, TractorPhase::Play);
-        assert!(
-            state
-                .hands
-                .values()
-                .all(|cards| cards.len() == state.hand_count())
-        );
-    }
-
-    #[test]
     fn ai_following_opponent_prefers_smallest_winning_card() {
         let mut state = test_state();
         state.current_position = 1;
@@ -1260,6 +1101,172 @@ mod tests {
     }
 
     #[test]
+    fn bottom_multiplier_tracks_last_winning_play_size() {
+        let mut state = test_state();
+        state.rules.target_rank = TractorRank::TWO;
+        state.bottom_cards = vec![9]; // one 10-point card in the bottom
+        // Single final trick: multiplier 1.
+        state.hands.insert(0, vec![5]);
+        state.hands.insert(1, vec![6]);
+        state.hands.insert(2, vec![7]);
+        state.hands.insert(3, vec![8]);
+        for (pos, card) in [(0, 5), (1, 6), (2, 7), (3, 8)] {
+            state
+                .play_cards(pos, format!("u{pos}"), vec![card])
+                .unwrap();
+        }
+        assert_eq!(state.bottom_multiplier, 1);
+        // The winner (highest suit-0 single = position 3) banks bottom × 1.
+        assert_eq!(state.last_trick_winner, Some(3));
+        assert_eq!(state.collected_scores.get(&3).copied(), Some(10));
+
+        // Now a pair-winning final trick: multiplier 2.
+        let mut state = test_state();
+        state.rules.target_rank = TractorRank::TWO;
+        state.bottom_cards = vec![9];
+        state.hands.insert(0, vec![5, 105]);
+        state.hands.insert(1, vec![6, 106]);
+        state.hands.insert(2, vec![7, 107]);
+        state.hands.insert(3, vec![8, 108]);
+        for (pos, cards) in [
+            (0, vec![5, 105]),
+            (1, vec![6, 106]),
+            (2, vec![7, 107]),
+            (3, vec![8, 108]),
+        ] {
+            state.play_cards(pos, format!("u{pos}"), cards).unwrap();
+        }
+        assert_eq!(state.bottom_multiplier, 2);
+        // Winner banks bottom (10) × 2 = 20.
+        assert_eq!(state.last_trick_winner, Some(3));
+        assert_eq!(state.collected_scores.get(&3).copied(), Some(20));
+    }
+
+    #[test]
+    fn compact_deck_count_removes_the_documented_non_scoring_ranks() {
+        assert_eq!(build_tractor_deck_with_removed_ranks(2, 0).len(), 108);
+        let ranks = |count| {
+            build_tractor_deck_with_removed_ranks(2, count)
+                .into_iter()
+                .map(card_rank)
+                .collect::<Vec<_>>()
+        };
+        let removed_three = ranks(3);
+        assert!(!removed_three.iter().any(|rank| [3, 4, 6].contains(rank)));
+        assert!(removed_three.contains(&7));
+        assert!(removed_three.contains(&5));
+        assert!(removed_three.contains(&10));
+        assert!(removed_three.contains(&13));
+
+        let removed_four = ranks(4);
+        assert!(!removed_four.iter().any(|rank| [3, 4, 6, 7].contains(rank)));
+        assert!(removed_four.contains(&8));
+    }
+
+    #[test]
+    fn failed_ace_queen_pair_throw_forces_out_queen_pair() {
+        let mut state = test_state();
+        state.rules.target_rank = TractorRank::TWO;
+        state.hands.insert(0, vec![13, 113, 11, 111]);
+        state.hands.insert(1, vec![12, 112, 20, 21]);
+        state.hands.insert(2, vec![30, 31, 32, 33]);
+        state.hands.insert(3, vec![42, 43, 44, 45]);
+
+        let played = state
+            .play_cards(0, "u0".to_owned(), vec![13, 113, 11, 111])
+            .expect("throw is resolved by referee");
+
+        assert_eq!(played.cards, vec![11, 111]);
+        assert_eq!(state.current_trick[0].cards, vec![11, 111]);
+        assert_eq!(state.hands[&0], vec![13, 113]);
+    }
+
+    #[test]
+    fn incremental_deal_gives_bottom_to_dealer_then_requires_equal_bury() {
+        let mut state = test_state();
+        let mut rules = state.rules.clone();
+        rules.target_rank = TractorRank::TWO;
+        state.deal_new_round(rules).expect("prepare round");
+        while state.phase == TractorPhase::Deal {
+            state.deal_next_card().expect("next card");
+        }
+        assert_eq!(state.phase, TractorPhase::Bury);
+        let dealer_count = state.remaining_hand_count(state.dealer_position) as usize;
+        assert_eq!(
+            dealer_count,
+            state.hand_count() + state.rules.bottom_card_count
+        );
+        let bottom = state.choose_auto_bury().expect("automatic bottom");
+        assert_eq!(bottom.len(), state.rules.bottom_card_count);
+        state
+            .bury_bottom(state.dealer_position, bottom)
+            .expect("bury exact count");
+        assert_eq!(state.phase, TractorPhase::Play);
+        assert!(
+            state
+                .hands
+                .values()
+                .all(|cards| cards.len() == state.hand_count())
+        );
+    }
+
+    #[test]
+    fn later_round_cannot_bury_before_trump_is_selected() {
+        let mut state = test_state();
+        state.phase = TractorPhase::Bury;
+        state.round_index = 1;
+        state.dealer_position = 0;
+        state.rules.bottom_card_count = 2;
+        state.rules.trump_suit = None;
+        state.hands.insert(0, vec![2, 3, 4, 5]);
+
+        assert!(state.bury_bottom(0, vec![2, 3]).is_err());
+        state.rules.trump_suit = Some(TractorSuit::DIAMOND);
+        state.bury_bottom(0, vec![2, 3]).expect("selected first");
+    }
+
+    #[test]
+    fn later_round_trump_is_selected_only_by_the_established_dealer() {
+        let mut state = test_state();
+        state.phase = TractorPhase::Deal;
+        state.round_index = 1;
+        state.dealer_position = 2;
+        state.rules.target_rank = TractorRank::FIVE;
+        state.hands.insert(0, vec![4]);
+        state.hands.insert(2, vec![14, 15, 16, 114, 115]);
+
+        assert!(state.declare_trump(0, vec![4]).is_err());
+        assert!(state.select_dealer_trump(1, TractorSuit::SPADE).is_err());
+        assert_eq!(state.preferred_dealer_trump_suit(), TractorSuit::HEART);
+
+        let selection = state
+            .select_dealer_trump(2, TractorSuit::CLUB)
+            .expect("dealer chooses freely");
+        assert!(selection.cards.is_empty());
+        assert_eq!(selection.strength, 0);
+        assert_eq!(selection.position, 2);
+        assert_eq!(state.rules.trump_suit, Some(TractorSuit::CLUB));
+    }
+
+    #[test]
+    fn partner_higher_pair_also_breaks_a_throw() {
+        let mut state = test_state();
+        state.rules.target_rank = TractorRank::TWO;
+        state.hands.insert(0, vec![13, 113, 11, 111]);
+        state.hands.insert(1, vec![20, 21, 22, 23]);
+        // Position 2 is the thrower's partner, but table validation must still
+        // notice that their K pair can beat the proposed Q component.
+        state.hands.insert(2, vec![12, 112, 30, 31]);
+        state.hands.insert(3, vec![42, 43, 44, 45]);
+
+        let played = state
+            .play_cards(0, "u0".to_owned(), vec![13, 113, 11, 111])
+            .expect("throw is resolved by referee");
+
+        assert_eq!(played.cards, vec![11, 111]);
+    }
+
+    #[test]
     fn play_rejects_wrong_card_count_and_must_follow_suit() {
         let mut state = test_state();
         state.hands.insert(0, vec![1, 101]);
@@ -1306,6 +1313,56 @@ mod tests {
         assert!(!state.advance_after_settlement().expect("finished"));
     }
 
+    #[test]
+    fn strong_ai_pair_can_counter_a_human_single_after_hand_evaluation() {
+        let mut state = test_state();
+        state.phase = TractorPhase::Deal;
+        state.round_index = 0;
+        state.rules.target_rank = TractorRank::TWO;
+        state.hands.insert(0, vec![14]);
+        state.hands.insert(1, vec![1, 101]);
+        state.deal_queue.push_back((2, 3));
+        state.base.lock().unwrap().mark_ai_position(1);
+
+        state
+            .declare_trump(0, vec![14])
+            .expect("human declares a single heart 2");
+        let (_, _, finished, auto_declaration) =
+            state.deal_next_card().expect("deal the final card");
+
+        assert!(finished);
+        assert_eq!(auto_declaration.as_ref().map(|item| item.strength), Some(2));
+        assert_eq!(
+            state.declaration.as_ref().map(|item| item.position),
+            Some(1)
+        );
+        assert_eq!(state.dealer_position, 1);
+        assert_eq!(state.rules.trump_suit, Some(TractorSuit::SPADE));
+        assert_eq!(state.phase, TractorPhase::Bury);
+    }
+
+    #[test]
+    fn stronger_level_card_declaration_sets_first_dealer_and_trump_suit() {
+        let mut state = test_state();
+        state.phase = TractorPhase::Deal;
+        state.round_index = 0;
+        state.rules.target_rank = TractorRank::THREE;
+        state.hands.insert(1, vec![2, 102]);
+        state.hands.insert(2, vec![15]);
+
+        let first = state.declare_trump(2, vec![15]).expect("single heart 3");
+        assert_eq!(first.trump_suit, TractorSuit::HEART);
+        assert_eq!(state.dealer_position, 2);
+        assert!(state.declare_trump(1, vec![2]).is_err());
+
+        let counter = state
+            .declare_trump(1, vec![2, 102])
+            .expect("pair of spade 3 counters single");
+        assert_eq!(counter.strength, 2);
+        assert_eq!(state.rules.trump_suit, Some(TractorSuit::SPADE));
+        assert_eq!(state.dealer_position, 1);
+    }
+
     fn test_state() -> TractorGameState {
         let mut common = CommonGameState::new();
         for position in 0..4 {
@@ -1335,6 +1392,35 @@ mod tests {
         let bottom = adjusted_bottom_card_count(total, 4, 8, min_bottom_card_count(3)).unwrap();
         assert_eq!(bottom, 10);
         assert_eq!((total - bottom) % 4, 0);
+    }
+
+    #[test]
+    fn tractor_lead_forces_pair_follow_and_higher_tractor_wins() {
+        let mut state = test_state();
+        state.rules.target_rank = TractorRank::TWO;
+        // Lead a suit-0 tractor rank3+rank4; each opponent must follow shape.
+        state.hands.insert(0, vec![2, 102, 3, 103]);
+        state.hands.insert(1, vec![5, 105, 6, 106]); // higher suit-0 tractor
+        state.hands.insert(2, vec![18, 118, 19, 119]);
+        state.hands.insert(3, vec![31, 131, 32, 132]);
+
+        state
+            .play_cards(0, "u0".to_owned(), vec![2, 102, 3, 103])
+            .expect("lead tractor");
+        // A single pair cannot answer a tractor lead (wrong card count).
+        assert!(state.play_cards(1, "u1".to_owned(), vec![5, 105]).is_err());
+        state
+            .play_cards(1, "u1".to_owned(), vec![5, 105, 6, 106])
+            .expect("follow higher tractor");
+        state
+            .play_cards(2, "u2".to_owned(), vec![18, 118, 19, 119])
+            .unwrap();
+        state
+            .play_cards(3, "u3".to_owned(), vec![31, 131, 32, 132])
+            .unwrap();
+
+        // Position 1's higher suit-0 tractor takes the trick.
+        assert_eq!(state.last_trick_winner, Some(1));
     }
 
     #[test]
@@ -1380,109 +1466,23 @@ mod tests {
     }
 
     #[test]
-    fn tractor_lead_forces_pair_follow_and_higher_tractor_wins() {
+    fn weak_ai_single_passes_at_end_of_first_deal() {
         let mut state = test_state();
+        state.phase = TractorPhase::Deal;
+        state.round_index = 0;
         state.rules.target_rank = TractorRank::TWO;
-        // Lead a suit-0 tractor rank3+rank4; each opponent must follow shape.
-        state.hands.insert(0, vec![2, 102, 3, 103]);
-        state.hands.insert(1, vec![5, 105, 6, 106]); // higher suit-0 tractor
-        state.hands.insert(2, vec![18, 118, 19, 119]);
-        state.hands.insert(3, vec![31, 131, 32, 132]);
+        state.hands.insert(1, vec![1]);
+        state.deal_queue.push_back((2, 3));
+        state.base.lock().unwrap().mark_ai_position(1);
 
-        state
-            .play_cards(0, "u0".to_owned(), vec![2, 102, 3, 103])
-            .expect("lead tractor");
-        // A single pair cannot answer a tractor lead (wrong card count).
-        assert!(state.play_cards(1, "u1".to_owned(), vec![5, 105]).is_err());
-        state
-            .play_cards(1, "u1".to_owned(), vec![5, 105, 6, 106])
-            .expect("follow higher tractor");
-        state
-            .play_cards(2, "u2".to_owned(), vec![18, 118, 19, 119])
-            .unwrap();
-        state
-            .play_cards(3, "u3".to_owned(), vec![31, 131, 32, 132])
-            .unwrap();
+        let (_, _, finished, auto_declaration) =
+            state.deal_next_card().expect("deal the final card");
 
-        // Position 1's higher suit-0 tractor takes the trick.
-        assert_eq!(state.last_trick_winner, Some(1));
-    }
-
-    #[test]
-    fn failed_ace_queen_pair_throw_forces_out_queen_pair() {
-        let mut state = test_state();
-        state.rules.target_rank = TractorRank::TWO;
-        state.hands.insert(0, vec![13, 113, 11, 111]);
-        state.hands.insert(1, vec![12, 112, 20, 21]);
-        state.hands.insert(2, vec![30, 31, 32, 33]);
-        state.hands.insert(3, vec![42, 43, 44, 45]);
-
-        let played = state
-            .play_cards(0, "u0".to_owned(), vec![13, 113, 11, 111])
-            .expect("throw is resolved by referee");
-
-        assert_eq!(played.cards, vec![11, 111]);
-        assert_eq!(state.current_trick[0].cards, vec![11, 111]);
-        assert_eq!(state.hands[&0], vec![13, 113]);
-    }
-
-    #[test]
-    fn partner_higher_pair_also_breaks_a_throw() {
-        let mut state = test_state();
-        state.rules.target_rank = TractorRank::TWO;
-        state.hands.insert(0, vec![13, 113, 11, 111]);
-        state.hands.insert(1, vec![20, 21, 22, 23]);
-        // Position 2 is the thrower's partner, but table validation must still
-        // notice that their K pair can beat the proposed Q component.
-        state.hands.insert(2, vec![12, 112, 30, 31]);
-        state.hands.insert(3, vec![42, 43, 44, 45]);
-
-        let played = state
-            .play_cards(0, "u0".to_owned(), vec![13, 113, 11, 111])
-            .expect("throw is resolved by referee");
-
-        assert_eq!(played.cards, vec![11, 111]);
-    }
-
-    #[test]
-    fn bottom_multiplier_tracks_last_winning_play_size() {
-        let mut state = test_state();
-        state.rules.target_rank = TractorRank::TWO;
-        state.bottom_cards = vec![9]; // one 10-point card in the bottom
-        // Single final trick: multiplier 1.
-        state.hands.insert(0, vec![5]);
-        state.hands.insert(1, vec![6]);
-        state.hands.insert(2, vec![7]);
-        state.hands.insert(3, vec![8]);
-        for (pos, card) in [(0, 5), (1, 6), (2, 7), (3, 8)] {
-            state
-                .play_cards(pos, format!("u{pos}"), vec![card])
-                .unwrap();
-        }
-        assert_eq!(state.bottom_multiplier, 1);
-        // The winner (highest suit-0 single = position 3) banks bottom × 1.
-        assert_eq!(state.last_trick_winner, Some(3));
-        assert_eq!(state.collected_scores.get(&3).copied(), Some(10));
-
-        // Now a pair-winning final trick: multiplier 2.
-        let mut state = test_state();
-        state.rules.target_rank = TractorRank::TWO;
-        state.bottom_cards = vec![9];
-        state.hands.insert(0, vec![5, 105]);
-        state.hands.insert(1, vec![6, 106]);
-        state.hands.insert(2, vec![7, 107]);
-        state.hands.insert(3, vec![8, 108]);
-        for (pos, cards) in [
-            (0, vec![5, 105]),
-            (1, vec![6, 106]),
-            (2, vec![7, 107]),
-            (3, vec![8, 108]),
-        ] {
-            state.play_cards(pos, format!("u{pos}"), cards).unwrap();
-        }
-        assert_eq!(state.bottom_multiplier, 2);
-        // Winner banks bottom (10) × 2 = 20.
-        assert_eq!(state.last_trick_winner, Some(3));
-        assert_eq!(state.collected_scores.get(&3).copied(), Some(20));
+        assert!(finished);
+        assert!(auto_declaration.is_none());
+        assert!(state.declaration.is_none());
+        assert_eq!(state.dealer_position, 0);
+        assert_eq!(state.rules.trump_suit, None);
+        assert_eq!(state.phase, TractorPhase::Bury);
     }
 }

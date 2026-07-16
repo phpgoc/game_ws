@@ -26,25 +26,6 @@ fn capped_basic_foundation_disables_redundant_closed_pure_one_suit_plan() {
 }
 
 #[test]
-fn half_capped_basic_foundation_disables_closed_pure_one_suit_chase() {
-    let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(4);
-    let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 11, 21, 35, 35, 35, 35];
-
-    assert!(has_basic_normal_route_foundation(
-        &hand,
-        &[],
-        WIN_RULE_SHENYANG_BASIC
-    ));
-    assert_eq!(estimated_visible_bonus_fan(&hand, &[]), 2);
-    assert!(pure_one_suit_plan_score(&hand, &[]) > 0.0);
-    assert_eq!(
-        pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
-        0.0
-    );
-}
-
-#[test]
 fn capped_basic_foundation_preserves_three_suits_over_pure_one_suit_chase() {
     let mut table = table_with_discards(1, Vec::new());
     table.max_fan = Some(2);
@@ -120,35 +101,30 @@ fn capped_pure_one_suit_route_can_discard_last_honor_when_suits_are_missing() {
 }
 
 #[test]
-fn one_fan_relaxed_room_does_not_chase_missing_suit_pure_plan() {
-    let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(1);
-    let hand = vec![2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 8, 8, 12];
+fn closed_dealer_threat_only_suppresses_basic_pure_one_suit_plan() {
+    let mut table = table_with_discards(1, vec![31, 32, 33, 34, 35, 36]);
+    table.dealer_position = 1;
+    table.wall_count = LATE_PRESSURE_WALL_COUNT;
+    table.seats.get_mut(&1).unwrap().hand_count = 13;
+    let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 21, 22, 31, 35];
 
-    assert!(pure_one_suit_plan_score(&hand, &[]) > 0.0);
+    assert!(dealer_opponent_has_major_threat(
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert!(!dealer_opponent_has_major_threat(
+        &table,
+        0,
+        WIN_RULE_RELAXED
+    ));
     assert_eq!(
-        pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_RELAXED),
+        pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
         0.0
     );
-    assert!(
-        pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0
-    );
-}
-
-#[test]
-fn two_fan_relaxed_room_does_not_chase_bonus_capped_pure_plan() {
-    let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(2);
-    let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 31, 35, 35, 35];
-
-    assert!(pure_one_suit_plan_score(&hand, &[]) > 0.0);
-    assert_eq!(estimated_visible_bonus_fan(&hand, &[]), 1);
     assert_eq!(
         pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_RELAXED),
-        0.0
-    );
-    assert!(
-        pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0
+        pure_one_suit_plan_score(&hand, &[])
     );
 }
 
@@ -256,6 +232,62 @@ fn discard_starts_pure_one_suit_plan_at_eight_main_suit_tiles() {
 }
 
 #[test]
+fn half_capped_basic_foundation_disables_closed_pure_one_suit_chase() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.max_fan = Some(4);
+    let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 11, 21, 35, 35, 35, 35];
+
+    assert!(has_basic_normal_route_foundation(
+        &hand,
+        &[],
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert_eq!(estimated_visible_bonus_fan(&hand, &[]), 2);
+    assert!(pure_one_suit_plan_score(&hand, &[]) > 0.0);
+    assert_eq!(
+        pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        0.0
+    );
+}
+
+#[test]
+fn non_dealer_relaxed_pure_one_suit_plan_can_break_three_suits() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.dealer_position = 1;
+    let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 8, 9, 11, 12, 13, 21];
+    let after_discard = remove_n_tiles(&hand, 21, 1);
+
+    assert!(
+        pure_one_suit_plan_score_for_context(&after_discard, &[], &table, 0, WIN_RULE_RELAXED,)
+            > 0.0
+    );
+    assert_eq!(
+        three_suits_discard_bias(&after_discard, &[], &table, 0, 21, WIN_RULE_RELAXED),
+        0.0
+    );
+    assert_eq!(
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        Some(21)
+    );
+}
+
+#[test]
+fn one_fan_relaxed_room_does_not_chase_missing_suit_pure_plan() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.max_fan = Some(1);
+    let hand = vec![2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 8, 8, 12];
+
+    assert!(pure_one_suit_plan_score(&hand, &[]) > 0.0);
+    assert_eq!(
+        pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_RELAXED),
+        0.0
+    );
+    assert!(
+        pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0
+    );
+}
+
+#[test]
 fn pure_one_suit_plan_abandons_exhausted_main_suit() {
     let hand = vec![1, 1, 2, 2, 3, 3, 4, 4, 11, 12, 21, 22, 31, 35];
     let live_table = table_with_discards(1, Vec::new());
@@ -292,6 +324,56 @@ fn pure_one_suit_plan_abandons_exhausted_main_suit() {
     assert_eq!(
         pure_one_suit_discard_bias(&hand, 11, &[], &exhausted_table, 0, WIN_RULE_SHENYANG_BASIC,),
         0.0
+    );
+}
+
+#[test]
+fn pure_one_suit_plan_ignores_invalid_hand_blockers() {
+    let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 91, 92, 93, 94, 95, 96, 97];
+
+    assert_eq!(pure_one_suit_shape(&hand, &[]), Some((0, 8, 0)));
+    assert!(pure_one_suit_plan_score(&hand, &[]) > 0.0);
+}
+
+#[test]
+fn pure_one_suit_plan_ignores_malformed_off_suit_meld() {
+    let hand = vec![1, 1, 2, 2, 3, 3, 4, 5, 6, 7, 8, 9, 9];
+    let malformed_off_suit = WsShenyangMahjongMeld {
+        kind: ShenyangMahjongMeldKind::PENG,
+        tiles: vec![11, 11],
+        from_position: Some(1),
+    };
+    let valid_off_suit = test_peng_meld(11);
+
+    assert!(pure_one_suit_plan_score(&hand, &[]) > 0.0);
+    assert_eq!(
+        pure_one_suit_plan_score(&hand, &[malformed_off_suit]),
+        pure_one_suit_plan_score(&hand, &[])
+    );
+    assert_eq!(pure_one_suit_plan_score(&hand, &[valid_off_suit]), 0.0);
+}
+
+#[test]
+fn pure_one_suit_plan_only_counts_visible_main_suit_claim_opportunity() {
+    let hand = vec![1, 1, 2, 2, 3, 3, 4, 4, 11, 12, 21, 31, 35];
+    let mut forged_table = table_with_discards(1, Vec::new());
+    forged_table.wall_count = 5;
+    forged_table.claim_window = Some(AiClaimView {
+        tile: 4,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+
+    assert_eq!(
+        pure_one_suit_plan_score_for_context(&hand, &[], &forged_table, 0, WIN_RULE_SHENYANG_BASIC,),
+        0.0
+    );
+
+    let mut valid_table = forged_table.clone();
+    valid_table.seats.get_mut(&1).unwrap().discards.push(4);
+    assert!(
+        pure_one_suit_plan_score_for_context(&hand, &[], &valid_table, 0, WIN_RULE_SHENYANG_BASIC,)
+            > 0.0
     );
 }
 
@@ -363,77 +445,6 @@ fn pure_one_suit_plan_requires_enough_wall_tiles_for_blockers() {
 }
 
 #[test]
-fn pure_one_suit_plan_only_counts_visible_main_suit_claim_opportunity() {
-    let hand = vec![1, 1, 2, 2, 3, 3, 4, 4, 11, 12, 21, 31, 35];
-    let mut forged_table = table_with_discards(1, Vec::new());
-    forged_table.wall_count = 5;
-    forged_table.claim_window = Some(AiClaimView {
-        tile: 4,
-        from_position: 1,
-        eligible_positions: vec![0],
-    });
-
-    assert_eq!(
-        pure_one_suit_plan_score_for_context(&hand, &[], &forged_table, 0, WIN_RULE_SHENYANG_BASIC,),
-        0.0
-    );
-
-    let mut valid_table = forged_table.clone();
-    valid_table.seats.get_mut(&1).unwrap().discards.push(4);
-    assert!(
-        pure_one_suit_plan_score_for_context(&hand, &[], &valid_table, 0, WIN_RULE_SHENYANG_BASIC,)
-            > 0.0
-    );
-}
-
-#[test]
-fn non_dealer_relaxed_pure_one_suit_plan_can_break_three_suits() {
-    let mut table = table_with_discards(1, Vec::new());
-    table.dealer_position = 1;
-    let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 8, 9, 11, 12, 13, 21];
-    let after_discard = remove_n_tiles(&hand, 21, 1);
-
-    assert!(
-        pure_one_suit_plan_score_for_context(&after_discard, &[], &table, 0, WIN_RULE_RELAXED,)
-            > 0.0
-    );
-    assert_eq!(
-        three_suits_discard_bias(&after_discard, &[], &table, 0, 21, WIN_RULE_RELAXED),
-        0.0
-    );
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
-        Some(21)
-    );
-}
-
-#[test]
-fn pure_one_suit_plan_ignores_invalid_hand_blockers() {
-    let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 91, 92, 93, 94, 95, 96, 97];
-
-    assert_eq!(pure_one_suit_shape(&hand, &[]), Some((0, 8, 0)));
-    assert!(pure_one_suit_plan_score(&hand, &[]) > 0.0);
-}
-
-#[test]
-fn pure_one_suit_plan_ignores_malformed_off_suit_meld() {
-    let hand = vec![1, 1, 2, 2, 3, 3, 4, 5, 6, 7, 8, 9, 9];
-    let malformed_off_suit = WsShenyangMahjongMeld {
-        kind: ShenyangMahjongMeldKind::PENG,
-        tiles: vec![11, 11],
-        from_position: Some(1),
-    };
-    let valid_off_suit = test_peng_meld(11);
-
-    assert!(pure_one_suit_plan_score(&hand, &[]) > 0.0);
-    assert_eq!(
-        pure_one_suit_plan_score(&hand, &[malformed_off_suit]),
-        pure_one_suit_plan_score(&hand, &[])
-    );
-    assert_eq!(pure_one_suit_plan_score(&hand, &[valid_off_suit]), 0.0);
-}
-
-#[test]
 fn pure_one_suit_route_can_discard_last_main_suit_terminal() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 8, 8];
@@ -480,6 +491,24 @@ fn pure_one_suit_rule_progress_does_not_require_opening() {
     assert_eq!(
         shenyang_rule_progress_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
         pure_score
+    );
+}
+
+#[test]
+fn seven_pairs_wait_discard_avoids_pure_one_suit_threat_tile() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 32;
+    table.seats.get_mut(&1).unwrap().melds = vec![test_chi_meld(2), test_peng_meld(7)];
+    let hand = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 18, 21, 21, 22, 22];
+
+    assert_eq!(pair_count(&hand), 6);
+    assert!(
+        pure_one_suit_threat_discard_bias(&table, 0, 5, 1)
+            < pure_one_suit_threat_discard_bias(&table, 0, 18, 1)
+    );
+    assert_eq!(
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(18)
     );
 }
 
@@ -547,47 +576,18 @@ fn threatening_dealer_preserves_committed_pure_one_suit_plans() {
 }
 
 #[test]
-fn closed_dealer_threat_only_suppresses_basic_pure_one_suit_plan() {
-    let mut table = table_with_discards(1, vec![31, 32, 33, 34, 35, 36]);
-    table.dealer_position = 1;
-    table.wall_count = LATE_PRESSURE_WALL_COUNT;
-    table.seats.get_mut(&1).unwrap().hand_count = 13;
-    let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 21, 22, 31, 35];
+fn two_fan_relaxed_room_does_not_chase_bonus_capped_pure_plan() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.max_fan = Some(2);
+    let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 31, 35, 35, 35];
 
-    assert!(dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
-    assert!(!dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_RELAXED
-    ));
-    assert_eq!(
-        pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
-        0.0
-    );
+    assert!(pure_one_suit_plan_score(&hand, &[]) > 0.0);
+    assert_eq!(estimated_visible_bonus_fan(&hand, &[]), 1);
     assert_eq!(
         pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_RELAXED),
-        pure_one_suit_plan_score(&hand, &[])
+        0.0
     );
-}
-
-#[test]
-fn seven_pairs_wait_discard_avoids_pure_one_suit_threat_tile() {
-    let mut table = table_with_discards(1, Vec::new());
-    table.wall_count = 32;
-    table.seats.get_mut(&1).unwrap().melds = vec![test_chi_meld(2), test_peng_meld(7)];
-    let hand = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 18, 21, 21, 22, 22];
-
-    assert_eq!(pair_count(&hand), 6);
     assert!(
-        pure_one_suit_threat_discard_bias(&table, 0, 5, 1)
-            < pure_one_suit_threat_discard_bias(&table, 0, 18, 1)
-    );
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(18)
+        pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0
     );
 }

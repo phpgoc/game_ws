@@ -20,6 +20,12 @@ const SUITS: [TractorSuit; 4] = [
 ];
 
 #[derive(Debug, Clone)]
+pub(crate) struct DeclarationDecision {
+    pub(crate) cards: Vec<i32>,
+    pub(crate) assessment: TrumpAssessment,
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct TrumpAssessment {
     pub(crate) suit: TractorSuit,
     pub(crate) score: i32,
@@ -29,84 +35,6 @@ pub(crate) struct TrumpAssessment {
     pub(crate) trump_pairs: usize,
     pub(crate) longest_trump_tractor: usize,
     pub(crate) longest_plain_suit: usize,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct DeclarationDecision {
-    pub(crate) cards: Vec<i32>,
-    pub(crate) assessment: TrumpAssessment,
-}
-
-pub(crate) fn assess_trump(
-    state: &TractorGameState,
-    position: usize,
-    suit: TractorSuit,
-) -> TrumpAssessment {
-    let hand = state
-        .hands
-        .get(&position)
-        .map(Vec::as_slice)
-        .unwrap_or_default();
-    assess_hand(hand, &state.rules, suit)
-}
-
-pub(crate) fn best_trump_suit(state: &TractorGameState, position: usize) -> TractorSuit {
-    SUITS
-        .into_iter()
-        .map(|suit| assess_trump(state, position, suit))
-        .max_by(|left, right| {
-            left.success_probability
-                .total_cmp(&right.success_probability)
-                .then_with(|| left.score.cmp(&right.score))
-                .then_with(|| (right.suit as i32).cmp(&(left.suit as i32)))
-        })
-        .map(|assessment| assessment.suit)
-        .unwrap_or(TractorSuit::SPADE)
-}
-
-pub(crate) fn declaration_decision(
-    state: &TractorGameState,
-    position: usize,
-    current_strength: i32,
-    forced: bool,
-) -> Option<DeclarationDecision> {
-    let hand = state.hands.get(&position)?;
-    let mut by_base: HashMap<i32, Vec<i32>> = HashMap::new();
-    for card in hand
-        .iter()
-        .filter(|card| card_rank(**card) == state.rules.target_rank as i32)
-    {
-        by_base.entry(base_card(*card)).or_default().push(*card);
-    }
-
-    by_base
-        .into_values()
-        .filter(|cards| cards.len() as i32 > current_strength)
-        .filter_map(|mut cards| {
-            cards.sort_unstable();
-            let suit = card_suit(cards[0]).and_then(suit_from_index)?;
-            let assessment = assess_trump(state, position, suit);
-            // The end-of-deal fallback may be slightly more adventurous, but
-            // it must not turn into "show any lone level card". Passing and
-            // playing no-suit trump is preferable to volunteering a clearly
-            // weak contract.
-            let fallback_discount = if forced { 0.04 } else { 0.0 };
-            let threshold =
-                declaration_threshold(cards.len(), current_strength > 0) - fallback_discount;
-            (assessment.success_probability >= threshold)
-                .then_some(DeclarationDecision { cards, assessment })
-        })
-        .max_by(|left, right| {
-            left.cards
-                .len()
-                .cmp(&right.cards.len())
-                .then_with(|| {
-                    left.assessment
-                        .success_probability
-                        .total_cmp(&right.assessment.success_probability)
-                })
-                .then_with(|| left.assessment.score.cmp(&right.assessment.score))
-        })
 }
 
 fn assess_hand(hand: &[i32], rules: &TractorRules, suit: TractorSuit) -> TrumpAssessment {
@@ -224,6 +152,78 @@ fn assess_hand(hand: &[i32], rules: &TractorRules, suit: TractorSuit) -> TrumpAs
     }
 }
 
+pub(crate) fn assess_trump(
+    state: &TractorGameState,
+    position: usize,
+    suit: TractorSuit,
+) -> TrumpAssessment {
+    let hand = state
+        .hands
+        .get(&position)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    assess_hand(hand, &state.rules, suit)
+}
+
+pub(crate) fn best_trump_suit(state: &TractorGameState, position: usize) -> TractorSuit {
+    SUITS
+        .into_iter()
+        .map(|suit| assess_trump(state, position, suit))
+        .max_by(|left, right| {
+            left.success_probability
+                .total_cmp(&right.success_probability)
+                .then_with(|| left.score.cmp(&right.score))
+                .then_with(|| (right.suit as i32).cmp(&(left.suit as i32)))
+        })
+        .map(|assessment| assessment.suit)
+        .unwrap_or(TractorSuit::SPADE)
+}
+
+pub(crate) fn declaration_decision(
+    state: &TractorGameState,
+    position: usize,
+    current_strength: i32,
+    forced: bool,
+) -> Option<DeclarationDecision> {
+    let hand = state.hands.get(&position)?;
+    let mut by_base: HashMap<i32, Vec<i32>> = HashMap::new();
+    for card in hand
+        .iter()
+        .filter(|card| card_rank(**card) == state.rules.target_rank as i32)
+    {
+        by_base.entry(base_card(*card)).or_default().push(*card);
+    }
+
+    by_base
+        .into_values()
+        .filter(|cards| cards.len() as i32 > current_strength)
+        .filter_map(|mut cards| {
+            cards.sort_unstable();
+            let suit = card_suit(cards[0]).and_then(suit_from_index)?;
+            let assessment = assess_trump(state, position, suit);
+            // The end-of-deal fallback may be slightly more adventurous, but
+            // it must not turn into "show any lone level card". Passing and
+            // playing no-suit trump is preferable to volunteering a clearly
+            // weak contract.
+            let fallback_discount = if forced { 0.04 } else { 0.0 };
+            let threshold =
+                declaration_threshold(cards.len(), current_strength > 0) - fallback_discount;
+            (assessment.success_probability >= threshold)
+                .then_some(DeclarationDecision { cards, assessment })
+        })
+        .max_by(|left, right| {
+            left.cards
+                .len()
+                .cmp(&right.cards.len())
+                .then_with(|| {
+                    left.assessment
+                        .success_probability
+                        .total_cmp(&right.assessment.success_probability)
+                })
+                .then_with(|| left.assessment.score.cmp(&right.assessment.score))
+        })
+}
+
 fn declaration_threshold(strength: usize, countering: bool) -> f64 {
     let base = match strength {
         0 | 1 => 0.60,
@@ -253,24 +253,22 @@ mod tests {
 
     use super::*;
 
-    fn state(hand: Vec<i32>) -> TractorGameState {
-        let mut common = CommonGameState::new();
-        for position in 0..4 {
-            common.add_player(position, position as u64 + 1, &format!("u{position}"));
-        }
-        let mut state = TractorGameState::from_common(Arc::new(Mutex::new(common)));
-        state.phase = TractorPhase::Deal;
-        state.rules.target_rank = TractorRank::TWO;
-        state.rules.deck_count = 3;
-        state.hands.insert(0, hand);
-        state
-    }
-
     #[test]
     fn a_lone_level_card_does_not_force_a_weak_declaration() {
         let state = state(vec![1, 15, 16, 17, 18, 29, 30, 31, 32, 42, 43, 44, 45, 46]);
         assert!(declaration_decision(&state, 0, 0, false).is_none());
         assert!(declaration_decision(&state, 0, 0, true).is_none());
+    }
+
+    #[test]
+    fn later_trump_selection_values_control_above_raw_suit_length() {
+        let state = state(vec![
+            // Spades: slightly shorter, but joker/level support combines with
+            // an A-K-Q tractor and two identity pairs.
+            1, 101, 11, 111, 12, 112, 13, 113, 53, 153, // Hearts: longer loose low cards.
+            15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+        ]);
+        assert_eq!(best_trump_suit(&state, 0), TractorSuit::SPADE);
     }
 
     #[test]
@@ -283,14 +281,16 @@ mod tests {
         assert!(decision.assessment.success_probability >= 0.525);
     }
 
-    #[test]
-    fn later_trump_selection_values_control_above_raw_suit_length() {
-        let state = state(vec![
-            // Spades: slightly shorter, but joker/level support combines with
-            // an A-K-Q tractor and two identity pairs.
-            1, 101, 11, 111, 12, 112, 13, 113, 53, 153, // Hearts: longer loose low cards.
-            15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
-        ]);
-        assert_eq!(best_trump_suit(&state, 0), TractorSuit::SPADE);
+    fn state(hand: Vec<i32>) -> TractorGameState {
+        let mut common = CommonGameState::new();
+        for position in 0..4 {
+            common.add_player(position, position as u64 + 1, &format!("u{position}"));
+        }
+        let mut state = TractorGameState::from_common(Arc::new(Mutex::new(common)));
+        state.phase = TractorPhase::Deal;
+        state.rules.target_rank = TractorRank::TWO;
+        state.rules.deck_count = 3;
+        state.hands.insert(0, hand);
+        state
     }
 }

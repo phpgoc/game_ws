@@ -20,17 +20,9 @@ pub struct EmbeddedTurnServer {
     listen_addr: SocketAddr,
 }
 
-impl EmbeddedTurnServer {
-    pub fn listen_addr(&self) -> SocketAddr {
-        self.listen_addr
-    }
-
-    pub async fn close(self) -> anyhow::Result<()> {
-        self.server
-            .close()
-            .await
-            .context("close embedded TURN server")
-    }
+struct ExpiringAuthHandler {
+    secret: String,
+    maximum_ttl_seconds: u64,
 }
 
 pub async fn start_embedded_turn(
@@ -70,9 +62,17 @@ pub async fn start_embedded_turn(
     })
 }
 
-struct ExpiringAuthHandler {
-    secret: String,
-    maximum_ttl_seconds: u64,
+impl EmbeddedTurnServer {
+    pub async fn close(self) -> anyhow::Result<()> {
+        self.server
+            .close()
+            .await
+            .context("close embedded TURN server")
+    }
+
+    pub fn listen_addr(&self) -> SocketAddr {
+        self.listen_addr
+    }
 }
 
 impl AuthHandler for ExpiringAuthHandler {

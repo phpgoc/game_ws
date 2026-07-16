@@ -15,37 +15,6 @@ pub enum TractorPhase {
 }
 
 #[typeshare]
-#[repr(i8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
-pub enum TractorSuit {
-    SPADE = 0,
-    HEART = 1,
-    CLUB = 2,
-    DIAMOND = 3,
-}
-
-#[typeshare]
-#[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
-#[allow(non_camel_case_types)]
-pub enum TractorRoutes {
-    DECLARE_TRUMP = 4001,
-    BURY_BOTTOM = 4002,
-    SELECT_TRUMP = 4003,
-}
-
-#[typeshare]
-#[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
-#[allow(non_camel_case_types)]
-pub enum TractorWsCode {
-    TRUMP_DECLARED = 4001,
-    BOTTOM_CARDS = 4002,
-    BOTTOM_BURIED = 4003,
-    HAND_UPDATED = 4004,
-}
-
-#[typeshare]
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
 #[allow(non_camel_case_types)]
@@ -63,6 +32,59 @@ pub enum TractorRank {
     Q = 12,
     K = 13,
     A = 14,
+}
+
+#[typeshare]
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
+#[allow(non_camel_case_types)]
+pub enum TractorRoutes {
+    DECLARE_TRUMP = 4001,
+    BURY_BOTTOM = 4002,
+    SELECT_TRUMP = 4003,
+}
+
+#[typeshare]
+#[repr(i8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
+pub enum TractorSuit {
+    SPADE = 0,
+    HEART = 1,
+    CLUB = 2,
+    DIAMOND = 3,
+}
+
+#[typeshare]
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
+#[allow(non_camel_case_types)]
+pub enum TractorWsCode {
+    TRUMP_DECLARED = 4001,
+    BOTTOM_CARDS = 4002,
+    BOTTOM_BURIED = 4003,
+    HAND_UPDATED = 4004,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsTractorBottomBuriedEvent {
+    pub position: i32,
+    pub name: String,
+    pub bottom_card_count: i32,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsTractorBottomCardsEvent {
+    pub position: i32,
+    pub cards: Vec<i32>,
+    pub required_count: i32,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsTractorBuryBottomRequest {
+    pub cards: Vec<i32>,
 }
 
 #[typeshare]
@@ -86,55 +108,9 @@ pub struct WsTractorDeclareTrumpRequest {
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsTractorSelectTrumpRequest {
-    pub trump_suit: TractorSuit,
-}
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsTractorTrumpDeclaration {
-    pub position: i32,
-    pub name: String,
-    pub cards: Vec<i32>,
-    pub trump_suit: TractorSuit,
-    pub strength: i32,
-    pub target_rank: TractorRank,
-}
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsTractorBottomCardsEvent {
-    pub position: i32,
-    pub cards: Vec<i32>,
-    pub required_count: i32,
-}
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsTractorBuryBottomRequest {
-    pub cards: Vec<i32>,
-}
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsTractorBottomBuriedEvent {
-    pub position: i32,
-    pub name: String,
-    pub bottom_card_count: i32,
-}
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsTractorHandEvent {
     pub position: i32,
     pub cards: Vec<i32>,
-}
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsTractorPlayerHandCount {
-    pub position: i32,
-    pub hand_count: i32,
 }
 
 #[typeshare]
@@ -160,6 +136,19 @@ pub struct WsTractorPlayedCards {
     pub position: i32,
     pub name: String,
     pub cards: Vec<i32>,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsTractorPlayerHandCount {
+    pub position: i32,
+    pub hand_count: i32,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsTractorSelectTrumpRequest {
+    pub trump_suit: TractorSuit,
 }
 
 #[typeshare]
@@ -197,6 +186,17 @@ pub struct WsTractorTableSnapshotEvent {
     pub trick_index: i32,
     pub current_trick: Vec<WsTractorPlayedCards>,
     pub turn_countdown: i32,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsTractorTrumpDeclaration {
+    pub position: i32,
+    pub name: String,
+    pub cards: Vec<i32>,
+    pub trump_suit: TractorSuit,
+    pub strength: i32,
+    pub target_rank: TractorRank,
 }
 
 impl Display for TractorPhase {

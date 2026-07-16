@@ -1,70 +1,28 @@
 use super::*;
 
-pub(in crate::ai::decision) fn piao_committed_group_count(
+pub(in crate::ai::decision) fn has_piao_route_basics(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
-) -> usize {
-    let open_triplets = melds
-        .iter()
-        .filter(|meld| is_triplet_like_meld(meld))
-        .count();
-    let mut counts: HashMap<i32, usize> = HashMap::new();
-    for &tile in hand.iter().filter(|tile| is_valid_tile(**tile)) {
-        *counts.entry(tile).or_default() += 1;
-    }
-    open_triplets + counts.values().filter(|count| **count >= 3).count()
+) -> bool {
+    missing_suits(hand, melds).is_empty() && has_terminal_or_honor_with_extra(hand, melds, None)
 }
 
-fn pending_piao_claim_tile(
-    melds: &[WsShenyangMahjongMeld],
-    table: &AiPublicTable,
-    position: usize,
-) -> Option<i32> {
-    let claim = table.claim_window.as_ref()?;
-    if claim.from_position == position
-        || !claim.eligible_positions.contains(&position)
-        || !claim_tile_already_visible(table, claim.tile)
-    {
-        return None;
-    }
-    let current_meld_tile_count = table
-        .seats
-        .get(&position)
-        .map(|seat| {
-            valid_meld_tiles(&seat.melds)
-                .filter(|tile| *tile == claim.tile)
-                .count()
-        })
-        .unwrap_or(0);
-    let projected_meld_tile_count = valid_meld_tiles(melds)
-        .filter(|tile| *tile == claim.tile)
-        .count();
-    (projected_meld_tile_count <= current_meld_tile_count).then_some(claim.tile)
-}
-
-fn piao_tile_acquisition_costs(
+pub(in crate::ai::decision) fn is_closed_early_piao_candidate(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    tile: i32,
-    pending_claim_tile: Option<i32>,
-) -> (Option<usize>, Option<usize>, Option<usize>) {
-    let own_count = hand.iter().filter(|item| **item == tile).count();
-    let available =
-        remaining_tile_count_with_melds_after_discards(hand, melds, table, position, tile, &[])
-            as usize
-            + usize::from(pending_claim_tile == Some(tile));
-    let cost_for = |target_count: usize| {
-        let required = target_count.saturating_sub(own_count);
-        (required <= available).then_some(required)
-    };
-    let open_triplet_required = 1 + 2usize.saturating_sub(own_count);
-    (
-        cost_for(2),
-        cost_for(3),
-        (open_triplet_required <= available).then_some(open_triplet_required),
-    )
+    win_rule: i32,
+) -> bool {
+    valid_meld_count(melds) == 0
+        && pair_count(hand) >= 3
+        && piao_plan_has_enough_group_opportunities(hand, melds, table, position)
+        && table.dealer_position != position
+        && !dealer_opponent_has_major_threat(table, position, win_rule)
+        && !piao_plan_is_capped(table)
+        && !capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table, win_rule)
+        && !capped_normal_route_visible_fan_reaches_cap(hand, melds, table, win_rule)
+        && has_piao_route_basics(hand, melds)
 }
 
 fn minimum_acquisitions_for_piao_shape(
@@ -145,6 +103,69 @@ fn minimum_acquisitions_for_piao_shape(
     best
 }
 
+fn pending_piao_claim_tile(
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+) -> Option<i32> {
+    let claim = table.claim_window.as_ref()?;
+    if claim.from_position == position
+        || !claim.eligible_positions.contains(&position)
+        || !claim_tile_already_visible(table, claim.tile)
+    {
+        return None;
+    }
+    let current_meld_tile_count = table
+        .seats
+        .get(&position)
+        .map(|seat| {
+            valid_meld_tiles(&seat.melds)
+                .filter(|tile| *tile == claim.tile)
+                .count()
+        })
+        .unwrap_or(0);
+    let projected_meld_tile_count = valid_meld_tiles(melds)
+        .filter(|tile| *tile == claim.tile)
+        .count();
+    (projected_meld_tile_count <= current_meld_tile_count).then_some(claim.tile)
+}
+
+pub(in crate::ai::decision) fn piao_committed_group_count(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+) -> usize {
+    let open_triplets = melds
+        .iter()
+        .filter(|meld| is_triplet_like_meld(meld))
+        .count();
+    let mut counts: HashMap<i32, usize> = HashMap::new();
+    for &tile in hand.iter().filter(|tile| is_valid_tile(**tile)) {
+        *counts.entry(tile).or_default() += 1;
+    }
+    open_triplets + counts.values().filter(|count| **count >= 3).count()
+}
+
+pub(in crate::ai::decision) fn piao_missing_suits_from_melds(
+    melds: &[WsShenyangMahjongMeld],
+) -> Vec<i32> {
+    if piao_threat_level(melds) < 3 {
+        return Vec::new();
+    }
+    let mut suits = [false; 3];
+    for meld in melds.iter().filter(|meld| is_triplet_like_meld(meld)) {
+        if let Some(tile) = meld_primary_tile(meld)
+            && is_suited(tile)
+        {
+            suits[tile_suit(tile) as usize] = true;
+        }
+    }
+    suits
+        .into_iter()
+        .enumerate()
+        .filter_map(|(suit, present)| (!present).then_some(suit as i32))
+        .collect()
+}
+
 fn piao_plan_has_enough_group_opportunities(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -156,6 +177,10 @@ fn piao_plan_has_enough_group_opportunities(
     minimum_acquisitions_for_piao_shape(hand, melds, table, position).is_some_and(|required| {
         required <= table.wall_count.saturating_add(pending_claim_opportunity)
     })
+}
+
+pub(in crate::ai::decision) fn piao_plan_is_capped(table: &AiPublicTable) -> bool {
+    table.max_fan.is_some_and(|max_fan| max_fan <= 1)
 }
 
 pub(in crate::ai::decision) fn piao_plan_score(
@@ -212,17 +237,6 @@ pub(in crate::ai::decision) fn piao_plan_score_for_context(
     }
 }
 
-pub(in crate::ai::decision) fn piao_plan_is_capped(table: &AiPublicTable) -> bool {
-    table.max_fan.is_some_and(|max_fan| max_fan <= 1)
-}
-
-pub(in crate::ai::decision) fn has_piao_route_basics(
-    hand: &[i32],
-    melds: &[WsShenyangMahjongMeld],
-) -> bool {
-    missing_suits(hand, melds).is_empty() && has_terminal_or_honor_with_extra(hand, melds, None)
-}
-
 pub(in crate::ai::decision) fn piao_threat_level(melds: &[WsShenyangMahjongMeld]) -> usize {
     if melds.iter().any(is_sequence_meld) {
         return 0;
@@ -233,41 +247,27 @@ pub(in crate::ai::decision) fn piao_threat_level(melds: &[WsShenyangMahjongMeld]
         .count()
 }
 
-pub(in crate::ai::decision) fn piao_missing_suits_from_melds(
-    melds: &[WsShenyangMahjongMeld],
-) -> Vec<i32> {
-    if piao_threat_level(melds) < 3 {
-        return Vec::new();
-    }
-    let mut suits = [false; 3];
-    for meld in melds.iter().filter(|meld| is_triplet_like_meld(meld)) {
-        if let Some(tile) = meld_primary_tile(meld)
-            && is_suited(tile)
-        {
-            suits[tile_suit(tile) as usize] = true;
-        }
-    }
-    suits
-        .into_iter()
-        .enumerate()
-        .filter_map(|(suit, present)| (!present).then_some(suit as i32))
-        .collect()
-}
-
-pub(in crate::ai::decision) fn is_closed_early_piao_candidate(
+fn piao_tile_acquisition_costs(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
-) -> bool {
-    valid_meld_count(melds) == 0
-        && pair_count(hand) >= 3
-        && piao_plan_has_enough_group_opportunities(hand, melds, table, position)
-        && table.dealer_position != position
-        && !dealer_opponent_has_major_threat(table, position, win_rule)
-        && !piao_plan_is_capped(table)
-        && !capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table, win_rule)
-        && !capped_normal_route_visible_fan_reaches_cap(hand, melds, table, win_rule)
-        && has_piao_route_basics(hand, melds)
+    tile: i32,
+    pending_claim_tile: Option<i32>,
+) -> (Option<usize>, Option<usize>, Option<usize>) {
+    let own_count = hand.iter().filter(|item| **item == tile).count();
+    let available =
+        remaining_tile_count_with_melds_after_discards(hand, melds, table, position, tile, &[])
+            as usize
+            + usize::from(pending_claim_tile == Some(tile));
+    let cost_for = |target_count: usize| {
+        let required = target_count.saturating_sub(own_count);
+        (required <= available).then_some(required)
+    };
+    let open_triplet_required = 1 + 2usize.saturating_sub(own_count);
+    (
+        cost_for(2),
+        cost_for(3),
+        (open_triplet_required <= available).then_some(open_triplet_required),
+    )
 }

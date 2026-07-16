@@ -76,13 +76,48 @@ pub(in crate::ai::decision) fn capped_piao_route_visible_fan_projects_cap(
     next_melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
 ) -> bool {
+    capped_pattern_route_visible_fan_projects_cap(
+        ShenyangMahjongWinPattern::PiaoHu,
+        hand,
+        melds,
+        next_hand,
+        next_melds,
+        table,
+    )
+}
+
+fn capped_pattern_route_visible_fan_projects_cap(
+    pattern: ShenyangMahjongWinPattern,
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    next_hand: &[i32],
+    next_melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+) -> bool {
     let Some(max_fan) = table.max_fan.filter(|max_fan| *max_fan > 0) else {
         return false;
     };
-    let base_fan = shenyang_win_pattern_base_fan(ShenyangMahjongWinPattern::PiaoHu);
+    let base_fan = shenyang_win_pattern_base_fan(pattern);
     let current_fan = base_fan + estimated_visible_bonus_fan(hand, melds);
     let projected_fan = base_fan + estimated_visible_bonus_fan(next_hand, next_melds);
     current_fan * 2 > max_fan && current_fan < max_fan && projected_fan >= max_fan
+}
+
+pub(in crate::ai::decision) fn capped_pure_one_suit_route_visible_fan_projects_cap(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    next_hand: &[i32],
+    next_melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+) -> bool {
+    capped_pattern_route_visible_fan_projects_cap(
+        ShenyangMahjongWinPattern::PureOneSuit,
+        hand,
+        melds,
+        next_hand,
+        next_melds,
+        table,
+    )
 }
 
 pub(in crate::ai::decision) fn estimated_concealed_dragon_triplet_fan(hand: &[i32]) -> i32 {

@@ -23,6 +23,16 @@ use self::knowledge::PublicKnowledge;
 pub(crate) use bid::{best_trump_suit, declaration_decision};
 pub(crate) use bury::choose_bury;
 
+fn candidate_would_win(state: &TractorGameState, position: usize, cards: &[i32]) -> bool {
+    let mut trick = state.current_trick.clone();
+    trick.push(share_type_public::WsTractorPlayedCards {
+        position: position as i32,
+        name: String::new(),
+        cards: cards.to_vec(),
+    });
+    combo::trick_winner(&trick, &state.rules) == Some(position)
+}
+
 pub fn decide(state: &TractorGameState, position: usize) -> Option<Vec<i32>> {
     let hand = state.hands.get(&position)?;
     if hand.is_empty() {
@@ -34,6 +44,133 @@ pub fn decide(state: &TractorGameState, position: usize) -> Option<Vec<i32>> {
     } else {
         follow_play(state, position, hand)
     }
+}
+
+fn follow_play(state: &TractorGameState, position: usize, hand: &[i32]) -> Option<Vec<i32>> {
+    let lead = state.lead_combo()?;
+    let mut candidates = state.legal_follows(position, &lead);
+    if candidates.is_empty() {
+        return combo::forced_follow(hand, &lead, &state.rules);
+    }
+
+    let knowledge = PublicKnowledge::from_state(state, position);
+    let current_winner = combo::trick_winner(&state.current_trick, &state.rules)?;
+    let partner_winning = same_team(current_winner, position) && current_winner != position;
+    let hold_probability = knowledge.current_winner_hold_probability(state);
+    let is_last = state.current_trick.len() + 1 >= state.active_positions().len();
+    let current_points = combo::trick_points(&state.current_trick);
+    let lead_count = lead.kind.card_count();
+    let near_bottom = hand.len() <= lead_count.saturating_mul(2);
+
+    if partner_winning {
+        let safe_to_feed = is_last || hold_probability >= 0.84;
+        if !safe_to_feed && (current_points > 0 || near_bottom) {
+            // A partner may be ahead only provisionally. If a later opponent
+            // is likely to ruff/overtake, take over with a materially safer
+            // card instead of either donating points or passively watching a
+            // scoring trick get stolen.
+            let mut protective_takeovers: Vec<_> = candidates
+                .iter()
+                .filter(|cards| candidate_would_win(state, position, cards))
+                .filter_map(|cards| {
+                    let hold = knowledge.candidate_hold_probability(state, position, cards);
+                    (hold >= 0.78 && hold >= hold_probability + 0.12)
+                        .then_some((cards.clone(), hold))
+                })
+                .collect();
+            protective_takeovers.sort_by(|(left, left_hold), (right, right_hold)| {
+                let left_cost = structure_loss(hand, left, &state.rules) * 100
+                    + play_strength(left, state, lead.suit);
+                let right_cost = structure_loss(hand, right, &state.rules) * 100
+                    + play_strength(right, state, lead.suit);
+                right_hold
+                    .total_cmp(left_hold)
+                    .then_with(|| left_cost.cmp(&right_cost))
+            });
+            if let Some((cards, _)) = protective_takeovers.into_iter().next() {
+                return Some(cards);
+            }
+        }
+        candidates.sort_by_key(|cards| {
+            let points = cards.iter().map(|card| card_score(*card)).sum::<i32>();
+            let loss = structure_loss(hand, cards, &state.rules);
+            let strength = play_strength(cards, state, lead.suit);
+            if safe_to_feed {
+                // Captured points always help our partnership: attackers move
+                // toward the threshold, while defenders keep those points out
+                // of the attacking score. Blood scoring changes urgency, not
+                // the sign of a safely captured point card.
+                let donation_value = points * 1_000 + strength;
+                (-donation_value, loss, strength)
+            } else {
+                (points, loss, strength)
+            }
+        });
+        return candidates.into_iter().next();
+    }
+
+    let mut winning: Vec<_> = candidates
+        .iter()
+        .filter(|cards| candidate_would_win(state, position, cards))
+        .cloned()
+        .collect();
+    if !winning.is_empty() {
+        winning.sort_by(|left, right| {
+            let left_utility = winning_utility(
+                state,
+                &knowledge,
+                position,
+                hand,
+                left,
+                current_points,
+                near_bottom,
+                lead.suit,
+            );
+            let right_utility = winning_utility(
+                state,
+                &knowledge,
+                position,
+                hand,
+                right,
+                current_points,
+                near_bottom,
+                lead.suit,
+            );
+            right_utility.total_cmp(&left_utility)
+        });
+        let best = &winning[0];
+        let ruffing =
+            lead.suit.is_some() && best.iter().all(|card| is_trump_card(*card, &state.rules));
+        let worth_taking = current_points > 0
+            || near_bottom
+            || knowledge.candidate_hold_probability(state, position, best) >= 0.82;
+        if worth_taking || !(ruffing && state.partner_still_to_play(position)) {
+            return Some(best.clone());
+        }
+    }
+
+    // Losing/discarding: avoid donating points, keep pairs and tractors intact,
+    // then prefer a play that empties a plain suit for a future ruff.
+    candidates.sort_by_key(|cards| {
+        let points = cards.iter().map(|card| card_score(*card)).sum::<i32>();
+        let loss = structure_loss(hand, cards, &state.rules);
+        let creates_void = play_creates_plain_void(hand, cards, state);
+        let strength = play_strength(cards, state, lead.suit);
+        (points, loss, !creates_void, strength)
+    });
+    candidates.into_iter().next()
+}
+
+fn hand_structure_value(hand: &[i32], rules: &crate::game_state::TractorRules) -> i32 {
+    combo::enumerate_leads(hand, rules)
+        .into_iter()
+        .filter_map(|cards| match combo::classify(&cards, rules)?.kind {
+            ComboKind::Pair => Some(20),
+            ComboKind::Tractor(pairs) => Some(45 * pairs as i32),
+            ComboKind::Throw { pairs, .. } => Some(10 * pairs as i32),
+            ComboKind::Single => None,
+        })
+        .sum()
 }
 
 /// Choose an opening play. The AI estimates whether every legal opponent reply
@@ -260,211 +397,6 @@ fn lead_play(state: &TractorGameState, position: usize, hand: &[i32]) -> Option<
     lowest_lead_single(hand, rules).map(|card| vec![card])
 }
 
-fn follow_play(state: &TractorGameState, position: usize, hand: &[i32]) -> Option<Vec<i32>> {
-    let lead = state.lead_combo()?;
-    let mut candidates = state.legal_follows(position, &lead);
-    if candidates.is_empty() {
-        return combo::forced_follow(hand, &lead, &state.rules);
-    }
-
-    let knowledge = PublicKnowledge::from_state(state, position);
-    let current_winner = combo::trick_winner(&state.current_trick, &state.rules)?;
-    let partner_winning = same_team(current_winner, position) && current_winner != position;
-    let hold_probability = knowledge.current_winner_hold_probability(state);
-    let is_last = state.current_trick.len() + 1 >= state.active_positions().len();
-    let current_points = combo::trick_points(&state.current_trick);
-    let lead_count = lead.kind.card_count();
-    let near_bottom = hand.len() <= lead_count.saturating_mul(2);
-
-    if partner_winning {
-        let safe_to_feed = is_last || hold_probability >= 0.84;
-        if !safe_to_feed && (current_points > 0 || near_bottom) {
-            // A partner may be ahead only provisionally. If a later opponent
-            // is likely to ruff/overtake, take over with a materially safer
-            // card instead of either donating points or passively watching a
-            // scoring trick get stolen.
-            let mut protective_takeovers: Vec<_> = candidates
-                .iter()
-                .filter(|cards| candidate_would_win(state, position, cards))
-                .filter_map(|cards| {
-                    let hold = knowledge.candidate_hold_probability(state, position, cards);
-                    (hold >= 0.78 && hold >= hold_probability + 0.12)
-                        .then_some((cards.clone(), hold))
-                })
-                .collect();
-            protective_takeovers.sort_by(|(left, left_hold), (right, right_hold)| {
-                let left_cost = structure_loss(hand, left, &state.rules) * 100
-                    + play_strength(left, state, lead.suit);
-                let right_cost = structure_loss(hand, right, &state.rules) * 100
-                    + play_strength(right, state, lead.suit);
-                right_hold
-                    .total_cmp(left_hold)
-                    .then_with(|| left_cost.cmp(&right_cost))
-            });
-            if let Some((cards, _)) = protective_takeovers.into_iter().next() {
-                return Some(cards);
-            }
-        }
-        candidates.sort_by_key(|cards| {
-            let points = cards.iter().map(|card| card_score(*card)).sum::<i32>();
-            let loss = structure_loss(hand, cards, &state.rules);
-            let strength = play_strength(cards, state, lead.suit);
-            if safe_to_feed {
-                // Captured points always help our partnership: attackers move
-                // toward the threshold, while defenders keep those points out
-                // of the attacking score. Blood scoring changes urgency, not
-                // the sign of a safely captured point card.
-                let donation_value = points * 1_000 + strength;
-                (-donation_value, loss, strength)
-            } else {
-                (points, loss, strength)
-            }
-        });
-        return candidates.into_iter().next();
-    }
-
-    let mut winning: Vec<_> = candidates
-        .iter()
-        .filter(|cards| candidate_would_win(state, position, cards))
-        .cloned()
-        .collect();
-    if !winning.is_empty() {
-        winning.sort_by(|left, right| {
-            let left_utility = winning_utility(
-                state,
-                &knowledge,
-                position,
-                hand,
-                left,
-                current_points,
-                near_bottom,
-                lead.suit,
-            );
-            let right_utility = winning_utility(
-                state,
-                &knowledge,
-                position,
-                hand,
-                right,
-                current_points,
-                near_bottom,
-                lead.suit,
-            );
-            right_utility.total_cmp(&left_utility)
-        });
-        let best = &winning[0];
-        let ruffing =
-            lead.suit.is_some() && best.iter().all(|card| is_trump_card(*card, &state.rules));
-        let worth_taking = current_points > 0
-            || near_bottom
-            || knowledge.candidate_hold_probability(state, position, best) >= 0.82;
-        if worth_taking || !(ruffing && state.partner_still_to_play(position)) {
-            return Some(best.clone());
-        }
-    }
-
-    // Losing/discarding: avoid donating points, keep pairs and tractors intact,
-    // then prefer a play that empties a plain suit for a future ruff.
-    candidates.sort_by_key(|cards| {
-        let points = cards.iter().map(|card| card_score(*card)).sum::<i32>();
-        let loss = structure_loss(hand, cards, &state.rules);
-        let creates_void = play_creates_plain_void(hand, cards, state);
-        let strength = play_strength(cards, state, lead.suit);
-        (points, loss, !creates_void, strength)
-    });
-    candidates.into_iter().next()
-}
-
-fn candidate_would_win(state: &TractorGameState, position: usize, cards: &[i32]) -> bool {
-    let mut trick = state.current_trick.clone();
-    trick.push(share_type_public::WsTractorPlayedCards {
-        position: position as i32,
-        name: String::new(),
-        cards: cards.to_vec(),
-    });
-    combo::trick_winner(&trick, &state.rules) == Some(position)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn winning_utility(
-    state: &TractorGameState,
-    knowledge: &PublicKnowledge,
-    position: usize,
-    hand: &[i32],
-    cards: &[i32],
-    current_points: i32,
-    near_bottom: bool,
-    lead_suit: Option<i32>,
-) -> f64 {
-    let added_points = cards.iter().map(|card| card_score(*card)).sum::<i32>();
-    let hold = knowledge.candidate_hold_probability(state, position, cards);
-    let loss = structure_loss(hand, cards, &state.rules);
-    let strength = play_strength(cards, state, lead_suit);
-    let defending = same_team(position, state.dealer_position);
-    let threshold = state.rules.blood_start_score.max(1);
-    let attacking_score = state.attacking_score();
-    let threshold_pressure = (attacking_score as f64 / threshold as f64).clamp(0.0, 1.5);
-    let wins_contract = !defending
-        && attacking_score < threshold
-        && attacking_score + current_points + added_points >= threshold;
-    let contract_swing = if wins_contract { 180.0 } else { 0.0 };
-    let bottom_value = if near_bottom { 70.0 } else { 0.0 };
-    (current_points + added_points) as f64 * (2.0 + threshold_pressure)
-        + hold * 120.0
-        + contract_swing
-        + bottom_value
-        - loss as f64 * 0.7
-        - strength as f64 * 0.015
-}
-
-fn structure_loss(hand: &[i32], cards: &[i32], rules: &crate::game_state::TractorRules) -> i32 {
-    let before = hand_structure_value(hand, rules);
-    let mut after = hand.to_vec();
-    for card in cards {
-        if let Some(index) = after.iter().position(|current| current == card) {
-            after.remove(index);
-        }
-    }
-    (before - hand_structure_value(&after, rules)).max(0)
-}
-
-fn hand_structure_value(hand: &[i32], rules: &crate::game_state::TractorRules) -> i32 {
-    combo::enumerate_leads(hand, rules)
-        .into_iter()
-        .filter_map(|cards| match combo::classify(&cards, rules)?.kind {
-            ComboKind::Pair => Some(20),
-            ComboKind::Tractor(pairs) => Some(45 * pairs as i32),
-            ComboKind::Throw { pairs, .. } => Some(10 * pairs as i32),
-            ComboKind::Single => None,
-        })
-        .sum()
-}
-
-fn play_creates_plain_void(hand: &[i32], cards: &[i32], state: &TractorGameState) -> bool {
-    let Some(suit) = cards
-        .iter()
-        .find(|card| !is_trump_card(**card, &state.rules))
-        .and_then(|card| card_suit(*card))
-    else {
-        return false;
-    };
-    hand.iter()
-        .filter(|card| !is_trump_card(**card, &state.rules) && card_suit(**card) == Some(suit))
-        .count()
-        == cards
-            .iter()
-            .filter(|card| !is_trump_card(**card, &state.rules) && card_suit(**card) == Some(suit))
-            .count()
-}
-
-fn play_strength(cards: &[i32], state: &TractorGameState, lead_suit: Option<i32>) -> i32 {
-    cards
-        .iter()
-        .map(|card| tractor_card_value(*card, &state.rules, lead_suit))
-        .max()
-        .unwrap_or_default()
-}
-
 /// Lowest single to lead: prefer the lowest card of the shortest plain suit so
 /// the AI works toward a void; fall back to the globally lowest card. Ties are
 /// broken by rank then card id to stay deterministic.
@@ -499,6 +431,74 @@ fn lowest_lead_single(hand: &[i32], rules: &crate::game_state::TractorRules) -> 
     })
 }
 
+fn play_creates_plain_void(hand: &[i32], cards: &[i32], state: &TractorGameState) -> bool {
+    let Some(suit) = cards
+        .iter()
+        .find(|card| !is_trump_card(**card, &state.rules))
+        .and_then(|card| card_suit(*card))
+    else {
+        return false;
+    };
+    hand.iter()
+        .filter(|card| !is_trump_card(**card, &state.rules) && card_suit(**card) == Some(suit))
+        .count()
+        == cards
+            .iter()
+            .filter(|card| !is_trump_card(**card, &state.rules) && card_suit(**card) == Some(suit))
+            .count()
+}
+
+fn play_strength(cards: &[i32], state: &TractorGameState, lead_suit: Option<i32>) -> i32 {
+    cards
+        .iter()
+        .map(|card| tractor_card_value(*card, &state.rules, lead_suit))
+        .max()
+        .unwrap_or_default()
+}
+
+fn structure_loss(hand: &[i32], cards: &[i32], rules: &crate::game_state::TractorRules) -> i32 {
+    let before = hand_structure_value(hand, rules);
+    let mut after = hand.to_vec();
+    for card in cards {
+        if let Some(index) = after.iter().position(|current| current == card) {
+            after.remove(index);
+        }
+    }
+    (before - hand_structure_value(&after, rules)).max(0)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn winning_utility(
+    state: &TractorGameState,
+    knowledge: &PublicKnowledge,
+    position: usize,
+    hand: &[i32],
+    cards: &[i32],
+    current_points: i32,
+    near_bottom: bool,
+    lead_suit: Option<i32>,
+) -> f64 {
+    let added_points = cards.iter().map(|card| card_score(*card)).sum::<i32>();
+    let hold = knowledge.candidate_hold_probability(state, position, cards);
+    let loss = structure_loss(hand, cards, &state.rules);
+    let strength = play_strength(cards, state, lead_suit);
+    let defending = same_team(position, state.dealer_position);
+    let threshold = state.rules.blood_start_score.max(1);
+    let attacking_score = state.attacking_score();
+    let threshold_pressure = (attacking_score as f64 / threshold as f64).clamp(0.0, 1.5);
+    let wins_contract = !defending
+        && attacking_score < threshold
+        && attacking_score + current_points + added_points >= threshold;
+    let contract_swing = if wins_contract { 180.0 } else { 0.0 };
+    let bottom_value = if near_bottom { 70.0 } else { 0.0 };
+    (current_points + added_points) as f64 * (2.0 + threshold_pressure)
+        + hold * 120.0
+        + contract_swing
+        + bottom_value
+        - loss as f64 * 0.7
+        - strength as f64 * 0.015
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, Mutex};
@@ -509,38 +509,20 @@ mod tests {
     use super::*;
     use crate::game_state::{TractorGameState, TractorRules};
 
-    fn test_state(target: TractorRank) -> TractorGameState {
-        let mut common = CommonGameState::new();
-        for position in 0..4 {
-            common.add_player(position, position as u64 + 1, &format!("u{position}"));
-        }
-        let mut state = TractorGameState::from_common(Arc::new(Mutex::new(common)));
-        state.phase = TractorPhase::Play;
-        state.rules = TractorRules {
-            blood_enabled: true,
-            blood_score_per_unit: 40,
-            blood_start_score: 80,
-            bottom_card_count: 8,
-            deck_count: 2,
-            final_target_rank: TractorRank::A,
-            removed_rank_count: 0,
-            target_rank: target,
-            trump_suit: None,
-        };
-        state.current_position = 0;
-        state
-    }
-
     #[test]
-    fn ai_leads_a_tractor_when_available() {
+    fn ai_avoids_points_when_following_a_pair_with_singles() {
         let mut state = test_state(TractorRank::TWO);
-        // suit-0 rank3 and rank4 pairs form a tractor, plus a loose card.
-        state.hands.insert(0, vec![2, 102, 3, 103, 20]);
-        let play = decide(&state, 0).expect("lead");
-        assert_eq!(
-            combo::classify(&play, &state.rules).map(|c| c.kind),
-            Some(ComboKind::Tractor(2))
-        );
+        state.current_position = 1;
+        state.current_trick.push(WsTractorPlayedCards {
+            position: 0,
+            name: "u0".to_owned(),
+            cards: vec![8, 108],
+        });
+        // No pair is available, so any two spade singles are legal. Base 4 is
+        // the five; a one-candidate fallback would unnecessarily donate it.
+        state.hands.insert(1, vec![4, 5, 6]);
+
+        assert_eq!(decide(&state, 1), Some(vec![5, 6]));
     }
 
     #[test]
@@ -572,80 +554,6 @@ mod tests {
     }
 
     #[test]
-    fn dealer_team_preserves_trump_tractor_when_plain_route_is_available_early() {
-        let mut state = test_state(TractorRank::TWO);
-        state.rules.blood_enabled = false;
-        state.rules.trump_suit = Some(TractorSuit::SPADE);
-        state.dealer_position = 0;
-        state.hands.insert(
-            0,
-            vec![
-                11, 111, 12, 112, // high trump tractor reserved for bottom control
-                15, 115, 16, 116, // plain heart tractor to establish first
-                30, 31, 32, 33, 42, 44,
-            ],
-        );
-        for position in 1..4 {
-            state.hands.insert(position, vec![35; 20]);
-        }
-
-        let play = decide(&state, 0).expect("lead");
-        let classified = combo::classify(&play, &state.rules).expect("tractor");
-        assert_eq!(classified.kind, ComboKind::Tractor(2));
-        assert_eq!(classified.suit, Some(1));
-    }
-
-    #[test]
-    fn ai_leads_low_plain_pair_over_high_one() {
-        let mut state = test_state(TractorRank::TWO);
-        // Two plain pairs (rank3 low, rank9 high) in an early-round-sized hand
-        // and no tractor. The AI probes low instead of cashing control early.
-        state.hands.insert(
-            0,
-            vec![2, 102, 8, 108, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23],
-        );
-        for position in 1..4 {
-            state.hands.insert(position, vec![30; 20]);
-        }
-        let play = decide(&state, 0).expect("lead");
-        assert_eq!(
-            combo::classify(&play, &state.rules).map(|c| c.kind),
-            Some(ComboKind::Pair)
-        );
-        // The lower pair (rank3 = base 2) is chosen.
-        assert_eq!(play, vec![2, 102]);
-    }
-
-    #[test]
-    fn ai_following_uses_smallest_winning_card() {
-        let mut state = test_state(TractorRank::A);
-        state.current_position = 1;
-        state.current_trick.push(WsTractorPlayedCards {
-            position: 0,
-            name: "u0".to_owned(),
-            cards: vec![4],
-        });
-        state.hands.insert(1, vec![5, 6, 13]);
-        assert_eq!(decide(&state, 1), Some(vec![5]));
-    }
-
-    #[test]
-    fn ai_avoids_points_when_following_a_pair_with_singles() {
-        let mut state = test_state(TractorRank::TWO);
-        state.current_position = 1;
-        state.current_trick.push(WsTractorPlayedCards {
-            position: 0,
-            name: "u0".to_owned(),
-            cards: vec![8, 108],
-        });
-        // No pair is available, so any two spade singles are legal. Base 4 is
-        // the five; a one-candidate fallback would unnecessarily donate it.
-        state.hands.insert(1, vec![4, 5, 6]);
-
-        assert_eq!(decide(&state, 1), Some(vec![5, 6]));
-    }
-
-    #[test]
     fn ai_cashes_ace_pair_before_risking_queen_pair() {
         let mut state = test_state(TractorRank::TWO);
         state.rules.deck_count = 4;
@@ -662,64 +570,6 @@ mod tests {
         }
 
         assert_eq!(decide(&state, 0), Some(vec![13, 113]));
-    }
-
-    #[test]
-    fn ai_gambles_ace_queen_throw_and_referee_falls_back_to_queen_pair() {
-        let mut state = test_state(TractorRank::TWO);
-        state
-            .hands
-            .insert(0, vec![13, 113, 11, 111, 18, 19, 20, 21, 22, 23]);
-        state.hands.insert(1, vec![12, 112, 30, 31]);
-        state.hands.insert(2, vec![32, 33, 34, 35]);
-        state.hands.insert(3, vec![42, 43, 44, 45]);
-
-        let play = decide(&state, 0).expect("probability-backed throw");
-        assert_eq!(
-            combo::classify(&play, &state.rules).map(|combo| combo.kind),
-            Some(ComboKind::Throw { cards: 4, pairs: 2 })
-        );
-        let played = state
-            .play_cards(0, "u0".to_owned(), play)
-            .expect("referee resolves failed throw");
-        assert_eq!(played.cards, vec![11, 111]);
-    }
-
-    #[test]
-    fn ai_releases_long_tractor_when_every_other_player_is_void() {
-        let mut state = test_state(TractorRank::TWO);
-        state.hands.insert(0, vec![2, 102, 3, 103, 20, 21]);
-        for position in 1..4 {
-            state.hands.insert(position, vec![30, 31, 32, 33]);
-        }
-        state.completed_tricks = vec![vec![
-            WsTractorPlayedCards {
-                position: 0,
-                name: "u0".to_owned(),
-                cards: vec![5],
-            },
-            WsTractorPlayedCards {
-                position: 1,
-                name: "u1".to_owned(),
-                cards: vec![18],
-            },
-            WsTractorPlayedCards {
-                position: 2,
-                name: "u2".to_owned(),
-                cards: vec![31],
-            },
-            WsTractorPlayedCards {
-                position: 3,
-                name: "u3".to_owned(),
-                cards: vec![44],
-            },
-        ]];
-
-        let play = decide(&state, 0).expect("lead long tractor");
-        assert_eq!(
-            combo::classify(&play, &state.rules).map(|combo| combo.kind),
-            Some(ComboKind::Tractor(2))
-        );
     }
 
     #[test]
@@ -752,39 +602,70 @@ mod tests {
     }
 
     #[test]
-    fn ai_withholds_points_when_future_enemy_is_known_void_and_can_ruff() {
-        let mut state = test_state(TractorRank::TWO);
-        state.current_position = 3;
-        state.current_trick = vec![
-            WsTractorPlayedCards {
-                position: 1,
-                name: "u1".to_owned(),
-                cards: vec![13],
-            },
-            WsTractorPlayedCards {
-                position: 2,
-                name: "u2".to_owned(),
-                cards: vec![4],
-            },
-        ];
-        state.completed_tricks = vec![vec![
-            WsTractorPlayedCards {
-                position: 1,
-                name: "u1".to_owned(),
-                cards: vec![6],
-            },
-            WsTractorPlayedCards {
-                position: 0,
-                name: "u0".to_owned(),
-                cards: vec![19],
-            },
-        ]];
-        state.hands.insert(0, vec![30, 31, 32, 33]);
-        state.hands.insert(1, vec![20, 21, 22]);
-        state.hands.insert(2, vec![34, 35, 36]);
-        state.hands.insert(3, vec![5, 12]);
+    fn ai_following_uses_smallest_winning_card() {
+        let mut state = test_state(TractorRank::A);
+        state.current_position = 1;
+        state.current_trick.push(WsTractorPlayedCards {
+            position: 0,
+            name: "u0".to_owned(),
+            cards: vec![4],
+        });
+        state.hands.insert(1, vec![5, 6, 13]);
+        assert_eq!(decide(&state, 1), Some(vec![5]));
+    }
 
-        assert_eq!(decide(&state, 3), Some(vec![5]));
+    #[test]
+    fn ai_gambles_ace_queen_throw_and_referee_falls_back_to_queen_pair() {
+        let mut state = test_state(TractorRank::TWO);
+        state
+            .hands
+            .insert(0, vec![13, 113, 11, 111, 18, 19, 20, 21, 22, 23]);
+        state.hands.insert(1, vec![12, 112, 30, 31]);
+        state.hands.insert(2, vec![32, 33, 34, 35]);
+        state.hands.insert(3, vec![42, 43, 44, 45]);
+
+        let play = decide(&state, 0).expect("probability-backed throw");
+        assert_eq!(
+            combo::classify(&play, &state.rules).map(|combo| combo.kind),
+            Some(ComboKind::Throw { cards: 4, pairs: 2 })
+        );
+        let played = state
+            .play_cards(0, "u0".to_owned(), play)
+            .expect("referee resolves failed throw");
+        assert_eq!(played.cards, vec![11, 111]);
+    }
+
+    #[test]
+    fn ai_leads_a_tractor_when_available() {
+        let mut state = test_state(TractorRank::TWO);
+        // suit-0 rank3 and rank4 pairs form a tractor, plus a loose card.
+        state.hands.insert(0, vec![2, 102, 3, 103, 20]);
+        let play = decide(&state, 0).expect("lead");
+        assert_eq!(
+            combo::classify(&play, &state.rules).map(|c| c.kind),
+            Some(ComboKind::Tractor(2))
+        );
+    }
+
+    #[test]
+    fn ai_leads_low_plain_pair_over_high_one() {
+        let mut state = test_state(TractorRank::TWO);
+        // Two plain pairs (rank3 low, rank9 high) in an early-round-sized hand
+        // and no tractor. The AI probes low instead of cashing control early.
+        state.hands.insert(
+            0,
+            vec![2, 102, 8, 108, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23],
+        );
+        for position in 1..4 {
+            state.hands.insert(position, vec![30; 20]);
+        }
+        let play = decide(&state, 0).expect("lead");
+        assert_eq!(
+            combo::classify(&play, &state.rules).map(|c| c.kind),
+            Some(ComboKind::Pair)
+        );
+        // The lower pair (rank3 = base 2) is chosen.
+        assert_eq!(play, vec![2, 102]);
     }
 
     #[test]
@@ -827,9 +708,82 @@ mod tests {
     }
 
     #[test]
+    fn ai_releases_long_tractor_when_every_other_player_is_void() {
+        let mut state = test_state(TractorRank::TWO);
+        state.hands.insert(0, vec![2, 102, 3, 103, 20, 21]);
+        for position in 1..4 {
+            state.hands.insert(position, vec![30, 31, 32, 33]);
+        }
+        state.completed_tricks = vec![vec![
+            WsTractorPlayedCards {
+                position: 0,
+                name: "u0".to_owned(),
+                cards: vec![5],
+            },
+            WsTractorPlayedCards {
+                position: 1,
+                name: "u1".to_owned(),
+                cards: vec![18],
+            },
+            WsTractorPlayedCards {
+                position: 2,
+                name: "u2".to_owned(),
+                cards: vec![31],
+            },
+            WsTractorPlayedCards {
+                position: 3,
+                name: "u3".to_owned(),
+                cards: vec![44],
+            },
+        ]];
+
+        let play = decide(&state, 0).expect("lead long tractor");
+        assert_eq!(
+            combo::classify(&play, &state.rules).map(|combo| combo.kind),
+            Some(ComboKind::Tractor(2))
+        );
+    }
+
+    #[test]
     fn ai_returns_none_without_cards() {
         let state = test_state(TractorRank::A);
         assert_eq!(decide(&state, 0), None);
+    }
+
+    #[test]
+    fn ai_withholds_points_when_future_enemy_is_known_void_and_can_ruff() {
+        let mut state = test_state(TractorRank::TWO);
+        state.current_position = 3;
+        state.current_trick = vec![
+            WsTractorPlayedCards {
+                position: 1,
+                name: "u1".to_owned(),
+                cards: vec![13],
+            },
+            WsTractorPlayedCards {
+                position: 2,
+                name: "u2".to_owned(),
+                cards: vec![4],
+            },
+        ];
+        state.completed_tricks = vec![vec![
+            WsTractorPlayedCards {
+                position: 1,
+                name: "u1".to_owned(),
+                cards: vec![6],
+            },
+            WsTractorPlayedCards {
+                position: 0,
+                name: "u0".to_owned(),
+                cards: vec![19],
+            },
+        ]];
+        state.hands.insert(0, vec![30, 31, 32, 33]);
+        state.hands.insert(1, vec![20, 21, 22]);
+        state.hands.insert(2, vec![34, 35, 36]);
+        state.hands.insert(3, vec![5, 12]);
+
+        assert_eq!(decide(&state, 3), Some(vec![5]));
     }
 
     #[test]
@@ -865,5 +819,51 @@ mod tests {
             assert_eq!(state.phase, TractorPhase::Settlement);
             assert!(state.hands.values().all(Vec::is_empty));
         }
+    }
+
+    #[test]
+    fn dealer_team_preserves_trump_tractor_when_plain_route_is_available_early() {
+        let mut state = test_state(TractorRank::TWO);
+        state.rules.blood_enabled = false;
+        state.rules.trump_suit = Some(TractorSuit::SPADE);
+        state.dealer_position = 0;
+        state.hands.insert(
+            0,
+            vec![
+                11, 111, 12, 112, // high trump tractor reserved for bottom control
+                15, 115, 16, 116, // plain heart tractor to establish first
+                30, 31, 32, 33, 42, 44,
+            ],
+        );
+        for position in 1..4 {
+            state.hands.insert(position, vec![35; 20]);
+        }
+
+        let play = decide(&state, 0).expect("lead");
+        let classified = combo::classify(&play, &state.rules).expect("tractor");
+        assert_eq!(classified.kind, ComboKind::Tractor(2));
+        assert_eq!(classified.suit, Some(1));
+    }
+
+    fn test_state(target: TractorRank) -> TractorGameState {
+        let mut common = CommonGameState::new();
+        for position in 0..4 {
+            common.add_player(position, position as u64 + 1, &format!("u{position}"));
+        }
+        let mut state = TractorGameState::from_common(Arc::new(Mutex::new(common)));
+        state.phase = TractorPhase::Play;
+        state.rules = TractorRules {
+            blood_enabled: true,
+            blood_score_per_unit: 40,
+            blood_start_score: 80,
+            bottom_card_count: 8,
+            deck_count: 2,
+            final_target_rank: TractorRank::A,
+            removed_rank_count: 0,
+            target_rank: target,
+            trump_suit: None,
+        };
+        state.current_position = 0;
+        state
     }
 }

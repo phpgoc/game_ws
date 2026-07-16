@@ -13,6 +13,16 @@ pub enum P2pRoutes {
 }
 
 #[typeshare]
+#[repr(i8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
+#[allow(non_camel_case_types)]
+pub enum P2pSignalKind {
+    OFFER = 0,
+    ANSWER = 1,
+    ICE_CANDIDATE = 2,
+}
+
+#[typeshare]
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
 #[allow(non_camel_case_types)]
@@ -24,13 +34,11 @@ pub enum P2pWsCode {
 }
 
 #[typeshare]
-#[repr(i8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
-#[allow(non_camel_case_types)]
-pub enum P2pSignalKind {
-    OFFER = 0,
-    ANSWER = 1,
-    ICE_CANDIDATE = 2,
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WsP2pIceConfigEvent {
+    pub self_position: i32,
+    pub ice_servers: Vec<WsP2pIceServer>,
+    pub credential_expires_at: String,
 }
 
 #[typeshare]
@@ -45,24 +53,9 @@ pub struct WsP2pIceServer {
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct WsP2pIceConfigEvent {
-    pub self_position: i32,
-    pub ice_servers: Vec<WsP2pIceServer>,
-    pub credential_expires_at: String,
-}
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WsP2pJoinRequest {
     pub game: String,
     pub room: String,
-    pub name: String,
-}
-
-#[typeshare]
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct WsP2pPeer {
-    pub position: i32,
     pub name: String,
 }
 
@@ -76,11 +69,9 @@ pub struct WsP2pJoinResponse {
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct WsP2pPeerStateEvent {
-    pub self_position: i32,
-    pub peer_position: i32,
-    pub peer_name: String,
-    pub initiator: bool,
+pub struct WsP2pPeer {
+    pub position: i32,
+    pub name: String,
 }
 
 #[typeshare]
@@ -91,8 +82,17 @@ pub struct WsP2pPeerLeftEvent {
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct WsP2pSignalRequest {
-    pub target_position: i32,
+pub struct WsP2pPeerStateEvent {
+    pub self_position: i32,
+    pub peer_position: i32,
+    pub peer_name: String,
+    pub initiator: bool,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WsP2pSignalEvent {
+    pub from_position: i32,
     pub kind: P2pSignalKind,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sdp: Option<String>,
@@ -108,8 +108,8 @@ pub struct WsP2pSignalRequest {
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct WsP2pSignalEvent {
-    pub from_position: i32,
+pub struct WsP2pSignalRequest {
+    pub target_position: i32,
     pub kind: P2pSignalKind,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sdp: Option<String>,

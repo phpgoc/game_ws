@@ -1,42 +1,23 @@
 use super::*;
 
 #[test]
-fn mid_round_non_dealer_can_choose_single_wait_for_extra_fan() {
-    let mut table = table_with_discards(1, Vec::new());
+fn capped_non_dealer_prefers_more_live_copies_over_depleted_wait_kinds() {
+    let mut table = table_with_discards(1, vec![24, 24, 24, 27]);
+    table.max_fan = Some(1);
     table.wall_count = 30;
-    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(31)];
-    let hand = vec![2, 2, 4, 5, 7, 11, 12, 13, 21, 22, 23];
+    let hand = vec![2, 3, 4, 19, 19, 19, 21, 22, 23, 25, 26, 27, 27, 29];
 
+    assert_ne!(table.dealer_position, 0);
+    assert!(ready_visible_fan_reaches_cap(
+        &hand,
+        &[],
+        &table,
+        0,
+        WIN_RULE_RELAXED,
+    ));
     assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(4)
-    );
-}
-
-#[test]
-fn half_capped_non_dealer_prefers_wider_wait_over_single_wait_fan() {
-    let mut table = table_with_discards(1, Vec::new());
-    table.wall_count = 30;
-    table.max_fan = Some(4);
-    table.seats.get_mut(&0).unwrap().melds = vec![test_gang_meld(35)];
-    let hand = vec![2, 2, 4, 5, 7, 11, 12, 13, 21, 22, 23];
-
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(7)
-    );
-}
-
-#[test]
-fn late_defense_non_dealer_prefers_wider_wait_over_single_wait_fan() {
-    let mut table = table_with_discards(1, Vec::new());
-    table.wall_count = 20;
-    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(31)];
-    let hand = vec![2, 2, 4, 5, 7, 11, 12, 13, 21, 22, 23];
-
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(7)
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        Some(19)
     );
 }
 
@@ -69,23 +50,29 @@ fn dealer_prefers_more_live_copies_over_two_depleted_wait_kinds() {
 }
 
 #[test]
-fn capped_non_dealer_prefers_more_live_copies_over_depleted_wait_kinds() {
-    let mut table = table_with_discards(1, vec![24, 24, 24, 27]);
-    table.max_fan = Some(1);
+fn half_capped_non_dealer_prefers_wider_wait_over_single_wait_fan() {
+    let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 30;
-    let hand = vec![2, 3, 4, 19, 19, 19, 21, 22, 23, 25, 26, 27, 27, 29];
+    table.max_fan = Some(4);
+    table.seats.get_mut(&0).unwrap().melds = vec![test_gang_meld(35)];
+    let hand = vec![2, 2, 4, 5, 7, 11, 12, 13, 21, 22, 23];
 
-    assert_ne!(table.dealer_position, 0);
-    assert!(ready_visible_fan_reaches_cap(
-        &hand,
-        &[],
-        &table,
-        0,
-        WIN_RULE_RELAXED,
-    ));
     assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
-        Some(19)
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(7)
+    );
+}
+
+#[test]
+fn late_defense_non_dealer_prefers_wider_wait_over_single_wait_fan() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 20;
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(31)];
+    let hand = vec![2, 2, 4, 5, 7, 11, 12, 13, 21, 22, 23];
+
+    assert_eq!(
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(7)
     );
 }
 
@@ -133,5 +120,18 @@ fn late_ready_equal_live_waits_prefer_public_honor_over_repeated_suited_discard(
     assert_eq!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
         Some(31)
+    );
+}
+
+#[test]
+fn mid_round_non_dealer_can_choose_single_wait_for_extra_fan() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 30;
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(31)];
+    let hand = vec![2, 2, 4, 5, 7, 11, 12, 13, 21, 22, 23];
+
+    assert_eq!(
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(4)
     );
 }

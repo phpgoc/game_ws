@@ -16,17 +16,6 @@ pub(super) use piao_threat::*;
 pub(super) use public_safety::*;
 pub(super) use pure_threat::*;
 
-pub(in crate::ai::decision) fn dealer_opponent_threat_scale(
-    table: &AiPublicTable,
-    seat_position: usize,
-) -> f64 {
-    if seat_position == table.dealer_position {
-        1.2
-    } else {
-        1.0
-    }
-}
-
 pub(in crate::ai::decision) fn dealer_opponent_has_major_threat(
     table: &AiPublicTable,
     position: usize,
@@ -44,4 +33,15 @@ pub(in crate::ai::decision) fn dealer_opponent_has_major_threat(
     let closed_threat =
         win_rule == WIN_RULE_SHENYANG_BASIC && closed_opponent_has_major_threat(dealer, table);
     piao_threat || pure_one_suit_threat_suit(dealer).is_some() || closed_threat
+}
+
+pub(in crate::ai::decision) fn dealer_opponent_threat_scale(
+    table: &AiPublicTable,
+    seat_position: usize,
+) -> f64 {
+    if seat_position == table.dealer_position {
+        1.2
+    } else {
+        1.0
+    }
 }

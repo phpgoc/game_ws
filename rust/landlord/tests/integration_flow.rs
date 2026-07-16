@@ -58,6 +58,164 @@ async fn join(client: &mut Client, name: &str, password: &str) -> Value {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn landlord_ai_seats_call_and_play_without_becoming_away() {
+    let port = free_port();
+    let listen_addr = format!("127.0.0.1:{port}");
+    let url = format!("ws://{listen_addr}");
+    let server = tokio::spawn(run_room_runtime(
+        RuntimeConfig {
+            service_name: "landlord-ai-test",
+            listen_addr,
+            idle_timeout: Duration::from_secs(30),
+            heartbeat_interval: Duration::from_secs(30),
+        },
+        LandlordGameHandler::default(),
+    ));
+
+    for _ in 0..50 {
+        if TokioTcpListener::bind(("127.0.0.1", port)).await.is_err() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    let mut owner = connect_client(&url).await;
+    let room = "landlord-ai-room";
+    let joined = join(&mut owner, "owner", room).await;
+    assert_eq!(position_from_joined(&joined), 0);
+
+    send_request(&mut owner, Routes::ADD_AI as i32, json!({ "count": 2 })).await;
+    for expected_position in 1..=2 {
+        let joined_ai = recv_until(&mut owner, "ai join event", |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::JOIN as i64)
+                && value
+                    .get("data")
+                    .and_then(|data| data.get("is_ai"))
+                    .and_then(Value::as_bool)
+                    == Some(true)
+        })
+        .await;
+        assert_eq!(joined_ai["data"]["position"], json!(expected_position));
+    }
+    recv_until(&mut owner, "add ai ok", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::ADD_AI as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+
+    send_request(&mut owner, Routes::START as i32, json!({})).await;
+    recv_until(&mut owner, "start ok", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::START as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+    let deal = recv_until(&mut owner, "owner deal", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::DEAL as i64)
+    })
+    .await;
+    let mut owner_hand = cards_from_deal(&deal);
+
+    let call_phase = recv_until(&mut owner, "owner call phase", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::CHANGE_PHASE as i64)
+            && value["data"]["phase"] == json!(1)
+    })
+    .await;
+    assert_eq!(call_phase["data"]["position"], json!(0));
+
+    send_request(
+        &mut owner,
+        LandlordRoutes::CALL_LANDLORD as i32,
+        json!({ "score": 2 }),
+    )
+    .await;
+    recv_until(&mut owner, "owner call ok", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(LandlordRoutes::CALL_LANDLORD as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+
+    let started_calling = Instant::now();
+    let mut ai_call_count = 0;
+    let landlord_position = loop {
+        let value = recv_json(&mut owner, "ai call or play phase").await;
+        let code = value.get("code").and_then(Value::as_i64);
+        if code == Some(WsCode::AWAY as i64)
+            && matches!(value["data"]["position"].as_i64(), Some(1 | 2))
+        {
+            panic!("AI seat was incorrectly marked away while calling: {value}");
+        }
+        if code == Some(WsCode::CALL_LANDLORD as i64) && value["data"]["name"] != json!("owner") {
+            ai_call_count += 1;
+        }
+        if code == Some(WsCode::CHANGE_PHASE as i64) && value["data"]["phase"] == json!(2) {
+            break value["data"]["position"]
+                .as_u64()
+                .expect("landlord position") as usize;
+        }
+    };
+    assert!(ai_call_count >= 1);
+    assert!(
+        started_calling.elapsed() < Duration::from_secs(3),
+        "AI bidding waited too long: {:?}",
+        started_calling.elapsed()
+    );
+
+    let expected_ai_position = if landlord_position == 0 {
+        let hidden = recv_until(&mut owner, "owner hidden cards", |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::DEAL_OPEN_CARDS as i64)
+        })
+        .await;
+        owner_hand.extend(cards_from_deal(&hidden));
+        owner_hand.sort_unstable();
+
+        send_request(
+            &mut owner,
+            Routes::PLAY as i32,
+            json!({ "cards": [owner_hand[0]] }),
+        )
+        .await;
+        recv_until(&mut owner, "owner play ok", |value| {
+            value.get("route").and_then(Value::as_i64) == Some(Routes::PLAY as i64)
+                && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+        })
+        .await;
+        1
+    } else {
+        landlord_position
+    };
+
+    let started_waiting = Instant::now();
+    let mut saw_ai_turn = false;
+    loop {
+        let value = recv_json(&mut owner, "first ai play").await;
+        let code = value.get("code").and_then(Value::as_i64);
+        if code == Some(WsCode::AWAY as i64)
+            && matches!(value["data"]["position"].as_i64(), Some(1 | 2))
+        {
+            panic!("AI seat was incorrectly marked away: {value}");
+        }
+        if code == Some(WsCode::CHANGE_DEAL as i64)
+            && value["data"]["position"] == json!(expected_ai_position)
+        {
+            saw_ai_turn = true;
+            assert_eq!(value["data"]["turn_countdown"], json!(1));
+        }
+        if code == Some(WsCode::PLAY as i64) && value["data"]["name"] != json!("owner") {
+            assert!(saw_ai_turn);
+            assert!(value["data"]["cards"].is_array());
+            assert!(
+                started_waiting.elapsed() < Duration::from_secs(2),
+                "AI action waited too long: {:?}",
+                started_waiting.elapsed()
+            );
+            break;
+        }
+    }
+
+    server.abort();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn landlord_three_players_can_start_call_and_play_over_ws() {
     let port = free_port();
     let listen_addr = format!("127.0.0.1:{port}");
@@ -226,164 +384,6 @@ async fn landlord_three_players_can_start_call_and_play_over_ws() {
     .await;
     let expected_next = (landlord_position + 1) % 3;
     assert_eq!(next_turn["data"]["position"], json!(expected_next as i32));
-
-    server.abort();
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn landlord_ai_seats_call_and_play_without_becoming_away() {
-    let port = free_port();
-    let listen_addr = format!("127.0.0.1:{port}");
-    let url = format!("ws://{listen_addr}");
-    let server = tokio::spawn(run_room_runtime(
-        RuntimeConfig {
-            service_name: "landlord-ai-test",
-            listen_addr,
-            idle_timeout: Duration::from_secs(30),
-            heartbeat_interval: Duration::from_secs(30),
-        },
-        LandlordGameHandler::default(),
-    ));
-
-    for _ in 0..50 {
-        if TokioTcpListener::bind(("127.0.0.1", port)).await.is_err() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
-
-    let mut owner = connect_client(&url).await;
-    let room = "landlord-ai-room";
-    let joined = join(&mut owner, "owner", room).await;
-    assert_eq!(position_from_joined(&joined), 0);
-
-    send_request(&mut owner, Routes::ADD_AI as i32, json!({ "count": 2 })).await;
-    for expected_position in 1..=2 {
-        let joined_ai = recv_until(&mut owner, "ai join event", |value| {
-            value.get("code").and_then(Value::as_i64) == Some(WsCode::JOIN as i64)
-                && value
-                    .get("data")
-                    .and_then(|data| data.get("is_ai"))
-                    .and_then(Value::as_bool)
-                    == Some(true)
-        })
-        .await;
-        assert_eq!(joined_ai["data"]["position"], json!(expected_position));
-    }
-    recv_until(&mut owner, "add ai ok", |value| {
-        value.get("route").and_then(Value::as_i64) == Some(Routes::ADD_AI as i64)
-            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
-    })
-    .await;
-
-    send_request(&mut owner, Routes::START as i32, json!({})).await;
-    recv_until(&mut owner, "start ok", |value| {
-        value.get("route").and_then(Value::as_i64) == Some(Routes::START as i64)
-            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
-    })
-    .await;
-    let deal = recv_until(&mut owner, "owner deal", |value| {
-        value.get("code").and_then(Value::as_i64) == Some(WsCode::DEAL as i64)
-    })
-    .await;
-    let mut owner_hand = cards_from_deal(&deal);
-
-    let call_phase = recv_until(&mut owner, "owner call phase", |value| {
-        value.get("code").and_then(Value::as_i64) == Some(WsCode::CHANGE_PHASE as i64)
-            && value["data"]["phase"] == json!(1)
-    })
-    .await;
-    assert_eq!(call_phase["data"]["position"], json!(0));
-
-    send_request(
-        &mut owner,
-        LandlordRoutes::CALL_LANDLORD as i32,
-        json!({ "score": 2 }),
-    )
-    .await;
-    recv_until(&mut owner, "owner call ok", |value| {
-        value.get("route").and_then(Value::as_i64) == Some(LandlordRoutes::CALL_LANDLORD as i64)
-            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
-    })
-    .await;
-
-    let started_calling = Instant::now();
-    let mut ai_call_count = 0;
-    let landlord_position = loop {
-        let value = recv_json(&mut owner, "ai call or play phase").await;
-        let code = value.get("code").and_then(Value::as_i64);
-        if code == Some(WsCode::AWAY as i64)
-            && matches!(value["data"]["position"].as_i64(), Some(1 | 2))
-        {
-            panic!("AI seat was incorrectly marked away while calling: {value}");
-        }
-        if code == Some(WsCode::CALL_LANDLORD as i64) && value["data"]["name"] != json!("owner") {
-            ai_call_count += 1;
-        }
-        if code == Some(WsCode::CHANGE_PHASE as i64) && value["data"]["phase"] == json!(2) {
-            break value["data"]["position"]
-                .as_u64()
-                .expect("landlord position") as usize;
-        }
-    };
-    assert!(ai_call_count >= 1);
-    assert!(
-        started_calling.elapsed() < Duration::from_secs(3),
-        "AI bidding waited too long: {:?}",
-        started_calling.elapsed()
-    );
-
-    let expected_ai_position = if landlord_position == 0 {
-        let hidden = recv_until(&mut owner, "owner hidden cards", |value| {
-            value.get("code").and_then(Value::as_i64) == Some(WsCode::DEAL_OPEN_CARDS as i64)
-        })
-        .await;
-        owner_hand.extend(cards_from_deal(&hidden));
-        owner_hand.sort_unstable();
-
-        send_request(
-            &mut owner,
-            Routes::PLAY as i32,
-            json!({ "cards": [owner_hand[0]] }),
-        )
-        .await;
-        recv_until(&mut owner, "owner play ok", |value| {
-            value.get("route").and_then(Value::as_i64) == Some(Routes::PLAY as i64)
-                && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
-        })
-        .await;
-        1
-    } else {
-        landlord_position
-    };
-
-    let started_waiting = Instant::now();
-    let mut saw_ai_turn = false;
-    loop {
-        let value = recv_json(&mut owner, "first ai play").await;
-        let code = value.get("code").and_then(Value::as_i64);
-        if code == Some(WsCode::AWAY as i64)
-            && matches!(value["data"]["position"].as_i64(), Some(1 | 2))
-        {
-            panic!("AI seat was incorrectly marked away: {value}");
-        }
-        if code == Some(WsCode::CHANGE_DEAL as i64)
-            && value["data"]["position"] == json!(expected_ai_position)
-        {
-            saw_ai_turn = true;
-            assert_eq!(value["data"]["turn_countdown"], json!(1));
-        }
-        if code == Some(WsCode::PLAY as i64) && value["data"]["name"] != json!("owner") {
-            assert!(saw_ai_turn);
-            assert!(value["data"]["cards"].is_array());
-            assert!(
-                started_waiting.elapsed() < Duration::from_secs(2),
-                "AI action waited too long: {:?}",
-                started_waiting.elapsed()
-            );
-            break;
-        }
-    }
 
     server.abort();
 }

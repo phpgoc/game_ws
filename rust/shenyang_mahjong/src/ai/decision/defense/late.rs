@@ -1,5 +1,28 @@
 use super::*;
 
+pub(in crate::ai::decision) fn defense_tile_safety_priority(
+    table: &AiPublicTable,
+    tile: i32,
+    own_tile_count: usize,
+) -> u8 {
+    if late_defense_tile_fully_accounted(table, tile, own_tile_count) {
+        return 5;
+    }
+    let public_discards = public_discard_count(table, tile);
+    if public_discards == 0 {
+        return 0;
+    }
+    if is_honor(tile) {
+        4
+    } else if public_discards >= 2 {
+        3
+    } else if tile_is_terminal(tile) {
+        1
+    } else {
+        2
+    }
+}
+
 pub(in crate::ai::decision) fn late_defense_discard_bias(
     table: &AiPublicTable,
     position: usize,
@@ -90,29 +113,6 @@ pub(in crate::ai::decision) fn late_defense_tile_fully_accounted(
     own_tile_count: usize,
 ) -> bool {
     exposed_meld_tile_count(table, tile) + own_tile_count >= 4
-}
-
-pub(in crate::ai::decision) fn defense_tile_safety_priority(
-    table: &AiPublicTable,
-    tile: i32,
-    own_tile_count: usize,
-) -> u8 {
-    if late_defense_tile_fully_accounted(table, tile, own_tile_count) {
-        return 5;
-    }
-    let public_discards = public_discard_count(table, tile);
-    if public_discards == 0 {
-        return 0;
-    }
-    if is_honor(tile) {
-        4
-    } else if public_discards >= 2 {
-        3
-    } else if tile_is_terminal(tile) {
-        1
-    } else {
-        2
-    }
 }
 
 pub(in crate::ai::decision) fn late_defense_tile_safety_score(

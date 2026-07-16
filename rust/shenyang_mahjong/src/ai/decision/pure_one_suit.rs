@@ -14,6 +14,38 @@ pub(super) fn dominant_pure_suit(hand: &[i32], melds: &[WsShenyangMahjongMeld]) 
         .and_then(|(suit, count)| (count > 0).then_some(suit as i32))
 }
 
+fn has_pending_main_suit_claim_opportunity(
+    table: &AiPublicTable,
+    position: usize,
+    main_suit: i32,
+) -> bool {
+    table.claim_window.as_ref().is_some_and(|claim| {
+        claim.from_position != position
+            && claim.eligible_positions.contains(&position)
+            && is_suited(claim.tile)
+            && tile_suit(claim.tile) == main_suit
+            && claim_tile_already_visible(table, claim.tile)
+    })
+}
+
+pub(super) fn has_established_pure_one_suit_route(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+) -> bool {
+    let Some(main_suit) = dominant_pure_suit(hand, melds) else {
+        return false;
+    };
+    hand.iter()
+        .all(|tile| is_suited(*tile) && tile_suit(*tile) == main_suit)
+        && melds.iter().all(|meld| {
+            is_valid_meld(meld)
+                && meld
+                    .tiles
+                    .iter()
+                    .all(|tile| is_suited(*tile) && tile_suit(*tile) == main_suit)
+        })
+}
+
 pub(super) fn is_main_pure_suit_tile(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -70,20 +102,6 @@ pub(super) fn pure_one_suit_plan_score(hand: &[i32], melds: &[WsShenyangMahjongM
     } else {
         0.0
     }
-}
-
-fn has_pending_main_suit_claim_opportunity(
-    table: &AiPublicTable,
-    position: usize,
-    main_suit: i32,
-) -> bool {
-    table.claim_window.as_ref().is_some_and(|claim| {
-        claim.from_position != position
-            && claim.eligible_positions.contains(&position)
-            && is_suited(claim.tile)
-            && tile_suit(claim.tile) == main_suit
-            && claim_tile_already_visible(table, claim.tile)
-    })
 }
 
 pub(super) fn pure_one_suit_plan_score_for_context(

@@ -100,6 +100,60 @@ fn claim_peng_takes_three_pair_three_suit_piao_start() {
 }
 
 #[test]
+fn closed_early_piao_peng_passes_against_threatening_dealer() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.claim_window = Some(AiClaimView {
+        tile: 5,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    table.seats.get_mut(&1).unwrap().hand_count = 7;
+    table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(23), test_peng_meld(24)];
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![1, 1, 4, 5, 5, 6, 11, 12, 13, 21, 21, 35, 35];
+
+    table.dealer_position = 3;
+    assert!(!dealer_opponent_has_major_threat(
+        &table,
+        0,
+        WIN_RULE_RELAXED,
+    ));
+    assert!(should_claim_peng_for_closed_early_piao_candidate(
+        &hand,
+        &[],
+        &table,
+        0,
+        WIN_RULE_RELAXED,
+        5,
+        1,
+    ));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+        Some(AiClaimChoice::Peng)
+    );
+
+    table.dealer_position = 1;
+    assert!(dealer_opponent_has_major_threat(
+        &table,
+        0,
+        WIN_RULE_RELAXED,
+    ));
+    assert!(!should_claim_peng_for_closed_early_piao_candidate(
+        &hand,
+        &[],
+        &table,
+        0,
+        WIN_RULE_RELAXED,
+        5,
+        1,
+    ));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+        Some(AiClaimChoice::Pass)
+    );
+}
+
+#[test]
 fn dealer_ready_piao_passes_fourth_plain_peng_for_speed() {
     let mut table = table_with_discards(1, Vec::new());
     table.dealer_position = 0;
@@ -296,59 +350,5 @@ fn relaxed_closed_piao_peng_ignores_malformed_meld() {
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
         Some(AiClaimChoice::Peng)
-    );
-}
-
-#[test]
-fn closed_early_piao_peng_passes_against_threatening_dealer() {
-    let mut table = table_with_discards(1, Vec::new());
-    table.claim_window = Some(AiClaimView {
-        tile: 5,
-        from_position: 1,
-        eligible_positions: vec![0],
-    });
-    table.seats.get_mut(&1).unwrap().hand_count = 7;
-    table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(23), test_peng_meld(24)];
-    let claim = table.claim_window.clone().unwrap();
-    let hand = vec![1, 1, 4, 5, 5, 6, 11, 12, 13, 21, 21, 35, 35];
-
-    table.dealer_position = 3;
-    assert!(!dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_RELAXED,
-    ));
-    assert!(should_claim_peng_for_closed_early_piao_candidate(
-        &hand,
-        &[],
-        &table,
-        0,
-        WIN_RULE_RELAXED,
-        5,
-        1,
-    ));
-    assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
-        Some(AiClaimChoice::Peng)
-    );
-
-    table.dealer_position = 1;
-    assert!(dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_RELAXED,
-    ));
-    assert!(!should_claim_peng_for_closed_early_piao_candidate(
-        &hand,
-        &[],
-        &table,
-        0,
-        WIN_RULE_RELAXED,
-        5,
-        1,
-    ));
-    assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
-        Some(AiClaimChoice::Pass)
     );
 }

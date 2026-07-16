@@ -30,6 +30,19 @@ fn opponent_threat_starts_after_three_triplet_melds() {
 }
 
 #[test]
+fn pure_one_suit_threat_combines_open_meld_and_matching_concealed_gang() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 32;
+    table.seats.get_mut(&1).unwrap().melds = vec![test_chi_meld(11), test_concealed_gang_meld(14)];
+
+    assert_eq!(
+        pure_one_suit_threat_suit(table.seats.get(&1).unwrap()),
+        Some((1, 2))
+    );
+    assert!(pure_one_suit_threat_discard_bias(&table, 0, 18, 1) < 0.0);
+}
+
+#[test]
 fn pure_one_suit_threat_ignores_ambiguous_closed_discards() {
     let only_honors = table_with_discards(1, vec![31, 32, 33, 35, 36]);
     let one_suit_only = table_with_discards(1, vec![1, 2, 3, 4, 5]);
@@ -49,6 +62,26 @@ fn pure_one_suit_threat_ignores_invalid_off_suit_discard_evidence() {
     let mut table = table_with_discards(1, vec![97, 98, 99, 100]);
     table.wall_count = 32;
     table.seats.get_mut(&1).unwrap().melds = vec![test_chi_meld(11)];
+
+    assert_eq!(
+        pure_one_suit_threat_suit(table.seats.get(&1).unwrap()),
+        None
+    );
+    assert_eq!(pure_one_suit_threat_discard_bias(&table, 0, 18, 1), 0.0);
+}
+
+#[test]
+fn pure_one_suit_threat_ignores_malformed_concealed_gang_commitment() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 32;
+    table.seats.get_mut(&1).unwrap().melds = vec![
+        test_chi_meld(11),
+        WsShenyangMahjongMeld {
+            kind: ShenyangMahjongMeldKind::GANG,
+            tiles: vec![14, 14, 14],
+            from_position: None,
+        },
+    ];
 
     assert_eq!(
         pure_one_suit_threat_suit(table.seats.get(&1).unwrap()),
@@ -103,6 +136,19 @@ fn pure_one_suit_threat_ignores_weak_single_meld_evidence() {
 }
 
 #[test]
+fn pure_one_suit_threat_keeps_matching_concealed_gang_suit() {
+    let mut table = table_with_discards(1, vec![1, 2, 11, 12, 31]);
+    table.wall_count = 32;
+    table.seats.get_mut(&1).unwrap().melds = vec![test_concealed_gang_meld(24)];
+
+    assert_eq!(
+        pure_one_suit_threat_suit(table.seats.get(&1).unwrap()),
+        Some((2, 1))
+    );
+    assert!(pure_one_suit_threat_discard_bias(&table, 0, 25, 1) < 0.0);
+}
+
+#[test]
 fn pure_one_suit_threat_penalizes_live_main_suit_tile() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 32;
@@ -153,16 +199,19 @@ fn pure_one_suit_threat_reads_closed_discard_pattern() {
 }
 
 #[test]
-fn pure_one_suit_threat_rejects_known_honor_concealed_gang() {
-    let mut table = table_with_discards(1, vec![1, 2, 11, 12, 31]);
+fn pure_one_suit_threat_reads_single_meld_with_strong_off_suit_discards() {
+    let mut table = table_with_discards(1, vec![2, 22, 31, 35]);
     table.wall_count = 32;
-    table.seats.get_mut(&1).unwrap().melds = vec![test_concealed_gang_meld(35)];
+    table.seats.get_mut(&1).unwrap().melds = vec![test_chi_meld(11)];
 
     assert_eq!(
         pure_one_suit_threat_suit(table.seats.get(&1).unwrap()),
-        None
+        Some((1, 1))
     );
-    assert_eq!(pure_one_suit_threat_discard_bias(&table, 0, 24, 1), 0.0);
+    assert!(
+        pure_one_suit_threat_discard_bias(&table, 0, 18, 1)
+            < pure_one_suit_threat_discard_bias(&table, 0, 24, 1)
+    );
 }
 
 #[test]
@@ -179,29 +228,16 @@ fn pure_one_suit_threat_rejects_concealed_gang_in_other_suit() {
 }
 
 #[test]
-fn pure_one_suit_threat_keeps_matching_concealed_gang_suit() {
+fn pure_one_suit_threat_rejects_known_honor_concealed_gang() {
     let mut table = table_with_discards(1, vec![1, 2, 11, 12, 31]);
     table.wall_count = 32;
-    table.seats.get_mut(&1).unwrap().melds = vec![test_concealed_gang_meld(24)];
+    table.seats.get_mut(&1).unwrap().melds = vec![test_concealed_gang_meld(35)];
 
     assert_eq!(
         pure_one_suit_threat_suit(table.seats.get(&1).unwrap()),
-        Some((2, 1))
+        None
     );
-    assert!(pure_one_suit_threat_discard_bias(&table, 0, 25, 1) < 0.0);
-}
-
-#[test]
-fn pure_one_suit_threat_combines_open_meld_and_matching_concealed_gang() {
-    let mut table = table_with_discards(1, Vec::new());
-    table.wall_count = 32;
-    table.seats.get_mut(&1).unwrap().melds = vec![test_chi_meld(11), test_concealed_gang_meld(14)];
-
-    assert_eq!(
-        pure_one_suit_threat_suit(table.seats.get(&1).unwrap()),
-        Some((1, 2))
-    );
-    assert!(pure_one_suit_threat_discard_bias(&table, 0, 18, 1) < 0.0);
+    assert_eq!(pure_one_suit_threat_discard_bias(&table, 0, 24, 1), 0.0);
 }
 
 #[test]
@@ -216,42 +252,6 @@ fn pure_one_suit_threat_starts_after_two_matching_concealed_gangs() {
         Some((1, 2))
     );
     assert!(pure_one_suit_threat_discard_bias(&table, 0, 18, 1) < 0.0);
-}
-
-#[test]
-fn pure_one_suit_threat_ignores_malformed_concealed_gang_commitment() {
-    let mut table = table_with_discards(1, Vec::new());
-    table.wall_count = 32;
-    table.seats.get_mut(&1).unwrap().melds = vec![
-        test_chi_meld(11),
-        WsShenyangMahjongMeld {
-            kind: ShenyangMahjongMeldKind::GANG,
-            tiles: vec![14, 14, 14],
-            from_position: None,
-        },
-    ];
-
-    assert_eq!(
-        pure_one_suit_threat_suit(table.seats.get(&1).unwrap()),
-        None
-    );
-    assert_eq!(pure_one_suit_threat_discard_bias(&table, 0, 18, 1), 0.0);
-}
-
-#[test]
-fn pure_one_suit_threat_reads_single_meld_with_strong_off_suit_discards() {
-    let mut table = table_with_discards(1, vec![2, 22, 31, 35]);
-    table.wall_count = 32;
-    table.seats.get_mut(&1).unwrap().melds = vec![test_chi_meld(11)];
-
-    assert_eq!(
-        pure_one_suit_threat_suit(table.seats.get(&1).unwrap()),
-        Some((1, 1))
-    );
-    assert!(
-        pure_one_suit_threat_discard_bias(&table, 0, 18, 1)
-            < pure_one_suit_threat_discard_bias(&table, 0, 24, 1)
-    );
 }
 
 #[test]

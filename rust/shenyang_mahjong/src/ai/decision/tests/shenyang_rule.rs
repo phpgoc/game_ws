@@ -1,6 +1,21 @@
 use super::*;
 
 #[test]
+fn basic_heng_complete_decomposition_ignores_malformed_meld_count() {
+    let malformed_meld = WsShenyangMahjongMeld {
+        kind: ShenyangMahjongMeldKind::CHI,
+        tiles: vec![11, 11, 11],
+        from_position: Some(1),
+    };
+    let hand = vec![1, 2, 2, 3, 3, 3, 4, 4, 5, 26, 26];
+
+    assert!(!is_valid_meld(&malformed_meld));
+    assert!(has_triplet_or_dragon_pair(&hand, &[]));
+    assert!(has_triplet_or_dragon_pair(&hand, &[malformed_meld]));
+    assert!(!has_triplet_or_dragon_pair(&hand, &[test_chi_meld(11)]));
+}
+
+#[test]
 fn basic_heng_filter_ignores_chi_tile_plus_hand_pair() {
     let table = table_with_discards(1, Vec::new());
     let melds = vec![test_chi_meld(1)];
@@ -69,18 +84,57 @@ fn basic_heng_heuristic_uses_complete_decomposition_for_fake_triplet() {
 }
 
 #[test]
-fn basic_heng_complete_decomposition_ignores_malformed_meld_count() {
-    let malformed_meld = WsShenyangMahjongMeld {
-        kind: ShenyangMahjongMeldKind::CHI,
-        tiles: vec![11, 11, 11],
-        from_position: Some(1),
-    };
-    let hand = vec![1, 2, 2, 3, 3, 3, 4, 4, 5, 26, 26];
+fn basic_heng_recovery_requires_enough_wall_tiles() {
+    let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 14, 15, 21, 22];
+    let mut discards = SHENYANG_MAHJONG_TILE_KINDS
+        .into_iter()
+        .flat_map(|tile| {
+            let visible = if tile == 35 {
+                2
+            } else if is_dragon(tile) {
+                3
+            } else {
+                2
+            };
+            std::iter::repeat_n(tile, visible)
+        })
+        .collect::<Vec<_>>();
+    sort_tiles(&mut discards);
+    let mut table = table_with_discards(1, discards);
+    table.wall_count = 1;
 
-    assert!(!is_valid_meld(&malformed_meld));
-    assert!(has_triplet_or_dragon_pair(&hand, &[]));
-    assert!(has_triplet_or_dragon_pair(&hand, &[malformed_meld]));
-    assert!(!has_triplet_or_dragon_pair(&hand, &[test_chi_meld(11)]));
+    assert!(!has_triplet_or_dragon_pair(&hand, &[]));
+    assert_eq!(remaining_tile_count(&hand, &table, 0, 35), 2);
+    assert!(!can_recover_basic_heng(&hand, &[], &table, 0));
+    assert!(!can_recover_basic_heng_after_discard(
+        &hand,
+        &[],
+        &table,
+        0,
+        31,
+    ));
+
+    let mut seeded_hand = hand.clone();
+    *seeded_hand.last_mut().unwrap() = 35;
+    assert_eq!(remaining_tile_count(&seeded_hand, &table, 0, 35), 1);
+    assert!(can_recover_basic_heng(&seeded_hand, &[], &table, 0));
+    assert!(can_recover_basic_heng_after_discard(
+        &seeded_hand,
+        &[],
+        &table,
+        0,
+        31,
+    ));
+
+    table.wall_count = 2;
+    assert!(can_recover_basic_heng(&hand, &[], &table, 0));
+    assert!(can_recover_basic_heng_after_discard(
+        &hand,
+        &[],
+        &table,
+        0,
+        31,
+    ));
 }
 
 #[test]
@@ -234,6 +288,32 @@ fn non_dealer_avoids_nearly_dead_single_wait_before_late_round() {
 }
 
 #[test]
+fn non_dealer_can_choose_edge_wait_for_extra_fan() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(11), test_chi_meld(21)];
+    let hand = vec![1, 1, 2, 4, 4, 6, 7, 8];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let edge_wait = remove_n_tiles(&hand, 1, 1);
+    let closed_middle_wait = remove_n_tiles(&hand, 4, 1);
+
+    assert!(
+        ready_tile_score_after_discard(&edge_wait, melds, &table, 0, WIN_RULE_SHENYANG_BASIC, 1,)
+            > ready_tile_score_after_discard(
+                &closed_middle_wait,
+                melds,
+                &table,
+                0,
+                WIN_RULE_SHENYANG_BASIC,
+                4,
+            )
+    );
+    assert_eq!(
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(1)
+    );
+}
+
+#[test]
 fn non_dealer_can_choose_single_wait_for_extra_fan_before_late_round() {
     let mut table = table_with_discards(1, Vec::new());
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(31)];
@@ -273,32 +353,6 @@ fn non_dealer_prefers_wider_wait_against_threatening_dealer() {
     assert_eq!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(4)
-    );
-}
-
-#[test]
-fn non_dealer_can_choose_edge_wait_for_extra_fan() {
-    let mut table = table_with_discards(1, Vec::new());
-    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(11), test_chi_meld(21)];
-    let hand = vec![1, 1, 2, 4, 4, 6, 7, 8];
-    let melds = table.seats.get(&0).unwrap().melds.as_slice();
-    let edge_wait = remove_n_tiles(&hand, 1, 1);
-    let closed_middle_wait = remove_n_tiles(&hand, 4, 1);
-
-    assert!(
-        ready_tile_score_after_discard(&edge_wait, melds, &table, 0, WIN_RULE_SHENYANG_BASIC, 1,)
-            > ready_tile_score_after_discard(
-                &closed_middle_wait,
-                melds,
-                &table,
-                0,
-                WIN_RULE_SHENYANG_BASIC,
-                4,
-            )
-    );
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(1)
     );
 }
 
@@ -354,60 +408,6 @@ fn recoverable_basic_heng_counts_live_dragon_pair_without_hand_seed() {
         unrecoverable_basic_rule_requirement_count(&hand, &[], &table, 0),
         0
     );
-}
-
-#[test]
-fn basic_heng_recovery_requires_enough_wall_tiles() {
-    let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 14, 15, 21, 22];
-    let mut discards = SHENYANG_MAHJONG_TILE_KINDS
-        .into_iter()
-        .flat_map(|tile| {
-            let visible = if tile == 35 {
-                2
-            } else if is_dragon(tile) {
-                3
-            } else {
-                2
-            };
-            std::iter::repeat_n(tile, visible)
-        })
-        .collect::<Vec<_>>();
-    sort_tiles(&mut discards);
-    let mut table = table_with_discards(1, discards);
-    table.wall_count = 1;
-
-    assert!(!has_triplet_or_dragon_pair(&hand, &[]));
-    assert_eq!(remaining_tile_count(&hand, &table, 0, 35), 2);
-    assert!(!can_recover_basic_heng(&hand, &[], &table, 0));
-    assert!(!can_recover_basic_heng_after_discard(
-        &hand,
-        &[],
-        &table,
-        0,
-        31,
-    ));
-
-    let mut seeded_hand = hand.clone();
-    *seeded_hand.last_mut().unwrap() = 35;
-    assert_eq!(remaining_tile_count(&seeded_hand, &table, 0, 35), 1);
-    assert!(can_recover_basic_heng(&seeded_hand, &[], &table, 0));
-    assert!(can_recover_basic_heng_after_discard(
-        &seeded_hand,
-        &[],
-        &table,
-        0,
-        31,
-    ));
-
-    table.wall_count = 2;
-    assert!(can_recover_basic_heng(&hand, &[], &table, 0));
-    assert!(can_recover_basic_heng_after_discard(
-        &hand,
-        &[],
-        &table,
-        0,
-        31,
-    ));
 }
 
 #[test]

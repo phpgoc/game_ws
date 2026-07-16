@@ -68,31 +68,6 @@ fn mid_broken_basic_discard_follows_public_tile_before_hand_shape() {
 }
 
 #[test]
-fn mid_broken_public_defense_prefers_honor_between_singleton_safe_tiles() {
-    let mut table = table_with_discards(1, vec![31, 6, 9]);
-    table.wall_count = 40;
-    table.seats.get_mut(&0).unwrap().discards = vec![5, 5, 5];
-    let hand = vec![5, 31];
-
-    assert_eq!(public_discard_count(&table, 5), 3);
-    assert_eq!(public_discard_count(&table, 31), 1);
-    assert!(
-        defense_tile_safety_priority(&table, 31, 1) > defense_tile_safety_priority(&table, 5, 1)
-    );
-    assert_eq!(
-        choose_public_defense_discard_from_candidates(
-            &hand,
-            &[],
-            &table,
-            0,
-            WIN_RULE_RELAXED,
-            vec![5, 31]
-        ),
-        Some(31)
-    );
-}
-
-#[test]
 fn mid_broken_basic_public_defense_preserves_only_recoverable_heng_seed() {
     let hand = vec![1, 2, 5, 8, 11, 12, 14, 17, 21, 22, 24, 27, 29, 35];
     let mut discards = dead_basic_heng_discards(&hand);
@@ -143,6 +118,31 @@ fn mid_broken_discard_uses_opponent_missing_suit_read_without_public_tile() {
     assert_eq!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
         Some(12)
+    );
+}
+
+#[test]
+fn mid_broken_public_defense_prefers_honor_between_singleton_safe_tiles() {
+    let mut table = table_with_discards(1, vec![31, 6, 9]);
+    table.wall_count = 40;
+    table.seats.get_mut(&0).unwrap().discards = vec![5, 5, 5];
+    let hand = vec![5, 31];
+
+    assert_eq!(public_discard_count(&table, 5), 3);
+    assert_eq!(public_discard_count(&table, 31), 1);
+    assert!(
+        defense_tile_safety_priority(&table, 31, 1) > defense_tile_safety_priority(&table, 5, 1)
+    );
+    assert_eq!(
+        choose_public_defense_discard_from_candidates(
+            &hand,
+            &[],
+            &table,
+            0,
+            WIN_RULE_RELAXED,
+            vec![5, 31]
+        ),
+        Some(31)
     );
 }
 

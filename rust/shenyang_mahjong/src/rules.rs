@@ -7,29 +7,13 @@ use share_type_public::games::shenyang_mahjong::{
 
 pub const WIN_RULE_RELAXED: i32 = 0;
 pub const WIN_RULE_SHENYANG_BASIC: i32 = 1;
-pub const XI_GANG_WINDS: [i32; 4] = [31, 32, 33, 34];
 pub const XI_GANG_DRAGONS: [i32; 3] = [35, 36, 37];
+pub const XI_GANG_WINDS: [i32; 4] = [31, 32, 33, 34];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ShenyangMahjongWinRules {
     pub win_rule: i32,
     pub allow_closed_dragon_pair_win: bool,
-}
-
-impl ShenyangMahjongWinRules {
-    pub const fn new(win_rule: i32) -> Self {
-        Self {
-            win_rule,
-            allow_closed_dragon_pair_win: false,
-        }
-    }
-
-    pub fn from_configs(configs: &HashMap<String, i32>) -> Self {
-        Self {
-            win_rule: win_rule_from_configs(configs),
-            allow_closed_dragon_pair_win: configs.get("allow_first_chi").copied().unwrap_or(1) == 0,
-        }
-    }
 }
 
 fn all_tiles_with_melds(tiles: &[i32], melds: &[WsShenyangMahjongMeld]) -> Vec<i32> {
@@ -38,20 +22,6 @@ fn all_tiles_with_melds(tiles: &[i32], melds: &[WsShenyangMahjongMeld]) -> Vec<i
         all_tiles.extend(meld.tiles.iter().copied());
     }
     all_tiles
-}
-
-pub fn xi_gang_options(hand: &[i32]) -> Vec<Vec<i32>> {
-    [XI_GANG_WINDS.as_slice(), XI_GANG_DRAGONS.as_slice()]
-        .into_iter()
-        .filter(|tiles| tiles_in_hand(hand, tiles))
-        .map(<[i32]>::to_vec)
-        .collect()
-}
-
-pub fn is_xi_gang_tiles(tiles: &[i32]) -> bool {
-    let mut tiles = tiles.to_vec();
-    tiles.sort_unstable();
-    tiles == XI_GANG_WINDS || tiles == XI_GANG_DRAGONS
 }
 
 pub fn can_chi(hand: &[i32], target_tile: i32, consume_tiles: &[i32]) -> bool {
@@ -76,6 +46,50 @@ pub fn can_concealed_gang(hand: &[i32], target_tile: i32) -> bool {
         return false;
     }
     hand.iter().filter(|&&tile| tile == target_tile).count() == 4
+}
+
+fn can_form_sequences(counts: &mut [u8; 38]) -> bool {
+    let Some(tile) = SHENYANG_MAHJONG_TILE_KINDS
+        .into_iter()
+        .find(|tile| counts[*tile as usize] > 0)
+    else {
+        return true;
+    };
+    if !is_suited_tile(tile) {
+        return false;
+    }
+    let tile2 = tile + 1;
+    let tile3 = tile + 2;
+    if !same_suit(tile, tile2)
+        || !same_suit(tile, tile3)
+        || counts[tile2 as usize] == 0
+        || counts[tile3 as usize] == 0
+    {
+        return false;
+    }
+    counts[tile as usize] -= 1;
+    counts[tile2 as usize] -= 1;
+    counts[tile3 as usize] -= 1;
+    let complete = can_form_sequences(counts);
+    counts[tile as usize] += 1;
+    counts[tile2 as usize] += 1;
+    counts[tile3 as usize] += 1;
+    complete
+}
+
+fn can_form_sequences_with_dragon_pair(tiles: &[i32]) -> bool {
+    if tiles.len() % 3 != 2 || !has_valid_tile_multiplicity(tiles) {
+        return false;
+    }
+    dragon_pair_tiles().into_iter().any(|pair_tile| {
+        let mut counts = tile_counts(tiles);
+        let pair_index = pair_tile as usize;
+        if counts[pair_index] < 2 {
+            return false;
+        }
+        counts[pair_index] -= 2;
+        can_form_sequences(&mut counts)
+    })
 }
 
 fn can_form_sets(counts: &mut [u8; 38]) -> bool {
@@ -120,35 +134,6 @@ fn can_form_sets(counts: &mut [u8; 38]) -> bool {
     }
 
     false
-}
-
-fn can_form_sequences(counts: &mut [u8; 38]) -> bool {
-    let Some(tile) = SHENYANG_MAHJONG_TILE_KINDS
-        .into_iter()
-        .find(|tile| counts[*tile as usize] > 0)
-    else {
-        return true;
-    };
-    if !is_suited_tile(tile) {
-        return false;
-    }
-    let tile2 = tile + 1;
-    let tile3 = tile + 2;
-    if !same_suit(tile, tile2)
-        || !same_suit(tile, tile3)
-        || counts[tile2 as usize] == 0
-        || counts[tile3 as usize] == 0
-    {
-        return false;
-    }
-    counts[tile as usize] -= 1;
-    counts[tile2 as usize] -= 1;
-    counts[tile3 as usize] -= 1;
-    let complete = can_form_sequences(counts);
-    counts[tile as usize] += 1;
-    counts[tile2 as usize] += 1;
-    counts[tile3 as usize] += 1;
-    complete
 }
 
 fn can_form_sets_with_one_pair(counts: &[u8; 38]) -> bool {
@@ -210,24 +195,6 @@ fn can_form_sets_with_triplet(counts: &mut [u8; 38], has_triplet: bool) -> bool 
     false
 }
 
-fn can_form_triplets_with_pair(tiles: &[i32]) -> bool {
-    if tiles.len() % 3 != 2 {
-        return false;
-    }
-    let counts = tile_counts(tiles);
-    SHENYANG_MAHJONG_TILE_KINDS.into_iter().any(|pair_tile| {
-        let pair_count = counts[pair_tile as usize];
-        pair_count >= 2
-            && SHENYANG_MAHJONG_TILE_KINDS.into_iter().all(|tile| {
-                let mut count = counts[tile as usize];
-                if tile == pair_tile {
-                    count -= 2;
-                }
-                count % 3 == 0
-            })
-    })
-}
-
 fn can_form_triplets_with_dragon_pair(tiles: &[i32]) -> bool {
     if tiles.len() % 3 != 2 {
         return false;
@@ -245,18 +212,21 @@ fn can_form_triplets_with_dragon_pair(tiles: &[i32]) -> bool {
     })
 }
 
-fn can_form_sequences_with_dragon_pair(tiles: &[i32]) -> bool {
-    if tiles.len() % 3 != 2 || !has_valid_tile_multiplicity(tiles) {
+fn can_form_triplets_with_pair(tiles: &[i32]) -> bool {
+    if tiles.len() % 3 != 2 {
         return false;
     }
-    dragon_pair_tiles().into_iter().any(|pair_tile| {
-        let mut counts = tile_counts(tiles);
-        let pair_index = pair_tile as usize;
-        if counts[pair_index] < 2 {
-            return false;
-        }
-        counts[pair_index] -= 2;
-        can_form_sequences(&mut counts)
+    let counts = tile_counts(tiles);
+    SHENYANG_MAHJONG_TILE_KINDS.into_iter().any(|pair_tile| {
+        let pair_count = counts[pair_tile as usize];
+        pair_count >= 2
+            && SHENYANG_MAHJONG_TILE_KINDS.into_iter().all(|tile| {
+                let mut count = counts[tile as usize];
+                if tile == pair_tile {
+                    count -= 2;
+                }
+                count % 3 == 0
+            })
     })
 }
 
@@ -326,6 +296,20 @@ pub(crate) fn has_dragon_pair_as_standard_pair(tiles: &[i32]) -> bool {
         }
     }
     false
+}
+
+pub(crate) fn has_edge_wait_decomposition(tiles: &[i32], win_tile: i32) -> bool {
+    if !is_suited_tile(win_tile) {
+        return false;
+    }
+    let rank = win_tile % 10;
+    let sequence = match rank {
+        3 => [win_tile - 2, win_tile - 1, win_tile],
+        7 => [win_tile, win_tile + 1, win_tile + 2],
+        _ => return false,
+    };
+    counts_after_removing(tiles, &sequence)
+        .is_some_and(|counts| can_form_sets_with_one_pair(&counts))
 }
 
 fn has_open_meld(melds: &[WsShenyangMahjongMeld]) -> bool {
@@ -443,30 +427,20 @@ pub fn is_complete_win_with_melds_for_rules(
     satisfies_shenyang_basic_win_for_rules(tiles, melds, rules)
 }
 
+pub(crate) fn is_door_opening_meld(meld: &WsShenyangMahjongMeld) -> bool {
+    meld.from_position.is_some() && (is_triplet_meld(meld) || is_sequence_meld(meld))
+}
+
 fn is_dragon_tile(tile: i32) -> bool {
     matches!(tile, 35..=37)
 }
 
-pub(crate) fn has_edge_wait_decomposition(tiles: &[i32], win_tile: i32) -> bool {
-    if !is_suited_tile(win_tile) {
-        return false;
-    }
-    let rank = win_tile % 10;
-    let sequence = match rank {
-        3 => [win_tile - 2, win_tile - 1, win_tile],
-        7 => [win_tile, win_tile + 1, win_tile + 2],
-        _ => return false,
-    };
-    counts_after_removing(tiles, &sequence)
-        .is_some_and(|counts| can_form_sets_with_one_pair(&counts))
+fn is_heng_meld(meld: &WsShenyangMahjongMeld) -> bool {
+    is_triplet_meld(meld) || is_xi_gang_meld(meld)
 }
 
 fn is_honor_tile(tile: i32) -> bool {
     matches!(tile, 31..=37)
-}
-
-pub(crate) fn is_door_opening_meld(meld: &WsShenyangMahjongMeld) -> bool {
-    meld.from_position.is_some() && (is_triplet_meld(meld) || is_sequence_meld(meld))
 }
 
 fn is_pair_single_wait(tiles: &[i32], win_tile: i32) -> bool {
@@ -662,16 +636,6 @@ fn is_triplet_meld(meld: &WsShenyangMahjongMeld) -> bool {
         && meld.tiles.iter().all(|tile| *tile == meld.tiles[0])
 }
 
-pub(crate) fn is_xi_gang_meld(meld: &WsShenyangMahjongMeld) -> bool {
-    meld.kind == ShenyangMahjongMeldKind::XI_GANG
-        && meld.from_position.is_none()
-        && is_xi_gang_tiles(&meld.tiles)
-}
-
-fn is_heng_meld(meld: &WsShenyangMahjongMeld) -> bool {
-    is_triplet_meld(meld) || is_xi_gang_meld(meld)
-}
-
 #[cfg(test)]
 fn is_unique_complete_wait(tiles: &[i32], melds: &[WsShenyangMahjongMeld], win_tile: i32) -> bool {
     let Some(index) = tiles.iter().position(|tile| *tile == win_tile) else {
@@ -736,6 +700,18 @@ fn is_valid_tile(tile: i32) -> bool {
 
 pub fn is_win(tiles: &[i32]) -> bool {
     is_standard_win(tiles) || is_seven_pairs_win(tiles)
+}
+
+pub(crate) fn is_xi_gang_meld(meld: &WsShenyangMahjongMeld) -> bool {
+    meld.kind == ShenyangMahjongMeldKind::XI_GANG
+        && meld.from_position.is_none()
+        && is_xi_gang_tiles(&meld.tiles)
+}
+
+pub fn is_xi_gang_tiles(tiles: &[i32]) -> bool {
+    let mut tiles = tiles.to_vec();
+    tiles.sort_unstable();
+    tiles == XI_GANG_WINDS || tiles == XI_GANG_DRAGONS
 }
 
 pub fn remove_tiles(hand: &mut Vec<i32>, tiles: &[i32]) -> bool {
@@ -810,74 +786,6 @@ pub(crate) fn shenyang_score_concealed_dragon_triplet_fan(hand_tiles: &[i32]) ->
         .count() as i32
 }
 
-pub(crate) fn shenyang_win_pattern(
-    hand_tiles: &[i32],
-    melds: &[WsShenyangMahjongMeld],
-) -> ShenyangMahjongWinPattern {
-    if melds.is_empty() && is_seven_pairs_win(hand_tiles) {
-        ShenyangMahjongWinPattern::SevenPairs
-    } else if is_pure_one_suit_win(hand_tiles, melds) {
-        ShenyangMahjongWinPattern::PureOneSuit
-    } else if is_piao_hu_win(hand_tiles, melds) {
-        ShenyangMahjongWinPattern::PiaoHu
-    } else {
-        ShenyangMahjongWinPattern::Standard
-    }
-}
-
-pub(crate) fn shenyang_win_pattern_base_fan(pattern: ShenyangMahjongWinPattern) -> i32 {
-    match pattern {
-        ShenyangMahjongWinPattern::Standard => 1,
-        ShenyangMahjongWinPattern::PiaoHu => 3,
-        ShenyangMahjongWinPattern::SevenPairs | ShenyangMahjongWinPattern::PureOneSuit => 4,
-    }
-}
-
-pub(crate) fn shenyang_score_wait_fan(
-    hand_tiles: &[i32],
-    melds: &[WsShenyangMahjongMeld],
-    win_tile: Option<i32>,
-    rules: ShenyangMahjongWinRules,
-    known_unavailable_tiles: &[i32],
-) -> i32 {
-    let Some(win_tile) = win_tile else {
-        return 0;
-    };
-    if !is_single_wait_shape_with_known_unavailable_tiles_for_rules(
-        hand_tiles,
-        melds,
-        win_tile,
-        rules,
-        known_unavailable_tiles,
-    ) {
-        return 0;
-    }
-
-    1 + i32::from(
-        shenyang_win_pattern(hand_tiles, melds) == ShenyangMahjongWinPattern::PiaoHu
-            && melds.len() == 4
-            && hand_tiles.len() == 2,
-    )
-}
-
-pub(crate) fn shenyang_score_visible_win_fan(
-    hand_tiles: &[i32],
-    melds: &[WsShenyangMahjongMeld],
-    win_tile: Option<i32>,
-    rules: ShenyangMahjongWinRules,
-    known_unavailable_tiles: &[i32],
-) -> i32 {
-    if !is_complete_win_with_melds_for_rules(hand_tiles, melds, rules) {
-        return 0;
-    }
-
-    shenyang_win_pattern_base_fan(shenyang_win_pattern(hand_tiles, melds))
-        + shenyang_score_meld_fan(melds)
-        + shenyang_score_concealed_dragon_triplet_fan(hand_tiles)
-        + shenyang_score_four_gui_yi_fan(hand_tiles, melds)
-        + shenyang_score_wait_fan(hand_tiles, melds, win_tile, rules, known_unavailable_tiles)
-}
-
 pub(crate) fn shenyang_score_four_gui_yi_fan(
     hand_tiles: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -928,6 +836,74 @@ pub(crate) fn shenyang_score_meld_fan(melds: &[WsShenyangMahjongMeld]) -> i32 {
         .sum()
 }
 
+pub(crate) fn shenyang_score_visible_win_fan(
+    hand_tiles: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    win_tile: Option<i32>,
+    rules: ShenyangMahjongWinRules,
+    known_unavailable_tiles: &[i32],
+) -> i32 {
+    if !is_complete_win_with_melds_for_rules(hand_tiles, melds, rules) {
+        return 0;
+    }
+
+    shenyang_win_pattern_base_fan(shenyang_win_pattern(hand_tiles, melds))
+        + shenyang_score_meld_fan(melds)
+        + shenyang_score_concealed_dragon_triplet_fan(hand_tiles)
+        + shenyang_score_four_gui_yi_fan(hand_tiles, melds)
+        + shenyang_score_wait_fan(hand_tiles, melds, win_tile, rules, known_unavailable_tiles)
+}
+
+pub(crate) fn shenyang_score_wait_fan(
+    hand_tiles: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    win_tile: Option<i32>,
+    rules: ShenyangMahjongWinRules,
+    known_unavailable_tiles: &[i32],
+) -> i32 {
+    let Some(win_tile) = win_tile else {
+        return 0;
+    };
+    if !is_single_wait_shape_with_known_unavailable_tiles_for_rules(
+        hand_tiles,
+        melds,
+        win_tile,
+        rules,
+        known_unavailable_tiles,
+    ) {
+        return 0;
+    }
+
+    1 + i32::from(
+        shenyang_win_pattern(hand_tiles, melds) == ShenyangMahjongWinPattern::PiaoHu
+            && melds.len() == 4
+            && hand_tiles.len() == 2,
+    )
+}
+
+pub(crate) fn shenyang_win_pattern(
+    hand_tiles: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+) -> ShenyangMahjongWinPattern {
+    if melds.is_empty() && is_seven_pairs_win(hand_tiles) {
+        ShenyangMahjongWinPattern::SevenPairs
+    } else if is_pure_one_suit_win(hand_tiles, melds) {
+        ShenyangMahjongWinPattern::PureOneSuit
+    } else if is_piao_hu_win(hand_tiles, melds) {
+        ShenyangMahjongWinPattern::PiaoHu
+    } else {
+        ShenyangMahjongWinPattern::Standard
+    }
+}
+
+pub(crate) fn shenyang_win_pattern_base_fan(pattern: ShenyangMahjongWinPattern) -> i32 {
+    match pattern {
+        ShenyangMahjongWinPattern::Standard => 1,
+        ShenyangMahjongWinPattern::PiaoHu => 3,
+        ShenyangMahjongWinPattern::SevenPairs | ShenyangMahjongWinPattern::PureOneSuit => 4,
+    }
+}
+
 pub fn sort_tiles(hand: &mut [i32]) {
     hand.sort_unstable();
 }
@@ -968,6 +944,30 @@ pub fn win_rule_from_configs(configs: &HashMap<String, i32>) -> i32 {
     }
 }
 
+pub fn xi_gang_options(hand: &[i32]) -> Vec<Vec<i32>> {
+    [XI_GANG_WINDS.as_slice(), XI_GANG_DRAGONS.as_slice()]
+        .into_iter()
+        .filter(|tiles| tiles_in_hand(hand, tiles))
+        .map(<[i32]>::to_vec)
+        .collect()
+}
+
+impl ShenyangMahjongWinRules {
+    pub fn from_configs(configs: &HashMap<String, i32>) -> Self {
+        Self {
+            win_rule: win_rule_from_configs(configs),
+            allow_closed_dragon_pair_win: configs.get("allow_first_chi").copied().unwrap_or(1) == 0,
+        }
+    }
+
+    pub const fn new(win_rule: i32) -> Self {
+        Self {
+            win_rule,
+            allow_closed_dragon_pair_win: false,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use share_type_public::games::shenyang_mahjong::{
@@ -995,6 +995,37 @@ mod tests {
         assert!(!can_chi(&hand, 31, &[32, 33]));
         assert!(!can_chi(&[1, 2, 3, 3, 3, 3], 3, &[1, 2]));
         assert!(!can_chi(&[1, 2, 99], 3, &[1, 2]));
+    }
+
+    #[test]
+    fn closed_dragon_pair_exception_ignores_only_xi_gang_melds() {
+        let tiles = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 35, 35];
+        let xi_gang = vec![meld(
+            ShenyangMahjongMeldKind::XI_GANG,
+            vec![31, 32, 33, 34],
+            None,
+        )];
+        let concealed_gang = vec![meld(
+            ShenyangMahjongMeldKind::GANG,
+            vec![31, 31, 31, 31],
+            None,
+        )];
+        let rules = ShenyangMahjongWinRules {
+            win_rule: WIN_RULE_SHENYANG_BASIC,
+            allow_closed_dragon_pair_win: true,
+        };
+
+        assert!(satisfies_shenyang_basic_win_for_rules(
+            &tiles, &xi_gang, rules
+        ));
+        assert!(is_complete_win_with_melds_for_rules(
+            &tiles, &xi_gang, rules
+        ));
+        assert!(!satisfies_shenyang_basic_win_for_rules(
+            &tiles,
+            &concealed_gang,
+            rules
+        ));
     }
 
     #[test]
@@ -1074,6 +1105,46 @@ mod tests {
     }
 
     #[test]
+    fn disabled_first_chi_enables_closed_dragon_pair_win_rule() {
+        let default_rules =
+            ShenyangMahjongWinRules::from_configs(&std::collections::HashMap::new());
+        let disabled_rules = ShenyangMahjongWinRules::from_configs(
+            &std::collections::HashMap::from([("allow_first_chi".to_owned(), 0)]),
+        );
+
+        assert!(!default_rules.allow_closed_dragon_pair_win);
+        assert!(disabled_rules.allow_closed_dragon_pair_win);
+    }
+
+    #[test]
+    fn each_xi_gang_adds_one_meld_fan() {
+        let melds = vec![
+            meld(ShenyangMahjongMeldKind::XI_GANG, vec![35, 36, 37], None),
+            meld(ShenyangMahjongMeldKind::XI_GANG, vec![31, 32, 33, 34], None),
+        ];
+
+        assert_eq!(super::shenyang_score_meld_fan(&melds), 2);
+    }
+
+    #[test]
+    fn four_gui_yi_counts_tile_exposed_by_xi_gang() {
+        let melds = vec![
+            meld(ShenyangMahjongMeldKind::XI_GANG, vec![35, 36, 37], None),
+            meld(ShenyangMahjongMeldKind::CHI, vec![1, 2, 3], Some(1)),
+            meld(ShenyangMahjongMeldKind::CHI, vec![11, 12, 13], Some(2)),
+        ];
+        let hand = vec![21, 21, 37, 37, 37];
+
+        assert!(is_complete_win_with_melds(
+            &hand,
+            &melds,
+            WIN_RULE_SHENYANG_BASIC,
+        ));
+        assert_eq!(super::shenyang_score_meld_fan(&melds), 1);
+        assert_eq!(super::shenyang_score_four_gui_yi_fan(&hand, &melds), 1);
+    }
+
+    #[test]
     fn gang_requires_three_copies_for_discard_claim() {
         let hand = vec![31, 31, 31, 32, 33];
         assert!(can_gang(&hand, 31));
@@ -1096,233 +1167,11 @@ mod tests {
     }
 
     #[test]
-    fn xi_gang_options_require_one_of_each_honor() {
-        assert_eq!(
-            super::xi_gang_options(&[31, 32, 33, 34, 35, 36, 37]),
-            vec![vec![31, 32, 33, 34], vec![35, 36, 37]]
-        );
-        assert_eq!(
-            super::xi_gang_options(&[31, 32, 33, 35, 36]),
-            Vec::<Vec<i32>>::new()
-        );
-        assert_eq!(
-            super::xi_gang_options(&[35, 35, 36, 37]),
-            vec![vec![35, 36, 37]]
-        );
-    }
-
-    #[test]
-    fn xi_gang_is_valid_only_as_a_source_less_special_meld() {
-        let dragons = meld(ShenyangMahjongMeldKind::XI_GANG, vec![35, 36, 37], None);
-        let winds = meld(ShenyangMahjongMeldKind::XI_GANG, vec![34, 31, 33, 32], None);
-        let sourced = meld(ShenyangMahjongMeldKind::XI_GANG, vec![35, 36, 37], Some(1));
-        let malformed = meld(ShenyangMahjongMeldKind::XI_GANG, vec![31, 32, 33], None);
-
-        assert!(super::is_valid_meld(&dragons));
-        assert!(super::is_valid_meld(&winds));
-        assert!(!super::is_valid_meld(&sourced));
-        assert!(!super::is_valid_meld(&malformed));
-    }
-
-    #[test]
-    fn xi_gang_counts_as_heng_without_opening_the_hand() {
-        let xi_gang = meld(ShenyangMahjongMeldKind::XI_GANG, vec![35, 36, 37], None);
-        let closed_remainder = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31];
-        assert!(is_complete_win_with_melds(
-            &closed_remainder,
-            std::slice::from_ref(&xi_gang),
-            WIN_RULE_RELAXED,
-        ));
-        assert!(!is_complete_win_with_melds(
-            &closed_remainder,
-            std::slice::from_ref(&xi_gang),
-            WIN_RULE_SHENYANG_BASIC,
-        ));
-
-        let open_melds = vec![
-            xi_gang,
-            meld(ShenyangMahjongMeldKind::CHI, vec![1, 2, 3], Some(1)),
-        ];
-        let open_remainder = vec![11, 12, 13, 21, 22, 23, 31, 31];
-        assert!(is_complete_win_with_melds(
-            &open_remainder,
-            &open_melds,
-            WIN_RULE_SHENYANG_BASIC,
-        ));
-    }
-
-    #[test]
-    fn shared_door_opening_predicate_excludes_concealed_and_xi_gangs() {
-        let chi = meld(ShenyangMahjongMeldKind::CHI, vec![1, 2, 3], Some(0));
-        let peng = meld(ShenyangMahjongMeldKind::PENG, vec![11, 11, 11], Some(1));
-        let open_gang = meld(ShenyangMahjongMeldKind::GANG, vec![21, 21, 21, 21], Some(2));
-        let concealed_gang = meld(ShenyangMahjongMeldKind::GANG, vec![31, 31, 31, 31], None);
-        let xi_gang = meld(ShenyangMahjongMeldKind::XI_GANG, vec![35, 36, 37], None);
-
-        assert!(is_door_opening_meld(&chi));
-        assert!(is_door_opening_meld(&peng));
-        assert!(is_door_opening_meld(&open_gang));
-        assert!(!is_door_opening_meld(&concealed_gang));
-        assert!(!is_door_opening_meld(&xi_gang));
-    }
-
-    #[test]
-    fn xi_gang_can_participate_in_closed_dragon_pair_piao() {
-        let tiles = vec![1, 1, 1, 11, 11, 11, 21, 21, 21, 35, 35];
-        let melds = vec![meld(
-            ShenyangMahjongMeldKind::XI_GANG,
-            vec![31, 32, 33, 34],
-            None,
-        )];
-
-        assert!(is_piao_hu_win(&tiles, &melds));
-        assert!(is_complete_win_with_melds(
-            &tiles,
-            &melds,
-            WIN_RULE_SHENYANG_BASIC,
-        ));
-    }
-
-    #[test]
-    fn each_xi_gang_adds_one_meld_fan() {
-        let melds = vec![
-            meld(ShenyangMahjongMeldKind::XI_GANG, vec![35, 36, 37], None),
-            meld(ShenyangMahjongMeldKind::XI_GANG, vec![31, 32, 33, 34], None),
-        ];
-
-        assert_eq!(super::shenyang_score_meld_fan(&melds), 2);
-    }
-
-    #[test]
-    fn shared_win_pattern_uses_server_base_fan_priority() {
-        let seven_pairs = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35, 35];
-        let pure_one_suit = vec![1, 2, 2, 3, 3, 4, 4, 5, 6, 7, 7, 7, 9, 9];
-        let piao_hand = vec![1, 1, 1, 35, 35];
-        let piao_melds = vec![
-            meld(ShenyangMahjongMeldKind::PENG, vec![11, 11, 11], Some(0)),
-            meld(ShenyangMahjongMeldKind::PENG, vec![21, 21, 21], Some(2)),
-            meld(ShenyangMahjongMeldKind::PENG, vec![31, 31, 31], Some(3)),
-        ];
-        let standard = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35];
-
-        let cases = [
-            (
-                seven_pairs.as_slice(),
-                &[][..],
-                ShenyangMahjongWinPattern::SevenPairs,
-                4,
-            ),
-            (
-                pure_one_suit.as_slice(),
-                &[][..],
-                ShenyangMahjongWinPattern::PureOneSuit,
-                4,
-            ),
-            (
-                piao_hand.as_slice(),
-                piao_melds.as_slice(),
-                ShenyangMahjongWinPattern::PiaoHu,
-                3,
-            ),
-            (
-                standard.as_slice(),
-                &[][..],
-                ShenyangMahjongWinPattern::Standard,
-                1,
-            ),
-        ];
-
-        for (hand, melds, expected_pattern, expected_base_fan) in cases {
-            let pattern = shenyang_win_pattern(hand, melds);
-            assert_eq!(pattern, expected_pattern);
-            assert_eq!(shenyang_win_pattern_base_fan(pattern), expected_base_fan);
-        }
-    }
-
-    #[test]
-    fn shared_wait_fan_stacks_shou_ba_yi_only_for_piao_single_wait() {
-        let piao_melds = vec![
-            meld(ShenyangMahjongMeldKind::PENG, vec![1, 1, 1], Some(0)),
-            meld(ShenyangMahjongMeldKind::PENG, vec![11, 11, 11], Some(1)),
-            meld(ShenyangMahjongMeldKind::PENG, vec![21, 21, 21], Some(2)),
-            meld(ShenyangMahjongMeldKind::PENG, vec![31, 31, 31], Some(3)),
-        ];
-        let piao_pair = vec![35, 35];
-        let standard = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 21, 21];
-        let rules = ShenyangMahjongWinRules::new(WIN_RULE_RELAXED);
-
-        assert_eq!(
-            shenyang_score_wait_fan(&piao_pair, &piao_melds, Some(35), rules, &[]),
-            2
-        );
-        assert_eq!(
-            shenyang_score_wait_fan(&standard, &[], Some(5), rules, &[]),
-            1
-        );
-        assert_eq!(shenyang_score_wait_fan(&standard, &[], None, rules, &[]), 0);
-    }
-
-    #[test]
-    fn shared_visible_win_fan_combines_pattern_meld_and_wait_scoring() {
-        let melds = vec![
-            meld(ShenyangMahjongMeldKind::PENG, vec![1, 1, 1], Some(0)),
-            meld(ShenyangMahjongMeldKind::GANG, vec![11, 11, 11, 11], Some(1)),
-            meld(ShenyangMahjongMeldKind::GANG, vec![21, 21, 21, 21], None),
-            meld(ShenyangMahjongMeldKind::PENG, vec![31, 31, 31], Some(2)),
-        ];
-        let hand = vec![35, 35];
-        let rules = ShenyangMahjongWinRules::new(WIN_RULE_RELAXED);
-
-        assert_eq!(
-            shenyang_score_visible_win_fan(&hand, &melds, Some(35), rules, &[]),
-            8
-        );
-        assert_eq!(
-            shenyang_score_visible_win_fan(&hand, &melds, None, rules, &[]),
-            6
-        );
-        assert_eq!(
-            shenyang_score_visible_win_fan(&[1, 2, 3], &[], Some(3), rules, &[]),
-            0
-        );
-    }
-
-    #[test]
-    fn four_gui_yi_counts_tile_exposed_by_xi_gang() {
-        let melds = vec![
-            meld(ShenyangMahjongMeldKind::XI_GANG, vec![35, 36, 37], None),
-            meld(ShenyangMahjongMeldKind::CHI, vec![1, 2, 3], Some(1)),
-            meld(ShenyangMahjongMeldKind::CHI, vec![11, 12, 13], Some(2)),
-        ];
-        let hand = vec![21, 21, 37, 37, 37];
-
-        assert!(is_complete_win_with_melds(
-            &hand,
-            &melds,
-            WIN_RULE_SHENYANG_BASIC,
-        ));
-        assert_eq!(super::shenyang_score_meld_fan(&melds), 1);
-        assert_eq!(super::shenyang_score_four_gui_yi_fan(&hand, &melds), 1);
-    }
-
-    #[test]
     fn missing_config_uses_shenyang_basic_win_rule() {
         assert_eq!(
             win_rule_from_configs(&std::collections::HashMap::new()),
             WIN_RULE_SHENYANG_BASIC
         );
-    }
-
-    #[test]
-    fn disabled_first_chi_enables_closed_dragon_pair_win_rule() {
-        let default_rules =
-            ShenyangMahjongWinRules::from_configs(&std::collections::HashMap::new());
-        let disabled_rules = ShenyangMahjongWinRules::from_configs(
-            &std::collections::HashMap::from([("allow_first_chi".to_owned(), 0)]),
-        );
-
-        assert!(!default_rules.allow_closed_dragon_pair_win);
-        assert!(disabled_rules.allow_closed_dragon_pair_win);
     }
 
     #[test]
@@ -1334,6 +1183,25 @@ mod tests {
         assert!(!can_peng(&[99, 99], 99));
         assert!(!can_peng(&[31, 31, 31, 31], 31));
         assert!(!can_peng(&[31, 31, 99], 31));
+    }
+
+    #[test]
+    fn piao_hu_accepts_closed_triplet_hand_with_dragon_pair() {
+        let tiles = vec![1, 1, 1, 11, 11, 11, 21, 21, 21, 35, 35];
+        let melds = vec![meld(
+            ShenyangMahjongMeldKind::GANG,
+            vec![31, 31, 31, 31],
+            None,
+        )];
+
+        assert!(is_complete_win(&tiles, melds.len()));
+        assert!(is_piao_hu_win(&tiles, &melds));
+        assert!(satisfies_shenyang_basic_win(&tiles, &melds));
+        assert!(is_complete_win_with_melds(
+            &tiles,
+            &melds,
+            WIN_RULE_SHENYANG_BASIC
+        ));
     }
 
     #[test]
@@ -1358,25 +1226,6 @@ mod tests {
         ];
 
         assert!(is_piao_hu_win(&tiles, &melds));
-    }
-
-    #[test]
-    fn piao_hu_accepts_closed_triplet_hand_with_dragon_pair() {
-        let tiles = vec![1, 1, 1, 11, 11, 11, 21, 21, 21, 35, 35];
-        let melds = vec![meld(
-            ShenyangMahjongMeldKind::GANG,
-            vec![31, 31, 31, 31],
-            None,
-        )];
-
-        assert!(is_complete_win(&tiles, melds.len()));
-        assert!(is_piao_hu_win(&tiles, &melds));
-        assert!(satisfies_shenyang_basic_win(&tiles, &melds));
-        assert!(is_complete_win_with_melds(
-            &tiles,
-            &melds,
-            WIN_RULE_SHENYANG_BASIC
-        ));
     }
 
     #[test]
@@ -1559,6 +1408,115 @@ mod tests {
     }
 
     #[test]
+    fn shared_door_opening_predicate_excludes_concealed_and_xi_gangs() {
+        let chi = meld(ShenyangMahjongMeldKind::CHI, vec![1, 2, 3], Some(0));
+        let peng = meld(ShenyangMahjongMeldKind::PENG, vec![11, 11, 11], Some(1));
+        let open_gang = meld(ShenyangMahjongMeldKind::GANG, vec![21, 21, 21, 21], Some(2));
+        let concealed_gang = meld(ShenyangMahjongMeldKind::GANG, vec![31, 31, 31, 31], None);
+        let xi_gang = meld(ShenyangMahjongMeldKind::XI_GANG, vec![35, 36, 37], None);
+
+        assert!(is_door_opening_meld(&chi));
+        assert!(is_door_opening_meld(&peng));
+        assert!(is_door_opening_meld(&open_gang));
+        assert!(!is_door_opening_meld(&concealed_gang));
+        assert!(!is_door_opening_meld(&xi_gang));
+    }
+
+    #[test]
+    fn shared_visible_win_fan_combines_pattern_meld_and_wait_scoring() {
+        let melds = vec![
+            meld(ShenyangMahjongMeldKind::PENG, vec![1, 1, 1], Some(0)),
+            meld(ShenyangMahjongMeldKind::GANG, vec![11, 11, 11, 11], Some(1)),
+            meld(ShenyangMahjongMeldKind::GANG, vec![21, 21, 21, 21], None),
+            meld(ShenyangMahjongMeldKind::PENG, vec![31, 31, 31], Some(2)),
+        ];
+        let hand = vec![35, 35];
+        let rules = ShenyangMahjongWinRules::new(WIN_RULE_RELAXED);
+
+        assert_eq!(
+            shenyang_score_visible_win_fan(&hand, &melds, Some(35), rules, &[]),
+            8
+        );
+        assert_eq!(
+            shenyang_score_visible_win_fan(&hand, &melds, None, rules, &[]),
+            6
+        );
+        assert_eq!(
+            shenyang_score_visible_win_fan(&[1, 2, 3], &[], Some(3), rules, &[]),
+            0
+        );
+    }
+
+    #[test]
+    fn shared_wait_fan_stacks_shou_ba_yi_only_for_piao_single_wait() {
+        let piao_melds = vec![
+            meld(ShenyangMahjongMeldKind::PENG, vec![1, 1, 1], Some(0)),
+            meld(ShenyangMahjongMeldKind::PENG, vec![11, 11, 11], Some(1)),
+            meld(ShenyangMahjongMeldKind::PENG, vec![21, 21, 21], Some(2)),
+            meld(ShenyangMahjongMeldKind::PENG, vec![31, 31, 31], Some(3)),
+        ];
+        let piao_pair = vec![35, 35];
+        let standard = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 21, 21];
+        let rules = ShenyangMahjongWinRules::new(WIN_RULE_RELAXED);
+
+        assert_eq!(
+            shenyang_score_wait_fan(&piao_pair, &piao_melds, Some(35), rules, &[]),
+            2
+        );
+        assert_eq!(
+            shenyang_score_wait_fan(&standard, &[], Some(5), rules, &[]),
+            1
+        );
+        assert_eq!(shenyang_score_wait_fan(&standard, &[], None, rules, &[]), 0);
+    }
+
+    #[test]
+    fn shared_win_pattern_uses_server_base_fan_priority() {
+        let seven_pairs = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35, 35];
+        let pure_one_suit = vec![1, 2, 2, 3, 3, 4, 4, 5, 6, 7, 7, 7, 9, 9];
+        let piao_hand = vec![1, 1, 1, 35, 35];
+        let piao_melds = vec![
+            meld(ShenyangMahjongMeldKind::PENG, vec![11, 11, 11], Some(0)),
+            meld(ShenyangMahjongMeldKind::PENG, vec![21, 21, 21], Some(2)),
+            meld(ShenyangMahjongMeldKind::PENG, vec![31, 31, 31], Some(3)),
+        ];
+        let standard = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35];
+
+        let cases = [
+            (
+                seven_pairs.as_slice(),
+                &[][..],
+                ShenyangMahjongWinPattern::SevenPairs,
+                4,
+            ),
+            (
+                pure_one_suit.as_slice(),
+                &[][..],
+                ShenyangMahjongWinPattern::PureOneSuit,
+                4,
+            ),
+            (
+                piao_hand.as_slice(),
+                piao_melds.as_slice(),
+                ShenyangMahjongWinPattern::PiaoHu,
+                3,
+            ),
+            (
+                standard.as_slice(),
+                &[][..],
+                ShenyangMahjongWinPattern::Standard,
+                1,
+            ),
+        ];
+
+        for (hand, melds, expected_pattern, expected_base_fan) in cases {
+            let pattern = shenyang_win_pattern(hand, melds);
+            assert_eq!(pattern, expected_pattern);
+            assert_eq!(shenyang_win_pattern_base_fan(pattern), expected_base_fan);
+        }
+    }
+
+    #[test]
     fn shenyang_basic_accepts_closed_pure_one_suit_without_open_meld() {
         let tiles = vec![1, 2, 3, 2, 3, 4, 4, 5, 6, 7, 7, 7, 9, 9];
 
@@ -1599,74 +1557,6 @@ mod tests {
     }
 
     #[test]
-    fn shenyang_basic_allows_closed_sequence_hand_with_dragon_pair_when_configured() {
-        let tiles = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 35, 35];
-        let rules = ShenyangMahjongWinRules {
-            win_rule: WIN_RULE_SHENYANG_BASIC,
-            allow_closed_dragon_pair_win: true,
-        };
-
-        assert!(!has_triplet_in_standard_decomposition(&tiles));
-        assert!(!satisfies_shenyang_basic_win(&tiles, &[]));
-        assert!(satisfies_shenyang_basic_win_for_rules(&tiles, &[], rules));
-        assert!(is_complete_win_with_melds_for_rules(&tiles, &[], rules));
-    }
-
-    #[test]
-    fn closed_dragon_pair_exception_ignores_only_xi_gang_melds() {
-        let tiles = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 35, 35];
-        let xi_gang = vec![meld(
-            ShenyangMahjongMeldKind::XI_GANG,
-            vec![31, 32, 33, 34],
-            None,
-        )];
-        let concealed_gang = vec![meld(
-            ShenyangMahjongMeldKind::GANG,
-            vec![31, 31, 31, 31],
-            None,
-        )];
-        let rules = ShenyangMahjongWinRules {
-            win_rule: WIN_RULE_SHENYANG_BASIC,
-            allow_closed_dragon_pair_win: true,
-        };
-
-        assert!(satisfies_shenyang_basic_win_for_rules(
-            &tiles, &xi_gang, rules
-        ));
-        assert!(is_complete_win_with_melds_for_rules(
-            &tiles, &xi_gang, rules
-        ));
-        assert!(!satisfies_shenyang_basic_win_for_rules(
-            &tiles,
-            &concealed_gang,
-            rules
-        ));
-    }
-
-    #[test]
-    fn shenyang_basic_closed_dragon_pair_exception_rejects_actual_triplet() {
-        let tiles = vec![1, 1, 1, 4, 5, 6, 11, 12, 13, 21, 22, 23, 35, 35];
-        let rules = ShenyangMahjongWinRules {
-            win_rule: WIN_RULE_SHENYANG_BASIC,
-            allow_closed_dragon_pair_win: true,
-        };
-
-        assert!(has_triplet_in_standard_decomposition(&tiles));
-        assert!(!satisfies_shenyang_basic_win_for_rules(&tiles, &[], rules));
-    }
-
-    #[test]
-    fn shenyang_basic_closed_dragon_pair_exception_rejects_ordinary_pair() {
-        let tiles = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 31];
-        let rules = ShenyangMahjongWinRules {
-            win_rule: WIN_RULE_SHENYANG_BASIC,
-            allow_closed_dragon_pair_win: true,
-        };
-
-        assert!(!satisfies_shenyang_basic_win_for_rules(&tiles, &[], rules));
-    }
-
-    #[test]
     fn shenyang_basic_accepts_open_pure_one_suit_without_terminal_or_triplet() {
         let tiles = vec![3, 4, 5, 4, 5, 6, 5, 6, 7, 8, 8];
         let melds = vec![meld(ShenyangMahjongMeldKind::CHI, vec![2, 3, 4], Some(1))];
@@ -1694,6 +1584,20 @@ mod tests {
     }
 
     #[test]
+    fn shenyang_basic_allows_closed_sequence_hand_with_dragon_pair_when_configured() {
+        let tiles = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 35, 35];
+        let rules = ShenyangMahjongWinRules {
+            win_rule: WIN_RULE_SHENYANG_BASIC,
+            allow_closed_dragon_pair_win: true,
+        };
+
+        assert!(!has_triplet_in_standard_decomposition(&tiles));
+        assert!(!satisfies_shenyang_basic_win(&tiles, &[]));
+        assert!(satisfies_shenyang_basic_win_for_rules(&tiles, &[], rules));
+        assert!(is_complete_win_with_melds_for_rules(&tiles, &[], rules));
+    }
+
+    #[test]
     fn shenyang_basic_always_counts_chi_as_opening_meld() {
         let tiles = vec![1, 1, 1, 2, 3, 4, 21, 22, 23, 8, 8];
         let melds = vec![meld(
@@ -1708,6 +1612,29 @@ mod tests {
             &melds,
             WIN_RULE_SHENYANG_BASIC
         ));
+    }
+
+    #[test]
+    fn shenyang_basic_closed_dragon_pair_exception_rejects_actual_triplet() {
+        let tiles = vec![1, 1, 1, 4, 5, 6, 11, 12, 13, 21, 22, 23, 35, 35];
+        let rules = ShenyangMahjongWinRules {
+            win_rule: WIN_RULE_SHENYANG_BASIC,
+            allow_closed_dragon_pair_win: true,
+        };
+
+        assert!(has_triplet_in_standard_decomposition(&tiles));
+        assert!(!satisfies_shenyang_basic_win_for_rules(&tiles, &[], rules));
+    }
+
+    #[test]
+    fn shenyang_basic_closed_dragon_pair_exception_rejects_ordinary_pair() {
+        let tiles = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 31];
+        let rules = ShenyangMahjongWinRules {
+            win_rule: WIN_RULE_SHENYANG_BASIC,
+            allow_closed_dragon_pair_win: true,
+        };
+
+        assert!(!satisfies_shenyang_basic_win_for_rules(&tiles, &[], rules));
     }
 
     #[test]
@@ -1884,6 +1811,20 @@ mod tests {
     }
 
     #[test]
+    fn single_wait_shape_counts_chi_as_opening_meld() {
+        let tiles = vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35];
+        let melds = vec![meld(ShenyangMahjongMeldKind::CHI, vec![1, 2, 3], Some(1))];
+
+        assert!(is_single_wait_shape_with_known_unavailable_tiles(
+            &tiles,
+            &melds,
+            35,
+            WIN_RULE_SHENYANG_BASIC,
+            &[],
+        ));
+    }
+
+    #[test]
     fn single_wait_shape_ignores_waits_blocked_by_exposed_four_copies() {
         let tiles = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 35, 35];
         let melds = vec![meld(
@@ -1960,20 +1901,6 @@ mod tests {
     }
 
     #[test]
-    fn single_wait_shape_counts_chi_as_opening_meld() {
-        let tiles = vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35];
-        let melds = vec![meld(ShenyangMahjongMeldKind::CHI, vec![1, 2, 3], Some(1))];
-
-        assert!(is_single_wait_shape_with_known_unavailable_tiles(
-            &tiles,
-            &melds,
-            35,
-            WIN_RULE_SHENYANG_BASIC,
-            &[],
-        ));
-    }
-
-    #[test]
     fn single_wait_shape_with_rule_rejects_closed_standard_basic_win() {
         let tiles = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35];
 
@@ -2005,5 +1932,78 @@ mod tests {
         assert!(!is_standard_win(&tiles));
         assert!(!is_complete_win(&tiles, 0));
         assert!(!is_win(&tiles));
+    }
+
+    #[test]
+    fn xi_gang_can_participate_in_closed_dragon_pair_piao() {
+        let tiles = vec![1, 1, 1, 11, 11, 11, 21, 21, 21, 35, 35];
+        let melds = vec![meld(
+            ShenyangMahjongMeldKind::XI_GANG,
+            vec![31, 32, 33, 34],
+            None,
+        )];
+
+        assert!(is_piao_hu_win(&tiles, &melds));
+        assert!(is_complete_win_with_melds(
+            &tiles,
+            &melds,
+            WIN_RULE_SHENYANG_BASIC,
+        ));
+    }
+
+    #[test]
+    fn xi_gang_counts_as_heng_without_opening_the_hand() {
+        let xi_gang = meld(ShenyangMahjongMeldKind::XI_GANG, vec![35, 36, 37], None);
+        let closed_remainder = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31];
+        assert!(is_complete_win_with_melds(
+            &closed_remainder,
+            std::slice::from_ref(&xi_gang),
+            WIN_RULE_RELAXED,
+        ));
+        assert!(!is_complete_win_with_melds(
+            &closed_remainder,
+            std::slice::from_ref(&xi_gang),
+            WIN_RULE_SHENYANG_BASIC,
+        ));
+
+        let open_melds = vec![
+            xi_gang,
+            meld(ShenyangMahjongMeldKind::CHI, vec![1, 2, 3], Some(1)),
+        ];
+        let open_remainder = vec![11, 12, 13, 21, 22, 23, 31, 31];
+        assert!(is_complete_win_with_melds(
+            &open_remainder,
+            &open_melds,
+            WIN_RULE_SHENYANG_BASIC,
+        ));
+    }
+
+    #[test]
+    fn xi_gang_is_valid_only_as_a_source_less_special_meld() {
+        let dragons = meld(ShenyangMahjongMeldKind::XI_GANG, vec![35, 36, 37], None);
+        let winds = meld(ShenyangMahjongMeldKind::XI_GANG, vec![34, 31, 33, 32], None);
+        let sourced = meld(ShenyangMahjongMeldKind::XI_GANG, vec![35, 36, 37], Some(1));
+        let malformed = meld(ShenyangMahjongMeldKind::XI_GANG, vec![31, 32, 33], None);
+
+        assert!(super::is_valid_meld(&dragons));
+        assert!(super::is_valid_meld(&winds));
+        assert!(!super::is_valid_meld(&sourced));
+        assert!(!super::is_valid_meld(&malformed));
+    }
+
+    #[test]
+    fn xi_gang_options_require_one_of_each_honor() {
+        assert_eq!(
+            super::xi_gang_options(&[31, 32, 33, 34, 35, 36, 37]),
+            vec![vec![31, 32, 33, 34], vec![35, 36, 37]]
+        );
+        assert_eq!(
+            super::xi_gang_options(&[31, 32, 33, 35, 36]),
+            Vec::<Vec<i32>>::new()
+        );
+        assert_eq!(
+            super::xi_gang_options(&[35, 35, 36, 37]),
+            vec![vec![35, 36, 37]]
+        );
     }
 }

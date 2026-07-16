@@ -10,22 +10,13 @@ use hmac::{Hmac, Mac};
 use sha1::Sha1;
 use share_type_public::{WsP2pIceConfigEvent, WsP2pIceServer};
 
-type HmacSha1 = Hmac<Sha1>;
+const DEFAULT_REALM: &str = "lan-game-p2p";
+const DEFAULT_RELAY_MAX_PORT: u16 = 49_200;
+const DEFAULT_RELAY_MIN_PORT: u16 = 49_160;
+const DEFAULT_TTL_SECONDS: u64 = 3_600;
 
 const DEFAULT_TURN_PORT: u16 = 3478;
-const DEFAULT_TTL_SECONDS: u64 = 3_600;
 const MAX_TTL_SECONDS: u64 = 86_400;
-const DEFAULT_RELAY_MIN_PORT: u16 = 49_160;
-const DEFAULT_RELAY_MAX_PORT: u16 = 49_200;
-const DEFAULT_REALM: &str = "lan-game-p2p";
-
-#[derive(Debug, Clone)]
-pub struct IceServiceConfig {
-    stun_urls: Vec<String>,
-    turn_urls: Vec<String>,
-    turn_secret: String,
-    credential_ttl_seconds: u64,
-}
 
 #[derive(Debug, Clone)]
 pub struct EmbeddedTurnConfig {
@@ -39,10 +30,167 @@ pub struct EmbeddedTurnConfig {
     pub credential_ttl_seconds: u64,
 }
 
+type HmacSha1 = Hmac<Sha1>;
+
+#[derive(Debug, Clone)]
+pub struct IceServiceConfig {
+    stun_urls: Vec<String>,
+    turn_urls: Vec<String>,
+    turn_secret: String,
+    credential_ttl_seconds: u64,
+}
+
 #[derive(Debug, Clone)]
 pub struct P2pServiceConfig {
     pub ice: IceServiceConfig,
     pub turn: EmbeddedTurnConfig,
+}
+
+fn detect_local_ip() -> Option<IpAddr> {
+    let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).ok()?;
+    socket.connect((Ipv4Addr::new(192, 0, 2, 1), 9)).ok()?;
+    let ip = socket.local_addr().ok()?.ip();
+    (!ip.is_unspecified()).then_some(ip)
+}
+
+fn env_u16(name: &str, default: u16) -> anyhow::Result<u16> {
+    env::var(name)
+        .ok()
+        .map(|value| value.parse::<u16>())
+        .transpose()
+        .with_context(|| format!("{name} must be an integer between 0 and 65535"))
+        .map(|value| value.unwrap_or(default))
+}
+
+fn ice_host(ip: IpAddr) -> String {
+    match ip {
+        IpAddr::V4(ip) => ip.to_string(),
+        IpAddr::V6(ip) => format!("[{ip}]"),
+    }
+}
+
+pub(crate) fn turn_password(secret: &str, username: &str) -> anyhow::Result<String> {
+    let mut mac = HmacSha1::new_from_slice(secret.as_bytes())
+        .context("invalid embedded TURN shared secret")?;
+    mac.update(username.as_bytes());
+    Ok(STANDARD.encode(mac.finalize().into_bytes()))
+}
+
+pub(crate) fn unix_time() -> anyhow::Result<u64> {
+    Ok(SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .context("system clock is before UNIX epoch")?
+        .as_secs())
+}
+
+fn validate_secret_and_ttl(secret: &str, ttl: u64) -> anyhow::Result<()> {
+    if secret.trim().len() < 16 {
+        bail!("TURN shared secret must contain at least 16 non-whitespace bytes");
+    }
+    if !(60..=MAX_TTL_SECONDS).contains(&ttl) {
+        bail!("TURN credential TTL must be between 60 and {MAX_TTL_SECONDS} seconds");
+    }
+    Ok(())
+}
+
+impl EmbeddedTurnConfig {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        listen_addr: SocketAddr,
+        public_ip: IpAddr,
+        relay_bind_ip: IpAddr,
+        relay_min_port: u16,
+        relay_max_port: u16,
+        realm: String,
+        turn_secret: String,
+        credential_ttl_seconds: u64,
+    ) -> anyhow::Result<Self> {
+        validate_secret_and_ttl(&turn_secret, credential_ttl_seconds)?;
+        if public_ip.is_unspecified() || public_ip.is_multicast() {
+            bail!("TURN public IP must be a concrete unicast address");
+        }
+        if listen_addr.is_ipv4() != public_ip.is_ipv4()
+            || relay_bind_ip.is_ipv4() != public_ip.is_ipv4()
+        {
+            bail!("TURN listen, relay bind, and public IP addresses must use one IP family");
+        }
+        if relay_min_port == 0 || relay_max_port < relay_min_port {
+            bail!("TURN relay port range is invalid");
+        }
+        if realm.trim().is_empty() || realm.len() > 128 || realm.chars().any(char::is_control) {
+            bail!("TURN realm must be a non-empty printable value up to 128 bytes");
+        }
+        Ok(Self {
+            listen_addr,
+            public_ip,
+            relay_bind_ip,
+            relay_min_port,
+            relay_max_port,
+            realm,
+            turn_secret,
+            credential_ttl_seconds,
+        })
+    }
+}
+
+impl IceServiceConfig {
+    pub fn issue_event(
+        &self,
+        session_id: u64,
+        self_position: usize,
+    ) -> anyhow::Result<WsP2pIceConfigEvent> {
+        let now = unix_time()?;
+        self.issue_event_at(session_id, self_position, now)
+    }
+
+    pub(crate) fn issue_event_at(
+        &self,
+        session_id: u64,
+        self_position: usize,
+        now: u64,
+    ) -> anyhow::Result<WsP2pIceConfigEvent> {
+        let expires_at = now.saturating_add(self.credential_ttl_seconds);
+        let username = format!("{expires_at}:{session_id}");
+        let credential = turn_password(&self.turn_secret, &username)?;
+
+        Ok(WsP2pIceConfigEvent {
+            self_position: self_position as i32,
+            ice_servers: vec![
+                WsP2pIceServer {
+                    urls: self.stun_urls.clone(),
+                    username: None,
+                    credential: None,
+                },
+                WsP2pIceServer {
+                    urls: self.turn_urls.clone(),
+                    username: Some(username),
+                    credential: Some(credential),
+                },
+            ],
+            credential_expires_at: expires_at.to_string(),
+        })
+    }
+
+    pub fn new(
+        stun_urls: Vec<String>,
+        turn_urls: Vec<String>,
+        turn_secret: String,
+        credential_ttl_seconds: u64,
+    ) -> anyhow::Result<Self> {
+        if stun_urls.is_empty() {
+            bail!("at least one STUN URL is required");
+        }
+        if turn_urls.is_empty() {
+            bail!("at least one TURN URL is required");
+        }
+        validate_secret_and_ttl(&turn_secret, credential_ttl_seconds)?;
+        Ok(Self {
+            stun_urls,
+            turn_urls,
+            turn_secret,
+            credential_ttl_seconds,
+        })
+    }
 }
 
 impl P2pServiceConfig {
@@ -145,153 +293,6 @@ fn embedded_ice_config(
         turn.turn_secret.clone(),
         turn.credential_ttl_seconds,
     )
-}
-
-impl EmbeddedTurnConfig {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        listen_addr: SocketAddr,
-        public_ip: IpAddr,
-        relay_bind_ip: IpAddr,
-        relay_min_port: u16,
-        relay_max_port: u16,
-        realm: String,
-        turn_secret: String,
-        credential_ttl_seconds: u64,
-    ) -> anyhow::Result<Self> {
-        validate_secret_and_ttl(&turn_secret, credential_ttl_seconds)?;
-        if public_ip.is_unspecified() || public_ip.is_multicast() {
-            bail!("TURN public IP must be a concrete unicast address");
-        }
-        if listen_addr.is_ipv4() != public_ip.is_ipv4()
-            || relay_bind_ip.is_ipv4() != public_ip.is_ipv4()
-        {
-            bail!("TURN listen, relay bind, and public IP addresses must use one IP family");
-        }
-        if relay_min_port == 0 || relay_max_port < relay_min_port {
-            bail!("TURN relay port range is invalid");
-        }
-        if realm.trim().is_empty() || realm.len() > 128 || realm.chars().any(char::is_control) {
-            bail!("TURN realm must be a non-empty printable value up to 128 bytes");
-        }
-        Ok(Self {
-            listen_addr,
-            public_ip,
-            relay_bind_ip,
-            relay_min_port,
-            relay_max_port,
-            realm,
-            turn_secret,
-            credential_ttl_seconds,
-        })
-    }
-}
-
-impl IceServiceConfig {
-    pub fn new(
-        stun_urls: Vec<String>,
-        turn_urls: Vec<String>,
-        turn_secret: String,
-        credential_ttl_seconds: u64,
-    ) -> anyhow::Result<Self> {
-        if stun_urls.is_empty() {
-            bail!("at least one STUN URL is required");
-        }
-        if turn_urls.is_empty() {
-            bail!("at least one TURN URL is required");
-        }
-        validate_secret_and_ttl(&turn_secret, credential_ttl_seconds)?;
-        Ok(Self {
-            stun_urls,
-            turn_urls,
-            turn_secret,
-            credential_ttl_seconds,
-        })
-    }
-
-    pub fn issue_event(
-        &self,
-        session_id: u64,
-        self_position: usize,
-    ) -> anyhow::Result<WsP2pIceConfigEvent> {
-        let now = unix_time()?;
-        self.issue_event_at(session_id, self_position, now)
-    }
-
-    pub(crate) fn issue_event_at(
-        &self,
-        session_id: u64,
-        self_position: usize,
-        now: u64,
-    ) -> anyhow::Result<WsP2pIceConfigEvent> {
-        let expires_at = now.saturating_add(self.credential_ttl_seconds);
-        let username = format!("{expires_at}:{session_id}");
-        let credential = turn_password(&self.turn_secret, &username)?;
-
-        Ok(WsP2pIceConfigEvent {
-            self_position: self_position as i32,
-            ice_servers: vec![
-                WsP2pIceServer {
-                    urls: self.stun_urls.clone(),
-                    username: None,
-                    credential: None,
-                },
-                WsP2pIceServer {
-                    urls: self.turn_urls.clone(),
-                    username: Some(username),
-                    credential: Some(credential),
-                },
-            ],
-            credential_expires_at: expires_at.to_string(),
-        })
-    }
-}
-
-pub(crate) fn turn_password(secret: &str, username: &str) -> anyhow::Result<String> {
-    let mut mac = HmacSha1::new_from_slice(secret.as_bytes())
-        .context("invalid embedded TURN shared secret")?;
-    mac.update(username.as_bytes());
-    Ok(STANDARD.encode(mac.finalize().into_bytes()))
-}
-
-pub(crate) fn unix_time() -> anyhow::Result<u64> {
-    Ok(SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .context("system clock is before UNIX epoch")?
-        .as_secs())
-}
-
-fn validate_secret_and_ttl(secret: &str, ttl: u64) -> anyhow::Result<()> {
-    if secret.trim().len() < 16 {
-        bail!("TURN shared secret must contain at least 16 non-whitespace bytes");
-    }
-    if !(60..=MAX_TTL_SECONDS).contains(&ttl) {
-        bail!("TURN credential TTL must be between 60 and {MAX_TTL_SECONDS} seconds");
-    }
-    Ok(())
-}
-
-fn env_u16(name: &str, default: u16) -> anyhow::Result<u16> {
-    env::var(name)
-        .ok()
-        .map(|value| value.parse::<u16>())
-        .transpose()
-        .with_context(|| format!("{name} must be an integer between 0 and 65535"))
-        .map(|value| value.unwrap_or(default))
-}
-
-fn detect_local_ip() -> Option<IpAddr> {
-    let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).ok()?;
-    socket.connect((Ipv4Addr::new(192, 0, 2, 1), 9)).ok()?;
-    let ip = socket.local_addr().ok()?.ip();
-    (!ip.is_unspecified()).then_some(ip)
-}
-
-fn ice_host(ip: IpAddr) -> String {
-    match ip {
-        IpAddr::V4(ip) => ip.to_string(),
-        IpAddr::V6(ip) => format!("[{ip}]"),
-    }
 }
 
 #[cfg(test)]

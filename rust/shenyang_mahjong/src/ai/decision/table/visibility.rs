@@ -36,6 +36,30 @@ pub(in crate::ai::decision) fn exposed_meld_tile_count(table: &AiPublicTable, ti
         .count()
 }
 
+pub(in crate::ai::decision) fn known_unavailable_tiles_for_claimed_win(
+    table: &AiPublicTable,
+    position: usize,
+    win_tile: i32,
+) -> Vec<i32> {
+    let current_melds = table
+        .seats
+        .get(&position)
+        .map(|seat| seat.melds.as_slice())
+        .unwrap_or(&[]);
+    let mut tiles =
+        known_unavailable_tiles_with_simulated_discards(table, position, current_melds, &[]);
+    if table
+        .claim_window
+        .as_ref()
+        .is_some_and(|claim| claim.tile == win_tile)
+        && claim_tile_already_visible(table, win_tile)
+        && let Some(index) = tiles.iter().position(|tile| *tile == win_tile)
+    {
+        tiles.remove(index);
+    }
+    tiles
+}
+
 pub(in crate::ai::decision) fn known_unavailable_tiles_with_simulated_discards(
     table: &AiPublicTable,
     position: usize,
@@ -85,30 +109,6 @@ pub(in crate::ai::decision) fn known_unavailable_tiles_with_simulated_discards(
     tiles
 }
 
-pub(in crate::ai::decision) fn known_unavailable_tiles_for_claimed_win(
-    table: &AiPublicTable,
-    position: usize,
-    win_tile: i32,
-) -> Vec<i32> {
-    let current_melds = table
-        .seats
-        .get(&position)
-        .map(|seat| seat.melds.as_slice())
-        .unwrap_or(&[]);
-    let mut tiles =
-        known_unavailable_tiles_with_simulated_discards(table, position, current_melds, &[]);
-    if table
-        .claim_window
-        .as_ref()
-        .is_some_and(|claim| claim.tile == win_tile)
-        && claim_tile_already_visible(table, win_tile)
-        && let Some(index) = tiles.iter().position(|tile| *tile == win_tile)
-    {
-        tiles.remove(index);
-    }
-    tiles
-}
-
 pub(in crate::ai::decision) fn open_meld_tile_count(table: &AiPublicTable, tile: i32) -> usize {
     if !is_valid_tile(tile) {
         return 0;
@@ -143,6 +143,19 @@ pub(in crate::ai::decision) fn own_previous_discard_count(
         .unwrap_or(0)
 }
 
+pub(crate) fn position_known_tile_counts_are_possible(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+) -> bool {
+    let mut owned_tiles = hand.to_vec();
+    owned_tiles.extend(valid_meld_tiles(melds));
+    unique_tiles(&owned_tiles).into_iter().all(|tile| {
+        hand.iter().filter(|item| **item == tile).count() + visible_tile_count(table, tile) as usize
+            <= 4
+    })
+}
+
 pub(in crate::ai::decision) fn public_discard_count(table: &AiPublicTable, tile: i32) -> usize {
     if !is_valid_tile(tile) {
         return 0;
@@ -171,19 +184,6 @@ pub(in crate::ai::decision) fn public_discard_seat_count(
         .values()
         .filter(|seat| seat.discards.contains(&tile))
         .count()
-}
-
-pub(crate) fn position_known_tile_counts_are_possible(
-    hand: &[i32],
-    melds: &[WsShenyangMahjongMeld],
-    table: &AiPublicTable,
-) -> bool {
-    let mut owned_tiles = hand.to_vec();
-    owned_tiles.extend(valid_meld_tiles(melds));
-    unique_tiles(&owned_tiles).into_iter().all(|tile| {
-        hand.iter().filter(|item| **item == tile).count() + visible_tile_count(table, tile) as usize
-            <= 4
-    })
 }
 
 pub(in crate::ai::decision::table) fn valid_meld_tile_count(

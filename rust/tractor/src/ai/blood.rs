@@ -12,17 +12,17 @@ use crate::{
     game_state::{TractorGameState, card_score, same_team},
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum BloodRoute {
-    Trump,
-    Plain(i32),
-}
-
 #[derive(Debug, Clone)]
 pub(crate) struct BloodPlan {
     pub(crate) route: BloodRoute,
     pub(crate) cards: Vec<i32>,
     pub(crate) control_probability: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BloodRoute {
+    Trump,
+    Plain(i32),
 }
 
 pub(crate) fn lead_plan(
@@ -121,6 +121,31 @@ mod tests {
     use super::*;
     use crate::game_state::{TractorGameState, TractorRules};
 
+    #[test]
+    fn blood_plan_chooses_dominant_plain_tractor_over_scattered_trump() {
+        let state = state(vec![
+            53, 1, 13, // scattered trump
+            15, 115, 16, 116, 17, 117, 18, 118, // four-pair heart tractor
+            31, 32,
+        ]);
+        let knowledge = PublicKnowledge::from_state(&state, 0);
+        let plan = lead_plan(&state, 0, &state.hands[&0], &knowledge).expect("blood plan");
+        assert_eq!(plan.route, BloodRoute::Plain(1));
+        assert_eq!(plan.cards.len(), 8);
+    }
+
+    #[test]
+    fn blood_plan_releases_full_trump_tractor_in_one_play() {
+        let state = state(vec![
+            11, 111, 12, 112, 13, 113, // spade Q-K-A trump tractor
+            15, 18, 31, 44,
+        ]);
+        let knowledge = PublicKnowledge::from_state(&state, 0);
+        let plan = lead_plan(&state, 0, &state.hands[&0], &knowledge).expect("blood plan");
+        assert_eq!(plan.route, BloodRoute::Trump);
+        assert_eq!(plan.cards.len(), 6);
+    }
+
     fn state(hand: Vec<i32>) -> TractorGameState {
         let mut common = CommonGameState::new();
         for position in 0..4 {
@@ -147,30 +172,5 @@ mod tests {
             state.hands.insert(position, vec![30, 31, 32, 33]);
         }
         state
-    }
-
-    #[test]
-    fn blood_plan_chooses_dominant_plain_tractor_over_scattered_trump() {
-        let state = state(vec![
-            53, 1, 13, // scattered trump
-            15, 115, 16, 116, 17, 117, 18, 118, // four-pair heart tractor
-            31, 32,
-        ]);
-        let knowledge = PublicKnowledge::from_state(&state, 0);
-        let plan = lead_plan(&state, 0, &state.hands[&0], &knowledge).expect("blood plan");
-        assert_eq!(plan.route, BloodRoute::Plain(1));
-        assert_eq!(plan.cards.len(), 8);
-    }
-
-    #[test]
-    fn blood_plan_releases_full_trump_tractor_in_one_play() {
-        let state = state(vec![
-            11, 111, 12, 112, 13, 113, // spade Q-K-A trump tractor
-            15, 18, 31, 44,
-        ]);
-        let knowledge = PublicKnowledge::from_state(&state, 0);
-        let plan = lead_plan(&state, 0, &state.hands[&0], &knowledge).expect("blood plan");
-        assert_eq!(plan.route, BloodRoute::Trump);
-        assert_eq!(plan.cards.len(), 6);
     }
 }

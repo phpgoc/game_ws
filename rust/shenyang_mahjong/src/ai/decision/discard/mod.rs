@@ -17,15 +17,6 @@ pub fn choose_discard_from_view(
     choose_discard_from_view_inner(hand, table, position, win_rule, false)
 }
 
-pub fn choose_forced_discard_from_view(
-    hand: &[i32],
-    table: &AiPublicTable,
-    position: usize,
-    win_rule: i32,
-) -> Option<i32> {
-    choose_discard_from_view_inner(hand, table, position, win_rule, true)
-}
-
 fn choose_discard_from_view_inner(
     hand: &[i32],
     table: &AiPublicTable,
@@ -162,6 +153,15 @@ fn choose_discard_from_view_inner(
         }
     }
     best_allowed.or(best_any).map(|(_, _, tile)| tile)
+}
+
+pub fn choose_forced_discard_from_view(
+    hand: &[i32],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+) -> Option<i32> {
+    choose_discard_from_view_inner(hand, table, position, win_rule, true)
 }
 
 fn discard_candidate_is_better(candidate: (i32, f64, i32), current: (i32, f64, i32)) -> bool {

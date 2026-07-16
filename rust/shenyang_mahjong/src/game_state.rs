@@ -46,17 +46,6 @@ pub struct SettlementState {
     pub is_haidilao: bool,
 }
 
-impl SettlementState {
-    pub fn unique_winner_positions(&self) -> Vec<usize> {
-        let mut seen = HashSet::new();
-        self.winner_positions
-            .iter()
-            .copied()
-            .filter(|position| seen.insert(*position))
-            .collect()
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct ShenyangMahjongGameState {
     inner: Arc<Mutex<ShenyangMahjongLoopState>>,
@@ -96,6 +85,16 @@ pub fn build_meld(
     }
 }
 
+pub fn claim_action_to_play_action(response: &ClaimResponse) -> ShenyangMahjongAction {
+    match response {
+        ClaimResponse::Pass => ShenyangMahjongAction::PASS,
+        ClaimResponse::Chi { .. } => ShenyangMahjongAction::CHI,
+        ClaimResponse::Peng => ShenyangMahjongAction::PENG,
+        ClaimResponse::Gang => ShenyangMahjongAction::GANG,
+        ClaimResponse::Hu => ShenyangMahjongAction::HU,
+    }
+}
+
 pub(crate) fn meld_source_is_valid_for_positions(
     meld: &WsShenyangMahjongMeld,
     position: usize,
@@ -122,16 +121,6 @@ fn next_player_position(current: usize, player_positions: &HashSet<usize>) -> Op
         .or_else(|| player_positions.iter().copied().min())
 }
 
-pub fn claim_action_to_play_action(response: &ClaimResponse) -> ShenyangMahjongAction {
-    match response {
-        ClaimResponse::Pass => ShenyangMahjongAction::PASS,
-        ClaimResponse::Chi { .. } => ShenyangMahjongAction::CHI,
-        ClaimResponse::Peng => ShenyangMahjongAction::PENG,
-        ClaimResponse::Gang => ShenyangMahjongAction::GANG,
-        ClaimResponse::Hu => ShenyangMahjongAction::HU,
-    }
-}
-
 fn system_wall_seed() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -150,6 +139,17 @@ fn wall_seed_base_from_env() -> Option<u64> {
             );
             None
         }
+    }
+}
+
+impl SettlementState {
+    pub fn unique_winner_positions(&self) -> Vec<usize> {
+        let mut seen = HashSet::new();
+        self.winner_positions
+            .iter()
+            .copied()
+            .filter(|position| seen.insert(*position))
+            .collect()
     }
 }
 
@@ -174,46 +174,8 @@ impl ShenyangMahjongLoopState {
         self.base.lock().unwrap().action_received
     }
 
-    fn known_tile_counts(&self) -> [usize; 38] {
-        let player_positions = self
-            .players_snapshot()
-            .keys()
-            .copied()
-            .collect::<HashSet<_>>();
-        let mut counts = [0usize; 38];
-        for tile in self
-            .hands
-            .values()
-            .flat_map(|hand| hand.iter().copied())
-            .chain(
-                self.discards
-                    .values()
-                    .flat_map(|discards| discards.iter().copied()),
-            )
-            .filter(|tile| SHENYANG_MAHJONG_TILE_KINDS.contains(tile))
-        {
-            counts[tile as usize] += 1;
-        }
-        for (position, melds) in &self.melds {
-            for tile in melds
-                .iter()
-                .filter(|meld| {
-                    meld_source_is_valid_for_positions(meld, *position, &player_positions)
-                })
-                .filter(|meld| is_valid_meld(meld))
-                .flat_map(|meld| meld.tiles.iter().copied())
-            {
-                counts[tile as usize] += 1;
-            }
-        }
-        counts
-    }
-
-    pub(crate) fn known_tile_count(&self, tile: i32) -> usize {
-        if !SHENYANG_MAHJONG_TILE_KINDS.contains(&tile) {
-            return 0;
-        }
-        self.known_tile_counts()[tile as usize]
+    pub fn clear_xi_gang_options(&mut self, position: usize) {
+        self.xi_gang_options.remove(&position);
     }
 
     pub fn deal_new_round(&mut self) {
@@ -265,22 +227,6 @@ impl ShenyangMahjongLoopState {
         self.set_action_received(false);
     }
 
-    pub fn draw_for_position(&mut self, position: usize) -> Option<i32> {
-        let tile = loop {
-            let tile = self.wall.pop()?;
-            if SHENYANG_MAHJONG_TILE_KINDS.contains(&tile) && self.known_tile_count(tile) < 4 {
-                break tile;
-            }
-        };
-        let hand = self.hands.entry(position).or_default();
-        hand.push(tile);
-        sort_tiles(hand);
-        self.current_position = position;
-        self.last_drawn_tile = Some(tile);
-        self.pending_gang_draw = false;
-        Some(tile)
-    }
-
     pub fn draw_for_next_turn(&mut self, position: usize) -> Option<i32> {
         let tile = self.draw_for_position(position)?;
         if position != self.dealer_position && self.first_normal_draw_positions.insert(position) {
@@ -300,23 +246,20 @@ impl ShenyangMahjongLoopState {
         Some(tile)
     }
 
-    pub fn xi_gang_options_for_position(&self, position: usize) -> Vec<Vec<i32>> {
-        self.xi_gang_options
-            .get(&position)
-            .cloned()
-            .unwrap_or_default()
-    }
-
-    pub fn clear_xi_gang_options(&mut self, position: usize) {
-        self.xi_gang_options.remove(&position);
-    }
-
-    pub fn has_drawable_wall_tile(&self) -> bool {
-        let counts = self.known_tile_counts();
-        self.wall
-            .iter()
-            .rev()
-            .any(|tile| SHENYANG_MAHJONG_TILE_KINDS.contains(tile) && counts[*tile as usize] < 4)
+    pub fn draw_for_position(&mut self, position: usize) -> Option<i32> {
+        let tile = loop {
+            let tile = self.wall.pop()?;
+            if SHENYANG_MAHJONG_TILE_KINDS.contains(&tile) && self.known_tile_count(tile) < 4 {
+                break tile;
+            }
+        };
+        let hand = self.hands.entry(position).or_default();
+        hand.push(tile);
+        sort_tiles(hand);
+        self.current_position = position;
+        self.last_drawn_tile = Some(tile);
+        self.pending_gang_draw = false;
+        Some(tile)
     }
 
     pub fn enter_settlement(
@@ -364,6 +307,14 @@ impl ShenyangMahjongLoopState {
         self.set_action_received(false);
     }
 
+    pub fn has_drawable_wall_tile(&self) -> bool {
+        let counts = self.known_tile_counts();
+        self.wall
+            .iter()
+            .rev()
+            .any(|tile| SHENYANG_MAHJONG_TILE_KINDS.contains(tile) && counts[*tile as usize] < 4)
+    }
+
     pub fn is_ai_controlled_position(&self, position: usize) -> bool {
         let state = self.base.lock().unwrap();
         state.is_ai_position(position) || state.is_away(position) || state.is_disconnected(position)
@@ -383,6 +334,48 @@ impl ShenyangMahjongLoopState {
 
     pub fn is_paused(&self) -> bool {
         self.base.lock().unwrap().paused
+    }
+
+    pub(crate) fn known_tile_count(&self, tile: i32) -> usize {
+        if !SHENYANG_MAHJONG_TILE_KINDS.contains(&tile) {
+            return 0;
+        }
+        self.known_tile_counts()[tile as usize]
+    }
+
+    fn known_tile_counts(&self) -> [usize; 38] {
+        let player_positions = self
+            .players_snapshot()
+            .keys()
+            .copied()
+            .collect::<HashSet<_>>();
+        let mut counts = [0usize; 38];
+        for tile in self
+            .hands
+            .values()
+            .flat_map(|hand| hand.iter().copied())
+            .chain(
+                self.discards
+                    .values()
+                    .flat_map(|discards| discards.iter().copied()),
+            )
+            .filter(|tile| SHENYANG_MAHJONG_TILE_KINDS.contains(tile))
+        {
+            counts[tile as usize] += 1;
+        }
+        for (position, melds) in &self.melds {
+            for tile in melds
+                .iter()
+                .filter(|meld| {
+                    meld_source_is_valid_for_positions(meld, *position, &player_positions)
+                })
+                .filter(|meld| is_valid_meld(meld))
+                .flat_map(|meld| meld.tiles.iter().copied())
+            {
+                counts[tile as usize] += 1;
+            }
+        }
+        counts
     }
 
     pub fn new(base: Arc<Mutex<CommonGameState>>) -> Self {
@@ -546,6 +539,13 @@ impl ShenyangMahjongLoopState {
             })
             .sum()
     }
+
+    pub fn xi_gang_options_for_position(&self, position: usize) -> Vec<Vec<i32>> {
+        self.xi_gang_options
+            .get(&position)
+            .cloned()
+            .unwrap_or_default()
+    }
 }
 
 #[cfg(test)]
@@ -574,6 +574,20 @@ mod tests {
     }
 
     #[test]
+    fn dealer_never_receives_a_xi_gang_window() {
+        let mut state = state_with_players();
+        state.dealer_position = 0;
+        state
+            .hands
+            .insert(0, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 31, 32, 33]);
+        state.wall = vec![34];
+
+        assert_eq!(state.draw_for_next_turn(0), Some(34));
+        assert!(state.xi_gang_options_for_position(0).is_empty());
+        assert!(!state.first_normal_draw_positions.contains(&0));
+    }
+
+    #[test]
     fn disconnected_position_is_ai_controlled_until_rejoin() {
         let state = state_with_players();
         state.base.lock().unwrap().mark_disconnected(2);
@@ -581,6 +595,66 @@ mod tests {
         assert!(state.is_disconnected(2));
         assert!(state.is_ai_controlled_position(2));
         assert!(!state.is_ai_position(2));
+    }
+
+    #[test]
+    fn draw_skips_impossible_fifth_wall_copy() {
+        let mut state = state_with_players();
+        state.hands.insert(0, vec![3, 3, 3, 3]);
+        state.wall = vec![35, 3];
+
+        assert_eq!(state.draw_for_position(0), Some(35));
+        let hand = state.hands.get(&0).expect("hand");
+        assert_eq!(hand.iter().filter(|tile| **tile == 3).count(), 4);
+        assert!(hand.contains(&35));
+        assert!(state.wall.is_empty());
+        assert_eq!(state.wall_count(), 0);
+        assert_eq!(state.last_drawn_tile, Some(35));
+    }
+
+    #[test]
+    fn draw_skips_invalid_wall_tiles() {
+        let mut state = state_with_players();
+        state.wall = vec![35, 99, -1];
+
+        assert_eq!(state.draw_for_position(0), Some(35));
+        assert_eq!(state.hands.get(&0), Some(&vec![35]));
+        assert!(state.wall.is_empty());
+        assert_eq!(state.wall_count(), 0);
+        assert_eq!(state.last_drawn_tile, Some(35));
+    }
+
+    #[test]
+    fn first_non_dealer_normal_draw_freezes_xi_gang_options() {
+        let mut state = state_with_players();
+        state.dealer_position = 0;
+        state
+            .hands
+            .insert(1, vec![1, 2, 3, 4, 5, 6, 7, 31, 32, 33, 34, 35, 36]);
+        state.wall = vec![9, 37];
+
+        assert_eq!(state.draw_for_next_turn(1), Some(37));
+        assert_eq!(
+            state.xi_gang_options_for_position(1),
+            vec![vec![31, 32, 33, 34], vec![35, 36, 37]]
+        );
+        assert!(state.first_normal_draw_positions.contains(&1));
+    }
+
+    #[test]
+    fn last_wall_draw_filters_wind_xi_gang_that_cannot_replace() {
+        let mut state = state_with_players();
+        state.dealer_position = 0;
+        state
+            .hands
+            .insert(1, vec![1, 2, 3, 4, 5, 6, 7, 31, 32, 33, 34, 35, 36]);
+        state.wall = vec![37];
+
+        assert_eq!(state.draw_for_next_turn(1), Some(37));
+        assert_eq!(
+            state.xi_gang_options_for_position(1),
+            vec![vec![35, 36, 37]]
+        );
     }
 
     #[test]
@@ -620,6 +694,21 @@ mod tests {
     }
 
     #[test]
+    fn replacement_draw_does_not_create_a_late_xi_gang_option() {
+        let mut state = state_with_players();
+        state.dealer_position = 0;
+        state
+            .hands
+            .insert(1, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 35, 36]);
+        state.wall = vec![37, 21];
+
+        assert_eq!(state.draw_for_next_turn(1), Some(21));
+        assert!(state.xi_gang_options_for_position(1).is_empty());
+        assert_eq!(state.draw_for_position(1), Some(37));
+        assert!(state.xi_gang_options_for_position(1).is_empty());
+    }
+
+    #[test]
     fn seeded_deal_advances_round_seed() {
         let mut state = state_with_players();
         state.wall_seed_base = Some(2026070401);
@@ -646,24 +735,15 @@ mod tests {
         );
     }
 
-    #[test]
-    fn wall_count_ignores_invalid_wall_tiles() {
-        let mut state = state_with_players();
-        state.wall = vec![35, 99, -1];
-
-        assert_eq!(state.wall_count(), 1);
-    }
-
-    #[test]
-    fn draw_skips_invalid_wall_tiles() {
-        let mut state = state_with_players();
-        state.wall = vec![35, 99, -1];
-
-        assert_eq!(state.draw_for_position(0), Some(35));
-        assert_eq!(state.hands.get(&0), Some(&vec![35]));
-        assert!(state.wall.is_empty());
-        assert_eq!(state.wall_count(), 0);
-        assert_eq!(state.last_drawn_tile, Some(35));
+    fn state_with_players() -> ShenyangMahjongLoopState {
+        let base = Arc::new(Mutex::new(CommonGameState::default()));
+        {
+            let mut common = base.lock().unwrap();
+            for position in 0..4 {
+                common.add_player(position, position as u64 + 1, &format!("P{}", position));
+            }
+        }
+        ShenyangMahjongLoopState::new(base)
     }
 
     #[test]
@@ -676,90 +756,10 @@ mod tests {
     }
 
     #[test]
-    fn draw_skips_impossible_fifth_wall_copy() {
+    fn wall_count_ignores_invalid_wall_tiles() {
         let mut state = state_with_players();
-        state.hands.insert(0, vec![3, 3, 3, 3]);
-        state.wall = vec![35, 3];
+        state.wall = vec![35, 99, -1];
 
-        assert_eq!(state.draw_for_position(0), Some(35));
-        let hand = state.hands.get(&0).expect("hand");
-        assert_eq!(hand.iter().filter(|tile| **tile == 3).count(), 4);
-        assert!(hand.contains(&35));
-        assert!(state.wall.is_empty());
-        assert_eq!(state.wall_count(), 0);
-        assert_eq!(state.last_drawn_tile, Some(35));
-    }
-
-    #[test]
-    fn first_non_dealer_normal_draw_freezes_xi_gang_options() {
-        let mut state = state_with_players();
-        state.dealer_position = 0;
-        state
-            .hands
-            .insert(1, vec![1, 2, 3, 4, 5, 6, 7, 31, 32, 33, 34, 35, 36]);
-        state.wall = vec![9, 37];
-
-        assert_eq!(state.draw_for_next_turn(1), Some(37));
-        assert_eq!(
-            state.xi_gang_options_for_position(1),
-            vec![vec![31, 32, 33, 34], vec![35, 36, 37]]
-        );
-        assert!(state.first_normal_draw_positions.contains(&1));
-    }
-
-    #[test]
-    fn replacement_draw_does_not_create_a_late_xi_gang_option() {
-        let mut state = state_with_players();
-        state.dealer_position = 0;
-        state
-            .hands
-            .insert(1, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 35, 36]);
-        state.wall = vec![37, 21];
-
-        assert_eq!(state.draw_for_next_turn(1), Some(21));
-        assert!(state.xi_gang_options_for_position(1).is_empty());
-        assert_eq!(state.draw_for_position(1), Some(37));
-        assert!(state.xi_gang_options_for_position(1).is_empty());
-    }
-
-    #[test]
-    fn last_wall_draw_filters_wind_xi_gang_that_cannot_replace() {
-        let mut state = state_with_players();
-        state.dealer_position = 0;
-        state
-            .hands
-            .insert(1, vec![1, 2, 3, 4, 5, 6, 7, 31, 32, 33, 34, 35, 36]);
-        state.wall = vec![37];
-
-        assert_eq!(state.draw_for_next_turn(1), Some(37));
-        assert_eq!(
-            state.xi_gang_options_for_position(1),
-            vec![vec![35, 36, 37]]
-        );
-    }
-
-    #[test]
-    fn dealer_never_receives_a_xi_gang_window() {
-        let mut state = state_with_players();
-        state.dealer_position = 0;
-        state
-            .hands
-            .insert(0, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 31, 32, 33]);
-        state.wall = vec![34];
-
-        assert_eq!(state.draw_for_next_turn(0), Some(34));
-        assert!(state.xi_gang_options_for_position(0).is_empty());
-        assert!(!state.first_normal_draw_positions.contains(&0));
-    }
-
-    fn state_with_players() -> ShenyangMahjongLoopState {
-        let base = Arc::new(Mutex::new(CommonGameState::default()));
-        {
-            let mut common = base.lock().unwrap();
-            for position in 0..4 {
-                common.add_player(position, position as u64 + 1, &format!("P{}", position));
-            }
-        }
-        ShenyangMahjongLoopState::new(base)
+        assert_eq!(state.wall_count(), 1);
     }
 }

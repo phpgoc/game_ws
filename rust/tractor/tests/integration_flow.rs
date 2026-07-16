@@ -15,6 +15,17 @@ use ws_common::{RuntimeConfig, run_room_runtime};
 
 type Client = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
+fn card_rank(card: i32) -> i32 {
+    let base = ((card - 1) % 100) + 1;
+    if base <= 52 {
+        ((base - 1) % 13) + 2
+    } else if base == 53 {
+        16
+    } else {
+        17
+    }
+}
+
 async fn connect_client(url: &str) -> Client {
     let (ws, _) = connect_async(url).await.expect("connect websocket");
     ws
@@ -210,15 +221,4 @@ async fn tractor_incremental_deal_compact_deck_and_bury_flow() {
     );
 
     server.abort();
-}
-
-fn card_rank(card: i32) -> i32 {
-    let base = ((card - 1) % 100) + 1;
-    if base <= 52 {
-        ((base - 1) % 13) + 2
-    } else if base == 53 {
-        16
-    } else {
-        17
-    }
 }

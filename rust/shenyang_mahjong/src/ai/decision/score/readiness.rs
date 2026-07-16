@@ -22,6 +22,47 @@ pub(in crate::ai::decision) fn best_ready_score_after_discard(
         .fold(0.0, f64::max)
 }
 
+fn ready_hand_visible_fan_exceeds_half_cap_with_simulated_discards(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+    max_fan: i32,
+    simulated_discards: &[i32],
+) -> bool {
+    if hand.len() % 3 != 1 {
+        return false;
+    }
+    let known_unavailable_tiles =
+        known_unavailable_tiles_with_simulated_discards(table, position, melds, simulated_discards);
+    SHENYANG_MAHJONG_TILE_KINDS.into_iter().any(|tile| {
+        remaining_tile_count_with_melds_after_discards(
+            hand,
+            melds,
+            table,
+            position,
+            tile,
+            simulated_discards,
+        ) > 0
+            && {
+                let mut next = hand.to_vec();
+                next.push(tile);
+                next.sort_unstable();
+                is_complete_win_for_table(&next, melds, table, win_rule)
+                    && estimated_fan_with_known_unavailable_wait_for_table(
+                        &next,
+                        melds,
+                        tile,
+                        table,
+                        win_rule,
+                        &known_unavailable_tiles,
+                    ) * 2
+                        > max_fan
+            }
+    })
+}
+
 pub(in crate::ai::decision) fn ready_hand_visible_fan_reaches_cap(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -81,16 +122,6 @@ fn ready_hand_visible_fan_reaches_cap_with_simulated_discards(
     })
 }
 
-pub(in crate::ai::decision) fn ready_has_pure_one_suit_win(
-    hand: &[i32],
-    melds: &[WsShenyangMahjongMeld],
-    table: &AiPublicTable,
-    position: usize,
-    win_rule: i32,
-) -> bool {
-    ready_has_pure_one_suit_win_with_simulated_discards(hand, melds, table, position, win_rule, &[])
-}
-
 pub(in crate::ai::decision) fn ready_has_piao_win(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -99,6 +130,47 @@ pub(in crate::ai::decision) fn ready_has_piao_win(
     win_rule: i32,
 ) -> bool {
     ready_has_piao_win_with_simulated_discards(hand, melds, table, position, win_rule, &[])
+}
+
+fn ready_has_piao_win_with_simulated_discards(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+    simulated_discards: &[i32],
+) -> bool {
+    if hand.len() % 3 != 1 {
+        return false;
+    }
+
+    SHENYANG_MAHJONG_TILE_KINDS.into_iter().any(|tile| {
+        remaining_tile_count_with_melds_after_discards(
+            hand,
+            melds,
+            table,
+            position,
+            tile,
+            simulated_discards,
+        ) > 0
+            && {
+                let mut next = hand.to_vec();
+                next.push(tile);
+                next.sort_unstable();
+                is_complete_win_for_table(&next, melds, table, win_rule)
+                    && is_piao_hu_win(&next, melds)
+            }
+    })
+}
+
+pub(in crate::ai::decision) fn ready_has_pure_one_suit_win(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+) -> bool {
+    ready_has_pure_one_suit_win_with_simulated_discards(hand, melds, table, position, win_rule, &[])
 }
 
 #[cfg(test)]
@@ -151,65 +223,6 @@ fn ready_has_pure_one_suit_win_with_simulated_discards(
     })
 }
 
-fn ready_has_piao_win_with_simulated_discards(
-    hand: &[i32],
-    melds: &[WsShenyangMahjongMeld],
-    table: &AiPublicTable,
-    position: usize,
-    win_rule: i32,
-    simulated_discards: &[i32],
-) -> bool {
-    if hand.len() % 3 != 1 {
-        return false;
-    }
-
-    SHENYANG_MAHJONG_TILE_KINDS.into_iter().any(|tile| {
-        remaining_tile_count_with_melds_after_discards(
-            hand,
-            melds,
-            table,
-            position,
-            tile,
-            simulated_discards,
-        ) > 0
-            && {
-                let mut next = hand.to_vec();
-                next.push(tile);
-                next.sort_unstable();
-                is_complete_win_for_table(&next, melds, table, win_rule)
-                    && is_piao_hu_win(&next, melds)
-            }
-    })
-}
-
-pub(in crate::ai::decision) fn ready_tile_score(
-    hand: &[i32],
-    melds: &[WsShenyangMahjongMeld],
-    table: &AiPublicTable,
-    position: usize,
-    win_rule: i32,
-) -> f64 {
-    ready_tile_score_with_simulated_discards(hand, melds, table, position, win_rule, &[])
-}
-
-pub(in crate::ai::decision) fn ready_tile_score_after_discard(
-    hand_after_discard: &[i32],
-    melds: &[WsShenyangMahjongMeld],
-    table: &AiPublicTable,
-    position: usize,
-    win_rule: i32,
-    discarded_tile: i32,
-) -> f64 {
-    ready_tile_score_with_simulated_discards(
-        hand_after_discard,
-        melds,
-        table,
-        position,
-        win_rule,
-        &[discarded_tile],
-    )
-}
-
 pub(in crate::ai::decision) fn ready_live_tile_count_after_discard(
     hand_after_discard: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -245,6 +258,34 @@ pub(in crate::ai::decision) fn ready_live_tile_count_after_discard(
             }
         })
         .sum()
+}
+
+pub(in crate::ai::decision) fn ready_tile_score(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+) -> f64 {
+    ready_tile_score_with_simulated_discards(hand, melds, table, position, win_rule, &[])
+}
+
+pub(in crate::ai::decision) fn ready_tile_score_after_discard(
+    hand_after_discard: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+    discarded_tile: i32,
+) -> f64 {
+    ready_tile_score_with_simulated_discards(
+        hand_after_discard,
+        melds,
+        table,
+        position,
+        win_rule,
+        &[discarded_tile],
+    )
 }
 
 pub(in crate::ai::decision) fn ready_tile_score_with_simulated_discards(
@@ -302,33 +343,6 @@ pub(in crate::ai::decision) fn ready_tile_score_with_simulated_discards(
     score
 }
 
-pub(in crate::ai::decision) fn ready_visible_fan_reaches_cap(
-    hand: &[i32],
-    melds: &[WsShenyangMahjongMeld],
-    table: &AiPublicTable,
-    position: usize,
-    win_rule: i32,
-) -> bool {
-    let Some(max_fan) = table.max_fan.filter(|max_fan| *max_fan > 0) else {
-        return false;
-    };
-    if hand.len() % 3 == 2 {
-        return unique_tiles(hand).into_iter().any(|discard| {
-            let next = remove_n_tiles(hand, discard, 1);
-            ready_hand_visible_fan_reaches_cap_with_simulated_discards(
-                &next,
-                melds,
-                table,
-                position,
-                win_rule,
-                max_fan,
-                &[discard],
-            )
-        });
-    }
-    ready_hand_visible_fan_reaches_cap(hand, melds, table, position, win_rule, max_fan)
-}
-
 pub(in crate::ai::decision) fn ready_visible_fan_exceeds_half_cap(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -364,43 +378,29 @@ pub(in crate::ai::decision) fn ready_visible_fan_exceeds_half_cap(
     )
 }
 
-fn ready_hand_visible_fan_exceeds_half_cap_with_simulated_discards(
+pub(in crate::ai::decision) fn ready_visible_fan_reaches_cap(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
     win_rule: i32,
-    max_fan: i32,
-    simulated_discards: &[i32],
 ) -> bool {
-    if hand.len() % 3 != 1 {
+    let Some(max_fan) = table.max_fan.filter(|max_fan| *max_fan > 0) else {
         return false;
+    };
+    if hand.len() % 3 == 2 {
+        return unique_tiles(hand).into_iter().any(|discard| {
+            let next = remove_n_tiles(hand, discard, 1);
+            ready_hand_visible_fan_reaches_cap_with_simulated_discards(
+                &next,
+                melds,
+                table,
+                position,
+                win_rule,
+                max_fan,
+                &[discard],
+            )
+        });
     }
-    let known_unavailable_tiles =
-        known_unavailable_tiles_with_simulated_discards(table, position, melds, simulated_discards);
-    SHENYANG_MAHJONG_TILE_KINDS.into_iter().any(|tile| {
-        remaining_tile_count_with_melds_after_discards(
-            hand,
-            melds,
-            table,
-            position,
-            tile,
-            simulated_discards,
-        ) > 0
-            && {
-                let mut next = hand.to_vec();
-                next.push(tile);
-                next.sort_unstable();
-                is_complete_win_for_table(&next, melds, table, win_rule)
-                    && estimated_fan_with_known_unavailable_wait_for_table(
-                        &next,
-                        melds,
-                        tile,
-                        table,
-                        win_rule,
-                        &known_unavailable_tiles,
-                    ) * 2
-                        > max_fan
-            }
-    })
+    ready_hand_visible_fan_reaches_cap(hand, melds, table, position, win_rule, max_fan)
 }

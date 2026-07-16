@@ -23,9 +23,10 @@ use chi_choice::choose_chi_claim;
 use gang_choice::choose_gang_claim;
 use peng_choice::choose_peng_claim;
 
-const MIN_WALL_TILES_FOR_CAPPED_HU_CHASE: usize = 4;
 pub(in crate::ai::decision) const CAPPED_HU_CHASE_MIN_WALL_HIT_PROBABILITY: f64 = 2.0 / 3.0;
 const EXPECTED_OPPONENT_COUNT: usize = 3;
+
+const MIN_WALL_TILES_FOR_CAPPED_HU_CHASE: usize = 4;
 const UNKNOWN_OPPONENT_HAND_COUNT: usize = 13;
 
 pub(in crate::ai::decision) fn capped_hu_chase_wall_hit_probability(

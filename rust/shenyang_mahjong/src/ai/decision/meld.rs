@@ -20,13 +20,6 @@ pub(super) fn claim_peng_meld(tile: i32, from_position: usize) -> WsShenyangMahj
     }
 }
 
-pub(super) fn is_closed_meld(meld: &WsShenyangMahjongMeld) -> bool {
-    (meld.kind == ShenyangMahjongMeldKind::GANG
-        && meld.from_position.is_none()
-        && meld_primary_tile(meld).is_some())
-        || is_xi_gang_meld(meld)
-}
-
 pub(super) fn has_closed_meld(melds: &[WsShenyangMahjongMeld]) -> bool {
     melds.iter().any(is_closed_meld)
 }
@@ -39,14 +32,29 @@ pub(super) fn has_peng_meld(melds: &[WsShenyangMahjongMeld], tile: i32) -> bool 
     melds.iter().any(|meld| is_open_peng_meld(meld, tile))
 }
 
-pub(super) fn is_open_peng_meld(meld: &WsShenyangMahjongMeld, tile: i32) -> bool {
-    meld.kind == ShenyangMahjongMeldKind::PENG
-        && is_open_meld(meld)
-        && meld_primary_tile(meld) == Some(tile)
+pub(super) fn has_virtual_tile_count(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    expected_count: usize,
+) -> bool {
+    hand.len() + valid_meld_count(melds) * 3 == expected_count
+}
+
+pub(super) fn is_closed_meld(meld: &WsShenyangMahjongMeld) -> bool {
+    (meld.kind == ShenyangMahjongMeldKind::GANG
+        && meld.from_position.is_none()
+        && meld_primary_tile(meld).is_some())
+        || is_xi_gang_meld(meld)
 }
 
 pub(super) fn is_open_meld(meld: &WsShenyangMahjongMeld) -> bool {
     is_door_opening_meld(meld)
+}
+
+pub(super) fn is_open_peng_meld(meld: &WsShenyangMahjongMeld, tile: i32) -> bool {
+    meld.kind == ShenyangMahjongMeldKind::PENG
+        && is_open_meld(meld)
+        && meld_primary_tile(meld) == Some(tile)
 }
 
 pub(super) fn is_sequence_meld(meld: &WsShenyangMahjongMeld) -> bool {
@@ -67,26 +75,14 @@ pub(super) fn is_triplet_like_meld(meld: &WsShenyangMahjongMeld) -> bool {
     meld_primary_tile(meld).is_some() || is_xi_gang_meld(meld)
 }
 
-pub(super) fn is_xi_gang_meld(meld: &WsShenyangMahjongMeld) -> bool {
-    meld.kind == ShenyangMahjongMeldKind::XI_GANG
-        && meld.from_position.is_none()
-        && is_xi_gang_tiles(&meld.tiles)
-}
-
 pub(super) fn is_valid_meld(meld: &WsShenyangMahjongMeld) -> bool {
     is_triplet_like_meld(meld) || is_sequence_meld(meld)
 }
 
-pub(super) fn valid_meld_count(melds: &[WsShenyangMahjongMeld]) -> usize {
-    melds.iter().filter(|meld| is_valid_meld(meld)).count()
-}
-
-pub(super) fn has_virtual_tile_count(
-    hand: &[i32],
-    melds: &[WsShenyangMahjongMeld],
-    expected_count: usize,
-) -> bool {
-    hand.len() + valid_meld_count(melds) * 3 == expected_count
+pub(super) fn is_xi_gang_meld(meld: &WsShenyangMahjongMeld) -> bool {
+    meld.kind == ShenyangMahjongMeldKind::XI_GANG
+        && meld.from_position.is_none()
+        && is_xi_gang_tiles(&meld.tiles)
 }
 
 pub(super) fn meld_primary_tile(meld: &WsShenyangMahjongMeld) -> Option<i32> {
@@ -119,6 +115,10 @@ pub(super) fn promoted_added_gang_melds(
         meld.tiles = vec![tile, tile, tile, tile];
     }
     next_melds
+}
+
+pub(super) fn valid_meld_count(melds: &[WsShenyangMahjongMeld]) -> usize {
+    melds.iter().filter(|meld| is_valid_meld(meld)).count()
 }
 
 pub(super) fn valid_meld_tiles(melds: &[WsShenyangMahjongMeld]) -> impl Iterator<Item = i32> + '_ {

@@ -67,27 +67,6 @@ fn capped_discard_does_not_preserve_redundant_four_gui_yi() {
 }
 
 #[test]
-fn half_capped_discard_does_not_preserve_four_gui_yi() {
-    let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(3);
-    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(2)];
-    let melds = table.seats.get(&0).unwrap().melds.as_slice();
-    let hand = vec![2, 3, 4, 11, 12, 13, 21, 22, 23, 35, 36];
-
-    assert_eq!(estimated_four_gui_yi_fan(&hand, melds), 1);
-    assert!(capped_normal_route_visible_fan_exceeds_half_cap(
-        &hand,
-        melds,
-        &table,
-        WIN_RULE_RELAXED
-    ));
-    assert_eq!(
-        four_gui_yi_discard_bias(&hand, 2, melds, &table, 0, WIN_RULE_RELAXED),
-        0.0
-    );
-}
-
-#[test]
 fn capped_open_basic_route_discards_redundant_single_dragon() {
     let mut table = table_with_discards(1, Vec::new());
     table.max_fan = Some(2);
@@ -190,28 +169,6 @@ fn discard_prefers_isolated_honor() {
     assert_eq!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
         Some(31)
-    );
-}
-
-#[test]
-fn discard_rejects_impossible_known_tile_state() {
-    let mut table = table_with_discards(1, Vec::new());
-    let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35];
-
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
-        Some(31)
-    );
-
-    table.seats.get_mut(&1).unwrap().discards = vec![1, 1, 1, 1];
-    assert_eq!(visible_tile_count(&table, 1), 4);
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
-        None
-    );
-    assert_eq!(
-        choose_forced_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
-        None
     );
 }
 
@@ -376,36 +333,6 @@ fn discard_preserves_only_terminal_or_honor_for_basic_rule() {
 }
 
 #[test]
-fn relaxed_capped_route_discards_redundant_single_dragon() {
-    let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(2);
-    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(35)];
-    let melds = table.seats.get(&0).unwrap().melds.as_slice();
-    let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 36];
-    let after_dragon = remove_n_tiles(&hand, 36, 1);
-
-    assert!(!capped_open_basic_route_visible_fan_reaches_cap(
-        &after_dragon,
-        melds,
-        &table
-    ));
-    assert!(capped_normal_route_visible_fan_reaches_cap(
-        &after_dragon,
-        melds,
-        &table,
-        WIN_RULE_RELAXED
-    ));
-    assert!(
-        capped_spare_dragon_discard_bias(&hand, 36, melds, &table, WIN_RULE_RELAXED)
-            > capped_spare_dragon_discard_bias(&hand, 11, melds, &table, WIN_RULE_RELAXED)
-    );
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
-        Some(36)
-    );
-}
-
-#[test]
 fn discard_preserves_only_triplet_for_basic_heng() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 1, 1, 2, 3, 4, 11, 12, 13, 21, 22, 23, 35, 36];
@@ -457,35 +384,6 @@ fn discard_preserves_ready_four_gui_yi_route() {
 }
 
 #[test]
-fn threatening_dealer_disables_four_gui_yi_discard_bias() {
-    let mut table = table_with_discards(1, Vec::new());
-    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(2)];
-    table.seats.get_mut(&1).unwrap().hand_count = 7;
-    table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(23), test_peng_meld(24)];
-    let melds = table.seats.get(&0).unwrap().melds.as_slice();
-    let hand = vec![2, 3, 4, 11, 12, 13, 21, 22, 23, 35, 36];
-
-    table.dealer_position = 3;
-    assert!(!dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
-    assert!(four_gui_yi_discard_bias(&hand, 2, melds, &table, 0, WIN_RULE_SHENYANG_BASIC,) < 0.0);
-
-    table.dealer_position = 1;
-    assert!(dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
-    assert_eq!(
-        four_gui_yi_discard_bias(&hand, 2, melds, &table, 0, WIN_RULE_SHENYANG_BASIC,),
-        0.0
-    );
-}
-
-#[test]
 fn discard_preserves_ready_hand_instead_of_breaking_wait() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 31, 31, 32];
@@ -510,6 +408,38 @@ fn discard_preserves_single_dragon_as_basic_heng_seed() {
     assert_ne!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(35)
+    );
+}
+
+#[test]
+fn discard_rejects_impossible_known_tile_state() {
+    let mut table = table_with_discards(1, Vec::new());
+    let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35];
+
+    assert_eq!(
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        Some(31)
+    );
+
+    table.seats.get_mut(&1).unwrap().discards = vec![1, 1, 1, 1];
+    assert_eq!(visible_tile_count(&table, 1), 4);
+    assert_eq!(
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        None
+    );
+    assert_eq!(
+        choose_forced_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        None
+    );
+}
+
+#[test]
+fn discard_rejects_incomplete_virtual_hand() {
+    let table = table_with_discards(1, Vec::new());
+
+    assert_eq!(
+        choose_discard_from_view(&[1, 2], &table, 0, WIN_RULE_RELAXED),
+        None
     );
 }
 
@@ -564,6 +494,27 @@ fn early_pinghu_route_preserves_core_sequence_over_public_middle() {
 }
 
 #[test]
+fn half_capped_discard_does_not_preserve_four_gui_yi() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.max_fan = Some(3);
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(2)];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![2, 3, 4, 11, 12, 13, 21, 22, 23, 35, 36];
+
+    assert_eq!(estimated_four_gui_yi_fan(&hand, melds), 1);
+    assert!(capped_normal_route_visible_fan_exceeds_half_cap(
+        &hand,
+        melds,
+        &table,
+        WIN_RULE_RELAXED
+    ));
+    assert_eq!(
+        four_gui_yi_discard_bias(&hand, 2, melds, &table, 0, WIN_RULE_RELAXED),
+        0.0
+    );
+}
+
+#[test]
 fn mid_pinghu_route_sequence_bias_turns_off_after_shape_period() {
     let mut table = table_with_discards(1, vec![14, 14]);
     table.wall_count = 55;
@@ -576,11 +527,60 @@ fn mid_pinghu_route_sequence_bias_turns_off_after_shape_period() {
 }
 
 #[test]
-fn discard_rejects_incomplete_virtual_hand() {
-    let table = table_with_discards(1, Vec::new());
+fn relaxed_capped_route_discards_redundant_single_dragon() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.max_fan = Some(2);
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(35)];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 36];
+    let after_dragon = remove_n_tiles(&hand, 36, 1);
 
+    assert!(!capped_open_basic_route_visible_fan_reaches_cap(
+        &after_dragon,
+        melds,
+        &table
+    ));
+    assert!(capped_normal_route_visible_fan_reaches_cap(
+        &after_dragon,
+        melds,
+        &table,
+        WIN_RULE_RELAXED
+    ));
+    assert!(
+        capped_spare_dragon_discard_bias(&hand, 36, melds, &table, WIN_RULE_RELAXED)
+            > capped_spare_dragon_discard_bias(&hand, 11, melds, &table, WIN_RULE_RELAXED)
+    );
     assert_eq!(
-        choose_discard_from_view(&[1, 2], &table, 0, WIN_RULE_RELAXED),
-        None
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        Some(36)
+    );
+}
+
+#[test]
+fn threatening_dealer_disables_four_gui_yi_discard_bias() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(2)];
+    table.seats.get_mut(&1).unwrap().hand_count = 7;
+    table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(23), test_peng_meld(24)];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![2, 3, 4, 11, 12, 13, 21, 22, 23, 35, 36];
+
+    table.dealer_position = 3;
+    assert!(!dealer_opponent_has_major_threat(
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert!(four_gui_yi_discard_bias(&hand, 2, melds, &table, 0, WIN_RULE_SHENYANG_BASIC,) < 0.0);
+
+    table.dealer_position = 1;
+    assert!(dealer_opponent_has_major_threat(
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC
+    ));
+    assert_eq!(
+        four_gui_yi_discard_bias(&hand, 2, melds, &table, 0, WIN_RULE_SHENYANG_BASIC,),
+        0.0
     );
 }

@@ -16,16 +16,16 @@ use crate::{
     },
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum BuryMode {
-    ProtectBottom,
-    RunLongSuit(i32),
-}
-
 #[derive(Debug, Clone)]
 pub(crate) struct BuryDecision {
     pub(crate) cards: Vec<i32>,
     pub(crate) mode: BuryMode,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BuryMode {
+    ProtectBottom,
+    RunLongSuit(i32),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -34,19 +34,6 @@ struct SuitProfile {
     count: usize,
     pairs: usize,
     longest_tractor: usize,
-}
-
-pub(crate) fn choose_bury(state: &TractorGameState) -> Option<Vec<i32>> {
-    match bury_decision(state)? {
-        BuryDecision {
-            cards,
-            mode: BuryMode::ProtectBottom,
-        }
-        | BuryDecision {
-            cards,
-            mode: BuryMode::RunLongSuit(_),
-        } => Some(cards),
-    }
 }
 
 pub(crate) fn bury_decision(state: &TractorGameState) -> Option<BuryDecision> {
@@ -127,6 +114,19 @@ pub(crate) fn bury_decision(state: &TractorGameState) -> Option<BuryDecision> {
         cards: selected,
         mode,
     })
+}
+
+pub(crate) fn choose_bury(state: &TractorGameState) -> Option<Vec<i32>> {
+    match bury_decision(state)? {
+        BuryDecision {
+            cards,
+            mode: BuryMode::ProtectBottom,
+        }
+        | BuryDecision {
+            cards,
+            mode: BuryMode::RunLongSuit(_),
+        } => Some(cards),
+    }
 }
 
 fn choose_mode(
@@ -264,20 +264,25 @@ mod tests {
 
     use super::*;
 
-    fn state(hand: Vec<i32>, bottom_card_count: usize) -> TractorGameState {
-        let mut common = CommonGameState::new();
-        for position in 0..4 {
-            common.add_player(position, position as u64 + 1, &format!("u{position}"));
-        }
-        let mut state = TractorGameState::from_common(Arc::new(Mutex::new(common)));
-        state.phase = TractorPhase::Bury;
-        state.rules.target_rank = TractorRank::TWO;
-        state.rules.trump_suit = Some(TractorSuit::SPADE);
-        state.rules.deck_count = 3;
-        state.rules.bottom_card_count = bottom_card_count;
-        state.dealer_position = 0;
-        state.hands.insert(0, hand);
-        state
+    #[test]
+    fn dominant_plain_tractor_selects_run_long_suit_plan() {
+        let state = state(
+            vec![
+                53, 1, 13, // limited trump
+                15, 115, 16, 116, 17, 117, 18, 118, 19, 119, // long heart tractor
+                31, 32, // short clubs
+                43, 44, 45, // short diamonds, includes a point card
+            ],
+            4,
+        );
+        let decision = bury_decision(&state).expect("bury decision");
+        assert_eq!(decision.mode, BuryMode::RunLongSuit(1));
+        assert!(
+            decision
+                .cards
+                .iter()
+                .all(|card| card_suit(*card) != Some(1))
+        );
     }
 
     #[test]
@@ -310,27 +315,6 @@ mod tests {
     }
 
     #[test]
-    fn dominant_plain_tractor_selects_run_long_suit_plan() {
-        let state = state(
-            vec![
-                53, 1, 13, // limited trump
-                15, 115, 16, 116, 17, 117, 18, 118, 19, 119, // long heart tractor
-                31, 32, // short clubs
-                43, 44, 45, // short diamonds, includes a point card
-            ],
-            4,
-        );
-        let decision = bury_decision(&state).expect("bury decision");
-        assert_eq!(decision.mode, BuryMode::RunLongSuit(1));
-        assert!(
-            decision
-                .cards
-                .iter()
-                .all(|card| card_suit(*card) != Some(1))
-        );
-    }
-
-    #[test]
     fn run_long_suit_plan_accepts_bottom_points_to_preserve_control() {
         let state = state(
             vec![
@@ -349,6 +333,22 @@ mod tests {
                 .iter()
                 .all(|card| card_suit(*card) != Some(1))
         );
+    }
+
+    fn state(hand: Vec<i32>, bottom_card_count: usize) -> TractorGameState {
+        let mut common = CommonGameState::new();
+        for position in 0..4 {
+            common.add_player(position, position as u64 + 1, &format!("u{position}"));
+        }
+        let mut state = TractorGameState::from_common(Arc::new(Mutex::new(common)));
+        state.phase = TractorPhase::Bury;
+        state.rules.target_rank = TractorRank::TWO;
+        state.rules.trump_suit = Some(TractorSuit::SPADE);
+        state.rules.deck_count = 3;
+        state.rules.bottom_card_count = bottom_card_count;
+        state.dealer_position = 0;
+        state.hands.insert(0, hand);
+        state
     }
 
     #[test]

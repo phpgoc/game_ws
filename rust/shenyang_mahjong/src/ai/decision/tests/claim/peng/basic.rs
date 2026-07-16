@@ -31,6 +31,30 @@ fn capped_claim_peng_opens_basic_route_over_sequence_preservation() {
 }
 
 #[test]
+fn claim_passes_from_impossible_known_tile_state() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.claim_window = Some(AiClaimView {
+        tile: 5,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![1, 2, 4, 5, 5, 7, 8, 11, 13, 15, 21, 24, 31];
+
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Peng)
+    );
+
+    table.seats.get_mut(&1).unwrap().discards = vec![1, 1, 1, 1];
+    assert_eq!(visible_tile_count(&table, 1), 4);
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Pass)
+    );
+}
+
+#[test]
 fn claim_peng_opens_later_closed_basic_hand_over_sequence_preservation() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 42;
@@ -185,30 +209,6 @@ fn claim_peng_takes_basic_heng_and_opening_when_no_heng() {
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Peng)
-    );
-}
-
-#[test]
-fn claim_passes_from_impossible_known_tile_state() {
-    let mut table = table_with_discards(1, Vec::new());
-    table.claim_window = Some(AiClaimView {
-        tile: 5,
-        from_position: 1,
-        eligible_positions: vec![0],
-    });
-    let claim = table.claim_window.clone().unwrap();
-    let hand = vec![1, 2, 4, 5, 5, 7, 8, 11, 13, 15, 21, 24, 31];
-
-    assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(AiClaimChoice::Peng)
-    );
-
-    table.seats.get_mut(&1).unwrap().discards = vec![1, 1, 1, 1];
-    assert_eq!(visible_tile_count(&table, 1), 4);
-    assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(AiClaimChoice::Pass)
     );
 }
 

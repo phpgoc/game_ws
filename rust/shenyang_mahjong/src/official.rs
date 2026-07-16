@@ -298,6 +298,43 @@ mod tests {
 
     #[cfg(feature = "official")]
     #[test]
+    fn official_records_configured_closed_dragon_pair_win_as_standard() {
+        let mut state = state_with_players();
+        state
+            .hands
+            .insert(1, vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 35, 35]);
+        state.enter_settlement(vec![1], None, None, true);
+        let settlement = state.settlement.as_ref().expect("settlement");
+        let configs = HashMap::from([
+            ("win_rule".to_owned(), crate::rules::WIN_RULE_SHENYANG_BASIC),
+            ("allow_first_chi".to_owned(), 0),
+        ]);
+        let score_changes = crate::game::settlement_score_changes_for_state(
+            &state,
+            &[0, 1, 2, 3],
+            settlement,
+            &configs,
+        );
+
+        let winner_scores = winner_scores_for_settlement(
+            &state,
+            settlement,
+            &score_changes,
+            crate::rules::WIN_RULE_SHENYANG_BASIC,
+            |position| Some(position as i64 + 10),
+        );
+
+        assert_eq!(winner_scores.len(), 1);
+        assert_eq!(winner_scores[0].winner_user_id, 11);
+        assert!(winner_scores[0].score > 0);
+        assert_eq!(
+            winner_scores[0].pattern,
+            data::ShenyangMahjongRoundWinPattern::Standard
+        );
+    }
+
+    #[cfg(feature = "official")]
+    #[test]
     fn official_reverse_win_requires_open_peng_source_and_discard_context() {
         let state_without_source = state_with_players();
         let mut state_with_source = state_with_players();
@@ -369,6 +406,37 @@ mod tests {
 
     #[cfg(feature = "official")]
     #[test]
+    fn official_winner_scores_deduplicate_restored_winners() {
+        let state = state_with_players();
+        let settlement = SettlementState {
+            winner_positions: vec![1, 1],
+            from_position: None,
+            win_tile: Some(9),
+            is_self_draw: true,
+            is_reverse_win: false,
+            is_gang_draw: false,
+            is_haidilao: false,
+        };
+        let score_changes = vec![WsShenyangMahjongScoreChange {
+            position: 1,
+            score: 15,
+        }];
+
+        let winner_scores = winner_scores_for_settlement(
+            &state,
+            &settlement,
+            &score_changes,
+            crate::rules::WIN_RULE_SHENYANG_BASIC,
+            |position| Some(position as i64 + 10),
+        );
+
+        assert_eq!(winner_scores.len(), 1);
+        assert_eq!(winner_scores[0].winner_user_id, 11);
+        assert_eq!(winner_scores[0].score, 15);
+    }
+
+    #[cfg(feature = "official")]
+    #[test]
     fn official_winner_scores_skip_zero_score_winners() {
         let state = state_with_players();
         let settlement = SettlementState {
@@ -406,74 +474,6 @@ mod tests {
         assert_eq!(winner_scores.len(), 1);
         assert_eq!(winner_scores[0].winner_user_id, 11);
         assert_eq!(winner_scores[0].score, 5);
-    }
-
-    #[cfg(feature = "official")]
-    #[test]
-    fn official_winner_scores_deduplicate_restored_winners() {
-        let state = state_with_players();
-        let settlement = SettlementState {
-            winner_positions: vec![1, 1],
-            from_position: None,
-            win_tile: Some(9),
-            is_self_draw: true,
-            is_reverse_win: false,
-            is_gang_draw: false,
-            is_haidilao: false,
-        };
-        let score_changes = vec![WsShenyangMahjongScoreChange {
-            position: 1,
-            score: 15,
-        }];
-
-        let winner_scores = winner_scores_for_settlement(
-            &state,
-            &settlement,
-            &score_changes,
-            crate::rules::WIN_RULE_SHENYANG_BASIC,
-            |position| Some(position as i64 + 10),
-        );
-
-        assert_eq!(winner_scores.len(), 1);
-        assert_eq!(winner_scores[0].winner_user_id, 11);
-        assert_eq!(winner_scores[0].score, 15);
-    }
-
-    #[cfg(feature = "official")]
-    #[test]
-    fn official_records_configured_closed_dragon_pair_win_as_standard() {
-        let mut state = state_with_players();
-        state
-            .hands
-            .insert(1, vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 35, 35]);
-        state.enter_settlement(vec![1], None, None, true);
-        let settlement = state.settlement.as_ref().expect("settlement");
-        let configs = HashMap::from([
-            ("win_rule".to_owned(), crate::rules::WIN_RULE_SHENYANG_BASIC),
-            ("allow_first_chi".to_owned(), 0),
-        ]);
-        let score_changes = crate::game::settlement_score_changes_for_state(
-            &state,
-            &[0, 1, 2, 3],
-            settlement,
-            &configs,
-        );
-
-        let winner_scores = winner_scores_for_settlement(
-            &state,
-            settlement,
-            &score_changes,
-            crate::rules::WIN_RULE_SHENYANG_BASIC,
-            |position| Some(position as i64 + 10),
-        );
-
-        assert_eq!(winner_scores.len(), 1);
-        assert_eq!(winner_scores[0].winner_user_id, 11);
-        assert!(winner_scores[0].score > 0);
-        assert_eq!(
-            winner_scores[0].pattern,
-            data::ShenyangMahjongRoundWinPattern::Standard
-        );
     }
 
     #[test]

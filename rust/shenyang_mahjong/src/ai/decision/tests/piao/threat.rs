@@ -118,6 +118,27 @@ fn opponent_four_piao_threat_penalizes_missing_suit_wait_tile() {
 }
 
 #[test]
+fn opponent_piao_threat_combines_open_peng_and_concealed_gangs() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 16;
+    table.seats.get_mut(&1).unwrap().hand_count = 2;
+    table.seats.get_mut(&1).unwrap().melds = vec![
+        test_peng_meld(1),
+        test_concealed_gang_meld(2),
+        test_concealed_gang_meld(11),
+        test_concealed_gang_meld(12),
+    ];
+    let seat = table.seats.get(&1).unwrap();
+
+    assert_eq!(piao_threat_level(&seat.melds), 4);
+    assert!(has_open_meld(&seat.melds));
+    assert_eq!(piao_missing_suits_from_melds(&seat.melds), vec![2]);
+    assert!(piao_threat_needs_suit(seat, 2));
+    assert!(piao_threat_blocks_missing_suit_safety(seat, 21));
+    assert!(opponent_threat_discard_bias(&table, 0, 21, 1) < 0.0);
+}
+
+#[test]
 fn opponent_piao_threat_ignores_player_after_chi_meld() {
     let mut table = table_with_discards(1, Vec::new());
     table.seats.get_mut(&1).unwrap().melds = vec![
@@ -150,27 +171,6 @@ fn opponent_piao_threat_requires_a_door_opening_meld() {
     assert!(!piao_threat_needs_suit(seat, 2));
     assert!(!piao_threat_blocks_missing_suit_safety(seat, 21));
     assert_eq!(opponent_threat_discard_bias(&table, 0, 21, 1), 0.0);
-}
-
-#[test]
-fn opponent_piao_threat_combines_open_peng_and_concealed_gangs() {
-    let mut table = table_with_discards(1, Vec::new());
-    table.wall_count = 16;
-    table.seats.get_mut(&1).unwrap().hand_count = 2;
-    table.seats.get_mut(&1).unwrap().melds = vec![
-        test_peng_meld(1),
-        test_concealed_gang_meld(2),
-        test_concealed_gang_meld(11),
-        test_concealed_gang_meld(12),
-    ];
-    let seat = table.seats.get(&1).unwrap();
-
-    assert_eq!(piao_threat_level(&seat.melds), 4);
-    assert!(has_open_meld(&seat.melds));
-    assert_eq!(piao_missing_suits_from_melds(&seat.melds), vec![2]);
-    assert!(piao_threat_needs_suit(seat, 2));
-    assert!(piao_threat_blocks_missing_suit_safety(seat, 21));
-    assert!(opponent_threat_discard_bias(&table, 0, 21, 1) < 0.0);
 }
 
 #[test]

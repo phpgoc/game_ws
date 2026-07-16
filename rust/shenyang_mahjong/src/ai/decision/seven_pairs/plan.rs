@@ -37,6 +37,43 @@ fn seven_pairs_plan_is_reachable(hand: &[i32], table: &AiPublicTable, position: 
         .is_some_and(|draws| draws <= table.wall_count)
 }
 
+pub(in crate::ai::decision) fn seven_pairs_plan_score(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+) -> f64 {
+    if valid_meld_count(melds) > 0 || !(hand.len() == 13 || hand.len() == 14) {
+        return 0.0;
+    }
+    if !seven_pairs_plan_is_reachable(hand, table, position) {
+        return 0.0;
+    }
+    let pairs = pair_count(hand);
+    if table.dealer_position == position
+        && pairs < 6
+        && !should_chase_basic_missing_suit_four_pairs(hand, melds, win_rule)
+    {
+        return 0.0;
+    }
+    if pairs < 6 && capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table, win_rule) {
+        return 0.0;
+    }
+    if pairs < 6 && capped_normal_route_visible_fan_reaches_cap(hand, melds, table, win_rule) {
+        return 0.0;
+    }
+    if win_rule == WIN_RULE_SHENYANG_BASIC && pairs < 6 && missing_suits(hand, melds).is_empty() {
+        return 0.0;
+    }
+    match pairs {
+        6.. => 42.0,
+        5 => 24.0,
+        4 => 10.0,
+        _ => 0.0,
+    }
+}
+
 pub(in crate::ai::decision) fn should_chase_basic_missing_suit_four_pairs(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -99,43 +136,6 @@ pub(in crate::ai::decision) fn should_lock_seven_pairs_plan(
         return false;
     }
     true
-}
-
-pub(in crate::ai::decision) fn seven_pairs_plan_score(
-    hand: &[i32],
-    melds: &[WsShenyangMahjongMeld],
-    table: &AiPublicTable,
-    position: usize,
-    win_rule: i32,
-) -> f64 {
-    if valid_meld_count(melds) > 0 || !(hand.len() == 13 || hand.len() == 14) {
-        return 0.0;
-    }
-    if !seven_pairs_plan_is_reachable(hand, table, position) {
-        return 0.0;
-    }
-    let pairs = pair_count(hand);
-    if table.dealer_position == position
-        && pairs < 6
-        && !should_chase_basic_missing_suit_four_pairs(hand, melds, win_rule)
-    {
-        return 0.0;
-    }
-    if pairs < 6 && capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table, win_rule) {
-        return 0.0;
-    }
-    if pairs < 6 && capped_normal_route_visible_fan_reaches_cap(hand, melds, table, win_rule) {
-        return 0.0;
-    }
-    if win_rule == WIN_RULE_SHENYANG_BASIC && pairs < 6 && missing_suits(hand, melds).is_empty() {
-        return 0.0;
-    }
-    match pairs {
-        6.. => 42.0,
-        5 => 24.0,
-        4 => 10.0,
-        _ => 0.0,
-    }
 }
 
 pub(in crate::ai::decision) fn should_preserve_seven_pairs_plan_for_context(

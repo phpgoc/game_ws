@@ -36,37 +36,6 @@ fn late_defense_candidates_avoid_piao_needed_suit_over_missing_suit_read() {
 }
 
 #[test]
-fn late_defense_closed_opponent_blocks_other_missing_suit_reads() {
-    let mut table = table_with_discards(1, vec![1, 4, 9]);
-    table.wall_count = 16;
-    table.seats.insert(
-        2,
-        AiSeatView {
-            position: 2,
-            hand_count: 10,
-            discards: vec![1, 4, 9],
-            melds: Vec::new(),
-        },
-    );
-    let mut closed_threat_table = table.clone();
-    closed_threat_table.seats.insert(
-        3,
-        AiSeatView {
-            position: 3,
-            hand_count: 13,
-            discards: Vec::new(),
-            melds: Vec::new(),
-        },
-    );
-
-    assert!(opponent_missing_suit_safety_bias(&table, 0, 5) > 0.0);
-    assert_eq!(
-        opponent_missing_suit_safety_bias(&closed_threat_table, 0, 5),
-        0.0
-    );
-}
-
-#[test]
 fn late_defense_chi_only_closed_opponent_blocks_missing_suit_read_when_chi_does_not_open_door() {
     let mut table = table_with_discards(1, vec![1, 4, 9]);
     table.wall_count = 16;
@@ -93,7 +62,7 @@ fn late_defense_chi_only_closed_opponent_blocks_missing_suit_read_when_chi_does_
 }
 
 #[test]
-fn late_defense_ten_tile_closed_threat_blocks_other_missing_suit_reads() {
+fn late_defense_closed_opponent_blocks_other_missing_suit_reads() {
     let mut table = table_with_discards(1, vec![1, 4, 9]);
     table.wall_count = 16;
     table.seats.insert(
@@ -105,22 +74,18 @@ fn late_defense_ten_tile_closed_threat_blocks_other_missing_suit_reads() {
             melds: Vec::new(),
         },
     );
-
-    let mut short_closed_table = table.clone();
-    short_closed_table.seats.insert(
+    let mut closed_threat_table = table.clone();
+    closed_threat_table.seats.insert(
         3,
         AiSeatView {
             position: 3,
-            hand_count: 9,
+            hand_count: 13,
             discards: Vec::new(),
             melds: Vec::new(),
         },
     );
 
-    let mut closed_threat_table = short_closed_table.clone();
-    closed_threat_table.seats.get_mut(&3).unwrap().hand_count = 10;
-
-    assert!(opponent_missing_suit_safety_bias(&short_closed_table, 0, 5) > 0.0);
+    assert!(opponent_missing_suit_safety_bias(&table, 0, 5) > 0.0);
     assert_eq!(
         opponent_missing_suit_safety_bias(&closed_threat_table, 0, 5),
         0.0
@@ -483,6 +448,41 @@ fn late_defense_prefers_public_tile_seen_from_multiple_seats() {
     );
     assert!(public_discard_seat_count(&table, 6) > public_discard_seat_count(&table, 5));
     assert!(late_defense_discard_bias(&table, 0, 6) > late_defense_discard_bias(&table, 0, 5));
+}
+
+#[test]
+fn late_defense_ten_tile_closed_threat_blocks_other_missing_suit_reads() {
+    let mut table = table_with_discards(1, vec![1, 4, 9]);
+    table.wall_count = 16;
+    table.seats.insert(
+        2,
+        AiSeatView {
+            position: 2,
+            hand_count: 10,
+            discards: vec![1, 4, 9],
+            melds: Vec::new(),
+        },
+    );
+
+    let mut short_closed_table = table.clone();
+    short_closed_table.seats.insert(
+        3,
+        AiSeatView {
+            position: 3,
+            hand_count: 9,
+            discards: Vec::new(),
+            melds: Vec::new(),
+        },
+    );
+
+    let mut closed_threat_table = short_closed_table.clone();
+    closed_threat_table.seats.get_mut(&3).unwrap().hand_count = 10;
+
+    assert!(opponent_missing_suit_safety_bias(&short_closed_table, 0, 5) > 0.0);
+    assert_eq!(
+        opponent_missing_suit_safety_bias(&closed_threat_table, 0, 5),
+        0.0
+    );
 }
 
 #[test]

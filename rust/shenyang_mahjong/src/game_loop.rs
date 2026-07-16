@@ -46,42 +46,8 @@ async fn deliver(dispatch: ws_common::Dispatch, senders: &SessionSenders) {
     }
 }
 
-fn settlement_should_stop(state: &Arc<std::sync::Mutex<ShenyangMahjongLoopState>>) -> bool {
-    let state = state.lock().unwrap();
-    state.players_snapshot().len() != 4 || state.stop_requested()
-}
-
-fn room_uses_common_state(
-    room: &RoomService,
-    room_key: &str,
-    common: &Arc<std::sync::Mutex<ws_common::CommonGameState>>,
-) -> bool {
-    room.room_common_state(room_key)
-        .is_some_and(|current| Arc::ptr_eq(&current, common))
-}
-
 fn loop_stop_requested(state: &Arc<std::sync::Mutex<ShenyangMahjongLoopState>>) -> bool {
     state.lock().unwrap().stop_requested()
-}
-
-async fn sleep_or_stop(
-    state: &Arc<std::sync::Mutex<ShenyangMahjongLoopState>>,
-    duration: Duration,
-) -> bool {
-    let mut remaining = duration.as_millis();
-    while remaining > 0 {
-        if loop_stop_requested(state) {
-            return true;
-        }
-        let step = remaining.min(100) as u64;
-        tokio::time::sleep(Duration::from_millis(step)).await;
-        remaining -= u128::from(step);
-    }
-    loop_stop_requested(state)
-}
-
-fn should_resolve_timed_out_claims(state: &ShenyangMahjongLoopState) -> bool {
-    state.turn_countdown() == 0 && state.claim_window.is_some()
 }
 
 fn perform_auto_discard_or_settle(
@@ -108,6 +74,40 @@ fn perform_auto_discard_or_settle(
         settle_draw(room_service, room_key, state, configs, dispatch);
     }
     discarded
+}
+
+fn room_uses_common_state(
+    room: &RoomService,
+    room_key: &str,
+    common: &Arc<std::sync::Mutex<ws_common::CommonGameState>>,
+) -> bool {
+    room.room_common_state(room_key)
+        .is_some_and(|current| Arc::ptr_eq(&current, common))
+}
+
+fn settlement_should_stop(state: &Arc<std::sync::Mutex<ShenyangMahjongLoopState>>) -> bool {
+    let state = state.lock().unwrap();
+    state.players_snapshot().len() != 4 || state.stop_requested()
+}
+
+fn should_resolve_timed_out_claims(state: &ShenyangMahjongLoopState) -> bool {
+    state.turn_countdown() == 0 && state.claim_window.is_some()
+}
+
+async fn sleep_or_stop(
+    state: &Arc<std::sync::Mutex<ShenyangMahjongLoopState>>,
+    duration: Duration,
+) -> bool {
+    let mut remaining = duration.as_millis();
+    while remaining > 0 {
+        if loop_stop_requested(state) {
+            return true;
+        }
+        let step = remaining.min(100) as u64;
+        tokio::time::sleep(Duration::from_millis(step)).await;
+        remaining -= u128::from(step);
+    }
+    loop_stop_requested(state)
 }
 
 pub(crate) fn start_game_loop(
@@ -380,22 +380,6 @@ mod tests {
     }
 
     #[test]
-    fn timed_out_empty_claim_window_is_resolved() {
-        let base = Arc::new(Mutex::new(CommonGameState::default()));
-        let mut state = ShenyangMahjongLoopState::new(base);
-        state.claim_window = Some(crate::game_state::ClaimWindowState {
-            tile: 3,
-            from_position: 0,
-            kind: crate::game_state::ClaimWindowKind::Discard,
-            eligible_positions: Vec::new(),
-            responses: HashMap::new(),
-        });
-        state.set_turn_countdown(0);
-
-        assert!(should_resolve_timed_out_claims(&state));
-    }
-
-    #[test]
     fn failed_auto_discard_settles_round() {
         let base = Arc::new(Mutex::new(CommonGameState::default()));
         let mut state = ShenyangMahjongLoopState::new(base);
@@ -432,6 +416,35 @@ mod tests {
     }
 
     #[test]
+    fn missing_auto_discard_tile_settles_round() {
+        let base = Arc::new(Mutex::new(CommonGameState::default()));
+        let mut state = ShenyangMahjongLoopState::new(base);
+        state.phase = ShenyangMahjongPhase::Play;
+        state.current_position = 0;
+        state.hands.insert(0, Vec::new());
+        state.discards.insert(0, Vec::new());
+        let mut dispatch = ws_common::Dispatch::default();
+
+        assert!(!perform_auto_discard_or_settle(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::new(),
+            &mut dispatch,
+            0,
+            None,
+        ));
+
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert!(
+            state
+                .settlement
+                .as_ref()
+                .is_some_and(|settlement| settlement.winner_positions.is_empty())
+        );
+    }
+
+    #[test]
     fn successful_auto_discard_keeps_round_playing() {
         let base = Arc::new(Mutex::new(CommonGameState::default()));
         let mut state = ShenyangMahjongLoopState::new(base);
@@ -462,31 +475,18 @@ mod tests {
     }
 
     #[test]
-    fn missing_auto_discard_tile_settles_round() {
+    fn timed_out_empty_claim_window_is_resolved() {
         let base = Arc::new(Mutex::new(CommonGameState::default()));
         let mut state = ShenyangMahjongLoopState::new(base);
-        state.phase = ShenyangMahjongPhase::Play;
-        state.current_position = 0;
-        state.hands.insert(0, Vec::new());
-        state.discards.insert(0, Vec::new());
-        let mut dispatch = ws_common::Dispatch::default();
+        state.claim_window = Some(crate::game_state::ClaimWindowState {
+            tile: 3,
+            from_position: 0,
+            kind: crate::game_state::ClaimWindowKind::Discard,
+            eligible_positions: Vec::new(),
+            responses: HashMap::new(),
+        });
+        state.set_turn_countdown(0);
 
-        assert!(!perform_auto_discard_or_settle(
-            &RoomService::default(),
-            "room",
-            &mut state,
-            &HashMap::new(),
-            &mut dispatch,
-            0,
-            None,
-        ));
-
-        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
-        assert!(
-            state
-                .settlement
-                .as_ref()
-                .is_some_and(|settlement| settlement.winner_positions.is_empty())
-        );
+        assert!(should_resolve_timed_out_claims(&state));
     }
 }

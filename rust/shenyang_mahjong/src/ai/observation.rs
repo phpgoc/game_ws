@@ -94,7 +94,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn public_table_filters_melds_with_invalid_source_positions() {
+    fn public_table_filters_invalid_discards() {
         let base = Arc::new(Mutex::new(CommonGameState::default()));
         {
             let mut common = base.lock().unwrap();
@@ -103,27 +103,11 @@ mod tests {
             }
         }
         let mut state = ShenyangMahjongLoopState::new(base);
-        state.melds.insert(
-            1,
-            vec![
-                test_meld(ShenyangMahjongMeldKind::PENG, 3, Some(0)),
-                test_meld(ShenyangMahjongMeldKind::GANG, 4, None),
-                test_meld(ShenyangMahjongMeldKind::PENG, 5, Some(1)),
-                test_meld(ShenyangMahjongMeldKind::PENG, 6, None),
-                test_meld(ShenyangMahjongMeldKind::PENG, 7, Some(-1)),
-                test_meld(ShenyangMahjongMeldKind::PENG, 8, Some(9)),
-                test_meld(ShenyangMahjongMeldKind::CHI, 11, Some(0)),
-                test_meld(ShenyangMahjongMeldKind::CHI, 21, Some(2)),
-            ],
-        );
+        state.discards.insert(1, vec![3, 99, 35, -1]);
 
         let table = build_public_table_with_configs(&state, &HashMap::new());
-        let melds = &table.seats.get(&1).expect("seat 1").melds;
 
-        assert_eq!(melds.len(), 3);
-        assert_eq!(melds[0].from_position, Some(0));
-        assert_eq!(melds[1].from_position, None);
-        assert_eq!(melds[2].from_position, Some(0));
+        assert_eq!(table.seats.get(&1).expect("seat 1").discards, vec![3, 35]);
     }
 
     #[test]
@@ -161,7 +145,7 @@ mod tests {
     }
 
     #[test]
-    fn public_table_filters_invalid_discards() {
+    fn public_table_filters_melds_with_invalid_source_positions() {
         let base = Arc::new(Mutex::new(CommonGameState::default()));
         {
             let mut common = base.lock().unwrap();
@@ -170,11 +154,27 @@ mod tests {
             }
         }
         let mut state = ShenyangMahjongLoopState::new(base);
-        state.discards.insert(1, vec![3, 99, 35, -1]);
+        state.melds.insert(
+            1,
+            vec![
+                test_meld(ShenyangMahjongMeldKind::PENG, 3, Some(0)),
+                test_meld(ShenyangMahjongMeldKind::GANG, 4, None),
+                test_meld(ShenyangMahjongMeldKind::PENG, 5, Some(1)),
+                test_meld(ShenyangMahjongMeldKind::PENG, 6, None),
+                test_meld(ShenyangMahjongMeldKind::PENG, 7, Some(-1)),
+                test_meld(ShenyangMahjongMeldKind::PENG, 8, Some(9)),
+                test_meld(ShenyangMahjongMeldKind::CHI, 11, Some(0)),
+                test_meld(ShenyangMahjongMeldKind::CHI, 21, Some(2)),
+            ],
+        );
 
         let table = build_public_table_with_configs(&state, &HashMap::new());
+        let melds = &table.seats.get(&1).expect("seat 1").melds;
 
-        assert_eq!(table.seats.get(&1).expect("seat 1").discards, vec![3, 35]);
+        assert_eq!(melds.len(), 3);
+        assert_eq!(melds[0].from_position, Some(0));
+        assert_eq!(melds[1].from_position, None);
+        assert_eq!(melds[2].from_position, Some(0));
     }
 
     fn test_meld(

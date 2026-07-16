@@ -24,45 +24,105 @@ use crate::{
 
 type StateRegistry = Arc<std::sync::Mutex<HashMap<String, TractorStateHandle>>>;
 
-fn room_uses_common_state(
-    room: &RoomService,
-    room_key: &str,
-    common: &Arc<std::sync::Mutex<ws_common::CommonGameState>>,
-) -> bool {
-    room.room_common_state(room_key)
-        .is_some_and(|current| Arc::ptr_eq(&current, common))
+fn action_loop_delay(configs: &HashMap<String, i32>, state: &TractorGameState) -> Duration {
+    if state.phase == TractorPhase::Settlement {
+        return Duration::ZERO;
+    }
+    let controlled = match state.phase {
+        TractorPhase::Bury => state.is_ai_controlled_position(state.dealer_position),
+        TractorPhase::Play => state.is_ai_controlled_position(state.current_position),
+        _ => false,
+    };
+    if controlled {
+        return Duration::from_millis(
+            configs
+                .get(KEY_AI_ACTION_TIME)
+                .copied()
+                .unwrap_or(1_000)
+                .max(1) as u64,
+        );
+    }
+    Duration::from_secs(1)
 }
 
-fn remove_registered_state_if_same(
-    states: &StateRegistry,
+fn build_auto_bury_dispatch(
     room_key: &str,
+    room_service: &RoomService,
     state: &TractorStateHandle,
-) {
-    let mut states = states.lock().unwrap();
-    if states
-        .get(room_key)
-        .is_some_and(|current| Arc::ptr_eq(current, state))
-    {
-        states.remove(room_key);
-    }
-}
-
-fn stop_requested(state: &TractorStateHandle) -> bool {
-    let common = { Arc::clone(&state.lock().unwrap().base) };
-    common.lock().unwrap().stop_requested()
-}
-
-async fn sleep_or_stop(state: &TractorStateHandle, duration: Duration) -> bool {
-    let mut remaining = duration.as_millis();
-    while remaining > 0 {
-        if stop_requested(state) {
-            return true;
+    configs: &HashMap<String, i32>,
+) -> Dispatch {
+    let mut dispatch = Dispatch::default();
+    let mut away_position = None;
+    let result = {
+        let mut state = state.lock().unwrap();
+        if state.phase != TractorPhase::Bury {
+            return dispatch;
         }
-        let step = remaining.min(100) as u64;
-        tokio::time::sleep(Duration::from_millis(step)).await;
-        remaining -= u128::from(step);
+        let position = state.dealer_position;
+        let controlled = state.is_ai_controlled_position(position);
+        if !controlled && state.base.lock().unwrap().turn_countdown > 0 {
+            let next = state.base.lock().unwrap().turn_countdown.saturating_sub(1);
+            state.set_turn_countdown(next);
+            return dispatch;
+        }
+        if !controlled && state.base.lock().unwrap().mark_away(position) {
+            away_position = Some(position);
+        }
+        let Some(cards) = state.choose_auto_bury() else {
+            return dispatch;
+        };
+        if state.bury_bottom(position, cards).is_err() {
+            return dispatch;
+        }
+        let countdown = current_play_time(configs, &state);
+        state.set_turn_countdown(countdown);
+        Some((
+            position,
+            state.player_name(position),
+            state.rules.bottom_card_count,
+            state.hands.get(&position).cloned().unwrap_or_default(),
+            state.snapshot(),
+        ))
+    };
+
+    if let Some(position) = away_position {
+        room_service.broadcast(
+            room_key,
+            WsCode::AWAY as i32,
+            WsPositionEvent {
+                position: position as i32,
+            },
+            &mut dispatch,
+        );
     }
-    stop_requested(state)
+    let Some((position, name, bottom_card_count, hand, snapshot)) = result else {
+        return dispatch;
+    };
+    room_service.broadcast(
+        room_key,
+        TractorWsCode::BOTTOM_BURIED as i32,
+        WsTractorBottomBuriedEvent {
+            position: position as i32,
+            name,
+            bottom_card_count: bottom_card_count as i32,
+        },
+        &mut dispatch,
+    );
+    for (session_id, _, member_position, _) in room_service.room_members(room_key) {
+        if member_position == position {
+            push_direct_event(
+                &mut dispatch,
+                session_id,
+                TractorWsCode::HAND_UPDATED as i32,
+                WsTractorHandEvent {
+                    position: position as i32,
+                    cards: hand.clone(),
+                },
+            );
+        }
+    }
+    push_table_snapshot(room_key, room_service, snapshot, &mut dispatch);
+    dispatch
 }
 
 fn build_auto_dispatch(
@@ -228,86 +288,6 @@ fn build_deal_dispatch(
     dispatch
 }
 
-fn build_auto_bury_dispatch(
-    room_key: &str,
-    room_service: &RoomService,
-    state: &TractorStateHandle,
-    configs: &HashMap<String, i32>,
-) -> Dispatch {
-    let mut dispatch = Dispatch::default();
-    let mut away_position = None;
-    let result = {
-        let mut state = state.lock().unwrap();
-        if state.phase != TractorPhase::Bury {
-            return dispatch;
-        }
-        let position = state.dealer_position;
-        let controlled = state.is_ai_controlled_position(position);
-        if !controlled && state.base.lock().unwrap().turn_countdown > 0 {
-            let next = state.base.lock().unwrap().turn_countdown.saturating_sub(1);
-            state.set_turn_countdown(next);
-            return dispatch;
-        }
-        if !controlled && state.base.lock().unwrap().mark_away(position) {
-            away_position = Some(position);
-        }
-        let Some(cards) = state.choose_auto_bury() else {
-            return dispatch;
-        };
-        if state.bury_bottom(position, cards).is_err() {
-            return dispatch;
-        }
-        let countdown = current_play_time(configs, &state);
-        state.set_turn_countdown(countdown);
-        Some((
-            position,
-            state.player_name(position),
-            state.rules.bottom_card_count,
-            state.hands.get(&position).cloned().unwrap_or_default(),
-            state.snapshot(),
-        ))
-    };
-
-    if let Some(position) = away_position {
-        room_service.broadcast(
-            room_key,
-            WsCode::AWAY as i32,
-            WsPositionEvent {
-                position: position as i32,
-            },
-            &mut dispatch,
-        );
-    }
-    let Some((position, name, bottom_card_count, hand, snapshot)) = result else {
-        return dispatch;
-    };
-    room_service.broadcast(
-        room_key,
-        TractorWsCode::BOTTOM_BURIED as i32,
-        WsTractorBottomBuriedEvent {
-            position: position as i32,
-            name,
-            bottom_card_count: bottom_card_count as i32,
-        },
-        &mut dispatch,
-    );
-    for (session_id, _, member_position, _) in room_service.room_members(room_key) {
-        if member_position == position {
-            push_direct_event(
-                &mut dispatch,
-                session_id,
-                TractorWsCode::HAND_UPDATED as i32,
-                WsTractorHandEvent {
-                    position: position as i32,
-                    cards: hand.clone(),
-                },
-            );
-        }
-    }
-    push_table_snapshot(room_key, room_service, snapshot, &mut dispatch);
-    dispatch
-}
-
 fn current_play_time(configs: &HashMap<String, i32>, state: &TractorGameState) -> u32 {
     let key = if state.is_ai_controlled_position(state.current_position) {
         KEY_AWAY_TIME
@@ -315,6 +295,21 @@ fn current_play_time(configs: &HashMap<String, i32>, state: &TractorGameState) -
         KEY_PLAY_TIME
     };
     configs.get(key).copied().unwrap_or(30).max(1) as u32
+}
+
+fn deal_step_delay(configs: &HashMap<String, i32>, state: &TractorGameState) -> Duration {
+    let key = if state.round_index == 0 {
+        KEY_FIRST_DEAL_TIME
+    } else {
+        KEY_DEAL_TIME
+    };
+    let default = if state.round_index == 0 {
+        15_000
+    } else {
+        3_000
+    };
+    let total_millis = configs.get(key).copied().unwrap_or(default).max(1) as u64;
+    Duration::from_millis((total_millis / state.total_deal_count.max(1) as u64).max(1))
 }
 
 async fn deliver(dispatch: Dispatch, senders: &SessionSenders) {
@@ -356,6 +351,29 @@ fn push_table_snapshot(
     room_service.broadcast(room_key, WsCode::TABLE_SNAPSHOT as i32, snapshot, dispatch);
 }
 
+fn remove_registered_state_if_same(
+    states: &StateRegistry,
+    room_key: &str,
+    state: &TractorStateHandle,
+) {
+    let mut states = states.lock().unwrap();
+    if states
+        .get(room_key)
+        .is_some_and(|current| Arc::ptr_eq(current, state))
+    {
+        states.remove(room_key);
+    }
+}
+
+fn room_uses_common_state(
+    room: &RoomService,
+    room_key: &str,
+    common: &Arc<std::sync::Mutex<ws_common::CommonGameState>>,
+) -> bool {
+    room.room_common_state(room_key)
+        .is_some_and(|current| Arc::ptr_eq(&current, common))
+}
+
 fn settlement_event(state: &TractorGameState) -> WsTractorSettlementEvent {
     let score = state.settlement_score();
     WsTractorSettlementEvent {
@@ -376,40 +394,17 @@ fn settlement_time(configs: &HashMap<String, i32>) -> u64 {
         .max(1) as u64
 }
 
-fn action_loop_delay(configs: &HashMap<String, i32>, state: &TractorGameState) -> Duration {
-    if state.phase == TractorPhase::Settlement {
-        return Duration::ZERO;
+async fn sleep_or_stop(state: &TractorStateHandle, duration: Duration) -> bool {
+    let mut remaining = duration.as_millis();
+    while remaining > 0 {
+        if stop_requested(state) {
+            return true;
+        }
+        let step = remaining.min(100) as u64;
+        tokio::time::sleep(Duration::from_millis(step)).await;
+        remaining -= u128::from(step);
     }
-    let controlled = match state.phase {
-        TractorPhase::Bury => state.is_ai_controlled_position(state.dealer_position),
-        TractorPhase::Play => state.is_ai_controlled_position(state.current_position),
-        _ => false,
-    };
-    if controlled {
-        return Duration::from_millis(
-            configs
-                .get(KEY_AI_ACTION_TIME)
-                .copied()
-                .unwrap_or(1_000)
-                .max(1) as u64,
-        );
-    }
-    Duration::from_secs(1)
-}
-
-fn deal_step_delay(configs: &HashMap<String, i32>, state: &TractorGameState) -> Duration {
-    let key = if state.round_index == 0 {
-        KEY_FIRST_DEAL_TIME
-    } else {
-        KEY_DEAL_TIME
-    };
-    let default = if state.round_index == 0 {
-        15_000
-    } else {
-        3_000
-    };
-    let total_millis = configs.get(key).copied().unwrap_or(default).max(1) as u64;
-    Duration::from_millis((total_millis / state.total_deal_count.max(1) as u64).max(1))
+    stop_requested(state)
 }
 
 pub(crate) fn start_game_loop(
@@ -560,6 +555,11 @@ pub(crate) fn start_game_loop(
     });
 }
 
+fn stop_requested(state: &TractorStateHandle) -> bool {
+    let common = { Arc::clone(&state.lock().unwrap().base) };
+    common.lock().unwrap().stop_requested()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -568,6 +568,22 @@ mod tests {
     use ws_common::CommonGameState;
 
     use crate::game_state::{TractorGameState, TractorRules};
+
+    #[test]
+    fn ai_action_delay_is_milliseconds_without_accelerating_human_turns() {
+        let state = test_state_with_ai_leader();
+        let configs = HashMap::from([(KEY_AI_ACTION_TIME.to_owned(), 75)]);
+        let mut state = state.lock().unwrap();
+
+        assert_eq!(
+            action_loop_delay(&configs, &state),
+            Duration::from_millis(75)
+        );
+        state.current_position = 1;
+        assert_eq!(action_loop_delay(&configs, &state), Duration::from_secs(1));
+        state.phase = TractorPhase::Settlement;
+        assert_eq!(action_loop_delay(&configs, &state), Duration::ZERO);
+    }
 
     #[test]
     fn auto_dispatch_uses_smart_ai_for_ai_position_lead() {
@@ -585,6 +601,26 @@ mod tests {
         assert_eq!(guard.current_trick[0].cards, vec![1]);
         assert!(!guard.hands.get(&0).unwrap().contains(&1));
         assert!(guard.hands.get(&0).unwrap().contains(&53));
+    }
+
+    #[test]
+    fn first_round_deal_uses_the_slower_configured_duration() {
+        let state = test_state_with_ai_leader();
+        let configs = HashMap::from([
+            (KEY_FIRST_DEAL_TIME.to_owned(), 12_000),
+            (KEY_DEAL_TIME.to_owned(), 2_000),
+        ]);
+        {
+            let mut state = state.lock().unwrap();
+            state.total_deal_count = 100;
+            state.round_index = 0;
+            assert_eq!(
+                deal_step_delay(&configs, &state),
+                Duration::from_millis(120)
+            );
+            state.round_index = 1;
+            assert_eq!(deal_step_delay(&configs, &state), Duration::from_millis(20));
+        }
     }
 
     #[test]
@@ -609,42 +645,6 @@ mod tests {
                 .get("same-name")
                 .is_some_and(|state| Arc::ptr_eq(state, &current))
         );
-    }
-
-    #[test]
-    fn first_round_deal_uses_the_slower_configured_duration() {
-        let state = test_state_with_ai_leader();
-        let configs = HashMap::from([
-            (KEY_FIRST_DEAL_TIME.to_owned(), 12_000),
-            (KEY_DEAL_TIME.to_owned(), 2_000),
-        ]);
-        {
-            let mut state = state.lock().unwrap();
-            state.total_deal_count = 100;
-            state.round_index = 0;
-            assert_eq!(
-                deal_step_delay(&configs, &state),
-                Duration::from_millis(120)
-            );
-            state.round_index = 1;
-            assert_eq!(deal_step_delay(&configs, &state), Duration::from_millis(20));
-        }
-    }
-
-    #[test]
-    fn ai_action_delay_is_milliseconds_without_accelerating_human_turns() {
-        let state = test_state_with_ai_leader();
-        let configs = HashMap::from([(KEY_AI_ACTION_TIME.to_owned(), 75)]);
-        let mut state = state.lock().unwrap();
-
-        assert_eq!(
-            action_loop_delay(&configs, &state),
-            Duration::from_millis(75)
-        );
-        state.current_position = 1;
-        assert_eq!(action_loop_delay(&configs, &state), Duration::from_secs(1));
-        state.phase = TractorPhase::Settlement;
-        assert_eq!(action_loop_delay(&configs, &state), Duration::ZERO);
     }
 
     fn test_state_with_ai_leader() -> TractorStateHandle {

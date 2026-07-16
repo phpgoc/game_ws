@@ -22,6 +22,13 @@ pub(super) fn choose_gang_claim(
             tile,
             from_position,
         )
+        && !claim_gang_projects_capped_pure_one_suit_fan(
+            hand,
+            current_melds,
+            table,
+            tile,
+            from_position,
+        )
     {
         return Some(AiClaimChoice::Pass);
     }

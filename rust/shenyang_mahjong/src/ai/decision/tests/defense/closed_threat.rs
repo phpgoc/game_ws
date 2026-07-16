@@ -1,26 +1,52 @@
 use super::*;
 
 #[test]
+fn closed_major_threat_requires_late_committed_unopened_route() {
+    let mut committed = table_with_discards(1, vec![1, 2, 3, 4, 5, 6]);
+    committed.wall_count = LATE_PRESSURE_WALL_COUNT;
+    committed.seats.get_mut(&1).unwrap().hand_count = 13;
+
+    assert!(closed_opponent_has_major_threat(
+        committed.seats.get(&1).unwrap(),
+        &committed,
+    ));
+
+    let mut early = committed.clone();
+    early.wall_count = LATE_PRESSURE_WALL_COUNT + 1;
+    assert!(!closed_opponent_has_major_threat(
+        early.seats.get(&1).unwrap(),
+        &early,
+    ));
+
+    let mut short_history = committed.clone();
+    short_history.seats.get_mut(&1).unwrap().discards.pop();
+    assert!(!closed_opponent_has_major_threat(
+        short_history.seats.get(&1).unwrap(),
+        &short_history,
+    ));
+
+    let mut opened = committed.clone();
+    opened.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(9)];
+    assert!(!closed_opponent_has_major_threat(
+        opened.seats.get(&1).unwrap(),
+        &opened,
+    ));
+
+    let mut invalid_history = committed.clone();
+    invalid_history.seats.get_mut(&1).unwrap().discards = vec![97, 98, 99, 100, 101, 102];
+    assert!(!closed_opponent_has_major_threat(
+        invalid_history.seats.get(&1).unwrap(),
+        &invalid_history,
+    ));
+}
+
+#[test]
 fn closed_opponent_threat_counts_ai_controlled_table_seat() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 16;
     table.seats.get_mut(&1).unwrap().hand_count = 13;
 
     assert!(closed_opponent_threat_discard_bias(&table, 0, 32, 1) < 0.0);
-}
-
-#[test]
-fn closed_opponent_threat_counts_concealed_gang_as_closed() {
-    let mut concealed = table_with_discards(1, Vec::new());
-    concealed.wall_count = 16;
-    concealed.seats.get_mut(&1).unwrap().melds = vec![test_concealed_gang_meld(9)];
-
-    let mut open = table_with_discards(1, Vec::new());
-    open.wall_count = 16;
-    open.seats.get_mut(&1).unwrap().melds = vec![test_gang_meld(9)];
-
-    assert!(closed_opponent_threat_discard_bias(&concealed, 0, 32, 1) < 0.0);
-    assert_eq!(closed_opponent_threat_discard_bias(&open, 0, 32, 1), 0.0);
 }
 
 #[test]
@@ -40,40 +66,17 @@ fn closed_opponent_threat_counts_chi_as_opening_meld() {
 }
 
 #[test]
-fn closed_opponent_threat_keeps_xi_gang_closed() {
-    let mut table = table_with_discards(1, Vec::new());
-    table.wall_count = 16;
-    {
-        let seat = table.seats.get_mut(&1).unwrap();
-        seat.hand_count = 7;
-        seat.discards = vec![1, 2, 3, 11, 12, 13];
-        seat.melds = vec![
-            WsShenyangMahjongMeld {
-                kind: ShenyangMahjongMeldKind::XI_GANG,
-                tiles: vec![31, 32, 33, 34],
-                from_position: None,
-            },
-            WsShenyangMahjongMeld {
-                kind: ShenyangMahjongMeldKind::XI_GANG,
-                tiles: vec![35, 36, 37],
-                from_position: None,
-            },
-        ];
-    }
+fn closed_opponent_threat_counts_concealed_gang_as_closed() {
+    let mut concealed = table_with_discards(1, Vec::new());
+    concealed.wall_count = 16;
+    concealed.seats.get_mut(&1).unwrap().melds = vec![test_concealed_gang_meld(9)];
 
-    assert!(!has_door_opening_meld(
-        &table.seats.get(&1).unwrap().melds,
-        &table,
-    ));
-    assert!(is_closed_opponent_threat_candidate(
-        table.seats.get(&1).unwrap(),
-        &table,
-    ));
-    assert!(closed_opponent_has_major_threat(
-        table.seats.get(&1).unwrap(),
-        &table,
-    ));
-    assert!(closed_opponent_threat_discard_bias(&table, 0, 29, 1) < 0.0);
+    let mut open = table_with_discards(1, Vec::new());
+    open.wall_count = 16;
+    open.seats.get_mut(&1).unwrap().melds = vec![test_gang_meld(9)];
+
+    assert!(closed_opponent_threat_discard_bias(&concealed, 0, 32, 1) < 0.0);
+    assert_eq!(closed_opponent_threat_discard_bias(&open, 0, 32, 1), 0.0);
 }
 
 #[test]
@@ -95,30 +98,6 @@ fn closed_opponent_threat_counts_short_hand_after_concealed_gang() {
     assert!(
         closed_opponent_threat_discard_bias(&short_concealed_gang, 0, 32, 1)
             < closed_opponent_threat_discard_bias(&longer_concealed_gang, 0, 32, 1)
-    );
-}
-
-#[test]
-fn closed_opponent_threat_ignores_malformed_concealed_gang_pressure() {
-    let mut baseline = table_with_discards(1, Vec::new());
-    baseline.wall_count = 16;
-    baseline.seats.get_mut(&1).unwrap().hand_count = 13;
-
-    let mut malformed = baseline.clone();
-    malformed.seats.get_mut(&1).unwrap().melds = vec![WsShenyangMahjongMeld {
-        kind: ShenyangMahjongMeldKind::GANG,
-        tiles: vec![9, 9, 9],
-        from_position: None,
-    }];
-
-    assert!(!is_closed_meld(&malformed.seats.get(&1).unwrap().melds[0]));
-    assert_eq!(
-        closed_hand_count_pressure_scale(malformed.seats.get(&1).unwrap()),
-        closed_hand_count_pressure_scale(baseline.seats.get(&1).unwrap())
-    );
-    assert_eq!(
-        closed_opponent_threat_discard_bias(&malformed, 0, 32, 1),
-        closed_opponent_threat_discard_bias(&baseline, 0, 32, 1)
     );
 }
 
@@ -247,6 +226,30 @@ fn closed_opponent_threat_ignores_invalid_off_suit_discards() {
 }
 
 #[test]
+fn closed_opponent_threat_ignores_malformed_concealed_gang_pressure() {
+    let mut baseline = table_with_discards(1, Vec::new());
+    baseline.wall_count = 16;
+    baseline.seats.get_mut(&1).unwrap().hand_count = 13;
+
+    let mut malformed = baseline.clone();
+    malformed.seats.get_mut(&1).unwrap().melds = vec![WsShenyangMahjongMeld {
+        kind: ShenyangMahjongMeldKind::GANG,
+        tiles: vec![9, 9, 9],
+        from_position: None,
+    }];
+
+    assert!(!is_closed_meld(&malformed.seats.get(&1).unwrap().melds[0]));
+    assert_eq!(
+        closed_hand_count_pressure_scale(malformed.seats.get(&1).unwrap()),
+        closed_hand_count_pressure_scale(baseline.seats.get(&1).unwrap())
+    );
+    assert_eq!(
+        closed_opponent_threat_discard_bias(&malformed, 0, 32, 1),
+        closed_opponent_threat_discard_bias(&baseline, 0, 32, 1)
+    );
+}
+
+#[test]
 fn closed_opponent_threat_ignores_tile_fully_accounted_by_exposed_and_own_tiles() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 16;
@@ -264,6 +267,43 @@ fn closed_opponent_threat_ignores_tile_fully_accounted_by_exposed_and_own_tiles(
     assert!(closed_threat_tile_fully_accounted(&table, 9, 1));
     assert_eq!(closed_opponent_threat_discard_bias(&table, 0, 9, 1), 0.0);
     assert!(closed_opponent_threat_discard_bias(&table, 0, 31, 1) < 0.0);
+}
+
+#[test]
+fn closed_opponent_threat_keeps_xi_gang_closed() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 16;
+    {
+        let seat = table.seats.get_mut(&1).unwrap();
+        seat.hand_count = 7;
+        seat.discards = vec![1, 2, 3, 11, 12, 13];
+        seat.melds = vec![
+            WsShenyangMahjongMeld {
+                kind: ShenyangMahjongMeldKind::XI_GANG,
+                tiles: vec![31, 32, 33, 34],
+                from_position: None,
+            },
+            WsShenyangMahjongMeld {
+                kind: ShenyangMahjongMeldKind::XI_GANG,
+                tiles: vec![35, 36, 37],
+                from_position: None,
+            },
+        ];
+    }
+
+    assert!(!has_door_opening_meld(
+        &table.seats.get(&1).unwrap().melds,
+        &table,
+    ));
+    assert!(is_closed_opponent_threat_candidate(
+        table.seats.get(&1).unwrap(),
+        &table,
+    ));
+    assert!(closed_opponent_has_major_threat(
+        table.seats.get(&1).unwrap(),
+        &table,
+    ));
+    assert!(closed_opponent_threat_discard_bias(&table, 0, 29, 1) < 0.0);
 }
 
 #[test]
@@ -340,44 +380,4 @@ fn closed_opponent_threat_starts_before_final_defense() {
 
     assert!(mid_round_bias < 0.0);
     assert!(mid_round_bias > late_defense_bias);
-}
-
-#[test]
-fn closed_major_threat_requires_late_committed_unopened_route() {
-    let mut committed = table_with_discards(1, vec![1, 2, 3, 4, 5, 6]);
-    committed.wall_count = LATE_PRESSURE_WALL_COUNT;
-    committed.seats.get_mut(&1).unwrap().hand_count = 13;
-
-    assert!(closed_opponent_has_major_threat(
-        committed.seats.get(&1).unwrap(),
-        &committed,
-    ));
-
-    let mut early = committed.clone();
-    early.wall_count = LATE_PRESSURE_WALL_COUNT + 1;
-    assert!(!closed_opponent_has_major_threat(
-        early.seats.get(&1).unwrap(),
-        &early,
-    ));
-
-    let mut short_history = committed.clone();
-    short_history.seats.get_mut(&1).unwrap().discards.pop();
-    assert!(!closed_opponent_has_major_threat(
-        short_history.seats.get(&1).unwrap(),
-        &short_history,
-    ));
-
-    let mut opened = committed.clone();
-    opened.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(9)];
-    assert!(!closed_opponent_has_major_threat(
-        opened.seats.get(&1).unwrap(),
-        &opened,
-    ));
-
-    let mut invalid_history = committed.clone();
-    invalid_history.seats.get_mut(&1).unwrap().discards = vec![97, 98, 99, 100, 101, 102];
-    assert!(!closed_opponent_has_major_threat(
-        invalid_history.seats.get(&1).unwrap(),
-        &invalid_history,
-    ));
 }

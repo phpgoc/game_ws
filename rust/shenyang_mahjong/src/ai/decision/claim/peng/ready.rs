@@ -1,24 +1,5 @@
 use super::*;
 
-pub(in crate::ai::decision) fn claim_gang_from_discard_reaches_ready(
-    hand: &[i32],
-    current_melds: &[WsShenyangMahjongMeld],
-    table: &AiPublicTable,
-    position: usize,
-    win_rule: i32,
-    tile: i32,
-    from_position: usize,
-) -> bool {
-    let mut next = remove_n_tiles(hand, tile, 3);
-    if next.len() + 3 != hand.len() {
-        return false;
-    }
-    sort_tiles(&mut next);
-    let mut melds = current_melds.to_vec();
-    melds.push(claim_gang_meld(tile, from_position));
-    ready_tile_score(&next, &melds, table, position, win_rule) > 0.0
-}
-
 pub(in crate::ai::decision) fn claim_gang_from_discard_reaches_piao_ready(
     hand: &[i32],
     current_melds: &[WsShenyangMahjongMeld],
@@ -36,6 +17,25 @@ pub(in crate::ai::decision) fn claim_gang_from_discard_reaches_piao_ready(
     let mut melds = current_melds.to_vec();
     melds.push(claim_gang_meld(tile, from_position));
     ready_has_piao_win(&next, &melds, table, position, win_rule)
+}
+
+pub(in crate::ai::decision) fn claim_gang_from_discard_reaches_ready(
+    hand: &[i32],
+    current_melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    win_rule: i32,
+    tile: i32,
+    from_position: usize,
+) -> bool {
+    let mut next = remove_n_tiles(hand, tile, 3);
+    if next.len() + 3 != hand.len() {
+        return false;
+    }
+    sort_tiles(&mut next);
+    let mut melds = current_melds.to_vec();
+    melds.push(claim_gang_meld(tile, from_position));
+    ready_tile_score(&next, &melds, table, position, win_rule) > 0.0
 }
 
 pub(in crate::ai::decision) fn should_claim_ready_dragon_peng_from_discard(
