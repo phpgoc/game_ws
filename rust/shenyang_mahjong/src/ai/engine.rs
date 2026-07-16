@@ -65,6 +65,21 @@ pub fn maybe_play_ai_turn(
         return false;
     }
     let win_rule = win_rule_from_configs(configs);
+    let mut passed_self_draw_tile = None;
+    if can_self_draw_hu_with_configs(state, position, configs) {
+        let table = build_public_table_with_configs(state, configs);
+        if let Some(win_tile) = state.last_drawn_tile
+            && !state.pending_gang_draw
+            && state.wall_count() > 0
+            && should_pass_self_draw_hu_from_view(&hand, &table, position, win_rule, win_tile)
+        {
+            passed_self_draw_tile = Some(win_tile);
+        } else {
+            perform_self_draw_hu(room_service, room_key, state, configs, dispatch, position);
+            return true;
+        }
+    }
+
     let xi_gang_options = state.xi_gang_options_for_position(position);
     if !xi_gang_options.is_empty() {
         let table = build_public_table_with_configs(state, configs);
@@ -83,22 +98,16 @@ pub fn maybe_play_ai_turn(
             );
         }
     }
-    if can_self_draw_hu_with_configs(state, position, configs) {
-        let table = build_public_table_with_configs(state, configs);
-        if let Some(win_tile) = state.last_drawn_tile
-            && !state.pending_gang_draw
-            && state.wall_count() > 0
-            && should_pass_self_draw_hu_from_view(&hand, &table, position, win_rule, win_tile)
-            && perform_discard(
-                room_service,
-                room_key,
-                state,
-                configs,
-                dispatch,
-                position,
-                win_tile,
-            )
-        {
+    if let Some(win_tile) = passed_self_draw_tile {
+        if perform_discard(
+            room_service,
+            room_key,
+            state,
+            configs,
+            dispatch,
+            position,
+            win_tile,
+        ) {
             return true;
         }
         perform_self_draw_hu(room_service, room_key, state, configs, dispatch, position);
@@ -1299,6 +1308,36 @@ mod tests {
         assert_eq!(state.melds.get(&1).unwrap().len(), 2);
         assert!(state.xi_gang_options_for_position(1).is_empty());
         assert!(state.discards.get(&1).unwrap().is_empty());
+    }
+
+    #[test]
+    fn ai_turn_hu_before_wind_xi_gang_when_seven_pairs_complete() {
+        let mut state = playable_state();
+        state.current_position = 1;
+        state.base.lock().unwrap().mark_ai_position(1);
+        state.hands.insert(
+            1,
+            vec![1, 1, 11, 11, 21, 21, 31, 31, 32, 32, 33, 33, 34, 34],
+        );
+        state.melds.insert(1, Vec::new());
+        state.discards.insert(1, Vec::new());
+        state.last_drawn_tile = Some(34);
+        state.wall = vec![22];
+        state.xi_gang_options.insert(1, vec![vec![31, 32, 33, 34]]);
+        let mut dispatch = Dispatch::default();
+
+        assert!(maybe_play_ai_turn(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::new(),
+            &mut dispatch,
+        ));
+
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert_eq!(state.settlement.as_ref().unwrap().winner_positions, vec![1]);
+        assert!(state.melds.get(&1).unwrap().is_empty());
+        assert_eq!(state.wall, vec![22]);
     }
 
     #[test]

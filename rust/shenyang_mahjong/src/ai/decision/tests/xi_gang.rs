@@ -113,6 +113,35 @@ fn double_xi_gang_discard_keeps_only_tile_of_third_suit() {
 }
 
 #[test]
+fn two_xi_gangs_count_toward_visible_fan_cap() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.max_fan = Some(3);
+    let hand = vec![11, 12, 13, 21, 21];
+    let melds = vec![
+        WsShenyangMahjongMeld {
+            kind: ShenyangMahjongMeldKind::XI_GANG,
+            tiles: vec![31, 32, 33, 34],
+            from_position: None,
+        },
+        WsShenyangMahjongMeld {
+            kind: ShenyangMahjongMeldKind::XI_GANG,
+            tiles: vec![35, 36, 37],
+            from_position: None,
+        },
+        test_chi_meld(1),
+    ];
+
+    assert_eq!(estimated_visible_bonus_fan(&hand, &melds), 2);
+    assert_eq!(
+        estimated_visible_fan_without_wait(&hand, &melds, WIN_RULE_SHENYANG_BASIC),
+        3
+    );
+    assert!(capped_open_basic_route_visible_fan_reaches_cap(
+        &hand, &melds, &table
+    ));
+}
+
+#[test]
 fn ai_does_not_declare_wind_xi_gang_without_replacement_tile() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 0;
