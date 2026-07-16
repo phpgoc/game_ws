@@ -12,6 +12,15 @@ pub struct LandlordGameState {
     inner: Arc<Mutex<LandlordLoopState>>,
 }
 
+/// 一次公开的出牌动作。`benchmark` 是行动前需要压过的牌；
+/// `cards` 为空表示不出。AI 只使用这些公开信息推断未知手牌。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LandlordPlayRecord {
+    pub position: usize,
+    pub cards: Vec<i32>,
+    pub benchmark: Vec<i32>,
+}
+
 /// Held exclusively by the game loop behind `Arc<std::sync::Mutex<>>`.
 /// Contains all in-game mutable state.
 /// `base` is shared with RoomService common state.
@@ -35,6 +44,8 @@ pub struct LandlordLoopState {
     pub last_play_position: usize,
     pub last_play: Vec<i32>,
     pub current_play: Vec<i32>,
+    /// 本副牌从开打起的完整公开动作历史，结算或重发牌时清空。
+    pub play_history: Vec<LandlordPlayRecord>,
 }
 
 impl LandlordGameState {
@@ -109,6 +120,10 @@ impl LandlordLoopState {
         self.base.lock().unwrap().is_away(pos)
     }
 
+    pub fn is_ai_position(&self, pos: usize) -> bool {
+        self.base.lock().unwrap().is_ai_position(pos)
+    }
+
     pub fn is_paused(&self) -> bool {
         self.base.lock().unwrap().paused
     }
@@ -136,6 +151,7 @@ impl LandlordLoopState {
             last_play_position: call_position,
             last_play: Vec::new(),
             current_play: Vec::new(),
+            play_history: Vec::new(),
         }
     }
 
@@ -180,6 +196,7 @@ impl LandlordLoopState {
         self.last_play_position = self.call_position;
         self.last_play.clear();
         self.current_play.clear();
+        self.play_history.clear();
         self.set_action_received(false);
         self.set_turn_countdown(0);
         self.clear_away();

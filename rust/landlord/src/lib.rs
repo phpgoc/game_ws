@@ -1,3 +1,4 @@
+pub mod ai;
 #[cfg(target_os = "android")]
 mod android_jni;
 pub mod core;

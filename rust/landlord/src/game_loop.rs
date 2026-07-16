@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -12,134 +12,14 @@ use share_type_public::{
 use tokio::sync::Mutex;
 use ws_common::{Delivery, OutboundPayload, RoomService, SessionSenders, dlog};
 
-use crate::core::play::card_rank;
-use crate::game_state::LandlordLoopState;
-use crate::play_validator::validate_play_request;
+use crate::ai::{choose_bid, choose_play};
+use crate::game_state::{LandlordLoopState, LandlordPlayRecord};
+
+const AI_ACTION_DELAY: Duration = Duration::from_millis(300);
 
 enum AutoBroadcastEvent {
     Call(WsCallLandlordEvent),
     Play(WsPlayEvent),
-}
-
-fn build_auto_candidates(hand: &[i32]) -> Vec<Vec<i32>> {
-    let grouped = group_by_rank(hand);
-    let mut seen: HashSet<Vec<i32>> = HashSet::new();
-    let mut candidates = Vec::new();
-
-    // 顺子
-    let single_ranks: Vec<u8> = grouped
-        .iter()
-        .filter_map(|(&rank, cards)| {
-            if rank < 15 && !cards.is_empty() {
-                Some(rank)
-            } else {
-                None
-            }
-        })
-        .collect();
-    let mut i = 0usize;
-    while i < single_ranks.len() {
-        let mut j = i;
-        while j + 1 < single_ranks.len() && single_ranks[j + 1] == single_ranks[j] + 1 {
-            j += 1;
-        }
-        let run = &single_ranks[i..=j];
-        if run.len() >= 5 {
-            for len in 5..=run.len() {
-                for start in 0..=run.len() - len {
-                    let mut cards = Vec::with_capacity(len);
-                    for rank in &run[start..start + len] {
-                        if let Some(&card) = grouped.get(rank).and_then(|v| v.first()) {
-                            cards.push(card);
-                        }
-                    }
-                    if cards.len() == len {
-                        push_candidate(cards, &mut seen, &mut candidates);
-                    }
-                }
-            }
-        }
-        i = j + 1;
-    }
-
-    // 3带（先三带一，再三带一对，再三张）
-    let triple_ranks: Vec<u8> = grouped
-        .iter()
-        .filter_map(|(&rank, cards)| if cards.len() >= 3 { Some(rank) } else { None })
-        .collect();
-    for &triple_rank in &triple_ranks {
-        let triple = grouped[&triple_rank][..3].to_vec();
-        if let Some(single) = grouped
-            .iter()
-            .filter(|(rank, cards)| **rank != triple_rank && !cards.is_empty())
-            .map(|(_, cards)| cards[0])
-            .next()
-        {
-            let mut cards = triple.clone();
-            cards.push(single);
-            push_candidate(cards, &mut seen, &mut candidates);
-        }
-        if let Some(pair_cards) = grouped
-            .iter()
-            .filter(|(rank, cards)| **rank != triple_rank && cards.len() >= 2)
-            .map(|(_, cards)| vec![cards[0], cards[1]])
-            .next()
-        {
-            let mut cards = triple.clone();
-            cards.extend(pair_cards);
-            push_candidate(cards, &mut seen, &mut candidates);
-        }
-        push_candidate(triple, &mut seen, &mut candidates);
-    }
-
-    // 对子
-    for cards in grouped.values().filter(|cards| cards.len() >= 2) {
-        push_candidate(vec![cards[0], cards[1]], &mut seen, &mut candidates);
-    }
-
-    // 单张
-    for cards in grouped.values() {
-        if let Some(&card) = cards.first() {
-            push_candidate(vec![card], &mut seen, &mut candidates);
-        }
-    }
-
-    // 炸弹
-    for cards in grouped.values().filter(|cards| cards.len() == 4) {
-        push_candidate(cards.clone(), &mut seen, &mut candidates);
-    }
-
-    // 火箭
-    if hand.contains(&53) && hand.contains(&54) {
-        push_candidate(vec![53, 54], &mut seen, &mut candidates);
-    }
-
-    candidates
-}
-
-fn choose_auto_play(state: &LandlordLoopState, position: usize) -> Vec<i32> {
-    let hand = match state.hands.get(&position) {
-        Some(cards) => cards,
-        None => return Vec::new(),
-    };
-    //怎么可能有空手牌？
-    // if hand.is_empty() {
-    //     return Vec::new();
-    // }
-
-    for candidate in build_auto_candidates(hand) {
-        if validate_play_request(state, position, &candidate) {
-            return candidate;
-        }
-    }
-
-    // 兜底：轮到自己起牌时，至少出最小单张。
-    if state.last_play.is_empty() || state.last_play_position == position {
-        let mut smallest = hand.clone();
-        smallest.sort_by_key(|card| (card_rank(*card), *card));
-        return vec![smallest[0]];
-    }
-    Vec::new()
 }
 
 /// Build a Dispatch that sends an event to all room members.
@@ -205,17 +85,6 @@ fn fixed_wait_seconds(
     default: u64,
 ) -> u64 {
     configs.get(key).copied().unwrap_or(default as i32).max(0) as u64
-}
-
-fn group_by_rank(hand: &[i32]) -> BTreeMap<u8, Vec<i32>> {
-    let mut grouped: BTreeMap<u8, Vec<i32>> = BTreeMap::new();
-    for &card in hand {
-        grouped.entry(card_rank(card)).or_default().push(card);
-    }
-    for cards in grouped.values_mut() {
-        cards.sort_unstable();
-    }
-    grouped
 }
 
 /// Advance through the CallLandlord phase: move to next player, check completion.
@@ -359,6 +228,16 @@ async fn handle_play_phase(
         let mut s = state.lock().unwrap();
         let pos = s.current_position;
         let played = std::mem::take(&mut s.current_play);
+        let benchmark = if s.last_play.is_empty() || s.last_play_position == pos {
+            Vec::new()
+        } else {
+            s.last_play.clone()
+        };
+        s.play_history.push(LandlordPlayRecord {
+            position: pos,
+            cards: played.clone(),
+            benchmark,
+        });
 
         if played.is_empty() {
             // Player passed — nothing changes except who's next.
@@ -647,10 +526,20 @@ async fn handle_start_phase(
     false
 }
 
-/// Handle timeout: mark the current player as away and simulate their action.
-fn handle_timeout(state: &mut LandlordLoopState) -> (Option<usize>, Option<AutoBroadcastEvent>) {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AutoActionReason {
+    Ai,
+    Timeout,
+}
+
+/// Execute an AI action or take over a timed-out human action. Only real
+/// timeouts mark a seat away; an AI seat remains an active virtual player.
+fn handle_automatic_action(
+    state: &mut LandlordLoopState,
+    reason: AutoActionReason,
+) -> (Option<usize>, Option<AutoBroadcastEvent>) {
     let pos = state.current_position;
-    let newly_away = if state.mark_away(pos) {
+    let newly_away = if reason == AutoActionReason::Timeout && state.mark_away(pos) {
         Some(pos)
     } else {
         None
@@ -660,29 +549,36 @@ fn handle_timeout(state: &mut LandlordLoopState) -> (Option<usize>, Option<AutoB
 
     match state.phase {
         LandlordPhase::CallLandlord => {
-            // Timed out = no call (score 0). Record it.
+            let score = if reason == AutoActionReason::Ai {
+                choose_bid(state, pos)
+            } else {
+                0
+            };
             let name = state.player_name(pos);
-            state.call_history.push((pos, 0));
+            if score > 0 {
+                state.score = score as u32;
+            }
+            state.call_history.push((pos, score));
             println!(
-                "[landlord][auto-call] pos={} name={} timeout -> score=0 history_len={}",
+                "[landlord][auto-call] pos={} name={} reason={:?} score={} history_len={}",
                 pos,
                 name,
+                reason,
+                score,
                 state.call_history.len()
             );
             auto_event = Some(AutoBroadcastEvent::Call(WsCallLandlordEvent {
                 name,
-                score: 0,
+                score,
             }));
             next_call(state);
         }
         LandlordPhase::Play => {
-            // Timed out = pass (empty play)
-            // 自动出牌，能管上就管，如果自己最大率先出牌，必出最小的牌，先看能不能顺，再看能不能3带，再看对，最后出单。
-            let auto_cards = choose_auto_play(state, pos);
+            let auto_cards = choose_play(state, pos);
             let name = state.player_name(pos);
             println!(
-                "[landlord][auto-play] pos={} name={} timeout -> cards={:?}",
-                pos, name, auto_cards
+                "[landlord][auto-play] pos={} name={} reason={:?} cards={:?}",
+                pos, name, reason, auto_cards
             );
             auto_event = Some(AutoBroadcastEvent::Play(WsPlayEvent {
                 name,
@@ -713,14 +609,6 @@ fn next_play(state: &mut LandlordLoopState) {
 
 fn player_name(state: &LandlordLoopState, position: usize) -> String {
     state.player_name(position)
-}
-
-fn push_candidate(cards: Vec<i32>, seen: &mut HashSet<Vec<i32>>, out: &mut Vec<Vec<i32>>) {
-    let mut normalized = cards;
-    normalized.sort_unstable();
-    if seen.insert(normalized.clone()) {
-        out.push(normalized);
-    }
 }
 
 /// Send a dispatch to all recipients via session senders.
@@ -828,35 +716,44 @@ pub(crate) fn start_game_loop(
                     }
                 }
                 LandlordPhase::CallLandlord | LandlordPhase::Play => {
-                    let phase = { state.lock().unwrap().phase };
                     let mut away_position: Option<usize> = None;
                     let mut auto_event: Option<AutoBroadcastEvent> = None;
-                    if matches!(phase, LandlordPhase::CallLandlord | LandlordPhase::Play) {
-                        let should_wait_tick = {
-                            let s = state.lock().unwrap();
-                            !s.action_received()
+                    let pending_turn = {
+                        let s = state.lock().unwrap();
+                        (!s.action_received()).then_some((
+                            s.phase,
+                            s.current_position,
+                            s.is_ai_position(s.current_position),
+                        ))
+                    };
+                    if let Some((waiting_phase, waiting_position, waiting_for_ai)) = pending_turn {
+                        let wait_duration = if waiting_for_ai {
+                            AI_ACTION_DELAY
+                        } else {
+                            Duration::from_secs(1)
                         };
-                        if should_wait_tick {
-                            if sleep_or_stop(&state, Duration::from_secs(1)).await {
-                                break;
-                            }
-                            if state.lock().unwrap().is_paused() {
-                                continue;
-                            }
-                            let mut s = state.lock().unwrap();
-                            if !matches!(s.phase, LandlordPhase::CallLandlord | LandlordPhase::Play)
-                            {
-                                continue;
-                            }
-                            if s.action_received() {
-                                // Action received while waiting this tick.
-                            } else if s.turn_countdown() > 0 {
-                                s.set_turn_countdown(s.turn_countdown() - 1);
-                                continue; // Wait for action or timeout
-                            } else {
-                                // Timeout
-                                (away_position, auto_event) = handle_timeout(&mut s);
-                            }
+                        if sleep_or_stop(&state, wait_duration).await {
+                            break;
+                        }
+                        if state.lock().unwrap().is_paused() {
+                            continue;
+                        }
+                        let mut s = state.lock().unwrap();
+                        if s.phase != waiting_phase || s.current_position != waiting_position {
+                            continue;
+                        }
+                        if s.action_received() {
+                            // Action received while waiting this tick.
+                        } else if waiting_for_ai && s.is_ai_position(waiting_position) {
+                            (away_position, auto_event) =
+                                handle_automatic_action(&mut s, AutoActionReason::Ai);
+                        } else if s.turn_countdown() > 0 {
+                            let next_countdown = s.turn_countdown() - 1;
+                            s.set_turn_countdown(next_countdown);
+                            continue;
+                        } else {
+                            (away_position, auto_event) =
+                                handle_automatic_action(&mut s, AutoActionReason::Timeout);
                         }
                     }
                     if away_position.is_some() || auto_event.is_some() {
@@ -955,16 +852,89 @@ pub(crate) fn start_game_loop(
 }
 
 /// Get the per-turn timeout for the current position:
-/// away players use away_time, others use play_time.
+/// AI players act after a short millisecond delay, away players use away_time,
+/// and active human players use play_time.
 fn turn_timeout(
     state: &LandlordLoopState,
     configs: &std::collections::HashMap<String, i32>,
 ) -> u32 {
     let away_time = configs.get("away_time").copied().unwrap_or(5) as u32;
     let play_time = configs.get("play_time").copied().unwrap_or(30) as u32;
-    if state.is_away(state.current_position) {
+    if state.is_ai_position(state.current_position) {
+        1
+    } else if state.is_away(state.current_position) {
         away_time
     } else {
         play_time
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use ws_common::CommonGameState;
+
+    use super::*;
+
+    fn state_with_ai(ai_position: usize) -> LandlordLoopState {
+        let mut common = CommonGameState::new();
+        for position in 0..3 {
+            common.add_player(position, position as u64 + 1, &format!("P{position}"));
+        }
+        common.mark_ai_position(ai_position);
+        let mut state = LandlordLoopState::new(Arc::new(Mutex::new(common)));
+        state.hands = HashMap::from([
+            (0, vec![1, 14, 27, 2, 15]),
+            (1, vec![3, 16, 4, 17]),
+            (2, vec![5, 18, 6, 19]),
+        ]);
+        state
+    }
+
+    #[test]
+    fn ai_play_acts_without_becoming_away() {
+        let mut state = state_with_ai(1);
+        state.phase = LandlordPhase::Play;
+        state.landlord_position = Some(0);
+        state.current_position = 1;
+        state.last_play_position = 0;
+        state.last_play = vec![2];
+
+        let (away_position, event) = handle_automatic_action(&mut state, AutoActionReason::Ai);
+
+        assert_eq!(away_position, None);
+        assert!(!state.is_away(1));
+        assert!(state.action_received());
+        assert!(!state.current_play.is_empty());
+        assert!(matches!(event, Some(AutoBroadcastEvent::Play(_))));
+    }
+
+    #[test]
+    fn human_timeout_marks_away_and_passes_bid() {
+        let mut state = state_with_ai(2);
+        state.phase = LandlordPhase::CallLandlord;
+        state.current_position = 0;
+
+        let (away_position, event) = handle_automatic_action(&mut state, AutoActionReason::Timeout);
+
+        assert_eq!(away_position, Some(0));
+        assert!(state.is_away(0));
+        assert_eq!(state.call_history, vec![(0, 0)]);
+        assert!(matches!(event, Some(AutoBroadcastEvent::Call(_))));
+    }
+
+    #[test]
+    fn ai_timeout_is_short_without_changing_human_timeouts() {
+        let mut state = state_with_ai(1);
+        let configs = HashMap::from([("away_time".to_owned(), 4), ("play_time".to_owned(), 35)]);
+
+        state.current_position = 1;
+        assert_eq!(turn_timeout(&state, &configs), 1);
+
+        state.current_position = 0;
+        assert_eq!(turn_timeout(&state, &configs), 35);
+        state.mark_away(0);
+        assert_eq!(turn_timeout(&state, &configs), 4);
     }
 }
