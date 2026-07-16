@@ -833,6 +833,33 @@ pub(crate) fn shenyang_win_pattern_base_fan(pattern: ShenyangMahjongWinPattern) 
     }
 }
 
+pub(crate) fn shenyang_score_wait_fan(
+    hand_tiles: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    win_tile: Option<i32>,
+    rules: ShenyangMahjongWinRules,
+    known_unavailable_tiles: &[i32],
+) -> i32 {
+    let Some(win_tile) = win_tile else {
+        return 0;
+    };
+    if !is_single_wait_shape_with_known_unavailable_tiles_for_rules(
+        hand_tiles,
+        melds,
+        win_tile,
+        rules,
+        known_unavailable_tiles,
+    ) {
+        return 0;
+    }
+
+    1 + i32::from(
+        shenyang_win_pattern(hand_tiles, melds) == ShenyangMahjongWinPattern::PiaoHu
+            && melds.len() == 4
+            && hand_tiles.len() == 2,
+    )
+}
+
 pub(crate) fn shenyang_score_four_gui_yi_fan(
     hand_tiles: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -936,7 +963,7 @@ mod tests {
         is_piao_hu_win, is_pure_one_suit_win, is_seven_pairs_win, is_single_wait_shape,
         is_single_wait_shape_with_known_unavailable_tiles, is_single_wait_shape_with_rule,
         is_standard_win, is_unique_complete_wait, is_win, satisfies_shenyang_basic_win,
-        satisfies_shenyang_basic_win_for_rules, shenyang_win_pattern,
+        satisfies_shenyang_basic_win_for_rules, shenyang_score_wait_fan, shenyang_win_pattern,
         shenyang_win_pattern_base_fan, win_rule_from_configs,
     };
 
@@ -1176,6 +1203,29 @@ mod tests {
             assert_eq!(pattern, expected_pattern);
             assert_eq!(shenyang_win_pattern_base_fan(pattern), expected_base_fan);
         }
+    }
+
+    #[test]
+    fn shared_wait_fan_stacks_shou_ba_yi_only_for_piao_single_wait() {
+        let piao_melds = vec![
+            meld(ShenyangMahjongMeldKind::PENG, vec![1, 1, 1], Some(0)),
+            meld(ShenyangMahjongMeldKind::PENG, vec![11, 11, 11], Some(1)),
+            meld(ShenyangMahjongMeldKind::PENG, vec![21, 21, 21], Some(2)),
+            meld(ShenyangMahjongMeldKind::PENG, vec![31, 31, 31], Some(3)),
+        ];
+        let piao_pair = vec![35, 35];
+        let standard = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 21, 21];
+        let rules = ShenyangMahjongWinRules::new(WIN_RULE_RELAXED);
+
+        assert_eq!(
+            shenyang_score_wait_fan(&piao_pair, &piao_melds, Some(35), rules, &[]),
+            2
+        );
+        assert_eq!(
+            shenyang_score_wait_fan(&standard, &[], Some(5), rules, &[]),
+            1
+        );
+        assert_eq!(shenyang_score_wait_fan(&standard, &[], None, rules, &[]), 0);
     }
 
     #[test]

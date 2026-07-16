@@ -208,28 +208,14 @@ fn estimated_fan_with_known_unavailable_wait_for_rules(
     rules: ShenyangMahjongWinRules,
     known_unavailable_tiles: &[i32],
 ) -> i32 {
-    let is_single_wait = is_single_wait_shape_with_known_unavailable_tiles_for_rules(
+    let wait_fan = shenyang_score_wait_fan(
         win_hand,
         melds,
-        win_tile,
+        Some(win_tile),
         rules,
         known_unavailable_tiles,
     );
-    let wait_fan = if is_single_wait { single_wait_fan() } else { 0 };
-    let shou_ba_yi_fan = if is_single_wait
-        && is_piao_hu_win(win_hand, melds)
-        && melds.len() == 4
-        && win_hand.len() == 2
-    {
-        1
-    } else {
-        0
-    };
-    estimated_visible_fan_without_wait_for_rules(win_hand, melds, rules) + wait_fan + shou_ba_yi_fan
-}
-
-pub(in crate::ai::decision) fn single_wait_fan() -> i32 {
-    1
+    estimated_visible_fan_without_wait_for_rules(win_hand, melds, rules) + wait_fan
 }
 
 pub(in crate::ai::decision) fn pressured_open_wait_scale(

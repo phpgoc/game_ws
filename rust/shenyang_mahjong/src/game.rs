@@ -27,13 +27,15 @@ use crate::game_state::{
 use crate::rules::{
     ShenyangMahjongWinRules, WIN_RULE_SHENYANG_BASIC, XI_GANG_WINDS, can_chi, can_concealed_gang,
     can_gang, can_peng, is_complete_win_with_melds, is_complete_win_with_melds_for_rules,
-    is_single_wait_shape_with_known_unavailable_tiles_for_rules, is_valid_meld, is_xi_gang_tiles,
-    shenyang_score_concealed_dragon_triplet_fan, shenyang_score_four_gui_yi_fan,
-    shenyang_score_meld_fan, shenyang_win_pattern, shenyang_win_pattern_base_fan, tiles_in_hand,
-    win_rule_from_configs,
+    is_valid_meld, is_xi_gang_tiles, shenyang_score_concealed_dragon_triplet_fan,
+    shenyang_score_four_gui_yi_fan, shenyang_score_meld_fan, shenyang_score_wait_fan,
+    shenyang_win_pattern, shenyang_win_pattern_base_fan, tiles_in_hand, win_rule_from_configs,
 };
 #[cfg(test)]
-use crate::rules::{is_seven_pairs_win, is_single_wait_shape_with_rule};
+use crate::rules::{
+    is_seven_pairs_win, is_single_wait_shape_with_known_unavailable_tiles_for_rules,
+    is_single_wait_shape_with_rule,
+};
 
 pub(crate) type LoopStateHandle = Arc<std::sync::Mutex<ShenyangMahjongLoopState>>;
 pub(crate) type LoopStateRegistry = Arc<std::sync::Mutex<HashMap<String, LoopStateHandle>>>;
@@ -933,26 +935,6 @@ fn is_valid_tile(tile: i32) -> bool {
     SHENYANG_MAHJONG_TILE_KINDS.contains(&tile)
 }
 
-fn is_shou_ba_yi(
-    pattern: ShenyangMahjongWinPattern,
-    hand_tiles: &[i32],
-    melds: &[WsShenyangMahjongMeld],
-    win_tile: Option<i32>,
-    rules: ShenyangMahjongWinRules,
-    known_unavailable_tiles: &[i32],
-) -> bool {
-    pattern == ShenyangMahjongWinPattern::PiaoHu
-        && melds.len() == 4
-        && hand_tiles.len() == 2
-        && is_single_wait_win_with_known_unavailable_tiles_for_rules(
-            hand_tiles,
-            melds,
-            win_tile,
-            rules,
-            known_unavailable_tiles,
-        )
-}
-
 #[cfg(test)]
 fn is_single_wait_win(
     hand_tiles: &[i32],
@@ -983,6 +965,7 @@ fn is_single_wait_win_with_known_unavailable_tiles(
     )
 }
 
+#[cfg(test)]
 fn is_single_wait_win_with_known_unavailable_tiles_for_rules(
     hand_tiles: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -2208,25 +2191,13 @@ fn winner_hand_fan_with_rules(
     if settlement_is_haidilao(state, settlement) {
         fan += 1;
     }
-    if is_single_wait_win_with_known_unavailable_tiles_for_rules(
+    fan += shenyang_score_wait_fan(
         &hand_tiles,
         melds,
         settlement.win_tile,
         rules,
         &known_unavailable_tiles,
-    ) {
-        fan += 1;
-    }
-    if is_shou_ba_yi(
-        pattern,
-        &hand_tiles,
-        melds,
-        settlement.win_tile,
-        rules,
-        &known_unavailable_tiles,
-    ) {
-        fan += 1;
-    }
+    );
     fan + four_gui_yi_fan(&hand_tiles, melds)
 }
 
