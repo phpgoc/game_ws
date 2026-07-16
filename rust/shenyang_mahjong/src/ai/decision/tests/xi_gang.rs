@@ -47,6 +47,48 @@ fn ai_preserves_multiple_dragon_pairs_over_dragon_xi_gang() {
 }
 
 #[test]
+fn ai_declares_dragon_xi_gang_when_multiple_dragons_are_triplets() {
+    let table = table_with_discards(1, Vec::new());
+    let hand = vec![1, 2, 3, 11, 12, 13, 21, 35, 35, 35, 36, 36, 36, 37];
+
+    assert_eq!(
+        choose_xi_gang_from_view(
+            &hand,
+            &[vec![35, 36, 37]],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+        ),
+        Some(vec![35, 36, 37])
+    );
+}
+
+#[test]
+fn ai_declares_dragon_xi_gang_that_preserves_four_gui_yi() {
+    let table = table_with_discards(1, Vec::new());
+    let hand = vec![1, 2, 3, 11, 12, 13, 21, 35, 35, 35, 35, 36, 36, 37];
+
+    assert_eq!(
+        choose_xi_gang_from_view(
+            &hand,
+            &[vec![35, 36, 37]],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+        ),
+        Some(vec![35, 36, 37])
+    );
+
+    let next_hand = vec![1, 2, 3, 11, 12, 13, 21, 35, 35, 35, 36];
+    let xi_gang = WsShenyangMahjongMeld {
+        kind: ShenyangMahjongMeldKind::XI_GANG,
+        tiles: vec![35, 36, 37],
+        from_position: None,
+    };
+    assert_eq!(estimated_visible_bonus_fan(&next_hand, &[xi_gang]), 3);
+}
+
+#[test]
 fn ai_declares_wind_xi_gang_even_from_locked_seven_pairs() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 31, 32, 33, 34];

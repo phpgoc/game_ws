@@ -19,9 +19,9 @@ pub fn choose_xi_gang_from_view(
         return None;
     }
 
-    let paired_dragons = XI_GANG_DRAGONS
+    let dragon_pairs = XI_GANG_DRAGONS
         .into_iter()
-        .filter(|dragon| hand.iter().filter(|tile| **tile == *dragon).count() >= 2)
+        .filter(|dragon| hand.iter().filter(|tile| **tile == *dragon).count() == 2)
         .count();
     [XI_GANG_WINDS.as_slice(), XI_GANG_DRAGONS.as_slice()]
         .into_iter()
@@ -32,7 +32,7 @@ pub fn choose_xi_gang_from_view(
                 option == expected && is_xi_gang_tiles(&option) && tiles_in_hand(hand, &option)
             })?;
             if (expected == XI_GANG_WINDS && table.wall_count == 0)
-                || (expected == XI_GANG_DRAGONS && paired_dragons >= 2)
+                || (expected == XI_GANG_DRAGONS && dragon_pairs >= 2)
             {
                 return None;
             }
