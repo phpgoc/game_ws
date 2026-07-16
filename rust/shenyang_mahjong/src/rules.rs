@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
 use share_type_public::games::shenyang_mahjong::{
-    SHENYANG_MAHJONG_TILE_KINDS, ShenyangMahjongMeldKind, WsShenyangMahjongMeld,
+    SHENYANG_MAHJONG_TILE_KINDS, ShenyangMahjongMeldKind, ShenyangMahjongWinPattern,
+    WsShenyangMahjongMeld,
 };
 
 pub const WIN_RULE_RELAXED: i32 = 0;
@@ -809,6 +810,29 @@ pub(crate) fn shenyang_score_concealed_dragon_triplet_fan(hand_tiles: &[i32]) ->
         .count() as i32
 }
 
+pub(crate) fn shenyang_win_pattern(
+    hand_tiles: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+) -> ShenyangMahjongWinPattern {
+    if melds.is_empty() && is_seven_pairs_win(hand_tiles) {
+        ShenyangMahjongWinPattern::SevenPairs
+    } else if is_pure_one_suit_win(hand_tiles, melds) {
+        ShenyangMahjongWinPattern::PureOneSuit
+    } else if is_piao_hu_win(hand_tiles, melds) {
+        ShenyangMahjongWinPattern::PiaoHu
+    } else {
+        ShenyangMahjongWinPattern::Standard
+    }
+}
+
+pub(crate) fn shenyang_win_pattern_base_fan(pattern: ShenyangMahjongWinPattern) -> i32 {
+    match pattern {
+        ShenyangMahjongWinPattern::Standard => 1,
+        ShenyangMahjongWinPattern::PiaoHu => 3,
+        ShenyangMahjongWinPattern::SevenPairs | ShenyangMahjongWinPattern::PureOneSuit => 4,
+    }
+}
+
 pub(crate) fn shenyang_score_four_gui_yi_fan(
     hand_tiles: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -902,7 +926,7 @@ pub fn win_rule_from_configs(configs: &HashMap<String, i32>) -> i32 {
 #[cfg(test)]
 mod tests {
     use share_type_public::games::shenyang_mahjong::{
-        ShenyangMahjongMeldKind, WsShenyangMahjongMeld,
+        ShenyangMahjongMeldKind, ShenyangMahjongWinPattern, WsShenyangMahjongMeld,
     };
 
     use super::{
@@ -912,7 +936,8 @@ mod tests {
         is_piao_hu_win, is_pure_one_suit_win, is_seven_pairs_win, is_single_wait_shape,
         is_single_wait_shape_with_known_unavailable_tiles, is_single_wait_shape_with_rule,
         is_standard_win, is_unique_complete_wait, is_win, satisfies_shenyang_basic_win,
-        satisfies_shenyang_basic_win_for_rules, win_rule_from_configs,
+        satisfies_shenyang_basic_win_for_rules, shenyang_win_pattern,
+        shenyang_win_pattern_base_fan, win_rule_from_configs,
     };
 
     #[test]
@@ -1105,6 +1130,52 @@ mod tests {
         ];
 
         assert_eq!(super::shenyang_score_meld_fan(&melds), 2);
+    }
+
+    #[test]
+    fn shared_win_pattern_uses_server_base_fan_priority() {
+        let seven_pairs = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35, 35];
+        let pure_one_suit = vec![1, 2, 2, 3, 3, 4, 4, 5, 6, 7, 7, 7, 9, 9];
+        let piao_hand = vec![1, 1, 1, 35, 35];
+        let piao_melds = vec![
+            meld(ShenyangMahjongMeldKind::PENG, vec![11, 11, 11], Some(0)),
+            meld(ShenyangMahjongMeldKind::PENG, vec![21, 21, 21], Some(2)),
+            meld(ShenyangMahjongMeldKind::PENG, vec![31, 31, 31], Some(3)),
+        ];
+        let standard = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35];
+
+        let cases = [
+            (
+                seven_pairs.as_slice(),
+                &[][..],
+                ShenyangMahjongWinPattern::SevenPairs,
+                4,
+            ),
+            (
+                pure_one_suit.as_slice(),
+                &[][..],
+                ShenyangMahjongWinPattern::PureOneSuit,
+                4,
+            ),
+            (
+                piao_hand.as_slice(),
+                piao_melds.as_slice(),
+                ShenyangMahjongWinPattern::PiaoHu,
+                3,
+            ),
+            (
+                standard.as_slice(),
+                &[][..],
+                ShenyangMahjongWinPattern::Standard,
+                1,
+            ),
+        ];
+
+        for (hand, melds, expected_pattern, expected_base_fan) in cases {
+            let pattern = shenyang_win_pattern(hand, melds);
+            assert_eq!(pattern, expected_pattern);
+            assert_eq!(shenyang_win_pattern_base_fan(pattern), expected_base_fan);
+        }
     }
 
     #[test]

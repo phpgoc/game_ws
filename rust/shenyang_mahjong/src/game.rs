@@ -24,16 +24,16 @@ use crate::game_state::{
     ClaimResponse, ClaimWindowKind, ClaimWindowState, ShenyangMahjongGameState,
     ShenyangMahjongLoopState, build_meld, meld_source_is_valid_for_positions,
 };
-#[cfg(test)]
-use crate::rules::is_single_wait_shape_with_rule;
 use crate::rules::{
     ShenyangMahjongWinRules, WIN_RULE_SHENYANG_BASIC, XI_GANG_WINDS, can_chi, can_concealed_gang,
     can_gang, can_peng, is_complete_win_with_melds, is_complete_win_with_melds_for_rules,
-    is_piao_hu_win, is_pure_one_suit_win, is_seven_pairs_win,
     is_single_wait_shape_with_known_unavailable_tiles_for_rules, is_valid_meld, is_xi_gang_tiles,
     shenyang_score_concealed_dragon_triplet_fan, shenyang_score_four_gui_yi_fan,
-    shenyang_score_meld_fan, tiles_in_hand, win_rule_from_configs,
+    shenyang_score_meld_fan, shenyang_win_pattern, shenyang_win_pattern_base_fan, tiles_in_hand,
+    win_rule_from_configs,
 };
+#[cfg(test)]
+use crate::rules::{is_seven_pairs_win, is_single_wait_shape_with_rule};
 
 pub(crate) type LoopStateHandle = Arc<std::sync::Mutex<ShenyangMahjongLoopState>>;
 pub(crate) type LoopStateRegistry = Arc<std::sync::Mutex<HashMap<String, LoopStateHandle>>>;
@@ -2080,14 +2080,6 @@ pub(crate) fn settlement_time(configs: &HashMap<String, i32>) -> u64 {
     config_value(configs, "settlement_time", 5).max(1) as u64
 }
 
-fn win_pattern_base_fan(pattern: ShenyangMahjongWinPattern) -> i32 {
-    match pattern {
-        ShenyangMahjongWinPattern::Standard => 1,
-        ShenyangMahjongWinPattern::PiaoHu => 3,
-        ShenyangMahjongWinPattern::SevenPairs | ShenyangMahjongWinPattern::PureOneSuit => 4,
-    }
-}
-
 fn winner_final_hand_tiles(
     state: &ShenyangMahjongLoopState,
     settlement: &crate::game_state::SettlementState,
@@ -2202,9 +2194,9 @@ fn winner_hand_fan_with_rules(
     if !is_complete_win_with_melds_for_rules(&hand_tiles, melds, rules) {
         return 0;
     }
-    let pattern = winner_pattern(&hand_tiles, melds);
+    let pattern = shenyang_win_pattern(&hand_tiles, melds);
     let known_unavailable_tiles = public_unavailable_tiles_for_winner(state, winner);
-    let mut fan = win_pattern_base_fan(pattern);
+    let mut fan = shenyang_win_pattern_base_fan(pattern);
     fan += shenyang_score_meld_fan(melds);
     fan += shenyang_score_concealed_dragon_triplet_fan(&hand_tiles);
     if settlement_is_reverse_win(state, settlement) {
@@ -2252,21 +2244,6 @@ fn winner_hand_fan_with_configs(
     )
 }
 
-fn winner_pattern(
-    hand_tiles: &[i32],
-    melds: &[WsShenyangMahjongMeld],
-) -> ShenyangMahjongWinPattern {
-    if melds.is_empty() && is_seven_pairs_win(hand_tiles) {
-        ShenyangMahjongWinPattern::SevenPairs
-    } else if is_pure_one_suit_win(hand_tiles, melds) {
-        ShenyangMahjongWinPattern::PureOneSuit
-    } else if is_piao_hu_win(hand_tiles, melds) {
-        ShenyangMahjongWinPattern::PiaoHu
-    } else {
-        ShenyangMahjongWinPattern::Standard
-    }
-}
-
 pub(crate) fn winner_pattern_with_rule(
     hand_tiles: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -2277,7 +2254,7 @@ pub(crate) fn winner_pattern_with_rule(
     {
         return ShenyangMahjongWinPattern::Standard;
     }
-    winner_pattern(hand_tiles, melds)
+    shenyang_win_pattern(hand_tiles, melds)
 }
 
 impl ShenyangMahjongGameHandler {
@@ -8773,7 +8750,7 @@ mod tests {
             1
         );
         assert_eq!(
-            winner_pattern(state.hands.get(&1).unwrap(), &[]),
+            shenyang_win_pattern(state.hands.get(&1).unwrap(), &[]),
             ShenyangMahjongWinPattern::Standard
         );
     }

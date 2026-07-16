@@ -37,7 +37,7 @@ use crate::rules::{
     is_pure_one_suit_win, is_seven_pairs_win,
     is_single_wait_shape_with_known_unavailable_tiles_for_rules,
     shenyang_score_concealed_dragon_triplet_fan, shenyang_score_four_gui_yi_fan,
-    shenyang_score_meld_fan, sort_tiles,
+    shenyang_score_meld_fan, shenyang_win_pattern, shenyang_win_pattern_base_fan, sort_tiles,
 };
 #[cfg(test)]
 use crate::rules::{

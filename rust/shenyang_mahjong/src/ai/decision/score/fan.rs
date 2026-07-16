@@ -153,14 +153,7 @@ fn estimated_visible_fan_without_wait_for_rules(
     if !is_complete_win_with_melds_for_rules(win_hand, melds, rules) {
         return 0;
     }
-    let is_piao = is_piao_hu_win(win_hand, melds);
-    let base = if is_piao {
-        3
-    } else if is_seven_pairs_win(win_hand) || is_pure_one_suit_win(win_hand, melds) {
-        4
-    } else {
-        1
-    };
+    let base = shenyang_win_pattern_base_fan(shenyang_win_pattern(win_hand, melds));
     base + estimated_visible_bonus_fan(win_hand, melds)
 }
 
