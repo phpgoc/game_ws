@@ -1,4 +1,3 @@
-use rand::Rng;
 use share_type_public::{
     TexasHoldEmAction, TexasHoldEmPhase, games::texas_hold_em::WsTexasHoldEmPlayRequest,
 };
@@ -60,7 +59,7 @@ fn aggressive_action(
 }
 
 pub fn decide(state: &HoldemGameState, position: usize) -> WsTexasHoldEmPlayRequest {
-    decide_with_bluff_roll(state, position, rand::rng().random::<f64>())
+    decide_with_bluff_roll(state, position, rand::random::<f64>())
 }
 
 fn decide_with_bluff_roll(
