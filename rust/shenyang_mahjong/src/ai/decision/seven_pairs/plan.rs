@@ -37,6 +37,10 @@ fn seven_pairs_plan_is_reachable(hand: &[i32], table: &AiPublicTable, position: 
         .is_some_and(|draws| draws <= table.wall_count)
 }
 
+fn relaxed_one_fan_cap_prefers_speed(table: &AiPublicTable, win_rule: i32) -> bool {
+    win_rule != WIN_RULE_SHENYANG_BASIC && table.max_fan == Some(1)
+}
+
 pub(in crate::ai::decision) fn should_chase_basic_missing_suit_four_pairs(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -80,6 +84,9 @@ pub(in crate::ai::decision) fn should_lock_seven_pairs_plan(
     if pairs >= 6 {
         return true;
     }
+    if relaxed_one_fan_cap_prefers_speed(table, win_rule) {
+        return false;
+    }
     if should_chase_basic_missing_suit_pairs(hand, melds, win_rule, pairs) {
         return true;
     }
@@ -115,6 +122,9 @@ pub(in crate::ai::decision) fn seven_pairs_plan_score(
         return 0.0;
     }
     let pairs = pair_count(hand);
+    if pairs < 6 && relaxed_one_fan_cap_prefers_speed(table, win_rule) {
+        return 0.0;
+    }
     if table.dealer_position == position
         && pairs < 6
         && !should_chase_basic_missing_suit_four_pairs(hand, melds, win_rule)

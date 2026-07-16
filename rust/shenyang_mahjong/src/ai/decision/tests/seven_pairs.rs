@@ -346,6 +346,42 @@ fn one_fan_capped_room_does_not_lock_five_pairs_when_basic_route_is_viable() {
 }
 
 #[test]
+fn one_fan_relaxed_room_only_locks_seven_pairs_when_ready() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.max_fan = Some(1);
+    let four_pairs = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 13, 21, 31, 35];
+    let five_pairs = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 12, 21, 31, 35];
+    let six_pairs = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 12, 21, 21, 35];
+
+    assert_eq!(
+        seven_pairs_plan_score(&four_pairs, &[], &table, 0, WIN_RULE_RELAXED),
+        0.0
+    );
+    assert_eq!(pair_count(&five_pairs), 5);
+    assert!(!should_lock_seven_pairs_plan(
+        &five_pairs,
+        &[],
+        &table,
+        0,
+        WIN_RULE_RELAXED
+    ));
+    assert_eq!(
+        seven_pairs_plan_score(&five_pairs, &[], &table, 0, WIN_RULE_RELAXED),
+        0.0
+    );
+
+    assert!(is_seven_pairs_wait_shape(&six_pairs));
+    assert!(should_lock_seven_pairs_plan(
+        &six_pairs,
+        &[],
+        &table,
+        0,
+        WIN_RULE_RELAXED
+    ));
+    assert!(seven_pairs_plan_score(&six_pairs, &[], &table, 0, WIN_RULE_RELAXED) > 0.0);
+}
+
+#[test]
 fn two_fan_capped_room_does_not_lock_five_pairs_when_basic_bonus_caps() {
     let mut table = table_with_discards(1, Vec::new());
     table.max_fan = Some(2);

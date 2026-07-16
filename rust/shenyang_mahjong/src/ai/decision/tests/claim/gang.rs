@@ -71,6 +71,25 @@ fn one_fan_capped_claim_gang_takes_dragon_for_replacement_draw() {
 }
 
 #[test]
+fn one_fan_relaxed_claim_gang_does_not_preserve_five_pairs() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.max_fan = Some(1);
+    table.claim_window = Some(AiClaimView {
+        tile: 1,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![1, 1, 1, 2, 2, 3, 3, 11, 11, 12, 12, 21, 31];
+
+    assert_eq!(pair_count(&hand), 5);
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+        Some(AiClaimChoice::Gang)
+    );
+}
+
+#[test]
 fn claim_gang_delays_open_piao_plain_gang_until_ready_and_pengs() {
     let mut table = table_with_discards(1, Vec::new());
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
