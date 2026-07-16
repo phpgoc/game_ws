@@ -47,6 +47,7 @@ pub struct WsJoinRequest {
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsJoinResponse {
+    pub self_position: i32,
     pub current_configs: HashMap<String, i32>,
     pub existing_members: Vec<WsMemberInfo>,
     pub param_descriptions: Option<HashMap<String, GameParam>>,

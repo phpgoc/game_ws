@@ -19,6 +19,10 @@ pub struct HoldemGameState {
     pub phase: TexasHoldEmPhase,
     pub deck: Vec<i32>,
     pub public_cards: Vec<i32>,
+    /// Players dealt into the current hand.  The room roster may grow while
+    /// this hand is running, so all betting/settlement logic must use this
+    /// frozen identity snapshot instead of `base.players`.
+    pub hand_players: HashMap<usize, String>,
     pub hands: HashMap<usize, Vec<i32>>,
     pub chips: HashMap<usize, i32>,
     pub round_bets: HashMap<usize, i32>,
@@ -48,9 +52,19 @@ impl HoldemGameState {
     }
 
     pub fn active_positions(&self) -> Vec<usize> {
-        let mut positions: Vec<_> = self.base.lock().unwrap().players.keys().copied().collect();
+        let mut positions: Vec<_> = if self.hand_players.is_empty() {
+            self.base.lock().unwrap().players.keys().copied().collect()
+        } else {
+            self.hand_players.keys().copied().collect()
+        };
         positions.sort_unstable();
         positions
+    }
+
+    pub fn is_hand_player(&self, position: usize, name: &str) -> bool {
+        self.hand_players
+            .get(&position)
+            .is_some_and(|hand_name| hand_name == name)
     }
 
     pub fn bet_of(&self, position: usize) -> i32 {
@@ -86,10 +100,24 @@ impl HoldemGameState {
         small_blind: i32,
         big_blind: i32,
     ) -> Result<(), &'static str> {
-        let positions = self.active_positions();
+        let (positions, names) = {
+            let base = self.base.lock().unwrap();
+            let mut players: Vec<_> = base.players.keys().copied().collect();
+            players.sort_unstable();
+            let names = players
+                .iter()
+                .filter_map(|position| {
+                    base.players
+                        .get(position)
+                        .map(|(_, name)| (*position, name.clone()))
+                })
+                .collect();
+            (players, names)
+        };
         if !(2..=8).contains(&positions.len()) {
             return Err("Holdem requires 2-8 players");
         }
+        self.hand_players = names;
         self.phase = TexasHoldEmPhase::PreFlop;
         self.deck = (1..=52)
             .filter(|card| crate::hand_evaluator::card_rank(*card) >= self.variant.min_card)
@@ -160,6 +188,7 @@ impl HoldemGameState {
             phase: TexasHoldEmPhase::Start,
             deck: Vec::new(),
             public_cards: Vec::new(),
+            hand_players: HashMap::new(),
             hands: HashMap::new(),
             chips: HashMap::new(),
             round_bets: HashMap::new(),
@@ -212,7 +241,10 @@ impl HoldemGameState {
     }
 
     pub fn player_name(&self, position: usize) -> String {
-        self.base.lock().unwrap().player_name(position)
+        self.hand_players
+            .get(&position)
+            .cloned()
+            .unwrap_or_else(|| self.base.lock().unwrap().player_name(position))
     }
 
     pub fn reveal_next_phase(&mut self) -> TexasHoldEmPhase {

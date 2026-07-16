@@ -54,10 +54,13 @@ pub struct WsTexasHoldEmActionEvent {
     pub position: i32,
     pub action: TexasHoldEmAction,
     pub amount: i32,
+    /// Total amount committed by this player on the current betting street.
     pub committed: i32,
     pub current_bet: i32,
     pub pot: i32,
     pub chips: i32,
+    pub folded: bool,
+    pub all_in: bool,
 }
 
 #[typeshare]
@@ -71,6 +74,7 @@ pub struct WsTexasHoldEmAutoStrategyRequest {
 pub struct WsTexasHoldEmDealEvent {
     pub my_cards: Vec<i32>,
     pub open_cards: Vec<i32>,
+    pub participant_positions: Vec<i32>,
     pub public_hole_cards: Vec<WsTexasHoldEmPublicHoleCards>,
     pub dealer_position: i32,
     pub small_blind_position: i32,
@@ -100,6 +104,42 @@ pub struct WsTexasHoldEmPublicCardsEvent {
 pub struct WsTexasHoldEmPublicHoleCards {
     pub position: i32,
     pub cards: Vec<i32>,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsTexasHoldEmPlayerSnapshot {
+    pub position: i32,
+    pub name: String,
+    pub chips: i32,
+    pub committed: i32,
+    pub folded: bool,
+    pub all_in: bool,
+    pub open_cards: Vec<i32>,
+}
+
+/// Complete table state sent to a player who joins or rejoins during an
+/// active hand.  A late joiner receives the public state with empty
+/// `my_cards` and `is_participating = false`; an original player reconnecting
+/// to the same name and position receives their private cards.
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsTexasHoldEmTableSnapshotEvent {
+    pub self_position: i32,
+    pub is_participating: bool,
+    pub phase: TexasHoldEmPhase,
+    pub public_cards: Vec<i32>,
+    pub players: Vec<WsTexasHoldEmPlayerSnapshot>,
+    pub my_cards: Vec<i32>,
+    pub dealer_position: i32,
+    pub small_blind_position: i32,
+    pub big_blind_position: i32,
+    pub current_position: i32,
+    pub call_amount: i32,
+    pub min_raise: i32,
+    pub current_bet: i32,
+    pub pot: i32,
+    pub turn_countdown: i32,
 }
 
 #[typeshare]

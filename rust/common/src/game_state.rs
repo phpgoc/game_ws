@@ -44,6 +44,30 @@ pub trait GameState: Send {
         true
     }
 
+    /// Whether a new human may join the room.
+    ///
+    /// This is intentionally separate from `can_accept_players`: a running
+    /// game may keep its settings/AI/seat layout locked while still allowing
+    /// spectators to join and wait for the next hand.
+    fn can_join_players(&self) -> bool {
+        self.can_accept_players()
+    }
+
+    /// Positions that are reserved by the current game and must not be
+    /// assigned to a newly joining player.  A game can keep a disconnected or
+    /// quit player's seat reserved until the current hand is over so a new
+    /// player cannot inherit that hand's private state.
+    fn position_reserved_for_join(&self, _position: usize) -> bool {
+        false
+    }
+
+    /// Whether removing a room member should stop the running game loop.
+    /// Round-based games generally stop when anyone quits; games that support
+    /// spectators and mid-hand departures can keep the current hand running.
+    fn quit_stops_game(&self) -> bool {
+        true
+    }
+
     fn clear_away(&mut self) {
         self.shared_common_state().lock().unwrap().clear_away();
     }

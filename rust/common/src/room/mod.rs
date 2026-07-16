@@ -704,6 +704,7 @@ impl RoomService {
                         Routes::JOIN as i32,
                         WsResponseCode::JOINED,
                         share_type_public::WsJoinResponse {
+                            self_position: position as i32,
                             current_configs: entry.configs.clone(),
                             existing_members,
                             param_descriptions: Some(entry.param_descriptions.clone()),
@@ -819,6 +820,7 @@ impl RoomService {
                 Routes::JOIN as i32,
                 WsResponseCode::JOINED,
                 share_type_public::WsJoinResponse {
+                    self_position: position as i32,
                     current_configs: entry.configs.clone(),
                     existing_members,
                     param_descriptions: Some(entry.param_descriptions.clone()),
@@ -849,7 +851,7 @@ impl RoomService {
         if self
             .rooms
             .get(&password)
-            .map(|entry| !entry.state.can_accept_players())
+            .map(|entry| !entry.state.can_join_players())
             .unwrap_or(false)
         {
             return self.error_response(
@@ -925,6 +927,7 @@ impl RoomService {
                 Routes::JOIN as i32,
                 WsResponseCode::JOINED,
                 share_type_public::WsJoinResponse {
+                    self_position: position as i32,
                     current_configs: entry.configs.clone(),
                     existing_members,
                     param_descriptions: Some(entry.param_descriptions.clone()),
@@ -1403,6 +1406,7 @@ impl RoomService {
 
         let mut recipients = Vec::new();
         if let Some(entry) = self.rooms.get_mut(&room_key) {
+            let quit_stops_game = entry.state.quit_stops_game();
             let players = entry.state.players();
             let mut position = session.position.take();
             if position.is_none()
@@ -1417,11 +1421,14 @@ impl RoomService {
             if let Some(pos) = position {
                 entry.state.remove_player(pos);
             }
-            entry.state.set_turn_countdown(0);
             recipients.extend(entry.state.players().values().map(|(sid, _)| *sid));
-            entry.state.request_stop();
+            let room_is_empty = entry.state.players().is_empty();
+            if quit_stops_game || room_is_empty {
+                entry.state.set_turn_countdown(0);
+                entry.state.request_stop();
+            }
             // 如果房间里没人了，删除房间
-            if entry.state.players().is_empty() {
+            if room_is_empty {
                 dlog!(
                     tracing::Level::WARN,
                     "Room '{}' is now empty and will be removed",
@@ -1596,7 +1603,8 @@ impl RoomService {
         {
             return Some(pos);
         }
-        (0..max_players).find(|pos| !players.contains_key(pos))
+        (0..max_players)
+            .find(|pos| !players.contains_key(pos) && !entry.state.position_reserved_for_join(*pos))
     }
 
     fn session_active_in_room(&self, session_id: SessionId, room_key: &str) -> bool {
