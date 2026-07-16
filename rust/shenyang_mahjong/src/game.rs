@@ -10326,6 +10326,47 @@ mod tests {
     }
 
     #[test]
+    fn settlement_scores_closed_dragon_pair_winner_after_xi_gang() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 35, 35]);
+        state.melds.insert(
+            1,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::XI_GANG,
+                vec![31, 32, 33, 34],
+                None,
+            )],
+        );
+        state.enter_settlement(vec![1], None, Some(35), true);
+        let settlement = state.settlement.as_ref().expect("settlement");
+        let default_configs = HashMap::from([("win_rule".to_owned(), 1)]);
+        let disabled_configs = HashMap::from([
+            ("win_rule".to_owned(), 1),
+            ("allow_first_chi".to_owned(), 0),
+        ]);
+
+        assert!(
+            settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &default_configs)
+                .iter()
+                .all(|change| change.score == 0)
+        );
+        assert_eq!(
+            settlement_score_changes_for_state(
+                &state,
+                &[0, 1, 2, 3],
+                settlement,
+                &disabled_configs
+            )
+            .into_iter()
+            .map(|change| (change.position, change.score))
+            .collect::<Vec<_>>(),
+            vec![(0, -6), (1, 16), (2, -5), (3, -5)]
+        );
+    }
+
+    #[test]
     fn settlement_self_draw_uses_single_closed_fan_when_any_payer_opened() {
         let mut state = playable_state();
         state
