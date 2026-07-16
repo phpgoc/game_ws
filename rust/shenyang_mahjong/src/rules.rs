@@ -329,7 +329,7 @@ pub(crate) fn has_dragon_pair_as_standard_pair(tiles: &[i32]) -> bool {
 }
 
 fn has_open_meld(melds: &[WsShenyangMahjongMeld]) -> bool {
-    melds.iter().any(is_open_meld)
+    melds.iter().any(is_door_opening_meld)
 }
 
 fn has_terminal_or_honor(tiles: &[i32]) -> bool {
@@ -465,7 +465,7 @@ fn is_honor_tile(tile: i32) -> bool {
     matches!(tile, 31..=37)
 }
 
-fn is_open_meld(meld: &WsShenyangMahjongMeld) -> bool {
+pub(crate) fn is_door_opening_meld(meld: &WsShenyangMahjongMeld) -> bool {
     meld.from_position.is_some() && (is_triplet_meld(meld) || is_sequence_meld(meld))
 }
 
@@ -978,12 +978,12 @@ mod tests {
         ShenyangMahjongWinRules, WIN_RULE_RELAXED, WIN_RULE_SHENYANG_BASIC, can_chi,
         can_concealed_gang, can_gang, can_peng, has_triplet_in_standard_decomposition,
         is_complete_win, is_complete_win_with_melds, is_complete_win_with_melds_for_rules,
-        is_piao_hu_win, is_pure_one_suit_win, is_seven_pairs_win, is_single_wait_shape,
-        is_single_wait_shape_with_known_unavailable_tiles, is_single_wait_shape_with_rule,
-        is_standard_win, is_unique_complete_wait, is_win, satisfies_shenyang_basic_win,
-        satisfies_shenyang_basic_win_for_rules, shenyang_score_visible_win_fan,
-        shenyang_score_wait_fan, shenyang_win_pattern, shenyang_win_pattern_base_fan,
-        win_rule_from_configs,
+        is_door_opening_meld, is_piao_hu_win, is_pure_one_suit_win, is_seven_pairs_win,
+        is_single_wait_shape, is_single_wait_shape_with_known_unavailable_tiles,
+        is_single_wait_shape_with_rule, is_standard_win, is_unique_complete_wait, is_win,
+        satisfies_shenyang_basic_win, satisfies_shenyang_basic_win_for_rules,
+        shenyang_score_visible_win_fan, shenyang_score_wait_fan, shenyang_win_pattern,
+        shenyang_win_pattern_base_fan, win_rule_from_configs,
     };
 
     #[test]
@@ -1149,6 +1149,21 @@ mod tests {
             &open_melds,
             WIN_RULE_SHENYANG_BASIC,
         ));
+    }
+
+    #[test]
+    fn shared_door_opening_predicate_excludes_concealed_and_xi_gangs() {
+        let chi = meld(ShenyangMahjongMeldKind::CHI, vec![1, 2, 3], Some(0));
+        let peng = meld(ShenyangMahjongMeldKind::PENG, vec![11, 11, 11], Some(1));
+        let open_gang = meld(ShenyangMahjongMeldKind::GANG, vec![21, 21, 21, 21], Some(2));
+        let concealed_gang = meld(ShenyangMahjongMeldKind::GANG, vec![31, 31, 31, 31], None);
+        let xi_gang = meld(ShenyangMahjongMeldKind::XI_GANG, vec![35, 36, 37], None);
+
+        assert!(is_door_opening_meld(&chi));
+        assert!(is_door_opening_meld(&peng));
+        assert!(is_door_opening_meld(&open_gang));
+        assert!(!is_door_opening_meld(&concealed_gang));
+        assert!(!is_door_opening_meld(&xi_gang));
     }
 
     #[test]

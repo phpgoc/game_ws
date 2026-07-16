@@ -27,8 +27,8 @@ use crate::game_state::{
 use crate::rules::{
     ShenyangMahjongWinRules, WIN_RULE_SHENYANG_BASIC, XI_GANG_WINDS, can_chi, can_concealed_gang,
     can_gang, can_peng, is_complete_win_with_melds, is_complete_win_with_melds_for_rules,
-    is_valid_meld, is_xi_gang_tiles, shenyang_score_visible_win_fan, shenyang_win_pattern,
-    tiles_in_hand, win_rule_from_configs,
+    is_door_opening_meld, is_valid_meld, is_xi_gang_tiles, shenyang_score_visible_win_fan,
+    shenyang_win_pattern, tiles_in_hand, win_rule_from_configs,
 };
 #[cfg(test)]
 use crate::rules::{
@@ -592,7 +592,7 @@ pub(crate) fn settlement_is_reverse_win(
         && state.melds.get(&from_position).is_some_and(|melds| {
             melds
                 .iter()
-                .any(|meld| is_open_meld(meld) && peng_meld_tile(meld) == Some(win_tile))
+                .any(|meld| is_door_opening_meld(meld) && peng_meld_tile(meld) == Some(win_tile))
         })
 }
 
@@ -663,7 +663,7 @@ fn can_added_gang(hand: &[i32], melds: &[WsShenyangMahjongMeld], target_tile: i3
         && hand.iter().filter(|tile| **tile == target_tile).count() == 1
         && melds
             .iter()
-            .filter(|meld| is_open_meld(meld) && peng_meld_tile(meld) == Some(target_tile))
+            .filter(|meld| is_door_opening_meld(meld) && peng_meld_tile(meld) == Some(target_tile))
             .count()
             == 1
 }
@@ -1062,10 +1062,6 @@ fn meld_shape_is_valid(meld: &WsShenyangMahjongMeld) -> bool {
     is_valid_meld(meld)
 }
 
-fn is_open_meld(meld: &WsShenyangMahjongMeld) -> bool {
-    meld.from_position.is_some() && meld_shape_is_valid(meld)
-}
-
 fn meld_source_is_valid_for_position(
     state: &ShenyangMahjongLoopState,
     position: usize,
@@ -1427,7 +1423,7 @@ pub(crate) fn perform_xi_gang(
 fn position_has_open_meld(state: &ShenyangMahjongLoopState, position: usize) -> bool {
     state.melds.get(&position).is_some_and(|melds| {
         melds.iter().any(|meld| {
-            meld_source_is_valid_for_position(state, position, meld) && is_open_meld(meld)
+            meld_source_is_valid_for_position(state, position, meld) && is_door_opening_meld(meld)
         })
     })
 }

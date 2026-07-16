@@ -1,6 +1,6 @@
 use share_type_public::games::shenyang_mahjong::{ShenyangMahjongMeldKind, WsShenyangMahjongMeld};
 
-use crate::rules::is_xi_gang_tiles;
+use crate::rules::{is_door_opening_meld, is_xi_gang_tiles};
 
 use super::tile::{is_suited, is_valid_tile, tile_suit};
 
@@ -46,9 +46,7 @@ pub(super) fn is_open_peng_meld(meld: &WsShenyangMahjongMeld, tile: i32) -> bool
 }
 
 pub(super) fn is_open_meld(meld: &WsShenyangMahjongMeld) -> bool {
-    meld.kind != ShenyangMahjongMeldKind::XI_GANG
-        && meld.from_position.is_some()
-        && is_valid_meld(meld)
+    is_door_opening_meld(meld)
 }
 
 pub(super) fn is_sequence_meld(meld: &WsShenyangMahjongMeld) -> bool {
