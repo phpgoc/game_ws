@@ -19,6 +19,35 @@ fn claim_peng_preserves_pinghu_sequence_when_open_and_heng_is_ready() {
 }
 
 #[test]
+fn claim_peng_preserves_configured_closed_sequence_wait() {
+    let mut table = table_with_discards(1, vec![1]);
+    table.wall_count = 36;
+    table.claim_window = Some(AiClaimView {
+        tile: 1,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![1, 1, 2, 2, 3, 11, 12, 13, 21, 22, 23, 35, 35];
+
+    assert_eq!(
+        ready_tile_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        0.0
+    );
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Peng)
+    );
+
+    table.allow_first_chi = false;
+    assert!(ready_tile_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0);
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Pass)
+    );
+}
+
+#[test]
 fn claim_peng_takes_late_ready_dragon_when_it_keeps_ready() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 36;
