@@ -12,16 +12,14 @@ pub fn choose_discard_from_view(
     hand: &[i32],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
 ) -> Option<i32> {
-    choose_discard_from_view_inner(hand, table, position, win_rule, false)
+    choose_discard_from_view_inner(hand, table, position, false)
 }
 
 fn choose_discard_from_view_inner(
     hand: &[i32],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
     must_discard: bool,
 ) -> Option<i32> {
     let melds = table
@@ -38,7 +36,7 @@ fn choose_discard_from_view_inner(
         return None;
     }
     if is_late_defense_round(table) && has_late_defense_known_safe_candidate(hand, table) {
-        if let Some(tile) = choose_late_ready_discard(hand, melds, table, position, win_rule) {
+        if let Some(tile) = choose_late_ready_discard(hand, melds, table, position) {
             return Some(tile);
         }
         if should_keep_pairs_for_seven_pairs_discard(hand, melds, table, position) {
@@ -53,7 +51,7 @@ fn choose_discard_from_view_inner(
         return Some(tile);
     }
     if is_late_defense_round(table) {
-        if let Some(tile) = choose_late_ready_discard(hand, melds, table, position, win_rule) {
+        if let Some(tile) = choose_late_ready_discard(hand, melds, table, position) {
             return Some(tile);
         }
         if should_keep_pairs_for_seven_pairs_discard(hand, melds, table, position) {
@@ -61,7 +59,7 @@ fn choose_discard_from_view_inner(
         }
         return choose_late_defense_discard(hand, table, position);
     }
-    if should_use_broken_hand_public_defense_discard(hand, melds, table, position, win_rule)
+    if should_use_broken_hand_public_defense_discard(hand, melds, table, position)
         && let Some(tile) = choose_broken_hand_public_defense_discard(hand, melds, table, position)
     {
         return Some(tile);
@@ -69,8 +67,8 @@ fn choose_discard_from_view_inner(
 
     let preserve_early_piao_pairs = has_early_piao_singleton_discard(hand, melds, table, position);
     let speed_first_wait = table.dealer_position == position
-        || ready_visible_fan_reaches_cap(hand, melds, table, position, win_rule)
-        || ready_visible_fan_exceeds_half_cap(hand, melds, table, position, win_rule);
+        || ready_visible_fan_reaches_cap(hand, melds, table, position)
+        || ready_visible_fan_exceeds_half_cap(hand, melds, table, position);
     let mut best_allowed: Option<(i32, f64, i32)> = None;
     let mut best_any: Option<(i32, f64, i32)> = None;
     for tile in unique_tiles(hand) {
@@ -86,8 +84,7 @@ fn choose_discard_from_view_inner(
             violates_basic_three_suits_discard(&next, melds, table, position, tile)
                 || violates_basic_terminal_or_honor_discard(&next, melds, table, position, tile)
                 || violates_basic_heng_discard(&next, melds, table, position, tile);
-        let score =
-            hand_progress_score_after_discard(&next, melds, table, position, win_rule, tile);
+        let score = hand_progress_score_after_discard(&next, melds, table, position, tile);
         let pressure = estimate_pressure_for_tile(table, position, tile);
         let neigh = neighbor_count(hand, tile);
         let discard_bias = match (count, is_honor(tile), tile_is_terminal(tile), neigh) {
@@ -105,11 +102,11 @@ fn choose_discard_from_view_inner(
             + capped_spare_dragon_discard_bias(hand, tile, melds, table)
             + seven_pairs_plan_discard_bias(hand, tile, melds, table, position)
             + seven_pairs_wait_discard_bias(hand, tile, melds, table, position)
-            + four_gui_yi_discard_bias(hand, tile, melds, table, position, win_rule)
+            + four_gui_yi_discard_bias(hand, tile, melds, table, position)
             + pure_one_suit_discard_bias(hand, tile, melds, table, position)
             + complete_sequence_discard_bias(hand, tile, melds, table, position)
             + incomplete_sequence_discard_bias(hand, tile, melds, table, position)
-            + pinghu_sequence_route_discard_bias(hand, tile, melds, table, position, win_rule)
+            + pinghu_sequence_route_discard_bias(hand, tile, melds, table, position)
             + mid_round_public_discard_bias(table, position, tile)
             + mid_round_open_meld_safety_bias(table, tile)
             + mid_round_live_honor_risk_bias(table, position, tile, count)
@@ -121,7 +118,7 @@ fn choose_discard_from_view_inner(
             + late_defense_discard_bias(table, position, tile);
         let combined = score + discard_bias + pressure;
         let ready_live_tiles = if speed_first_wait {
-            ready_live_tile_count_after_discard(&next, melds, table, position, win_rule, tile)
+            ready_live_tile_count_after_discard(&next, melds, table, position, tile)
         } else {
             0
         };
@@ -153,9 +150,8 @@ pub fn choose_forced_discard_from_view(
     hand: &[i32],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
 ) -> Option<i32> {
-    choose_discard_from_view_inner(hand, table, position, win_rule, true)
+    choose_discard_from_view_inner(hand, table, position, true)
 }
 
 fn discard_candidate_is_better(candidate: (i32, f64, i32), current: (i32, f64, i32)) -> bool {

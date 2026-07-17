@@ -7,10 +7,7 @@ fn late_defense_avoids_breaking_cold_terminal_pair_against_closed_opponent() {
     table.seats.get_mut(&1).unwrap().hand_count = 13;
     let hand = vec![2, 4, 6, 8, 9, 9, 12, 14, 16, 18, 19, 22, 24, 26];
 
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(19)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(19));
 }
 
 #[test]
@@ -19,10 +16,7 @@ fn late_defense_breaks_locked_five_pairs_for_only_public_tile() {
     table.wall_count = 20;
     let hand = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 14, 21, 21, 31, 35];
 
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(1)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(1));
 }
 
 #[test]
@@ -41,10 +35,7 @@ fn late_defense_can_follow_exposed_terminal_over_live_wind() {
     );
     let hand = vec![2, 4, 6, 8, 9, 12, 14, 16, 18, 22, 24, 26, 28, 31];
 
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(9)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(9));
 }
 
 #[test]
@@ -78,10 +69,7 @@ fn late_defense_locked_five_pairs_follows_public_singleton_without_breaking_pair
     table.wall_count = 20;
     let hand = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 14, 21, 21, 31, 35];
 
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(5)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(5));
 }
 
 #[test]
@@ -91,7 +79,7 @@ fn late_defense_preserves_locked_five_pairs_without_public_tile() {
     let hand = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 14, 21, 21, 31, 35];
 
     assert!(!matches!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_discard_from_view(&hand, &table, 0),
         Some(1 | 2 | 11 | 12 | 21)
     ));
 }
@@ -103,10 +91,7 @@ fn mid_round_discard_avoids_live_dragon_against_open_opponent() {
     table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(9)];
     let hand = vec![1, 2, 3, 11, 12, 13, 14, 16, 18, 21, 22, 23, 31, 35];
 
-    assert_ne!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(35)
-    );
+    assert_ne!(choose_discard_from_view(&hand, &table, 0), Some(35));
 }
 
 #[test]
@@ -116,10 +101,7 @@ fn mid_round_discard_avoids_live_terminal_against_open_opponent() {
     table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(16)];
     let hand = vec![1, 2, 3, 9, 11, 12, 14, 16, 18, 21, 22, 24, 26, 31];
 
-    assert_ne!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(9)
-    );
+    assert_ne!(choose_discard_from_view(&hand, &table, 0), Some(9));
 }
 
 #[test]
@@ -128,10 +110,7 @@ fn mid_round_discard_follows_public_dragon_over_multiple_public_terminal() {
     table.wall_count = 46;
     let hand = vec![1, 2, 3, 9, 11, 12, 14, 16, 18, 21, 22, 24, 26, 35];
 
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(35)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(35));
 }
 
 #[test]
@@ -140,10 +119,7 @@ fn mid_round_discard_follows_public_honor_over_live_dragon() {
     table.wall_count = 46;
     let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 36];
 
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(31)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(31));
 }
 
 #[test]
@@ -152,10 +128,7 @@ fn mid_round_discard_follows_public_middle_before_late_round() {
     table.wall_count = 55;
     let hand = vec![1, 2, 3, 9, 11, 12, 14, 16, 18, 21, 22, 24, 26, 35];
 
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(14)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(14));
 }
 
 #[test]
@@ -165,10 +138,7 @@ fn mid_round_discard_follows_public_middle_over_cold_wind_against_closed_opponen
     table.seats.get_mut(&1).unwrap().hand_count = 13;
     let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 14, 21, 22, 23, 31];
 
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(14)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(14));
 }
 
 #[test]
@@ -177,10 +147,7 @@ fn mid_round_discard_follows_public_middle_over_live_terminal() {
     table.wall_count = 37;
     let hand = vec![1, 2, 3, 9, 11, 12, 14, 16, 18, 21, 22, 24, 26, 31];
 
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(14)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(14));
 }
 
 #[test]
@@ -399,10 +366,7 @@ fn mid_round_open_meld_tile_is_safer_than_live_suited_tile() {
     assert!(
         mid_round_open_meld_safety_bias(&table, 14) > mid_round_open_meld_safety_bias(&table, 9)
     );
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(14)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(14));
 }
 
 #[test]
@@ -458,10 +422,7 @@ fn mid_round_values_two_open_meld_tiles_over_live_dragon() {
             > mid_round_open_meld_safety_bias(&table, 35)
                 + mid_round_live_honor_risk_bias(&table, 0, 35, 1)
     );
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(6)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(6));
 }
 
 #[test]

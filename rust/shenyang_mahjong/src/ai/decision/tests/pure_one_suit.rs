@@ -34,7 +34,7 @@ fn capped_basic_foundation_preserves_three_suits_over_pure_one_suit_chase() {
     ));
     assert!(three_suits_discard_bias(&after_discard, &[], &table, 0, 11) <= -80.0);
     assert!(!matches!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_discard_from_view(&hand, &table, 0),
         Some(11 | 21)
     ));
 }
@@ -46,7 +46,7 @@ fn capped_discard_does_not_chase_pure_one_suit_when_three_suits_remain() {
     let hand = vec![1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 7, 8, 11, 21];
 
     assert!(!matches!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_discard_from_view(&hand, &table, 0),
         Some(11 | 21)
     ));
 }
@@ -80,10 +80,7 @@ fn one_fan_cap_uses_normal_discard_instead_of_forcing_last_honor() {
         pure_one_suit_plan_score_for_context(&remove_n_tiles(&hand, 31, 1), &[], &table, 0,),
         0.0
     );
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(12)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(12));
 }
 
 #[test]
@@ -108,7 +105,7 @@ fn dealer_can_chase_overwhelming_pure_one_suit_shape() {
     let hand = vec![1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 11, 35];
 
     assert!(matches!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_discard_from_view(&hand, &table, 0),
         Some(11 | 35)
     ));
 }
@@ -120,7 +117,7 @@ fn dealer_can_start_overwhelming_pure_one_suit_by_clearing_third_blocker() {
     let hand = vec![1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 7, 11, 12, 13];
 
     assert!(matches!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_discard_from_view(&hand, &table, 0),
         Some(11 | 12 | 13)
     ));
 }
@@ -132,7 +129,7 @@ fn dealer_discard_does_not_chase_early_pure_one_suit_by_breaking_second_suit() {
     let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 8, 9, 11, 12, 31, 35];
 
     assert!(!matches!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_discard_from_view(&hand, &table, 0),
         Some(11 | 12)
     ));
 }
@@ -144,7 +141,7 @@ fn dealer_does_not_start_pure_one_suit_plan_at_eight_main_suit_tiles() {
     let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 21, 22, 31, 35];
 
     assert!(!matches!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_discard_from_view(&hand, &table, 0),
         Some(11 | 12 | 21 | 22)
     ));
 }
@@ -175,10 +172,7 @@ fn discard_can_pursue_pure_one_suit_when_shape_is_strong() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 7, 8, 9, 11];
 
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(11)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(11));
 }
 
 #[test]
@@ -187,7 +181,7 @@ fn discard_clears_honor_before_off_suit_singleton_for_pure_one_suit_plan() {
     let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 8, 9, 11, 31, 35, 36];
 
     assert!(matches!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_discard_from_view(&hand, &table, 0),
         Some(31 | 35 | 36)
     ));
 }
@@ -198,7 +192,7 @@ fn discard_clears_honor_when_early_pure_one_suit_plan_is_available() {
     let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 8, 9, 11, 12, 31, 35];
 
     assert!(matches!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_discard_from_view(&hand, &table, 0),
         Some(31 | 35)
     ));
 }
@@ -208,10 +202,7 @@ fn discard_clears_last_honor_for_pure_one_suit_without_terminal_need() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 8, 8, 12, 31];
 
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(31)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(31));
 }
 
 #[test]
@@ -220,7 +211,7 @@ fn discard_starts_pure_one_suit_plan_at_eight_main_suit_tiles() {
     let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 21, 22, 31, 35];
 
     assert!(matches!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_discard_from_view(&hand, &table, 0),
         Some(11 | 12 | 21 | 22 | 31 | 35)
     ));
 }
@@ -252,10 +243,7 @@ fn non_dealer_pure_one_suit_plan_can_break_three_suits() {
         three_suits_discard_bias(&after_discard, &[], &table, 0, 21),
         0.0
     );
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(21)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(21));
 }
 
 #[test]
@@ -450,10 +438,7 @@ fn seven_pairs_wait_discard_avoids_pure_one_suit_threat_tile() {
         pure_one_suit_threat_discard_bias(&table, 0, 5, 1)
             < pure_one_suit_threat_discard_bias(&table, 0, 18, 1)
     );
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(18)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(18));
 }
 
 #[test]

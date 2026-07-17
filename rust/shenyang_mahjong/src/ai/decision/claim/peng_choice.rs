@@ -5,7 +5,6 @@ pub(super) fn choose_peng_claim(
     current_melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
     tile: i32,
     from_position: usize,
     current_score: f64,
@@ -48,17 +47,11 @@ pub(super) fn choose_peng_claim(
         ShenyangMahjongMeldKind::PENG,
         tile,
         from_position,
-    ) && !should_open_broken_closed_hand_for_defense(
-        hand,
-        current_melds,
-        table,
-        position,
-        win_rule,
-    ) {
+    ) && !should_open_broken_closed_hand_for_defense(hand, current_melds, table, position)
+    {
         return Some(AiClaimChoice::Pass);
     }
-    if should_pass_peng_for_open_pure_defense(hand, current_melds, table, position, win_rule, tile)
-    {
+    if should_pass_peng_for_open_pure_defense(hand, current_melds, table, position, tile) {
         return Some(AiClaimChoice::Pass);
     }
     if current_ready_score > 0.0 {
@@ -67,7 +60,6 @@ pub(super) fn choose_peng_claim(
             current_melds,
             table,
             position,
-            win_rule,
             tile,
             from_position,
             current_ready_score,
@@ -79,7 +71,6 @@ pub(super) fn choose_peng_claim(
             current_melds,
             table,
             position,
-            win_rule,
             tile,
             from_position,
             current_ready_score,
@@ -126,7 +117,6 @@ pub(super) fn choose_peng_claim(
         current_melds,
         table,
         position,
-        win_rule,
         tile,
     ) {
         return Some(AiClaimChoice::Pass);
@@ -155,8 +145,8 @@ pub(super) fn choose_peng_claim(
     let mut melds = current_melds.to_vec();
     melds.push(claim_peng_meld(tile, from_position));
     sort_tiles(&mut next);
-    let after = best_score_after_forced_discard(&next, &melds, table, position, win_rule);
-    if should_open_broken_closed_hand_for_defense(hand, current_melds, table, position, win_rule) {
+    let after = best_score_after_forced_discard(&next, &melds, table, position);
+    if should_open_broken_closed_hand_for_defense(hand, current_melds, table, position) {
         return Some(AiClaimChoice::Peng);
     }
     if should_preserve_pinghu_sequence_over_peng(hand, current_melds, table, position, tile) {

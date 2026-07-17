@@ -24,8 +24,7 @@ fn broken_closed_defense_preserves_seven_pairs_route() {
         &hand,
         &[],
         &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
+        0
     ));
 }
 
@@ -35,10 +34,7 @@ fn capped_discard_sets_seven_pairs_wait_on_live_wind_tiebreaker() {
     table.max_fan = Some(4);
     let hand = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 21, 21, 22, 22, 31];
 
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(5)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(5));
 }
 
 #[test]
@@ -75,10 +71,7 @@ fn capped_locked_seven_pairs_route_can_discard_last_honor() {
         &table,
         0
     ));
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(31)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(31));
 }
 
 #[test]
@@ -88,7 +81,7 @@ fn dealer_discard_keeps_four_pairs_when_basic_hand_is_missing_suit() {
     let hand = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 13, 14, 15, 31, 35];
 
     assert!(!matches!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_discard_from_view(&hand, &table, 0),
         Some(1 | 2 | 3 | 11)
     ));
 }
@@ -109,7 +102,7 @@ fn discard_keeps_four_pairs_for_basic_seven_pairs_when_missing_suit() {
     let hand = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 13, 14, 15, 31, 35];
 
     assert!(!matches!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_discard_from_view(&hand, &table, 0),
         Some(1 | 2 | 3 | 11)
     ));
 }
@@ -119,7 +112,7 @@ fn discard_keeps_pairs_for_basic_seven_pairs_plan_when_missing_suit() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 12, 31, 35, 36, 37];
 
-    let discard = choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC);
+    let discard = choose_discard_from_view(&hand, &table, 0);
 
     assert!(matches!(discard, Some(31 | 35 | 36 | 37)));
 }
@@ -130,7 +123,7 @@ fn discard_keeps_pairs_when_many_pairs_can_chase_seven_pairs() {
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 22, 23, 31, 35, 36];
 
     assert!(matches!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_discard_from_view(&hand, &table, 0),
         Some(21 | 22 | 23 | 31 | 35 | 36)
     ));
 }
@@ -143,7 +136,7 @@ fn discard_keeps_quad_pairs_for_basic_seven_pairs_when_missing_suit() {
     assert_eq!(pair_count(&hand), 5);
     assert!(should_lock_seven_pairs_plan(&hand, &[], &table, 0));
     assert!(!matches!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_discard_from_view(&hand, &table, 0),
         Some(1 | 2 | 3 | 11)
     ));
 }
@@ -153,10 +146,7 @@ fn discard_locked_five_pairs_prefers_honor_singleton_first() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 1, 2, 2, 5, 9, 11, 11, 12, 12, 14, 21, 21, 31];
 
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(31)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(31));
 }
 
 #[test]
@@ -165,7 +155,7 @@ fn discard_locked_five_pairs_prefers_non_terminal_singleton_over_terminal() {
     let hand = vec![1, 1, 2, 2, 5, 9, 11, 11, 12, 12, 14, 19, 21, 21];
 
     assert!(matches!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_discard_from_view(&hand, &table, 0),
         Some(5 | 14)
     ));
 }
@@ -176,10 +166,7 @@ fn discard_locked_five_pairs_prefers_single_dragon_before_wind() {
     let hand = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 14, 21, 21, 31, 35];
 
     assert!(should_lock_seven_pairs_plan(&hand, &[], &table, 0));
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(35)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(35));
 }
 
 #[test]
@@ -187,10 +174,7 @@ fn discard_returns_none_for_seven_pairs_win() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35, 35];
 
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        None
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), None);
 }
 
 #[test]
@@ -198,10 +182,7 @@ fn discard_sets_seven_pairs_wait_away_from_public_middle_tile() {
     let table = table_with_discards(1, vec![5]);
     let hand = vec![1, 1, 2, 2, 5, 9, 11, 11, 12, 12, 21, 21, 22, 22];
 
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(5)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(5));
 }
 
 #[test]
@@ -216,10 +197,7 @@ fn discard_sets_seven_pairs_wait_by_breaking_dead_triplet_wait() {
         seven_pairs_wait_tile_score(5, &live_middle_wait, &table, 0)
             > seven_pairs_wait_tile_score(31, &dead_wind_wait, &table, 0)
     );
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(31)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(31));
 }
 
 #[test]
@@ -227,10 +205,7 @@ fn discard_sets_seven_pairs_wait_on_live_terminal_before_middle_tile() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 1, 2, 2, 5, 9, 11, 11, 12, 12, 21, 21, 22, 22];
 
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(5)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(5));
 }
 
 #[test]
@@ -238,10 +213,7 @@ fn discard_sets_seven_pairs_wait_on_live_terminal_over_dead_wind() {
     let table = table_with_discards(1, vec![31, 31]);
     let hand = vec![1, 1, 2, 2, 9, 11, 11, 12, 12, 21, 21, 22, 22, 31];
 
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(31)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(31));
 }
 
 #[test]
@@ -249,10 +221,7 @@ fn discard_sets_seven_pairs_wait_on_live_wind_before_middle_tile() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 21, 21, 22, 22, 31];
 
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(5)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(5));
 }
 
 #[test]
@@ -260,10 +229,7 @@ fn discard_sets_seven_pairs_wait_on_wind_before_dragon() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 1, 2, 2, 3, 3, 4, 4, 11, 11, 21, 21, 31, 35];
 
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(35)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(35));
 }
 
 #[test]
@@ -332,10 +298,7 @@ fn late_six_pair_hand_breaks_public_pair_instead_of_setting_unsafe_wait() {
         0,
     ));
     assert_eq!(public_discard_count(&table, 1), 1);
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(1)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(1));
 }
 
 #[test]
@@ -355,10 +318,7 @@ fn one_fan_capped_six_pairs_still_sets_better_seven_pairs_wait() {
     let hand = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 21, 21, 22, 22, 31];
 
     assert_eq!(pair_count(&hand), 6);
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(5)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(5));
 }
 
 #[test]
@@ -535,10 +495,7 @@ fn seven_pairs_wait_score_rejects_dead_exposed_wind_wait() {
         seven_pairs_wait_tile_score(5, &middle_wait, &table, 0)
             > seven_pairs_wait_tile_score(31, &wind_wait, &table, 0)
     );
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(31)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(31));
 }
 
 #[test]
@@ -598,10 +555,7 @@ fn speed_first_seven_pairs_wait_prefers_three_live_middle_copies_over_two_termin
         seven_pairs_wait_tile_score(5, &middle_wait, &table, 0)
             > seven_pairs_wait_tile_score(9, &terminal_wait, &table, 0)
     );
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(9)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(9));
 
     table.dealer_position = 3;
     table.wall_count = FINAL_DEFENSE_WALL_COUNT;

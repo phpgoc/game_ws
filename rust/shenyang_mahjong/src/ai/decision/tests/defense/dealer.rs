@@ -79,10 +79,7 @@ fn seven_pairs_prefers_live_middle_wait_against_major_dealer_threat() {
         seven_pairs_wait_discard_bias(&hand, 15, &[], &table, 0)
             > seven_pairs_wait_discard_bias(&hand, 1, &[], &table, 0)
     );
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(15)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(15));
 
     table.dealer_position = 1;
     assert!(dealer_opponent_has_major_threat(&table, 0));
@@ -94,8 +91,5 @@ fn seven_pairs_prefers_live_middle_wait_against_major_dealer_threat() {
         seven_pairs_wait_discard_bias(&hand, 1, &[], &table, 0)
             > seven_pairs_wait_discard_bias(&hand, 15, &[], &table, 0)
     );
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(1)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(1));
 }

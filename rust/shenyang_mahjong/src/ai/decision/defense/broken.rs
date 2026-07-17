@@ -16,7 +16,6 @@ pub(in crate::ai::decision) fn should_open_broken_closed_hand_for_defense(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
 ) -> bool {
     let already_open = has_door_opening_meld(melds, table);
     if already_open || !is_mid_broken_hand_defense_round(table) {
@@ -28,8 +27,8 @@ pub(in crate::ai::decision) fn should_open_broken_closed_hand_for_defense(
     {
         return false;
     }
-    if ready_tile_score(hand, melds, table, position, win_rule) > 0.0
-        || one_step_wait_potential(hand, melds, table, position, win_rule) > 0.0
+    if ready_tile_score(hand, melds, table, position) > 0.0
+        || one_step_wait_potential(hand, melds, table, position) > 0.0
     {
         return false;
     }
@@ -65,7 +64,6 @@ pub(in crate::ai::decision) fn should_use_broken_hand_public_defense_discard(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
 ) -> bool {
     if is_late_defense_round(table)
         || !is_mid_broken_hand_defense_round(table)
@@ -83,8 +81,8 @@ pub(in crate::ai::decision) fn should_use_broken_hand_public_defense_discard(
     {
         return false;
     }
-    if best_ready_score_after_discard(hand, melds, table, position, win_rule) > 0.0
-        || best_one_step_wait_potential_after_discard(hand, melds, table, position, win_rule) > 0.0
+    if best_ready_score_after_discard(hand, melds, table, position) > 0.0
+        || best_one_step_wait_potential_after_discard(hand, melds, table, position) > 0.0
     {
         return false;
     }

@@ -19,7 +19,7 @@ fn claim_hu_accepts_open_meld_remainder() {
     let hand = vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Hu)
     );
 }
@@ -36,7 +36,7 @@ fn claim_hu_accepts_seven_pairs() {
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Hu)
     );
 }
@@ -53,13 +53,13 @@ fn claim_hu_allows_closed_sequence_dragon_pair_win_when_first_chi_disabled() {
     let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 35];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Pass)
     );
 
     table.allow_first_chi = false;
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Hu)
     );
 }
@@ -77,7 +77,7 @@ fn claim_hu_beats_other_claims() {
     let hand = vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Hu)
     );
 }
@@ -95,7 +95,7 @@ fn claim_hu_counts_chi_as_opening_meld() {
     let hand = vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Hu)
     );
 }
@@ -164,7 +164,7 @@ fn claim_hu_does_not_double_count_visible_tile_to_create_capped_wait() {
         16,
     ));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Hu)
     );
 }
@@ -182,14 +182,14 @@ fn claim_hu_passes_when_unowned_tile_has_five_visible_copies() {
     let hand = vec![1, 2, 11, 12, 13, 31, 31, 31, 35, 35];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Hu)
     );
 
     table.seats.get_mut(&1).unwrap().discards = vec![3, 3, 3, 3, 3];
     assert_eq!(visible_tile_count(&table, 3), 5);
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Pass)
     );
 }
@@ -208,7 +208,7 @@ fn claim_hu_still_wins_during_final_defense() {
     let hand = vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Hu)
     );
 }
@@ -250,7 +250,7 @@ fn claim_hu_takes_when_current_fan_exceeds_half_cap() {
         36,
     ));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Hu)
     );
 }
@@ -318,7 +318,7 @@ fn dealer_claim_hu_takes_one_fan_short_instead_of_chasing_cap() {
         16,
     ));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Hu)
     );
 }
@@ -364,7 +364,7 @@ fn final_claim_hu_takes_one_fan_short_without_full_wall_cycle() {
         16,
     ));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Hu)
     );
 }
@@ -424,7 +424,7 @@ fn hu_takes_legal_hand_against_long_closed_dealer() {
         16,
     ));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Hu)
     );
 }
@@ -479,7 +479,7 @@ fn hu_takes_one_fan_short_against_threatening_dealer() {
         &win_hand, &table, 0, 16,
     ));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Hu)
     );
 }
@@ -513,7 +513,7 @@ fn late_claim_hu_can_pass_one_fan_short_when_capped_wait_is_live() {
         16,
     ));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Pass)
     );
 }
@@ -545,7 +545,7 @@ fn late_claim_hu_takes_when_capped_wait_is_unlikely_to_reach_wall() {
         &hand, &win_hand, melds, &table, 0, 16,
     ));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Hu)
     );
 }

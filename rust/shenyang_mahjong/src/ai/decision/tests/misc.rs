@@ -7,10 +7,7 @@ fn capped_non_dealer_prefers_wider_wait_over_single_wait_fan() {
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(31)];
     let hand = vec![2, 2, 4, 5, 7, 11, 12, 13, 21, 22, 23];
 
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(7)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(7));
 }
 
 #[test]
@@ -19,7 +16,7 @@ fn discard_candidates_ignore_invalid_tiles() {
     table.wall_count = 16;
     let hand = vec![1, 1, 4, 7, 9, 12, 14, 14, 17, 21, 23, 25, 31, 99];
 
-    let choice = choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC);
+    let choice = choose_discard_from_view(&hand, &table, 0);
 
     assert!(choice.is_some_and(is_valid_tile));
 }
@@ -50,30 +47,18 @@ fn hand_progress_ignores_invalid_melds_but_counts_valid_melds() {
         },
     ];
     let valid_melds = vec![test_chi_meld(1), test_peng_meld(11)];
-    let base = hand_progress_score(&[], &[], &table, 0, WIN_RULE_SHENYANG_BASIC);
+    let base = hand_progress_score(&[], &[], &table, 0);
 
-    assert_eq!(
-        hand_progress_score(&[], &invalid_melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        base
-    );
-    assert!(hand_progress_score(&[], &valid_melds, &table, 0, WIN_RULE_SHENYANG_BASIC) > base);
+    assert_eq!(hand_progress_score(&[], &invalid_melds, &table, 0), base);
+    assert!(hand_progress_score(&[], &valid_melds, &table, 0) > base);
 
-    let base_after_discard =
-        hand_progress_score_after_discard(&[], &[], &table, 0, WIN_RULE_SHENYANG_BASIC, 5);
+    let base_after_discard = hand_progress_score_after_discard(&[], &[], &table, 0, 5);
     assert_eq!(
-        hand_progress_score_after_discard(
-            &[],
-            &invalid_melds,
-            &table,
-            0,
-            WIN_RULE_SHENYANG_BASIC,
-            5,
-        ),
+        hand_progress_score_after_discard(&[], &invalid_melds, &table, 0, 5,),
         base_after_discard
     );
     assert!(
-        hand_progress_score_after_discard(&[], &valid_melds, &table, 0, WIN_RULE_SHENYANG_BASIC, 5,)
-            > base_after_discard
+        hand_progress_score_after_discard(&[], &valid_melds, &table, 0, 5,) > base_after_discard
     );
 }
 
@@ -95,25 +80,18 @@ fn late_broken_basic_discard_follows_public_tile_for_weak_recoverable_hand() {
         0.0
     );
     assert_eq!(piao_plan_score_for_context(&hand, &[], &table, 0), 0.0);
+    assert_eq!(best_ready_score_after_discard(&hand, &[], &table, 0), 0.0);
     assert_eq!(
-        best_ready_score_after_discard(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
-        0.0
-    );
-    assert_eq!(
-        best_one_step_wait_potential_after_discard(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        best_one_step_wait_potential_after_discard(&hand, &[], &table, 0),
         0.0
     );
     assert!(should_use_broken_hand_public_defense_discard(
         &hand,
         &[],
         &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
+        0
     ));
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(31)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(31));
 }
 
 #[test]
@@ -125,30 +103,14 @@ fn late_ready_discard_breaks_wait_for_public_safe_tile() {
     let hand = vec![1, 2, 3, 4, 5, 6, 21, 22, 32, 35, 35];
 
     assert_eq!(
-        ready_live_tile_count_after_discard(
-            &remove_n_tiles(&hand, 5, 1),
-            melds,
-            &table,
-            0,
-            WIN_RULE_SHENYANG_BASIC,
-            5,
-        ),
+        ready_live_tile_count_after_discard(&remove_n_tiles(&hand, 5, 1), melds, &table, 0, 5,),
         0
     );
     assert!(
-        ready_live_tile_count_after_discard(
-            &remove_n_tiles(&hand, 32, 1),
-            melds,
-            &table,
-            0,
-            WIN_RULE_SHENYANG_BASIC,
-            32,
-        ) > 0
+        ready_live_tile_count_after_discard(&remove_n_tiles(&hand, 32, 1), melds, &table, 0, 32,)
+            > 0
     );
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(5)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(5));
 }
 
 #[test]
@@ -157,10 +119,7 @@ fn late_unready_discard_uses_defense_before_hand_progress() {
     table.wall_count = 16;
     let hand = vec![1, 1, 4, 7, 9, 12, 14, 14, 17, 21, 23, 25, 31, 35];
 
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(14)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(14));
 }
 
 #[test]
@@ -169,20 +128,13 @@ fn illegal_near_ready_shape_uses_defensive_opening() {
     table.wall_count = 40;
     let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 31, 31, 35];
 
-    assert_eq!(
-        ready_tile_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
-        0.0
-    );
-    assert_eq!(
-        one_step_wait_potential(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
-        0.0
-    );
+    assert_eq!(ready_tile_score(&hand, &[], &table, 0), 0.0);
+    assert_eq!(one_step_wait_potential(&hand, &[], &table, 0), 0.0);
     assert!(should_open_broken_closed_hand_for_defense(
         &hand,
         &[],
         &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
+        0
     ));
 }
 

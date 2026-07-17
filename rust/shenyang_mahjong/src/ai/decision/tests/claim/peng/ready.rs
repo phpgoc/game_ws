@@ -13,7 +13,7 @@ fn claim_peng_preserves_pinghu_sequence_when_open_and_heng_is_ready() {
     let hand = vec![4, 5, 5, 6, 11, 12, 21, 22, 35, 35];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Pass)
     );
 }
@@ -30,19 +30,16 @@ fn claim_peng_preserves_configured_closed_sequence_wait() {
     let claim = table.claim_window.clone().unwrap();
     let hand = vec![1, 1, 2, 2, 3, 11, 12, 13, 21, 22, 23, 35, 35];
 
+    assert_eq!(ready_tile_score(&hand, &[], &table, 0), 0.0);
     assert_eq!(
-        ready_tile_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
-        0.0
-    );
-    assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Peng)
     );
 
     table.allow_first_chi = false;
-    assert!(ready_tile_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0);
+    assert!(ready_tile_score(&hand, &[], &table, 0) > 0.0);
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Pass)
     );
 }
@@ -61,7 +58,7 @@ fn claim_peng_takes_late_ready_dragon_when_it_keeps_ready() {
     let hand = vec![1, 2, 3, 11, 12, 13, 21, 22, 35, 35];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Peng)
     );
 }
@@ -79,9 +76,9 @@ fn claim_peng_takes_ready_dragon_before_late_round_when_it_keeps_ready() {
     let hand = vec![1, 2, 3, 11, 12, 13, 21, 22, 35, 35];
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
 
-    assert!(ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0);
+    assert!(ready_tile_score(&hand, melds, &table, 0) > 0.0);
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Peng)
     );
 }
@@ -100,7 +97,7 @@ fn claim_ready_hand_passes_dragon_peng_when_visible_fan_is_capped() {
     let hand = vec![11, 12, 13, 21, 22, 23, 24, 25, 35, 35];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Pass)
     );
 }
@@ -119,16 +116,10 @@ fn claim_ready_hand_passes_peng_when_fan_exceeds_half_cap() {
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
     let hand = vec![1, 2, 3, 9, 9, 11, 12, 13, 21, 22];
 
-    assert!(ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0);
-    assert!(ready_visible_fan_exceeds_half_cap(
-        &hand,
-        melds,
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(ready_tile_score(&hand, melds, &table, 0) > 0.0);
+    assert!(ready_visible_fan_exceeds_half_cap(&hand, melds, &table, 0));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Pass)
     );
 }
@@ -145,7 +136,7 @@ fn claim_ready_hand_pengs_dragon_when_it_keeps_ready() {
     let claim = table.claim_window.clone().unwrap();
     let hand = vec![11, 12, 13, 21, 22, 23, 24, 25, 35, 35];
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
-    let current_ready_score = ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC);
+    let current_ready_score = ready_tile_score(&hand, melds, &table, 0);
 
     assert!(current_ready_score > 0.0);
     assert!(!is_complete_win_with_melds(
@@ -157,13 +148,12 @@ fn claim_ready_hand_pengs_dragon_when_it_keeps_ready() {
         melds,
         &table,
         0,
-        WIN_RULE_SHENYANG_BASIC,
         35,
         1,
         current_ready_score
     ));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Peng)
     );
 }
@@ -184,7 +174,7 @@ fn ready_hand_rejects_narrowing_dragon_peng_against_threatening_dealer() {
     let hand = vec![11, 12, 13, 21, 22, 23, 24, 25, 35, 35];
     table.dealer_position = 3;
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
-    let current_ready_score = ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC);
+    let current_ready_score = ready_tile_score(&hand, melds, &table, 0);
 
     assert!(!dealer_opponent_has_major_threat(&table, 0));
     assert!(should_claim_ready_dragon_peng_from_discard(
@@ -192,32 +182,29 @@ fn ready_hand_rejects_narrowing_dragon_peng_against_threatening_dealer() {
         melds,
         &table,
         0,
-        WIN_RULE_SHENYANG_BASIC,
         35,
         1,
         current_ready_score,
     ));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Peng)
     );
 
     table.dealer_position = 1;
-    let threatened_current_ready_score =
-        ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC);
+    let threatened_current_ready_score = ready_tile_score(&hand, melds, &table, 0);
     assert!(dealer_opponent_has_major_threat(&table, 0));
     assert!(!should_claim_ready_dragon_peng_from_discard(
         &hand,
         melds,
         &table,
         0,
-        WIN_RULE_SHENYANG_BASIC,
         35,
         1,
         threatened_current_ready_score,
     ));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Pass)
     );
 }

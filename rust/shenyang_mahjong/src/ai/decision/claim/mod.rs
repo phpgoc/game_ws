@@ -76,7 +76,6 @@ pub fn choose_claim_from_view(
     claim: &AiClaimView,
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
 ) -> Option<AiClaimChoice> {
     if position == claim.from_position || !claim.eligible_positions.contains(&position) {
         return None;
@@ -107,15 +106,15 @@ pub fn choose_claim_from_view(
         .get(&position)
         .map(|seat| seat.melds.clone())
         .unwrap_or_default();
-    let current_ready_score = ready_tile_score(hand, &current_melds, table, position, win_rule);
+    let current_ready_score = ready_tile_score(hand, &current_melds, table, position);
     if should_pass_late_unready_claim_for_defense(table, current_ready_score) {
         return Some(AiClaimChoice::Pass);
     }
-    if ready_visible_fan_reaches_cap(hand, &current_melds, table, position, win_rule) {
+    if ready_visible_fan_reaches_cap(hand, &current_melds, table, position) {
         return Some(AiClaimChoice::Pass);
     }
     if current_ready_score > 0.0
-        && ready_visible_fan_exceeds_half_cap(hand, &current_melds, table, position, win_rule)
+        && ready_visible_fan_exceeds_half_cap(hand, &current_melds, table, position)
     {
         return Some(AiClaimChoice::Pass);
     }
@@ -125,20 +124,18 @@ pub fn choose_claim_from_view(
         &current_melds,
         table,
         position,
-        win_rule,
         tile,
         claim.from_position,
     ) {
         return Some(choice);
     }
 
-    let current_score = hand_progress_score(hand, &current_melds, table, position, win_rule);
+    let current_score = hand_progress_score(hand, &current_melds, table, position);
     if let Some(choice) = choose_peng_claim(
         hand,
         &current_melds,
         table,
         position,
-        win_rule,
         tile,
         claim.from_position,
         current_score,
@@ -152,7 +149,6 @@ pub fn choose_claim_from_view(
         &current_melds,
         table,
         position,
-        win_rule,
         tile,
         claim.from_position,
         current_ready_score,

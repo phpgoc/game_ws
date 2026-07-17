@@ -18,15 +18,14 @@ fn capped_claim_gang_does_not_peng_to_preserve_redundant_four_gui_yi() {
         &hand,
         table.seats.get(&0).unwrap().melds.as_slice(),
         &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
+        0
     ));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Gang)
     );
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, 0),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Gang)
     );
 }
@@ -48,21 +47,12 @@ fn capped_open_basic_route_delays_plain_gang_before_ready() {
     assert!(capped_open_basic_route_visible_fan_reaches_cap(
         &hand, melds, &table
     ));
-    assert_eq!(
-        ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        0.0
-    );
+    assert_eq!(ready_tile_score(&hand, melds, &table, 0), 0.0);
     assert!(!should_claim_gang_from_discard(
-        &hand,
-        melds,
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-        9,
-        1
+        &hand, melds, &table, 0, 9, 1
     ));
     assert_ne!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Gang)
     );
 }
@@ -79,7 +69,7 @@ fn claim_gang_beats_peng_when_not_winning() {
     let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 35, 35, 35];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Gang)
     );
 }
@@ -97,7 +87,7 @@ fn claim_gang_delays_open_piao_plain_gang_until_ready_and_pengs() {
     let hand = vec![11, 11, 21, 21, 21, 31, 31, 35, 35, 36];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Peng)
     );
 }
@@ -115,13 +105,13 @@ fn claim_gang_delays_open_plain_gang_when_not_ready() {
     let hand = vec![4, 5, 6, 9, 9, 9, 11, 12, 14, 21];
 
     assert_ne!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Gang)
     );
 
     table.dealer_position = 0;
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Gang)
     );
 }
@@ -142,11 +132,10 @@ fn claim_gang_opens_broken_closed_hand_for_defense() {
         &hand,
         &[],
         &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
+        0
     ));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Gang)
     );
 }
@@ -164,7 +153,7 @@ fn claim_gang_opens_broken_closed_hand_late_for_defense() {
     let hand = vec![2, 2, 2, 4, 7, 12, 14, 17, 31, 32, 33, 34, 35];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Gang)
     );
 }
@@ -181,7 +170,7 @@ fn claim_gang_opens_closed_plain_basic_hand_before_ready() {
     let hand = vec![3, 3, 3, 4, 5, 7, 8, 11, 12, 14, 21, 22, 31];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Gang)
     );
 }
@@ -202,11 +191,10 @@ fn claim_gang_opens_mid_missing_suit_no_terminal_hand_for_defense() {
         &hand,
         &[],
         &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
+        0
     ));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Gang)
     );
 }
@@ -224,7 +212,7 @@ fn claim_gang_passes_capped_closed_pure_one_suit_wait() {
     let hand = vec![1, 1, 1, 2, 3, 4, 5, 6, 7, 8, 8, 9, 9];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Pass)
     );
 }
@@ -241,7 +229,7 @@ fn claim_gang_passes_closed_pure_one_suit_plan_before_ready() {
     let hand = vec![1, 1, 1, 2, 3, 4, 5, 6, 7, 8, 8, 9, 11];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Pass)
     );
 }
@@ -258,7 +246,7 @@ fn claim_gang_passes_dragon_when_pure_one_suit_plan_starts_at_eight_tiles() {
     let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 11, 21, 35, 35, 35];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Pass)
     );
 }
@@ -276,7 +264,7 @@ fn claim_gang_passes_final_unready_broken_hand_for_defense() {
     let hand = vec![2, 2, 2, 4, 7, 12, 14, 17, 31, 32, 33, 34, 35];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Pass)
     );
 }
@@ -294,7 +282,7 @@ fn claim_gang_takes_late_gang_when_closed_shape_is_not_legal_ready() {
     let hand = vec![2, 4, 6, 6, 6, 7, 8, 13, 14, 15, 23, 24, 25];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Gang)
     );
 }
@@ -314,16 +302,15 @@ fn claim_gang_passes_pure_plan_when_gang_only_reaches_basic_ready() {
     let melds = vec![claim_gang_meld(1, 1)];
 
     assert!(pure_one_suit_plan_score_for_context(&hand, &[], &table, 0) > 0.0);
-    assert!(ready_tile_score(&after_claim, &melds, &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0);
+    assert!(ready_tile_score(&after_claim, &melds, &table, 0) > 0.0);
     assert!(!ready_has_pure_one_suit_win(
         &after_claim,
         &melds,
         &table,
         0,
-        WIN_RULE_SHENYANG_BASIC,
     ));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Pass)
     );
 }
@@ -342,7 +329,7 @@ fn claim_gang_passes_ready_pure_one_suit_when_visible_fan_capped() {
     let hand = vec![1, 1, 1, 5, 6, 7, 8, 8, 9, 9];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Pass)
     );
 }
@@ -359,7 +346,7 @@ fn claim_gang_passes_when_it_breaks_locked_pure_one_suit_plan() {
     let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 8, 9, 11, 11, 11];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Pass)
     );
 }
@@ -376,7 +363,7 @@ fn claim_gang_passes_when_it_breaks_locked_seven_pairs_plan() {
     let hand = vec![1, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 31];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Pass)
     );
 }
@@ -394,7 +381,7 @@ fn claim_gang_penges_closed_early_piao_candidate() {
 
     assert!(is_closed_early_piao_candidate(&hand, &[], &table, 0));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Peng)
     );
 }
@@ -417,33 +404,13 @@ fn claim_gang_penges_committed_piao_plan_when_gang_only_reaches_basic_ready() {
     after_melds.push(claim_gang_meld(21, 1));
 
     assert!(piao_plan_score_for_context(&hand, melds, &table, 0) >= 22.0);
-    assert!(
-        ready_tile_score(
-            &after_claim,
-            &after_melds,
-            &table,
-            0,
-            WIN_RULE_SHENYANG_BASIC
-        ) > 0.0
-    );
-    assert!(!ready_has_piao_win(
-        &after_claim,
-        &after_melds,
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(ready_tile_score(&after_claim, &after_melds, &table, 0) > 0.0);
+    assert!(!ready_has_piao_win(&after_claim, &after_melds, &table, 0));
     assert!(!should_claim_gang_from_discard(
-        &hand,
-        melds,
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-        21,
-        1
+        &hand, melds, &table, 0, 21, 1
     ));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Peng)
     );
 }
@@ -461,7 +428,7 @@ fn claim_gang_passes_final_unready_hand_when_replacement_tile_is_unavailable() {
     let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 35, 35, 35];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Pass)
     );
 }
@@ -478,7 +445,7 @@ fn claim_gang_preserves_five_pairs_even_for_dragon_gang() {
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 22, 35, 35, 35];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Pass)
     );
 }
@@ -497,7 +464,7 @@ fn claim_gang_skips_plain_gang_when_ready_fan_already_capped() {
     let hand = vec![1, 2, 3, 9, 9, 9, 11, 12, 13, 21];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Pass)
     );
 }
@@ -516,16 +483,10 @@ fn claim_gang_skips_ready_plain_gang_when_fan_exceeds_half_cap() {
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
     let hand = vec![1, 2, 3, 9, 9, 9, 11, 12, 13, 21];
 
-    assert!(ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0);
-    assert!(ready_visible_fan_exceeds_half_cap(
-        &hand,
-        melds,
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(ready_tile_score(&hand, melds, &table, 0) > 0.0);
+    assert!(ready_visible_fan_exceeds_half_cap(&hand, melds, &table, 0));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Pass)
     );
 }
@@ -551,12 +512,11 @@ fn claim_gang_stops_preserving_four_gui_yi_against_threatening_dealer() {
         table.seats.get(&0).unwrap().melds.as_slice(),
         &table,
         0,
-        WIN_RULE_SHENYANG_BASIC,
         4,
         1,
     ));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Peng)
     );
 
@@ -567,12 +527,11 @@ fn claim_gang_stops_preserving_four_gui_yi_against_threatening_dealer() {
         table.seats.get(&0).unwrap().melds.as_slice(),
         &table,
         0,
-        WIN_RULE_SHENYANG_BASIC,
         4,
         1,
     ));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Gang)
     );
 }
@@ -595,24 +554,12 @@ fn claim_gang_takes_committed_piao_plan_when_gang_reaches_piao_ready() {
     after_melds.push(claim_gang_meld(21, 1));
 
     assert!(piao_plan_score_for_context(&hand, melds, &table, 0) >= 22.0);
-    assert!(ready_has_piao_win(
-        &after_claim,
-        &after_melds,
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(ready_has_piao_win(&after_claim, &after_melds, &table, 0));
     assert!(should_claim_gang_from_discard(
-        &hand,
-        melds,
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-        21,
-        1
+        &hand, melds, &table, 0, 21, 1
     ));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Gang)
     );
 }
@@ -629,7 +576,7 @@ fn claim_gang_takes_dragon_gang_to_open_basic_hand_before_ready() {
     let hand = vec![1, 2, 3, 4, 5, 7, 11, 12, 14, 21, 35, 35, 35];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Gang)
     );
 }
@@ -648,7 +595,7 @@ fn claim_gang_takes_late_ready_dragon_gang_when_it_keeps_ready() {
     let hand = vec![1, 2, 3, 11, 12, 13, 21, 35, 35, 35];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Gang)
     );
 }
@@ -671,16 +618,10 @@ fn claim_gang_takes_open_plain_gang_when_it_reaches_ready() {
         0.0
     );
     assert!(claim_gang_from_discard_reaches_ready(
-        &hand,
-        melds,
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-        9,
-        1
+        &hand, melds, &table, 0, 9, 1
     ));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Gang)
     );
 }
@@ -697,7 +638,7 @@ fn claim_gang_takes_ready_main_suit_pure_one_suit_when_not_capped() {
     let hand = vec![1, 1, 1, 2, 3, 4, 5, 6, 7, 8, 8, 9, 9];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Gang)
     );
 }
@@ -719,11 +660,10 @@ fn dealer_claim_gang_opens_broken_closed_hand_for_speed() {
         &hand,
         &[],
         &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
+        0
     ));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Gang)
     );
 }
@@ -743,12 +683,9 @@ fn dealer_takes_unready_discard_gang_that_preserves_committed_piao() {
 
     assert!(piao_plan_score_for_context(&hand, melds, &table, 0) >= 40.0);
     assert!(piao_committed_group_count(&hand, melds) >= 3);
+    assert_eq!(ready_tile_score(&hand, melds, &table, 0), 0.0);
     assert_eq!(
-        ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        0.0
-    );
-    assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Peng)
     );
 
@@ -757,13 +694,13 @@ fn dealer_takes_unready_discard_gang_that_preserves_committed_piao() {
         vec![test_peng_meld(3), test_peng_meld(14), test_peng_meld(25)];
     assert!(dealer_opponent_has_major_threat(&table, 0));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Gang)
     );
 
     table.dealer_position = 0;
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Gang)
     );
 }
@@ -787,7 +724,7 @@ fn half_capped_committed_piao_claim_gang_takes_projected_cap() {
     assert!(piao_committed_group_count(&hand, melds) >= 3);
     assert_eq!(estimated_visible_bonus_fan(&hand, melds), 0);
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Gang)
     );
 }
@@ -806,13 +743,10 @@ fn half_capped_established_pure_claim_gang_takes_projected_cap() {
     let hand = vec![1, 1, 1, 2, 2, 2, 3, 4, 5, 5, 6, 8, 9];
 
     assert!(pure_one_suit_plan_score_for_context(&hand, &[], &table, 0) > 0.0);
-    assert_eq!(
-        ready_tile_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
-        0.0
-    );
+    assert_eq!(ready_tile_score(&hand, &[], &table, 0), 0.0);
     assert_eq!(estimated_visible_bonus_fan(&hand, &[]), 0);
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Gang)
     );
 }
@@ -832,10 +766,7 @@ fn half_capped_unready_claim_gang_takes_projected_cap() {
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
     let hand = vec![1, 4, 7, 9, 9, 9, 11, 14, 17, 21];
 
-    assert_eq!(
-        ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        0.0
-    );
+    assert_eq!(ready_tile_score(&hand, melds, &table, 0), 0.0);
     assert!(capped_normal_route_visible_fan_exceeds_half_cap(
         &hand, melds, &table
     ));
@@ -843,7 +774,7 @@ fn half_capped_unready_claim_gang_takes_projected_cap() {
         &hand, melds, &table
     ));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Gang)
     );
 }
@@ -862,7 +793,7 @@ fn non_dealer_claim_gang_penges_to_preserve_four_gui_yi_when_peng_stays_ready() 
     let hand = vec![2, 2, 2, 4, 4, 4, 5, 21, 21, 21];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Peng)
     );
 
@@ -872,12 +803,11 @@ fn non_dealer_claim_gang_penges_to_preserve_four_gui_yi_when_peng_stays_ready() 
         table.seats.get(&0).unwrap().melds.as_slice(),
         &table,
         0,
-        WIN_RULE_SHENYANG_BASIC,
         4,
         1,
     ));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Gang)
     );
 }
@@ -895,7 +825,7 @@ fn one_fan_capped_claim_gang_takes_dragon_for_replacement_draw() {
     let hand = vec![1, 2, 3, 4, 5, 7, 11, 12, 14, 21, 35, 35, 35];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Gang)
     );
 }
@@ -914,7 +844,7 @@ fn one_fan_claim_gang_does_not_preserve_five_pairs() {
 
     assert_eq!(pair_count(&hand), 5);
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Gang)
     );
 }
@@ -953,7 +883,7 @@ fn three_fan_capped_claim_gang_penges_dragon_over_five_pairs() {
         &table
     ));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Peng)
     );
 }

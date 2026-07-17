@@ -68,11 +68,10 @@ pub(in crate::ai::decision) fn should_claim_gang_from_discard(
     current_melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
     tile: i32,
     from_position: usize,
 ) -> bool {
-    let current_ready_score = ready_tile_score(hand, current_melds, table, position, win_rule);
+    let current_ready_score = ready_tile_score(hand, current_melds, table, position);
     let piao_score = piao_plan_score_for_context(hand, current_melds, table, position);
     let committed_piao_plan = piao_score >= 22.0
         && piao_threat_level(current_melds) > 0
@@ -90,7 +89,7 @@ pub(in crate::ai::decision) fn should_claim_gang_from_discard(
             || table.max_fan.is_some_and(|max_fan| max_fan <= 1)
             || dealer_opponent_has_major_threat(table, position)
             || projected_capped_visible_fan);
-    if ready_visible_fan_reaches_cap(hand, current_melds, table, position, win_rule) {
+    if ready_visible_fan_reaches_cap(hand, current_melds, table, position) {
         return false;
     }
     if !speed_first_unready
@@ -103,7 +102,6 @@ pub(in crate::ai::decision) fn should_claim_gang_from_discard(
         current_melds,
         table,
         position,
-        win_rule,
         tile,
         from_position,
     );
@@ -114,7 +112,6 @@ pub(in crate::ai::decision) fn should_claim_gang_from_discard(
                 current_melds,
                 table,
                 position,
-                win_rule,
                 tile,
                 from_position,
             );
@@ -131,7 +128,7 @@ pub(in crate::ai::decision) fn should_claim_gang_from_discard(
     if should_claim_opening_gang_for_basic_hand(hand, current_melds, table, position, tile) {
         return true;
     }
-    if should_open_broken_closed_hand_for_defense(hand, current_melds, table, position, win_rule) {
+    if should_open_broken_closed_hand_for_defense(hand, current_melds, table, position) {
         return true;
     }
 

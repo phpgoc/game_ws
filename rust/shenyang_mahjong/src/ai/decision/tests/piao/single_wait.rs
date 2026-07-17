@@ -17,10 +17,7 @@ fn capped_four_piao_melds_prefers_wider_wait_over_honor_shape() {
         piao_single_wait_tile_score(5, &[5], melds, &table, 0)
             > piao_single_wait_tile_score(31, &[31], melds, &table, 0)
     );
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(31)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(31));
 }
 
 #[test]
@@ -40,10 +37,7 @@ fn dealer_four_piao_melds_prefers_live_middle_over_low_live_wind_wait() {
         piao_single_wait_tile_score(5, &[5], melds, &table, 0)
             > piao_single_wait_tile_score(31, &[31], melds, &table, 0)
     );
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(31)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(31));
 }
 
 #[test]
@@ -76,10 +70,7 @@ fn discard_after_four_piao_melds_keeps_live_single_wait() {
     ];
     let hand = vec![36, 37];
 
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(36)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(36));
 }
 
 #[test]
@@ -94,10 +85,7 @@ fn discard_after_four_piao_melds_rejects_dead_exposed_wind_wait() {
     let hand = vec![5, 31];
 
     assert_eq!(remaining_tile_count(&[31], &table, 0, 31), 0);
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(31)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(31));
 }
 
 #[test]
@@ -155,10 +143,7 @@ fn late_open_hand_avoids_live_tile_against_four_piao_melds() {
     };
     let hand = vec![7, 8, 9, 9, 9, 13, 22, 23, 24, 36, 36];
 
-    assert_ne!(
-        choose_discard_from_view(&hand, &table, 1, WIN_RULE_SHENYANG_BASIC),
-        Some(13)
-    );
+    assert_ne!(choose_discard_from_view(&hand, &table, 1), Some(13));
 }
 
 #[test]
@@ -183,10 +168,7 @@ fn piao_single_wait_discard_avoids_pure_one_suit_threat_tile() {
         pure_one_suit_threat_discard_bias(&table, 0, 5, 1)
             < pure_one_suit_threat_discard_bias(&table, 0, 31, 1)
     );
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(31)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(31));
 }
 
 #[test]

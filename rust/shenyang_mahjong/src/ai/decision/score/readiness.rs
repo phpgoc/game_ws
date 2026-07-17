@@ -5,10 +5,9 @@ pub(in crate::ai::decision) fn best_ready_score_after_discard(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
 ) -> f64 {
     if hand.len() % 3 != 2 {
-        return ready_tile_score(hand, melds, table, position, win_rule);
+        return ready_tile_score(hand, melds, table, position);
     }
     unique_tiles(hand)
         .into_iter()
@@ -17,7 +16,7 @@ pub(in crate::ai::decision) fn best_ready_score_after_discard(
             if let Some(index) = next.iter().position(|item| *item == tile) {
                 next.remove(index);
             }
-            ready_tile_score_after_discard(&next, melds, table, position, win_rule, tile)
+            ready_tile_score_after_discard(&next, melds, table, position, tile)
         })
         .fold(0.0, f64::max)
 }
@@ -27,7 +26,6 @@ fn ready_hand_visible_fan_exceeds_half_cap_with_simulated_discards(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    _win_rule: i32,
     max_fan: i32,
     simulated_discards: &[i32],
 ) -> bool {
@@ -67,7 +65,6 @@ pub(in crate::ai::decision) fn ready_hand_visible_fan_reaches_cap(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
     max_fan: i32,
 ) -> bool {
     ready_hand_visible_fan_reaches_cap_with_simulated_discards(
@@ -75,7 +72,6 @@ pub(in crate::ai::decision) fn ready_hand_visible_fan_reaches_cap(
         melds,
         table,
         position,
-        win_rule,
         max_fan,
         &[],
     )
@@ -86,7 +82,6 @@ fn ready_hand_visible_fan_reaches_cap_with_simulated_discards(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    _win_rule: i32,
     max_fan: i32,
     simulated_discards: &[i32],
 ) -> bool {
@@ -125,9 +120,8 @@ pub(in crate::ai::decision) fn ready_has_piao_win(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
 ) -> bool {
-    ready_has_piao_win_with_simulated_discards(hand, melds, table, position, win_rule, &[])
+    ready_has_piao_win_with_simulated_discards(hand, melds, table, position, &[])
 }
 
 fn ready_has_piao_win_with_simulated_discards(
@@ -135,7 +129,6 @@ fn ready_has_piao_win_with_simulated_discards(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    _win_rule: i32,
     simulated_discards: &[i32],
 ) -> bool {
     if hand.len() % 3 != 1 {
@@ -165,9 +158,8 @@ pub(in crate::ai::decision) fn ready_has_pure_one_suit_win(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
 ) -> bool {
-    ready_has_pure_one_suit_win_with_simulated_discards(hand, melds, table, position, win_rule, &[])
+    ready_has_pure_one_suit_win_with_simulated_discards(hand, melds, table, position, &[])
 }
 
 #[cfg(test)]
@@ -176,7 +168,6 @@ pub(in crate::ai::decision) fn ready_has_pure_one_suit_win_after_discard(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
     discarded_tile: i32,
 ) -> bool {
     ready_has_pure_one_suit_win_with_simulated_discards(
@@ -184,7 +175,6 @@ pub(in crate::ai::decision) fn ready_has_pure_one_suit_win_after_discard(
         melds,
         table,
         position,
-        win_rule,
         &[discarded_tile],
     )
 }
@@ -194,7 +184,6 @@ fn ready_has_pure_one_suit_win_with_simulated_discards(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    _win_rule: i32,
     simulated_discards: &[i32],
 ) -> bool {
     if hand.len() % 3 != 1 {
@@ -224,7 +213,6 @@ pub(in crate::ai::decision) fn ready_live_tile_count_after_discard(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    _win_rule: i32,
     discarded_tile: i32,
 ) -> i32 {
     if hand_after_discard.len() % 3 != 1 {
@@ -261,9 +249,8 @@ pub(in crate::ai::decision) fn ready_tile_score(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
 ) -> f64 {
-    ready_tile_score_with_simulated_discards(hand, melds, table, position, win_rule, &[])
+    ready_tile_score_with_simulated_discards(hand, melds, table, position, &[])
 }
 
 pub(in crate::ai::decision) fn ready_tile_score_after_discard(
@@ -271,7 +258,6 @@ pub(in crate::ai::decision) fn ready_tile_score_after_discard(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
     discarded_tile: i32,
 ) -> f64 {
     ready_tile_score_with_simulated_discards(
@@ -279,7 +265,6 @@ pub(in crate::ai::decision) fn ready_tile_score_after_discard(
         melds,
         table,
         position,
-        win_rule,
         &[discarded_tile],
     )
 }
@@ -289,7 +274,6 @@ pub(in crate::ai::decision) fn ready_tile_score_with_simulated_discards(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    _win_rule: i32,
     simulated_discards: &[i32],
 ) -> f64 {
     if hand.len() % 3 != 1 {
@@ -343,7 +327,6 @@ pub(in crate::ai::decision) fn ready_visible_fan_exceeds_half_cap(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
 ) -> bool {
     let Some(max_fan) = table.max_fan.filter(|max_fan| *max_fan > 0) else {
         return false;
@@ -356,7 +339,6 @@ pub(in crate::ai::decision) fn ready_visible_fan_exceeds_half_cap(
                 melds,
                 table,
                 position,
-                win_rule,
                 max_fan,
                 &[discard],
             )
@@ -367,7 +349,6 @@ pub(in crate::ai::decision) fn ready_visible_fan_exceeds_half_cap(
         melds,
         table,
         position,
-        win_rule,
         max_fan,
         &[],
     )
@@ -378,7 +359,6 @@ pub(in crate::ai::decision) fn ready_visible_fan_reaches_cap(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
 ) -> bool {
     let Some(max_fan) = table.max_fan.filter(|max_fan| *max_fan > 0) else {
         return false;
@@ -391,11 +371,10 @@ pub(in crate::ai::decision) fn ready_visible_fan_reaches_cap(
                 melds,
                 table,
                 position,
-                win_rule,
                 max_fan,
                 &[discard],
             )
         });
     }
-    ready_hand_visible_fan_reaches_cap(hand, melds, table, position, win_rule, max_fan)
+    ready_hand_visible_fan_reaches_cap(hand, melds, table, position, max_fan)
 }

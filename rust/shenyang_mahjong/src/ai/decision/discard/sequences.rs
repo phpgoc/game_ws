@@ -55,7 +55,6 @@ pub(in crate::ai::decision) fn pinghu_sequence_route_discard_bias(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
 ) -> f64 {
     if table.wall_count <= 55
         || hand.iter().filter(|item| **item == tile).count() != 1
@@ -64,7 +63,7 @@ pub(in crate::ai::decision) fn pinghu_sequence_route_discard_bias(
         || is_closed_early_piao_candidate(hand, melds, table, position)
         || piao_plan_score_for_context(hand, melds, table, position) >= 20.0
         || pure_one_suit_plan_score_for_context(hand, melds, table, position) > 0.0
-        || best_ready_score_after_discard(hand, melds, table, position, win_rule) > 0.0
+        || best_ready_score_after_discard(hand, melds, table, position) > 0.0
         || pinghu_sequence_route_tile_count(hand) < 5
     {
         return 0.0;

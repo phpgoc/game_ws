@@ -5,10 +5,9 @@ pub(in crate::ai::decision) fn best_one_step_wait_potential_after_discard(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
 ) -> f64 {
     if hand.is_empty() {
-        return one_step_wait_potential(hand, melds, table, position, win_rule);
+        return one_step_wait_potential(hand, melds, table, position);
     }
     unique_tiles(hand)
         .into_iter()
@@ -17,7 +16,7 @@ pub(in crate::ai::decision) fn best_one_step_wait_potential_after_discard(
             if let Some(index) = next.iter().position(|item| *item == tile) {
                 next.remove(index);
             }
-            one_step_wait_potential_after_discard(&next, melds, table, position, win_rule, tile)
+            one_step_wait_potential_after_discard(&next, melds, table, position, tile)
         })
         .fold(0.0, f64::max)
 }
@@ -27,10 +26,9 @@ pub(in crate::ai::decision) fn best_score_after_forced_discard(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
 ) -> f64 {
     if hand.is_empty() {
-        return hand_progress_score(hand, melds, table, position, win_rule);
+        return hand_progress_score(hand, melds, table, position);
     }
     let mut best = f64::NEG_INFINITY;
     for tile in unique_tiles(hand) {
@@ -39,7 +37,7 @@ pub(in crate::ai::decision) fn best_score_after_forced_discard(
             next.remove(index);
         }
         best = best.max(hand_progress_score_after_discard(
-            &next, melds, table, position, win_rule, tile,
+            &next, melds, table, position, tile,
         ));
     }
     best
@@ -50,12 +48,11 @@ pub(in crate::ai::decision) fn hand_progress_score(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
 ) -> f64 {
     hand_power(hand)
         + valid_meld_count(melds) as f64 * 10.0
-        + ready_tile_score(hand, melds, table, position, win_rule)
-        + one_step_wait_potential(hand, melds, table, position, win_rule)
+        + ready_tile_score(hand, melds, table, position)
+        + one_step_wait_potential(hand, melds, table, position)
         + seven_pairs_plan_score(hand, melds, table, position)
         + piao_plan_score_for_context(hand, melds, table, position)
         + shenyang_rule_progress_score(hand, melds, table, position)
@@ -66,25 +63,16 @@ pub(in crate::ai::decision) fn hand_progress_score_after_discard(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
     discarded_tile: i32,
 ) -> f64 {
     hand_power(hand_after_discard)
         + valid_meld_count(melds) as f64 * 10.0
-        + ready_tile_score_after_discard(
-            hand_after_discard,
-            melds,
-            table,
-            position,
-            win_rule,
-            discarded_tile,
-        )
+        + ready_tile_score_after_discard(hand_after_discard, melds, table, position, discarded_tile)
         + one_step_wait_potential_after_discard(
             hand_after_discard,
             melds,
             table,
             position,
-            win_rule,
             discarded_tile,
         )
         + seven_pairs_plan_score(hand_after_discard, melds, table, position)
@@ -97,9 +85,8 @@ pub(in crate::ai::decision) fn one_step_wait_potential(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
 ) -> f64 {
-    one_step_wait_potential_with_simulated_discards(hand, melds, table, position, win_rule, &[])
+    one_step_wait_potential_with_simulated_discards(hand, melds, table, position, &[])
 }
 
 pub(in crate::ai::decision) fn one_step_wait_potential_after_discard(
@@ -107,7 +94,6 @@ pub(in crate::ai::decision) fn one_step_wait_potential_after_discard(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
     discarded_tile: i32,
 ) -> f64 {
     one_step_wait_potential_with_simulated_discards(
@@ -115,7 +101,6 @@ pub(in crate::ai::decision) fn one_step_wait_potential_after_discard(
         melds,
         table,
         position,
-        win_rule,
         &[discarded_tile],
     )
 }
@@ -125,7 +110,6 @@ fn one_step_wait_potential_with_simulated_discards(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
     simulated_discards: &[i32],
 ) -> f64 {
     if hand.len() % 3 != 1
@@ -134,7 +118,6 @@ fn one_step_wait_potential_with_simulated_discards(
             melds,
             table,
             position,
-            win_rule,
             simulated_discards,
         ) > 0.0
     {
@@ -177,7 +160,6 @@ fn one_step_wait_potential_with_simulated_discards(
                 melds,
                 table,
                 position,
-                win_rule,
                 &projected_discards,
             );
             if ready > best_ready {

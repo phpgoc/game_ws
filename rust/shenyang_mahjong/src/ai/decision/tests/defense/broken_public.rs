@@ -17,13 +17,9 @@ fn dealer_mid_unrecoverable_basic_hand_uses_public_defense_discard() {
         &hand,
         &[],
         &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
+        0
     ));
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(5)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(5));
 }
 
 #[test]
@@ -39,13 +35,9 @@ fn mid_broken_basic_discard_follows_open_meld_tile_without_public_discards() {
         &hand,
         &[],
         &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
+        0
     ));
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(14)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(14));
 }
 
 #[test]
@@ -58,13 +50,9 @@ fn mid_broken_basic_discard_follows_public_tile_before_hand_shape() {
         &hand,
         &[],
         &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
+        0
     ));
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(5)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(5));
 }
 
 #[test]
@@ -90,13 +78,9 @@ fn mid_broken_basic_public_defense_preserves_only_recoverable_heng_seed() {
         &hand,
         &[],
         &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
+        0
     ));
-    assert_ne!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(35)
-    );
+    assert_ne!(choose_discard_from_view(&hand, &table, 0), Some(35));
 }
 
 #[test]
@@ -112,13 +96,9 @@ fn mid_broken_discard_uses_opponent_missing_suit_read_without_public_tile() {
         &hand,
         &[],
         &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
+        0
     ));
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(12)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(12));
 }
 
 #[test]
@@ -149,17 +129,13 @@ fn mid_broken_public_defense_preserves_dragon_pair_over_public_singleton() {
         &hand,
         &[],
         &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
+        0
     ));
     assert!(
         public_defense_tile_safety_score(&table, 0, 5, 1)
             > public_defense_tile_safety_score(&table, 0, 35, 2)
     );
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(5)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(5));
 }
 
 #[test]
@@ -172,13 +148,9 @@ fn mid_broken_public_defense_preserves_locked_seven_pairs_route() {
         &hand,
         &[],
         &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
+        0
     ));
-    assert_ne!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(11)
-    );
+    assert_ne!(choose_discard_from_view(&hand, &table, 0), Some(11));
 }
 
 #[test]
@@ -207,11 +179,7 @@ fn mid_broken_closed_discard_follows_public_tile_before_hand_shape() {
         &hand,
         &[],
         &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
+        0
     ));
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(5)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(5));
 }

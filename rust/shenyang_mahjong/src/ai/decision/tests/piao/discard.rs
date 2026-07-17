@@ -7,10 +7,7 @@ fn discard_four_pair_piao_candidate_clears_single_dragon_before_wind() {
 
     assert_eq!(pair_count(&hand), 4);
     assert!(piao_plan_score_for_context(&hand, &[], &table, 0) > 0.0);
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(35)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(35));
 }
 
 #[test]
@@ -21,7 +18,7 @@ fn discard_preserves_committed_piao_pair_over_public_pair_tile() {
     let hand = vec![21, 21, 22, 23, 24, 31, 35, 36];
 
     assert!(!matches!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_discard_from_view(&hand, &table, 0),
         Some(21)
     ));
 }
@@ -33,7 +30,7 @@ fn discard_preserves_four_pair_piao_candidate_over_public_pair_tile() {
     let hand = vec![1, 1, 4, 5, 11, 11, 12, 13, 21, 21, 22, 23, 31, 31];
 
     assert!(!matches!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_discard_from_view(&hand, &table, 0),
         Some(1 | 11 | 21 | 31)
     ));
 }
@@ -43,10 +40,7 @@ fn discard_preserves_only_terminal_or_honor_for_piao_plan() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![2, 2, 5, 5, 8, 8, 12, 12, 15, 16, 18, 22, 24, 31];
 
-    assert_ne!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(31)
-    );
+    assert_ne!(choose_discard_from_view(&hand, &table, 0), Some(31));
 }
 
 #[test]
@@ -54,10 +48,7 @@ fn discard_preserves_only_terminal_or_honor_for_three_pair_piao_candidate() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![2, 2, 5, 5, 8, 8, 12, 14, 15, 16, 22, 24, 26, 31];
 
-    assert_ne!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(31)
-    );
+    assert_ne!(choose_discard_from_view(&hand, &table, 0), Some(31));
 }
 
 #[test]
@@ -65,10 +56,7 @@ fn discard_preserves_only_third_suit_for_piao_plan() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![2, 2, 2, 5, 5, 8, 8, 12, 12, 12, 15, 15, 22, 31];
 
-    assert_ne!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(22)
-    );
+    assert_ne!(choose_discard_from_view(&hand, &table, 0), Some(22));
 }
 
 #[test]
@@ -77,10 +65,7 @@ fn discard_preserves_only_third_suit_for_three_pair_piao_candidate() {
     table.wall_count = 36;
     let hand = vec![2, 2, 5, 5, 8, 8, 12, 14, 15, 16, 24, 31, 35, 37];
 
-    assert_ne!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(24)
-    );
+    assert_ne!(choose_discard_from_view(&hand, &table, 0), Some(24));
 }
 
 #[test]
@@ -91,7 +76,7 @@ fn discard_preserves_open_piao_pairs_over_public_pair_tile() {
     let hand = vec![11, 11, 12, 21, 21, 22, 23, 24, 31, 35, 36];
 
     assert!(!matches!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_discard_from_view(&hand, &table, 0),
         Some(11 | 21)
     ));
 }
@@ -103,7 +88,7 @@ fn discard_preserves_three_pair_piao_candidate_over_public_pair_tile() {
     let hand = vec![1, 1, 4, 5, 6, 11, 11, 12, 13, 14, 21, 21, 22, 23];
 
     assert!(is_closed_early_piao_candidate(&hand, &[], &table, 0));
-    let chosen = choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC);
+    let chosen = choose_discard_from_view(&hand, &table, 0);
     assert!(
         !matches!(chosen, Some(1 | 11 | 21)),
         "unexpected pair discard: {chosen:?}"
@@ -116,7 +101,7 @@ fn discard_preserves_three_pair_three_suit_piao_candidate() {
     let hand = vec![1, 1, 4, 5, 6, 11, 11, 12, 13, 14, 21, 21, 22, 23];
 
     assert!(!matches!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_discard_from_view(&hand, &table, 0),
         Some(1 | 11 | 21)
     ));
 }
@@ -129,10 +114,7 @@ fn discard_three_pair_piao_candidate_still_prefers_wind_before_single_dragon() {
     assert_eq!(pair_count(&hand), 3);
     assert!(is_closed_early_piao_candidate(&hand, &[], &table, 0));
     assert!(piao_plan_score_for_context(&hand, &[], &table, 0) > 0.0);
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(31)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(31));
 }
 
 #[test]
@@ -145,7 +127,7 @@ fn incomplete_sequence_bias_does_not_override_piao_pair_plan() {
         0.0
     );
     assert!(!matches!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        choose_discard_from_view(&hand, &table, 0),
         Some(11 | 21 | 35)
     ));
 }

@@ -180,14 +180,12 @@ fn broken_closed_defense_opens_mid_severely_broken_hand() {
         &hand,
         &[],
         &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
+        0
     ));
     assert!(should_open_broken_closed_hand_for_defense(
         &hand,
         &[],
         &table,
-        0,
         0
     ));
 }
@@ -199,14 +197,8 @@ fn broken_closed_defense_opens_mid_when_heng_is_unrecoverable() {
     table.wall_count = 52;
 
     assert!(hand_power(&hand) >= 14.0);
-    assert_eq!(
-        ready_tile_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
-        0.0
-    );
-    assert_eq!(
-        one_step_wait_potential(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
-        0.0
-    );
+    assert_eq!(ready_tile_score(&hand, &[], &table, 0), 0.0);
+    assert_eq!(one_step_wait_potential(&hand, &[], &table, 0), 0.0);
     assert_eq!(
         unrecoverable_basic_rule_requirement_count(&hand, &[], &table, 0),
         1
@@ -215,8 +207,7 @@ fn broken_closed_defense_opens_mid_when_heng_is_unrecoverable() {
         &hand,
         &[],
         &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
+        0
     ));
 }
 
@@ -226,20 +217,13 @@ fn broken_closed_defense_rejects_illegal_near_ready_shape() {
     table.wall_count = 40;
     let hand = vec![2, 2, 3, 4, 5, 11, 12, 13, 21, 22, 23, 31, 35];
 
-    assert_eq!(
-        ready_tile_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
-        0.0
-    );
-    assert_eq!(
-        one_step_wait_potential(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
-        0.0
-    );
+    assert_eq!(ready_tile_score(&hand, &[], &table, 0), 0.0);
+    assert_eq!(one_step_wait_potential(&hand, &[], &table, 0), 0.0);
     assert!(should_open_broken_closed_hand_for_defense(
         &hand,
         &[],
         &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
+        0
     ));
 }
 
@@ -257,8 +241,7 @@ fn broken_closed_defense_waits_mid_recoverable_no_terminal_hand() {
         &hand,
         &[],
         &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
+        0
     ));
 }
 
@@ -272,8 +255,7 @@ fn broken_closed_defense_waits_mid_when_basic_requirements_are_intact() {
         &hand,
         &[],
         &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
+        0
     ));
 }
 
@@ -284,10 +266,7 @@ fn dealer_prefers_wider_wait_over_single_wait_fan() {
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(31)];
     let hand = vec![2, 2, 4, 5, 7, 11, 12, 13, 21, 22, 23];
 
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(7)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(7));
 }
 
 #[test]
@@ -305,10 +284,7 @@ fn near_capped_non_dealer_prefers_wider_wait_over_single_wait_fan() {
     table.seats.get_mut(&0).unwrap().melds = vec![test_gang_meld(35)];
     let hand = vec![2, 2, 4, 5, 7, 11, 12, 13, 21, 22, 23];
 
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(7)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(7));
 }
 
 #[test]
@@ -317,10 +293,7 @@ fn non_dealer_avoids_nearly_dead_single_wait_before_late_round() {
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(31)];
     let hand = vec![2, 2, 4, 5, 7, 11, 12, 13, 21, 22, 23];
 
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(7)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(7));
 }
 
 #[test]
@@ -333,20 +306,10 @@ fn non_dealer_can_choose_edge_wait_for_extra_fan() {
     let closed_middle_wait = remove_n_tiles(&hand, 4, 1);
 
     assert!(
-        ready_tile_score_after_discard(&edge_wait, melds, &table, 0, WIN_RULE_SHENYANG_BASIC, 1,)
-            > ready_tile_score_after_discard(
-                &closed_middle_wait,
-                melds,
-                &table,
-                0,
-                WIN_RULE_SHENYANG_BASIC,
-                4,
-            )
+        ready_tile_score_after_discard(&edge_wait, melds, &table, 0, 1,)
+            > ready_tile_score_after_discard(&closed_middle_wait, melds, &table, 0, 4,)
     );
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(1)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(1));
 }
 
 #[test]
@@ -355,10 +318,7 @@ fn non_dealer_can_choose_single_wait_for_extra_fan_before_late_round() {
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(31)];
     let hand = vec![2, 2, 4, 5, 7, 11, 12, 13, 21, 22, 23];
 
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(4)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(4));
 }
 
 #[test]
@@ -371,17 +331,11 @@ fn non_dealer_prefers_wider_wait_against_threatening_dealer() {
     let hand = vec![2, 2, 4, 5, 7, 11, 12, 13, 21, 22, 23];
 
     assert!(dealer_opponent_has_major_threat(&table, 0));
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(7)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(7));
 
     table.dealer_position = 3;
     assert!(!dealer_opponent_has_major_threat(&table, 0));
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(4)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(4));
 }
 
 #[test]
@@ -468,21 +422,14 @@ fn closed_defense_requires_terminal_or_honor() {
     table.wall_count = 40;
     let hand = vec![2, 2, 2, 5, 5, 5, 12, 12, 12, 14, 17, 23, 27];
 
-    assert_eq!(
-        ready_tile_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
-        0.0
-    );
-    assert_eq!(
-        one_step_wait_potential(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
-        0.0
-    );
+    assert_eq!(ready_tile_score(&hand, &[], &table, 0), 0.0);
+    assert_eq!(one_step_wait_potential(&hand, &[], &table, 0), 0.0);
     assert!(hand_power(&hand) >= 18.0);
     assert!(should_open_broken_closed_hand_for_defense(
         &hand,
         &[],
         &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
+        0
     ));
 }
 

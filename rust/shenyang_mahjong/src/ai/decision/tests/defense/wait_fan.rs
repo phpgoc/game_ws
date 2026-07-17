@@ -73,8 +73,5 @@ fn mid_round_open_hand_does_not_chase_wait_fan_with_live_terminal_discard() {
     };
     let hand = vec![9, 13, 14, 15, 24, 24, 28, 29];
 
-    assert_ne!(
-        choose_discard_from_view(&hand, &table, 3, WIN_RULE_SHENYANG_BASIC),
-        Some(9)
-    );
+    assert_ne!(choose_discard_from_view(&hand, &table, 3), Some(9));
 }

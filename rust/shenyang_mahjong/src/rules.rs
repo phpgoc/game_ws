@@ -5,7 +5,6 @@ use share_type_public::games::shenyang_mahjong::{
     WsShenyangMahjongMeld,
 };
 
-pub const WIN_RULE_SHENYANG_BASIC: i32 = 1;
 pub const XI_GANG_DRAGONS: [i32; 3] = [35, 36, 37];
 pub const XI_GANG_WINDS: [i32; 4] = [31, 32, 33, 34];
 

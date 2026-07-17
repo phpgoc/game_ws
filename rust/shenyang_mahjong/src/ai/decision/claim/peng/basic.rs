@@ -114,7 +114,6 @@ pub(in crate::ai::decision) fn should_pass_closed_basic_peng_to_preserve_sequenc
     current_melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
     tile: i32,
 ) -> bool {
     !has_door_opening_meld(current_melds, table)
@@ -128,11 +127,5 @@ pub(in crate::ai::decision) fn should_pass_closed_basic_peng_to_preserve_sequenc
         && tile_is_middle_of_sequence(hand, tile)
         && piao_plan_score_for_context(hand, current_melds, table, position) < 22.0
         && pure_one_suit_plan_score_for_context(hand, current_melds, table, position) <= 0.0
-        && !should_open_broken_closed_hand_for_defense(
-            hand,
-            current_melds,
-            table,
-            position,
-            win_rule,
-        )
+        && !should_open_broken_closed_hand_for_defense(hand, current_melds, table, position)
 }

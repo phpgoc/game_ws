@@ -296,7 +296,6 @@ pub(in crate::ai::decision) fn four_gui_yi_discard_bias(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
 ) -> f64 {
     let current_four_gui_yi = estimated_four_gui_yi_fan(hand, melds);
     if current_four_gui_yi <= 0 {
@@ -314,7 +313,7 @@ pub(in crate::ai::decision) fn four_gui_yi_discard_bias(
         return 0.0;
     }
     if let Some(max_fan) = table.max_fan.filter(|max_fan| *max_fan > 0)
-        && ready_hand_visible_fan_reaches_cap(&next, melds, table, position, win_rule, max_fan)
+        && ready_hand_visible_fan_reaches_cap(&next, melds, table, position, max_fan)
     {
         return 0.0;
     }
@@ -323,10 +322,10 @@ pub(in crate::ai::decision) fn four_gui_yi_discard_bias(
     }
 
     let fan_loss = (current_four_gui_yi - after_four_gui_yi) as f64;
-    if ready_tile_score_after_discard(&next, melds, table, position, win_rule, tile) > 0.0 {
+    if ready_tile_score_after_discard(&next, melds, table, position, tile) > 0.0 {
         return -28.0 * fan_loss;
     }
-    if best_ready_score_after_discard(hand, melds, table, position, win_rule) > 0.0 {
+    if best_ready_score_after_discard(hand, melds, table, position) > 0.0 {
         return -18.0 * fan_loss;
     }
     -6.0 * fan_loss

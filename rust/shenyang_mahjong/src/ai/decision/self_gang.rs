@@ -21,7 +21,6 @@ pub fn choose_self_gang_from_view(
     candidate_tiles: &[i32],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
 ) -> Option<i32> {
     let melds = table
         .seats
@@ -37,12 +36,11 @@ pub fn choose_self_gang_from_view(
         return None;
     }
 
-    let current_ready_score =
-        best_ready_score_after_discard(hand, melds, table, position, win_rule);
+    let current_ready_score = best_ready_score_after_discard(hand, melds, table, position);
     if should_pass_late_unready_self_gang_for_defense(table, current_ready_score) {
         return None;
     }
-    let current_score = best_score_after_forced_discard(hand, melds, table, position, win_rule);
+    let current_score = best_score_after_forced_discard(hand, melds, table, position);
     let mut best: Option<(f64, i32)> = None;
     for tile in candidate_tiles.iter().copied() {
         if !can_self_gang_candidate(hand, melds, tile)
@@ -50,7 +48,7 @@ pub fn choose_self_gang_from_view(
         {
             continue;
         }
-        let score = self_gang_score(tile, hand, melds, table, position, win_rule, current_score);
+        let score = self_gang_score(tile, hand, melds, table, position, current_score);
         match best {
             None => best = Some((score, tile)),
             Some((best_score, best_tile)) => {
@@ -105,7 +103,6 @@ pub(super) fn self_gang_score(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
     current_score: f64,
 ) -> f64 {
     let is_added_gang = has_peng_meld(melds, tile);
@@ -113,7 +110,7 @@ pub(super) fn self_gang_score(
     else {
         return f64::NEG_INFINITY;
     };
-    let is_ready = best_ready_score_after_discard(hand, melds, table, position, win_rule) > 0.0;
+    let is_ready = best_ready_score_after_discard(hand, melds, table, position) > 0.0;
     let piao_score = piao_plan_score_for_context(hand, melds, table, position);
     let pure_one_suit_score = pure_one_suit_plan_score_for_context(hand, melds, table, position);
     let committed_piao_plan = piao_score >= 22.0
@@ -154,10 +151,10 @@ pub(super) fn self_gang_score(
     {
         return f64::NEG_INFINITY;
     }
-    if is_ready && ready_visible_fan_reaches_cap(hand, melds, table, position, win_rule) {
+    if is_ready && ready_visible_fan_reaches_cap(hand, melds, table, position) {
         return f64::NEG_INFINITY;
     }
-    if is_ready && ready_visible_fan_exceeds_half_cap(hand, melds, table, position, win_rule) {
+    if is_ready && ready_visible_fan_exceeds_half_cap(hand, melds, table, position) {
         return f64::NEG_INFINITY;
     }
     if !is_ready
@@ -190,14 +187,14 @@ pub(super) fn self_gang_score(
         return f64::NEG_INFINITY;
     }
 
-    let after_ready_score = ready_tile_score(&next, &next_melds, table, position, win_rule);
+    let after_ready_score = ready_tile_score(&next, &next_melds, table, position);
     let keeps_pure_one_suit_ready = pure_one_suit_score > 0.0
-        && ready_has_pure_one_suit_win(&next, &next_melds, table, position, win_rule);
+        && ready_has_pure_one_suit_win(&next, &next_melds, table, position);
     if pure_one_suit_score > 0.0 && !keeps_pure_one_suit_ready && !speed_first_pure_concealed_gang {
         return f64::NEG_INFINITY;
     }
     let keeps_piao_ready =
-        committed_piao_plan && ready_has_piao_win(&next, &next_melds, table, position, win_rule);
+        committed_piao_plan && ready_has_piao_win(&next, &next_melds, table, position);
     if committed_piao_plan && !keeps_piao_ready && !speed_first_piao_concealed_gang {
         return f64::NEG_INFINITY;
     }
@@ -218,7 +215,7 @@ pub(super) fn self_gang_score(
             return f64::NEG_INFINITY;
         }
     }
-    let after_score = hand_progress_score(&next, &next_melds, table, position, win_rule);
+    let after_score = hand_progress_score(&next, &next_melds, table, position);
     let mut score = after_score - current_score + 34.0;
 
     if is_dragon(tile) {

@@ -117,7 +117,7 @@ fn double_xi_gang_discard_keeps_only_tile_of_third_suit() {
     ];
     let hand = vec![1, 2, 3, 4, 11, 12, 13, 21];
 
-    let discard = choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC)
+    let discard = choose_discard_from_view(&hand, &table, 0)
         .expect("double xi gang hand should choose a discard");
     assert_ne!(discard, 21);
 }

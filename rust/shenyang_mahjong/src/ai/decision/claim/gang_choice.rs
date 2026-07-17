@@ -5,7 +5,6 @@ pub(super) fn choose_gang_claim(
     current_melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
     tile: i32,
     from_position: usize,
 ) -> Option<AiClaimChoice> {
@@ -18,7 +17,6 @@ pub(super) fn choose_gang_claim(
             current_melds,
             table,
             position,
-            win_rule,
             tile,
             from_position,
         )
@@ -53,13 +51,8 @@ pub(super) fn choose_gang_claim(
         ShenyangMahjongMeldKind::GANG,
         tile,
         from_position,
-    ) && !should_open_broken_closed_hand_for_defense(
-        hand,
-        current_melds,
-        table,
-        position,
-        win_rule,
-    ) {
+    ) && !should_open_broken_closed_hand_for_defense(hand, current_melds, table, position)
+    {
         return Some(AiClaimChoice::Pass);
     }
     if should_peng_to_preserve_four_gui_yi_from_discard(
@@ -67,20 +60,11 @@ pub(super) fn choose_gang_claim(
         current_melds,
         table,
         position,
-        win_rule,
         tile,
         from_position,
     ) {
         return Some(AiClaimChoice::Peng);
     }
-    should_claim_gang_from_discard(
-        hand,
-        current_melds,
-        table,
-        position,
-        win_rule,
-        tile,
-        from_position,
-    )
-    .then_some(AiClaimChoice::Gang)
+    should_claim_gang_from_discard(hand, current_melds, table, position, tile, from_position)
+        .then_some(AiClaimChoice::Gang)
 }

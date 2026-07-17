@@ -5,7 +5,6 @@ pub(in crate::ai::decision) fn should_claim_chi_to_open_broken_hand_for_defense(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
 ) -> bool {
     if has_open_meld(melds)
         || !is_late_round(table)
@@ -15,7 +14,7 @@ pub(in crate::ai::decision) fn should_claim_chi_to_open_broken_hand_for_defense(
     {
         return false;
     }
-    ready_tile_score(hand, melds, table, position, win_rule) <= 0.0
-        && one_step_wait_potential(hand, melds, table, position, win_rule) <= 0.0
+    ready_tile_score(hand, melds, table, position) <= 0.0
+        && one_step_wait_potential(hand, melds, table, position) <= 0.0
         && hand_power(hand) < 18.0
 }

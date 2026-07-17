@@ -121,7 +121,6 @@ pub(in crate::ai::decision) fn choose_late_ready_discard(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
 ) -> Option<i32> {
     if !is_late_defense_round(table) {
         return None;
@@ -131,7 +130,7 @@ pub(in crate::ai::decision) fn choose_late_ready_discard(
         .filter_map(|tile| {
             let next = remove_n_tiles(hand, tile, 1);
             let live_tiles =
-                ready_live_tile_count_after_discard(&next, melds, table, position, win_rule, tile);
+                ready_live_tile_count_after_discard(&next, melds, table, position, tile);
             (live_tiles > 0).then_some((tile, live_tiles))
         })
         .collect::<Vec<_>>();

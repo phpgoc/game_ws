@@ -8,10 +8,7 @@ fn discard_avoids_live_pair_against_piao_threat() {
         vec![test_peng_meld(1), test_peng_meld(11), test_peng_meld(21)];
     let hand = vec![2, 3, 4, 5, 5, 6, 7, 11, 12, 13, 21, 22, 23, 31];
 
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(31)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(31));
 }
 
 #[test]
@@ -26,10 +23,7 @@ fn discard_follows_public_tile_over_live_pair_against_piao_threat() {
         opponent_threat_discard_bias(&table, 0, 5, 2)
             < opponent_threat_discard_bias(&table, 0, 14, 1)
     );
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(14)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(14));
 }
 
 #[test]
@@ -51,8 +45,5 @@ fn seven_pairs_wait_discard_avoids_piao_missing_suit_threat_tile() {
         opponent_threat_discard_bias(&table, 0, 5, 1)
             < opponent_threat_discard_bias(&table, 0, 31, 1)
     );
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(31)
-    );
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(31));
 }

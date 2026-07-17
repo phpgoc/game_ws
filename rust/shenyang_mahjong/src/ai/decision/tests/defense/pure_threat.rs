@@ -11,10 +11,7 @@ fn mid_round_discard_avoids_pure_one_suit_threat_suit() {
         pure_one_suit_threat_discard_bias(&table, 0, 18, 1)
             < pure_one_suit_threat_discard_bias(&table, 0, 22, 1)
     );
-    assert_ne!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        Some(18)
-    );
+    assert_ne!(choose_discard_from_view(&hand, &table, 0), Some(18));
 }
 
 #[test]

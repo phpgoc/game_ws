@@ -41,7 +41,6 @@ pub(in crate::ai::decision) fn should_claim_ready_piao_peng_for_shou_ba_yi(
     current_melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
     tile: i32,
     from_position: usize,
     current_ready_score: f64,
@@ -74,13 +73,7 @@ pub(in crate::ai::decision) fn should_claim_ready_piao_peng_for_shou_ba_yi(
     unique_tiles(&next).into_iter().any(|discard| {
         let after_discard = remove_n_tiles(&next, discard, 1);
         after_discard.len() == 1
-            && ready_tile_score_after_discard(
-                &after_discard,
-                &melds,
-                table,
-                position,
-                win_rule,
-                discard,
-            ) > 0.0
+            && ready_tile_score_after_discard(&after_discard, &melds, table, position, discard)
+                > 0.0
     })
 }

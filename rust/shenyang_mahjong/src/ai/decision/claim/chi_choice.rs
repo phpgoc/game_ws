@@ -5,7 +5,6 @@ pub(super) fn choose_chi_claim(
     current_melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
     tile: i32,
     from_position: usize,
     current_ready_score: f64,
@@ -29,13 +28,8 @@ pub(super) fn choose_chi_claim(
         return Some(AiClaimChoice::Pass);
     }
 
-    let defensive_open = should_claim_chi_to_open_broken_hand_for_defense(
-        hand,
-        current_melds,
-        table,
-        position,
-        win_rule,
-    );
+    let defensive_open =
+        should_claim_chi_to_open_broken_hand_for_defense(hand, current_melds, table, position);
     let pure_chi_suit =
         (pure_one_suit_plan_score_for_context(hand, current_melds, table, position) > 0.0)
             .then(|| dominant_pure_suit(hand, current_melds))
@@ -68,8 +62,8 @@ pub(super) fn choose_chi_claim(
             },
             from_position: Some(from_position as i32),
         });
-        let after = best_score_after_forced_discard(&next, &melds, table, position, win_rule);
-        let after_ready = best_ready_score_after_discard(&next, &melds, table, position, win_rule);
+        let after = best_score_after_forced_discard(&next, &melds, table, position);
+        let after_ready = best_ready_score_after_discard(&next, &melds, table, position);
         if after_ready > 0.0 {
             match &best_ready_chi {
                 None => best_ready_chi = Some((after_ready, after, consume_tiles)),

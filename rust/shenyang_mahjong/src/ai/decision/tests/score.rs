@@ -8,8 +8,8 @@ fn capped_ready_score_keeps_wind_shape_as_seven_pairs_tiebreaker() {
     let middle_wait = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 21, 21, 22, 22];
 
     assert!(
-        ready_tile_score(&wind_wait, &[], &table, 0, WIN_RULE_SHENYANG_BASIC)
-            > ready_tile_score(&middle_wait, &[], &table, 0, WIN_RULE_SHENYANG_BASIC)
+        ready_tile_score(&wind_wait, &[], &table, 0)
+            > ready_tile_score(&middle_wait, &[], &table, 0)
     );
 }
 
@@ -21,8 +21,8 @@ fn capped_ready_score_prefers_live_middle_over_public_wind_wait() {
     let middle_wait = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 21, 21, 22, 22];
 
     assert!(
-        ready_tile_score(&middle_wait, &[], &table, 0, WIN_RULE_SHENYANG_BASIC)
-            > ready_tile_score(&wind_wait, &[], &table, 0, WIN_RULE_SHENYANG_BASIC)
+        ready_tile_score(&middle_wait, &[], &table, 0)
+            > ready_tile_score(&wind_wait, &[], &table, 0)
     );
 }
 
@@ -55,15 +55,7 @@ fn estimated_fan_counts_terminal_single_wait_when_public_discards_exhaust_other_
         estimated_fan_with_known_unavailable_wait(&win_hand, &melds, 1, &known_unavailable,),
         2
     );
-    assert!(
-        ready_tile_score(
-            &hand_after_discard,
-            &melds,
-            &table,
-            0,
-            WIN_RULE_SHENYANG_BASIC,
-        ) > 100.0
-    );
+    assert!(ready_tile_score(&hand_after_discard, &melds, &table, 0,) > 100.0);
 }
 
 #[test]
@@ -338,10 +330,7 @@ fn one_step_wait_potential_rejects_illegal_near_ready_shape() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 31, 35];
 
-    assert_eq!(
-        one_step_wait_potential(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
-        0.0
-    );
+    assert_eq!(one_step_wait_potential(&hand, &[], &table, 0), 0.0);
 }
 
 #[test]
@@ -358,7 +347,7 @@ fn one_step_wait_potential_values_open_basic_route_foundation() {
     assert!(has_terminal_or_honor_with_extra(&hand, melds, None));
     assert!(has_triplet_or_dragon_pair(&hand, melds));
     assert!(
-        one_step_wait_potential(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0,
+        one_step_wait_potential(&hand, melds, &table, 0) > 0.0,
         "open basic hand with all hard requirements should value one-step ready draws"
     );
 }
@@ -371,13 +360,7 @@ fn ready_cap_counts_single_wait_fan() {
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
     let hand = vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35];
 
-    assert!(ready_visible_fan_reaches_cap(
-        &hand,
-        melds,
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(ready_visible_fan_reaches_cap(&hand, melds, &table, 0));
 }
 
 #[test]
@@ -388,17 +371,14 @@ fn ready_score_allows_closed_sequence_dragon_pair_win_when_first_chi_disabled() 
     win_hand.push(35);
     sort_tiles(&mut win_hand);
 
-    assert_eq!(
-        ready_tile_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
-        0.0
-    );
+    assert_eq!(ready_tile_score(&hand, &[], &table, 0), 0.0);
     assert_eq!(
         estimated_visible_fan_without_wait_for_table(&win_hand, &[], &table),
         0
     );
 
     table.allow_first_chi = false;
-    assert!(ready_tile_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0);
+    assert!(ready_tile_score(&hand, &[], &table, 0) > 0.0);
     assert_eq!(
         estimated_visible_fan_without_wait_for_table(&win_hand, &[], &table),
         1
@@ -411,9 +391,9 @@ fn ready_score_counts_chi_as_opening_meld() {
     let melds = vec![test_chi_meld(1)];
     let hand = vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35];
 
-    assert!(ready_tile_score(&hand, &melds, &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0);
+    assert!(ready_tile_score(&hand, &melds, &table, 0) > 0.0);
 
-    assert!(ready_tile_score(&hand, &melds, &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0);
+    assert!(ready_tile_score(&hand, &melds, &table, 0) > 0.0);
 }
 
 #[test]
@@ -428,10 +408,7 @@ fn ready_score_counts_projected_meld_tiles_as_dead() {
         remaining_tile_count_with_melds(&hand, &melds, &table, 0, 3),
         3
     );
-    assert_eq!(
-        ready_tile_score(&hand, &melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        43.0
-    );
+    assert_eq!(ready_tile_score(&hand, &melds, &table, 0), 43.0);
 }
 
 #[test]
@@ -454,24 +431,11 @@ fn ready_score_counts_simulated_discarded_wait_tile_as_dead() {
         2
     );
     assert_eq!(
-        ready_tile_score(
-            &hand_after_discard,
-            &melds,
-            &table,
-            0,
-            WIN_RULE_SHENYANG_BASIC
-        ),
+        ready_tile_score(&hand_after_discard, &melds, &table, 0),
         43.0
     );
     assert_eq!(
-        ready_tile_score_after_discard(
-            &hand_after_discard,
-            &melds,
-            &table,
-            0,
-            WIN_RULE_SHENYANG_BASIC,
-            31
-        ),
+        ready_tile_score_after_discard(&hand_after_discard, &melds, &table, 0, 31),
         38.0
     );
 }
@@ -493,10 +457,7 @@ fn ready_score_does_not_double_count_visible_claim_tile_in_projected_meld() {
         remaining_tile_count_with_melds(&hand, &melds, &table, 0, 3),
         1
     );
-    assert_eq!(
-        ready_tile_score(&hand, &melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        33.0
-    );
+    assert_eq!(ready_tile_score(&hand, &melds, &table, 0), 33.0);
 }
 
 #[test]
@@ -514,12 +475,9 @@ fn ready_score_keeps_closed_sequence_dragon_pair_route_after_xi_gang() {
     win_hand.push(35);
     sort_tiles(&mut win_hand);
 
-    assert_eq!(
-        ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        0.0
-    );
+    assert_eq!(ready_tile_score(&hand, melds, &table, 0), 0.0);
     table.allow_first_chi = false;
-    assert!(ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0);
+    assert!(ready_tile_score(&hand, melds, &table, 0) > 0.0);
     assert_eq!(
         estimated_visible_fan_without_wait_for_table(&win_hand, melds, &table),
         2
@@ -534,8 +492,8 @@ fn ready_score_values_live_wind_over_middle_for_dealer_seven_pairs() {
     let middle_wait = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 21, 21, 22, 22];
 
     assert!(
-        ready_tile_score(&wind_wait, &[], &table, 0, WIN_RULE_SHENYANG_BASIC)
-            > ready_tile_score(&middle_wait, &[], &table, 0, WIN_RULE_SHENYANG_BASIC)
+        ready_tile_score(&wind_wait, &[], &table, 0)
+            > ready_tile_score(&middle_wait, &[], &table, 0)
     );
 }
 
@@ -547,13 +505,7 @@ fn ready_visible_cap_counts_concealed_dragon_triplet() {
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
     let hand = vec![11, 12, 13, 21, 22, 23, 31, 35, 35, 35];
 
-    assert!(ready_visible_fan_reaches_cap(
-        &hand,
-        melds,
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(ready_visible_fan_reaches_cap(&hand, melds, &table, 0));
 }
 
 #[test]
@@ -564,13 +516,7 @@ fn ready_visible_cap_counts_four_gui_yi() {
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
     let hand = vec![1, 2, 3, 7, 8, 9, 9, 9, 9, 21];
 
-    assert!(ready_visible_fan_reaches_cap(
-        &hand,
-        melds,
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(ready_visible_fan_reaches_cap(&hand, melds, &table, 0));
 }
 
 #[test]
@@ -586,13 +532,7 @@ fn ready_visible_cap_counts_piao_shou_ba_yi() {
     let hand = vec![35];
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
 
-    assert!(ready_visible_fan_reaches_cap(
-        &hand,
-        melds,
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(ready_visible_fan_reaches_cap(&hand, melds, &table, 0));
 }
 
 #[test]

@@ -2,14 +2,6 @@ use std::collections::HashMap;
 
 use ws_common::{Dispatch, RoomService};
 
-use crate::game::{
-    can_declare_xi_gang, can_self_draw_hu_with_configs, can_self_gang, claim_window_matches_source,
-    perform_discard, perform_self_draw_hu, perform_self_gang, perform_xi_gang,
-    resolve_claim_window,
-};
-use crate::game_state::{ClaimResponse, ClaimWindowKind, ShenyangMahjongLoopState};
-use crate::rules::WIN_RULE_SHENYANG_BASIC;
-
 use super::decision::{
     AiClaimChoice, choose_claim_from_view, choose_discard_from_view,
     choose_forced_discard_from_view, choose_self_gang_from_view, choose_xi_gang_from_view,
@@ -17,6 +9,12 @@ use super::decision::{
     should_pass_self_draw_hu_from_view,
 };
 use super::observation::{AiClaimView, AiPublicTable, build_public_table_with_configs};
+use crate::game::{
+    can_declare_xi_gang, can_self_draw_hu_with_configs, can_self_gang, claim_window_matches_source,
+    perform_discard, perform_self_draw_hu, perform_self_gang, perform_xi_gang,
+    resolve_claim_window,
+};
+use crate::game_state::{ClaimResponse, ClaimWindowKind, ShenyangMahjongLoopState};
 
 fn choose_self_gang_tile(
     state: &ShenyangMahjongLoopState,
@@ -32,13 +30,7 @@ fn choose_self_gang_tile(
         .filter(|tile| can_self_gang(state, position, *tile))
         .collect::<Vec<_>>();
     let table = build_public_table_with_configs(state, configs);
-    choose_self_gang_from_view(
-        hand,
-        &candidate_tiles,
-        &table,
-        position,
-        WIN_RULE_SHENYANG_BASIC,
-    )
+    choose_self_gang_from_view(hand, &candidate_tiles, &table, position)
 }
 
 fn claim_hu_is_complete(
@@ -82,7 +74,6 @@ pub fn maybe_play_ai_turn(
     if hand.is_empty() {
         return false;
     }
-    let win_rule = WIN_RULE_SHENYANG_BASIC;
     let mut passed_self_draw_tile = None;
     if can_self_draw_hu_with_configs(state, position, configs) {
         let table = build_public_table_with_configs(state, configs);
@@ -158,8 +149,8 @@ pub fn maybe_play_ai_turn(
     }
 
     let table = build_public_table_with_configs(state, configs);
-    let discard = choose_discard_from_view(&hand, &table, position, win_rule)
-        .or_else(|| choose_forced_discard_from_view(&hand, &table, position, win_rule));
+    let discard = choose_discard_from_view(&hand, &table, position)
+        .or_else(|| choose_forced_discard_from_view(&hand, &table, position));
     if let Some(tile) = discard {
         return perform_discard(
             room_service,
@@ -192,7 +183,6 @@ pub fn maybe_resolve_ai_claims(
     let Some(claim) = table.claim_window.as_ref() else {
         return false;
     };
-    let win_rule = WIN_RULE_SHENYANG_BASIC;
     let claim_matches_source = claim_window_matches_source(state, &claim_window);
 
     let mut changed = false;
@@ -210,8 +200,7 @@ pub fn maybe_resolve_ai_claims(
         } else if is_rob_gang && claim_hu_is_complete(&hand, claim, &table, position) {
             AiClaimChoice::Hu
         } else {
-            choose_claim_from_view(&hand, claim, &table, position, win_rule)
-                .unwrap_or(AiClaimChoice::Pass)
+            choose_claim_from_view(&hand, claim, &table, position).unwrap_or(AiClaimChoice::Pass)
         };
         let response = match choice {
             AiClaimChoice::Hu => ClaimResponse::Hu,

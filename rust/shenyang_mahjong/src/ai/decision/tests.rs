@@ -14,7 +14,6 @@ use std::collections::HashMap;
 
 use super::*;
 use crate::ai::observation::{AiClaimView, AiSeatView};
-use crate::rules::WIN_RULE_SHENYANG_BASIC;
 
 fn dead_basic_heng_discards(hand: &[i32]) -> Vec<i32> {
     let mut counts = HashMap::<i32, usize>::new();
