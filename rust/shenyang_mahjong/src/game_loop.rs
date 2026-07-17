@@ -161,7 +161,7 @@ pub(crate) fn start_game_loop(
                             guard.current_position,
                             guard.turn_countdown(),
                         );
-                        push_private_deal_events(&room, &room_key, &guard, &mut dispatch);
+                        push_private_deal_events(&room, &room_key, &guard, &configs, &mut dispatch);
                         push_room_event(
                             &room,
                             &room_key,

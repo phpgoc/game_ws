@@ -99,6 +99,20 @@ pub fn maybe_play_ai_turn(
         }
     }
 
+    if state.is_ting(position) {
+        return state.last_drawn_tile.is_some_and(|tile| {
+            perform_discard(
+                room_service,
+                room_key,
+                state,
+                configs,
+                dispatch,
+                position,
+                tile,
+            )
+        });
+    }
+
     let xi_gang_options = state.xi_gang_options_for_position(position);
     if !xi_gang_options.is_empty() {
         let table = build_public_table_with_configs(state, configs);

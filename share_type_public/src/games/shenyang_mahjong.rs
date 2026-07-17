@@ -84,6 +84,10 @@ pub struct WsShenyangMahjongDealEvent {
     pub current_position: i32,
     pub wall_count: i32,
     pub turn_countdown: i32,
+    #[serde(default)]
+    pub last_drawn_tile: Option<i32>,
+    #[serde(default)]
+    pub ting_discard_tiles: Vec<i32>,
 }
 
 #[typeshare]
@@ -106,6 +110,10 @@ pub struct WsShenyangMahjongPlayEvent {
     pub wall_count: i32,
     #[serde(default)]
     pub xi_gang_options: Vec<Vec<i32>>,
+    #[serde(default)]
+    pub ting_discard_tiles: Vec<i32>,
+    #[serde(default)]
+    pub is_ting: Option<bool>,
 }
 
 #[typeshare]
@@ -115,6 +123,8 @@ pub struct WsShenyangMahjongPlayRequest {
     pub tiles: Vec<i32>,
     pub target_tile: Option<i32>,
     pub from_position: Option<i32>,
+    #[serde(default)]
+    pub declare_ting: Option<bool>,
 }
 
 #[typeshare]
@@ -125,6 +135,8 @@ pub struct WsShenyangMahjongPlayerSnapshot {
     pub hand_tiles: Vec<i32>,
     pub discards: Vec<i32>,
     pub melds: Vec<WsShenyangMahjongMeld>,
+    #[serde(default)]
+    pub is_ting: Option<bool>,
 }
 
 #[typeshare]
@@ -139,6 +151,8 @@ pub struct WsShenyangMahjongPublicPlayerSnapshot {
     pub hand_count: i32,
     pub discards: Vec<i32>,
     pub melds: Vec<WsShenyangMahjongMeld>,
+    #[serde(default)]
+    pub is_ting: Option<bool>,
 }
 
 #[typeshare]
@@ -184,6 +198,8 @@ pub struct WsShenyangMahjongTableSnapshotEvent {
     pub claim_window: Option<WsShenyangMahjongClaimWindowEvent>,
     #[serde(default)]
     pub xi_gang_options: Vec<Vec<i32>>,
+    #[serde(default)]
+    pub ting_discard_tiles: Vec<i32>,
 }
 
 #[typeshare]

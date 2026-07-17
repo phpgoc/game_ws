@@ -66,6 +66,7 @@ pub struct ShenyangMahjongLoopState {
     pub pending_gang_draw: bool,
     pub first_normal_draw_positions: HashSet<usize>,
     pub xi_gang_options: HashMap<usize, Vec<Vec<i32>>>,
+    pub ting_positions: HashSet<usize>,
     pub settlement: Option<SettlementState>,
     wall_seed_base: Option<u64>,
     wall_round_index: u64,
@@ -185,6 +186,7 @@ impl ShenyangMahjongLoopState {
         self.pending_gang_draw = false;
         self.first_normal_draw_positions.clear();
         self.xi_gang_options.clear();
+        self.ting_positions.clear();
         self.settlement = None;
         let seed = self.next_wall_seed();
         self.wall = Self::shuffle_wall_with_seed(seed);
@@ -397,6 +399,7 @@ impl ShenyangMahjongLoopState {
             pending_gang_draw: false,
             first_normal_draw_positions: HashSet::new(),
             xi_gang_options: HashMap::new(),
+            ting_positions: HashSet::new(),
             settlement: None,
             wall_seed_base: wall_seed_base_from_env(),
             wall_round_index: 0,
@@ -458,6 +461,7 @@ impl ShenyangMahjongLoopState {
         self.pending_gang_draw = false;
         self.first_normal_draw_positions.clear();
         self.xi_gang_options.clear();
+        self.ting_positions.clear();
         self.settlement = None;
         self.set_action_received(false);
         self.set_turn_countdown(0);
@@ -467,6 +471,14 @@ impl ShenyangMahjongLoopState {
         if let Some(discards) = self.discards.get_mut(&position) {
             let _ = discards.pop();
         }
+    }
+
+    pub fn is_ting(&self, position: usize) -> bool {
+        self.ting_positions.contains(&position)
+    }
+
+    pub fn declare_ting(&mut self, position: usize) {
+        self.ting_positions.insert(position);
     }
 
     pub fn remove_tiles_from_hand(&mut self, position: usize, tiles: &[i32]) -> bool {

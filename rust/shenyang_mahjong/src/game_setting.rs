@@ -58,6 +58,13 @@ pub fn build_shenyang_mahjong_settings() -> (GameSettings, HashMap<String, GameP
                 options: vec!["disabled".into(), "enabled".into()],
             }),
         ),
+        (
+            "ting_fan".into(),
+            GameParam::Enum(GameParamEnum {
+                default: 0,
+                options: vec!["disabled".into(), "enabled".into()],
+            }),
+        ),
     ]
     .into_iter()
     .collect();
@@ -99,6 +106,8 @@ mod tests {
         assert!(descriptions.contains_key("win_rule"));
         assert_eq!(settings.values.get("allow_first_chi"), Some(&1));
         assert!(descriptions.contains_key("allow_first_chi"));
+        assert_eq!(settings.values.get("ting_fan"), Some(&0));
+        assert!(descriptions.contains_key("ting_fan"));
         assert!(!settings.values.contains_key("allow_chi"));
         assert!(!settings.values.contains_key("chi_opens_door"));
     }

@@ -27,7 +27,8 @@ use crate::game_state::{
 use crate::rules::{
     ShenyangMahjongWinRules, WIN_RULE_SHENYANG_BASIC, XI_GANG_WINDS, can_chi, can_concealed_gang,
     can_gang, can_peng, is_complete_win_with_melds_for_rules, is_door_opening_meld, is_valid_meld,
-    is_xi_gang_tiles, shenyang_score_visible_win_fan, shenyang_win_pattern, tiles_in_hand,
+    is_xi_gang_tiles, remove_tiles, shenyang_score_visible_win_fan, shenyang_win_pattern,
+    tiles_in_hand,
 };
 #[cfg(test)]
 use crate::rules::{
@@ -54,7 +55,15 @@ pub(crate) fn advance_to_next_turn(
     let next_position = state.next_position(state.current_position);
     if let Some(tile) = state.draw_for_next_turn(next_position) {
         state.set_turn_countdown(current_play_time(configs));
-        push_draw_events(room_service, room_key, state, dispatch, next_position, tile);
+        push_draw_events(
+            room_service,
+            room_key,
+            state,
+            configs,
+            dispatch,
+            next_position,
+            tile,
+        );
         push_phase_change(
             room_service,
             room_key,
@@ -223,6 +232,7 @@ pub(crate) fn build_settlement_event_with_configs(
             hand_tiles,
             discards: public_discards_for_position(state, *position),
             melds: public_melds_for_position(state, *position, &player_positions),
+            is_ting: Some(state.is_ting(*position)),
         });
     }
 
@@ -278,6 +288,7 @@ pub(crate) fn build_table_snapshot_event_with_configs(
                 .unwrap_or(0) as i32,
             discards: public_discards_for_position(state, position),
             melds: public_melds_for_position(state, position, &player_positions),
+            is_ting: Some(state.is_ting(position)),
         });
     }
 
@@ -337,6 +348,7 @@ pub(crate) fn build_table_snapshot_event_with_configs(
         } else {
             Vec::new()
         },
+        ting_discard_tiles: ting_discard_tiles_for_position(state, viewer_position, configs),
     }
 }
 
@@ -422,6 +434,7 @@ pub(crate) fn can_declare_xi_gang(
         && state.current_position == position
         && position != state.dealer_position
         && state.claim_window.is_none()
+        && !state.is_ting(position)
         && position_has_discardable_tile_count(state, position)
         && position_hand_tiles_are_valid(state, position)
         && !position_has_impossible_known_tile_count(state, position)
@@ -476,6 +489,7 @@ pub(crate) fn can_self_gang(
         || state.current_position != position
         || !position_owns_last_drawn_tile(state, position)
         || state.claim_window.is_some()
+        || state.is_ting(position)
         || state.wall_count() == 0
         || !position_has_discardable_tile_count(state, position)
         || !position_hand_tiles_are_valid(state, position)
@@ -621,7 +635,15 @@ fn draw_after_gang_or_settle(
     if let Some(tile) = state.draw_for_position(position) {
         state.pending_gang_draw = true;
         state.set_turn_countdown(current_play_time(configs));
-        push_draw_events(room_service, room_key, state, dispatch, position, tile);
+        push_draw_events(
+            room_service,
+            room_key,
+            state,
+            configs,
+            dispatch,
+            position,
+            tile,
+        );
         push_phase_change(
             room_service,
             room_key,
@@ -683,6 +705,8 @@ fn finish_added_gang(
             from_position,
             wall_count: state.wall_count() as i32,
             xi_gang_options: Vec::new(),
+            ting_discard_tiles: Vec::new(),
+            is_ting: None,
         },
     );
     draw_after_gang_or_settle(room_service, room_key, state, configs, dispatch, position);
@@ -712,6 +736,61 @@ fn is_complete_win_with_configs(
         melds,
         ShenyangMahjongWinRules::from_configs(configs),
     )
+}
+
+fn ting_wait_tiles_after_discard(
+    state: &ShenyangMahjongLoopState,
+    position: usize,
+    discard_tile: i32,
+    configs: &HashMap<String, i32>,
+) -> Vec<i32> {
+    let Some(mut hand) = state.hands.get(&position).cloned() else {
+        return Vec::new();
+    };
+    if !remove_tiles(&mut hand, &[discard_tile]) {
+        return Vec::new();
+    }
+    let melds = state.melds.get(&position).map(Vec::as_slice).unwrap_or(&[]);
+    SHENYANG_MAHJONG_TILE_KINDS
+        .into_iter()
+        .filter(|tile| state.known_tile_count(*tile) < 4)
+        .filter(|tile| {
+            let mut completed = hand.clone();
+            completed.push(*tile);
+            completed.sort_unstable();
+            is_complete_win_with_configs(&completed, melds, configs)
+        })
+        .collect()
+}
+
+pub(crate) fn ting_discard_tiles_for_position(
+    state: &ShenyangMahjongLoopState,
+    position: usize,
+    configs: &HashMap<String, i32>,
+) -> Vec<i32> {
+    if state.phase != ShenyangMahjongPhase::Play
+        || state.current_position != position
+        || state.claim_window.is_some()
+        || state.is_ting(position)
+        || state.is_ai_position(position)
+        || !position_has_discardable_tile_count(state, position)
+        || !position_hand_tiles_are_valid(state, position)
+        || position_has_impossible_known_tile_count(state, position)
+        || !position_meld_shapes_are_valid(state, position)
+        || !position_meld_sources_are_valid(state, position)
+    {
+        return Vec::new();
+    }
+    let Some(hand) = state.hands.get(&position) else {
+        return Vec::new();
+    };
+    let mut candidates = hand.clone();
+    candidates.sort_unstable();
+    candidates.dedup();
+    candidates
+        .into_iter()
+        .filter(|tile| !ting_wait_tiles_after_discard(state, position, *tile, configs).is_empty())
+        .collect()
 }
 
 #[cfg(test)]
@@ -845,6 +924,28 @@ pub(crate) fn perform_discard(
     position: usize,
     tile: i32,
 ) -> bool {
+    perform_discard_with_ting(
+        room_service,
+        room_key,
+        state,
+        configs,
+        dispatch,
+        position,
+        tile,
+        false,
+    )
+}
+
+pub(crate) fn perform_discard_with_ting(
+    room_service: &RoomService,
+    room_key: &str,
+    state: &mut ShenyangMahjongLoopState,
+    configs: &HashMap<String, i32>,
+    dispatch: &mut Dispatch,
+    position: usize,
+    tile: i32,
+    declare_ting: bool,
+) -> bool {
     if state.phase != ShenyangMahjongPhase::Play
         || state.current_position != position
         || state.claim_window.is_some()
@@ -857,8 +958,22 @@ pub(crate) fn perform_discard(
     {
         return false;
     }
+    if state.is_ting(position) {
+        if state.last_drawn_tile != Some(tile)
+            || ting_wait_tiles_after_discard(state, position, tile, configs).is_empty()
+        {
+            return false;
+        }
+    } else if declare_ting
+        && !ting_discard_tiles_for_position(state, position, configs).contains(&tile)
+    {
+        return false;
+    }
     if !state.remove_tiles_from_hand(position, &[tile]) {
         return false;
+    }
+    if declare_ting {
+        state.declare_ting(position);
     }
     state.clear_xi_gang_options(position);
     state.discards.entry(position).or_default().push(tile);
@@ -878,6 +993,8 @@ pub(crate) fn perform_discard(
             from_position: None,
             wall_count: state.wall_count() as i32,
             xi_gang_options: Vec::new(),
+            ting_discard_tiles: Vec::new(),
+            is_ting: Some(state.is_ting(position)),
         },
     );
 
@@ -930,6 +1047,8 @@ pub(crate) fn perform_self_draw_hu(
             from_position: None,
             wall_count: state.wall_count() as i32,
             xi_gang_options: Vec::new(),
+            ting_discard_tiles: Vec::new(),
+            is_ting: None,
         },
     );
     let win_tile = state.last_drawn_tile;
@@ -1043,6 +1162,8 @@ pub(crate) fn perform_self_gang(
             from_position: None,
             wall_count: state.wall_count() as i32,
             xi_gang_options: Vec::new(),
+            ting_discard_tiles: Vec::new(),
+            is_ting: None,
         },
     );
     draw_after_gang_or_settle(room_service, room_key, state, configs, dispatch, position);
@@ -1090,7 +1211,15 @@ pub(crate) fn perform_xi_gang(
     state.set_turn_countdown(current_play_time(configs));
     push_xi_gang_events(state, dispatch, position, &tiles);
     if let Some(tile) = replacement_tile {
-        push_draw_events(room_service, room_key, state, dispatch, position, tile);
+        push_draw_events(
+            room_service,
+            room_key,
+            state,
+            configs,
+            dispatch,
+            position,
+            tile,
+        );
     }
     true
 }
@@ -1104,7 +1233,8 @@ fn position_can_chi(
 }
 
 fn position_can_claim_meld(state: &ShenyangMahjongLoopState, position: usize) -> bool {
-    position_has_claimable_tile_count(state, position)
+    !state.is_ting(position)
+        && position_has_claimable_tile_count(state, position)
         && position_hand_tiles_are_valid(state, position)
         && !position_has_impossible_known_tile_count(state, position)
         && position_meld_shapes_are_valid(state, position)
@@ -1338,6 +1468,7 @@ pub(crate) fn push_draw_events(
     _room_service: &RoomService,
     _room_key: &str,
     state: &ShenyangMahjongLoopState,
+    configs: &HashMap<String, i32>,
     dispatch: &mut Dispatch,
     position: usize,
     tile: i32,
@@ -1368,7 +1499,29 @@ pub(crate) fn push_draw_events(
                 } else {
                     Vec::new()
                 },
+                ting_discard_tiles: if is_drawing_player {
+                    ting_discard_tiles_for_position(state, position, configs)
+                } else {
+                    Vec::new()
+                },
+                is_ting: state.is_ting(position).then_some(true),
             },
+        );
+    }
+}
+
+fn push_private_table_snapshot(
+    state: &ShenyangMahjongLoopState,
+    configs: &HashMap<String, i32>,
+    dispatch: &mut Dispatch,
+    position: usize,
+) {
+    if let Some((session_id, _)) = state.players_snapshot().get(&position) {
+        push_direct_event(
+            dispatch,
+            *session_id,
+            WsCode::TABLE_SNAPSHOT as i32,
+            build_table_snapshot_event_with_configs(state, position, configs),
         );
     }
 }
@@ -1398,6 +1551,7 @@ pub(crate) fn push_private_deal_events(
     _room_service: &RoomService,
     _room_key: &str,
     state: &ShenyangMahjongLoopState,
+    configs: &HashMap<String, i32>,
     dispatch: &mut Dispatch,
 ) {
     let players = state.players_snapshot();
@@ -1413,6 +1567,12 @@ pub(crate) fn push_private_deal_events(
                 current_position: state.current_position as i32,
                 wall_count: state.wall_count() as i32,
                 turn_countdown: state.turn_countdown() as i32,
+                last_drawn_tile: if position == state.current_position {
+                    state.last_drawn_tile
+                } else {
+                    None
+                },
+                ting_discard_tiles: ting_discard_tiles_for_position(state, position, configs),
             },
         );
     }
@@ -1453,6 +1613,8 @@ fn push_xi_gang_events(
                 } else {
                     Vec::new()
                 },
+                ting_discard_tiles: Vec::new(),
+                is_ting: None,
             },
         );
     }
@@ -1586,6 +1748,8 @@ pub(crate) fn resolve_claim_window(
                     from_position: Some(claim_window.from_position as i32),
                     wall_count: state.wall_count() as i32,
                     xi_gang_options: Vec::new(),
+                    ting_discard_tiles: Vec::new(),
+                    is_ting: None,
                 },
             );
         }
@@ -1679,8 +1843,11 @@ pub(crate) fn resolve_claim_window(
                             from_position: Some(claim_window.from_position as i32),
                             wall_count: state.wall_count() as i32,
                             xi_gang_options: Vec::new(),
+                            ting_discard_tiles: Vec::new(),
+                            is_ting: None,
                         },
                     );
+                    push_private_table_snapshot(state, configs, dispatch, winner);
                     push_phase_change(
                         room_service,
                         room_key,
@@ -1724,12 +1891,22 @@ pub(crate) fn resolve_claim_window(
                             from_position: Some(claim_window.from_position as i32),
                             wall_count: state.wall_count() as i32,
                             xi_gang_options: Vec::new(),
+                            ting_discard_tiles: Vec::new(),
+                            is_ting: None,
                         },
                     );
                     if let Some(tile) = state.draw_for_position(winner) {
                         state.pending_gang_draw = true;
                         state.set_turn_countdown(current_play_time(configs));
-                        push_draw_events(room_service, room_key, state, dispatch, winner, tile);
+                        push_draw_events(
+                            room_service,
+                            room_key,
+                            state,
+                            configs,
+                            dispatch,
+                            winner,
+                            tile,
+                        );
                         push_phase_change(
                             room_service,
                             room_key,
@@ -1779,8 +1956,11 @@ pub(crate) fn resolve_claim_window(
                     from_position: Some(claim_window.from_position as i32),
                     wall_count: state.wall_count() as i32,
                     xi_gang_options: Vec::new(),
+                    ting_discard_tiles: Vec::new(),
+                    is_ting: None,
                 },
             );
+            push_private_table_snapshot(state, configs, dispatch, winner);
             push_phase_change(
                 room_service,
                 room_key,
@@ -2113,12 +2293,16 @@ fn winner_hand_fan_with_configs(
     winner: usize,
     configs: &HashMap<String, i32>,
 ) -> i32 {
-    winner_hand_fan_with_rules(
+    let mut fan = winner_hand_fan_with_rules(
         state,
         settlement,
         winner,
         ShenyangMahjongWinRules::from_configs(configs),
-    )
+    );
+    if configs.get("ting_fan").copied() == Some(1) && state.is_ting(winner) {
+        fan += 1;
+    }
+    fan
 }
 
 #[cfg(test)]
@@ -2458,7 +2642,7 @@ impl ShenyangMahjongGameHandler {
                                 WsResponseCode::NO_PERMISSION,
                             );
                         }
-                        if !perform_discard(
+                        if !perform_discard_with_ting(
                             room_service,
                             &room_key,
                             &mut state,
@@ -2466,6 +2650,7 @@ impl ShenyangMahjongGameHandler {
                             &mut dispatch,
                             position,
                             tile,
+                            payload.declare_ting.unwrap_or(false),
                         ) {
                             return room_service.error_response(
                                 session_id,
@@ -3636,6 +3821,7 @@ mod tests {
             &RoomService::default(),
             "room",
             &state,
+            &HashMap::new(),
             &mut dispatch,
             1,
             35,
@@ -6131,6 +6317,120 @@ mod tests {
         state.current_position = 0;
         state.dealer_position = 0;
         state
+    }
+
+    fn seven_pairs_ting_hand() -> Vec<i32> {
+        vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 12, 21, 21, 31, 32]
+    }
+
+    #[test]
+    fn ting_candidates_are_human_only_and_declaration_is_recorded() {
+        let mut state = playable_state();
+        state.hands.insert(0, seven_pairs_ting_hand());
+        state.last_drawn_tile = Some(32);
+        assert_eq!(
+            ting_discard_tiles_for_position(&state, 0, &relaxed_configs()),
+            vec![31, 32]
+        );
+
+        state.base.lock().unwrap().mark_ai_position(0);
+        assert!(ting_discard_tiles_for_position(&state, 0, &relaxed_configs()).is_empty());
+
+        let (room_service, _handler, room_key, loop_state) = setup_request_room();
+        let mut human_state = loop_state.lock().unwrap();
+        human_state.phase = ShenyangMahjongPhase::Play;
+        human_state.current_position = 0;
+        human_state.dealer_position = 0;
+        human_state.hands.insert(0, seven_pairs_ting_hand());
+        human_state.last_drawn_tile = Some(32);
+        let mut dispatch = Dispatch::default();
+        assert!(perform_discard_with_ting(
+            &room_service,
+            &room_key,
+            &mut human_state,
+            &relaxed_configs(),
+            &mut dispatch,
+            0,
+            32,
+            true,
+        ));
+        assert!(human_state.is_ting(0));
+        let declared_event = dispatch.messages.iter().find_map(|message| {
+            let OutboundPayload::Event(event) = &message.payload else {
+                return None;
+            };
+            (event.code == WsCode::PLAY as i32)
+                .then(|| {
+                    serde_json::from_value::<WsShenyangMahjongPlayEvent>(event.data.clone()).ok()
+                })
+                .flatten()
+                .filter(|event| event.action == ShenyangMahjongAction::DISCARD)
+        });
+        assert_eq!(declared_event.and_then(|event| event.is_ting), Some(true));
+    }
+
+    #[test]
+    fn declared_ting_locks_future_discard_to_the_drawn_tile() {
+        let mut state = playable_state();
+        let mut hand = seven_pairs_ting_hand();
+        hand.retain(|tile| *tile != 32);
+        hand.push(5);
+        hand.sort_unstable();
+        state.hands.insert(0, hand);
+        state.last_drawn_tile = Some(5);
+        state.declare_ting(0);
+        let mut dispatch = Dispatch::default();
+
+        assert!(!perform_discard(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+            0,
+            1,
+        ));
+        assert!(perform_discard(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &relaxed_configs(),
+            &mut dispatch,
+            0,
+            5,
+        ));
+    }
+
+    #[test]
+    fn enabled_ting_setting_adds_one_fan_before_the_cap() {
+        let mut state = playable_state();
+        state
+            .hands
+            .insert(1, vec![2, 3, 5, 6, 7, 11, 12, 13, 21, 22, 23, 31, 31]);
+        state.declare_ting(1);
+        state.enter_settlement_with_reverse_win(
+            vec![1],
+            Some(0),
+            Some(4),
+            false,
+            false,
+            false,
+            false,
+        );
+        let settlement = state.settlement.as_ref().expect("settlement");
+        let disabled = HashMap::from([
+            ("win_rule".to_owned(), WIN_RULE_RELAXED),
+            ("ting_fan".to_owned(), 0),
+        ]);
+        let enabled = HashMap::from([
+            ("win_rule".to_owned(), WIN_RULE_RELAXED),
+            ("ting_fan".to_owned(), 1),
+        ]);
+
+        assert_eq!(
+            winner_hand_fan_with_configs(&state, settlement, 1, &enabled),
+            winner_hand_fan_with_configs(&state, settlement, 1, &disabled) + 1,
+        );
     }
 
     #[test]
