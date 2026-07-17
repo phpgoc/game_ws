@@ -38,20 +38,6 @@ pub fn build_shenyang_mahjong_settings() -> (GameSettings, HashMap<String, GameP
             }),
         ),
         (
-            "multi_hu_mode".into(),
-            GameParam::Enum(GameParamEnum {
-                default: 1,
-                options: vec!["nearest".into(), "multi".into()],
-            }),
-        ),
-        (
-            "win_rule".into(),
-            GameParam::Enum(GameParamEnum {
-                default: 1,
-                options: vec!["relaxed".into(), "shenyang_basic".into()],
-            }),
-        ),
-        (
             "allow_first_chi".into(),
             GameParam::Enum(GameParamEnum {
                 default: 1,
@@ -102,8 +88,10 @@ mod tests {
         assert!(settings.values.contains_key("claim_time"));
         assert_eq!(settings.values.get("max_fan"), Some(&4));
         assert!(descriptions.contains_key("max_fan"));
-        assert_eq!(settings.values.get("win_rule"), Some(&1));
-        assert!(descriptions.contains_key("win_rule"));
+        assert!(!settings.values.contains_key("multi_hu_mode"));
+        assert!(!descriptions.contains_key("multi_hu_mode"));
+        assert!(!settings.values.contains_key("win_rule"));
+        assert!(!descriptions.contains_key("win_rule"));
         assert_eq!(settings.values.get("allow_first_chi"), Some(&1));
         assert!(descriptions.contains_key("allow_first_chi"));
         assert_eq!(settings.values.get("ting_fan"), Some(&0));

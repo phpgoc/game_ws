@@ -82,10 +82,6 @@ fn allow_first_chi(configs: &HashMap<String, i32>) -> bool {
     config_value(configs, "allow_first_chi", 1) == 1
 }
 
-pub(crate) fn allow_multi_hu(configs: &HashMap<String, i32>) -> bool {
-    config_value(configs, "multi_hu_mode", 1) == 1
-}
-
 pub(crate) fn build_claim_options(
     state: &ShenyangMahjongLoopState,
     tile: i32,
@@ -1712,27 +1708,18 @@ pub(crate) fn resolve_claim_window(
     }
 
     if !hu_positions.is_empty() {
-        let chosen_hu = ordered_positions
-            .iter()
-            .copied()
-            .find(|position| hu_positions.contains(position));
         if is_rob_gang {
             let _ = state.remove_tiles_from_hand(claim_window.from_position, &[claim_window.tile]);
         } else {
             state.remove_last_discard(claim_window.from_position);
         }
-        let winners = if allow_multi_hu(configs) {
-            let mut winners = hu_positions.clone();
-            winners.sort_by_key(|position| {
-                ordered_positions
-                    .iter()
-                    .position(|item| item == position)
-                    .unwrap_or(usize::MAX)
-            });
-            winners
-        } else {
-            vec![chosen_hu.unwrap_or(hu_positions[0])]
-        };
+        let mut winners = hu_positions.clone();
+        winners.sort_by_key(|position| {
+            ordered_positions
+                .iter()
+                .position(|item| item == position)
+                .unwrap_or(usize::MAX)
+        });
         for winner in &winners {
             push_room_event(
                 room_service,
@@ -2973,7 +2960,8 @@ mod tests {
         );
         state
             .hands
-            .insert(1, vec![1, 2, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+            .insert(1, vec![1, 2, 11, 12, 13, 31, 31, 31, 35, 35]);
+        state.melds.insert(1, vec![open_peng_meld(21, 3)]);
         state.wall = vec![36];
         state.last_drawn_tile = Some(3);
         let mut dispatch = Dispatch::default();
@@ -3769,18 +3757,19 @@ mod tests {
         state.current_position = 1;
         state
             .hands
-            .insert(1, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 35, 36, 37]);
+            .insert(1, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 35, 35, 35, 36, 37]);
         state.melds.insert(1, Vec::new());
         state.last_drawn_tile = Some(37);
         state.wall = vec![34];
         state.xi_gang_options.insert(1, vec![vec![35, 36, 37]]);
+        let configs = HashMap::from([("allow_first_chi".to_owned(), 0)]);
         let mut dispatch = Dispatch::default();
 
         assert!(perform_xi_gang(
             &RoomService::default(),
             "room",
             &mut state,
-            &relaxed_configs(),
+            &configs,
             &mut dispatch,
             1,
             &[37, 35, 36],
@@ -3796,13 +3785,13 @@ mod tests {
         );
         assert!(!position_has_open_meld(&state, 1));
         assert!(state.xi_gang_options_for_position(1).is_empty());
-        assert!(can_self_draw_hu_with_configs(&state, 1, &relaxed_configs()));
+        assert!(can_self_draw_hu_with_configs(&state, 1, &configs));
 
         perform_self_draw_hu(
             &RoomService::default(),
             "room",
             &mut state,
-            &relaxed_configs(),
+            &configs,
             &mut dispatch,
             1,
         );
@@ -4234,7 +4223,7 @@ mod tests {
     }
 
     #[test]
-    fn perform_self_draw_hu_respects_win_rule_configs() {
+    fn perform_self_draw_hu_ignores_legacy_relaxed_win_rule_config() {
         let mut state = playable_state();
         state.current_position = 0;
         state
@@ -4244,13 +4233,17 @@ mod tests {
         let configs = HashMap::from([("win_rule".to_owned(), 1)]);
         let mut dispatch = Dispatch::default();
 
-        assert!(can_self_draw_hu_with_configs(&state, 0, &relaxed_configs()));
+        assert!(!can_self_draw_hu_with_configs(
+            &state,
+            0,
+            &relaxed_configs()
+        ));
         assert!(!can_self_draw_hu_with_configs(&state, 0, &configs));
         perform_self_draw_hu(
             &RoomService::default(),
             "room",
             &mut state,
-            &configs,
+            &relaxed_configs(),
             &mut dispatch,
             0,
         );
@@ -4352,10 +4345,12 @@ mod tests {
             state.discards.insert(0, vec![3]);
             state
                 .hands
-                .insert(1, vec![1, 2, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+                .insert(1, vec![1, 2, 11, 12, 13, 21, 22, 23, 35, 35]);
             state
                 .hands
-                .insert(2, vec![1, 2, 4, 5, 6, 14, 15, 16, 24, 25, 26, 32, 32]);
+                .insert(2, vec![1, 2, 14, 15, 16, 24, 25, 26, 35, 35]);
+            state.melds.insert(1, vec![open_peng_meld(31, 3)]);
+            state.melds.insert(2, vec![open_peng_meld(32, 3)]);
             state.claim_window = Some(ClaimWindowState {
                 tile: 3,
                 from_position: 0,
@@ -5131,7 +5126,7 @@ mod tests {
     }
 
     #[test]
-    fn play_request_nearest_hu_mode_keeps_only_first_winner_in_turn_order() {
+    fn play_request_legacy_nearest_config_still_allows_multiple_hu() {
         let (mut room_service, mut handler, _room_key, loop_state) =
             setup_request_room_with_configs(serde_json::json!({"multi_hu_mode":0,"win_rule":0}));
         {
@@ -5145,10 +5140,12 @@ mod tests {
             state.discards.insert(0, vec![3]);
             state
                 .hands
-                .insert(1, vec![1, 2, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+                .insert(1, vec![1, 2, 11, 12, 13, 21, 22, 23, 35, 35]);
             state
                 .hands
-                .insert(2, vec![1, 2, 4, 5, 6, 14, 15, 16, 24, 25, 26, 32, 32]);
+                .insert(2, vec![1, 2, 14, 15, 16, 24, 25, 26, 35, 35]);
+            state.melds.insert(1, vec![open_peng_meld(31, 3)]);
+            state.melds.insert(2, vec![open_peng_meld(32, 3)]);
             state.claim_window = Some(ClaimWindowState {
                 tile: 3,
                 from_position: 0,
@@ -5158,30 +5155,30 @@ mod tests {
             });
         }
 
-        let later_hu = handler.handle_game_request(
-            &mut room_service,
-            3,
-            play_request(ShenyangMahjongAction::HU, Vec::new(), Some(3), Some(0)),
-        );
-        let nearest_hu = handler.handle_game_request(
+        let first_hu = handler.handle_game_request(
             &mut room_service,
             2,
             play_request(ShenyangMahjongAction::HU, Vec::new(), Some(3), Some(0)),
         );
+        let second_hu = handler.handle_game_request(
+            &mut room_service,
+            3,
+            play_request(ShenyangMahjongAction::HU, Vec::new(), Some(3), Some(0)),
+        );
 
         assert_eq!(
-            response_code(&later_hu, 3, Routes::PLAY),
+            response_code(&first_hu, 2, Routes::PLAY),
             Some(WsResponseCode::OK as i32)
         );
-        assert!(!has_room_event(&later_hu, WsCode::GAME_OVER));
+        assert!(!has_room_event(&first_hu, WsCode::GAME_OVER));
         assert_eq!(
-            response_code(&nearest_hu, 2, Routes::PLAY),
+            response_code(&second_hu, 3, Routes::PLAY),
             Some(WsResponseCode::OK as i32)
         );
-        assert!(has_room_event(&nearest_hu, WsCode::GAME_OVER));
+        assert!(has_room_event(&second_hu, WsCode::GAME_OVER));
         let state = loop_state.lock().unwrap();
         let settlement = state.settlement.as_ref().expect("settlement");
-        assert_eq!(settlement.winner_positions, vec![1]);
+        assert_eq!(settlement.winner_positions, vec![1, 2]);
         assert_eq!(settlement.from_position, Some(0));
         assert_eq!(settlement.win_tile, Some(3));
         assert_eq!(state.discards.get(&0), Some(&Vec::<i32>::new()));
@@ -5864,7 +5861,7 @@ mod tests {
             }
             state
                 .hands
-                .insert(0, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+                .insert(0, vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35, 35]);
         }
 
         let denied = handler.handle_game_request(
@@ -6155,7 +6152,8 @@ mod tests {
             );
             state
                 .hands
-                .insert(1, vec![1, 2, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+                .insert(1, vec![1, 2, 11, 12, 13, 31, 31, 31, 35, 35]);
+            state.melds.insert(1, vec![open_peng_meld(21, 3)]);
             state.wall = vec![36];
             state.last_drawn_tile = Some(3);
             state.claim_window = Some(ClaimWindowState {
@@ -6233,7 +6231,8 @@ mod tests {
             state.discards.insert(0, vec![3]);
             state
                 .hands
-                .insert(1, vec![1, 2, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+                .insert(1, vec![1, 2, 11, 12, 13, 31, 31, 31, 35, 35]);
+            state.melds.insert(1, vec![open_peng_meld(21, 3)]);
             state
                 .hands
                 .insert(2, vec![3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35]);
@@ -7508,7 +7507,8 @@ mod tests {
         );
         state
             .hands
-            .insert(1, vec![1, 2, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+            .insert(1, vec![1, 2, 11, 12, 13, 31, 31, 31, 35, 35]);
+        state.melds.insert(1, vec![open_peng_meld(21, 3)]);
         state.wall = vec![36];
         state.last_drawn_tile = Some(3);
         state.claim_window = Some(ClaimWindowState {
@@ -7541,7 +7541,7 @@ mod tests {
     }
 
     #[test]
-    fn rob_gang_options_do_not_count_concealed_gang_as_open_for_basic_rule() {
+    fn legacy_relaxed_config_does_not_count_concealed_gang_as_open() {
         let mut state = playable_state();
         state
             .hands
@@ -7558,7 +7558,7 @@ mod tests {
         let basic_configs = HashMap::from([("win_rule".to_owned(), 1)]);
         let basic = build_rob_gang_claim_window_event(&state, 3, 0, 5, &basic_configs);
 
-        assert!(relaxed.eligible_positions.contains(&1));
+        assert!(!relaxed.eligible_positions.contains(&1));
         assert!(!basic.eligible_positions.contains(&1));
     }
 
@@ -7691,7 +7691,7 @@ mod tests {
     }
 
     #[test]
-    fn self_draw_hu_does_not_count_concealed_gang_as_open_for_basic_rule() {
+    fn legacy_relaxed_config_does_not_count_concealed_gang_as_open_for_self_draw() {
         let mut state = playable_state();
         state
             .hands
@@ -7707,7 +7707,11 @@ mod tests {
         state.last_drawn_tile = Some(35);
         let configs = HashMap::from([("win_rule".to_owned(), 1)]);
 
-        assert!(can_self_draw_hu_with_configs(&state, 0, &relaxed_configs()));
+        assert!(!can_self_draw_hu_with_configs(
+            &state,
+            0,
+            &relaxed_configs()
+        ));
         assert!(!can_self_draw_hu_with_configs(&state, 0, &configs));
     }
 
@@ -7857,7 +7861,7 @@ mod tests {
         let mut state = playable_state();
         state
             .hands
-            .insert(0, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+            .insert(0, vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35, 35]);
 
         assert!(!can_self_draw_hu_with_configs(
             &state,
@@ -7952,7 +7956,8 @@ mod tests {
         let mut state = playable_state();
         state
             .hands
-            .insert(0, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35]);
+            .insert(0, vec![2, 3, 4, 11, 12, 13, 31, 31, 31, 35]);
+        state.melds.insert(0, vec![open_peng_meld(21, 2)]);
         state.wall = vec![35];
 
         assert_eq!(state.draw_for_position(0), Some(35));
@@ -8033,8 +8038,9 @@ mod tests {
         let mut state = playable_state();
         state
             .hands
-            .insert(0, vec![3, 3, 3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31]);
-        state.wall = vec![31];
+            .insert(0, vec![3, 3, 3, 3, 11, 12, 13, 31, 31, 31, 35]);
+        state.melds.insert(0, vec![open_peng_meld(21, 2)]);
+        state.wall = vec![35];
         state.last_drawn_tile = Some(3);
         let mut dispatch = Dispatch::default();
 
@@ -8048,7 +8054,7 @@ mod tests {
             3,
         ));
         assert_eq!(state.wall_count(), 0);
-        assert_eq!(state.last_drawn_tile, Some(31));
+        assert_eq!(state.last_drawn_tile, Some(35));
         assert!(state.pending_gang_draw);
         assert!(can_self_draw_hu_with_configs(&state, 0, &relaxed_configs()));
 
@@ -8065,7 +8071,7 @@ mod tests {
         assert!(settlement.is_self_draw);
         assert!(settlement.is_gang_draw);
         assert!(settlement.is_haidilao);
-        assert_eq!(settlement.win_tile, Some(31));
+        assert_eq!(settlement.win_tile, Some(35));
         assert_eq!(winner_hand_fan(&state, settlement, 0), 6);
 
         let event = build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
@@ -9192,7 +9198,8 @@ mod tests {
         let mut state = playable_state();
         state
             .hands
-            .insert(1, vec![2, 3, 5, 6, 7, 11, 12, 13, 21, 22, 23, 31, 31]);
+            .insert(1, vec![2, 3, 11, 12, 13, 31, 31, 31, 35, 35]);
+        state.melds.insert(1, vec![open_peng_meld(21, 3)]);
         state.enter_settlement_with_reverse_win(
             vec![1],
             Some(0),
@@ -9215,7 +9222,8 @@ mod tests {
         let mut state = playable_state();
         state
             .hands
-            .insert(1, vec![2, 3, 5, 6, 7, 11, 12, 13, 21, 22, 23, 31, 31]);
+            .insert(1, vec![2, 3, 11, 12, 13, 31, 31, 31, 35, 35]);
+        state.melds.insert(1, vec![open_peng_meld(21, 3)]);
         state.enter_settlement_with_reverse_win(
             vec![1],
             Some(0),
@@ -9351,7 +9359,8 @@ mod tests {
         let mut state = playable_state();
         state
             .hands
-            .insert(1, vec![2, 3, 4, 5, 6, 7, 11, 12, 13, 21, 22, 23, 31, 31]);
+            .insert(1, vec![2, 3, 4, 11, 12, 13, 31, 31, 31, 35, 35]);
+        state.melds.insert(1, vec![open_peng_meld(21, 3)]);
         state.enter_settlement_with_reverse_win(vec![1], Some(0), None, true, true, false, false);
         let settlement = state.settlement.as_ref().expect("settlement");
 
@@ -9469,7 +9478,8 @@ mod tests {
         let mut state = playable_state();
         state
             .hands
-            .insert(1, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+            .insert(1, vec![2, 3, 4, 11, 12, 13, 31, 31, 31, 35, 35]);
+        state.melds.insert(1, vec![open_peng_meld(21, 3)]);
         state.enter_settlement_with_reverse_win(vec![1], None, None, true, false, true, true);
         let settlement = state.settlement.clone().expect("settlement");
 
@@ -9481,16 +9491,13 @@ mod tests {
         assert!(!no_gang_event.winner_details[0].is_gang_draw);
         assert!(no_gang_event.winner_details[0].is_haidilao);
 
-        state
-            .hands
-            .insert(1, vec![3, 4, 5, 11, 12, 13, 21, 22, 23, 31, 31]);
+        state.hands.insert(1, vec![11, 12, 13, 31, 31, 31, 35, 35]);
         state.melds.insert(
             1,
-            vec![build_meld(
-                ShenyangMahjongMeldKind::GANG,
-                vec![2, 2, 2, 2],
-                None,
-            )],
+            vec![
+                open_peng_meld(21, 3),
+                build_meld(ShenyangMahjongMeldKind::GANG, vec![2, 2, 2, 2], None),
+            ],
         );
 
         assert_eq!(winner_hand_fan(&state, &settlement, 1), 5);
@@ -9516,7 +9523,8 @@ mod tests {
         let mut state = playable_state();
         state
             .hands
-            .insert(1, vec![2, 3, 5, 6, 7, 11, 12, 13, 21, 22, 23, 31, 31]);
+            .insert(1, vec![2, 3, 11, 12, 13, 31, 31, 31, 35, 35]);
+        state.melds.insert(1, vec![open_peng_meld(21, 3)]);
         state.enter_settlement_with_reverse_win(
             vec![1],
             Some(0),
@@ -10685,7 +10693,8 @@ mod tests {
         let mut state = playable_state();
         state
             .hands
-            .insert(1, vec![1, 2, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+            .insert(1, vec![1, 2, 11, 12, 13, 31, 31, 31, 35, 35]);
+        state.melds.insert(1, vec![open_peng_meld(21, 3)]);
         state.melds.insert(
             0,
             vec![build_meld(
@@ -10959,7 +10968,8 @@ mod tests {
             .insert(1, vec![1, 2, 3, 3, 3, 4, 11, 12, 13, 21, 22, 23, 31]);
         state
             .hands
-            .insert(2, vec![1, 2, 11, 12, 13, 21, 22, 23, 32, 32, 32, 35, 35]);
+            .insert(2, vec![1, 2, 11, 12, 13, 32, 32, 32, 35, 35]);
+        state.melds.insert(2, vec![open_peng_meld(29, 3)]);
         state.discards.insert(0, vec![3]);
         state.claim_window = Some(ClaimWindowState {
             tile: 3,
@@ -11191,7 +11201,8 @@ mod tests {
         let mut state = playable_state();
         state
             .hands
-            .insert(1, vec![1, 2, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
+            .insert(1, vec![1, 2, 11, 12, 13, 31, 31, 31, 35, 35]);
+        state.melds.insert(1, vec![open_peng_meld(21, 3)]);
         state.melds.insert(
             0,
             vec![build_meld(
@@ -11339,23 +11350,24 @@ mod tests {
         state.last_drawn_tile = Some(34);
         state.wall = vec![24];
         state.xi_gang_options.insert(1, vec![vec![31, 32, 33, 34]]);
+        let configs = HashMap::from([("allow_first_chi".to_owned(), 0)]);
         let mut dispatch = Dispatch::default();
 
         assert!(perform_xi_gang(
             &RoomService::default(),
             "room",
             &mut state,
-            &relaxed_configs(),
+            &configs,
             &mut dispatch,
             1,
             &[31, 32, 33, 34],
         ));
-        assert!(can_self_draw_hu_with_configs(&state, 1, &relaxed_configs()));
+        assert!(can_self_draw_hu_with_configs(&state, 1, &configs));
         perform_self_draw_hu(
             &RoomService::default(),
             "room",
             &mut state,
-            &relaxed_configs(),
+            &configs,
             &mut dispatch,
             1,
         );

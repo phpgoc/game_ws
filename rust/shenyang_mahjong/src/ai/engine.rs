@@ -1144,7 +1144,8 @@ mod tests {
         state.current_position = 1;
         state
             .hands
-            .insert(0, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35]);
+            .insert(0, vec![2, 3, 4, 11, 12, 13, 31, 31, 31, 35]);
+        state.melds.insert(0, vec![test_peng_meld(21)]);
         state.discards.insert(1, vec![35]);
         state.claim_window = Some(ClaimWindowState {
             tile: 35,
@@ -1303,7 +1304,8 @@ mod tests {
         state.base.lock().unwrap().mark_away(0);
         state
             .hands
-            .insert(0, vec![4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35, 35, 35, 35]);
+            .insert(0, vec![4, 5, 6, 11, 12, 13, 31, 35, 35, 35, 35]);
+        state.melds.insert(0, vec![test_peng_meld(21)]);
         state.last_drawn_tile = Some(35);
         state.wall = vec![37; 24];
         let mut dispatch = Dispatch::default();
@@ -1319,9 +1321,13 @@ mod tests {
         assert_eq!(state.current_position, 0);
         assert_eq!(state.last_drawn_tile, Some(37));
         assert!(state.hands.get(&0).unwrap().contains(&37));
-        assert_eq!(
-            state.melds.get(&0).unwrap().first().unwrap().tiles,
-            vec![35, 35, 35, 35]
+        assert!(
+            state
+                .melds
+                .get(&0)
+                .unwrap()
+                .iter()
+                .any(|meld| meld.tiles == vec![35, 35, 35, 35])
         );
         assert!(state.discards.get(&0).unwrap().is_empty());
     }

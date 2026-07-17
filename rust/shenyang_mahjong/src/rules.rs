@@ -933,15 +933,8 @@ fn triplet_meld_primary_tile(meld: &WsShenyangMahjongMeld) -> Option<i32> {
     is_triplet_meld(meld).then(|| meld.tiles[0])
 }
 
-pub fn win_rule_from_configs(configs: &HashMap<String, i32>) -> i32 {
-    match configs
-        .get("win_rule")
-        .copied()
-        .unwrap_or(WIN_RULE_SHENYANG_BASIC)
-    {
-        WIN_RULE_SHENYANG_BASIC => WIN_RULE_SHENYANG_BASIC,
-        _ => WIN_RULE_RELAXED,
-    }
+pub fn win_rule_from_configs(_configs: &HashMap<String, i32>) -> i32 {
+    WIN_RULE_SHENYANG_BASIC
 }
 
 pub fn xi_gang_options(hand: &[i32]) -> Vec<Vec<i32>> {
@@ -1174,6 +1167,17 @@ mod tests {
     fn missing_config_uses_shenyang_basic_win_rule() {
         assert_eq!(
             win_rule_from_configs(&std::collections::HashMap::new()),
+            WIN_RULE_SHENYANG_BASIC
+        );
+    }
+
+    #[test]
+    fn legacy_relaxed_config_still_uses_shenyang_basic_win_rule() {
+        let configs = std::collections::HashMap::from([("win_rule".to_owned(), WIN_RULE_RELAXED)]);
+
+        assert_eq!(win_rule_from_configs(&configs), WIN_RULE_SHENYANG_BASIC);
+        assert_eq!(
+            ShenyangMahjongWinRules::from_configs(&configs).win_rule,
             WIN_RULE_SHENYANG_BASIC
         );
     }
