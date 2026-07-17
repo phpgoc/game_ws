@@ -66,7 +66,7 @@ pub(in crate::ai::decision) fn seven_pairs_plan_score(
     if pairs < 6 && capped_normal_route_visible_fan_reaches_cap(hand, melds, table, win_rule) {
         return 0.0;
     }
-    if win_rule == WIN_RULE_SHENYANG_BASIC && pairs < 6 && missing_suits(hand, melds).is_empty() {
+    if pairs < 6 && missing_suits(hand, melds).is_empty() {
         return 0.0;
     }
     match pairs {
@@ -80,24 +80,18 @@ pub(in crate::ai::decision) fn seven_pairs_plan_score(
 pub(in crate::ai::decision) fn should_chase_basic_missing_suit_four_pairs(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
-    win_rule: i32,
+    _win_rule: i32,
 ) -> bool {
-    win_rule == WIN_RULE_SHENYANG_BASIC
-        && pair_count(hand) == 4
-        && valid_meld_count(melds) == 0
-        && !missing_suits(hand, melds).is_empty()
+    pair_count(hand) == 4 && valid_meld_count(melds) == 0 && !missing_suits(hand, melds).is_empty()
 }
 
 pub(in crate::ai::decision) fn should_chase_basic_missing_suit_pairs(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
-    win_rule: i32,
+    _win_rule: i32,
     pairs: usize,
 ) -> bool {
-    win_rule == WIN_RULE_SHENYANG_BASIC
-        && pairs >= 4
-        && valid_meld_count(melds) == 0
-        && !missing_suits(hand, melds).is_empty()
+    pairs >= 4 && valid_meld_count(melds) == 0 && !missing_suits(hand, melds).is_empty()
 }
 
 pub(in crate::ai::decision) fn should_lock_seven_pairs_plan(

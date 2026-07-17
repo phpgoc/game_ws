@@ -110,6 +110,7 @@ fn dealer_does_not_lock_five_pairs_when_basic_route_is_viable() {
         0,
         WIN_RULE_SHENYANG_BASIC
     ));
+    assert!(!should_lock_seven_pairs_plan(&hand, &[], &table, 0, 0));
 }
 
 #[test]
@@ -461,6 +462,7 @@ fn one_fan_room_only_locks_seven_pairs_when_ready() {
         seven_pairs_plan_score(&five_pairs, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
         0.0
     );
+    assert_eq!(seven_pairs_plan_score(&five_pairs, &[], &table, 0, 0), 0.0);
 
     assert!(is_seven_pairs_wait_shape(&six_pairs));
     assert!(should_lock_seven_pairs_plan(
@@ -485,6 +487,7 @@ fn dealer_locks_five_pairs_when_normal_route_is_missing_a_suit() {
         &[],
         WIN_RULE_SHENYANG_BASIC
     ));
+    assert!(!has_basic_normal_route_foundation(&hand, &[], 0));
     assert!(should_lock_seven_pairs_plan(
         &hand,
         &[],
@@ -492,6 +495,7 @@ fn dealer_locks_five_pairs_when_normal_route_is_missing_a_suit() {
         0,
         WIN_RULE_SHENYANG_BASIC
     ));
+    assert!(should_lock_seven_pairs_plan(&hand, &[], &table, 0, 0));
 }
 
 #[test]

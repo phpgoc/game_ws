@@ -346,10 +346,9 @@ pub(in crate::ai::decision) fn four_gui_yi_discard_bias(
 pub(in crate::ai::decision) fn has_basic_normal_route_foundation(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
-    win_rule: i32,
+    _win_rule: i32,
 ) -> bool {
-    win_rule == WIN_RULE_SHENYANG_BASIC
-        && missing_suits(hand, melds).is_empty()
+    missing_suits(hand, melds).is_empty()
         && has_terminal_or_honor_with_extra(hand, melds, None)
         && has_triplet_or_dragon_pair(hand, melds)
 }
@@ -357,9 +356,9 @@ pub(in crate::ai::decision) fn has_basic_normal_route_foundation(
 pub(in crate::ai::decision) fn has_normal_route_foundation(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
-    win_rule: i32,
+    _win_rule: i32,
 ) -> bool {
-    win_rule != WIN_RULE_SHENYANG_BASIC || has_basic_normal_route_foundation(hand, melds, win_rule)
+    has_basic_normal_route_foundation(hand, melds, _win_rule)
 }
 
 pub(in crate::ai::decision) fn pressured_open_wait_scale(
