@@ -163,8 +163,7 @@ pub(in crate::ai::decision) fn should_claim_opening_gang_for_basic_hand(
     win_rule: i32,
     tile: i32,
 ) -> bool {
-    win_rule == WIN_RULE_SHENYANG_BASIC
-        && !has_door_opening_meld(current_melds, table)
+    !has_door_opening_meld(current_melds, table)
         && can_gang(hand, tile)
         && table.max_fan.is_none_or(|max_fan| max_fan > 1)
         && !is_closed_early_piao_candidate(hand, current_melds, table, position, win_rule)

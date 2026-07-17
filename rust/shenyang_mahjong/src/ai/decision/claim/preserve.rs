@@ -9,11 +9,7 @@ pub(in crate::ai::decision) fn should_claim_capped_dragon_peng_over_five_pairs(
     tile: i32,
     from_position: usize,
 ) -> bool {
-    if win_rule != WIN_RULE_SHENYANG_BASIC
-        || !is_dragon(tile)
-        || pair_count(hand) != 5
-        || !can_peng(hand, tile)
-    {
+    if !is_dragon(tile) || pair_count(hand) != 5 || !can_peng(hand, tile) {
         return false;
     }
     let preserves_pair_route =
@@ -41,12 +37,11 @@ pub(in crate::ai::decision) fn should_claim_dragon_peng_over_live_five_pairs(
     current_melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
+    _win_rule: i32,
     tile: i32,
     from_position: usize,
 ) -> bool {
-    if win_rule != WIN_RULE_SHENYANG_BASIC
-        || !is_dragon(tile)
+    if !is_dragon(tile)
         || pair_count(hand) != 5
         || valid_meld_count(current_melds) > 0
         || !can_peng(hand, tile)
@@ -122,7 +117,7 @@ pub(in crate::ai::decision) fn should_preserve_pinghu_sequence_over_peng(
     {
         return false;
     }
-    if win_rule == WIN_RULE_SHENYANG_BASIC && !has_door_opening_meld(melds, table) {
+    if !has_door_opening_meld(melds, table) {
         return false;
     }
     true

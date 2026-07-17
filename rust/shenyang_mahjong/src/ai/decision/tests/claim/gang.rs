@@ -25,6 +25,10 @@ fn capped_claim_gang_does_not_peng_to_preserve_redundant_four_gui_yi() {
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Gang)
     );
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, 0),
+        Some(AiClaimChoice::Gang)
+    );
 }
 
 #[test]

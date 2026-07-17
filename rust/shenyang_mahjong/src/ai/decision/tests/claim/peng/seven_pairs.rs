@@ -140,10 +140,19 @@ fn claim_peng_takes_dragon_from_live_five_pairs_with_malformed_meld() {
     ));
     assert!(should_claim_dragon_peng_over_live_five_pairs(
         &hand,
-        &[malformed_meld],
+        &[malformed_meld.clone()],
         &table,
         0,
         WIN_RULE_SHENYANG_BASIC,
+        35,
+        1,
+    ));
+    assert!(should_claim_dragon_peng_over_live_five_pairs(
+        &hand,
+        &[malformed_meld],
+        &table,
+        0,
+        0,
         35,
         1,
     ));
@@ -198,6 +207,7 @@ fn required_peng_gain_ignores_malformed_meld_for_four_pair_protection() {
         from_position: Some(1),
     };
     let base = required_peng_gain(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC, 31);
+    assert_eq!(required_peng_gain(&hand, &[], &table, 0, 0, 31), base);
 
     assert_eq!(pair_count(&hand), 4);
     assert_eq!(valid_meld_count(&[malformed_meld.clone()]), 0);

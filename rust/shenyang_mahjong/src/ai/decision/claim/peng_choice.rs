@@ -149,15 +149,11 @@ pub(super) fn choose_peng_claim(
     ) {
         return Some(AiClaimChoice::Peng);
     }
-    if win_rule == WIN_RULE_SHENYANG_BASIC
-        && !has_door_opening_meld(current_melds, table)
-        && can_gang(hand, tile)
-    {
+    if !has_door_opening_meld(current_melds, table) && can_gang(hand, tile) {
         return Some(AiClaimChoice::Peng);
     }
-    if win_rule == WIN_RULE_SHENYANG_BASIC
-        && (table.dealer_position == position
-            || dealer_opponent_has_major_threat(table, position, win_rule))
+    if table.dealer_position == position
+        || dealer_opponent_has_major_threat(table, position, win_rule)
     {
         return Some(AiClaimChoice::Peng);
     }
@@ -207,19 +203,17 @@ pub(in crate::ai::decision) fn required_peng_gain(
     if is_suited(tile) && missing_suits.contains(&tile_suit(tile)) {
         required_gain -= 5.0;
     }
-    if win_rule == WIN_RULE_SHENYANG_BASIC && !has_door_opening_meld(current_melds, table) {
+    if !has_door_opening_meld(current_melds, table) {
         required_gain -= 4.0;
     }
-    if win_rule == WIN_RULE_SHENYANG_BASIC && !has_triplet_or_dragon_pair(hand, current_melds) {
+    if !has_triplet_or_dragon_pair(hand, current_melds) {
         required_gain -= 3.0;
     }
     if piao_plan_score_for_context(hand, current_melds, table, position, win_rule) >= 22.0 {
         required_gain -= 7.0;
     }
-    if win_rule == WIN_RULE_SHENYANG_BASIC {
-        required_gain -= 4.0;
-    }
-    if win_rule == WIN_RULE_SHENYANG_BASIC && table.dealer_position == position {
+    required_gain -= 4.0;
+    if table.dealer_position == position {
         required_gain -= 8.0;
     }
     if valid_meld_count(current_melds) == 0 && pair_count(hand) >= 4 {

@@ -24,8 +24,21 @@ fn capped_claim_peng_opens_basic_route_over_sequence_preservation() {
         5,
         1
     ));
+    assert!(should_claim_peng_to_open_capped_basic_route(
+        &hand,
+        &[],
+        &table,
+        0,
+        0,
+        5,
+        1
+    ));
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Peng)
+    );
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, 0),
         Some(AiClaimChoice::Peng)
     );
 }
@@ -74,6 +87,15 @@ fn claim_peng_opens_later_closed_basic_hand_over_sequence_preservation() {
         &table,
         0,
         WIN_RULE_SHENYANG_BASIC,
+        5,
+        1
+    ));
+    assert!(should_claim_peng_to_open_mid_basic_hand(
+        &hand,
+        &[],
+        &table,
+        0,
+        0,
         5,
         1
     ));

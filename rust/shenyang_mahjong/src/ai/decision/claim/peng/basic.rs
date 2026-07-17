@@ -9,8 +9,7 @@ pub(in crate::ai::decision) fn should_claim_peng_for_basic_heng_and_opening(
     tile: i32,
     from_position: usize,
 ) -> bool {
-    if win_rule != WIN_RULE_SHENYANG_BASIC
-        || has_door_opening_meld(current_melds, table)
+    if has_door_opening_meld(current_melds, table)
         || has_triplet_or_dragon_pair(hand, current_melds)
         || !can_peng(hand, tile)
         || !missing_suits(hand, current_melds).is_empty()
@@ -53,8 +52,7 @@ pub(in crate::ai::decision) fn should_claim_peng_to_open_capped_basic_route(
     tile: i32,
     from_position: usize,
 ) -> bool {
-    if win_rule != WIN_RULE_SHENYANG_BASIC
-        || table.max_fan.is_none_or(|max_fan| max_fan <= 0)
+    if table.max_fan.is_none_or(|max_fan| max_fan <= 0)
         || has_door_opening_meld(current_melds, table)
         || !can_peng(hand, tile)
         || !missing_suits(hand, current_melds).is_empty()
@@ -100,8 +98,7 @@ pub(in crate::ai::decision) fn should_claim_peng_to_open_mid_basic_hand(
     tile: i32,
     from_position: usize,
 ) -> bool {
-    if win_rule != WIN_RULE_SHENYANG_BASIC
-        || has_door_opening_meld(current_melds, table)
+    if has_door_opening_meld(current_melds, table)
         || !is_mid_opening_round(table)
         || !can_peng(hand, tile)
         || !missing_suits(hand, current_melds).is_empty()
@@ -144,8 +141,7 @@ pub(in crate::ai::decision) fn should_pass_closed_basic_peng_to_preserve_sequenc
     win_rule: i32,
     tile: i32,
 ) -> bool {
-    win_rule == WIN_RULE_SHENYANG_BASIC
-        && !has_door_opening_meld(current_melds, table)
+    !has_door_opening_meld(current_melds, table)
         && table.dealer_position != position
         && !dealer_opponent_has_major_threat(table, position, win_rule)
         && table.max_fan.is_none_or(|max_fan| max_fan > 1)
