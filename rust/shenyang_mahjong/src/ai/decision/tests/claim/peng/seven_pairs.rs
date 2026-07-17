@@ -245,11 +245,7 @@ fn threatening_dealer_stops_marginal_five_pair_chase() {
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 21, 21, 22, 31, 35, 35];
 
     table.dealer_position = 3;
-    assert!(!dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-    ));
+    assert!(!dealer_opponent_has_major_threat(&table, 0));
     assert!(should_lock_seven_pairs_plan(
         &hand,
         &[],
@@ -263,11 +259,7 @@ fn threatening_dealer_stops_marginal_five_pair_chase() {
     );
 
     table.dealer_position = 1;
-    assert!(dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-    ));
+    assert!(dealer_opponent_has_major_threat(&table, 0));
     assert!(!should_lock_seven_pairs_plan(
         &hand,
         &[],

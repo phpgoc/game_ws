@@ -66,11 +66,7 @@ fn dealer_takes_unready_concealed_gang_that_preserves_committed_piao() {
     table.seats.get_mut(&1).unwrap().hand_count = 4;
     table.seats.get_mut(&1).unwrap().melds =
         vec![test_peng_meld(3), test_peng_meld(14), test_peng_meld(25)];
-    assert!(dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(dealer_opponent_has_major_threat(&table, 0));
     assert_eq!(
         choose_self_gang_from_view(&hand, &[21], &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(21)
@@ -959,11 +955,7 @@ fn self_gang_stops_preserving_four_gui_yi_against_threatening_dealer() {
     let breaks_ready = vec![1, 2, 4, 5, 7, 11, 12, 13, 21, 21, 31];
 
     table.dealer_position = 3;
-    assert!(!dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(!dealer_opponent_has_major_threat(&table, 0));
     assert_eq!(
         choose_self_gang_from_view(&keeps_ready, &[31], &table, 0, WIN_RULE_SHENYANG_BASIC,),
         None
@@ -976,11 +968,7 @@ fn self_gang_stops_preserving_four_gui_yi_against_threatening_dealer() {
     );
 
     table.dealer_position = 1;
-    assert!(dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(dealer_opponent_has_major_threat(&table, 0));
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
     assert!(has_virtual_tile_count(&keeps_ready, melds, 14));
     assert!(position_known_tile_counts_are_possible(

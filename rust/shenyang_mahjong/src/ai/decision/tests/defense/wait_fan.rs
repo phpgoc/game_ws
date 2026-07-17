@@ -14,16 +14,7 @@ fn fan_wait_bias_stops_when_visible_fan_exceeds_half_cap() {
     assert!(visible_fan * 2 > table.max_fan.unwrap());
 
     assert_eq!(
-        fan_wait_bias(
-            &win_hand,
-            &melds,
-            &table,
-            0,
-            WIN_RULE_SHENYANG_BASIC,
-            6,
-            4,
-            &[4],
-        ),
+        fan_wait_bias(&win_hand, &melds, &table, 0, 6, 4, &[4],),
         0.0
     );
 }

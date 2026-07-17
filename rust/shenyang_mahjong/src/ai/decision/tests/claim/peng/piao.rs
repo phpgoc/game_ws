@@ -113,17 +113,12 @@ fn closed_early_piao_peng_passes_against_threatening_dealer() {
     let hand = vec![1, 1, 4, 5, 5, 6, 11, 12, 13, 21, 21, 35, 35];
 
     table.dealer_position = 3;
-    assert!(!dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-    ));
+    assert!(!dealer_opponent_has_major_threat(&table, 0));
     assert!(should_claim_peng_for_closed_early_piao_candidate(
         &hand,
         &[],
         &table,
         0,
-        WIN_RULE_SHENYANG_BASIC,
         5,
         1,
     ));
@@ -133,17 +128,12 @@ fn closed_early_piao_peng_passes_against_threatening_dealer() {
     );
 
     table.dealer_position = 1;
-    assert!(dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-    ));
+    assert!(dealer_opponent_has_major_threat(&table, 0));
     assert!(!should_claim_peng_for_closed_early_piao_candidate(
         &hand,
         &[],
         &table,
         0,
-        WIN_RULE_SHENYANG_BASIC,
         5,
         1,
     ));
@@ -237,11 +227,7 @@ fn ready_piao_passes_shou_ba_yi_peng_against_threatening_dealer() {
 
     table.dealer_position = 3;
     let current_ready_score = ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC);
-    assert!(!dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-    ));
+    assert!(!dealer_opponent_has_major_threat(&table, 0));
     assert!(should_claim_ready_piao_peng_for_shou_ba_yi(
         &hand,
         melds,
@@ -259,11 +245,7 @@ fn ready_piao_passes_shou_ba_yi_peng_against_threatening_dealer() {
 
     table.dealer_position = 1;
     let threatened_ready_score = ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC);
-    assert!(dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-    ));
+    assert!(dealer_opponent_has_major_threat(&table, 0));
     assert!(!should_claim_ready_piao_peng_for_shou_ba_yi(
         &hand,
         melds,
@@ -297,7 +279,6 @@ fn claim_peng_takes_closed_early_piao_candidate_over_sequence_shape() {
         &[],
         &table,
         0,
-        WIN_RULE_SHENYANG_BASIC,
         5,
         1
     ));
@@ -330,7 +311,6 @@ fn closed_piao_peng_ignores_malformed_meld() {
         &[malformed_meld],
         &table,
         0,
-        WIN_RULE_SHENYANG_BASIC,
         5,
         1
     ));
@@ -339,7 +319,6 @@ fn closed_piao_peng_ignores_malformed_meld() {
         &[test_peng_meld(31)],
         &table,
         0,
-        WIN_RULE_SHENYANG_BASIC,
         5,
         1
     ));

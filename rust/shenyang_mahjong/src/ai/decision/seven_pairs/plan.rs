@@ -127,8 +127,7 @@ pub(in crate::ai::decision) fn should_lock_seven_pairs_plan(
     if capped_normal_route_visible_fan_reaches_cap(hand, melds, table, win_rule) {
         return false;
     }
-    if (table.dealer_position == position
-        || dealer_opponent_has_major_threat(table, position, win_rule))
+    if (table.dealer_position == position || dealer_opponent_has_major_threat(table, position))
         && has_normal_route_foundation(hand, melds)
     {
         return false;

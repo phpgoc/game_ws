@@ -78,7 +78,7 @@ pub(in crate::ai::decision) fn should_claim_ready_dragon_peng_from_discard(
         return false;
     }
     let keep_ratio = if table.dealer_position == position
-        || dealer_opponent_has_major_threat(table, position, win_rule)
+        || dealer_opponent_has_major_threat(table, position)
         || is_late_round(table)
     {
         0.75

@@ -380,8 +380,8 @@ fn mid_round_non_dealer_piao_single_wait_prefers_wider_middle_without_wind_extra
     assert_eq!(remaining_tile_count(&[31], &table, 0, 31), 2);
     assert_eq!(remaining_tile_count(&[5], &table, 0, 5), 3);
     assert!(
-        piao_single_wait_tile_score(5, &[5], melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
-            > piao_single_wait_tile_score(31, &[31], melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
+        piao_single_wait_tile_score(5, &[5], melds, &table, 0)
+            > piao_single_wait_tile_score(31, &[31], melds, &table, 0)
     );
 }
 

@@ -49,7 +49,7 @@ fn choose_discard_from_view_inner(
     if let Some(tile) = choose_seven_pairs_wait_discard(hand, melds, table, position, win_rule) {
         return Some(tile);
     }
-    if let Some(tile) = choose_piao_single_wait_discard(hand, melds, table, position, win_rule) {
+    if let Some(tile) = choose_piao_single_wait_discard(hand, melds, table, position) {
         return Some(tile);
     }
     if is_late_defense_round(table) {
@@ -109,7 +109,7 @@ fn choose_discard_from_view_inner(
             + basic_heng_seed_discard_bias(hand, tile, melds)
             + capped_spare_dragon_discard_bias(hand, tile, melds, table, win_rule)
             + seven_pairs_plan_discard_bias(hand, tile, melds, table, position, win_rule)
-            + seven_pairs_wait_discard_bias(hand, tile, melds, table, position, win_rule)
+            + seven_pairs_wait_discard_bias(hand, tile, melds, table, position)
             + four_gui_yi_discard_bias(hand, tile, melds, table, position, win_rule)
             + pure_one_suit_discard_bias(hand, tile, melds, table, position, win_rule)
             + complete_sequence_discard_bias(hand, tile, melds, table, position, win_rule)

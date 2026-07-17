@@ -143,7 +143,7 @@ pub(in crate::ai::decision) fn should_pass_closed_basic_peng_to_preserve_sequenc
 ) -> bool {
     !has_door_opening_meld(current_melds, table)
         && table.dealer_position != position
-        && !dealer_opponent_has_major_threat(table, position, win_rule)
+        && !dealer_opponent_has_major_threat(table, position)
         && table.max_fan.is_none_or(|max_fan| max_fan > 1)
         && !is_late_round(table)
         && can_peng(hand, tile)

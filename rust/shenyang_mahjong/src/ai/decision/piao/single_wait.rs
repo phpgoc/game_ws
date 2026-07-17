@@ -5,7 +5,6 @@ pub(in crate::ai::decision) fn choose_piao_single_wait_discard(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
 ) -> Option<i32> {
     if hand.len() != 2 || melds.len() != 4 || piao_threat_level(melds) != 4 {
         return None;
@@ -30,7 +29,7 @@ pub(in crate::ai::decision) fn choose_piao_single_wait_discard(
             let own_tile_count = hand.iter().filter(|item| **item == tile).count();
             Some((
                 piao_single_wait_tile_score_after_discard(
-                    wait_tile, &next, melds, table, position, win_rule, tile,
+                    wait_tile, &next, melds, table, position, tile,
                 ) + wait_setting_discard_safety_adjustment(table, position, tile, own_tile_count),
                 tile,
             ))
@@ -51,7 +50,6 @@ pub(in crate::ai::decision) fn piao_single_wait_tile_score(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
 ) -> f64 {
     piao_single_wait_tile_score_with_simulated_discards(
         wait_tile,
@@ -59,7 +57,6 @@ pub(in crate::ai::decision) fn piao_single_wait_tile_score(
         melds,
         table,
         position,
-        win_rule,
         &[],
     )
 }
@@ -70,7 +67,6 @@ pub(in crate::ai::decision) fn piao_single_wait_tile_score_after_discard(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
     discarded_tile: i32,
 ) -> f64 {
     piao_single_wait_tile_score_with_simulated_discards(
@@ -79,7 +75,6 @@ pub(in crate::ai::decision) fn piao_single_wait_tile_score_after_discard(
         melds,
         table,
         position,
-        win_rule,
         &[discarded_tile],
     )
 }
@@ -90,7 +85,6 @@ fn piao_single_wait_tile_score_with_simulated_discards(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
     simulated_discards: &[i32],
 ) -> f64 {
     let mut win_hand = hand_after_discard.to_vec();
@@ -127,7 +121,7 @@ fn piao_single_wait_tile_score_with_simulated_discards(
         .map(|max_fan| estimated_fan.min(max_fan))
         .unwrap_or(estimated_fan);
     let speed_first = table.dealer_position == position
-        || dealer_opponent_has_major_threat(table, position, win_rule)
+        || dealer_opponent_has_major_threat(table, position)
         || is_late_defense_round(table);
     let remaining_weight = if speed_first { 14.0 } else { 7.0 };
     let fan_weight = if speed_first { 2.0 } else { 7.0 };

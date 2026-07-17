@@ -14,8 +14,8 @@ fn capped_four_piao_melds_prefers_wider_wait_over_honor_shape() {
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
 
     assert!(
-        piao_single_wait_tile_score(5, &[5], melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
-            > piao_single_wait_tile_score(31, &[31], melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
+        piao_single_wait_tile_score(5, &[5], melds, &table, 0)
+            > piao_single_wait_tile_score(31, &[31], melds, &table, 0)
     );
     assert_eq!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
@@ -37,8 +37,8 @@ fn dealer_four_piao_melds_prefers_live_middle_over_low_live_wind_wait() {
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
 
     assert!(
-        piao_single_wait_tile_score(5, &[5], melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
-            > piao_single_wait_tile_score(31, &[31], melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
+        piao_single_wait_tile_score(5, &[5], melds, &table, 0)
+            > piao_single_wait_tile_score(31, &[31], melds, &table, 0)
     );
     assert_eq!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
@@ -60,8 +60,8 @@ fn dealer_piao_single_wait_still_prefers_wider_middle_wait() {
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
 
     assert!(
-        piao_single_wait_tile_score(5, &[5], melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
-            > piao_single_wait_tile_score(31, &[31], melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
+        piao_single_wait_tile_score(5, &[5], melds, &table, 0)
+            > piao_single_wait_tile_score(31, &[31], melds, &table, 0)
     );
 }
 
@@ -176,8 +176,8 @@ fn piao_single_wait_discard_avoids_pure_one_suit_threat_tile() {
     let hand = vec![5, 31];
 
     assert!(
-        piao_single_wait_tile_score(31, &[31], melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
-            > piao_single_wait_tile_score(5, &[5], melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
+        piao_single_wait_tile_score(31, &[31], melds, &table, 0)
+            > piao_single_wait_tile_score(5, &[5], melds, &table, 0)
     );
     assert!(
         pure_one_suit_threat_discard_bias(&table, 0, 5, 1)
@@ -203,12 +203,10 @@ fn piao_single_wait_score_rejects_wait_that_cannot_complete_requirements() {
     assert!(piao_needs_terminal_or_honor_from_melds(melds));
     assert_eq!(piao_missing_suits_from_melds(melds), vec![2]);
     assert_eq!(
-        piao_single_wait_tile_score(15, &[15], melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        piao_single_wait_tile_score(15, &[15], melds, &table, 0),
         -240.0
     );
-    assert!(
-        piao_single_wait_tile_score(21, &[21], melds, &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0
-    );
+    assert!(piao_single_wait_tile_score(21, &[21], melds, &table, 0) > 0.0);
 }
 
 #[test]
@@ -227,23 +225,13 @@ fn threatening_dealer_increases_piao_live_wait_priority() {
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
 
     table.dealer_position = 3;
-    let regular_live_advantage =
-        piao_single_wait_tile_score(5, &[5], melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
-            - piao_single_wait_tile_score(31, &[31], melds, &table, 0, WIN_RULE_SHENYANG_BASIC);
-    assert!(!dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-    ));
+    let regular_live_advantage = piao_single_wait_tile_score(5, &[5], melds, &table, 0)
+        - piao_single_wait_tile_score(31, &[31], melds, &table, 0);
+    assert!(!dealer_opponent_has_major_threat(&table, 0));
 
     table.dealer_position = 1;
-    let threatened_live_advantage =
-        piao_single_wait_tile_score(5, &[5], melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
-            - piao_single_wait_tile_score(31, &[31], melds, &table, 0, WIN_RULE_SHENYANG_BASIC);
-    assert!(dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-    ));
+    let threatened_live_advantage = piao_single_wait_tile_score(5, &[5], melds, &table, 0)
+        - piao_single_wait_tile_score(31, &[31], melds, &table, 0);
+    assert!(dealer_opponent_has_major_threat(&table, 0));
     assert!(threatened_live_advantage > regular_live_advantage);
 }

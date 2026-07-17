@@ -186,11 +186,7 @@ fn ready_hand_rejects_narrowing_dragon_peng_against_threatening_dealer() {
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
     let current_ready_score = ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC);
 
-    assert!(!dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-    ));
+    assert!(!dealer_opponent_has_major_threat(&table, 0));
     assert!(should_claim_ready_dragon_peng_from_discard(
         &hand,
         melds,
@@ -209,11 +205,7 @@ fn ready_hand_rejects_narrowing_dragon_peng_against_threatening_dealer() {
     table.dealer_position = 1;
     let threatened_current_ready_score =
         ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC);
-    assert!(dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-    ));
+    assert!(dealer_opponent_has_major_threat(&table, 0));
     assert!(!should_claim_ready_dragon_peng_from_discard(
         &hand,
         melds,

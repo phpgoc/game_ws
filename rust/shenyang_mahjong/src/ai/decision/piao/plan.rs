@@ -18,7 +18,7 @@ pub(in crate::ai::decision) fn is_closed_early_piao_candidate(
         && pair_count(hand) >= 3
         && piao_plan_has_enough_group_opportunities(hand, melds, table, position)
         && table.dealer_position != position
-        && !dealer_opponent_has_major_threat(table, position, win_rule)
+        && !dealer_opponent_has_major_threat(table, position)
         && !piao_plan_is_capped(table)
         && !capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table, win_rule)
         && !capped_normal_route_visible_fan_reaches_cap(hand, melds, table, win_rule)
@@ -227,7 +227,7 @@ pub(in crate::ai::decision) fn piao_plan_score_for_context(
         return 0.0;
     }
     let marginal_closed_plan_against_dealer_threat =
-        valid_meld_count(melds) == 0 && dealer_opponent_has_major_threat(table, position, win_rule);
+        valid_meld_count(melds) == 0 && dealer_opponent_has_major_threat(table, position);
     if score < 40.0
         && (table.dealer_position == position || marginal_closed_plan_against_dealer_threat)
     {

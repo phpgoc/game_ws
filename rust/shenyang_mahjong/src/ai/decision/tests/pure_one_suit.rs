@@ -105,11 +105,7 @@ fn closed_dealer_threat_suppresses_marginal_pure_one_suit_plan() {
     table.seats.get_mut(&1).unwrap().hand_count = 13;
     let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 21, 22, 31, 35];
 
-    assert!(dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(dealer_opponent_has_major_threat(&table, 0));
     assert_eq!(
         pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
         0.0
@@ -527,11 +523,7 @@ fn threatening_dealer_disables_marginal_closed_pure_one_suit_plan() {
     let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 21, 22, 31, 35];
 
     table.dealer_position = 3;
-    assert!(!dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(!dealer_opponent_has_major_threat(&table, 0));
     assert_eq!(pure_one_suit_plan_score(&hand, &[]), 10.0);
     assert_eq!(
         pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
@@ -540,11 +532,7 @@ fn threatening_dealer_disables_marginal_closed_pure_one_suit_plan() {
     assert!(pure_one_suit_discard_bias(&hand, 11, &[], &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0);
 
     table.dealer_position = 1;
-    assert!(dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(dealer_opponent_has_major_threat(&table, 0));
     assert_eq!(
         pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
         0.0
@@ -565,11 +553,7 @@ fn threatening_dealer_preserves_committed_pure_one_suit_plans() {
     let open_hand = vec![2, 3, 4, 5, 6, 7, 8, 11, 12, 21];
     let overwhelming_hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 8, 9, 9, 11, 31];
 
-    assert!(dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(dealer_opponent_has_major_threat(&table, 0));
     assert_eq!(pure_one_suit_plan_score(&open_hand, &open_melds), 23.0);
     assert_eq!(
         pure_one_suit_plan_score_for_context(

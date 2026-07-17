@@ -141,7 +141,7 @@ pub(super) fn pure_one_suit_plan_score_for_context(
         return 0.0;
     }
     let marginal_closed_plan_against_dealer_threat =
-        valid_meld_count(melds) == 0 && dealer_opponent_has_major_threat(table, position, win_rule);
+        valid_meld_count(melds) == 0 && dealer_opponent_has_major_threat(table, position);
     if table.dealer_position != position && !marginal_closed_plan_against_dealer_threat {
         return score;
     }

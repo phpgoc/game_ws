@@ -142,7 +142,7 @@ pub(super) fn self_gang_score(
     let speed_first_concealed_gang = !is_added_gang
         && (table.dealer_position == position
             || table.max_fan.is_some_and(|max_fan| max_fan <= 1)
-            || dealer_opponent_has_major_threat(table, position, win_rule)
+            || dealer_opponent_has_major_threat(table, position)
             || projected_capped_visible_fan);
     let speed_first_pure_concealed_gang = pure_one_suit_score > 0.0
         && speed_first_concealed_gang
@@ -214,7 +214,7 @@ pub(super) fn self_gang_score(
             && visible_fan_gain <= 0
             && !keeps_pure_one_suit_ready
             && table.dealer_position != position
-            && !dealer_opponent_has_major_threat(table, position, win_rule)
+            && !dealer_opponent_has_major_threat(table, position)
         {
             return f64::NEG_INFINITY;
         }

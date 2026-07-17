@@ -96,9 +96,7 @@ pub fn choose_claim_from_view(
     win_hand.push(tile);
     win_hand.sort_unstable();
     if is_complete_win_for_table(&win_hand, melds, table) {
-        if should_pass_hu_for_capped_live_wait(
-            hand, &win_hand, melds, table, position, win_rule, tile,
-        ) {
+        if should_pass_hu_for_capped_live_wait(hand, &win_hand, melds, table, position, tile) {
             return Some(AiClaimChoice::Pass);
         }
         return Some(AiClaimChoice::Hu);
@@ -171,14 +169,13 @@ pub(in crate::ai::decision) fn should_pass_hu_for_capped_live_wait(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
     tile: i32,
 ) -> bool {
     let Some(max_fan) = table.max_fan.filter(|max_fan| *max_fan > 1) else {
         return false;
     };
     if table.dealer_position == position
-        || dealer_opponent_has_major_threat(table, position, win_rule)
+        || dealer_opponent_has_major_threat(table, position)
         || table.wall_count < MIN_WALL_TILES_FOR_CAPPED_HU_CHASE
         || hand.len() % 3 != 1
     {
@@ -249,7 +246,6 @@ pub fn should_pass_self_draw_hu_from_view(
     win_hand: &[i32],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
     win_tile: i32,
 ) -> bool {
     let melds = table
@@ -273,7 +269,6 @@ pub fn should_pass_self_draw_hu_from_view(
         melds,
         table,
         position,
-        win_rule,
         win_tile,
     )
 }

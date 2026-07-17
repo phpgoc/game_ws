@@ -553,11 +553,7 @@ fn claim_gang_stops_preserving_four_gui_yi_against_threatening_dealer() {
     let hand = vec![2, 2, 2, 4, 4, 4, 5, 21, 21, 21];
 
     table.dealer_position = 3;
-    assert!(!dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(!dealer_opponent_has_major_threat(&table, 0));
     assert!(should_peng_to_preserve_four_gui_yi_from_discard(
         &hand,
         table.seats.get(&0).unwrap().melds.as_slice(),
@@ -573,11 +569,7 @@ fn claim_gang_stops_preserving_four_gui_yi_against_threatening_dealer() {
     );
 
     table.dealer_position = 1;
-    assert!(dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(dealer_opponent_has_major_threat(&table, 0));
     assert!(!should_peng_to_preserve_four_gui_yi_from_discard(
         &hand,
         table.seats.get(&0).unwrap().melds.as_slice(),
@@ -771,11 +763,7 @@ fn dealer_takes_unready_discard_gang_that_preserves_committed_piao() {
     table.seats.get_mut(&1).unwrap().hand_count = 4;
     table.seats.get_mut(&1).unwrap().melds =
         vec![test_peng_meld(3), test_peng_meld(14), test_peng_meld(25)];
-    assert!(dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(dealer_opponent_has_major_threat(&table, 0));
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Gang)

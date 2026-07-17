@@ -96,7 +96,6 @@ pub(super) fn choose_peng_claim(
         current_melds,
         table,
         position,
-        win_rule,
         tile,
         from_position,
     ) {
@@ -151,9 +150,7 @@ pub(super) fn choose_peng_claim(
     if !has_door_opening_meld(current_melds, table) && can_gang(hand, tile) {
         return Some(AiClaimChoice::Peng);
     }
-    if table.dealer_position == position
-        || dealer_opponent_has_major_threat(table, position, win_rule)
-    {
+    if table.dealer_position == position || dealer_opponent_has_major_threat(table, position) {
         return Some(AiClaimChoice::Peng);
     }
     if piao_plan_score_for_context(hand, current_melds, table, position, win_rule) >= 32.0 {

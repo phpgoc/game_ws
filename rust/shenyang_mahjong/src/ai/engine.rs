@@ -90,7 +90,7 @@ pub fn maybe_play_ai_turn(
         if let Some(win_tile) = state.last_drawn_tile
             && !state.pending_gang_draw
             && state.wall_count() > 0
-            && should_pass_self_draw_hu_from_view(&hand, &table, position, win_rule, win_tile)
+            && should_pass_self_draw_hu_from_view(&hand, &table, position, win_tile)
         {
             passed_self_draw_tile = Some(win_tile);
         } else {

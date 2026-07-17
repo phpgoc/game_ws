@@ -535,11 +535,7 @@ fn threatening_dealer_disables_closed_marginal_piao_protection() {
     let four_pair_hand = vec![1, 1, 4, 4, 11, 11, 12, 13, 21, 21, 22, 23, 31, 35];
 
     table.dealer_position = 3;
-    assert!(!dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(!dealer_opponent_has_major_threat(&table, 0));
     assert_eq!(
         piao_plan_score_for_context(&three_pair_hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
         15.0
@@ -571,11 +567,7 @@ fn threatening_dealer_disables_closed_marginal_piao_protection() {
     assert!(piao_discard_bias(&four_pair_hand, 1, &[], &table, 0, WIN_RULE_SHENYANG_BASIC,) < 0.0);
 
     table.dealer_position = 1;
-    assert!(dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(dealer_opponent_has_major_threat(&table, 0));
     assert_eq!(
         piao_plan_score_for_context(&three_pair_hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
         5.25
@@ -630,11 +622,7 @@ fn threatening_dealer_preserves_highly_developed_closed_piao_plan() {
     table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(23), test_peng_meld(24)];
     let hand = vec![1, 1, 1, 4, 4, 4, 11, 11, 12, 12, 21, 21, 31, 35];
 
-    assert!(dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(dealer_opponent_has_major_threat(&table, 0));
     assert_eq!(piao_plan_score(&hand, &[]), 53.0);
     assert_eq!(
         piao_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
@@ -653,11 +641,7 @@ fn threatening_dealer_preserves_open_piao_plan() {
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
     let hand = vec![11, 11, 12, 13, 14, 21, 21, 23, 24, 31];
 
-    assert!(dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(dealer_opponent_has_major_threat(&table, 0));
     assert_eq!(piao_plan_score(&hand, melds), 28.0);
     assert_eq!(
         piao_plan_score_for_context(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),

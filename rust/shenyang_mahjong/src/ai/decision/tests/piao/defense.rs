@@ -44,8 +44,8 @@ fn seven_pairs_wait_discard_avoids_piao_missing_suit_threat_tile() {
 
     assert_eq!(pair_count(&hand), 6);
     assert!(
-        seven_pairs_wait_tile_score(31, &wind_wait, &table, 0, WIN_RULE_SHENYANG_BASIC)
-            > seven_pairs_wait_tile_score(5, &middle_wait, &table, 0, WIN_RULE_SHENYANG_BASIC,)
+        seven_pairs_wait_tile_score(31, &wind_wait, &table, 0)
+            > seven_pairs_wait_tile_score(5, &middle_wait, &table, 0)
     );
     assert!(
         opponent_threat_discard_bias(&table, 0, 5, 1)

@@ -259,33 +259,10 @@ fn fan_wait_bias_counts_middle_tile_seven_pairs_single_wait() {
     table.max_fan = Some(8);
     let win_hand = vec![1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 11, 11, 21, 21];
 
-    assert!(
-        fan_wait_bias(
-            &win_hand,
-            &[],
-            &table,
-            0,
-            WIN_RULE_SHENYANG_BASIC,
-            5,
-            3,
-            &[]
-        ) > 0.0
-    );
+    assert!(fan_wait_bias(&win_hand, &[], &table, 0, 5, 3, &[]) > 0.0);
 
     table.dealer_position = 0;
-    assert_eq!(
-        fan_wait_bias(
-            &win_hand,
-            &[],
-            &table,
-            0,
-            WIN_RULE_SHENYANG_BASIC,
-            5,
-            3,
-            &[],
-        ),
-        0.0
-    );
+    assert_eq!(fan_wait_bias(&win_hand, &[], &table, 0, 5, 3, &[],), 0.0);
 }
 
 #[test]
@@ -304,16 +281,7 @@ fn fan_wait_bias_counts_single_wait_cap_when_visible_fan_is_half_cap() {
         2
     );
     assert_eq!(
-        fan_wait_bias(
-            &win_hand,
-            &melds,
-            &table,
-            0,
-            WIN_RULE_SHENYANG_BASIC,
-            6,
-            4,
-            &[],
-        ),
+        fan_wait_bias(&win_hand, &melds, &table, 0, 6, 4, &[],),
         14.0
     );
 }
@@ -327,58 +295,22 @@ fn fan_wait_bias_rewards_edge_wait_decomposition() {
 
     assert!(has_edge_wait_decomposition(&edge_win, 3));
     assert!(!has_edge_wait_decomposition(&closed_middle_win, 3));
-    let edge_score = fan_wait_bias(
-        &edge_win,
-        &melds,
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-        3,
-        4,
-        &[],
-    );
-    let closed_middle_score = fan_wait_bias(
-        &closed_middle_win,
-        &melds,
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-        3,
-        4,
-        &[],
-    );
+    let edge_score = fan_wait_bias(&edge_win, &melds, &table, 0, 3, 4, &[]);
+    let closed_middle_score = fan_wait_bias(&closed_middle_win, &melds, &table, 0, 3, 4, &[]);
 
     assert!(edge_score > closed_middle_score);
 
     let mut speed_first_table = table.clone();
     speed_first_table.dealer_position = 0;
     assert_eq!(
-        fan_wait_bias(
-            &edge_win,
-            &melds,
-            &speed_first_table,
-            0,
-            WIN_RULE_SHENYANG_BASIC,
-            3,
-            4,
-            &[],
-        ),
+        fan_wait_bias(&edge_win, &melds, &speed_first_table, 0, 3, 4, &[],),
         0.0
     );
 
     speed_first_table.dealer_position = 1;
     speed_first_table.wall_count = FINAL_DEFENSE_WALL_COUNT;
     assert_eq!(
-        fan_wait_bias(
-            &edge_win,
-            &melds,
-            &speed_first_table,
-            0,
-            WIN_RULE_SHENYANG_BASIC,
-            3,
-            4,
-            &[],
-        ),
+        fan_wait_bias(&edge_win, &melds, &speed_first_table, 0, 3, 4, &[],),
         0.0
     );
 }
@@ -405,16 +337,7 @@ fn fan_wait_bias_stops_piao_shou_ba_yi_when_visible_fan_exceeds_half_cap() {
     );
     assert!(3 * 2 > table.max_fan.unwrap());
     assert_eq!(
-        fan_wait_bias(
-            &win_hand,
-            &melds,
-            &table,
-            0,
-            WIN_RULE_SHENYANG_BASIC,
-            35,
-            2,
-            &[],
-        ),
+        fan_wait_bias(&win_hand, &melds, &table, 0, 35, 2, &[],),
         0.0
     );
 }
@@ -437,16 +360,7 @@ fn fan_wait_bias_stops_terminal_single_wait_when_visible_fan_exceeds_half_cap() 
     assert!(5 * 2 > table.max_fan.unwrap());
 
     assert_eq!(
-        fan_wait_bias(
-            &win_hand,
-            &melds,
-            &table,
-            0,
-            WIN_RULE_SHENYANG_BASIC,
-            11,
-            3,
-            &[],
-        ),
+        fan_wait_bias(&win_hand, &melds, &table, 0, 11, 3, &[],),
         0.0
     );
 }
@@ -456,19 +370,7 @@ fn fan_wait_bias_rejects_closed_illegal_basic_hand() {
     let table = table_with_discards(1, Vec::new());
     let win_hand = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35];
 
-    assert_eq!(
-        fan_wait_bias(
-            &win_hand,
-            &[],
-            &table,
-            0,
-            WIN_RULE_SHENYANG_BASIC,
-            35,
-            2,
-            &[],
-        ),
-        0.0
-    );
+    assert_eq!(fan_wait_bias(&win_hand, &[], &table, 0, 35, 2, &[],), 0.0);
 }
 
 #[test]

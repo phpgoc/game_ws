@@ -233,13 +233,12 @@ pub(in crate::ai::decision) fn fan_wait_bias(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
     win_tile: i32,
     remaining: i32,
     known_unavailable_tiles: &[i32],
 ) -> f64 {
     if table.dealer_position == position
-        || dealer_opponent_has_major_threat(table, position, win_rule)
+        || dealer_opponent_has_major_threat(table, position)
         || is_late_defense_round(table)
         || !is_single_wait_shape_for_table(
             win_hand,
@@ -326,9 +325,7 @@ pub(in crate::ai::decision) fn four_gui_yi_discard_bias(
     {
         return 0.0;
     }
-    if table.dealer_position == position
-        || dealer_opponent_has_major_threat(table, position, win_rule)
-    {
+    if table.dealer_position == position || dealer_opponent_has_major_threat(table, position) {
         return 0.0;
     }
 

@@ -19,7 +19,6 @@ pub(super) use pure_threat::*;
 pub(in crate::ai::decision) fn dealer_opponent_has_major_threat(
     table: &AiPublicTable,
     position: usize,
-    _win_rule: i32,
 ) -> bool {
     if position == table.dealer_position {
         return false;

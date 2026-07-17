@@ -595,19 +595,11 @@ fn threatening_dealer_disables_four_gui_yi_discard_bias() {
     let hand = vec![2, 3, 4, 11, 12, 13, 21, 22, 23, 35, 36];
 
     table.dealer_position = 3;
-    assert!(!dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(!dealer_opponent_has_major_threat(&table, 0));
     assert!(four_gui_yi_discard_bias(&hand, 2, melds, &table, 0, WIN_RULE_SHENYANG_BASIC,) < 0.0);
 
     table.dealer_position = 1;
-    assert!(dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(dealer_opponent_has_major_threat(&table, 0));
     assert_eq!(
         four_gui_yi_discard_bias(&hand, 2, melds, &table, 0, WIN_RULE_SHENYANG_BASIC,),
         0.0

@@ -374,22 +374,14 @@ fn non_dealer_prefers_wider_wait_against_threatening_dealer() {
     dealer.melds = vec![test_peng_meld(3), test_peng_meld(14), test_peng_meld(25)];
     let hand = vec![2, 2, 4, 5, 7, 11, 12, 13, 21, 22, 23];
 
-    assert!(dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-    ));
+    assert!(dealer_opponent_has_major_threat(&table, 0));
     assert_eq!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(7)
     );
 
     table.dealer_position = 3;
-    assert!(!dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-    ));
+    assert!(!dealer_opponent_has_major_threat(&table, 0));
     assert_eq!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(4)

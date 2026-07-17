@@ -163,7 +163,6 @@ fn claim_hu_does_not_double_count_visible_tile_to_create_capped_wait() {
         melds,
         &table,
         0,
-        WIN_RULE_SHENYANG_BASIC,
         16,
     ));
     assert_eq!(
@@ -251,7 +250,6 @@ fn claim_hu_takes_when_current_fan_exceeds_half_cap() {
         melds,
         &table,
         0,
-        WIN_RULE_SHENYANG_BASIC,
         36,
     ));
     assert_eq!(
@@ -332,7 +330,6 @@ fn dealer_claim_hu_takes_one_fan_short_instead_of_chasing_cap() {
         melds,
         &table,
         0,
-        WIN_RULE_SHENYANG_BASIC,
         16,
     ));
     assert_eq!(
@@ -350,11 +347,7 @@ fn dealer_self_draw_hu_takes_one_fan_short_instead_of_chasing_cap() {
     let win_hand = vec![13, 14, 15, 15, 16, 16, 16, 17, 28, 28, 28];
 
     assert!(!should_pass_self_draw_hu_from_view(
-        &win_hand,
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-        16,
+        &win_hand, &table, 0, 16,
     ));
 }
 
@@ -383,7 +376,6 @@ fn final_claim_hu_takes_one_fan_short_without_full_wall_cycle() {
         melds,
         &table,
         0,
-        WIN_RULE_SHENYANG_BASIC,
         16,
     ));
     assert_eq!(
@@ -401,11 +393,7 @@ fn final_self_draw_hu_takes_one_fan_short_without_full_wall_cycle() {
     let win_hand = vec![13, 14, 15, 15, 16, 16, 16, 17, 28, 28, 28];
 
     assert!(!should_pass_self_draw_hu_from_view(
-        &win_hand,
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-        16,
+        &win_hand, &table, 0, 16,
     ));
 }
 
@@ -429,41 +417,25 @@ fn hu_takes_legal_hand_against_long_closed_dealer() {
     sort_tiles(&mut win_hand);
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
 
-    assert!(dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-    ));
+    assert!(dealer_opponent_has_major_threat(&table, 0));
     let mut non_dealer_threat_table = table.clone();
     non_dealer_threat_table.dealer_position = 3;
     assert!(!dealer_opponent_has_major_threat(
         &non_dealer_threat_table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
+        0
     ));
     assert!(!should_pass_hu_for_capped_live_wait(
-        &hand,
-        &win_hand,
-        melds,
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-        16,
+        &hand, &win_hand, melds, &table, 0, 16,
     ));
 
     let mut self_draw_table = table.clone();
     self_draw_table.claim_window = None;
     self_draw_table.seats.get_mut(&1).unwrap().discards = vec![31, 32, 33, 34, 35, 36];
-    assert!(dealer_opponent_has_major_threat(
-        &self_draw_table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-    ));
+    assert!(dealer_opponent_has_major_threat(&self_draw_table, 0));
     assert!(!should_pass_self_draw_hu_from_view(
         &win_hand,
         &self_draw_table,
         0,
-        WIN_RULE_SHENYANG_BASIC,
         16,
     ));
     assert_eq!(
@@ -494,17 +466,12 @@ fn hu_takes_one_fan_short_against_threatening_dealer() {
     sort_tiles(&mut win_hand);
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
 
-    assert!(dealer_opponent_has_major_threat(
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-    ));
+    assert!(dealer_opponent_has_major_threat(&table, 0));
     let mut non_dealer_threat_table = table.clone();
     non_dealer_threat_table.dealer_position = 3;
     assert!(!dealer_opponent_has_major_threat(
         &non_dealer_threat_table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
+        0
     ));
     assert!(should_pass_hu_for_capped_live_wait(
         &hand,
@@ -512,31 +479,19 @@ fn hu_takes_one_fan_short_against_threatening_dealer() {
         melds,
         &non_dealer_threat_table,
         0,
-        WIN_RULE_SHENYANG_BASIC,
         16,
     ));
     assert!(should_pass_self_draw_hu_from_view(
         &win_hand,
         &non_dealer_threat_table,
         0,
-        WIN_RULE_SHENYANG_BASIC,
         16,
     ));
     assert!(!should_pass_hu_for_capped_live_wait(
-        &hand,
-        &win_hand,
-        melds,
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-        16,
+        &hand, &win_hand, melds, &table, 0, 16,
     ));
     assert!(!should_pass_self_draw_hu_from_view(
-        &win_hand,
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-        16,
+        &win_hand, &table, 0, 16,
     ));
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
@@ -570,7 +525,6 @@ fn late_claim_hu_can_pass_one_fan_short_when_capped_wait_is_live() {
         melds,
         &table,
         0,
-        WIN_RULE_SHENYANG_BASIC,
         16,
     ));
     assert_eq!(
@@ -603,13 +557,7 @@ fn late_claim_hu_takes_when_capped_wait_is_unlikely_to_reach_wall() {
             < CAPPED_HU_CHASE_MIN_WALL_HIT_PROBABILITY
     );
     assert!(!should_pass_hu_for_capped_live_wait(
-        &hand,
-        &win_hand,
-        melds,
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-        16,
+        &hand, &win_hand, melds, &table, 0, 16,
     ));
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
@@ -631,11 +579,7 @@ fn late_self_draw_hu_takes_when_capped_wait_is_unlikely_to_reach_wall() {
             < CAPPED_HU_CHASE_MIN_WALL_HIT_PROBABILITY
     );
     assert!(!should_pass_self_draw_hu_from_view(
-        &win_hand,
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-        16,
+        &win_hand, &table, 0, 16,
     ));
 }
 
@@ -684,13 +628,7 @@ fn self_draw_hu_can_pass_one_fan_short_when_capped_wait_is_live() {
         ),
         2
     );
-    assert!(should_pass_self_draw_hu_from_view(
-        &win_hand,
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-        16,
-    ));
+    assert!(should_pass_self_draw_hu_from_view(&win_hand, &table, 0, 16,));
 }
 
 #[test]
@@ -701,10 +639,6 @@ fn self_draw_hu_takes_when_current_fan_exceeds_half_cap() {
     let win_hand = vec![13, 14, 15, 15, 16, 16, 16, 17, 28, 28, 28];
 
     assert!(!should_pass_self_draw_hu_from_view(
-        &win_hand,
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-        16,
+        &win_hand, &table, 0, 16,
     ));
 }
