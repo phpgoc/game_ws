@@ -34,7 +34,7 @@ fn choose_discard_from_view_inner(
     {
         return None;
     }
-    if !must_discard && is_complete_win_for_table(hand, melds, table, win_rule) {
+    if !must_discard && is_complete_win_for_table(hand, melds, table) {
         return None;
     }
     if is_late_defense_round(table) && has_late_defense_known_safe_candidate(hand, table) {

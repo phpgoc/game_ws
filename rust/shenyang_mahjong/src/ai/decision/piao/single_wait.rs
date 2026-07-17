@@ -23,7 +23,7 @@ pub(in crate::ai::decision) fn choose_piao_single_wait_discard(
             win_hand.push(wait_tile);
             win_hand.sort_unstable();
             if !is_piao_hu_win(&win_hand, melds)
-                || !is_complete_win_for_table(&win_hand, melds, table, win_rule)
+                || !is_complete_win_for_table(&win_hand, melds, table)
             {
                 return None;
             }
@@ -96,9 +96,7 @@ fn piao_single_wait_tile_score_with_simulated_discards(
     let mut win_hand = hand_after_discard.to_vec();
     win_hand.push(wait_tile);
     win_hand.sort_unstable();
-    if !is_piao_hu_win(&win_hand, melds)
-        || !is_complete_win_for_table(&win_hand, melds, table, win_rule)
-    {
+    if !is_piao_hu_win(&win_hand, melds) || !is_complete_win_for_table(&win_hand, melds, table) {
         return -240.0;
     }
 

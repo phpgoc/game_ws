@@ -95,7 +95,7 @@ pub fn choose_claim_from_view(
     let mut win_hand = hand.to_vec();
     win_hand.push(tile);
     win_hand.sort_unstable();
-    if is_complete_win_for_table(&win_hand, melds, table, win_rule) {
+    if is_complete_win_for_table(&win_hand, melds, table) {
         if should_pass_hu_for_capped_live_wait(
             hand, &win_hand, melds, table, position, win_rule, tile,
         ) {
@@ -228,7 +228,7 @@ pub(in crate::ai::decision) fn should_pass_hu_for_capped_live_wait(
             let mut next = hand.to_vec();
             next.push(wait_tile);
             next.sort_unstable();
-            let reaches_cap = is_complete_win_for_table(&next, melds, table, win_rule)
+            let reaches_cap = is_complete_win_for_table(&next, melds, table)
                 && estimated_fan_with_known_unavailable_wait_for_table(
                     &next,
                     melds,
@@ -257,7 +257,7 @@ pub fn should_pass_self_draw_hu_from_view(
         .get(&position)
         .map(|seat| seat.melds.as_slice())
         .unwrap_or(&[]);
-    if !is_complete_win_for_table(win_hand, melds, table, win_rule) {
+    if !is_complete_win_for_table(win_hand, melds, table) {
         return false;
     }
     let Some(index) = win_hand.iter().position(|tile| *tile == win_tile) else {

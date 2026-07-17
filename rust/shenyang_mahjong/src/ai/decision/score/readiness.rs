@@ -27,7 +27,7 @@ fn ready_hand_visible_fan_exceeds_half_cap_with_simulated_discards(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
+    _win_rule: i32,
     max_fan: i32,
     simulated_discards: &[i32],
 ) -> bool {
@@ -49,7 +49,7 @@ fn ready_hand_visible_fan_exceeds_half_cap_with_simulated_discards(
                 let mut next = hand.to_vec();
                 next.push(tile);
                 next.sort_unstable();
-                is_complete_win_for_table(&next, melds, table, win_rule)
+                is_complete_win_for_table(&next, melds, table)
                     && estimated_fan_with_known_unavailable_wait_for_table(
                         &next,
                         melds,
@@ -86,7 +86,7 @@ fn ready_hand_visible_fan_reaches_cap_with_simulated_discards(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
+    _win_rule: i32,
     max_fan: i32,
     simulated_discards: &[i32],
 ) -> bool {
@@ -108,7 +108,7 @@ fn ready_hand_visible_fan_reaches_cap_with_simulated_discards(
                 let mut next = hand.to_vec();
                 next.push(tile);
                 next.sort_unstable();
-                is_complete_win_for_table(&next, melds, table, win_rule)
+                is_complete_win_for_table(&next, melds, table)
                     && estimated_fan_with_known_unavailable_wait_for_table(
                         &next,
                         melds,
@@ -135,7 +135,7 @@ fn ready_has_piao_win_with_simulated_discards(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
+    _win_rule: i32,
     simulated_discards: &[i32],
 ) -> bool {
     if hand.len() % 3 != 1 {
@@ -155,8 +155,7 @@ fn ready_has_piao_win_with_simulated_discards(
                 let mut next = hand.to_vec();
                 next.push(tile);
                 next.sort_unstable();
-                is_complete_win_for_table(&next, melds, table, win_rule)
-                    && is_piao_hu_win(&next, melds)
+                is_complete_win_for_table(&next, melds, table) && is_piao_hu_win(&next, melds)
             }
     })
 }
@@ -195,7 +194,7 @@ fn ready_has_pure_one_suit_win_with_simulated_discards(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
+    _win_rule: i32,
     simulated_discards: &[i32],
 ) -> bool {
     if hand.len() % 3 != 1 {
@@ -215,8 +214,7 @@ fn ready_has_pure_one_suit_win_with_simulated_discards(
                 let mut next = hand.to_vec();
                 next.push(tile);
                 next.sort_unstable();
-                is_complete_win_for_table(&next, melds, table, win_rule)
-                    && is_pure_one_suit_win(&next, melds)
+                is_complete_win_for_table(&next, melds, table) && is_pure_one_suit_win(&next, melds)
             }
     })
 }
@@ -226,7 +224,7 @@ pub(in crate::ai::decision) fn ready_live_tile_count_after_discard(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
+    _win_rule: i32,
     discarded_tile: i32,
 ) -> i32 {
     if hand_after_discard.len() % 3 != 1 {
@@ -249,7 +247,7 @@ pub(in crate::ai::decision) fn ready_live_tile_count_after_discard(
             let mut next = hand_after_discard.to_vec();
             next.push(tile);
             next.sort_unstable();
-            if is_complete_win_for_table(&next, melds, table, win_rule) {
+            if is_complete_win_for_table(&next, melds, table) {
                 remaining
             } else {
                 0
@@ -317,7 +315,7 @@ pub(in crate::ai::decision) fn ready_tile_score_with_simulated_discards(
         let mut next = hand.to_vec();
         next.push(tile);
         next.sort_unstable();
-        if is_complete_win_for_table(&next, melds, table, win_rule) {
+        if is_complete_win_for_table(&next, melds, table) {
             wait_kinds += 1;
             score += 28.0 + remaining as f64 * 5.0;
             score += fan_wait_bias(

@@ -125,12 +125,7 @@ fn claim_hu_does_not_double_count_visible_tile_to_create_capped_wait() {
     let pass_known_unavailable =
         known_unavailable_tiles_with_simulated_discards(&table, 0, melds, &pass_simulated_discards);
 
-    assert!(is_complete_win_for_table(
-        &current_win,
-        melds,
-        &table,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(is_complete_win_for_table(&current_win, melds, &table));
     assert_eq!(
         estimated_fan_with_known_unavailable_wait(
             &current_win,

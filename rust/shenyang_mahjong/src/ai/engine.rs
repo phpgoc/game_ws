@@ -46,7 +46,7 @@ fn claim_hu_is_complete(
     claim: &AiClaimView,
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
+    _win_rule: i32,
 ) -> bool {
     let mut win_hand = hand.to_vec();
     win_hand.push(claim.tile);
@@ -57,7 +57,7 @@ fn claim_hu_is_complete(
         .map(|seat| seat.melds.as_slice())
         .unwrap_or(&[]);
     claim_known_tile_counts_are_possible(hand, melds, claim, table)
-        && is_complete_win_for_table(&win_hand, melds, table, win_rule)
+        && is_complete_win_for_table(&win_hand, melds, table)
 }
 
 pub fn maybe_play_ai_turn(

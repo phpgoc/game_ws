@@ -115,7 +115,6 @@ pub(crate) fn is_complete_win_for_table(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
-    _win_rule: i32,
 ) -> bool {
     is_complete_win_with_melds_for_rules(hand, melds, win_rules_for_table(table))
 }
