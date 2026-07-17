@@ -247,7 +247,7 @@ mod tests {
 
     use share_type_public::games::shenyang_mahjong::{
         SHENYANG_MAHJONG_TILE_KINDS, ShenyangMahjongMeldKind, ShenyangMahjongPhase,
-        WsShenyangMahjongMeld, WsShenyangMahjongScoreChange,
+        ShenyangMahjongWinPattern, WsShenyangMahjongMeld, WsShenyangMahjongScoreChange,
     };
     use ws_common::CommonGameState;
 
@@ -807,6 +807,57 @@ mod tests {
                 .map(|settlement| settlement.winner_positions.clone()),
             Some(vec![0])
         );
+    }
+
+    #[test]
+    fn away_position_self_draws_configured_closed_sequence_after_xi_gang() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_away(0);
+        state
+            .hands
+            .insert(0, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 35, 35]);
+        state.melds.insert(
+            0,
+            vec![WsShenyangMahjongMeld {
+                kind: ShenyangMahjongMeldKind::XI_GANG,
+                tiles: vec![31, 32, 33, 34],
+                from_position: None,
+            }],
+        );
+        state.last_drawn_tile = Some(35);
+        let default_configs = HashMap::from([("win_rule".to_owned(), WIN_RULE_SHENYANG_BASIC)]);
+        let configs = HashMap::from([
+            ("win_rule".to_owned(), WIN_RULE_SHENYANG_BASIC),
+            ("allow_first_chi".to_owned(), 0),
+        ]);
+        let mut dispatch = Dispatch::default();
+
+        assert!(!can_self_draw_hu_with_configs(&state, 0, &default_configs));
+        assert!(can_self_draw_hu_with_configs(&state, 0, &configs));
+        assert!(maybe_play_ai_turn(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &configs,
+            &mut dispatch,
+        ));
+
+        let settlement = state.settlement.as_ref().expect("settlement");
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert_eq!(settlement.winner_positions, vec![0]);
+        assert!(!settlement.is_gang_draw);
+        assert!(state.discards.get(&0).unwrap().is_empty());
+        assert_eq!(
+            state.melds.get(&0).unwrap()[0].kind,
+            ShenyangMahjongMeldKind::XI_GANG
+        );
+        let event = build_settlement_event_with_configs(&state, &configs)
+            .expect("configured closed sequence settlement event");
+        assert_eq!(
+            event.winner_details[0].pattern,
+            ShenyangMahjongWinPattern::Standard
+        );
+        assert!(event.winner_details[0].score > 0);
     }
 
     #[test]
