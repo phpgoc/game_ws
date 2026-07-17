@@ -353,13 +353,14 @@ async fn shenyang_mahjong_owner_can_start_with_ai_and_receive_ai_play() {
     }
 
     let mut owner = connect_client(&url).await;
+    let mut watcher = connect_client(&url).await;
     let room = "shenyang-mahjong-flow-room";
     let join_response = join(&mut owner, "owner", room).await;
     assert_eq!(join_response["data"]["existing_members"], json!([]));
 
-    send_request(&mut owner, Routes::ADD_AI as i32, json!({ "count": 3 })).await;
+    send_request(&mut owner, Routes::ADD_AI as i32, json!({ "count": 2 })).await;
     let mut joined_ai_positions = Vec::new();
-    for _ in 0..3 {
+    for _ in 0..2 {
         let join_event = recv_until(&mut owner, "ai join event", |value| {
             value.get("code").and_then(Value::as_i64) == Some(WsCode::JOIN as i64)
                 && value
@@ -376,12 +377,13 @@ async fn shenyang_mahjong_owner_can_start_with_ai_and_receive_ai_play() {
         );
     }
     joined_ai_positions.sort_unstable();
-    assert_eq!(joined_ai_positions, vec![1, 2, 3]);
+    assert_eq!(joined_ai_positions, vec![1, 2]);
     recv_until(&mut owner, "add ai ok", |value| {
         value.get("route").and_then(Value::as_i64) == Some(Routes::ADD_AI as i64)
             && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
     })
     .await;
+    join(&mut watcher, "watcher", room).await;
 
     send_request(
         &mut owner,
@@ -426,11 +428,18 @@ async fn shenyang_mahjong_owner_can_start_with_ai_and_receive_ai_play() {
         .as_array()
         .expect("existing members");
     assert_eq!(existing_members.len(), 3);
-    assert!(
+    assert_eq!(
         existing_members
             .iter()
-            .all(|member| member["is_ai"].as_bool() == Some(true))
+            .filter(|member| member["is_ai"].as_bool() == Some(true))
+            .count(),
+        2
     );
+    assert!(existing_members.iter().any(|member| {
+        member["name"] == json!("watcher")
+            && member["is_active"].as_bool() == Some(true)
+            && member["is_ai"].as_bool() == Some(false)
+    }));
     let snapshot = recv_until(&mut owner, "rejoin table snapshot", |value| {
         value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
     })
