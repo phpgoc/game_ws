@@ -3277,6 +3277,84 @@ fn play_request_rob_gang_rejects_peng_and_accepts_hu() {
 }
 
 #[test]
+fn play_request_rob_gang_allows_multiple_hu() {
+    let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
+    {
+        let mut state = loop_state.lock().unwrap();
+        state.phase = ShenyangMahjongPhase::Play;
+        state.current_position = 0;
+        for position in 0..4 {
+            state.discards.insert(position, Vec::new());
+            state.melds.insert(position, Vec::new());
+        }
+        state
+            .hands
+            .insert(0, vec![1, 2, 3, 6, 11, 12, 13, 21, 22, 23, 31]);
+        state.melds.insert(
+            0,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::PENG,
+                vec![6, 6, 6],
+                Some(2),
+            )],
+        );
+        state
+            .hands
+            .insert(1, vec![4, 5, 11, 12, 13, 21, 22, 23, 35, 35]);
+        state
+            .hands
+            .insert(2, vec![4, 5, 14, 15, 16, 24, 25, 26, 35, 35]);
+        state.melds.insert(1, vec![open_peng_meld(31, 3)]);
+        state.melds.insert(2, vec![open_peng_meld(32, 3)]);
+        state.wall = vec![36];
+        state.last_drawn_tile = Some(6);
+        state.claim_window = Some(ClaimWindowState {
+            tile: 6,
+            from_position: 0,
+            kind: ClaimWindowKind::RobGang,
+            eligible_positions: vec![1, 2],
+            responses: HashMap::new(),
+        });
+    }
+
+    let first_hu = handler.handle_game_request(
+        &mut room_service,
+        2,
+        play_request(ShenyangMahjongAction::HU, Vec::new(), Some(6), Some(0)),
+    );
+    let second_hu = handler.handle_game_request(
+        &mut room_service,
+        3,
+        play_request(ShenyangMahjongAction::HU, Vec::new(), Some(6), Some(0)),
+    );
+
+    assert_eq!(
+        response_code(&first_hu, 2, Routes::PLAY),
+        Some(WsResponseCode::OK as i32)
+    );
+    assert!(!has_room_event(&first_hu, WsCode::GAME_OVER));
+    assert_eq!(
+        response_code(&second_hu, 3, Routes::PLAY),
+        Some(WsResponseCode::OK as i32)
+    );
+    assert!(has_room_event(&second_hu, WsCode::GAME_OVER));
+
+    let state = loop_state.lock().unwrap();
+    let settlement = state.settlement.as_ref().expect("settlement");
+    assert_eq!(settlement.winner_positions, vec![1, 2]);
+    assert_eq!(settlement.from_position, Some(0));
+    assert_eq!(settlement.win_tile, Some(6));
+    assert!(settlement.is_reverse_win);
+    assert!(!state.hands.get(&0).unwrap().contains(&6));
+    assert_eq!(
+        state.melds.get(&0).unwrap().first().unwrap().kind,
+        ShenyangMahjongMeldKind::PENG
+    );
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
+    assert_eq!(winner_hand_fan(&state, settlement, 2), 2);
+}
+
+#[test]
 fn play_request_waits_for_claims_and_hu_beats_peng() {
     let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
     {
