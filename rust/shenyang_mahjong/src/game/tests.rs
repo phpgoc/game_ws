@@ -199,7 +199,7 @@ fn claim_options_allow_closed_sequence_dragon_pair_win_when_first_chi_disabled()
 }
 
 #[test]
-fn claim_options_allow_closed_pure_one_suit_for_basic_rule() {
+fn claim_options_allow_closed_pure_one_suit() {
     let mut state = playable_state();
     state
         .hands
@@ -240,7 +240,7 @@ fn claim_options_allow_hu_after_open_meld() {
 }
 
 #[test]
-fn claim_options_allow_open_pure_one_suit_for_basic_rule() {
+fn claim_options_allow_open_pure_one_suit() {
     let mut state = playable_state();
     state.hands.insert(1, vec![3, 4, 5, 4, 5, 6, 5, 6, 7, 8]);
     state.melds.insert(
@@ -394,7 +394,7 @@ fn claim_options_count_existing_gang_as_three_virtual_tiles() {
 }
 
 #[test]
-fn claim_options_do_not_count_concealed_gang_as_open_for_basic_rule() {
+fn claim_options_do_not_count_concealed_gang_as_open() {
     let mut state = playable_state();
     state
         .hands
@@ -522,7 +522,7 @@ fn claim_options_ignore_melds_with_invalid_sources_for_known_tile_count() {
 }
 
 #[test]
-fn claim_options_list_chi_for_shenyang_basic_rule() {
+fn claim_options_list_chi_for_shenyang_rule() {
     let mut state = playable_state();
     state
         .hands
@@ -703,7 +703,7 @@ fn claim_options_require_thirteen_virtual_tiles_for_melds() {
 }
 
 #[test]
-fn claim_options_respect_shenyang_basic_win_rule() {
+fn claim_options_respect_shenyang_win_rule() {
     let mut state = playable_state();
     state
         .hands
@@ -1526,7 +1526,7 @@ fn play_request_blocks_only_first_chi_when_configured() {
 }
 
 #[test]
-fn play_request_chi_allows_shenyang_basic_rule() {
+fn play_request_chi_allows_shenyang_rule() {
     let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
     {
         let mut state = loop_state.lock().unwrap();
@@ -2978,7 +2978,7 @@ fn play_request_rejects_self_hu_without_draw_and_accepts_after_draw() {
 }
 
 #[test]
-fn play_request_respects_shenyang_basic_win_rule() {
+fn play_request_respects_shenyang_win_rule() {
     let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
     {
         let mut state = loop_state.lock().unwrap();
@@ -3667,7 +3667,7 @@ fn default_configs() -> HashMap<String, i32> {
 }
 
 #[test]
-fn resolve_claim_window_allows_chi_for_shenyang_basic_rule() {
+fn resolve_claim_window_allows_chi_for_shenyang_rule() {
     let mut state = playable_state();
     state
         .hands
@@ -4491,7 +4491,7 @@ fn rob_gang_hu_rejects_impossible_fifth_tile_response() {
 }
 
 #[test]
-fn rob_gang_hu_respects_basic_open_requirement() {
+fn rob_gang_hu_respects_shenyang_open_requirement() {
     let mut state = playable_state();
     state
         .hands
@@ -4600,10 +4600,10 @@ fn concealed_gang_does_not_count_as_open_for_rob_gang() {
         )],
     );
     let default_event = build_rob_gang_claim_window_event(&state, 3, 0, 5, &default_configs());
-    let basic_event = build_rob_gang_claim_window_event(&state, 3, 0, 5, &HashMap::new());
+    let empty_config_event = build_rob_gang_claim_window_event(&state, 3, 0, 5, &HashMap::new());
 
     assert!(!default_event.eligible_positions.contains(&1));
-    assert!(!basic_event.eligible_positions.contains(&1));
+    assert!(!empty_config_event.eligible_positions.contains(&1));
 }
 
 #[test]
@@ -4926,7 +4926,7 @@ fn self_draw_hu_requires_current_position() {
 }
 
 #[test]
-fn self_draw_hu_respects_shenyang_basic_win_rule() {
+fn self_draw_hu_respects_shenyang_win_rule() {
     let mut state = playable_state();
     state
         .hands
@@ -5589,10 +5589,10 @@ fn settlement_fan_accepts_only_dragon_pair_for_closed_piao() {
     let settlement = state.settlement.as_ref().expect("settlement");
 
     assert_eq!(
-        winner_pattern_with_rules(
+        winner_pattern_with_context(
             state.hands.get(&1).unwrap(),
             &[],
-            ShenyangMahjongWinRules::new()
+            ShenyangMahjongWinContext::new()
         ),
         ShenyangMahjongWinPattern::PiaoHu
     );
@@ -7501,21 +7501,21 @@ fn settlement_winner_details_use_shenyang_rules_for_closed_pure_one_suit() {
     state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(9), false, false, false, false);
 
     let default_event = build_settlement_event_with_configs(&state, &default_configs()).unwrap();
-    let basic_event = build_settlement_event_with_configs(&state, &HashMap::new()).unwrap();
+    let empty_config_event = build_settlement_event_with_configs(&state, &HashMap::new()).unwrap();
 
     assert_eq!(
         default_event.winner_details[0].pattern,
         ShenyangMahjongWinPattern::PureOneSuit
     );
     assert_eq!(
-        basic_event.winner_details[0].pattern,
+        empty_config_event.winner_details[0].pattern,
         ShenyangMahjongWinPattern::PureOneSuit
     );
     assert_eq!(
         winner_hand_fan(&state, state.settlement.as_ref().expect("settlement"), 1),
         4
     );
-    assert_eq!(basic_event.winner_details[0].score, 6);
+    assert_eq!(empty_config_event.winner_details[0].score, 6);
 }
 
 fn setup_request_room() -> (

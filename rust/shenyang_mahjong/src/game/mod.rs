@@ -25,14 +25,14 @@ use crate::game_state::{
     ShenyangMahjongLoopState, build_meld, meld_source_is_valid_for_positions,
 };
 use crate::rules::{
-    ShenyangMahjongWinRules, XI_GANG_WINDS, can_chi, can_concealed_gang, can_gang, can_peng,
-    is_complete_win_with_melds_for_rules, is_door_opening_meld, is_valid_meld, is_xi_gang_tiles,
+    ShenyangMahjongWinContext, XI_GANG_WINDS, can_chi, can_concealed_gang, can_gang, can_peng,
+    is_complete_win_with_melds_with_context, is_door_opening_meld, is_valid_meld, is_xi_gang_tiles,
     remove_tiles, shenyang_score_visible_win_fan, shenyang_win_pattern, tiles_in_hand,
 };
 #[cfg(test)]
 use crate::rules::{
     is_legal_single_wait_shape, is_seven_pairs_win,
-    is_single_wait_shape_with_known_unavailable_tiles_for_rules, shenyang_score_four_gui_yi_fan,
+    is_single_wait_shape_with_known_unavailable_tiles_with_context, shenyang_score_four_gui_yi_fan,
     shenyang_score_meld_fan,
 };
 
@@ -79,7 +79,7 @@ pub(crate) fn advance_to_next_turn(
 }
 
 fn allow_first_chi(configs: &HashMap<String, i32>) -> bool {
-    config_value(configs, "allow_first_chi", 1) == 1
+    ShenyangMahjongWinContext::from_configs(configs).allows_first_chi()
 }
 
 pub(crate) fn build_claim_options(
@@ -355,7 +355,7 @@ fn build_winner_details(
     score_changes: &[WsShenyangMahjongScoreChange],
     configs: &HashMap<String, i32>,
 ) -> Vec<WsShenyangMahjongWinnerDetail> {
-    let rules = ShenyangMahjongWinRules::from_configs(configs);
+    let context = ShenyangMahjongWinContext::from_configs(configs);
     let score_by_position = score_changes
         .iter()
         .map(|change| (change.position as usize, change.score))
@@ -371,7 +371,7 @@ fn build_winner_details(
             }
             let hand_tiles = winner_final_hand_tiles(state, settlement, position);
             let melds = state.melds.get(&position).map(Vec::as_slice).unwrap_or(&[]);
-            let pattern = winner_pattern_with_rules(&hand_tiles, melds, rules);
+            let pattern = winner_pattern_with_context(&hand_tiles, melds, context);
             Some(WsShenyangMahjongWinnerDetail {
                 position: position as i32,
                 pattern,
@@ -728,10 +728,10 @@ fn is_complete_win_with_configs(
     melds: &[WsShenyangMahjongMeld],
     configs: &HashMap<String, i32>,
 ) -> bool {
-    is_complete_win_with_melds_for_rules(
+    is_complete_win_with_melds_with_context(
         tiles,
         melds,
-        ShenyangMahjongWinRules::from_configs(configs),
+        ShenyangMahjongWinContext::from_configs(configs),
     )
 }
 
@@ -809,31 +809,31 @@ fn is_single_wait_win_with_known_unavailable_tiles(
     win_tile: Option<i32>,
     known_unavailable_tiles: &[i32],
 ) -> bool {
-    is_single_wait_win_with_known_unavailable_tiles_for_rules(
+    is_single_wait_win_with_known_unavailable_tiles_with_context(
         hand_tiles,
         melds,
         win_tile,
-        ShenyangMahjongWinRules::new(),
+        ShenyangMahjongWinContext::new(),
         known_unavailable_tiles,
     )
 }
 
 #[cfg(test)]
-fn is_single_wait_win_with_known_unavailable_tiles_for_rules(
+fn is_single_wait_win_with_known_unavailable_tiles_with_context(
     hand_tiles: &[i32],
     melds: &[WsShenyangMahjongMeld],
     win_tile: Option<i32>,
-    rules: ShenyangMahjongWinRules,
+    context: ShenyangMahjongWinContext,
     known_unavailable_tiles: &[i32],
 ) -> bool {
     let Some(win_tile) = win_tile else {
         return false;
     };
-    is_single_wait_shape_with_known_unavailable_tiles_for_rules(
+    is_single_wait_shape_with_known_unavailable_tiles_with_context(
         hand_tiles,
         melds,
         win_tile,
-        rules,
+        context,
         known_unavailable_tiles,
     )
 }
@@ -2270,7 +2270,7 @@ fn winner_hand_fan(
     settlement: &crate::game_state::SettlementState,
     winner: usize,
 ) -> i32 {
-    winner_hand_fan_with_rules(state, settlement, winner, ShenyangMahjongWinRules::new())
+    winner_hand_fan_with_context(state, settlement, winner, ShenyangMahjongWinContext::new())
 }
 
 fn winner_hand_fan_with_configs(
@@ -2279,11 +2279,11 @@ fn winner_hand_fan_with_configs(
     winner: usize,
     configs: &HashMap<String, i32>,
 ) -> i32 {
-    let mut fan = winner_hand_fan_with_rules(
+    let mut fan = winner_hand_fan_with_context(
         state,
         settlement,
         winner,
-        ShenyangMahjongWinRules::from_configs(configs),
+        ShenyangMahjongWinContext::from_configs(configs),
     );
     if configs.get("ting_fan").copied() == Some(1) && state.is_ting(winner) {
         fan += 1;
@@ -2291,11 +2291,11 @@ fn winner_hand_fan_with_configs(
     fan
 }
 
-fn winner_hand_fan_with_rules(
+fn winner_hand_fan_with_context(
     state: &ShenyangMahjongLoopState,
     settlement: &crate::game_state::SettlementState,
     winner: usize,
-    rules: ShenyangMahjongWinRules,
+    context: ShenyangMahjongWinContext,
 ) -> i32 {
     if !settlement_winner_has_valid_win_tile(state, settlement, winner)
         || winner_has_impossible_known_tile_count(state, settlement, winner)
@@ -2305,7 +2305,7 @@ fn winner_hand_fan_with_rules(
     }
     let hand_tiles = winner_final_hand_tiles(state, settlement, winner);
     let melds = state.melds.get(&winner).map(Vec::as_slice).unwrap_or(&[]);
-    if !is_complete_win_with_melds_for_rules(&hand_tiles, melds, rules) {
+    if !is_complete_win_with_melds_with_context(&hand_tiles, melds, context) {
         return 0;
     }
     let known_unavailable_tiles = public_unavailable_tiles_for_winner(state, winner);
@@ -2313,7 +2313,7 @@ fn winner_hand_fan_with_rules(
         &hand_tiles,
         melds,
         settlement.win_tile,
-        rules,
+        context,
         &known_unavailable_tiles,
     );
     if settlement_is_reverse_win(state, settlement) {
@@ -2361,12 +2361,12 @@ fn winner_has_impossible_known_tile_count(
     })
 }
 
-pub(crate) fn winner_pattern_with_rules(
+pub(crate) fn winner_pattern_with_context(
     hand_tiles: &[i32],
     melds: &[WsShenyangMahjongMeld],
-    rules: ShenyangMahjongWinRules,
+    context: ShenyangMahjongWinContext,
 ) -> ShenyangMahjongWinPattern {
-    if !is_complete_win_with_melds_for_rules(hand_tiles, melds, rules) {
+    if !is_complete_win_with_melds_with_context(hand_tiles, melds, context) {
         return ShenyangMahjongWinPattern::Standard;
     }
     shenyang_win_pattern(hand_tiles, melds)

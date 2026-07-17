@@ -69,7 +69,7 @@ fn late_broken_basic_discard_follows_public_tile_for_weak_recoverable_hand() {
     let hand = vec![1, 2, 3, 4, 5, 6, 7, 11, 14, 19, 21, 31, 32, 33];
 
     assert_eq!(
-        unrecoverable_basic_rule_requirement_count(&hand, &[], &table, 0),
+        unrecoverable_normal_hand_requirement_count(&hand, &[], &table, 0),
         0
     );
     assert!(hand_power(&hand) >= 16.0);

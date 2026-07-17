@@ -61,7 +61,7 @@ pub(in crate::ai::decision) fn shenyang_rule_progress_score(
     score
 }
 
-pub(in crate::ai::decision) fn unrecoverable_basic_rule_requirement_count(
+pub(in crate::ai::decision) fn unrecoverable_normal_hand_requirement_count(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,

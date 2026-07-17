@@ -33,9 +33,9 @@ use share_type_public::games::shenyang_mahjong::{
 };
 
 use crate::rules::{
-    ShenyangMahjongWinRules, can_chi, can_gang, can_peng, has_edge_wait_decomposition,
-    is_complete_win_with_melds_for_rules, is_piao_hu_win, is_pure_one_suit_win, is_seven_pairs_win,
-    is_single_wait_shape_with_known_unavailable_tiles_for_rules,
+    ShenyangMahjongWinContext, can_chi, can_gang, can_peng, has_edge_wait_decomposition,
+    is_complete_win_with_melds_with_context, is_piao_hu_win, is_pure_one_suit_win,
+    is_seven_pairs_win, is_single_wait_shape_with_known_unavailable_tiles_with_context,
     shenyang_score_concealed_dragon_triplet_fan, shenyang_score_four_gui_yi_fan,
     shenyang_score_meld_fan, shenyang_score_visible_win_fan, shenyang_win_pattern_base_fan,
     sort_tiles,
@@ -116,7 +116,7 @@ pub(crate) fn is_complete_win_for_table(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
 ) -> bool {
-    is_complete_win_with_melds_for_rules(hand, melds, win_rules_for_table(table))
+    is_complete_win_with_melds_with_context(hand, melds, win_context_for_table(table))
 }
 
 pub(in crate::ai::decision) fn is_single_wait_shape_for_table(
@@ -126,11 +126,11 @@ pub(in crate::ai::decision) fn is_single_wait_shape_for_table(
     table: &AiPublicTable,
     known_unavailable_tiles: &[i32],
 ) -> bool {
-    is_single_wait_shape_with_known_unavailable_tiles_for_rules(
+    is_single_wait_shape_with_known_unavailable_tiles_with_context(
         hand,
         melds,
         win_tile,
-        win_rules_for_table(table),
+        win_context_for_table(table),
         known_unavailable_tiles,
     )
 }
@@ -143,10 +143,8 @@ pub(crate) fn position_known_tile_counts_are_possible(
     table::position_known_tile_counts_are_possible(hand, melds, table)
 }
 
-pub(in crate::ai::decision) fn win_rules_for_table(
+pub(in crate::ai::decision) fn win_context_for_table(
     table: &AiPublicTable,
-) -> ShenyangMahjongWinRules {
-    ShenyangMahjongWinRules {
-        allow_closed_sequence_dragon_pair_win: !table.allow_first_chi,
-    }
+) -> ShenyangMahjongWinContext {
+    ShenyangMahjongWinContext::from_allow_first_chi(table.allow_first_chi)
 }

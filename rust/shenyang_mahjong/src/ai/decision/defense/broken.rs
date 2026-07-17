@@ -42,7 +42,7 @@ pub(in crate::ai::decision) fn should_open_broken_closed_hand_for_defense(
     .filter(|missing| *missing)
     .count();
     let unrecoverable_rule_requirements =
-        unrecoverable_basic_rule_requirement_count(hand, melds, table, position);
+        unrecoverable_normal_hand_requirement_count(hand, melds, table, position);
     let power = hand_power(hand);
     if !is_late_round(table) {
         return unrecoverable_rule_requirements >= 1
@@ -96,7 +96,7 @@ pub(in crate::ai::decision) fn should_use_broken_hand_public_defense_discard(
     .filter(|missing| *missing)
     .count();
     let unrecoverable_rule_requirements =
-        unrecoverable_basic_rule_requirement_count(hand, melds, table, position);
+        unrecoverable_normal_hand_requirement_count(hand, melds, table, position);
     if table.dealer_position == position && unrecoverable_rule_requirements == 0 {
         return false;
     }

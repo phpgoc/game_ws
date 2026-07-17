@@ -427,7 +427,7 @@ fn claim_chi_passes_mid_round_when_shape_ready_still_misses_a_suit() {
 }
 
 #[test]
-fn claim_chi_takes_shenyang_basic_rule_when_it_reaches_ready() {
+fn claim_chi_takes_shenyang_rule_when_it_reaches_ready() {
     let mut table = table_with_discards(3, Vec::new());
     table.wall_count = 40;
     table.claim_window = Some(AiClaimView {

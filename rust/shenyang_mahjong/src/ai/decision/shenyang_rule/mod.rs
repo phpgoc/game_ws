@@ -11,5 +11,5 @@ pub(super) use heng::loses_basic_heng_recovery_after_discard;
 pub(super) use heng::{can_recover_basic_heng, can_recover_basic_heng_after_discard};
 pub(super) use progress::{
     basic_heng_seed_discard_bias, shenyang_rule_progress_score,
-    unrecoverable_basic_rule_requirement_count,
+    unrecoverable_normal_hand_requirement_count,
 };

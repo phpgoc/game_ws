@@ -127,27 +127,27 @@ pub(in crate::ai::decision) fn estimated_fan_with_known_unavailable_wait(
     win_tile: i32,
     known_unavailable_tiles: &[i32],
 ) -> i32 {
-    estimated_fan_with_known_unavailable_wait_for_rules(
+    estimated_fan_with_known_unavailable_wait_with_context(
         win_hand,
         melds,
         win_tile,
-        ShenyangMahjongWinRules::new(),
+        ShenyangMahjongWinContext::new(),
         known_unavailable_tiles,
     )
 }
 
-fn estimated_fan_with_known_unavailable_wait_for_rules(
+fn estimated_fan_with_known_unavailable_wait_with_context(
     win_hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
     win_tile: i32,
-    rules: ShenyangMahjongWinRules,
+    context: ShenyangMahjongWinContext,
     known_unavailable_tiles: &[i32],
 ) -> i32 {
     shenyang_score_visible_win_fan(
         win_hand,
         melds,
         Some(win_tile),
-        rules,
+        context,
         known_unavailable_tiles,
     )
 }
@@ -159,11 +159,11 @@ pub(in crate::ai::decision) fn estimated_fan_with_known_unavailable_wait_for_tab
     table: &AiPublicTable,
     known_unavailable_tiles: &[i32],
 ) -> i32 {
-    estimated_fan_with_known_unavailable_wait_for_rules(
+    estimated_fan_with_known_unavailable_wait_with_context(
         win_hand,
         melds,
         win_tile,
-        win_rules_for_table(table),
+        win_context_for_table(table),
         known_unavailable_tiles,
     )
 }
@@ -202,15 +202,19 @@ pub(in crate::ai::decision) fn estimated_visible_fan_without_wait(
     win_hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
 ) -> i32 {
-    estimated_visible_fan_without_wait_for_rules(win_hand, melds, ShenyangMahjongWinRules::new())
+    estimated_visible_fan_without_wait_with_context(
+        win_hand,
+        melds,
+        ShenyangMahjongWinContext::new(),
+    )
 }
 
-fn estimated_visible_fan_without_wait_for_rules(
+fn estimated_visible_fan_without_wait_with_context(
     win_hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
-    rules: ShenyangMahjongWinRules,
+    context: ShenyangMahjongWinContext,
 ) -> i32 {
-    shenyang_score_visible_win_fan(win_hand, melds, None, rules, &[])
+    shenyang_score_visible_win_fan(win_hand, melds, None, context, &[])
 }
 
 pub(in crate::ai::decision) fn estimated_visible_fan_without_wait_for_table(
@@ -218,7 +222,7 @@ pub(in crate::ai::decision) fn estimated_visible_fan_without_wait_for_table(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
 ) -> i32 {
-    estimated_visible_fan_without_wait_for_rules(win_hand, melds, win_rules_for_table(table))
+    estimated_visible_fan_without_wait_with_context(win_hand, melds, win_context_for_table(table))
 }
 
 pub(in crate::ai::decision) fn fan_wait_bias(

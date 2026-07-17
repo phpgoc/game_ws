@@ -129,7 +129,7 @@ fn claim_peng_opens_mid_unrecoverable_no_terminal_hand_for_defense() {
     let hand = vec![2, 3, 4, 5, 5, 6, 7, 12, 13, 14, 22, 23, 24];
 
     assert_eq!(
-        unrecoverable_basic_rule_requirement_count(&hand, &[], &table, 0),
+        unrecoverable_normal_hand_requirement_count(&hand, &[], &table, 0),
         1
     );
     assert!(should_open_broken_closed_hand_for_defense(

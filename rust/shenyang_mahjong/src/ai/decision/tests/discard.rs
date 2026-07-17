@@ -160,7 +160,7 @@ fn discard_preserves_edge_of_complete_sequence() {
 }
 
 #[test]
-fn discard_preserves_last_honor_for_basic_rule() {
+fn discard_preserves_last_honor_for_normal_hand() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![2, 3, 4, 5, 6, 7, 12, 13, 14, 22, 23, 24, 31, 5];
 
@@ -168,7 +168,7 @@ fn discard_preserves_last_honor_for_basic_rule() {
 }
 
 #[test]
-fn discard_preserves_last_suit_for_basic_rule() {
+fn discard_preserves_last_suit_for_normal_hand() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 21, 31];
 
@@ -274,7 +274,7 @@ fn discard_preserves_only_recoverable_heng_seed() {
 }
 
 #[test]
-fn discard_preserves_only_terminal_or_honor_for_basic_rule() {
+fn discard_preserves_only_terminal_or_honor_for_normal_hand() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 5, 6];
 

@@ -10,7 +10,7 @@ fn dealer_mid_unrecoverable_basic_hand_uses_public_defense_discard() {
     let hand = vec![2, 3, 4, 5, 5, 6, 7, 12, 13, 14, 22, 23, 24, 25];
 
     assert_eq!(
-        unrecoverable_basic_rule_requirement_count(&hand, &[], &table, 0),
+        unrecoverable_normal_hand_requirement_count(&hand, &[], &table, 0),
         1
     );
     assert!(should_use_broken_hand_public_defense_discard(

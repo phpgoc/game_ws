@@ -256,7 +256,8 @@ mod tests {
     use crate::game::build_settlement_event_with_configs;
     use crate::game_state::ClaimWindowState;
     use crate::rules::{
-        ShenyangMahjongWinRules, is_complete_win_with_melds, is_complete_win_with_melds_for_rules,
+        ShenyangMahjongWinContext, is_complete_win_with_melds,
+        is_complete_win_with_melds_with_context,
     };
 
     #[test]
@@ -715,7 +716,7 @@ mod tests {
         seed: u64,
     ) {
         let settlement = state.settlement.as_ref().expect("AI round settlement");
-        let rules = ShenyangMahjongWinRules::from_configs(configs);
+        let context = ShenyangMahjongWinContext::from_configs(configs);
         for winner in &settlement.winner_positions {
             let mut hand = state.hands.get(winner).cloned().unwrap_or_default();
             if !settlement.is_self_draw
@@ -727,7 +728,7 @@ mod tests {
             let melds = state.melds.get(winner).map(Vec::as_slice).unwrap_or(&[]);
 
             assert!(
-                is_complete_win_with_melds_for_rules(&hand, melds, rules),
+                is_complete_win_with_melds_with_context(&hand, melds, context),
                 "seed {seed} winner {winner} should have a legal Shenyang Mahjong hand: hand={hand:?}, melds={melds:?}, settlement={settlement:?}"
             );
         }

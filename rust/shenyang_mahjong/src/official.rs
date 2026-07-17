@@ -31,11 +31,11 @@ pub async fn has_active_membership(session_id: String) -> bool {
 #[cfg(feature = "official")]
 use crate::game::{
     settlement_from_position, settlement_is_reverse_win, settlement_score_changes_for_state,
-    winner_pattern_with_rules,
+    winner_pattern_with_context,
 };
 use crate::game_state::{SettlementState, ShenyangMahjongLoopState};
 #[cfg(feature = "official")]
-use crate::rules::ShenyangMahjongWinRules;
+use crate::rules::ShenyangMahjongWinContext;
 
 #[cfg(feature = "official")]
 fn block_on_official<F>(future: F) -> Option<F::Output>
@@ -151,9 +151,9 @@ pub fn settle_round(
     let players = state.players_snapshot();
     let positions = players.keys().copied().collect::<Vec<_>>();
     let score_changes = settlement_score_changes_for_state(state, &positions, settlement, configs);
-    let rules = ShenyangMahjongWinRules::from_configs(configs);
+    let context = ShenyangMahjongWinContext::from_configs(configs);
     let winner_scores =
-        winner_scores_for_settlement(state, settlement, &score_changes, rules, |position| {
+        winner_scores_for_settlement(state, settlement, &score_changes, context, |position| {
             room_service.room_official_user_id(room_key, position)
         });
     let (from_position, is_reverse_win) =
@@ -196,7 +196,7 @@ fn winner_pattern_for_position(
     state: &ShenyangMahjongLoopState,
     settlement: &SettlementState,
     position: usize,
-    rules: ShenyangMahjongWinRules,
+    context: ShenyangMahjongWinContext,
 ) -> data::ShenyangMahjongRoundWinPattern {
     let mut hand_tiles = state.hands.get(&position).cloned().unwrap_or_default();
     if !settlement.is_self_draw
@@ -206,7 +206,7 @@ fn winner_pattern_for_position(
         hand_tiles.sort_unstable();
     }
     let melds = state.melds.get(&position).map(Vec::as_slice).unwrap_or(&[]);
-    match winner_pattern_with_rules(&hand_tiles, melds, rules) {
+    match winner_pattern_with_context(&hand_tiles, melds, context) {
         share_type_public::games::shenyang_mahjong::ShenyangMahjongWinPattern::Standard => {
             data::ShenyangMahjongRoundWinPattern::Standard
         }
@@ -256,7 +256,7 @@ fn winner_scores_for_settlement<F>(
     state: &ShenyangMahjongLoopState,
     settlement: &SettlementState,
     score_changes: &[WsShenyangMahjongScoreChange],
-    rules: ShenyangMahjongWinRules,
+    context: ShenyangMahjongWinContext,
     mut user_id_for_position: F,
 ) -> Vec<data::GameRoundShenyangMahjongWinnerScoreInput>
 where
@@ -272,7 +272,7 @@ where
             winner_scores.push(data::GameRoundShenyangMahjongWinnerScoreInput {
                 winner_user_id,
                 score,
-                pattern: winner_pattern_for_position(state, settlement, position, rules),
+                pattern: winner_pattern_for_position(state, settlement, position, context),
             });
         }
     }
@@ -291,7 +291,7 @@ mod tests {
     #[cfg(feature = "official")]
     use crate::game_state::{ShenyangMahjongLoopState, build_meld};
     #[cfg(feature = "official")]
-    use crate::rules::ShenyangMahjongWinRules;
+    use crate::rules::ShenyangMahjongWinContext;
 
     #[cfg(feature = "official")]
     use share_type_public::games::shenyang_mahjong::ShenyangMahjongMeldKind;
@@ -343,7 +343,7 @@ mod tests {
             &state,
             settlement,
             &score_changes,
-            ShenyangMahjongWinRules::from_configs(&configs),
+            ShenyangMahjongWinContext::from_configs(&configs),
             |position| Some(position as i64 + 10),
         );
 
@@ -449,7 +449,7 @@ mod tests {
             &state,
             &settlement,
             &score_changes,
-            ShenyangMahjongWinRules::new(),
+            ShenyangMahjongWinContext::new(),
             |position| Some(position as i64 + 10),
         );
 
@@ -490,7 +490,7 @@ mod tests {
             &state,
             &settlement,
             &score_changes,
-            ShenyangMahjongWinRules::new(),
+            ShenyangMahjongWinContext::new(),
             |position| Some(position as i64 + 10),
         );
 
@@ -564,7 +564,7 @@ mod tests {
                 &seven_pairs_state,
                 seven_pairs_settlement,
                 1,
-                ShenyangMahjongWinRules::new()
+                ShenyangMahjongWinContext::new()
             ),
             data::ShenyangMahjongRoundWinPattern::SevenPairs
         );
@@ -596,7 +596,7 @@ mod tests {
                 &piao_state,
                 piao_settlement,
                 2,
-                ShenyangMahjongWinRules::new()
+                ShenyangMahjongWinContext::new()
             ),
             data::ShenyangMahjongRoundWinPattern::PiaoHu
         );
@@ -621,11 +621,11 @@ mod tests {
         let settlement = state.settlement.as_ref().expect("settlement");
 
         assert_eq!(
-            winner_pattern_for_position(&state, settlement, 1, ShenyangMahjongWinRules::new()),
+            winner_pattern_for_position(&state, settlement, 1, ShenyangMahjongWinContext::new()),
             data::ShenyangMahjongRoundWinPattern::PureOneSuit
         );
         assert_eq!(
-            winner_pattern_for_position(&state, settlement, 1, ShenyangMahjongWinRules::new()),
+            winner_pattern_for_position(&state, settlement, 1, ShenyangMahjongWinContext::new()),
             data::ShenyangMahjongRoundWinPattern::PureOneSuit
         );
     }
