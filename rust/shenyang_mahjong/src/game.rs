@@ -2946,7 +2946,7 @@ mod tests {
     }
 
     #[test]
-    fn claim_options_allow_closed_dragon_pair_win_when_first_chi_disabled() {
+    fn claim_options_allow_closed_sequence_dragon_pair_win_when_first_chi_disabled() {
         let mut state = playable_state();
         state
             .hands
@@ -7331,7 +7331,7 @@ mod tests {
     }
 
     #[test]
-    fn self_draw_closed_dragon_pair_win_stays_available_after_xi_gang() {
+    fn self_draw_closed_sequence_dragon_pair_win_stays_available_after_xi_gang() {
         let mut state = playable_state();
         state.current_position = 1;
         state
@@ -7357,7 +7357,7 @@ mod tests {
     }
 
     #[test]
-    fn self_draw_hu_allows_closed_dragon_pair_win_when_first_chi_disabled() {
+    fn self_draw_hu_allows_closed_sequence_dragon_pair_win_when_first_chi_disabled() {
         let mut state = playable_state();
         state.current_position = 0;
         state
@@ -8304,7 +8304,7 @@ mod tests {
     }
 
     #[test]
-    fn settlement_fan_counts_configured_closed_dragon_pair_win_as_standard() {
+    fn settlement_fan_counts_configured_closed_sequence_dragon_pair_win_as_standard() {
         let mut state = playable_state();
         state
             .hands
@@ -10061,7 +10061,7 @@ mod tests {
     }
 
     #[test]
-    fn settlement_scores_closed_dragon_pair_winner_after_xi_gang() {
+    fn settlement_scores_closed_sequence_dragon_pair_winner_after_xi_gang() {
         let mut state = playable_state();
         state
             .hands

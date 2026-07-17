@@ -533,7 +533,7 @@ fn ready_cap_counts_single_wait_fan() {
 }
 
 #[test]
-fn ready_score_allows_closed_dragon_pair_win_when_first_chi_disabled() {
+fn ready_score_allows_closed_sequence_dragon_pair_win_when_first_chi_disabled() {
     let mut table = table_with_discards(1, Vec::new());
     let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 35];
     let mut win_hand = hand.clone();
@@ -648,7 +648,7 @@ fn ready_score_does_not_double_count_visible_claim_tile_in_projected_meld() {
 }
 
 #[test]
-fn ready_score_keeps_closed_dragon_pair_route_after_xi_gang() {
+fn ready_score_keeps_closed_sequence_dragon_pair_route_after_xi_gang() {
     let mut table = table_with_discards(1, Vec::new());
     let xi_gang = WsShenyangMahjongMeld {
         kind: ShenyangMahjongMeldKind::XI_GANG,

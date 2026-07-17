@@ -300,7 +300,7 @@ mod tests {
 
     #[cfg(feature = "official")]
     #[test]
-    fn official_records_configured_closed_dragon_pair_win_as_standard() {
+    fn official_records_configured_closed_sequence_dragon_pair_win_as_standard() {
         let mut state = state_with_players();
         state
             .hands

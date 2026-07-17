@@ -152,6 +152,6 @@ pub(in crate::ai::decision) fn win_rules_for_table(
 ) -> ShenyangMahjongWinRules {
     ShenyangMahjongWinRules {
         win_rule,
-        allow_closed_dragon_pair_win: !table.allow_first_chi,
+        allow_closed_sequence_dragon_pair_win: !table.allow_first_chi,
     }
 }

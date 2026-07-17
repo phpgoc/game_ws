@@ -42,7 +42,7 @@ fn claim_hu_accepts_seven_pairs() {
 }
 
 #[test]
-fn claim_hu_allows_closed_dragon_pair_win_when_first_chi_disabled() {
+fn claim_hu_allows_closed_sequence_dragon_pair_win_when_first_chi_disabled() {
     let mut table = table_with_discards(1, Vec::new());
     table.claim_window = Some(AiClaimView {
         tile: 35,

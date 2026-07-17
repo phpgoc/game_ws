@@ -13,7 +13,7 @@ pub const XI_GANG_WINDS: [i32; 4] = [31, 32, 33, 34];
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ShenyangMahjongWinRules {
     pub win_rule: i32,
-    pub allow_closed_dragon_pair_win: bool,
+    pub allow_closed_sequence_dragon_pair_win: bool,
 }
 
 fn all_tiles_with_melds(tiles: &[i32], melds: &[WsShenyangMahjongMeld]) -> Vec<i32> {
@@ -764,7 +764,7 @@ pub fn satisfies_shenyang_basic_win_for_rules(
     if is_piao_hu_win(tiles, melds) {
         return true;
     }
-    if rules.allow_closed_dragon_pair_win
+    if rules.allow_closed_sequence_dragon_pair_win
         && melds.iter().all(is_xi_gang_meld)
         && can_form_sequences_with_dragon_pair(tiles)
     {
@@ -956,14 +956,18 @@ impl ShenyangMahjongWinRules {
     pub fn from_configs(configs: &HashMap<String, i32>) -> Self {
         Self {
             win_rule: win_rule_from_configs(configs),
-            allow_closed_dragon_pair_win: configs.get("allow_first_chi").copied().unwrap_or(1) == 0,
+            allow_closed_sequence_dragon_pair_win: configs
+                .get("allow_first_chi")
+                .copied()
+                .unwrap_or(1)
+                == 0,
         }
     }
 
     pub const fn new(win_rule: i32) -> Self {
         Self {
             win_rule,
-            allow_closed_dragon_pair_win: false,
+            allow_closed_sequence_dragon_pair_win: false,
         }
     }
 }
@@ -998,7 +1002,7 @@ mod tests {
     }
 
     #[test]
-    fn closed_dragon_pair_exception_ignores_only_xi_gang_melds() {
+    fn closed_sequence_dragon_pair_exception_ignores_only_xi_gang_melds() {
         let tiles = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 35, 35];
         let xi_gang = vec![meld(
             ShenyangMahjongMeldKind::XI_GANG,
@@ -1012,7 +1016,7 @@ mod tests {
         )];
         let rules = ShenyangMahjongWinRules {
             win_rule: WIN_RULE_SHENYANG_BASIC,
-            allow_closed_dragon_pair_win: true,
+            allow_closed_sequence_dragon_pair_win: true,
         };
 
         assert!(satisfies_shenyang_basic_win_for_rules(
@@ -1105,15 +1109,15 @@ mod tests {
     }
 
     #[test]
-    fn disabled_first_chi_enables_closed_dragon_pair_win_rule() {
+    fn disabled_first_chi_enables_closed_sequence_dragon_pair_win_rule() {
         let default_rules =
             ShenyangMahjongWinRules::from_configs(&std::collections::HashMap::new());
         let disabled_rules = ShenyangMahjongWinRules::from_configs(
             &std::collections::HashMap::from([("allow_first_chi".to_owned(), 0)]),
         );
 
-        assert!(!default_rules.allow_closed_dragon_pair_win);
-        assert!(disabled_rules.allow_closed_dragon_pair_win);
+        assert!(!default_rules.allow_closed_sequence_dragon_pair_win);
+        assert!(disabled_rules.allow_closed_sequence_dragon_pair_win);
     }
 
     #[test]
@@ -1588,7 +1592,7 @@ mod tests {
         let tiles = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 35, 35];
         let rules = ShenyangMahjongWinRules {
             win_rule: WIN_RULE_SHENYANG_BASIC,
-            allow_closed_dragon_pair_win: true,
+            allow_closed_sequence_dragon_pair_win: true,
         };
 
         assert!(!has_triplet_in_standard_decomposition(&tiles));
@@ -1615,11 +1619,11 @@ mod tests {
     }
 
     #[test]
-    fn shenyang_basic_closed_dragon_pair_exception_rejects_actual_triplet() {
+    fn shenyang_basic_closed_sequence_dragon_pair_exception_rejects_actual_triplet() {
         let tiles = vec![1, 1, 1, 4, 5, 6, 11, 12, 13, 21, 22, 23, 35, 35];
         let rules = ShenyangMahjongWinRules {
             win_rule: WIN_RULE_SHENYANG_BASIC,
-            allow_closed_dragon_pair_win: true,
+            allow_closed_sequence_dragon_pair_win: true,
         };
 
         assert!(has_triplet_in_standard_decomposition(&tiles));
@@ -1627,11 +1631,11 @@ mod tests {
     }
 
     #[test]
-    fn shenyang_basic_closed_dragon_pair_exception_rejects_ordinary_pair() {
+    fn shenyang_basic_closed_sequence_dragon_pair_exception_rejects_ordinary_pair() {
         let tiles = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 31];
         let rules = ShenyangMahjongWinRules {
             win_rule: WIN_RULE_SHENYANG_BASIC,
-            allow_closed_dragon_pair_win: true,
+            allow_closed_sequence_dragon_pair_win: true,
         };
 
         assert!(!satisfies_shenyang_basic_win_for_rules(&tiles, &[], rules));
