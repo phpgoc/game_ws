@@ -848,12 +848,15 @@ impl RoomService {
             .get(&password)
             .map(|e| e.max_players)
             .unwrap_or(2);
-        if self
+        let can_join_new_position = self
             .rooms
             .get(&password)
-            .map(|entry| !entry.state.can_join_players())
-            .unwrap_or(false)
-        {
+            .map(|entry| entry.state.can_join_players())
+            .unwrap_or(false);
+        let has_disconnected_position = self.rooms.get(&password).is_some_and(|entry| {
+            (0..max_players).any(|position| entry.state.is_disconnected(position))
+        });
+        if !can_join_new_position && !has_disconnected_position {
             return self.error_response(
                 session_id,
                 Routes::JOIN as i32,
@@ -867,7 +870,9 @@ impl RoomService {
                 WsResponseCode::NO_PERMISSION,
             );
         }
-        let Some(position) = self.select_position(&password, max_players, session_id) else {
+        let Some(position) =
+            self.select_position(&password, max_players, session_id, can_join_new_position)
+        else {
             return self.error_response(
                 session_id,
                 Routes::JOIN as i32,
@@ -879,6 +884,13 @@ impl RoomService {
         let name_for_event = name.clone();
         {
             let entry = self.rooms.get_mut(&password).unwrap();
+            if entry.state.is_disconnected(position) {
+                // A different name replaces the disconnected room member at
+                // this position. Removing the old roster entry first also
+                // clears its avatar and away state without touching the
+                // game-specific, position-keyed hand state.
+                entry.state.remove_player(position);
+            }
             entry.state.add_player(position, session_id, &name);
             entry.state.set_avatar(position, &avatar_url);
         }
@@ -1621,6 +1633,7 @@ impl RoomService {
         room_key: &str,
         max_players: usize,
         session_id: SessionId,
+        can_join_new_position: bool,
     ) -> Option<usize> {
         let Some(entry) = self.rooms.get(room_key) else {
             return Some(0);
@@ -1633,8 +1646,21 @@ impl RoomService {
         {
             return Some(pos);
         }
+        // Disconnected humans never consume room capacity. Prefer replacing
+        // one before assigning a genuinely new seat. A running game may lock
+        // new seats and reserve its hand positions, but an explicit
+        // disconnected roster entry is still replaceable.
         (0..max_players)
-            .find(|pos| !players.contains_key(pos) && !entry.state.position_reserved_for_join(*pos))
+            .find(|position| entry.state.is_disconnected(*position))
+            .or_else(|| {
+                if !can_join_new_position {
+                    return None;
+                }
+                (0..max_players).find(|position| {
+                    !players.contains_key(position)
+                        && !entry.state.position_reserved_for_join(*position)
+                })
+            })
     }
 
     fn session_active_in_room(&self, session_id: SessionId, room_key: &str) -> bool {
@@ -2229,6 +2255,8 @@ mod tests {
             settings,
         );
 
+        let common = service.room_common_state("p1").expect("common state");
+        common.lock().unwrap().mark_away(0);
         let disconnect = service.disconnect(1);
         let inactive_event = disconnect.messages.iter().any(|item| match &item.payload {
             OutboundPayload::Event(event) if event.code == WsCode::JOIN as i32 => {
@@ -2254,6 +2282,11 @@ mod tests {
             .expect("join common");
 
         assert_eq!(service.session_position(3), Some(0));
+        {
+            let common = common.lock().unwrap();
+            assert!(!common.is_disconnected(0));
+            assert!(!common.is_away(0));
+        }
         assert!(
             service
                 .room_members("p1")
@@ -2277,6 +2310,79 @@ mod tests {
             _ => false,
         });
         assert!(joined);
+    }
+
+    #[test]
+    fn different_name_replaces_disconnected_position_when_new_seats_are_locked() {
+        let mut service = RoomService::default();
+        let _ = join_room(&mut service, 1, "owner", "locked-room", GameId::LANDLORD);
+        let _ = common_request(
+            &mut service,
+            2,
+            GameId::LANDLORD,
+            Routes::JOIN,
+            serde_json::json!({
+                "name": "old-player",
+                "password": "locked-room",
+                "game_id": GameId::LANDLORD as i32,
+                "avatar_url": "old-avatar"
+            }),
+        );
+        let common = service
+            .room_common_state("locked-room")
+            .expect("common state");
+        common.lock().unwrap().mark_away(1);
+
+        let _ = service.disconnect(2);
+        service.set_room_game_state(
+            "locked-room",
+            Box::new(NoAcceptState {
+                common: Arc::clone(&common),
+            }),
+        );
+
+        let replacement = join_room(
+            &mut service,
+            3,
+            "replacement",
+            "locked-room",
+            GameId::LANDLORD,
+        );
+
+        assert!(has_response(
+            &replacement,
+            Routes::JOIN,
+            WsResponseCode::JOINED
+        ));
+        assert_eq!(service.session_position(3), Some(1));
+        let mut members = service.room_members("locked-room");
+        members.sort_by_key(|(_, _, position, _)| *position);
+        assert_eq!(
+            members,
+            vec![
+                (1, "owner".to_string(), 0, String::new()),
+                (3, "replacement".to_string(), 1, String::new()),
+            ]
+        );
+        {
+            let common = common.lock().unwrap();
+            assert!(!common.is_disconnected(1));
+            assert!(!common.is_away(1));
+            assert_eq!(common.player_avatar(1), "");
+        }
+
+        let old_player = join_room(
+            &mut service,
+            4,
+            "old-player",
+            "locked-room",
+            GameId::LANDLORD,
+        );
+        assert!(has_response(
+            &old_player,
+            Routes::JOIN,
+            WsResponseCode::NO_PERMISSION
+        ));
     }
 
     #[test]

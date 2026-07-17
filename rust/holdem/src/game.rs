@@ -921,6 +921,17 @@ impl GameHandler for HoldemGameHandler {
         let Some(state) = self.current_state(room_service, &room_key) else {
             return;
         };
+        let Some(position) = room_service.session_position(session_id) else {
+            return;
+        };
+        let name = room_service.session_name(session_id);
+        if state.lock().unwrap().replace_hand_player(position, &name) {
+            // A replacement controls the inherited hand from this point, but
+            // should not inherit the disconnected player's auto strategy.
+            if let Some(strategies) = self.auto_strategies.lock().unwrap().get_mut(&room_key) {
+                strategies.remove(&position);
+            }
+        }
         self.push_table_snapshot(room_service, session_id, &state, dispatch);
     }
 
@@ -1335,6 +1346,68 @@ mod tests {
         assert!(snapshot.is_participating);
         assert_eq!(snapshot.self_position, 1);
         assert_eq!(snapshot.my_cards, expected_cards);
+    }
+
+    #[test]
+    fn disconnected_current_hand_player_can_be_replaced_by_a_different_name() {
+        let mut handler = HoldemGameHandler::default();
+        let mut room = RoomService::default();
+        for session_id in 1..=2 {
+            join_with_hook(
+                &mut handler,
+                &mut room,
+                session_id,
+                &format!("u{session_id}"),
+            );
+        }
+        handler.handle_start(&mut room, 1);
+        let state = handler.state("room").expect("active hand");
+        let expected_cards = state
+            .lock()
+            .unwrap()
+            .hands
+            .get(&1)
+            .cloned()
+            .expect("player cards");
+        handler
+            .auto_strategies
+            .lock()
+            .unwrap()
+            .entry("room".to_string())
+            .or_default()
+            .insert(1, TexasHoldEmAutoStrategy::CHECK_CALL);
+
+        room.disconnect(2);
+        let replaced = join_with_hook(&mut handler, &mut room, 3, "replacement");
+
+        let response = join_response(&replaced, 3);
+        assert_eq!(response.self_position, 1);
+        let snapshot = table_snapshot(&replaced, 3);
+        assert!(snapshot.is_participating);
+        assert_eq!(snapshot.self_position, 1);
+        assert_eq!(snapshot.my_cards, expected_cards);
+        assert_eq!(
+            state
+                .lock()
+                .unwrap()
+                .hand_players
+                .get(&1)
+                .map(String::as_str),
+            Some("replacement")
+        );
+        assert!(
+            handler
+                .auto_strategies
+                .lock()
+                .unwrap()
+                .get("room")
+                .is_none_or(|strategies| !strategies.contains_key(&1))
+        );
+        assert!(
+            room.room_members("room")
+                .iter()
+                .all(|(_, name, _, _)| name != "u2")
+        );
     }
 
     #[test]

@@ -53,10 +53,10 @@ pub trait GameState: Send {
         self.can_accept_players()
     }
 
-    /// Positions that are reserved by the current game and must not be
-    /// assigned to a newly joining player.  A game can keep a disconnected or
-    /// quit player's seat reserved until the current hand is over so a new
-    /// player cannot inherit that hand's private state.
+    /// Vacant positions that are reserved by the current game and must not be
+    /// assigned to a newly joining player. A game can keep an explicitly quit
+    /// player's seat reserved until the current hand is over. A roster entry
+    /// marked disconnected remains replaceable by design.
     fn position_reserved_for_join(&self, _position: usize) -> bool {
         false
     }
@@ -229,6 +229,7 @@ impl CommonGameState {
     pub fn add_player(&mut self, position: usize, session_id: SessionId, name: &str) {
         self.players
             .insert(position, (session_id, name.to_string()));
+        self.away_positions.remove(&position);
         self.disconnected_positions.remove(&position);
         self.ai_positions.remove(&position);
     }

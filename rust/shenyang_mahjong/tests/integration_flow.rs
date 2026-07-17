@@ -454,7 +454,27 @@ async fn shenyang_mahjong_owner_can_start_with_ai_and_receive_ai_play() {
     );
     assert_eq!(snapshot["data"]["current_position"], json!(0));
     assert_eq!(snapshot["data"]["claim_window"], Value::Null);
-    let last_drawn_tile = snapshot["data"]["last_drawn_tile"]
+
+    close_client(&mut owner).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let mut owner = connect_client(&url).await;
+    let replacement_response = join(&mut owner, "replacement", room).await;
+    assert_eq!(replacement_response["data"]["self_position"], json!(0));
+    assert!(
+        replacement_response["data"]["existing_members"]
+            .as_array()
+            .expect("replacement existing members")
+            .iter()
+            .all(|member| member["name"] != json!("owner"))
+    );
+    let replacement_snapshot = recv_until(&mut owner, "replacement table snapshot", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+    })
+    .await;
+    assert_eq!(my_tiles(&replacement_snapshot), owner_tiles);
+    assert_eq!(replacement_snapshot["data"]["current_position"], json!(0));
+
+    let last_drawn_tile = replacement_snapshot["data"]["last_drawn_tile"]
         .as_i64()
         .expect("last drawn tile") as i32;
     assert!(owner_tiles.contains(&last_drawn_tile));

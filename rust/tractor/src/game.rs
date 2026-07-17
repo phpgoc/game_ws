@@ -11,8 +11,8 @@ use share_type_public::{
 };
 use tokio::sync::Mutex;
 use ws_common::{
-    ClientRequest, Delivery, Dispatch, GameHandler, OutboundPayload, RoomService, SessionId,
-    SessionSenders,
+    ClientRequest, Delivery, Dispatch, GameHandler, OutboundPayload, RequestResponse, RoomService,
+    SessionId, SessionSenders,
 };
 
 use crate::{
@@ -32,6 +32,18 @@ pub struct TractorGameHandler {
     room_service: Option<Arc<Mutex<RoomService>>>,
     senders: Option<SessionSenders>,
     states: StateRegistry,
+}
+
+fn join_succeeded(dispatch: &Dispatch, session_id: SessionId) -> bool {
+    dispatch.messages.iter().any(|message| {
+        message.recipient == session_id
+            && matches!(
+                &message.payload,
+                OutboundPayload::Response(RequestResponse::WithData(response))
+                    if response.route == Routes::JOIN as i32
+                        && response.code as i32 == WsResponseCode::JOINED as i32
+            )
+    })
 }
 
 struct TractorGameStateHandle {
@@ -538,12 +550,67 @@ impl GameHandler for TractorGameHandler {
     fn after_common_request(
         &mut self,
         room_service: &mut RoomService,
-        _session_id: SessionId,
+        session_id: SessionId,
         request: &ClientRequest,
-        _dispatch: &mut Dispatch,
+        dispatch: &mut Dispatch,
     ) {
         if matches!(request.route, r if r == Routes::QUIT as i32 || r == Routes::DISBAND as i32) {
             self.prune_stopped_states(room_service);
+        }
+        if request.route != Routes::JOIN as i32 || !join_succeeded(dispatch, session_id) {
+            return;
+        }
+        let Some(room_key) = room_service.room_key_of(session_id) else {
+            return;
+        };
+        let Some(position) = room_service.session_position(session_id) else {
+            return;
+        };
+        let Some(state) = self.current_state(room_service, &room_key) else {
+            return;
+        };
+        let (hand, snapshot, settlement) = {
+            let state = state.lock().unwrap();
+            (
+                state.hands.get(&position).cloned().unwrap_or_default(),
+                state.snapshot(),
+                (state.phase == share_type_public::TractorPhase::Settlement).then(|| {
+                    let score = state.settlement_score();
+                    WsTractorSettlementEvent {
+                        winner_positions: state.winner_positions(),
+                        score,
+                        blood_units: state.rules.blood_units(score),
+                        target_rank: state.rules.target_rank,
+                        match_finished: state.match_finished(),
+                        next_target_rank: state.next_target_rank(),
+                    }
+                }),
+            )
+        };
+        Self::push_private_event(
+            dispatch,
+            session_id,
+            TractorWsCode::HAND_UPDATED,
+            WsTractorHandEvent {
+                position: position as i32,
+                cards: hand,
+            },
+        );
+        dispatch.messages.push(Delivery {
+            recipient: session_id,
+            payload: OutboundPayload::Event(CommonEvent {
+                code: WsCode::TABLE_SNAPSHOT as i32,
+                data: serde_json::to_value(snapshot).unwrap_or(Value::Null),
+            }),
+        });
+        if let Some(settlement) = settlement {
+            dispatch.messages.push(Delivery {
+                recipient: session_id,
+                payload: OutboundPayload::Event(CommonEvent {
+                    code: WsCode::GAME_OVER as i32,
+                    data: serde_json::to_value(settlement).unwrap_or(Value::Null),
+                }),
+            });
         }
     }
 
@@ -604,7 +671,7 @@ impl ws_common::GameState for TractorGameStateHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use share_type_public::WsJoinRequest;
+    use share_type_public::{WsJoinRequest, games::tractor::WsTractorTableSnapshotEvent};
 
     fn join_request(name: &str) -> ClientRequest {
         ClientRequest {
@@ -618,6 +685,122 @@ mod tests {
             })
             .unwrap(),
         }
+    }
+
+    fn join_with_hook(
+        handler: &mut TractorGameHandler,
+        room: &mut RoomService,
+        session_id: SessionId,
+        name: &str,
+    ) -> Dispatch {
+        let request = join_request(name);
+        let mut dispatch = room
+            .handle_common_request(session_id, &request, handler.game_id(), || {
+                handler.build_room_settings()
+            })
+            .expect("common JOIN dispatch");
+        handler.after_common_request(room, session_id, &request, &mut dispatch);
+        dispatch
+    }
+
+    fn private_hand(dispatch: &Dispatch, session_id: SessionId) -> WsTractorHandEvent {
+        dispatch
+            .messages
+            .iter()
+            .find_map(|message| {
+                if message.recipient != session_id {
+                    return None;
+                }
+                let OutboundPayload::Event(event) = &message.payload else {
+                    return None;
+                };
+                (event.code == TractorWsCode::HAND_UPDATED as i32)
+                    .then(|| serde_json::from_value(event.data.clone()).unwrap())
+            })
+            .expect("private hand event")
+    }
+
+    fn table_snapshot(dispatch: &Dispatch, session_id: SessionId) -> WsTractorTableSnapshotEvent {
+        dispatch
+            .messages
+            .iter()
+            .find_map(|message| {
+                if message.recipient != session_id {
+                    return None;
+                }
+                let OutboundPayload::Event(event) = &message.payload else {
+                    return None;
+                };
+                (event.code == WsCode::TABLE_SNAPSHOT as i32)
+                    .then(|| serde_json::from_value(event.data.clone()).unwrap())
+            })
+            .expect("table snapshot event")
+    }
+
+    #[test]
+    fn disconnected_player_can_rejoin_or_be_replaced_during_play() {
+        let mut handler = TractorGameHandler::default();
+        let mut room = RoomService::default();
+        for session_id in 1..=4 {
+            join_with_hook(
+                &mut handler,
+                &mut room,
+                session_id,
+                &format!("u{session_id}"),
+            );
+        }
+        handler.handle_start(&mut room, 1);
+        let state = handler.state("room").expect("tractor state");
+        let expected_hand = vec![4, 5, 6];
+        {
+            let mut state = state.lock().unwrap();
+            state.phase = share_type_public::TractorPhase::Play;
+            state.current_position = 1;
+            state.hands.insert(0, vec![7, 8, 9]);
+            state.hands.insert(1, expected_hand.clone());
+            state.hands.insert(2, vec![10, 11, 12]);
+            state.hands.insert(3, vec![13, 14, 15]);
+            state.base.lock().unwrap().mark_away(1);
+        }
+
+        room.disconnect(2);
+        let rejoined = join_with_hook(&mut handler, &mut room, 5, "u2");
+
+        assert_eq!(room.session_position(5), Some(1));
+        assert_eq!(private_hand(&rejoined, 5).cards, expected_hand);
+        assert_eq!(
+            table_snapshot(&rejoined, 5).phase,
+            share_type_public::TractorPhase::Play
+        );
+        {
+            let base = Arc::clone(&state.lock().unwrap().base);
+            let common = base.lock().unwrap();
+            assert!(!common.is_disconnected(1));
+            assert!(!common.is_away(1));
+        }
+
+        room.disconnect(5);
+        let replaced = join_with_hook(&mut handler, &mut room, 6, "replacement");
+
+        assert_eq!(room.session_position(6), Some(1));
+        assert_eq!(private_hand(&replaced, 6).cards, vec![4, 5, 6]);
+        assert_eq!(state.lock().unwrap().player_name(1), "replacement");
+        assert!(
+            room.room_members("room")
+                .iter()
+                .all(|(_, name, _, _)| name != "u2")
+        );
+
+        state.lock().unwrap().phase = share_type_public::TractorPhase::Settlement;
+        room.disconnect(6);
+        let settlement_rejoin = join_with_hook(&mut handler, &mut room, 7, "replacement");
+        assert!(settlement_rejoin.messages.iter().any(|message| {
+            message.recipient == 7
+                && matches!(
+                    &message.payload,
+                    OutboundPayload::Event(event) if event.code == WsCode::GAME_OVER as i32
+                )
+        }));
     }
 
     #[test]

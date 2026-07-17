@@ -67,6 +67,19 @@ impl HoldemGameState {
             .is_some_and(|hand_name| hand_name == name)
     }
 
+    /// Transfer a disconnected current-hand seat to the room member that
+    /// replaced it. Returns whether the frozen hand identity changed.
+    pub fn replace_hand_player(&mut self, position: usize, name: &str) -> bool {
+        let Some(hand_name) = self.hand_players.get_mut(&position) else {
+            return false;
+        };
+        if hand_name == name {
+            return false;
+        }
+        name.clone_into(hand_name);
+        true
+    }
+
     pub fn bet_of(&self, position: usize) -> i32 {
         self.round_bets.get(&position).copied().unwrap_or_default()
     }
