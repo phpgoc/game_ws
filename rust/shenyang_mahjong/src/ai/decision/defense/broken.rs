@@ -18,11 +18,7 @@ pub(in crate::ai::decision) fn should_open_broken_closed_hand_for_defense(
     position: usize,
     win_rule: i32,
 ) -> bool {
-    let already_open = if win_rule == WIN_RULE_SHENYANG_BASIC {
-        has_door_opening_meld(melds, table)
-    } else {
-        has_open_meld(melds)
-    };
+    let already_open = has_door_opening_meld(melds, table);
     if already_open || !is_mid_broken_hand_defense_round(table) {
         return false;
     }
@@ -38,22 +34,16 @@ pub(in crate::ai::decision) fn should_open_broken_closed_hand_for_defense(
         return false;
     }
 
-    let (missing_rule_requirements, unrecoverable_rule_requirements) =
-        if win_rule == WIN_RULE_SHENYANG_BASIC {
-            let missing_rule_requirements = [
-                !missing_suits(hand, melds).is_empty(),
-                !has_terminal_or_honor_with_extra(hand, melds, None),
-                !has_triplet_or_dragon_pair(hand, melds),
-            ]
-            .into_iter()
-            .filter(|missing| *missing)
-            .count();
-            let unrecoverable_rule_requirements =
-                unrecoverable_basic_rule_requirement_count(hand, melds, table, position);
-            (missing_rule_requirements, unrecoverable_rule_requirements)
-        } else {
-            (0, 0)
-        };
+    let missing_rule_requirements = [
+        !missing_suits(hand, melds).is_empty(),
+        !has_terminal_or_honor_with_extra(hand, melds, None),
+        !has_triplet_or_dragon_pair(hand, melds),
+    ]
+    .into_iter()
+    .filter(|missing| *missing)
+    .count();
+    let unrecoverable_rule_requirements =
+        unrecoverable_basic_rule_requirement_count(hand, melds, table, position);
     let power = hand_power(hand);
     if !is_late_round(table) {
         return unrecoverable_rule_requirements >= 1
@@ -99,23 +89,16 @@ pub(in crate::ai::decision) fn should_use_broken_hand_public_defense_discard(
         return false;
     }
 
-    let missing_rule_requirements = if win_rule == WIN_RULE_SHENYANG_BASIC {
-        [
-            !missing_suits(hand, melds).is_empty(),
-            !has_terminal_or_honor_with_extra(hand, melds, None),
-            !has_triplet_or_dragon_pair(hand, melds),
-        ]
-        .into_iter()
-        .filter(|missing| *missing)
-        .count()
-    } else {
-        0
-    };
-    let unrecoverable_rule_requirements = if win_rule == WIN_RULE_SHENYANG_BASIC {
-        unrecoverable_basic_rule_requirement_count(hand, melds, table, position)
-    } else {
-        0
-    };
+    let missing_rule_requirements = [
+        !missing_suits(hand, melds).is_empty(),
+        !has_terminal_or_honor_with_extra(hand, melds, None),
+        !has_triplet_or_dragon_pair(hand, melds),
+    ]
+    .into_iter()
+    .filter(|missing| *missing)
+    .count();
+    let unrecoverable_rule_requirements =
+        unrecoverable_basic_rule_requirement_count(hand, melds, table, position);
     if table.dealer_position == position && unrecoverable_rule_requirements == 0 {
         return false;
     }

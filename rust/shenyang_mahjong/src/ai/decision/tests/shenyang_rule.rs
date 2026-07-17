@@ -187,6 +187,13 @@ fn broken_closed_defense_opens_mid_severely_broken_hand() {
         0,
         WIN_RULE_SHENYANG_BASIC
     ));
+    assert!(should_open_broken_closed_hand_for_defense(
+        &hand,
+        &[],
+        &table,
+        0,
+        0
+    ));
 }
 
 #[test]

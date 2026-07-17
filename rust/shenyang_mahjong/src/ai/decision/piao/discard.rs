@@ -74,7 +74,7 @@ pub(in crate::ai::decision) fn piao_discard_bias(
             + piao_pair_liveness_discard_bias(hand, table, position, tile, count)
     } else if only_terminal_or_honor || only_suit_tile {
         -40.0
-    } else if win_rule == WIN_RULE_SHENYANG_BASIC && is_dragon(tile) && pair_count(hand) >= 4 {
+    } else if is_dragon(tile) && pair_count(hand) >= 4 {
         16.0
     } else if is_honor(tile) || tile_is_terminal(tile) {
         1.0

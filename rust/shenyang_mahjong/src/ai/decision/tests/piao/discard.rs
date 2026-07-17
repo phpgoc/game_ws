@@ -201,6 +201,7 @@ fn piao_discard_bias_protects_live_dragon_pair() {
 
     let middle_pair = piao_discard_bias(&hand, 11, &[], &table, 0, WIN_RULE_SHENYANG_BASIC);
     let dragon_pair = piao_discard_bias(&hand, 35, &[], &table, 0, WIN_RULE_SHENYANG_BASIC);
+    assert_eq!(piao_discard_bias(&hand, 35, &[], &table, 0, 0), dragon_pair);
 
     assert_eq!(pair_count(&hand), 4);
     assert!(remaining_tile_count(&hand, &table, 0, 35) > 0);
