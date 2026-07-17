@@ -359,11 +359,7 @@ fn half_capped_basic_foundation_does_not_lock_five_pairs() {
     let hand = vec![1, 1, 2, 2, 11, 11, 21, 22, 31, 35, 35, 35, 35];
 
     assert_eq!(pair_count(&hand), 5);
-    assert!(has_basic_normal_route_foundation(
-        &hand,
-        &[],
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(has_basic_normal_route_foundation(&hand, &[]));
     assert_eq!(estimated_visible_bonus_fan(&hand, &[]), 2);
     assert!(capped_basic_route_foundation_visible_fan_exceeds_half_cap(
         &hand,
@@ -411,11 +407,7 @@ fn one_fan_capped_room_does_not_lock_five_pairs_when_basic_route_is_viable() {
     table.max_fan = Some(1);
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 22, 31, 35, 35];
 
-    assert!(has_basic_normal_route_foundation(
-        &hand,
-        &[],
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(has_basic_normal_route_foundation(&hand, &[]));
     assert!(!should_lock_seven_pairs_plan(
         &hand,
         &[],
@@ -482,12 +474,7 @@ fn dealer_locks_five_pairs_when_normal_route_is_missing_a_suit() {
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 31, 32, 33];
 
     assert_eq!(pair_count(&hand), 5);
-    assert!(!has_basic_normal_route_foundation(
-        &hand,
-        &[],
-        WIN_RULE_SHENYANG_BASIC
-    ));
-    assert!(!has_basic_normal_route_foundation(&hand, &[], 0));
+    assert!(!has_basic_normal_route_foundation(&hand, &[]));
     assert!(should_lock_seven_pairs_plan(
         &hand,
         &[],
@@ -799,11 +786,7 @@ fn two_fan_capped_room_does_not_lock_five_pairs_when_basic_bonus_caps() {
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 22, 35, 35, 35];
 
     assert_eq!(pair_count(&hand), 5);
-    assert!(has_basic_normal_route_foundation(
-        &hand,
-        &[],
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(has_basic_normal_route_foundation(&hand, &[]));
     assert_eq!(estimated_visible_bonus_fan(&hand, &[]), 1);
     assert!(!should_lock_seven_pairs_plan(
         &hand,

@@ -129,7 +129,7 @@ pub(in crate::ai::decision) fn should_lock_seven_pairs_plan(
     }
     if (table.dealer_position == position
         || dealer_opponent_has_major_threat(table, position, win_rule))
-        && has_normal_route_foundation(hand, melds, win_rule)
+        && has_normal_route_foundation(hand, melds)
     {
         return false;
     }

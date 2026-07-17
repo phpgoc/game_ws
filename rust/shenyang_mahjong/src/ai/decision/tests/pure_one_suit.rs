@@ -6,11 +6,7 @@ fn capped_basic_foundation_disables_redundant_closed_pure_one_suit_plan() {
     table.max_fan = Some(2);
     let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 11, 21, 35, 35, 35];
 
-    assert!(has_basic_normal_route_foundation(
-        &hand,
-        &[],
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(has_basic_normal_route_foundation(&hand, &[]));
     assert_eq!(estimated_visible_bonus_fan(&hand, &[]), 1);
     assert!(capped_basic_route_foundation_visible_fan_reaches_cap(
         &hand,
@@ -250,11 +246,7 @@ fn half_capped_basic_foundation_disables_closed_pure_one_suit_chase() {
     table.max_fan = Some(4);
     let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 11, 21, 35, 35, 35, 35];
 
-    assert!(has_basic_normal_route_foundation(
-        &hand,
-        &[],
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(has_basic_normal_route_foundation(&hand, &[]));
     assert_eq!(estimated_visible_bonus_fan(&hand, &[]), 2);
     assert!(pure_one_suit_plan_score(&hand, &[]) > 0.0);
     assert_eq!(
