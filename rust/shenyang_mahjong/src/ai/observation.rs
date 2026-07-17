@@ -4,7 +4,7 @@ use share_type_public::games::shenyang_mahjong::WsShenyangMahjongMeld;
 
 use crate::game::public_discards_for_position;
 use crate::game_state::{ShenyangMahjongLoopState, meld_source_is_valid_for_positions};
-use crate::rules::is_valid_meld;
+use crate::rules::{ShenyangMahjongWinContext, is_valid_meld};
 
 #[derive(Debug, Clone)]
 pub struct AiClaimView {
@@ -76,7 +76,7 @@ pub fn build_public_table_with_configs(
         dealer_position: state.dealer_position,
         wall_count: state.wall_count(),
         max_fan: configs.get("max_fan").copied().filter(|fan| *fan > 0),
-        allow_first_chi: configs.get("allow_first_chi").copied().unwrap_or(1) == 1,
+        allow_first_chi: ShenyangMahjongWinContext::from_configs(configs).allows_first_chi(),
         claim_window,
         seats,
     }
@@ -92,6 +92,17 @@ mod tests {
     use ws_common::CommonGameState;
 
     use super::*;
+
+    #[test]
+    fn public_table_reuses_first_chi_win_context() {
+        let state = ShenyangMahjongLoopState::new(Arc::new(Mutex::new(CommonGameState::default())));
+
+        assert!(build_public_table_with_configs(&state, &HashMap::new()).allow_first_chi);
+        for value in [0, 2] {
+            let configs = HashMap::from([("allow_first_chi".to_owned(), value)]);
+            assert!(!build_public_table_with_configs(&state, &configs).allow_first_chi);
+        }
+    }
 
     #[test]
     fn public_table_filters_invalid_discards() {
