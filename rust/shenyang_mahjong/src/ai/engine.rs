@@ -415,6 +415,47 @@ mod tests {
     }
 
     #[test]
+    fn ai_claim_hu_joins_human_winner_without_cutting_off_multi_hu() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_ai_position(2);
+        state.hands.insert(0, Vec::new());
+        state
+            .hands
+            .insert(1, vec![1, 2, 11, 12, 13, 21, 22, 23, 35, 35]);
+        state
+            .hands
+            .insert(2, vec![1, 2, 14, 15, 16, 24, 25, 26, 35, 35]);
+        state.hands.insert(3, Vec::new());
+        state.melds.insert(1, vec![test_peng_meld_from(31, 3)]);
+        state.melds.insert(2, vec![test_peng_meld_from(32, 3)]);
+        state.discards.insert(0, vec![3]);
+        state.wall = vec![34];
+        state.claim_window = Some(ClaimWindowState {
+            tile: 3,
+            from_position: 0,
+            kind: ClaimWindowKind::Discard,
+            eligible_positions: vec![1, 2],
+            responses: HashMap::from([(1, ClaimResponse::Hu)]),
+        });
+        let mut dispatch = Dispatch::default();
+
+        assert!(maybe_resolve_ai_claims(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &default_configs(),
+            &mut dispatch,
+        ));
+
+        let settlement = state.settlement.as_ref().expect("settlement");
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert_eq!(settlement.winner_positions, vec![1, 2]);
+        assert_eq!(settlement.from_position, Some(0));
+        assert_eq!(settlement.win_tile, Some(3));
+        assert_eq!(state.discards.get(&0), Some(&Vec::<i32>::new()));
+    }
+
+    #[test]
     fn ai_turn_actively_declares_available_xi_gang() {
         let mut state = playable_state();
         state.current_position = 1;
