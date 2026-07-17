@@ -307,10 +307,7 @@ mod tests {
             .insert(1, vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 35, 35]);
         state.enter_settlement(vec![1], None, None, true);
         let settlement = state.settlement.as_ref().expect("settlement");
-        let configs = HashMap::from([
-            ("win_rule".to_owned(), crate::rules::WIN_RULE_SHENYANG_BASIC),
-            ("allow_first_chi".to_owned(), 0),
-        ]);
+        let configs = HashMap::from([("allow_first_chi".to_owned(), 0)]);
         let score_changes = crate::game::settlement_score_changes_for_state(
             &state,
             &[0, 1, 2, 3],

@@ -8,7 +8,7 @@ use crate::game::{
     resolve_claim_window,
 };
 use crate::game_state::{ClaimResponse, ClaimWindowKind, ShenyangMahjongLoopState};
-use crate::rules::win_rule_from_configs;
+use crate::rules::WIN_RULE_SHENYANG_BASIC;
 
 use super::decision::{
     AiClaimChoice, choose_claim_from_view, choose_discard_from_view,
@@ -37,7 +37,7 @@ fn choose_self_gang_tile(
         &candidate_tiles,
         &table,
         position,
-        win_rule_from_configs(configs),
+        WIN_RULE_SHENYANG_BASIC,
     )
 }
 
@@ -83,7 +83,7 @@ pub fn maybe_play_ai_turn(
     if hand.is_empty() {
         return false;
     }
-    let win_rule = win_rule_from_configs(configs);
+    let win_rule = WIN_RULE_SHENYANG_BASIC;
     let mut passed_self_draw_tile = None;
     if can_self_draw_hu_with_configs(state, position, configs) {
         let table = build_public_table_with_configs(state, configs);
@@ -194,7 +194,7 @@ pub fn maybe_resolve_ai_claims(
     let Some(claim) = table.claim_window.as_ref() else {
         return false;
     };
-    let win_rule = win_rule_from_configs(configs);
+    let win_rule = WIN_RULE_SHENYANG_BASIC;
     let claim_matches_source = claim_window_matches_source(state, &claim_window);
 
     let mut changed = false;
@@ -269,8 +269,8 @@ mod tests {
     use crate::game::build_settlement_event_with_configs;
     use crate::game_state::ClaimWindowState;
     use crate::rules::{
-        ShenyangMahjongWinRules, WIN_RULE_RELAXED, WIN_RULE_SHENYANG_BASIC,
-        is_complete_win_with_melds, is_complete_win_with_melds_for_rules,
+        ShenyangMahjongWinRules, WIN_RULE_RELAXED, is_complete_win_with_melds,
+        is_complete_win_with_melds_for_rules,
     };
 
     #[test]
@@ -294,7 +294,7 @@ mod tests {
             eligible_positions: vec![0, 2],
             responses: HashMap::new(),
         });
-        let configs = HashMap::from([("win_rule".to_owned(), WIN_RULE_SHENYANG_BASIC)]);
+        let configs = HashMap::new();
         let mut dispatch = Dispatch::default();
 
         assert!(maybe_resolve_ai_claims(
@@ -339,7 +339,7 @@ mod tests {
             &RoomService::default(),
             "room",
             &mut state,
-            &relaxed_configs(),
+            &default_configs(),
             &mut dispatch,
         ));
 
@@ -375,7 +375,7 @@ mod tests {
             &RoomService::default(),
             "room",
             &mut state,
-            &relaxed_configs(),
+            &default_configs(),
             &mut dispatch,
         ));
 
@@ -414,7 +414,7 @@ mod tests {
             &RoomService::default(),
             "room",
             &mut state,
-            &relaxed_configs(),
+            &default_configs(),
             &mut dispatch,
         ));
 
@@ -766,13 +766,13 @@ mod tests {
         assert!(!can_self_draw_hu_with_configs(
             &state,
             0,
-            &relaxed_configs()
+            &default_configs()
         ));
         assert!(maybe_play_ai_turn(
             &RoomService::default(),
             "room",
             &mut state,
-            &relaxed_configs(),
+            &default_configs(),
             &mut dispatch,
         ));
 
@@ -903,11 +903,8 @@ mod tests {
             }],
         );
         state.last_drawn_tile = Some(35);
-        let default_configs = HashMap::from([("win_rule".to_owned(), WIN_RULE_SHENYANG_BASIC)]);
-        let configs = HashMap::from([
-            ("win_rule".to_owned(), WIN_RULE_SHENYANG_BASIC),
-            ("allow_first_chi".to_owned(), 0),
-        ]);
+        let default_configs = HashMap::new();
+        let configs = HashMap::from([("allow_first_chi".to_owned(), 0)]);
         let mut dispatch = Dispatch::default();
 
         assert!(!can_self_draw_hu_with_configs(&state, 0, &default_configs));
@@ -1105,10 +1102,7 @@ mod tests {
             eligible_positions: vec![0],
             responses: HashMap::new(),
         });
-        let configs = HashMap::from([
-            ("win_rule".to_owned(), WIN_RULE_SHENYANG_BASIC),
-            ("max_fan".to_owned(), 2),
-        ]);
+        let configs = HashMap::from([("max_fan".to_owned(), 2)]);
         let table = build_public_table_with_configs(&state, &configs);
         let claim = table.claim_window.as_ref().expect("claim window");
         let mut dispatch = Dispatch::default();
@@ -1160,7 +1154,7 @@ mod tests {
             &RoomService::default(),
             "room",
             &mut state,
-            &relaxed_configs(),
+            &default_configs(),
             &mut dispatch,
         ));
 
@@ -1184,7 +1178,7 @@ mod tests {
             &RoomService::default(),
             "room",
             &mut state,
-            &relaxed_configs(),
+            &default_configs(),
             &mut dispatch,
         ));
 
@@ -1283,7 +1277,7 @@ mod tests {
             &RoomService::default(),
             "room",
             &mut state,
-            &relaxed_configs(),
+            &default_configs(),
             &mut dispatch,
         ));
 
@@ -1314,7 +1308,7 @@ mod tests {
             &RoomService::default(),
             "room",
             &mut state,
-            &relaxed_configs(),
+            &default_configs(),
             &mut dispatch,
         ));
 
@@ -1413,10 +1407,10 @@ mod tests {
     }
 
     #[test]
-    fn four_ai_positions_settle_relaxed_seeded_round() {
-        let configs = relaxed_configs();
+    fn four_ai_positions_settle_standard_seeded_round() {
+        let configs = default_configs();
         let state = run_seeded_ai_round_with_configs(2026070406, 260, &configs);
-        let settlement = state.settlement.as_ref().expect("AI relaxed settlement");
+        let settlement = state.settlement.as_ref().expect("AI standard settlement");
         let total_discards = state.discards.values().map(Vec::len).sum::<usize>();
 
         assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
@@ -1424,7 +1418,7 @@ mod tests {
             settlement.is_self_draw
                 || settlement.from_position.is_some()
                 || settlement.winner_positions.is_empty(),
-            "relaxed seeded AI round should settle as a self draw, discard win, or legal draw"
+            "standard seeded AI round should settle as a self draw, discard win, or legal draw"
         );
         assert!(total_discards > 0);
         assert_seeded_settlement_winners_are_legal(&state, &configs, 2026070406);
@@ -1433,10 +1427,7 @@ mod tests {
 
     #[test]
     fn four_ai_positions_settle_first_chi_disabled_seeded_round() {
-        let configs = HashMap::from([
-            ("win_rule".to_owned(), WIN_RULE_SHENYANG_BASIC),
-            ("allow_first_chi".to_owned(), 0),
-        ]);
+        let configs = HashMap::from([("allow_first_chi".to_owned(), 0)]);
         let state = run_seeded_ai_round_with_configs(2026070407, 260, &configs);
         let settlement = state
             .settlement
@@ -1485,8 +1476,8 @@ mod tests {
         state
     }
 
-    fn relaxed_configs() -> HashMap<String, i32> {
-        HashMap::from([("win_rule".to_owned(), WIN_RULE_RELAXED)])
+    fn default_configs() -> HashMap<String, i32> {
+        HashMap::new()
     }
 
     #[test]
@@ -1511,7 +1502,7 @@ mod tests {
             eligible_positions: vec![0, 2],
             responses: HashMap::new(),
         });
-        let configs = HashMap::from([("win_rule".to_owned(), WIN_RULE_SHENYANG_BASIC)]);
+        let configs = HashMap::new();
         let table = build_public_table_with_configs(&state, &configs);
         let claim = table.claim_window.as_ref().expect("claim window");
         let mut dispatch = Dispatch::default();
@@ -1565,7 +1556,7 @@ mod tests {
             eligible_positions: vec![0, 2],
             responses: HashMap::new(),
         });
-        let configs = HashMap::from([("win_rule".to_owned(), WIN_RULE_SHENYANG_BASIC)]);
+        let configs = HashMap::new();
         let table = build_public_table_with_configs(&state, &configs);
         let claim = table.claim_window.as_ref().expect("claim window");
         let mut dispatch = Dispatch::default();

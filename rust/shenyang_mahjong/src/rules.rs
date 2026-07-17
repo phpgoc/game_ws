@@ -933,10 +933,6 @@ fn triplet_meld_primary_tile(meld: &WsShenyangMahjongMeld) -> Option<i32> {
     is_triplet_meld(meld).then(|| meld.tiles[0])
 }
 
-pub fn win_rule_from_configs(_configs: &HashMap<String, i32>) -> i32 {
-    WIN_RULE_SHENYANG_BASIC
-}
-
 pub fn xi_gang_options(hand: &[i32]) -> Vec<Vec<i32>> {
     [XI_GANG_WINDS.as_slice(), XI_GANG_DRAGONS.as_slice()]
         .into_iter()
@@ -948,7 +944,7 @@ pub fn xi_gang_options(hand: &[i32]) -> Vec<Vec<i32>> {
 impl ShenyangMahjongWinRules {
     pub fn from_configs(configs: &HashMap<String, i32>) -> Self {
         Self {
-            win_rule: win_rule_from_configs(configs),
+            win_rule: WIN_RULE_SHENYANG_BASIC,
             allow_closed_sequence_dragon_pair_win: configs
                 .get("allow_first_chi")
                 .copied()
@@ -980,7 +976,7 @@ mod tests {
         is_single_wait_shape_with_rule, is_standard_win, is_unique_complete_wait, is_win,
         satisfies_shenyang_basic_win, satisfies_shenyang_basic_win_for_rules,
         shenyang_score_visible_win_fan, shenyang_score_wait_fan, shenyang_win_pattern,
-        shenyang_win_pattern_base_fan, win_rule_from_configs,
+        shenyang_win_pattern_base_fan,
     };
 
     #[test]
@@ -1164,18 +1160,9 @@ mod tests {
     }
 
     #[test]
-    fn missing_config_uses_shenyang_basic_win_rule() {
-        assert_eq!(
-            win_rule_from_configs(&std::collections::HashMap::new()),
-            WIN_RULE_SHENYANG_BASIC
-        );
-    }
-
-    #[test]
-    fn legacy_relaxed_config_still_uses_shenyang_basic_win_rule() {
+    fn legacy_win_rule_config_is_ignored() {
         let configs = std::collections::HashMap::from([("win_rule".to_owned(), WIN_RULE_RELAXED)]);
 
-        assert_eq!(win_rule_from_configs(&configs), WIN_RULE_SHENYANG_BASIC);
         assert_eq!(
             ShenyangMahjongWinRules::from_configs(&configs).win_rule,
             WIN_RULE_SHENYANG_BASIC

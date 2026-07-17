@@ -31,7 +31,7 @@ fn added_gang_opens_rob_gang_claim_window_before_replacement_draw() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
         0,
         3,
@@ -185,11 +185,8 @@ fn claim_options_allow_closed_sequence_dragon_pair_win_when_first_chi_disabled()
     state
         .hands
         .insert(1, vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 35]);
-    let default_configs = HashMap::from([("win_rule".to_owned(), 1)]);
-    let disabled_configs = HashMap::from([
-        ("win_rule".to_owned(), 1),
-        ("allow_first_chi".to_owned(), 0),
-    ]);
+    let default_configs = HashMap::new();
+    let disabled_configs = HashMap::from([("allow_first_chi".to_owned(), 0)]);
 
     let default_options = build_claim_options(&state, 35, 0, &default_configs);
     let disabled_options = build_claim_options(&state, 35, 0, &disabled_configs);
@@ -208,7 +205,7 @@ fn claim_options_allow_closed_pure_one_suit_for_basic_rule() {
     state
         .hands
         .insert(1, vec![1, 2, 3, 2, 3, 4, 4, 5, 6, 7, 7, 7, 9]);
-    let configs = HashMap::from([("win_rule".to_owned(), 1)]);
+    let configs = HashMap::new();
 
     let options = build_claim_options(&state, 9, 0, &configs);
 
@@ -255,7 +252,7 @@ fn claim_options_allow_open_pure_one_suit_for_basic_rule() {
             Some(0),
         )],
     );
-    let configs = HashMap::from([("win_rule".to_owned(), 1)]);
+    let configs = HashMap::new();
 
     let options = build_claim_options(&state, 8, 0, &configs);
     let player = options
@@ -288,10 +285,7 @@ fn claim_options_block_only_first_chi_when_configured() {
     state
         .hands
         .insert(1, vec![1, 2, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35]);
-    let configs = HashMap::from([
-        ("win_rule".to_owned(), 1),
-        ("allow_first_chi".to_owned(), 0),
-    ]);
+    let configs = HashMap::from([("allow_first_chi".to_owned(), 0)]);
 
     let options = build_claim_options(&state, 3, 0, &configs);
 
@@ -391,7 +385,7 @@ fn claim_options_count_existing_gang_as_three_virtual_tiles() {
         )],
     );
 
-    let options = build_claim_options(&state, 3, 0, &relaxed_configs());
+    let options = build_claim_options(&state, 3, 0, &default_configs());
     let option = options
         .iter()
         .find(|option| option.position == 1)
@@ -414,7 +408,7 @@ fn claim_options_do_not_count_concealed_gang_as_open_for_basic_rule() {
             None,
         )],
     );
-    let configs = HashMap::from([("win_rule".to_owned(), 1)]);
+    let configs = HashMap::new();
 
     let options = build_claim_options(&state, 35, 0, &configs);
 
@@ -492,7 +486,7 @@ fn claim_options_ignore_malformed_melds_for_known_tile_count() {
         )],
     );
 
-    let options = build_claim_options(&state, 3, 0, &relaxed_configs());
+    let options = build_claim_options(&state, 3, 0, &default_configs());
     let player = options
         .iter()
         .find(|option| option.position == 1)
@@ -518,7 +512,7 @@ fn claim_options_ignore_melds_with_invalid_sources_for_known_tile_count() {
         )],
     );
 
-    let options = build_claim_options(&state, 3, 0, &relaxed_configs());
+    let options = build_claim_options(&state, 3, 0, &default_configs());
     let player = options
         .iter()
         .find(|option| option.position == 1)
@@ -534,7 +528,7 @@ fn claim_options_list_chi_for_shenyang_basic_rule() {
     state
         .hands
         .insert(1, vec![1, 2, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35]);
-    let configs = HashMap::from([("win_rule".to_owned(), 1)]);
+    let configs = HashMap::new();
 
     let options = build_claim_options(&state, 3, 0, &configs);
     let next_player = options
@@ -561,7 +555,7 @@ fn claim_options_list_concrete_actions() {
         .hands
         .insert(3, vec![1, 5, 7, 9, 11, 13, 15, 17, 21, 23, 25, 31, 35]);
 
-    let options = build_claim_options(&state, 3, 0, &relaxed_configs());
+    let options = build_claim_options(&state, 3, 0, &default_configs());
     let next_player = options
         .iter()
         .find(|option| option.position == 1)
@@ -581,7 +575,7 @@ fn claim_options_reject_impossible_fifth_tile_chi() {
         .hands
         .insert(1, vec![1, 2, 3, 3, 3, 3, 7, 8, 9, 11, 12, 13, 21]);
 
-    let options = build_claim_options(&state, 3, 0, &relaxed_configs());
+    let options = build_claim_options(&state, 3, 0, &default_configs());
 
     assert!(!options.iter().any(|option| option.position == 1));
 }
@@ -593,7 +587,7 @@ fn claim_options_reject_impossible_fifth_tile_claims() {
         .hands
         .insert(1, vec![3, 3, 3, 3, 7, 8, 9, 11, 12, 13, 21, 22, 31]);
 
-    let options = build_claim_options(&state, 3, 0, &relaxed_configs());
+    let options = build_claim_options(&state, 3, 0, &default_configs());
 
     assert!(!options.iter().any(|option| option.position == 1));
 }
@@ -609,7 +603,7 @@ fn claim_options_reject_impossible_table_known_tile_claims() {
         .hands
         .insert(2, vec![3, 3, 7, 8, 9, 14, 15, 16, 24, 25, 26, 32, 36]);
 
-    let options = build_claim_options(&state, 3, 0, &relaxed_configs());
+    let options = build_claim_options(&state, 3, 0, &default_configs());
 
     assert!(known_tile_count(&state, 3) > 4);
     assert!(options.is_empty());
@@ -625,7 +619,7 @@ fn claim_options_reject_melds_from_impossible_known_tile_state() {
     state.discards.insert(2, vec![9]);
     state.wall = vec![37];
 
-    let options = build_claim_options(&state, 3, 0, &relaxed_configs());
+    let options = build_claim_options(&state, 3, 0, &default_configs());
 
     assert_eq!(known_tile_count(&state, 9), 5);
     assert!(position_has_impossible_known_tile_count(&state, 1));
@@ -640,7 +634,7 @@ fn claim_options_reject_player_with_invalid_hand_tile() {
         .hands
         .insert(1, vec![3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 99]);
 
-    let options = build_claim_options(&state, 3, 0, &relaxed_configs());
+    let options = build_claim_options(&state, 3, 0, &default_configs());
 
     assert!(!options.iter().any(|option| option.position == 1));
 }
@@ -661,7 +655,7 @@ fn claim_options_reject_player_with_malformed_owned_meld() {
         )],
     );
 
-    let options = build_claim_options(&state, 3, 0, &relaxed_configs());
+    let options = build_claim_options(&state, 3, 0, &default_configs());
 
     assert!(!options.iter().any(|option| option.position == 1));
 }
@@ -675,7 +669,7 @@ fn claim_options_reject_public_fifth_copy_used_by_winner() {
     state.discards.insert(0, vec![6]);
     state.discards.insert(3, vec![1]);
 
-    let invalid_options = build_claim_options(&state, 6, 0, &relaxed_configs());
+    let invalid_options = build_claim_options(&state, 6, 0, &default_configs());
 
     assert_eq!(known_tile_count(&state, 1), 5);
     assert!(position_has_impossible_known_tile_count(&state, 2));
@@ -686,7 +680,7 @@ fn claim_options_reject_public_fifth_copy_used_by_winner() {
     );
 
     state.discards.insert(3, vec![9, 9, 9, 9, 9]);
-    let unrelated_options = build_claim_options(&state, 6, 0, &relaxed_configs());
+    let unrelated_options = build_claim_options(&state, 6, 0, &default_configs());
 
     assert_eq!(known_tile_count(&state, 9), 5);
     assert!(!position_has_impossible_known_tile_count(&state, 2));
@@ -704,7 +698,7 @@ fn claim_options_require_thirteen_virtual_tiles_for_melds() {
     state.discards.insert(0, vec![3]);
     state.hands.insert(1, vec![1, 2, 3, 3, 3]);
 
-    let options = build_claim_options(&state, 3, 0, &relaxed_configs());
+    let options = build_claim_options(&state, 3, 0, &default_configs());
 
     assert!(!options.iter().any(|option| option.position == 1));
 }
@@ -715,7 +709,7 @@ fn claim_options_respect_shenyang_basic_win_rule() {
     state
         .hands
         .insert(1, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35]);
-    let configs = HashMap::from([("win_rule".to_owned(), 1)]);
+    let configs = HashMap::new();
 
     let options = build_claim_options(&state, 35, 0, &configs);
 
@@ -937,7 +931,7 @@ fn perform_discard_rejects_during_claim_window() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
         0,
         3,
@@ -966,7 +960,7 @@ fn perform_discard_rejects_invalid_owned_tile() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
         0,
         99,
@@ -1003,7 +997,7 @@ fn perform_discard_rejects_malformed_owned_meld() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
         0,
         4,
@@ -1031,7 +1025,7 @@ fn perform_discard_rejects_outside_play_phase() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
         0,
         3,
@@ -1063,7 +1057,7 @@ fn perform_discard_rejects_public_fifth_copy() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
         0,
         3,
@@ -1101,7 +1095,7 @@ fn perform_discard_rejects_self_sourced_open_meld() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
         0,
         4,
@@ -1130,7 +1124,7 @@ fn perform_discard_rejects_valid_target_with_invalid_hand_tile() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
         0,
         4,
@@ -1157,7 +1151,7 @@ fn perform_discard_requires_current_position() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
         0,
         3,
@@ -1184,7 +1178,7 @@ fn perform_discard_requires_fourteen_virtual_tiles() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
         0,
         3,
@@ -1216,13 +1210,13 @@ fn perform_self_draw_hu_rejects_during_claim_window() {
     assert!(!can_self_draw_hu_with_configs(
         &state,
         0,
-        &relaxed_configs()
+        &default_configs()
     ));
     perform_self_draw_hu(
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
         0,
     );
@@ -1246,7 +1240,7 @@ fn perform_self_draw_hu_requires_current_position() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
         0,
     );
@@ -1268,13 +1262,13 @@ fn perform_self_draw_hu_requires_legal_win() {
     assert!(!can_self_draw_hu_with_configs(
         &state,
         0,
-        &relaxed_configs()
+        &default_configs()
     ));
     perform_self_draw_hu(
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
         0,
     );
@@ -1284,27 +1278,23 @@ fn perform_self_draw_hu_requires_legal_win() {
 }
 
 #[test]
-fn perform_self_draw_hu_ignores_legacy_relaxed_win_rule_config() {
+fn perform_self_draw_hu_requires_shenyang_rules() {
     let mut state = playable_state();
     state.current_position = 0;
     state
         .hands
         .insert(0, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
     state.last_drawn_tile = Some(35);
-    let configs = HashMap::from([("win_rule".to_owned(), 1)]);
+    let configs = default_configs();
     let mut dispatch = Dispatch::default();
 
-    assert!(!can_self_draw_hu_with_configs(
-        &state,
-        0,
-        &relaxed_configs()
-    ));
+    assert!(!can_self_draw_hu_with_configs(&state, 0, &configs));
     assert!(!can_self_draw_hu_with_configs(&state, 0, &configs));
     perform_self_draw_hu(
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &configs,
         &mut dispatch,
         0,
     );
@@ -1337,7 +1327,7 @@ fn perform_self_gang_rejects_during_claim_window() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
         0,
         3,
@@ -1365,7 +1355,7 @@ fn perform_self_gang_requires_current_position() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
         0,
         3,
@@ -3387,12 +3377,12 @@ fn ting_candidates_are_human_only_and_declaration_is_recorded() {
     state.hands.insert(0, seven_pairs_ting_hand());
     state.last_drawn_tile = Some(32);
     assert_eq!(
-        ting_discard_tiles_for_position(&state, 0, &relaxed_configs()),
+        ting_discard_tiles_for_position(&state, 0, &default_configs()),
         vec![31, 32]
     );
 
     state.base.lock().unwrap().mark_ai_position(0);
-    assert!(ting_discard_tiles_for_position(&state, 0, &relaxed_configs()).is_empty());
+    assert!(ting_discard_tiles_for_position(&state, 0, &default_configs()).is_empty());
 
     let (room_service, _handler, room_key, loop_state) = setup_request_room();
     let mut human_state = loop_state.lock().unwrap();
@@ -3406,7 +3396,7 @@ fn ting_candidates_are_human_only_and_declaration_is_recorded() {
         &room_service,
         &room_key,
         &mut human_state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
         0,
         32,
@@ -3441,7 +3431,7 @@ fn declared_ting_locks_future_discard_to_the_drawn_tile() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
         0,
         1,
@@ -3450,7 +3440,7 @@ fn declared_ting_locks_future_discard_to_the_drawn_tile() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
         0,
         5,
@@ -3466,14 +3456,8 @@ fn enabled_ting_setting_adds_one_fan_before_the_cap() {
     state.declare_ting(1);
     state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(4), false, false, false, false);
     let settlement = state.settlement.as_ref().expect("settlement");
-    let disabled = HashMap::from([
-        ("win_rule".to_owned(), WIN_RULE_RELAXED),
-        ("ting_fan".to_owned(), 0),
-    ]);
-    let enabled = HashMap::from([
-        ("win_rule".to_owned(), WIN_RULE_RELAXED),
-        ("ting_fan".to_owned(), 1),
-    ]);
+    let disabled = HashMap::from([("ting_fan".to_owned(), 0)]);
+    let enabled = HashMap::from([("ting_fan".to_owned(), 1)]);
 
     assert_eq!(
         winner_hand_fan_with_configs(&state, settlement, 1, &enabled),
@@ -3668,8 +3652,8 @@ fn redeal_uses_only_positive_score_winners_for_dealer_rotation() {
     assert!(state.settlement.is_none());
 }
 
-fn relaxed_configs() -> HashMap<String, i32> {
-    HashMap::from([("win_rule".to_owned(), WIN_RULE_RELAXED)])
+fn default_configs() -> HashMap<String, i32> {
+    HashMap::new()
 }
 
 #[test]
@@ -3693,7 +3677,7 @@ fn resolve_claim_window_allows_chi_for_shenyang_basic_rule() {
             },
         )]),
     });
-    let configs = HashMap::from([("win_rule".to_owned(), 1)]);
+    let configs = HashMap::new();
     let mut dispatch = Dispatch::default();
 
     resolve_claim_window(
@@ -3906,7 +3890,7 @@ fn resolve_claim_window_ignores_illegal_gang_response() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
     );
 
@@ -3949,7 +3933,7 @@ fn resolve_claim_window_ignores_illegal_hu_response() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
     );
 
@@ -3982,7 +3966,7 @@ fn resolve_claim_window_ignores_illegal_peng_response() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
     );
 
@@ -4028,7 +4012,7 @@ fn resolve_claim_window_ignores_impossible_fifth_tile_peng_response() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
     );
 
@@ -4066,7 +4050,7 @@ fn resolve_claim_window_ignores_invalid_chi_sequence() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
     );
 
@@ -4109,7 +4093,7 @@ fn resolve_claim_window_ignores_meld_responses_without_thirteen_virtual_tiles() 
             &RoomService::default(),
             "room",
             &mut state,
-            &relaxed_configs(),
+            &default_configs(),
             &mut dispatch,
         );
 
@@ -4158,7 +4142,7 @@ fn resolve_claim_window_ignores_melds_from_impossible_known_tile_state() {
             &RoomService::default(),
             "room",
             &mut state,
-            &relaxed_configs(),
+            &default_configs(),
             &mut dispatch,
         );
 
@@ -4194,7 +4178,7 @@ fn resolve_claim_window_ignores_mismatched_source_discard() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
     );
 
@@ -4229,7 +4213,7 @@ fn resolve_claim_window_ignores_public_fifth_copy_used_by_hu_winner() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
     );
 
@@ -4263,7 +4247,7 @@ fn resolve_claim_window_ignores_response_from_source_position() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
     );
 
@@ -4297,7 +4281,7 @@ fn resolve_claim_window_recovers_from_unknown_source() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
     );
 
@@ -4435,7 +4419,7 @@ fn rob_gang_hu_ignores_invalid_added_gang_source() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
     );
 
@@ -4480,7 +4464,7 @@ fn rob_gang_hu_rejects_impossible_fifth_tile_response() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
     );
 
@@ -4575,7 +4559,7 @@ fn rob_gang_hu_settles_without_upgrading_peng() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
     );
 
@@ -4592,7 +4576,7 @@ fn rob_gang_hu_settles_without_upgrading_peng() {
 }
 
 #[test]
-fn legacy_relaxed_config_does_not_count_concealed_gang_as_open() {
+fn concealed_gang_does_not_count_as_open_for_rob_gang() {
     let mut state = playable_state();
     state
         .hands
@@ -4605,12 +4589,11 @@ fn legacy_relaxed_config_does_not_count_concealed_gang_as_open() {
             None,
         )],
     );
-    let relaxed = build_rob_gang_claim_window_event(&state, 3, 0, 5, &relaxed_configs());
-    let basic_configs = HashMap::from([("win_rule".to_owned(), 1)]);
-    let basic = build_rob_gang_claim_window_event(&state, 3, 0, 5, &basic_configs);
+    let default_event = build_rob_gang_claim_window_event(&state, 3, 0, 5, &default_configs());
+    let basic_event = build_rob_gang_claim_window_event(&state, 3, 0, 5, &HashMap::new());
 
-    assert!(!relaxed.eligible_positions.contains(&1));
-    assert!(!basic.eligible_positions.contains(&1));
+    assert!(!default_event.eligible_positions.contains(&1));
+    assert!(!basic_event.eligible_positions.contains(&1));
 }
 
 #[test]
@@ -4632,7 +4615,7 @@ fn rob_gang_options_reject_impossible_fifth_tile() {
         .insert(1, vec![1, 2, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
     state.discards.insert(2, vec![3]);
 
-    let claim_window = build_rob_gang_claim_window_event(&state, 3, 0, 5, &relaxed_configs());
+    let claim_window = build_rob_gang_claim_window_event(&state, 3, 0, 5, &default_configs());
 
     assert!(!claim_window.eligible_positions.contains(&1));
     assert!(claim_window.options.is_empty());
@@ -4657,7 +4640,7 @@ fn rob_gang_options_reject_public_fifth_copy_used_by_winner() {
         .insert(1, vec![1, 1, 1, 1, 2, 3, 7, 8, 11, 12, 13, 35, 35]);
     state.discards.insert(2, vec![1]);
 
-    let claim_window = build_rob_gang_claim_window_event(&state, 6, 0, 5, &relaxed_configs());
+    let claim_window = build_rob_gang_claim_window_event(&state, 6, 0, 5, &default_configs());
 
     assert_eq!(known_tile_count(&state, 1), 5);
     assert!(!claim_window.eligible_positions.contains(&1));
@@ -4686,7 +4669,7 @@ fn rob_gang_pass_clears_invalid_added_gang_source() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
     );
 
@@ -4713,11 +4696,8 @@ fn self_draw_closed_sequence_dragon_pair_win_stays_available_after_xi_gang() {
         )],
     );
     state.last_drawn_tile = Some(35);
-    let default_configs = HashMap::from([("win_rule".to_owned(), 1)]);
-    let disabled_configs = HashMap::from([
-        ("win_rule".to_owned(), 1),
-        ("allow_first_chi".to_owned(), 0),
-    ]);
+    let default_configs = HashMap::new();
+    let disabled_configs = HashMap::from([("allow_first_chi".to_owned(), 0)]);
 
     assert!(!can_self_draw_hu_with_configs(&state, 1, &default_configs));
     assert!(can_self_draw_hu_with_configs(&state, 1, &disabled_configs));
@@ -4731,18 +4711,15 @@ fn self_draw_hu_allows_closed_sequence_dragon_pair_win_when_first_chi_disabled()
         .hands
         .insert(0, vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 35, 35]);
     state.last_drawn_tile = Some(35);
-    let default_configs = HashMap::from([("win_rule".to_owned(), 1)]);
-    let disabled_configs = HashMap::from([
-        ("win_rule".to_owned(), 1),
-        ("allow_first_chi".to_owned(), 0),
-    ]);
+    let default_configs = HashMap::new();
+    let disabled_configs = HashMap::from([("allow_first_chi".to_owned(), 0)]);
 
     assert!(!can_self_draw_hu_with_configs(&state, 0, &default_configs));
     assert!(can_self_draw_hu_with_configs(&state, 0, &disabled_configs));
 }
 
 #[test]
-fn legacy_relaxed_config_does_not_count_concealed_gang_as_open_for_self_draw() {
+fn concealed_gang_does_not_count_as_open_for_self_draw() {
     let mut state = playable_state();
     state
         .hands
@@ -4756,13 +4733,9 @@ fn legacy_relaxed_config_does_not_count_concealed_gang_as_open_for_self_draw() {
         )],
     );
     state.last_drawn_tile = Some(35);
-    let configs = HashMap::from([("win_rule".to_owned(), 1)]);
+    let configs = default_configs();
 
-    assert!(!can_self_draw_hu_with_configs(
-        &state,
-        0,
-        &relaxed_configs()
-    ));
+    assert!(!can_self_draw_hu_with_configs(&state, 0, &configs));
     assert!(!can_self_draw_hu_with_configs(&state, 0, &configs));
 }
 
@@ -4781,7 +4754,7 @@ fn self_draw_hu_rejects_chi_from_non_previous_position() {
         )],
     );
     state.last_drawn_tile = Some(35);
-    let configs = HashMap::from([("win_rule".to_owned(), WIN_RULE_SHENYANG_BASIC)]);
+    let configs = HashMap::new();
 
     assert!(is_complete_win_with_configs(
         state.hands.get(&0).unwrap(),
@@ -4822,13 +4795,13 @@ fn self_draw_hu_rejects_outside_play_phase() {
     assert!(!can_self_draw_hu_with_configs(
         &state,
         0,
-        &relaxed_configs()
+        &default_configs()
     ));
     perform_self_draw_hu(
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
         0,
     );
@@ -4854,14 +4827,14 @@ fn self_draw_hu_rejects_public_fifth_copy() {
     assert!(!can_self_draw_hu_with_configs(
         &state,
         0,
-        &relaxed_configs()
+        &default_configs()
     ));
 
     perform_self_draw_hu(
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
         0,
     );
@@ -4872,7 +4845,7 @@ fn self_draw_hu_rejects_public_fifth_copy() {
     state.discards.insert(1, vec![9, 9, 9, 9, 9]);
     assert_eq!(known_tile_count(&state, 9), 5);
     assert!(!position_has_impossible_known_tile_count(&state, 0));
-    assert!(can_self_draw_hu_with_configs(&state, 0, &relaxed_configs()));
+    assert!(can_self_draw_hu_with_configs(&state, 0, &default_configs()));
 }
 
 #[test]
@@ -4890,7 +4863,7 @@ fn self_draw_hu_rejects_self_sourced_open_meld() {
         )],
     );
     state.last_drawn_tile = Some(35);
-    let configs = HashMap::from([("win_rule".to_owned(), WIN_RULE_SHENYANG_BASIC)]);
+    let configs = HashMap::new();
 
     assert!(is_complete_win_with_configs(
         state.hands.get(&0).unwrap(),
@@ -4917,7 +4890,7 @@ fn self_draw_hu_requires_a_drawn_turn() {
     assert!(!can_self_draw_hu_with_configs(
         &state,
         0,
-        &relaxed_configs()
+        &default_configs()
     ));
 
     state.last_drawn_tile = Some(9);
@@ -4925,12 +4898,12 @@ fn self_draw_hu_requires_a_drawn_turn() {
     assert!(!can_self_draw_hu_with_configs(
         &state,
         0,
-        &relaxed_configs()
+        &default_configs()
     ));
 
     state.last_drawn_tile = Some(35);
 
-    assert!(can_self_draw_hu_with_configs(&state, 0, &relaxed_configs()));
+    assert!(can_self_draw_hu_with_configs(&state, 0, &default_configs()));
 }
 
 #[test]
@@ -4952,7 +4925,7 @@ fn self_draw_hu_respects_shenyang_basic_win_rule() {
         .hands
         .insert(0, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35]);
     state.last_drawn_tile = Some(35);
-    let configs = HashMap::from([("win_rule".to_owned(), 1)]);
+    let configs = HashMap::new();
 
     assert!(!can_self_draw_hu_with_configs(&state, 0, &configs));
 
@@ -4991,10 +4964,7 @@ fn self_draw_hu_respects_shenyang_basic_win_rule() {
     state.last_drawn_tile = Some(35);
 
     assert!(can_self_draw_hu_with_configs(&state, 0, &configs));
-    let first_chi_disabled_configs = HashMap::from([
-        ("win_rule".to_owned(), 1),
-        ("allow_first_chi".to_owned(), 0),
-    ]);
+    let first_chi_disabled_configs = HashMap::from([("allow_first_chi".to_owned(), 0)]);
     assert!(can_self_draw_hu_with_configs(
         &state,
         0,
@@ -5015,14 +4985,14 @@ fn self_draw_last_wall_tile_counts_haidilao_without_gang_draw() {
     assert_eq!(state.wall_count(), 0);
     assert_eq!(state.last_drawn_tile, Some(35));
     assert!(!state.pending_gang_draw);
-    assert!(can_self_draw_hu_with_configs(&state, 0, &relaxed_configs()));
+    assert!(can_self_draw_hu_with_configs(&state, 0, &default_configs()));
 
     let mut dispatch = Dispatch::default();
     perform_self_draw_hu(
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
         0,
     );
@@ -5034,7 +5004,7 @@ fn self_draw_last_wall_tile_counts_haidilao_without_gang_draw() {
     assert_eq!(settlement.win_tile, Some(35));
     assert_eq!(winner_hand_fan(&state, settlement, 0), 3);
 
-    let event = build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
+    let event = build_settlement_event_with_configs(&state, &default_configs()).unwrap();
     assert!(!event.is_gang_draw);
     assert!(event.is_haidilao);
     assert_eq!(event.winner_details.len(), 1);
@@ -5057,7 +5027,7 @@ fn self_gang_consumes_four_tiles_and_draws_replacement() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
         0,
         3,
@@ -5107,13 +5077,13 @@ fn self_gang_last_replacement_self_draw_counts_gang_draw_and_haidilao() {
     assert_eq!(state.wall_count(), 0);
     assert_eq!(state.last_drawn_tile, Some(35));
     assert!(state.pending_gang_draw);
-    assert!(can_self_draw_hu_with_configs(&state, 0, &relaxed_configs()));
+    assert!(can_self_draw_hu_with_configs(&state, 0, &default_configs()));
 
     perform_self_draw_hu(
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
         0,
     );
@@ -5125,7 +5095,7 @@ fn self_gang_last_replacement_self_draw_counts_gang_draw_and_haidilao() {
     assert_eq!(settlement.win_tile, Some(35));
     assert_eq!(winner_hand_fan(&state, settlement, 0), 6);
 
-    let event = build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
+    let event = build_settlement_event_with_configs(&state, &default_configs()).unwrap();
     assert!(event.is_gang_draw);
     assert!(event.is_haidilao);
     assert_eq!(event.winner_details.len(), 1);
@@ -5157,7 +5127,7 @@ fn self_gang_rejects_malformed_owned_meld() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
         0,
         3,
@@ -5189,7 +5159,7 @@ fn self_gang_rejects_outside_play_phase() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
         0,
         3,
@@ -5295,7 +5265,7 @@ fn self_gang_rejects_unrelated_invalid_hand_tile() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
         0,
         3,
@@ -5362,7 +5332,7 @@ fn self_gang_rejects_when_replacement_tile_is_unavailable() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
         0,
         3,
@@ -5400,7 +5370,7 @@ fn self_gang_requires_fourteen_virtual_tiles() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
         0,
         3,
@@ -5427,7 +5397,7 @@ fn self_gang_requires_owned_last_drawn_tile() {
         &RoomService::default(),
         "room",
         &mut state,
-        &relaxed_configs(),
+        &default_configs(),
         &mut dispatch,
         0,
         3,
@@ -5484,7 +5454,7 @@ fn settlement_event_normalizes_invalid_gang_haidilao_as_draw() {
     state.enter_settlement_with_reverse_win(vec![1], None, Some(31), true, false, true, true);
 
     let event =
-        build_settlement_event_with_configs(&state, &relaxed_configs()).expect("settlement event");
+        build_settlement_event_with_configs(&state, &default_configs()).expect("settlement event");
 
     assert!(event.winner_positions.is_empty());
     assert!(event.winner_details.is_empty());
@@ -5513,7 +5483,7 @@ fn settlement_event_normalizes_invalid_reverse_win_as_draw() {
     state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(4), false, true, false, false);
 
     let event =
-        build_settlement_event_with_configs(&state, &relaxed_configs()).expect("settlement event");
+        build_settlement_event_with_configs(&state, &default_configs()).expect("settlement event");
 
     assert!(event.winner_positions.is_empty());
     assert!(event.winner_details.is_empty());
@@ -5676,11 +5646,8 @@ fn settlement_fan_counts_configured_closed_sequence_dragon_pair_win_as_standard(
         .insert(1, vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 35, 35]);
     state.enter_settlement(vec![1], None, None, true);
     let settlement = state.settlement.as_ref().expect("settlement");
-    let default_configs = HashMap::from([("win_rule".to_owned(), 1)]);
-    let disabled_configs = HashMap::from([
-        ("win_rule".to_owned(), 1),
-        ("allow_first_chi".to_owned(), 0),
-    ]);
+    let default_configs = HashMap::new();
+    let disabled_configs = HashMap::from([("allow_first_chi".to_owned(), 0)]);
 
     assert_eq!(
         winner_hand_fan_with_configs(&state, settlement, 1, &default_configs),
@@ -6175,7 +6142,7 @@ fn settlement_fan_ignores_gang_draw_flag_on_discard_win() {
     let settlement = state.settlement.as_ref().expect("settlement");
 
     assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
-    let event = build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
+    let event = build_settlement_event_with_configs(&state, &default_configs()).unwrap();
     assert!(!event.is_gang_draw);
     assert!(!event.winner_details[0].is_gang_draw);
 }
@@ -6191,7 +6158,7 @@ fn settlement_fan_ignores_haidilao_flag_on_discard_win() {
     let settlement = state.settlement.as_ref().expect("settlement");
 
     assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
-    let event = build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
+    let event = build_settlement_event_with_configs(&state, &default_configs()).unwrap();
     assert!(!event.is_haidilao);
     assert!(!event.winner_details[0].is_haidilao);
 }
@@ -6312,7 +6279,7 @@ fn settlement_fan_ignores_reverse_win_flag_on_self_draw() {
     let settlement = state.settlement.as_ref().expect("settlement");
 
     assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
-    let event = build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
+    let event = build_settlement_event_with_configs(&state, &default_configs()).unwrap();
     assert_eq!(event.from_position, None);
     assert!(!event.is_reverse_win);
     assert!(!event.winner_details[0].is_reverse_win);
@@ -6423,7 +6390,7 @@ fn settlement_fan_requires_gang_meld_and_empty_wall_for_draw_bonuses() {
     let settlement = state.settlement.clone().expect("settlement");
 
     assert_eq!(winner_hand_fan(&state, &settlement, 1), 2);
-    let no_gang_event = build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
+    let no_gang_event = build_settlement_event_with_configs(&state, &default_configs()).unwrap();
     assert!(!no_gang_event.is_gang_draw);
     assert!(no_gang_event.is_haidilao);
     assert!(!no_gang_event.winner_details[0].is_gang_draw);
@@ -6439,7 +6406,7 @@ fn settlement_fan_requires_gang_meld_and_empty_wall_for_draw_bonuses() {
     );
 
     assert_eq!(winner_hand_fan(&state, &settlement, 1), 5);
-    let valid_event = build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
+    let valid_event = build_settlement_event_with_configs(&state, &default_configs()).unwrap();
     assert!(valid_event.is_gang_draw);
     assert!(valid_event.is_haidilao);
     assert!(valid_event.winner_details[0].is_gang_draw);
@@ -6449,7 +6416,7 @@ fn settlement_fan_requires_gang_meld_and_empty_wall_for_draw_bonuses() {
 
     assert_eq!(winner_hand_fan(&state, &settlement, 1), 4);
     let nonempty_wall_event =
-        build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
+        build_settlement_event_with_configs(&state, &default_configs()).unwrap();
     assert!(nonempty_wall_event.is_gang_draw);
     assert!(!nonempty_wall_event.is_haidilao);
     assert!(nonempty_wall_event.winner_details[0].is_gang_draw);
@@ -6467,7 +6434,7 @@ fn settlement_fan_requires_open_peng_source_for_rob_gang() {
     let settlement = state.settlement.clone().expect("settlement");
 
     assert_eq!(winner_hand_fan(&state, &settlement, 1), 1);
-    let invalid_event = build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
+    let invalid_event = build_settlement_event_with_configs(&state, &default_configs()).unwrap();
     assert!(!invalid_event.is_reverse_win);
     assert!(!invalid_event.winner_details[0].is_reverse_win);
 
@@ -6481,7 +6448,7 @@ fn settlement_fan_requires_open_peng_source_for_rob_gang() {
     );
 
     assert_eq!(winner_hand_fan(&state, &settlement, 1), 2);
-    let valid_event = build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
+    let valid_event = build_settlement_event_with_configs(&state, &default_configs()).unwrap();
     assert!(valid_event.is_reverse_win);
     assert!(valid_event.winner_details[0].is_reverse_win);
     assert!(!valid_event.is_gang_draw);
@@ -7289,11 +7256,8 @@ fn settlement_scores_closed_sequence_dragon_pair_winner_after_xi_gang() {
     );
     state.enter_settlement(vec![1], None, Some(35), true);
     let settlement = state.settlement.as_ref().expect("settlement");
-    let default_configs = HashMap::from([("win_rule".to_owned(), 1)]);
-    let disabled_configs = HashMap::from([
-        ("win_rule".to_owned(), 1),
-        ("allow_first_chi".to_owned(), 0),
-    ]);
+    let default_configs = HashMap::new();
+    let disabled_configs = HashMap::from([("allow_first_chi".to_owned(), 0)]);
 
     assert!(
         settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &default_configs)
@@ -7459,7 +7423,7 @@ fn settlement_winner_details_describe_piao_hu() {
     state.melds.insert(3, vec![open_peng_meld(34, 2)]);
     state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(1), false, false, false, false);
 
-    let event = build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
+    let event = build_settlement_event_with_configs(&state, &default_configs()).unwrap();
 
     assert_eq!(event.winner_details.len(), 1);
     assert_eq!(
@@ -7483,7 +7447,7 @@ fn settlement_winner_details_describe_pure_one_suit() {
     state.melds.insert(3, vec![open_peng_meld(34, 2)]);
     state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(7), false, false, false, false);
 
-    let event = build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
+    let event = build_settlement_event_with_configs(&state, &default_configs()).unwrap();
 
     assert_eq!(event.winner_details.len(), 1);
     assert_eq!(
@@ -7537,7 +7501,7 @@ fn settlement_winner_details_do_not_describe_sequence_remainder_as_piao_hu() {
     state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(4), false, false, false, false);
 
     let settlement = state.settlement.as_ref().expect("settlement");
-    let event = build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
+    let event = build_settlement_event_with_configs(&state, &default_configs()).unwrap();
 
     assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
     assert_eq!(event.winner_details.len(), 1);
@@ -7565,7 +7529,7 @@ fn settlement_winner_details_include_reverse_win_and_score() {
     );
     state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(3), false, true, false, false);
 
-    let event = build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
+    let event = build_settlement_event_with_configs(&state, &default_configs()).unwrap();
 
     assert_eq!(event.winner_details.len(), 1);
     assert_eq!(event.winner_details[0].position, 1);
@@ -7578,7 +7542,7 @@ fn settlement_winner_details_include_reverse_win_and_score() {
 }
 
 #[test]
-fn settlement_winner_details_use_win_rule_for_closed_pure_one_suit() {
+fn settlement_winner_details_use_shenyang_rules_for_closed_pure_one_suit() {
     let mut state = playable_state();
     state
         .hands
@@ -7586,13 +7550,11 @@ fn settlement_winner_details_use_win_rule_for_closed_pure_one_suit() {
     state.melds.insert(3, vec![open_peng_meld(34, 2)]);
     state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(9), false, false, false, false);
 
-    let relaxed_event = build_settlement_event_with_configs(&state, &relaxed_configs()).unwrap();
-    let basic_event =
-        build_settlement_event_with_configs(&state, &HashMap::from([("win_rule".to_owned(), 1)]))
-            .unwrap();
+    let default_event = build_settlement_event_with_configs(&state, &default_configs()).unwrap();
+    let basic_event = build_settlement_event_with_configs(&state, &HashMap::new()).unwrap();
 
     assert_eq!(
-        relaxed_event.winner_details[0].pattern,
+        default_event.winner_details[0].pattern,
         ShenyangMahjongWinPattern::PureOneSuit
     );
     assert_eq!(
@@ -7763,7 +7725,7 @@ fn table_and_settlement_snapshots_filter_invalid_discards() {
     state.discards.insert(1, vec![3, 99, 35, -1]);
     state.enter_settlement(Vec::new(), None, None, false);
 
-    let snapshot = build_table_snapshot_event_with_configs(&state, 0, &relaxed_configs());
+    let snapshot = build_table_snapshot_event_with_configs(&state, 0, &default_configs());
     let public_discards = &snapshot
         .players
         .iter()
@@ -7821,8 +7783,8 @@ fn table_snapshot_filters_drawn_tile_and_claim_options() {
     });
     state.set_turn_countdown(4);
 
-    let drawer_snapshot = build_table_snapshot_event_with_configs(&state, 0, &relaxed_configs());
-    let snapshot = build_table_snapshot_event_with_configs(&state, 1, &relaxed_configs());
+    let drawer_snapshot = build_table_snapshot_event_with_configs(&state, 0, &default_configs());
+    let snapshot = build_table_snapshot_event_with_configs(&state, 1, &default_configs());
     let claim_window = snapshot.claim_window.expect("claim window");
     let option = claim_window
         .options
@@ -7843,7 +7805,7 @@ fn table_snapshot_filters_drawn_tile_and_claim_options() {
     assert!(option.chi_options.contains(&vec![2, 4]));
     assert_eq!(claim_window.options.len(), 1);
 
-    let observer_snapshot = build_table_snapshot_event_with_configs(&state, 3, &relaxed_configs());
+    let observer_snapshot = build_table_snapshot_event_with_configs(&state, 3, &default_configs());
     let observer_claim_window = observer_snapshot.claim_window.expect("claim window");
     assert_eq!(observer_claim_window.tile, 3);
     assert_eq!(observer_claim_window.from_position, 0);
@@ -7856,13 +7818,13 @@ fn table_snapshot_filters_drawn_tile_and_claim_options() {
         .unwrap()
         .responses
         .insert(1, ClaimResponse::Pass);
-    let responded_snapshot = build_table_snapshot_event_with_configs(&state, 1, &relaxed_configs());
+    let responded_snapshot = build_table_snapshot_event_with_configs(&state, 1, &default_configs());
     let responded_claim_window = responded_snapshot.claim_window.expect("claim window");
     assert_eq!(responded_claim_window.tile, 3);
     assert!(responded_claim_window.eligible_positions.is_empty());
     assert!(responded_claim_window.options.is_empty());
 
-    let pending_snapshot = build_table_snapshot_event_with_configs(&state, 2, &relaxed_configs());
+    let pending_snapshot = build_table_snapshot_event_with_configs(&state, 2, &default_configs());
     let pending_claim_window = pending_snapshot.claim_window.expect("claim window");
     assert_eq!(pending_claim_window.eligible_positions, vec![2]);
     assert_eq!(pending_claim_window.options.len(), 1);
@@ -7870,7 +7832,7 @@ fn table_snapshot_filters_drawn_tile_and_claim_options() {
     assert!(pending_claim_window.options[0].can_hu);
 
     state.claim_window.as_mut().unwrap().eligible_positions = vec![1];
-    let excluded_snapshot = build_table_snapshot_event_with_configs(&state, 2, &relaxed_configs());
+    let excluded_snapshot = build_table_snapshot_event_with_configs(&state, 2, &default_configs());
     let excluded_claim_window = excluded_snapshot.claim_window.expect("claim window");
     assert!(excluded_claim_window.eligible_positions.is_empty());
     assert!(excluded_claim_window.options.is_empty());
@@ -7888,7 +7850,7 @@ fn table_snapshot_filters_malformed_meld_shapes() {
     );
     state.enter_settlement(Vec::new(), None, None, false);
 
-    let snapshot = build_table_snapshot_event_with_configs(&state, 0, &relaxed_configs());
+    let snapshot = build_table_snapshot_event_with_configs(&state, 0, &default_configs());
     let public_melds = &snapshot
         .players
         .iter()
@@ -7930,7 +7892,7 @@ fn table_snapshot_filters_melds_with_invalid_source_positions() {
     );
     state.enter_settlement(Vec::new(), None, None, false);
 
-    let snapshot = build_table_snapshot_event_with_configs(&state, 0, &relaxed_configs());
+    let snapshot = build_table_snapshot_event_with_configs(&state, 0, &default_configs());
     let public_invalid = snapshot
         .players
         .iter()
@@ -7973,7 +7935,7 @@ fn table_snapshot_hides_claim_window_outside_play_phase() {
     });
     state.phase = ShenyangMahjongPhase::Settlement;
 
-    let snapshot = build_table_snapshot_event_with_configs(&state, 1, &relaxed_configs());
+    let snapshot = build_table_snapshot_event_with_configs(&state, 1, &default_configs());
 
     assert!(snapshot.claim_window.is_none());
 }
@@ -7991,7 +7953,7 @@ fn table_snapshot_hides_claim_window_with_invalid_source() {
         responses: HashMap::new(),
     });
 
-    let snapshot = build_table_snapshot_event_with_configs(&state, 1, &relaxed_configs());
+    let snapshot = build_table_snapshot_event_with_configs(&state, 1, &default_configs());
 
     assert!(snapshot.claim_window.is_none());
 }
@@ -8009,7 +7971,7 @@ fn table_snapshot_hides_claim_window_with_invalid_tile() {
         responses: HashMap::new(),
     });
 
-    let snapshot = build_table_snapshot_event_with_configs(&state, 1, &relaxed_configs());
+    let snapshot = build_table_snapshot_event_with_configs(&state, 1, &default_configs());
 
     assert!(snapshot.claim_window.is_none());
 }
@@ -8027,7 +7989,7 @@ fn table_snapshot_hides_claim_window_with_malformed_participants() {
         responses: HashMap::new(),
     });
 
-    let snapshot = build_table_snapshot_event_with_configs(&state, 1, &relaxed_configs());
+    let snapshot = build_table_snapshot_event_with_configs(&state, 1, &default_configs());
 
     assert!(snapshot.claim_window.is_none());
 }
@@ -8049,7 +8011,7 @@ fn table_snapshot_includes_settlement_for_rejoin() {
     );
     state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(3), false, true, false, false);
 
-    let snapshot = build_table_snapshot_event_with_configs(&state, 1, &relaxed_configs());
+    let snapshot = build_table_snapshot_event_with_configs(&state, 1, &default_configs());
     let settlement = snapshot.settlement.expect("settlement");
 
     assert_eq!(snapshot.phase, ShenyangMahjongPhase::Settlement);
@@ -8075,7 +8037,7 @@ fn table_snapshot_marks_disconnected_player_as_away() {
     let state = playable_state();
     state.base.lock().unwrap().mark_disconnected(2);
 
-    let snapshot = build_table_snapshot_event_with_configs(&state, 1, &relaxed_configs());
+    let snapshot = build_table_snapshot_event_with_configs(&state, 1, &default_configs());
     let player = snapshot
         .players
         .iter()
