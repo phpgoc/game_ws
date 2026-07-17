@@ -260,6 +260,48 @@ fn discard_preserves_only_dragon_pair_for_basic_heng() {
 }
 
 #[test]
+fn discard_sets_configured_closed_sequence_wait_after_xi_gang() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.allow_first_chi = false;
+    table.seats.get_mut(&0).unwrap().melds = vec![WsShenyangMahjongMeld {
+        kind: ShenyangMahjongMeldKind::XI_GANG,
+        tiles: vec![31, 32, 33, 34],
+        from_position: None,
+    }];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![1, 2, 3, 11, 12, 13, 21, 22, 24, 35, 35];
+    let after_discard = remove_n_tiles(&hand, 24, 1);
+
+    let mut default_table = table.clone();
+    default_table.allow_first_chi = true;
+    assert_eq!(
+        ready_tile_score_after_discard(
+            &after_discard,
+            melds,
+            &default_table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+            24,
+        ),
+        0.0
+    );
+    assert!(
+        ready_tile_score_after_discard(
+            &after_discard,
+            melds,
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+            24,
+        ) > 0.0
+    );
+    assert_eq!(
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(24)
+    );
+}
+
+#[test]
 fn discard_preserves_only_pair_as_basic_heng_seed() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 2, 3, 5, 5, 6, 7, 8, 11, 12, 13, 21, 22, 23];
