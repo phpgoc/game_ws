@@ -279,23 +279,8 @@ fn mid_round_live_suited_risk_discounts_exposed_meld_tiles() {
 
     assert!(live_risk_exposure_scale(&exposed_table, 9) < 1.0);
     assert!(
-        mid_round_live_suited_risk_bias(
-            &hand,
-            &[],
-            &exposed_table,
-            0,
-            9,
-            1,
-            WIN_RULE_SHENYANG_BASIC
-        ) > mid_round_live_suited_risk_bias(
-            &hand,
-            &[],
-            &live_table,
-            0,
-            9,
-            1,
-            WIN_RULE_SHENYANG_BASIC
-        )
+        mid_round_live_suited_risk_bias(&hand, &[], &exposed_table, 0, 9, 1)
+            > mid_round_live_suited_risk_bias(&hand, &[], &live_table, 0, 9, 1)
     );
 }
 
@@ -304,14 +289,10 @@ fn mid_round_live_suited_risk_grows_when_opponents_are_open() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 37;
     let hand = vec![1, 2, 3, 9, 11, 12, 14, 16, 18, 21, 22, 24, 26, 31];
-    let base =
-        mid_round_live_suited_risk_bias(&hand, &[], &table, 0, 9, 1, WIN_RULE_SHENYANG_BASIC);
+    let base = mid_round_live_suited_risk_bias(&hand, &[], &table, 0, 9, 1);
     table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(16)];
 
-    assert!(
-        mid_round_live_suited_risk_bias(&hand, &[], &table, 0, 9, 1, WIN_RULE_SHENYANG_BASIC)
-            < base
-    );
+    assert!(mid_round_live_suited_risk_bias(&hand, &[], &table, 0, 9, 1) < base);
 }
 
 #[test]
@@ -319,20 +300,16 @@ fn mid_round_live_suited_risk_ignores_concealed_gang_opponent() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 37;
     let hand = vec![1, 2, 3, 9, 11, 12, 14, 16, 18, 21, 22, 24, 26, 31];
-    let base =
-        mid_round_live_suited_risk_bias(&hand, &[], &table, 0, 9, 1, WIN_RULE_SHENYANG_BASIC);
+    let base = mid_round_live_suited_risk_bias(&hand, &[], &table, 0, 9, 1);
 
     table.seats.get_mut(&1).unwrap().melds = vec![test_concealed_gang_meld(16)];
     assert_eq!(
-        mid_round_live_suited_risk_bias(&hand, &[], &table, 0, 9, 1, WIN_RULE_SHENYANG_BASIC),
+        mid_round_live_suited_risk_bias(&hand, &[], &table, 0, 9, 1),
         base
     );
 
     table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(16)];
-    assert!(
-        mid_round_live_suited_risk_bias(&hand, &[], &table, 0, 9, 1, WIN_RULE_SHENYANG_BASIC)
-            < base
-    );
+    assert!(mid_round_live_suited_risk_bias(&hand, &[], &table, 0, 9, 1) < base);
 }
 
 #[test]
@@ -348,21 +325,10 @@ fn mid_round_live_suited_risk_ignores_tile_fully_accounted_by_meld_and_own_tile(
     assert_eq!(public_discard_count(&accounted_table, 9), 0);
     assert_eq!(exposed_meld_tile_count(&accounted_table, 9), 3);
     assert_eq!(
-        mid_round_live_suited_risk_bias(
-            &hand,
-            &[],
-            &accounted_table,
-            0,
-            9,
-            1,
-            WIN_RULE_SHENYANG_BASIC
-        ),
+        mid_round_live_suited_risk_bias(&hand, &[], &accounted_table, 0, 9, 1),
         0.0
     );
-    assert!(
-        mid_round_live_suited_risk_bias(&hand, &[], &live_table, 0, 9, 1, WIN_RULE_SHENYANG_BASIC)
-            < 0.0
-    );
+    assert!(mid_round_live_suited_risk_bias(&hand, &[], &live_table, 0, 9, 1) < 0.0);
 }
 
 #[test]

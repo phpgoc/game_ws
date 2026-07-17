@@ -308,7 +308,6 @@ fn claim_peng_passes_when_terminal_or_honor_is_unrecoverable_for_basic() {
         &[],
         &table,
         0,
-        WIN_RULE_SHENYANG_BASIC,
         ShenyangMahjongMeldKind::PENG,
         5,
         1
@@ -317,7 +316,6 @@ fn claim_peng_passes_when_terminal_or_honor_is_unrecoverable_for_basic() {
         &hand,
         &[],
         &table,
-        0,
         0,
         ShenyangMahjongMeldKind::PENG,
         5,

@@ -53,13 +53,12 @@ pub(in crate::ai::decision) fn mid_round_live_suited_risk_bias(
     position: usize,
     tile: i32,
     own_tile_count: usize,
-    win_rule: i32,
 ) -> f64 {
     if table.wall_count > 60
         || is_late_defense_round(table)
         || own_tile_count != 1
         || !is_suited(tile)
-        || should_keep_pairs_for_seven_pairs_discard(hand, melds, table, position, win_rule)
+        || should_keep_pairs_for_seven_pairs_discard(hand, melds, table, position)
     {
         return 0.0;
     }

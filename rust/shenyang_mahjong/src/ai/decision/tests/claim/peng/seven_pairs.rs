@@ -83,13 +83,7 @@ fn claim_peng_preserves_quad_as_two_pairs_seven_pairs_route() {
     let hand = vec![1, 1, 1, 1, 2, 2, 3, 3, 11, 11, 12, 31, 35];
 
     assert_eq!(pair_count(&hand), 5);
-    assert!(should_lock_seven_pairs_plan(
-        &hand,
-        &[],
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(should_lock_seven_pairs_plan(&hand, &[], &table, 0));
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Pass)
@@ -136,7 +130,6 @@ fn claim_peng_takes_dragon_from_live_five_pairs_with_malformed_meld() {
         &[malformed_meld.clone()],
         &table,
         0,
-        WIN_RULE_SHENYANG_BASIC,
     ));
     assert!(should_claim_dragon_peng_over_live_five_pairs(
         &hand,
@@ -180,13 +173,7 @@ fn claim_peng_takes_dragon_when_five_pairs_are_live() {
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 22, 31, 35, 35];
 
     assert_eq!(pair_count(&hand), 5);
-    assert!(should_lock_seven_pairs_plan(
-        &hand,
-        &[],
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(should_lock_seven_pairs_plan(&hand, &[], &table, 0));
     assert!(remaining_tile_count(&hand, &table, 0, 2) > 0);
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
@@ -203,30 +190,16 @@ fn required_peng_gain_ignores_malformed_meld_for_four_pair_protection() {
         tiles: vec![3, 3, 4],
         from_position: Some(1),
     };
-    let base = required_peng_gain(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC, 31);
-    assert_eq!(required_peng_gain(&hand, &[], &table, 0, 0, 31), base);
+    let base = required_peng_gain(&hand, &[], &table, 0, 31);
+    assert_eq!(required_peng_gain(&hand, &[], &table, 0, 31), base);
 
     assert_eq!(pair_count(&hand), 4);
     assert_eq!(valid_meld_count(&[malformed_meld.clone()]), 0);
     assert_eq!(
-        required_peng_gain(
-            &hand,
-            &[malformed_meld],
-            &table,
-            0,
-            WIN_RULE_SHENYANG_BASIC,
-            31,
-        ),
+        required_peng_gain(&hand, &[malformed_meld], &table, 0, 31,),
         base
     );
-    let with_valid_meld = required_peng_gain(
-        &hand,
-        &[test_chi_meld(3)],
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-        31,
-    );
+    let with_valid_meld = required_peng_gain(&hand, &[test_chi_meld(3)], &table, 0, 31);
     assert!(with_valid_meld < base);
 }
 
@@ -246,13 +219,7 @@ fn threatening_dealer_stops_marginal_five_pair_chase() {
 
     table.dealer_position = 3;
     assert!(!dealer_opponent_has_major_threat(&table, 0));
-    assert!(should_lock_seven_pairs_plan(
-        &hand,
-        &[],
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-    ));
+    assert!(should_lock_seven_pairs_plan(&hand, &[], &table, 0,));
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Pass)
@@ -260,26 +227,14 @@ fn threatening_dealer_stops_marginal_five_pair_chase() {
 
     table.dealer_position = 1;
     assert!(dealer_opponent_has_major_threat(&table, 0));
-    assert!(!should_lock_seven_pairs_plan(
-        &hand,
-        &[],
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-    ));
+    assert!(!should_lock_seven_pairs_plan(&hand, &[], &table, 0,));
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Peng)
     );
 
     let six_pair_hand = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 12, 21, 21, 31];
-    assert!(should_lock_seven_pairs_plan(
-        &six_pair_hand,
-        &[],
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-    ));
+    assert!(should_lock_seven_pairs_plan(&six_pair_hand, &[], &table, 0,));
 
     let missing_suit_hand = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 12, 31, 32, 33];
     assert!(!missing_suits(&missing_suit_hand, &[]).is_empty());
@@ -288,7 +243,6 @@ fn threatening_dealer_stops_marginal_five_pair_chase() {
         &[],
         &table,
         0,
-        WIN_RULE_SHENYANG_BASIC,
     ));
 }
 
@@ -304,13 +258,7 @@ fn two_fan_capped_claim_peng_uses_dragon_pair_for_speed_over_five_pairs() {
     let claim = table.claim_window.clone().unwrap();
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 22, 31, 35, 35];
 
-    assert!(should_lock_seven_pairs_plan(
-        &hand,
-        &[],
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(should_lock_seven_pairs_plan(&hand, &[], &table, 0));
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Peng)

@@ -14,10 +14,7 @@ fn claim_peng_passes_raw_piao_shape_without_terminal_or_honor() {
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
 
     assert!(piao_plan_score(&hand, melds) >= 32.0);
-    assert_eq!(
-        piao_plan_score_for_context(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        0.0
-    );
+    assert_eq!(piao_plan_score_for_context(&hand, melds, &table, 0), 0.0);
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Pass)

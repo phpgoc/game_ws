@@ -32,7 +32,7 @@ pub fn choose_self_gang_from_view(
         || !position_known_tile_counts_are_possible(hand, melds, table)
         || table.wall_count == 0
         || candidate_tiles.is_empty()
-        || should_preserve_seven_pairs_for_self_gang(hand, melds, table, position, win_rule)
+        || should_preserve_seven_pairs_for_self_gang(hand, melds, table, position)
     {
         return None;
     }
@@ -114,9 +114,8 @@ pub(super) fn self_gang_score(
         return f64::NEG_INFINITY;
     };
     let is_ready = best_ready_score_after_discard(hand, melds, table, position, win_rule) > 0.0;
-    let piao_score = piao_plan_score_for_context(hand, melds, table, position, win_rule);
-    let pure_one_suit_score =
-        pure_one_suit_plan_score_for_context(hand, melds, table, position, win_rule);
+    let piao_score = piao_plan_score_for_context(hand, melds, table, position);
+    let pure_one_suit_score = pure_one_suit_plan_score_for_context(hand, melds, table, position);
     let committed_piao_plan = piao_score >= 22.0
         && piao_threat_level(melds) > 0
         && piao_committed_group_count(hand, melds) >= 3;
@@ -274,7 +273,6 @@ pub(super) fn should_preserve_seven_pairs_for_self_gang(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
 ) -> bool {
-    should_lock_seven_pairs_plan(hand, melds, table, position, win_rule)
+    should_lock_seven_pairs_plan(hand, melds, table, position)
 }

@@ -16,11 +16,10 @@ pub(super) fn choose_chi_claim(
     if position != next_position_after(from_position, table) {
         return None;
     }
-    if should_preserve_seven_pairs_plan_for_context(hand, current_melds, table, position, win_rule)
-    {
+    if should_preserve_seven_pairs_plan_for_context(hand, current_melds, table, position) {
         return Some(AiClaimChoice::Pass);
     }
-    if should_preserve_piao_plan_for_chi(hand, current_melds, table, position, win_rule) {
+    if should_preserve_piao_plan_for_chi(hand, current_melds, table, position) {
         return Some(AiClaimChoice::Pass);
     }
     if current_ready_score > 0.0 {
@@ -38,8 +37,7 @@ pub(super) fn choose_chi_claim(
         win_rule,
     );
     let pure_chi_suit =
-        (pure_one_suit_plan_score_for_context(hand, current_melds, table, position, win_rule)
-            > 0.0)
+        (pure_one_suit_plan_score_for_context(hand, current_melds, table, position) > 0.0)
             .then(|| dominant_pure_suit(hand, current_melds))
             .flatten();
     let mut best_ready_chi: Option<(f64, f64, Vec<i32>)> = None;

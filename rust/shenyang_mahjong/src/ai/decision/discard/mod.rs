@@ -41,12 +41,12 @@ fn choose_discard_from_view_inner(
         if let Some(tile) = choose_late_ready_discard(hand, melds, table, position, win_rule) {
             return Some(tile);
         }
-        if should_keep_pairs_for_seven_pairs_discard(hand, melds, table, position, win_rule) {
+        if should_keep_pairs_for_seven_pairs_discard(hand, melds, table, position) {
             return choose_late_defense_discard_preserving_pairs(hand, table, position);
         }
         return choose_late_defense_discard(hand, table, position);
     }
-    if let Some(tile) = choose_seven_pairs_wait_discard(hand, melds, table, position, win_rule) {
+    if let Some(tile) = choose_seven_pairs_wait_discard(hand, melds, table, position) {
         return Some(tile);
     }
     if let Some(tile) = choose_piao_single_wait_discard(hand, melds, table, position) {
@@ -56,7 +56,7 @@ fn choose_discard_from_view_inner(
         if let Some(tile) = choose_late_ready_discard(hand, melds, table, position, win_rule) {
             return Some(tile);
         }
-        if should_keep_pairs_for_seven_pairs_discard(hand, melds, table, position, win_rule) {
+        if should_keep_pairs_for_seven_pairs_discard(hand, melds, table, position) {
             return choose_late_defense_discard_preserving_pairs(hand, table, position);
         }
         return choose_late_defense_discard(hand, table, position);
@@ -67,8 +67,7 @@ fn choose_discard_from_view_inner(
         return Some(tile);
     }
 
-    let preserve_early_piao_pairs =
-        has_early_piao_singleton_discard(hand, melds, table, position, win_rule);
+    let preserve_early_piao_pairs = has_early_piao_singleton_discard(hand, melds, table, position);
     let speed_first_wait = table.dealer_position == position
         || ready_visible_fan_reaches_cap(hand, melds, table, position, win_rule)
         || ready_visible_fan_exceeds_half_cap(hand, melds, table, position, win_rule);
@@ -84,11 +83,9 @@ fn choose_discard_from_view_inner(
             next.remove(index);
         }
         let violates_basic_hard_requirement =
-            violates_basic_three_suits_discard(&next, melds, table, position, tile, win_rule)
-                || violates_basic_terminal_or_honor_discard(
-                    &next, melds, table, position, tile, win_rule,
-                )
-                || violates_basic_heng_discard(&next, melds, table, position, tile, win_rule);
+            violates_basic_three_suits_discard(&next, melds, table, position, tile)
+                || violates_basic_terminal_or_honor_discard(&next, melds, table, position, tile)
+                || violates_basic_heng_discard(&next, melds, table, position, tile);
         let score =
             hand_progress_score_after_discard(&next, melds, table, position, win_rule, tile);
         let pressure = estimate_pressure_for_tile(table, position, tile);
@@ -100,25 +97,23 @@ fn choose_discard_from_view_inner(
             (2, _, _, _) => pair_discard_bias(hand),
             (c, _, _, neigh) if c >= 3 => -4.5 - neigh as f64,
             _ => 0.0,
-        } + three_suits_discard_bias(
-            &next, melds, table, position, tile, win_rule,
-        ) + terminal_or_honor_discard_bias(
-            &next, melds, table, position, tile, win_rule,
-        ) + piao_discard_bias(hand, tile, melds, table, position, win_rule)
-            + early_piao_candidate_discard_bias(hand, tile, melds, table, position, win_rule)
+        } + three_suits_discard_bias(&next, melds, table, position, tile)
+            + terminal_or_honor_discard_bias(&next, melds, table, position, tile)
+            + piao_discard_bias(hand, tile, melds, table, position)
+            + early_piao_candidate_discard_bias(hand, tile, melds, table, position)
             + basic_heng_seed_discard_bias(hand, tile, melds)
             + capped_spare_dragon_discard_bias(hand, tile, melds, table)
-            + seven_pairs_plan_discard_bias(hand, tile, melds, table, position, win_rule)
+            + seven_pairs_plan_discard_bias(hand, tile, melds, table, position)
             + seven_pairs_wait_discard_bias(hand, tile, melds, table, position)
             + four_gui_yi_discard_bias(hand, tile, melds, table, position, win_rule)
-            + pure_one_suit_discard_bias(hand, tile, melds, table, position, win_rule)
-            + complete_sequence_discard_bias(hand, tile, melds, table, position, win_rule)
-            + incomplete_sequence_discard_bias(hand, tile, melds, table, position, win_rule)
+            + pure_one_suit_discard_bias(hand, tile, melds, table, position)
+            + complete_sequence_discard_bias(hand, tile, melds, table, position)
+            + incomplete_sequence_discard_bias(hand, tile, melds, table, position)
             + pinghu_sequence_route_discard_bias(hand, tile, melds, table, position, win_rule)
             + mid_round_public_discard_bias(table, position, tile)
             + mid_round_open_meld_safety_bias(table, tile)
             + mid_round_live_honor_risk_bias(table, position, tile, count)
-            + mid_round_live_suited_risk_bias(hand, melds, table, position, tile, count, win_rule)
+            + mid_round_live_suited_risk_bias(hand, melds, table, position, tile, count)
             + own_open_public_safety_bias(melds, table, position, tile)
             + opponent_threat_discard_bias(table, position, tile, count)
             + pure_one_suit_threat_discard_bias(table, position, tile, count)

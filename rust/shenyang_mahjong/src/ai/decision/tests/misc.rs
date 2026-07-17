@@ -89,21 +89,12 @@ fn late_broken_basic_discard_follows_public_tile_for_weak_recoverable_hand() {
     );
     assert!(hand_power(&hand) >= 16.0);
     assert!(hand_power(&hand) < 18.0);
-    assert!(!should_lock_seven_pairs_plan(
-        &hand,
-        &[],
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(!should_lock_seven_pairs_plan(&hand, &[], &table, 0));
     assert_eq!(
-        pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        pure_one_suit_plan_score_for_context(&hand, &[], &table, 0),
         0.0
     );
-    assert_eq!(
-        piao_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
-        0.0
-    );
+    assert_eq!(piao_plan_score_for_context(&hand, &[], &table, 0), 0.0);
     assert_eq!(
         best_ready_score_after_discard(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
         0.0

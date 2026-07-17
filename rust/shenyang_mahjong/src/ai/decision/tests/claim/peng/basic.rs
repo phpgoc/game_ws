@@ -20,7 +20,6 @@ fn capped_claim_peng_opens_basic_route_over_sequence_preservation() {
         &[],
         &table,
         0,
-        WIN_RULE_SHENYANG_BASIC,
         5,
         1
     ));
@@ -28,7 +27,6 @@ fn capped_claim_peng_opens_basic_route_over_sequence_preservation() {
         &hand,
         &[],
         &table,
-        0,
         0,
         5,
         1
@@ -86,7 +84,6 @@ fn claim_peng_opens_later_closed_basic_hand_over_sequence_preservation() {
         &[],
         &table,
         0,
-        WIN_RULE_SHENYANG_BASIC,
         5,
         1
     ));
@@ -94,7 +91,6 @@ fn claim_peng_opens_later_closed_basic_hand_over_sequence_preservation() {
         &hand,
         &[],
         &table,
-        0,
         0,
         5,
         1
@@ -130,7 +126,6 @@ fn claim_peng_opens_mid_basic_hand_with_existing_heng() {
         &[],
         &table,
         0,
-        WIN_RULE_SHENYANG_BASIC,
         ShenyangMahjongMeldKind::PENG,
         5,
         1
@@ -140,7 +135,6 @@ fn claim_peng_opens_mid_basic_hand_with_existing_heng() {
         &[],
         &table,
         0,
-        WIN_RULE_SHENYANG_BASIC,
         5,
         1
     ));

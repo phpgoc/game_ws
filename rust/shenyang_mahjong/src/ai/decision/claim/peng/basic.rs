@@ -5,7 +5,6 @@ pub(in crate::ai::decision) fn should_claim_peng_for_basic_heng_and_opening(
     current_melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
     tile: i32,
     from_position: usize,
 ) -> bool {
@@ -14,15 +13,8 @@ pub(in crate::ai::decision) fn should_claim_peng_for_basic_heng_and_opening(
         || !can_peng(hand, tile)
         || !missing_suits(hand, current_melds).is_empty()
         || !has_terminal_or_honor_with_extra(hand, current_melds, Some(tile))
-        || should_preserve_seven_pairs_plan_for_context(
-            hand,
-            current_melds,
-            table,
-            position,
-            win_rule,
-        )
-        || pure_one_suit_plan_score_for_context(hand, current_melds, table, position, win_rule)
-            > 0.0
+        || should_preserve_seven_pairs_plan_for_context(hand, current_melds, table, position)
+        || pure_one_suit_plan_score_for_context(hand, current_melds, table, position) > 0.0
     {
         return false;
     }
@@ -48,7 +40,6 @@ pub(in crate::ai::decision) fn should_claim_peng_to_open_capped_basic_route(
     current_melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
     tile: i32,
     from_position: usize,
 ) -> bool {
@@ -58,16 +49,9 @@ pub(in crate::ai::decision) fn should_claim_peng_to_open_capped_basic_route(
         || !missing_suits(hand, current_melds).is_empty()
         || !has_terminal_or_honor_with_extra(hand, current_melds, Some(tile))
         || !has_triplet_or_dragon_pair(hand, current_melds)
-        || should_preserve_seven_pairs_plan_for_context(
-            hand,
-            current_melds,
-            table,
-            position,
-            win_rule,
-        )
-        || pure_one_suit_plan_score_for_context(hand, current_melds, table, position, win_rule)
-            > 0.0
-        || piao_plan_score_for_context(hand, current_melds, table, position, win_rule) >= 22.0
+        || should_preserve_seven_pairs_plan_for_context(hand, current_melds, table, position)
+        || pure_one_suit_plan_score_for_context(hand, current_melds, table, position) > 0.0
+        || piao_plan_score_for_context(hand, current_melds, table, position) >= 22.0
     {
         return false;
     }
@@ -94,7 +78,6 @@ pub(in crate::ai::decision) fn should_claim_peng_to_open_mid_basic_hand(
     current_melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
     tile: i32,
     from_position: usize,
 ) -> bool {
@@ -104,15 +87,8 @@ pub(in crate::ai::decision) fn should_claim_peng_to_open_mid_basic_hand(
         || !missing_suits(hand, current_melds).is_empty()
         || !has_terminal_or_honor_with_extra(hand, current_melds, Some(tile))
         || !has_triplet_or_dragon_pair(hand, current_melds)
-        || should_preserve_seven_pairs_plan_for_context(
-            hand,
-            current_melds,
-            table,
-            position,
-            win_rule,
-        )
-        || pure_one_suit_plan_score_for_context(hand, current_melds, table, position, win_rule)
-            > 0.0
+        || should_preserve_seven_pairs_plan_for_context(hand, current_melds, table, position)
+        || pure_one_suit_plan_score_for_context(hand, current_melds, table, position) > 0.0
     {
         return false;
     }
@@ -150,9 +126,8 @@ pub(in crate::ai::decision) fn should_pass_closed_basic_peng_to_preserve_sequenc
         && is_suited(tile)
         && has_triplet_like_group(hand, current_melds)
         && tile_is_middle_of_sequence(hand, tile)
-        && piao_plan_score_for_context(hand, current_melds, table, position, win_rule) < 22.0
-        && pure_one_suit_plan_score_for_context(hand, current_melds, table, position, win_rule)
-            <= 0.0
+        && piao_plan_score_for_context(hand, current_melds, table, position) < 22.0
+        && pure_one_suit_plan_score_for_context(hand, current_melds, table, position) <= 0.0
         && !should_open_broken_closed_hand_for_defense(
             hand,
             current_melds,

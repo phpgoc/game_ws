@@ -42,7 +42,6 @@ pub(in crate::ai::decision) fn seven_pairs_plan_score(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    _win_rule: i32,
 ) -> f64 {
     if valid_meld_count(melds) > 0 || !(hand.len() == 13 || hand.len() == 14) {
         return 0.0;
@@ -97,7 +96,6 @@ pub(in crate::ai::decision) fn should_lock_seven_pairs_plan(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    _win_rule: i32,
 ) -> bool {
     if valid_meld_count(melds) > 0 || !(hand.len() == 13 || hand.len() == 14) {
         return false;
@@ -140,7 +138,6 @@ pub(in crate::ai::decision) fn should_preserve_seven_pairs_plan_for_context(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
 ) -> bool {
-    hand.len() == 13 && should_lock_seven_pairs_plan(hand, melds, table, position, win_rule)
+    hand.len() == 13 && should_lock_seven_pairs_plan(hand, melds, table, position)
 }

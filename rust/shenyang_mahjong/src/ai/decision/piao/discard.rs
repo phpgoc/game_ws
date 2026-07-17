@@ -6,9 +6,8 @@ pub(in crate::ai::decision) fn early_piao_candidate_discard_bias(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
 ) -> f64 {
-    if !is_closed_early_piao_candidate(hand, melds, table, position, win_rule) {
+    if !is_closed_early_piao_candidate(hand, melds, table, position) {
         return 0.0;
     }
     let count = hand.iter().filter(|item| **item == tile).count();
@@ -33,9 +32,8 @@ pub(in crate::ai::decision) fn has_early_piao_singleton_discard(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
 ) -> bool {
-    is_closed_early_piao_candidate(hand, melds, table, position, win_rule)
+    is_closed_early_piao_candidate(hand, melds, table, position)
         && unique_tiles(hand).into_iter().any(|tile| {
             hand.iter().filter(|item| **item == tile).count() == 1 && {
                 let next = remove_n_tiles(hand, tile, 1);
@@ -50,14 +48,12 @@ pub(in crate::ai::decision) fn piao_discard_bias(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
 ) -> f64 {
-    if piao_plan_score_for_context(hand, melds, table, position, win_rule) < 20.0 {
+    if piao_plan_score_for_context(hand, melds, table, position) < 20.0 {
         return 0.0;
     }
     let count = hand.iter().filter(|item| **item == tile).count();
-    let pure_one_suit_score =
-        pure_one_suit_plan_score_for_context(hand, melds, table, position, win_rule);
+    let pure_one_suit_score = pure_one_suit_plan_score_for_context(hand, melds, table, position);
     let committed_groups = piao_committed_group_count(hand, melds);
     let only_terminal_or_honor = (is_honor(tile) || tile_is_terminal(tile))
         && count == 1

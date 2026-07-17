@@ -52,7 +52,7 @@ fn dealer_takes_unready_concealed_gang_that_preserves_committed_piao() {
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
     let hand = vec![2, 5, 8, 11, 11, 11, 21, 21, 21, 21, 35];
 
-    assert!(piao_plan_score_for_context(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC) >= 40.0);
+    assert!(piao_plan_score_for_context(&hand, melds, &table, 0) >= 40.0);
     assert!(piao_committed_group_count(&hand, melds) >= 3);
     assert_eq!(
         best_ready_score_after_discard(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
@@ -86,7 +86,7 @@ fn half_capped_closed_basic_piao_self_gang_still_prioritizes_opening() {
     table.max_fan = Some(5);
     let hand = vec![1, 1, 1, 11, 11, 11, 21, 21, 21, 21, 31, 31, 35, 36];
 
-    assert!(piao_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC) >= 40.0);
+    assert!(piao_plan_score_for_context(&hand, &[], &table, 0) >= 40.0);
     assert!(piao_committed_group_count(&hand, &[]) >= 3);
     assert_eq!(estimated_visible_bonus_fan(&hand, &[]), 1);
     assert_eq!(
@@ -117,7 +117,7 @@ fn half_capped_committed_piao_self_gang_takes_projected_cap() {
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
     let hand = vec![2, 5, 8, 11, 11, 11, 21, 21, 21, 21, 35];
 
-    assert!(piao_plan_score_for_context(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC) >= 40.0);
+    assert!(piao_plan_score_for_context(&hand, melds, &table, 0) >= 40.0);
     assert!(piao_committed_group_count(&hand, melds) >= 3);
     assert_eq!(estimated_visible_bonus_fan(&hand, melds), 1);
     assert_eq!(
@@ -135,10 +135,7 @@ fn half_capped_established_pure_self_gang_takes_projected_cap() {
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
     let hand = vec![1, 1, 1, 1, 2, 2, 4, 5, 6, 6, 9];
 
-    assert!(
-        pure_one_suit_plan_score_for_context(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
-            > 0.0
-    );
+    assert!(pure_one_suit_plan_score_for_context(&hand, melds, &table, 0) > 0.0);
     assert_eq!(
         best_ready_score_after_discard(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
         0.0
@@ -313,7 +310,7 @@ fn self_gang_allows_committed_piao_plan_when_gang_reaches_piao_ready() {
     let mut after_melds = melds.to_vec();
     after_melds.push(test_concealed_gang_meld(21));
 
-    assert!(piao_plan_score_for_context(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC) >= 22.0);
+    assert!(piao_plan_score_for_context(&hand, melds, &table, 0) >= 22.0);
     assert!(ready_has_piao_win(
         &after_gang,
         &after_melds,
@@ -338,8 +335,7 @@ fn self_gang_allows_dragon_gang_after_opening_basic_hand() {
             &hand,
             table.seats.get(&0).unwrap().melds.as_slice(),
             &table,
-            0,
-            WIN_RULE_SHENYANG_BASIC
+            0
         ),
         0.0
     );
@@ -417,10 +413,7 @@ fn self_gang_delays_added_plain_gang_before_ready() {
         best_ready_score_after_discard(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
         0.0
     );
-    assert_eq!(
-        piao_plan_score_for_context(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
-        0.0
-    );
+    assert_eq!(piao_plan_score_for_context(&hand, melds, &table, 0), 0.0);
     assert_eq!(
         choose_self_gang_from_view(&hand, &[9], &table, 0, WIN_RULE_SHENYANG_BASIC),
         None
@@ -486,7 +479,7 @@ fn self_gang_delays_open_piao_dragon_gang_until_ready() {
     let hand = vec![2, 5, 8, 11, 14, 17, 21, 35, 35, 35, 35];
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
 
-    assert!(piao_plan_score_for_context(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC) >= 22.0);
+    assert!(piao_plan_score_for_context(&hand, melds, &table, 0) >= 22.0);
     assert_eq!(
         best_ready_score_after_discard(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
         0.0
@@ -548,7 +541,7 @@ fn self_gang_passes_committed_piao_plan_when_gang_only_reaches_basic_ready() {
     let mut after_melds = melds.to_vec();
     after_melds.push(test_concealed_gang_meld(21));
 
-    assert!(piao_plan_score_for_context(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC) >= 22.0);
+    assert!(piao_plan_score_for_context(&hand, melds, &table, 0) >= 22.0);
     assert!(best_ready_score_after_discard(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0);
     assert!(
         ready_tile_score(
@@ -598,15 +591,7 @@ fn self_gang_passes_pure_plan_when_gang_only_reaches_basic_ready() {
     sort_tiles(&mut after_gang);
     let melds = vec![test_chi_meld(2), test_concealed_gang_meld(1)];
 
-    assert!(
-        pure_one_suit_plan_score_for_context(
-            &hand,
-            current_melds,
-            &table,
-            0,
-            WIN_RULE_SHENYANG_BASIC,
-        ) > 0.0
-    );
+    assert!(pure_one_suit_plan_score_for_context(&hand, current_melds, &table, 0,) > 0.0);
     assert!(
         best_ready_score_after_discard(&hand, current_melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
             > 0.0
@@ -1021,9 +1006,7 @@ fn speed_first_concealed_gang_preserves_unready_pure_one_suit_plan() {
     let mut table = table_with_discards(1, Vec::new());
     let hand = vec![1, 1, 1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 31, 32];
 
-    assert!(
-        pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0
-    );
+    assert!(pure_one_suit_plan_score_for_context(&hand, &[], &table, 0) > 0.0);
     assert_eq!(
         best_ready_score_after_discard(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
         0.0
@@ -1042,7 +1025,7 @@ fn speed_first_concealed_gang_preserves_unready_pure_one_suit_plan() {
     table.dealer_position = 1;
     table.max_fan = Some(1);
     assert_eq!(
-        pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        pure_one_suit_plan_score_for_context(&hand, &[], &table, 0),
         0.0
     );
     assert_eq!(

@@ -23,9 +23,8 @@ pub(in crate::ai::decision) fn seven_pairs_plan_discard_bias(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
 ) -> f64 {
-    if !should_keep_pairs_for_seven_pairs_discard(hand, melds, table, position, win_rule) {
+    if !should_keep_pairs_for_seven_pairs_discard(hand, melds, table, position) {
         return 0.0;
     }
     let count = hand.iter().filter(|item| **item == tile).count();
@@ -55,10 +54,9 @@ pub(in crate::ai::decision) fn should_keep_pairs_for_seven_pairs_discard(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
 ) -> bool {
     if valid_meld_count(melds) > 0 || hand.len() != 14 {
         return false;
     }
-    should_lock_seven_pairs_plan(hand, melds, table, position, win_rule)
+    should_lock_seven_pairs_plan(hand, melds, table, position)
 }

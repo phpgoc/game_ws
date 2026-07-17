@@ -50,15 +50,8 @@ pub(in crate::ai::decision) fn should_claim_ready_dragon_peng_from_discard(
 ) -> bool {
     if !is_dragon(tile)
         || !can_peng(hand, tile)
-        || should_preserve_seven_pairs_plan_for_context(
-            hand,
-            current_melds,
-            table,
-            position,
-            win_rule,
-        )
-        || pure_one_suit_plan_score_for_context(hand, current_melds, table, position, win_rule)
-            > 0.0
+        || should_preserve_seven_pairs_plan_for_context(hand, current_melds, table, position)
+        || pure_one_suit_plan_score_for_context(hand, current_melds, table, position) > 0.0
         || ready_visible_fan_reaches_cap(hand, current_melds, table, position, win_rule)
     {
         return false;

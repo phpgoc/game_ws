@@ -313,9 +313,7 @@ fn claim_gang_passes_pure_plan_when_gang_only_reaches_basic_ready() {
     sort_tiles(&mut after_claim);
     let melds = vec![claim_gang_meld(1, 1)];
 
-    assert!(
-        pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0
-    );
+    assert!(pure_one_suit_plan_score_for_context(&hand, &[], &table, 0) > 0.0);
     assert!(ready_tile_score(&after_claim, &melds, &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0);
     assert!(!ready_has_pure_one_suit_win(
         &after_claim,
@@ -394,13 +392,7 @@ fn claim_gang_penges_closed_early_piao_candidate() {
     let claim = table.claim_window.clone().unwrap();
     let hand = vec![1, 1, 1, 4, 5, 6, 11, 11, 12, 13, 21, 21, 22];
 
-    assert!(is_closed_early_piao_candidate(
-        &hand,
-        &[],
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(is_closed_early_piao_candidate(&hand, &[], &table, 0));
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Peng)
@@ -424,7 +416,7 @@ fn claim_gang_penges_committed_piao_plan_when_gang_only_reaches_basic_ready() {
     let mut after_melds = melds.to_vec();
     after_melds.push(claim_gang_meld(21, 1));
 
-    assert!(piao_plan_score_for_context(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC) >= 22.0);
+    assert!(piao_plan_score_for_context(&hand, melds, &table, 0) >= 22.0);
     assert!(
         ready_tile_score(
             &after_claim,
@@ -602,7 +594,7 @@ fn claim_gang_takes_committed_piao_plan_when_gang_reaches_piao_ready() {
     let mut after_melds = melds.to_vec();
     after_melds.push(claim_gang_meld(21, 1));
 
-    assert!(piao_plan_score_for_context(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC) >= 22.0);
+    assert!(piao_plan_score_for_context(&hand, melds, &table, 0) >= 22.0);
     assert!(ready_has_piao_win(
         &after_claim,
         &after_melds,
@@ -675,7 +667,7 @@ fn claim_gang_takes_open_plain_gang_when_it_reaches_ready() {
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
 
     assert_eq!(
-        pure_one_suit_plan_score_for_context(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC,),
+        pure_one_suit_plan_score_for_context(&hand, melds, &table, 0,),
         0.0
     );
     assert!(claim_gang_from_discard_reaches_ready(
@@ -749,7 +741,7 @@ fn dealer_takes_unready_discard_gang_that_preserves_committed_piao() {
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
     let hand = vec![2, 5, 8, 11, 11, 11, 21, 21, 21, 35];
 
-    assert!(piao_plan_score_for_context(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC) >= 40.0);
+    assert!(piao_plan_score_for_context(&hand, melds, &table, 0) >= 40.0);
     assert!(piao_committed_group_count(&hand, melds) >= 3);
     assert_eq!(
         ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
@@ -791,7 +783,7 @@ fn half_capped_committed_piao_claim_gang_takes_projected_cap() {
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
     let hand = vec![2, 5, 8, 11, 11, 11, 21, 21, 21, 35];
 
-    assert!(piao_plan_score_for_context(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC) >= 40.0);
+    assert!(piao_plan_score_for_context(&hand, melds, &table, 0) >= 40.0);
     assert!(piao_committed_group_count(&hand, melds) >= 3);
     assert_eq!(estimated_visible_bonus_fan(&hand, melds), 0);
     assert_eq!(
@@ -813,9 +805,7 @@ fn half_capped_established_pure_claim_gang_takes_projected_cap() {
     let claim = table.claim_window.clone().unwrap();
     let hand = vec![1, 1, 1, 2, 2, 2, 3, 4, 5, 5, 6, 8, 9];
 
-    assert!(
-        pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0
-    );
+    assert!(pure_one_suit_plan_score_for_context(&hand, &[], &table, 0) > 0.0);
     assert_eq!(
         ready_tile_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
         0.0
@@ -941,13 +931,7 @@ fn three_fan_capped_claim_gang_penges_dragon_over_five_pairs() {
     let claim = table.claim_window.clone().unwrap();
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 22, 35, 35, 35];
 
-    assert!(!should_lock_seven_pairs_plan(
-        &hand,
-        &[],
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(!should_lock_seven_pairs_plan(&hand, &[], &table, 0));
     assert!(capped_basic_route_foundation_visible_fan_exceeds_half_cap(
         &hand,
         &[],

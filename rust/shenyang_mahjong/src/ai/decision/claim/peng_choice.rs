@@ -14,7 +14,7 @@ pub(super) fn choose_peng_claim(
     if !can_peng(hand, tile) {
         return None;
     }
-    if pure_one_suit_plan_score_for_context(hand, current_melds, table, position, win_rule) > 0.0 {
+    if pure_one_suit_plan_score_for_context(hand, current_melds, table, position) > 0.0 {
         return Some(AiClaimChoice::Pass);
     }
     if should_claim_capped_dragon_peng_over_five_pairs(
@@ -22,7 +22,6 @@ pub(super) fn choose_peng_claim(
         current_melds,
         table,
         position,
-        win_rule,
         tile,
         from_position,
     ) {
@@ -38,8 +37,7 @@ pub(super) fn choose_peng_claim(
     ) {
         return Some(AiClaimChoice::Peng);
     }
-    if should_preserve_seven_pairs_plan_for_context(hand, current_melds, table, position, win_rule)
-    {
+    if should_preserve_seven_pairs_plan_for_context(hand, current_melds, table, position) {
         return Some(AiClaimChoice::Pass);
     }
     if claim_leaves_unrecoverable_basic_requirement(
@@ -47,7 +45,6 @@ pub(super) fn choose_peng_claim(
         current_melds,
         table,
         position,
-        win_rule,
         ShenyangMahjongMeldKind::PENG,
         tile,
         from_position,
@@ -109,7 +106,6 @@ pub(super) fn choose_peng_claim(
         current_melds,
         table,
         position,
-        win_rule,
         tile,
         from_position,
     ) {
@@ -120,7 +116,6 @@ pub(super) fn choose_peng_claim(
         current_melds,
         table,
         position,
-        win_rule,
         tile,
         from_position,
     ) {
@@ -141,7 +136,6 @@ pub(super) fn choose_peng_claim(
         current_melds,
         table,
         position,
-        win_rule,
         tile,
         from_position,
     ) {
@@ -153,7 +147,7 @@ pub(super) fn choose_peng_claim(
     if table.dealer_position == position || dealer_opponent_has_major_threat(table, position) {
         return Some(AiClaimChoice::Peng);
     }
-    if piao_plan_score_for_context(hand, current_melds, table, position, win_rule) >= 32.0 {
+    if piao_plan_score_for_context(hand, current_melds, table, position) >= 32.0 {
         return Some(AiClaimChoice::Peng);
     }
 
@@ -165,17 +159,10 @@ pub(super) fn choose_peng_claim(
     if should_open_broken_closed_hand_for_defense(hand, current_melds, table, position, win_rule) {
         return Some(AiClaimChoice::Peng);
     }
-    if should_preserve_pinghu_sequence_over_peng(
-        hand,
-        current_melds,
-        table,
-        position,
-        win_rule,
-        tile,
-    ) {
+    if should_preserve_pinghu_sequence_over_peng(hand, current_melds, table, position, tile) {
         return Some(AiClaimChoice::Pass);
     }
-    let required_gain = required_peng_gain(hand, current_melds, table, position, win_rule, tile);
+    let required_gain = required_peng_gain(hand, current_melds, table, position, tile);
     (after >= current_score + required_gain).then_some(AiClaimChoice::Peng)
 }
 
@@ -184,7 +171,6 @@ pub(in crate::ai::decision) fn required_peng_gain(
     current_melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
     tile: i32,
 ) -> f64 {
     let mut required_gain = if is_honor(tile) || tile_is_terminal(tile) {
@@ -205,7 +191,7 @@ pub(in crate::ai::decision) fn required_peng_gain(
     if !has_triplet_or_dragon_pair(hand, current_melds) {
         required_gain -= 3.0;
     }
-    if piao_plan_score_for_context(hand, current_melds, table, position, win_rule) >= 22.0 {
+    if piao_plan_score_for_context(hand, current_melds, table, position) >= 22.0 {
         required_gain -= 7.0;
     }
     required_gain -= 4.0;

@@ -5,9 +5,7 @@ fn ai_declares_dragon_xi_gang_even_from_live_pure_one_suit_plan() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 31, 32, 33, 35, 36, 37];
 
-    assert!(
-        pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC,) > 0.0
-    );
+    assert!(pure_one_suit_plan_score_for_context(&hand, &[], &table, 0,) > 0.0);
     assert_eq!(
         choose_xi_gang_from_view(&hand, &[vec![35, 36, 37]], &table, 0,),
         Some(vec![35, 36, 37])
@@ -61,13 +59,7 @@ fn ai_declares_wind_xi_gang_even_from_locked_seven_pairs() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 31, 32, 33, 34];
 
-    assert!(should_lock_seven_pairs_plan(
-        &hand,
-        &[],
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC,
-    ));
+    assert!(should_lock_seven_pairs_plan(&hand, &[], &table, 0,));
     assert_eq!(
         choose_xi_gang_from_view(&hand, &[vec![31, 32, 33, 34]], &table, 0,),
         Some(vec![31, 32, 33, 34])

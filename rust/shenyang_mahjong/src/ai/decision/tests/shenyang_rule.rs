@@ -26,8 +26,7 @@ fn basic_heng_filter_ignores_chi_tile_plus_hand_pair() {
         &melds,
         &table,
         0,
-        35,
-        WIN_RULE_SHENYANG_BASIC
+        35
     ));
 }
 
@@ -43,7 +42,6 @@ fn legacy_rule_number_cannot_disable_shenyang_discard_guards() {
         &table,
         0,
         35,
-        0,
     ));
     assert!(basic_heng_seed_discard_bias(&hand_after_discard, 35, &melds) < 0.0);
 
@@ -54,7 +52,6 @@ fn legacy_rule_number_cannot_disable_shenyang_discard_guards() {
         &table,
         0,
         35,
-        0,
     ));
 
     let two_suits_after = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 14, 15, 31, 35];
@@ -64,7 +61,6 @@ fn legacy_rule_number_cannot_disable_shenyang_discard_guards() {
         &table,
         0,
         21,
-        0,
     ));
 }
 
@@ -538,10 +534,8 @@ fn shenyang_rule_progress_penalizes_unrecoverable_missing_heng_more() {
     assert!(can_recover_basic_heng(&hand, &[], &live_table, 0));
     assert!(!can_recover_basic_heng(&hand, &[], &dead_table, 0));
 
-    let live_score =
-        shenyang_rule_progress_score(&hand, &[], &live_table, 0, WIN_RULE_SHENYANG_BASIC);
-    let dead_score =
-        shenyang_rule_progress_score(&hand, &[], &dead_table, 0, WIN_RULE_SHENYANG_BASIC);
+    let live_score = shenyang_rule_progress_score(&hand, &[], &live_table, 0);
+    let dead_score = shenyang_rule_progress_score(&hand, &[], &dead_table, 0);
 
     assert!(
         dead_score < live_score - 8.0,

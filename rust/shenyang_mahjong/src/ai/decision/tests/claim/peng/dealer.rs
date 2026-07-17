@@ -178,13 +178,7 @@ fn one_fan_capped_claim_peng_uses_dragon_pair_for_speed_over_five_pairs() {
     let claim = table.claim_window.clone().unwrap();
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 22, 31, 35, 35];
 
-    assert!(!should_lock_seven_pairs_plan(
-        &hand,
-        &[],
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(!should_lock_seven_pairs_plan(&hand, &[], &table, 0));
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Peng)

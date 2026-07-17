@@ -12,7 +12,7 @@ pub(super) fn choose_gang_claim(
     if table.wall_count == 0 || !can_gang(hand, tile) {
         return None;
     }
-    if pure_one_suit_plan_score_for_context(hand, current_melds, table, position, win_rule) > 0.0
+    if pure_one_suit_plan_score_for_context(hand, current_melds, table, position) > 0.0
         && !should_claim_ready_pure_one_suit_gang_from_discard(
             hand,
             current_melds,
@@ -37,14 +37,12 @@ pub(super) fn choose_gang_claim(
         current_melds,
         table,
         position,
-        win_rule,
         tile,
         from_position,
     ) {
         return Some(AiClaimChoice::Peng);
     }
-    if should_preserve_seven_pairs_plan_for_context(hand, current_melds, table, position, win_rule)
-    {
+    if should_preserve_seven_pairs_plan_for_context(hand, current_melds, table, position) {
         return Some(AiClaimChoice::Pass);
     }
     if claim_leaves_unrecoverable_basic_requirement(
@@ -52,7 +50,6 @@ pub(super) fn choose_gang_claim(
         current_melds,
         table,
         position,
-        win_rule,
         ShenyangMahjongMeldKind::GANG,
         tile,
         from_position,

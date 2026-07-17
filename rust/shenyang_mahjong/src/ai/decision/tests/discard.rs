@@ -91,8 +91,8 @@ fn discard_breaks_weak_edge_closed_wait_before_core_closed_middle_wait() {
     assert!(tile_is_weak_edge_wait_terminal(&hand, 1));
     assert!(tile_is_core_closed_middle_wait_member(&hand, 4));
     assert!(
-        incomplete_sequence_discard_bias(&hand, 1, &[], &table, 0, WIN_RULE_SHENYANG_BASIC)
-            > incomplete_sequence_discard_bias(&hand, 4, &[], &table, 0, WIN_RULE_SHENYANG_BASIC)
+        incomplete_sequence_discard_bias(&hand, 1, &[], &table, 0)
+            > incomplete_sequence_discard_bias(&hand, 4, &[], &table, 0)
     );
     assert_eq!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
@@ -107,8 +107,8 @@ fn discard_breaks_weak_edge_wait_before_core_closed_middle_wait() {
 
     assert!(tile_is_core_closed_middle_wait_member(&hand, 4));
     assert!(
-        incomplete_sequence_discard_bias(&hand, 1, &[], &table, 0, WIN_RULE_SHENYANG_BASIC)
-            > incomplete_sequence_discard_bias(&hand, 4, &[], &table, 0, WIN_RULE_SHENYANG_BASIC)
+        incomplete_sequence_discard_bias(&hand, 1, &[], &table, 0)
+            > incomplete_sequence_discard_bias(&hand, 4, &[], &table, 0)
     );
     assert_eq!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
@@ -122,8 +122,8 @@ fn discard_breaks_weak_edge_wait_before_core_two_sided_wait() {
     let hand = vec![1, 2, 4, 5, 11, 12, 13, 21, 22, 23, 24, 25, 35, 35];
 
     assert!(
-        incomplete_sequence_discard_bias(&hand, 1, &[], &table, 0, WIN_RULE_SHENYANG_BASIC)
-            > incomplete_sequence_discard_bias(&hand, 4, &[], &table, 0, WIN_RULE_SHENYANG_BASIC)
+        incomplete_sequence_discard_bias(&hand, 1, &[], &table, 0)
+            > incomplete_sequence_discard_bias(&hand, 4, &[], &table, 0)
     );
     assert_eq!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
@@ -184,8 +184,8 @@ fn discard_preserves_edge_of_complete_sequence() {
 
     assert!(tile_is_part_of_complete_sequence(&hand, 4));
     assert!(
-        complete_sequence_discard_bias(&hand, 4, &[], &table, 0, WIN_RULE_SHENYANG_BASIC)
-            < complete_sequence_discard_bias(&hand, 8, &[], &table, 0, WIN_RULE_SHENYANG_BASIC)
+        complete_sequence_discard_bias(&hand, 4, &[], &table, 0)
+            < complete_sequence_discard_bias(&hand, 8, &[], &table, 0)
     );
     assert_eq!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
@@ -232,8 +232,8 @@ fn discard_preserves_middle_of_complete_sequence() {
     let hand = vec![4, 5, 6, 8, 11, 11, 11, 19, 19, 19, 21, 21, 22, 22];
 
     assert!(
-        complete_sequence_discard_bias(&hand, 5, &[], &table, 0, WIN_RULE_SHENYANG_BASIC)
-            < complete_sequence_discard_bias(&hand, 8, &[], &table, 0, WIN_RULE_SHENYANG_BASIC)
+        complete_sequence_discard_bias(&hand, 5, &[], &table, 0)
+            < complete_sequence_discard_bias(&hand, 8, &[], &table, 0)
     );
     assert_eq!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
@@ -337,18 +337,10 @@ fn discard_preserves_only_recoverable_heng_seed() {
         &[],
         &table,
         0,
-        35,
-        WIN_RULE_SHENYANG_BASIC
+        35
     ));
     let after_one = remove_n_tiles(&hand, 1, 1);
-    assert!(!violates_basic_heng_discard(
-        &after_one,
-        &[],
-        &table,
-        0,
-        1,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(!violates_basic_heng_discard(&after_one, &[], &table, 0, 1));
     assert_ne!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(35)

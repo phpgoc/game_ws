@@ -5,20 +5,14 @@ pub(in crate::ai::decision) fn should_claim_capped_dragon_peng_over_five_pairs(
     current_melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
     tile: i32,
     from_position: usize,
 ) -> bool {
     if !is_dragon(tile) || pair_count(hand) != 5 || !can_peng(hand, tile) {
         return false;
     }
-    let preserves_pair_route =
-        should_lock_seven_pairs_plan(hand, current_melds, table, position, win_rule)
-            || capped_basic_route_foundation_visible_fan_exceeds_half_cap(
-                hand,
-                current_melds,
-                table,
-            );
+    let preserves_pair_route = should_lock_seven_pairs_plan(hand, current_melds, table, position)
+        || capped_basic_route_foundation_visible_fan_exceeds_half_cap(hand, current_melds, table);
     if !preserves_pair_route {
         return false;
     }
@@ -84,14 +78,12 @@ pub(in crate::ai::decision) fn should_preserve_piao_plan_for_chi(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
 ) -> bool {
     if melds.iter().any(is_sequence_meld) {
         return false;
     }
-    let score = piao_plan_score_for_context(hand, melds, table, position, win_rule);
-    let early_piao_candidate =
-        is_closed_early_piao_candidate(hand, melds, table, position, win_rule);
+    let score = piao_plan_score_for_context(hand, melds, table, position);
+    let early_piao_candidate = is_closed_early_piao_candidate(hand, melds, table, position);
     if !early_piao_candidate && score <= 0.0 {
         return false;
     }
@@ -103,13 +95,12 @@ pub(in crate::ai::decision) fn should_preserve_pinghu_sequence_over_peng(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
     tile: i32,
 ) -> bool {
     if !is_suited(tile)
         || is_dragon(tile)
         || table.dealer_position == position
-        || piao_plan_score_for_context(hand, melds, table, position, win_rule) >= 22.0
+        || piao_plan_score_for_context(hand, melds, table, position) >= 22.0
         || !has_triplet_or_dragon_pair(hand, melds)
         || !tile_is_middle_of_sequence(hand, tile)
     {

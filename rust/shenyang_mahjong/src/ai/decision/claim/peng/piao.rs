@@ -54,15 +54,8 @@ pub(in crate::ai::decision) fn should_claim_ready_piao_peng_for_shou_ba_yi(
         || !can_peng(hand, tile)
         || piao_threat_level(current_melds) != 3
         || !has_piao_route_basics(hand, current_melds)
-        || should_preserve_seven_pairs_plan_for_context(
-            hand,
-            current_melds,
-            table,
-            position,
-            win_rule,
-        )
-        || pure_one_suit_plan_score_for_context(hand, current_melds, table, position, win_rule)
-            > 0.0
+        || should_preserve_seven_pairs_plan_for_context(hand, current_melds, table, position)
+        || pure_one_suit_plan_score_for_context(hand, current_melds, table, position) > 0.0
     {
         return false;
     }

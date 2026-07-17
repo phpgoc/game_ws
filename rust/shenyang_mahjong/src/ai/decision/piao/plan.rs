@@ -12,7 +12,6 @@ pub(in crate::ai::decision) fn is_closed_early_piao_candidate(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    _win_rule: i32,
 ) -> bool {
     valid_meld_count(melds) == 0
         && pair_count(hand) >= 3
@@ -213,7 +212,6 @@ pub(in crate::ai::decision) fn piao_plan_score_for_context(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    _win_rule: i32,
 ) -> f64 {
     let score = piao_plan_score(hand, melds);
     if score <= 0.0

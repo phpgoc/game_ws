@@ -10,8 +10,7 @@ fn basic_three_suits_filter_allows_locked_seven_pairs_route() {
         &[],
         &table,
         0,
-        21,
-        WIN_RULE_SHENYANG_BASIC
+        21
     ));
 }
 
@@ -52,16 +51,14 @@ fn capped_locked_seven_pairs_route_can_break_three_suits_requirement() {
         &hand_after_discard,
         &[],
         &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
+        0
     ));
     assert!(!violates_basic_three_suits_discard(
         &hand_after_discard,
         &[],
         &table,
         0,
-        21,
-        WIN_RULE_SHENYANG_BASIC
+        21
     ));
 }
 
@@ -76,8 +73,7 @@ fn capped_locked_seven_pairs_route_can_discard_last_honor() {
         &after_discard,
         &[],
         &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
+        0
     ));
     assert_eq!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
@@ -103,14 +99,8 @@ fn dealer_does_not_lock_five_pairs_when_basic_route_is_viable() {
     table.dealer_position = 0;
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 21, 21, 22, 31, 35, 35, 36];
 
-    assert!(!should_lock_seven_pairs_plan(
-        &hand,
-        &[],
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
-    assert!(!should_lock_seven_pairs_plan(&hand, &[], &table, 0, 0));
+    assert!(!should_lock_seven_pairs_plan(&hand, &[], &table, 0));
+    assert!(!should_lock_seven_pairs_plan(&hand, &[], &table, 0));
 }
 
 #[test]
@@ -151,13 +141,7 @@ fn discard_keeps_quad_pairs_for_basic_seven_pairs_when_missing_suit() {
     let hand = vec![1, 1, 1, 1, 2, 2, 3, 3, 11, 11, 12, 31, 35, 36];
 
     assert_eq!(pair_count(&hand), 5);
-    assert!(should_lock_seven_pairs_plan(
-        &hand,
-        &[],
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(should_lock_seven_pairs_plan(&hand, &[], &table, 0));
     assert!(!matches!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(1 | 2 | 3 | 11)
@@ -191,13 +175,7 @@ fn discard_locked_five_pairs_prefers_single_dragon_before_wind() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 14, 21, 21, 31, 35];
 
-    assert!(should_lock_seven_pairs_plan(
-        &hand,
-        &[],
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(should_lock_seven_pairs_plan(&hand, &[], &table, 0));
     assert_eq!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(35)
@@ -295,17 +273,8 @@ fn five_pair_plan_unlocks_when_wall_cannot_supply_two_missing_pairs() {
     let hand = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 12, 31, 35, 36];
 
     assert_eq!(pair_count(&hand), 5);
-    assert!(!should_lock_seven_pairs_plan(
-        &hand,
-        &[],
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
-    assert_eq!(
-        seven_pairs_plan_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
-        0.0
-    );
+    assert!(!should_lock_seven_pairs_plan(&hand, &[], &table, 0));
+    assert_eq!(seven_pairs_plan_score(&hand, &[], &table, 0), 0.0);
 }
 
 #[test]
@@ -317,38 +286,17 @@ fn four_pair_missing_suit_bias_ignores_malformed_meld() {
         tiles: vec![31, 31],
         from_position: Some(1),
     };
-    let base_bias = three_suits_discard_bias(
-        &hand_after_discard,
-        &[],
-        &table,
-        0,
-        15,
-        WIN_RULE_SHENYANG_BASIC,
-    );
+    let base_bias = three_suits_discard_bias(&hand_after_discard, &[], &table, 0, 15);
 
     assert_eq!(pair_count(&hand_after_discard), 4);
     assert_eq!(missing_suits(&hand_after_discard, &[]), vec![2]);
     assert_eq!(base_bias, 0.0);
     assert_eq!(
-        three_suits_discard_bias(
-            &hand_after_discard,
-            &[malformed_meld],
-            &table,
-            0,
-            15,
-            WIN_RULE_SHENYANG_BASIC,
-        ),
+        three_suits_discard_bias(&hand_after_discard, &[malformed_meld], &table, 0, 15,),
         base_bias
     );
     assert!(
-        three_suits_discard_bias(
-            &hand_after_discard,
-            &[test_peng_meld(31)],
-            &table,
-            0,
-            15,
-            WIN_RULE_SHENYANG_BASIC,
-        ) < 0.0
+        three_suits_discard_bias(&hand_after_discard, &[test_peng_meld(31)], &table, 0, 15,) < 0.0
     );
 }
 
@@ -366,17 +314,8 @@ fn half_capped_basic_foundation_does_not_lock_five_pairs() {
         &[],
         &table
     ));
-    assert!(!should_lock_seven_pairs_plan(
-        &hand,
-        &[],
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
-    assert_eq!(
-        seven_pairs_plan_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
-        0.0
-    );
+    assert!(!should_lock_seven_pairs_plan(&hand, &[], &table, 0));
+    assert_eq!(seven_pairs_plan_score(&hand, &[], &table, 0), 0.0);
 }
 
 #[test]
@@ -391,7 +330,6 @@ fn late_six_pair_hand_breaks_public_pair_instead_of_setting_unsafe_wait() {
         &[],
         &table,
         0,
-        WIN_RULE_SHENYANG_BASIC,
     ));
     assert_eq!(public_discard_count(&table, 1), 1);
     assert_eq!(
@@ -407,13 +345,7 @@ fn one_fan_capped_room_does_not_lock_five_pairs_when_basic_route_is_viable() {
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 22, 31, 35, 35];
 
     assert!(has_basic_normal_route_foundation(&hand, &[]));
-    assert!(!should_lock_seven_pairs_plan(
-        &hand,
-        &[],
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(!should_lock_seven_pairs_plan(&hand, &[], &table, 0));
 }
 
 #[test]
@@ -437,33 +369,15 @@ fn one_fan_room_only_locks_seven_pairs_when_ready() {
     let five_pairs = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 12, 21, 31, 35];
     let six_pairs = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 12, 21, 21, 35];
 
-    assert_eq!(
-        seven_pairs_plan_score(&four_pairs, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
-        0.0
-    );
+    assert_eq!(seven_pairs_plan_score(&four_pairs, &[], &table, 0), 0.0);
     assert_eq!(pair_count(&five_pairs), 5);
-    assert!(!should_lock_seven_pairs_plan(
-        &five_pairs,
-        &[],
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
-    assert_eq!(
-        seven_pairs_plan_score(&five_pairs, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
-        0.0
-    );
-    assert_eq!(seven_pairs_plan_score(&five_pairs, &[], &table, 0, 0), 0.0);
+    assert!(!should_lock_seven_pairs_plan(&five_pairs, &[], &table, 0));
+    assert_eq!(seven_pairs_plan_score(&five_pairs, &[], &table, 0), 0.0);
+    assert_eq!(seven_pairs_plan_score(&five_pairs, &[], &table, 0), 0.0);
 
     assert!(is_seven_pairs_wait_shape(&six_pairs));
-    assert!(should_lock_seven_pairs_plan(
-        &six_pairs,
-        &[],
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
-    assert!(seven_pairs_plan_score(&six_pairs, &[], &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0);
+    assert!(should_lock_seven_pairs_plan(&six_pairs, &[], &table, 0));
+    assert!(seven_pairs_plan_score(&six_pairs, &[], &table, 0) > 0.0);
 }
 
 #[test]
@@ -474,14 +388,8 @@ fn dealer_locks_five_pairs_when_normal_route_is_missing_a_suit() {
 
     assert_eq!(pair_count(&hand), 5);
     assert!(!has_basic_normal_route_foundation(&hand, &[]));
-    assert!(should_lock_seven_pairs_plan(
-        &hand,
-        &[],
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
-    assert!(should_lock_seven_pairs_plan(&hand, &[], &table, 0, 0));
+    assert!(should_lock_seven_pairs_plan(&hand, &[], &table, 0));
+    assert!(should_lock_seven_pairs_plan(&hand, &[], &table, 0));
 }
 
 #[test]
@@ -490,17 +398,8 @@ fn seven_pairs_plan_ignores_invalid_pairs() {
     let hand = vec![1, 1, 2, 2, 3, 4, 5, 6, 7, 31, 97, 97, 98, 98];
 
     assert_eq!(pair_count(&hand), 2);
-    assert_eq!(
-        seven_pairs_plan_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
-        0.0
-    );
-    assert!(!should_lock_seven_pairs_plan(
-        &hand,
-        &[],
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert_eq!(seven_pairs_plan_score(&hand, &[], &table, 0), 0.0);
+    assert!(!should_lock_seven_pairs_plan(&hand, &[], &table, 0));
 }
 
 #[test]
@@ -514,9 +413,8 @@ fn seven_pairs_plan_ignores_malformed_melds_but_rejects_valid_melds() {
         from_position: Some(1),
     };
     let valid_meld = test_peng_meld(21);
-    let base_score = seven_pairs_plan_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC);
-    let base_bias =
-        seven_pairs_plan_discard_bias(&discard_hand, 1, &[], &table, 0, WIN_RULE_SHENYANG_BASIC);
+    let base_score = seven_pairs_plan_score(&hand, &[], &table, 0);
+    let base_bias = seven_pairs_plan_discard_bias(&discard_hand, 1, &[], &table, 0);
 
     assert_eq!(valid_meld_count(&[malformed_meld.clone()]), 0);
     assert_eq!(valid_meld_count(&[valid_meld.clone()]), 1);
@@ -525,27 +423,13 @@ fn seven_pairs_plan_ignores_malformed_melds_but_rejects_valid_melds() {
         &[malformed_meld.clone()],
         &table,
         0,
-        WIN_RULE_SHENYANG_BASIC,
     ));
     assert_eq!(
-        seven_pairs_plan_score(
-            &hand,
-            &[malformed_meld.clone()],
-            &table,
-            0,
-            WIN_RULE_SHENYANG_BASIC,
-        ),
+        seven_pairs_plan_score(&hand, &[malformed_meld.clone()], &table, 0,),
         base_score
     );
     assert_eq!(
-        seven_pairs_plan_discard_bias(
-            &discard_hand,
-            1,
-            &[malformed_meld],
-            &table,
-            0,
-            WIN_RULE_SHENYANG_BASIC,
-        ),
+        seven_pairs_plan_discard_bias(&discard_hand, 1, &[malformed_meld], &table, 0,),
         base_bias
     );
 
@@ -554,27 +438,13 @@ fn seven_pairs_plan_ignores_malformed_melds_but_rejects_valid_melds() {
         &[valid_meld.clone()],
         &table,
         0,
-        WIN_RULE_SHENYANG_BASIC,
     ));
     assert_eq!(
-        seven_pairs_plan_score(
-            &hand,
-            &[valid_meld.clone()],
-            &table,
-            0,
-            WIN_RULE_SHENYANG_BASIC,
-        ),
+        seven_pairs_plan_score(&hand, &[valid_meld.clone()], &table, 0,),
         0.0
     );
     assert_eq!(
-        seven_pairs_plan_discard_bias(
-            &discard_hand,
-            1,
-            &[valid_meld],
-            &table,
-            0,
-            WIN_RULE_SHENYANG_BASIC,
-        ),
+        seven_pairs_plan_discard_bias(&discard_hand, 1, &[valid_meld], &table, 0,),
         0.0
     );
 
@@ -606,12 +476,9 @@ fn seven_pairs_plan_protects_honor_and_terminal_pairs_more() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 1, 5, 5, 11, 11, 12, 12, 21, 21, 31, 31, 35, 36];
 
-    let middle_pair =
-        seven_pairs_plan_discard_bias(&hand, 5, &[], &table, 0, WIN_RULE_SHENYANG_BASIC);
-    let terminal_pair =
-        seven_pairs_plan_discard_bias(&hand, 1, &[], &table, 0, WIN_RULE_SHENYANG_BASIC);
-    let honor_pair =
-        seven_pairs_plan_discard_bias(&hand, 31, &[], &table, 0, WIN_RULE_SHENYANG_BASIC);
+    let middle_pair = seven_pairs_plan_discard_bias(&hand, 5, &[], &table, 0);
+    let terminal_pair = seven_pairs_plan_discard_bias(&hand, 1, &[], &table, 0);
+    let honor_pair = seven_pairs_plan_discard_bias(&hand, 31, &[], &table, 0);
 
     assert!(honor_pair < terminal_pair);
     assert!(terminal_pair < middle_pair);
@@ -622,10 +489,8 @@ fn seven_pairs_plan_protects_live_middle_pair_over_dead_wind_pair() {
     let table = table_with_discards(1, vec![31, 31]);
     let hand = vec![1, 1, 5, 5, 11, 11, 12, 12, 21, 21, 31, 31, 35, 36];
 
-    let dead_wind_pair =
-        seven_pairs_plan_discard_bias(&hand, 31, &[], &table, 0, WIN_RULE_SHENYANG_BASIC);
-    let live_middle_pair =
-        seven_pairs_plan_discard_bias(&hand, 5, &[], &table, 0, WIN_RULE_SHENYANG_BASIC);
+    let dead_wind_pair = seven_pairs_plan_discard_bias(&hand, 31, &[], &table, 0);
+    let live_middle_pair = seven_pairs_plan_discard_bias(&hand, 5, &[], &table, 0);
 
     assert_eq!(remaining_tile_count(&hand, &table, 0, 31), 0);
     assert!(remaining_tile_count(&hand, &table, 0, 5) > 0);
@@ -637,10 +502,8 @@ fn seven_pairs_plan_protects_live_pair_over_dead_pair() {
     let table = table_with_discards(1, vec![5, 5]);
     let hand = vec![1, 1, 5, 5, 11, 11, 12, 12, 21, 21, 31, 31, 35, 36];
 
-    let dead_middle_pair =
-        seven_pairs_plan_discard_bias(&hand, 5, &[], &table, 0, WIN_RULE_SHENYANG_BASIC);
-    let live_middle_pair =
-        seven_pairs_plan_discard_bias(&hand, 12, &[], &table, 0, WIN_RULE_SHENYANG_BASIC);
+    let dead_middle_pair = seven_pairs_plan_discard_bias(&hand, 5, &[], &table, 0);
+    let live_middle_pair = seven_pairs_plan_discard_bias(&hand, 12, &[], &table, 0);
 
     assert_eq!(remaining_tile_count(&hand, &table, 0, 5), 0);
     assert!(remaining_tile_count(&hand, &table, 0, 12) > 0);
@@ -693,14 +556,8 @@ fn six_pair_plan_keeps_dead_singleton_when_wall_can_replace_the_wait() {
     table.wall_count = 2;
     let hand = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 12, 13, 13, 31];
 
-    assert!(should_lock_seven_pairs_plan(
-        &hand,
-        &[],
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
-    assert!(seven_pairs_plan_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0);
+    assert!(should_lock_seven_pairs_plan(&hand, &[], &table, 0));
+    assert!(seven_pairs_plan_score(&hand, &[], &table, 0) > 0.0);
 }
 
 #[test]
@@ -710,13 +567,7 @@ fn six_pair_plan_keeps_live_singleton_with_one_wall_tile() {
     let hand = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 12, 13, 13, 31];
 
     assert!(remaining_tile_count(&hand, &table, 0, 31) > 0);
-    assert!(should_lock_seven_pairs_plan(
-        &hand,
-        &[],
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(should_lock_seven_pairs_plan(&hand, &[], &table, 0));
 }
 
 #[test]
@@ -727,17 +578,8 @@ fn six_pair_plan_unlocks_when_dead_singleton_needs_two_draws() {
 
     assert!(is_seven_pairs_wait_shape(&hand));
     assert_eq!(remaining_tile_count(&hand, &table, 0, 31), 0);
-    assert!(!should_lock_seven_pairs_plan(
-        &hand,
-        &[],
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
-    assert_eq!(
-        seven_pairs_plan_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
-        0.0
-    );
+    assert!(!should_lock_seven_pairs_plan(&hand, &[], &table, 0));
+    assert_eq!(seven_pairs_plan_score(&hand, &[], &table, 0), 0.0);
 }
 
 #[test]
@@ -778,17 +620,8 @@ fn two_fan_capped_room_does_not_lock_five_pairs_when_basic_bonus_caps() {
     assert_eq!(pair_count(&hand), 5);
     assert!(has_basic_normal_route_foundation(&hand, &[]));
     assert_eq!(estimated_visible_bonus_fan(&hand, &[]), 1);
-    assert!(!should_lock_seven_pairs_plan(
-        &hand,
-        &[],
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
-    assert_eq!(
-        seven_pairs_plan_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
-        0.0
-    );
+    assert!(!should_lock_seven_pairs_plan(&hand, &[], &table, 0));
+    assert_eq!(seven_pairs_plan_score(&hand, &[], &table, 0), 0.0);
 }
 
 #[test]
@@ -799,15 +632,6 @@ fn two_fan_room_does_not_lock_bonus_capped_five_pairs() {
 
     assert_eq!(pair_count(&hand), 5);
     assert_eq!(estimated_visible_bonus_fan(&hand, &[]), 1);
-    assert!(!should_lock_seven_pairs_plan(
-        &hand,
-        &[],
-        &table,
-        0,
-        WIN_RULE_SHENYANG_BASIC
-    ));
-    assert_eq!(
-        seven_pairs_plan_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
-        0.0
-    );
+    assert!(!should_lock_seven_pairs_plan(&hand, &[], &table, 0));
+    assert_eq!(seven_pairs_plan_score(&hand, &[], &table, 0), 0.0);
 }

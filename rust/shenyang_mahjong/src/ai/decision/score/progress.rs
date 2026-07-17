@@ -56,9 +56,9 @@ pub(in crate::ai::decision) fn hand_progress_score(
         + valid_meld_count(melds) as f64 * 10.0
         + ready_tile_score(hand, melds, table, position, win_rule)
         + one_step_wait_potential(hand, melds, table, position, win_rule)
-        + seven_pairs_plan_score(hand, melds, table, position, win_rule)
-        + piao_plan_score_for_context(hand, melds, table, position, win_rule)
-        + shenyang_rule_progress_score(hand, melds, table, position, win_rule)
+        + seven_pairs_plan_score(hand, melds, table, position)
+        + piao_plan_score_for_context(hand, melds, table, position)
+        + shenyang_rule_progress_score(hand, melds, table, position)
 }
 
 pub(in crate::ai::decision) fn hand_progress_score_after_discard(
@@ -87,9 +87,9 @@ pub(in crate::ai::decision) fn hand_progress_score_after_discard(
             win_rule,
             discarded_tile,
         )
-        + seven_pairs_plan_score(hand_after_discard, melds, table, position, win_rule)
-        + piao_plan_score_for_context(hand_after_discard, melds, table, position, win_rule)
-        + shenyang_rule_progress_score(hand_after_discard, melds, table, position, win_rule)
+        + seven_pairs_plan_score(hand_after_discard, melds, table, position)
+        + piao_plan_score_for_context(hand_after_discard, melds, table, position)
+        + shenyang_rule_progress_score(hand_after_discard, melds, table, position)
 }
 
 pub(in crate::ai::decision) fn one_step_wait_potential(

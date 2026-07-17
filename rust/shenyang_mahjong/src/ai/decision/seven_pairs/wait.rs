@@ -5,9 +5,8 @@ pub(in crate::ai::decision) fn choose_seven_pairs_wait_discard(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
 ) -> Option<i32> {
-    if !should_keep_pairs_for_seven_pairs_discard(hand, melds, table, position, win_rule)
+    if !should_keep_pairs_for_seven_pairs_discard(hand, melds, table, position)
         || pair_count(hand) != 6
     {
         return None;

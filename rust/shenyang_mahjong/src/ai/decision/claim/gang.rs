@@ -73,7 +73,7 @@ pub(in crate::ai::decision) fn should_claim_gang_from_discard(
     from_position: usize,
 ) -> bool {
     let current_ready_score = ready_tile_score(hand, current_melds, table, position, win_rule);
-    let piao_score = piao_plan_score_for_context(hand, current_melds, table, position, win_rule);
+    let piao_score = piao_plan_score_for_context(hand, current_melds, table, position);
     let committed_piao_plan = piao_score >= 22.0
         && piao_threat_level(current_melds) > 0
         && piao_committed_group_count(hand, current_melds) >= 3;
@@ -128,14 +128,7 @@ pub(in crate::ai::decision) fn should_claim_gang_from_discard(
     if is_dragon(tile) {
         return true;
     }
-    if should_claim_opening_gang_for_basic_hand(
-        hand,
-        current_melds,
-        table,
-        position,
-        win_rule,
-        tile,
-    ) {
+    if should_claim_opening_gang_for_basic_hand(hand, current_melds, table, position, tile) {
         return true;
     }
     if should_open_broken_closed_hand_for_defense(hand, current_melds, table, position, win_rule) {
@@ -153,21 +146,13 @@ pub(in crate::ai::decision) fn should_claim_opening_gang_for_basic_hand(
     current_melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
     tile: i32,
 ) -> bool {
     !has_door_opening_meld(current_melds, table)
         && can_gang(hand, tile)
         && table.max_fan.is_none_or(|max_fan| max_fan > 1)
-        && !is_closed_early_piao_candidate(hand, current_melds, table, position, win_rule)
-        && !should_preserve_seven_pairs_plan_for_context(
-            hand,
-            current_melds,
-            table,
-            position,
-            win_rule,
-        )
-        && pure_one_suit_plan_score_for_context(hand, current_melds, table, position, win_rule)
-            <= 0.0
-        && piao_plan_score_for_context(hand, current_melds, table, position, win_rule) < 22.0
+        && !is_closed_early_piao_candidate(hand, current_melds, table, position)
+        && !should_preserve_seven_pairs_plan_for_context(hand, current_melds, table, position)
+        && pure_one_suit_plan_score_for_context(hand, current_melds, table, position) <= 0.0
+        && piao_plan_score_for_context(hand, current_melds, table, position) < 22.0
 }
