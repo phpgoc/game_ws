@@ -192,10 +192,15 @@ fn non_dealer_delays_closed_dragon_gang_but_dealer_takes_replacement_draw() {
         choose_self_gang_from_view(&hand, &[35], &table, 0, WIN_RULE_SHENYANG_BASIC),
         None
     );
+    assert_eq!(choose_self_gang_from_view(&hand, &[35], &table, 0, 0), None);
 
     table.dealer_position = 0;
     assert_eq!(
         choose_self_gang_from_view(&hand, &[35], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(35)
+    );
+    assert_eq!(
+        choose_self_gang_from_view(&hand, &[35], &table, 0, 0),
         Some(35)
     );
 }
@@ -268,10 +273,15 @@ fn self_gang_delays_closed_plain_gang_before_ready_without_opening() {
         choose_self_gang_from_view(&hand, &[3], &table, 0, WIN_RULE_SHENYANG_BASIC),
         None
     );
+    assert_eq!(choose_self_gang_from_view(&hand, &[3], &table, 0, 0), None);
 
     table.dealer_position = 0;
     assert_eq!(
         choose_self_gang_from_view(&hand, &[3], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(3)
+    );
+    assert_eq!(
+        choose_self_gang_from_view(&hand, &[3], &table, 0, 0),
         Some(3)
     );
 }

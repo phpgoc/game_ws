@@ -120,13 +120,11 @@ pub(super) fn self_gang_score(
     let committed_piao_plan = piao_score >= 22.0
         && piao_threat_level(melds) > 0
         && piao_committed_group_count(hand, melds) >= 3;
-    let normal_route_projects_cap = (win_rule != WIN_RULE_SHENYANG_BASIC
-        || has_door_opening_meld(melds, table))
+    let normal_route_projects_cap = has_door_opening_meld(melds, table)
         && capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table, win_rule)
         && !capped_normal_route_visible_fan_reaches_cap(hand, melds, table, win_rule)
         && capped_normal_route_visible_fan_reaches_cap(&next, &next_melds, table, win_rule);
-    let piao_route_projects_cap = (win_rule != WIN_RULE_SHENYANG_BASIC
-        || has_door_opening_meld(melds, table))
+    let piao_route_projects_cap = has_door_opening_meld(melds, table)
         && committed_piao_plan
         && has_piao_route_basics(&next, &next_melds)
         && capped_piao_route_visible_fan_projects_cap(hand, melds, &next, &next_melds, table);
@@ -187,7 +185,6 @@ pub(super) fn self_gang_score(
     }
     if !is_added_gang
         && !is_ready
-        && win_rule == WIN_RULE_SHENYANG_BASIC
         && !speed_first_concealed_gang
         && (!is_dragon(tile) || !has_door_opening_meld(melds, table))
     {
@@ -239,7 +236,7 @@ pub(super) fn self_gang_score(
         score += 5.0;
     } else if !is_ready {
         score -= 14.0;
-    } else if win_rule == WIN_RULE_SHENYANG_BASIC && table.dealer_position != position {
+    } else if table.dealer_position != position {
         score -= if is_late_defense_round(table) {
             4.0
         } else {
