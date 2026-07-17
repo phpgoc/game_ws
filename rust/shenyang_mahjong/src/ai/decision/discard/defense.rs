@@ -5,7 +5,6 @@ pub(in crate::ai::decision) fn choose_broken_hand_public_defense_discard(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
 ) -> Option<i32> {
     let public_candidates = unique_tiles(hand)
         .into_iter()
@@ -17,7 +16,6 @@ pub(in crate::ai::decision) fn choose_broken_hand_public_defense_discard(
             melds,
             table,
             position,
-            win_rule,
             public_candidates,
         );
     }
@@ -32,7 +30,6 @@ pub(in crate::ai::decision) fn choose_broken_hand_public_defense_discard(
             melds,
             table,
             position,
-            win_rule,
             open_meld_candidates,
         );
     }
@@ -46,7 +43,6 @@ pub(in crate::ai::decision) fn choose_broken_hand_public_defense_discard(
         melds,
         table,
         position,
-        win_rule,
         missing_suit_candidates,
     )
 }
@@ -188,7 +184,6 @@ pub(in crate::ai::decision) fn choose_public_defense_discard_from_candidates(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
     candidates: Vec<i32>,
 ) -> Option<i32> {
     let common_own_tile_count = candidates
@@ -203,7 +198,7 @@ pub(in crate::ai::decision) fn choose_public_defense_discard_from_candidates(
     for tile in candidates {
         let own_tile_count = hand.iter().filter(|item| **item == tile).count();
         let requirement_bias =
-            basic_heng_recovery_public_defense_bias(hand, melds, table, position, tile, win_rule);
+            basic_heng_recovery_public_defense_bias(hand, melds, table, position, tile);
         let preserves_basic_heng_recovery = requirement_bias >= 0.0;
         let priority = if use_safety_priority {
             defense_tile_safety_priority(table, tile, own_tile_count)

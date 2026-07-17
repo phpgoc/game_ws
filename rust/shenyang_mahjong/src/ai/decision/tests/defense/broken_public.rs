@@ -134,14 +134,7 @@ fn mid_broken_public_defense_prefers_honor_between_singleton_safe_tiles() {
         defense_tile_safety_priority(&table, 31, 1) > defense_tile_safety_priority(&table, 5, 1)
     );
     assert_eq!(
-        choose_public_defense_discard_from_candidates(
-            &hand,
-            &[],
-            &table,
-            0,
-            WIN_RULE_SHENYANG_BASIC,
-            vec![5, 31]
-        ),
+        choose_public_defense_discard_from_candidates(&hand, &[], &table, 0, vec![5, 31]),
         Some(31)
     );
 }
@@ -199,14 +192,7 @@ fn mid_broken_public_defense_preserves_triplet_over_public_pair() {
             > public_defense_tile_safety_score(&table, 0, 5, 3)
     );
     assert_eq!(
-        choose_public_defense_discard_from_candidates(
-            &hand,
-            &[],
-            &table,
-            0,
-            WIN_RULE_SHENYANG_BASIC,
-            vec![5, 7]
-        ),
+        choose_public_defense_discard_from_candidates(&hand, &[], &table, 0, vec![5, 7]),
         Some(7)
     );
 }

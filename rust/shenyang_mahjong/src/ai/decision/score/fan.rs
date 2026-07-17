@@ -246,7 +246,6 @@ pub(in crate::ai::decision) fn fan_wait_bias(
             melds,
             win_tile,
             table,
-            win_rule,
             known_unavailable_tiles,
         )
     {

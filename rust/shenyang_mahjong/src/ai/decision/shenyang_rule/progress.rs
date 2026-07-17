@@ -5,7 +5,6 @@ pub(in crate::ai::decision) fn basic_heng_seed_discard_bias(
     hand: &[i32],
     tile: i32,
     melds: &[WsShenyangMahjongMeld],
-    _win_rule: i32,
 ) -> f64 {
     if has_triplet_or_dragon_pair(hand, melds) {
         return 0.0;

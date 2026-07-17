@@ -56,7 +56,7 @@ pub(in crate::ai::decision) fn seven_pairs_plan_score(
     }
     if table.dealer_position == position
         && pairs < 6
-        && !should_chase_basic_missing_suit_four_pairs(hand, melds, win_rule)
+        && !should_chase_basic_missing_suit_four_pairs(hand, melds)
     {
         return 0.0;
     }
@@ -80,7 +80,6 @@ pub(in crate::ai::decision) fn seven_pairs_plan_score(
 pub(in crate::ai::decision) fn should_chase_basic_missing_suit_four_pairs(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
-    _win_rule: i32,
 ) -> bool {
     pair_count(hand) == 4 && valid_meld_count(melds) == 0 && !missing_suits(hand, melds).is_empty()
 }
@@ -88,7 +87,6 @@ pub(in crate::ai::decision) fn should_chase_basic_missing_suit_four_pairs(
 pub(in crate::ai::decision) fn should_chase_basic_missing_suit_pairs(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
-    _win_rule: i32,
     pairs: usize,
 ) -> bool {
     pairs >= 4 && valid_meld_count(melds) == 0 && !missing_suits(hand, melds).is_empty()
@@ -117,7 +115,7 @@ pub(in crate::ai::decision) fn should_lock_seven_pairs_plan(
     if table.max_fan.is_some_and(|max_fan| max_fan <= 1) {
         return false;
     }
-    if should_chase_basic_missing_suit_pairs(hand, melds, win_rule, pairs) {
+    if should_chase_basic_missing_suit_pairs(hand, melds, pairs) {
         return true;
     }
     if pairs < 5 {

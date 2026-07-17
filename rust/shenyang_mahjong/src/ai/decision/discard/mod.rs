@@ -62,8 +62,7 @@ fn choose_discard_from_view_inner(
         return choose_late_defense_discard(hand, table, position);
     }
     if should_use_broken_hand_public_defense_discard(hand, melds, table, position, win_rule)
-        && let Some(tile) =
-            choose_broken_hand_public_defense_discard(hand, melds, table, position, win_rule)
+        && let Some(tile) = choose_broken_hand_public_defense_discard(hand, melds, table, position)
     {
         return Some(tile);
     }
@@ -107,7 +106,7 @@ fn choose_discard_from_view_inner(
             &next, melds, table, position, tile, win_rule,
         ) + piao_discard_bias(hand, tile, melds, table, position, win_rule)
             + early_piao_candidate_discard_bias(hand, tile, melds, table, position, win_rule)
-            + basic_heng_seed_discard_bias(hand, tile, melds, win_rule)
+            + basic_heng_seed_discard_bias(hand, tile, melds)
             + capped_spare_dragon_discard_bias(hand, tile, melds, table, win_rule)
             + seven_pairs_plan_discard_bias(hand, tile, melds, table, position, win_rule)
             + seven_pairs_wait_discard_bias(hand, tile, melds, table, position, win_rule)

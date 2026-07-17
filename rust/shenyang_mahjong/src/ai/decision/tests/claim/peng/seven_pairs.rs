@@ -143,7 +143,6 @@ fn claim_peng_takes_dragon_from_live_five_pairs_with_malformed_meld() {
         &[malformed_meld.clone()],
         &table,
         0,
-        WIN_RULE_SHENYANG_BASIC,
         35,
         1,
     ));
@@ -151,7 +150,6 @@ fn claim_peng_takes_dragon_from_live_five_pairs_with_malformed_meld() {
         &hand,
         &[malformed_meld],
         &table,
-        0,
         0,
         35,
         1,
@@ -161,7 +159,6 @@ fn claim_peng_takes_dragon_from_live_five_pairs_with_malformed_meld() {
         &[test_peng_meld(31)],
         &table,
         0,
-        WIN_RULE_SHENYANG_BASIC,
         35,
         1,
     ));

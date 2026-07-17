@@ -6,9 +6,8 @@ pub(in crate::ai::decision) fn basic_heng_recovery_public_defense_bias(
     table: &AiPublicTable,
     position: usize,
     tile: i32,
-    win_rule: i32,
 ) -> f64 {
-    if loses_basic_heng_recovery_after_discard(hand, melds, table, position, tile, win_rule) {
+    if loses_basic_heng_recovery_after_discard(hand, melds, table, position, tile) {
         -22.0
     } else {
         0.0

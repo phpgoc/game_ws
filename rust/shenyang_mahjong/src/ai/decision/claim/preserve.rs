@@ -37,7 +37,6 @@ pub(in crate::ai::decision) fn should_claim_dragon_peng_over_live_five_pairs(
     current_melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    _win_rule: i32,
     tile: i32,
     from_position: usize,
 ) -> bool {

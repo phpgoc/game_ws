@@ -125,7 +125,6 @@ pub(in crate::ai::decision) fn is_single_wait_shape_for_table(
     melds: &[WsShenyangMahjongMeld],
     win_tile: i32,
     table: &AiPublicTable,
-    _win_rule: i32,
     known_unavailable_tiles: &[i32],
 ) -> bool {
     is_single_wait_shape_with_known_unavailable_tiles_for_rules(

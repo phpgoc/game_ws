@@ -112,7 +112,6 @@ pub(in crate::ai::decision) fn violates_basic_heng_discard(
             table,
             position,
             tile,
-            win_rule,
         );
     if !had_heng && !lost_recoverable_heng {
         return false;

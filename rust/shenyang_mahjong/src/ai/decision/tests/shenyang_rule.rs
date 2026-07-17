@@ -45,7 +45,7 @@ fn legacy_rule_number_cannot_disable_shenyang_discard_guards() {
         35,
         0,
     ));
-    assert!(basic_heng_seed_discard_bias(&hand_after_discard, 35, &melds, 0) < 0.0);
+    assert!(basic_heng_seed_discard_bias(&hand_after_discard, 35, &melds) < 0.0);
 
     let no_terminal_after = vec![2, 3, 4, 12, 13, 14, 22, 23, 24, 5];
     assert!(violates_basic_terminal_or_honor_discard(
@@ -75,7 +75,7 @@ fn basic_heng_filter_ignores_invalid_hand_triplet() {
     assert!(!is_valid_tile(99));
     assert!(!has_triplet_like_group(&hand, &[]));
     assert!(!has_triplet_or_dragon_pair(&hand, &[]));
-    assert!(basic_heng_seed_discard_bias(&hand, 35, &[], WIN_RULE_SHENYANG_BASIC) < 0.0);
+    assert!(basic_heng_seed_discard_bias(&hand, 35, &[]) < 0.0);
 }
 
 #[test]

@@ -333,8 +333,7 @@ fn discard_preserves_only_recoverable_heng_seed() {
         &[],
         &table,
         0,
-        35,
-        WIN_RULE_SHENYANG_BASIC
+        35
     ));
     assert!(violates_basic_heng_discard(
         &after_dragon,
@@ -438,7 +437,7 @@ fn discard_preserves_single_dragon_as_basic_heng_seed() {
     let hand = vec![1, 2, 3, 4, 5, 6, 8, 11, 12, 13, 21, 22, 24, 35];
 
     assert!(!has_triplet_or_dragon_pair(&hand, &[]));
-    assert!(basic_heng_seed_discard_bias(&hand, 35, &[], WIN_RULE_SHENYANG_BASIC) < 0.0);
+    assert!(basic_heng_seed_discard_bias(&hand, 35, &[]) < 0.0);
     assert_ne!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(35)

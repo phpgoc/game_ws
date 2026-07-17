@@ -10,31 +10,23 @@ pub(in crate::ai::decision) fn claim_leaves_unrecoverable_basic_requirement(
     tile: i32,
     from_position: usize,
 ) -> bool {
-    claim_leaves_unrecoverable_missing_suit(
-        hand,
-        current_melds,
-        table,
-        win_rule,
-        kind,
-        tile,
-        from_position,
-    ) || claim_leaves_unrecoverable_terminal_or_honor(
-        hand,
-        current_melds,
-        table,
-        position,
-        win_rule,
-        kind,
-        tile,
-        from_position,
-    )
+    claim_leaves_unrecoverable_missing_suit(hand, current_melds, table, kind, tile, from_position)
+        || claim_leaves_unrecoverable_terminal_or_honor(
+            hand,
+            current_melds,
+            table,
+            position,
+            win_rule,
+            kind,
+            tile,
+            from_position,
+        )
 }
 
 pub(in crate::ai::decision) fn claim_leaves_unrecoverable_missing_suit(
     hand: &[i32],
     current_melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
-    _win_rule: i32,
     kind: ShenyangMahjongMeldKind,
     tile: i32,
     from_position: usize,
