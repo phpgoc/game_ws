@@ -444,6 +444,59 @@ mod tests {
     }
 
     #[test]
+    fn ai_turn_self_draws_after_dragon_xi_gang_without_gang_draw() {
+        let mut state = playable_state();
+        state.current_position = 1;
+        state.base.lock().unwrap().mark_ai_position(1);
+        state
+            .hands
+            .insert(1, vec![1, 1, 1, 11, 11, 11, 21, 21, 21, 35, 35, 35, 36, 37]);
+        state.melds.insert(1, Vec::new());
+        state.discards.insert(1, Vec::new());
+        state.last_drawn_tile = Some(37);
+        state.xi_gang_options.insert(1, vec![vec![35, 36, 37]]);
+        let configs = HashMap::new();
+        let mut dispatch = Dispatch::default();
+
+        assert!(maybe_play_ai_turn(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &configs,
+            &mut dispatch,
+        ));
+        assert_eq!(state.phase, ShenyangMahjongPhase::Play);
+        assert_eq!(state.melds.get(&1).unwrap().len(), 1);
+        assert_eq!(
+            state.melds.get(&1).unwrap()[0].kind,
+            ShenyangMahjongMeldKind::XI_GANG
+        );
+        assert_eq!(state.last_drawn_tile, Some(37));
+
+        assert!(maybe_play_ai_turn(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &configs,
+            &mut dispatch,
+        ));
+
+        let settlement = state.settlement.as_ref().expect("settlement");
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert_eq!(settlement.winner_positions, vec![1]);
+        assert!(settlement.is_self_draw);
+        assert!(!settlement.is_gang_draw);
+        assert!(state.discards.get(&1).unwrap().is_empty());
+        let event = build_settlement_event_with_configs(&state, &configs)
+            .expect("post-Xi-Gang settlement event");
+        assert_eq!(
+            event.winner_details[0].pattern,
+            ShenyangMahjongWinPattern::PiaoHu
+        );
+        assert!(!event.winner_details[0].is_gang_draw);
+    }
+
+    #[test]
     fn ai_turn_declares_both_xi_gangs_in_order() {
         let mut state = playable_state();
         state.current_position = 1;
