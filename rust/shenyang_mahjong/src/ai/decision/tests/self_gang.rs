@@ -131,6 +131,30 @@ fn half_capped_committed_piao_self_gang_takes_projected_cap() {
 }
 
 #[test]
+fn half_capped_established_pure_self_gang_takes_projected_cap() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.dealer_position = 3;
+    table.max_fan = Some(6);
+    table.seats.get_mut(&0).unwrap().melds = vec![test_chi_meld(2)];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![1, 1, 1, 1, 2, 2, 4, 5, 6, 6, 9];
+
+    assert!(
+        pure_one_suit_plan_score_for_context(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
+            > 0.0
+    );
+    assert_eq!(
+        best_ready_score_after_discard(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        0.0
+    );
+    assert_eq!(estimated_visible_bonus_fan(&hand, melds), 1);
+    assert_eq!(
+        choose_self_gang_from_view(&hand, &[1], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(1)
+    );
+}
+
+#[test]
 fn half_capped_unready_self_gang_takes_projected_cap() {
     let mut table = table_with_discards(1, Vec::new());
     table.dealer_position = 3;

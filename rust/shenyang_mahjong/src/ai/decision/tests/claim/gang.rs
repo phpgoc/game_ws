@@ -809,6 +809,33 @@ fn half_capped_committed_piao_claim_gang_takes_projected_cap() {
 }
 
 #[test]
+fn half_capped_established_pure_claim_gang_takes_projected_cap() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.dealer_position = 3;
+    table.max_fan = Some(5);
+    table.claim_window = Some(AiClaimView {
+        tile: 1,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![1, 1, 1, 2, 2, 2, 3, 4, 5, 5, 6, 8, 9];
+
+    assert!(
+        pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0
+    );
+    assert_eq!(
+        ready_tile_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        0.0
+    );
+    assert_eq!(estimated_visible_bonus_fan(&hand, &[]), 0);
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Gang)
+    );
+}
+
+#[test]
 fn half_capped_unready_claim_gang_takes_projected_cap() {
     let mut table = table_with_discards(1, Vec::new());
     table.dealer_position = 3;

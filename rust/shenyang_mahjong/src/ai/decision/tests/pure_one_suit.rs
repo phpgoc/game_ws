@@ -177,6 +177,27 @@ fn dealer_does_not_start_pure_one_suit_plan_at_eight_main_suit_tiles() {
 }
 
 #[test]
+fn established_pure_one_suit_route_requires_every_tile_in_one_suit() {
+    let established_hand = vec![1, 2, 3, 5, 6, 7, 8, 9];
+    assert!(has_established_pure_one_suit_route(
+        &established_hand,
+        &[test_chi_meld(2)]
+    ));
+
+    let planned_hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 11, 31];
+    assert!(pure_one_suit_plan_score(&planned_hand, &[]) > 0.0);
+    assert!(!has_established_pure_one_suit_route(&planned_hand, &[]));
+    assert!(!has_established_pure_one_suit_route(
+        &established_hand,
+        &[test_chi_meld(12)]
+    ));
+    assert!(!has_established_pure_one_suit_route(
+        &established_hand,
+        &[test_peng_meld(31)]
+    ));
+}
+
+#[test]
 fn discard_can_pursue_pure_one_suit_when_shape_is_strong() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 7, 8, 9, 11];
