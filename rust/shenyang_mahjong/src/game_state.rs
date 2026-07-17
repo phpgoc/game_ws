@@ -694,6 +694,27 @@ mod tests {
     }
 
     #[test]
+    fn redeal_handles_multiple_winners_for_dealer_rotation() {
+        let mut dealer_wins = state_with_players();
+        dealer_wins.dealer_position = 0;
+        dealer_wins.enter_settlement(vec![0, 2], Some(1), Some(35), false);
+
+        dealer_wins.redeal();
+
+        assert_eq!(dealer_wins.dealer_position, 0);
+        assert_eq!(dealer_wins.current_position, 0);
+
+        let mut dealer_loses = state_with_players();
+        dealer_loses.dealer_position = 0;
+        dealer_loses.enter_settlement(vec![1, 2], Some(3), Some(35), false);
+
+        dealer_loses.redeal();
+
+        assert_eq!(dealer_loses.dealer_position, 1);
+        assert_eq!(dealer_loses.current_position, 1);
+    }
+
+    #[test]
     fn redeal_keeps_dealer_after_draw() {
         let mut state = state_with_players();
         state.dealer_position = 0;

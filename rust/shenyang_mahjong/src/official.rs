@@ -499,6 +499,62 @@ mod tests {
         assert_eq!(winner_scores[0].score, 5);
     }
 
+    #[cfg(feature = "official")]
+    #[test]
+    fn official_winner_scores_record_every_discard_winner() {
+        let mut state = state_with_players();
+        state.discards.insert(0, vec![3]);
+        state
+            .hands
+            .insert(1, vec![1, 2, 11, 12, 13, 21, 22, 23, 35, 35]);
+        state
+            .hands
+            .insert(2, vec![1, 2, 14, 15, 16, 24, 25, 26, 35, 35]);
+        state.melds.insert(
+            1,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::PENG,
+                vec![31, 31, 31],
+                Some(3),
+            )],
+        );
+        state.melds.insert(
+            2,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::PENG,
+                vec![32, 32, 32],
+                Some(3),
+            )],
+        );
+        state.enter_settlement(vec![1, 2], Some(0), Some(3), false);
+        let settlement = state.settlement.as_ref().expect("settlement");
+        let score_changes = crate::game::settlement_score_changes_for_state(
+            &state,
+            &[0, 1, 2, 3],
+            settlement,
+            &HashMap::new(),
+        );
+
+        let winner_scores = winner_scores_for_settlement(
+            &state,
+            settlement,
+            &score_changes,
+            ShenyangMahjongWinContext::new(),
+            |position| Some(position as i64 + 10),
+        );
+
+        assert_eq!(winner_scores.len(), 2);
+        assert_eq!(winner_scores[0].winner_user_id, 11);
+        assert_eq!(winner_scores[0].score, 4);
+        assert_eq!(winner_scores[1].winner_user_id, 12);
+        assert_eq!(winner_scores[1].score, 4);
+        assert!(
+            winner_scores
+                .iter()
+                .all(|winner| { winner.pattern == data::ShenyangMahjongRoundWinPattern::Standard })
+        );
+    }
+
     #[test]
     fn self_draw_score_counts_each_loser() {
         let settlement = SettlementState {
