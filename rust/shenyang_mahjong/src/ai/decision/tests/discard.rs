@@ -227,6 +227,47 @@ fn discard_sets_configured_closed_sequence_wait_after_xi_gang() {
 }
 
 #[test]
+fn configured_closed_sequence_route_after_xi_gang_keeps_dragon_pair_and_third_suit() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.allow_first_chi = false;
+    table.seats.get_mut(&0).unwrap().melds = vec![WsShenyangMahjongMeld {
+        kind: ShenyangMahjongMeldKind::XI_GANG,
+        tiles: vec![31, 32, 33, 34],
+        from_position: None,
+    }];
+    let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 21, 35, 35];
+
+    let discard = choose_discard_from_view(&hand, &table, 0)
+        .expect("closed sequence route should choose a discard");
+
+    assert_ne!(discard, 21, "the only tile of the third suit is required");
+    assert_ne!(discard, 35, "the dragon pair is the required closed pair");
+
+    let missing_suit_hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 35, 35];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let after_dragon_discard = remove_n_tiles(&missing_suit_hand, 35, 1);
+    assert!(violates_basic_heng_discard(
+        &after_dragon_discard,
+        melds,
+        &table,
+        0,
+        35,
+    ));
+    let mut first_chi_allowed = table.clone();
+    first_chi_allowed.allow_first_chi = true;
+    assert!(!violates_basic_heng_discard(
+        &after_dragon_discard,
+        melds,
+        &first_chi_allowed,
+        0,
+        35,
+    ));
+    let discard = choose_discard_from_view(&missing_suit_hand, &table, 0)
+        .expect("recoverable closed sequence route should choose a discard");
+    assert_ne!(discard, 35, "the closed route still needs its dragon pair");
+}
+
+#[test]
 fn discard_preserves_only_pair_as_basic_heng_seed() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 2, 3, 5, 5, 6, 7, 8, 11, 12, 13, 21, 22, 23];

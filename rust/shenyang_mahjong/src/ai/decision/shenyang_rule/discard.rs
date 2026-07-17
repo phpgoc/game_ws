@@ -1,3 +1,4 @@
+use super::super::meld::is_xi_gang_meld;
 use super::super::*;
 use super::heng::loses_basic_heng_recovery_after_discard;
 
@@ -11,6 +12,30 @@ fn capped_normal_route_before_discard_reaches_cap(
     hand_before_discard.push(discarded_tile);
     sort_tiles(&mut hand_before_discard);
     capped_normal_route_visible_fan_reaches_cap(&hand_before_discard, melds, table)
+}
+
+fn loses_first_chi_disabled_closed_dragon_pair_after_xi_gang(
+    hand_after_discard: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    discarded_tile: i32,
+) -> bool {
+    if table.allow_first_chi
+        || !is_dragon(discarded_tile)
+        || melds.is_empty()
+        || !melds.iter().all(is_xi_gang_meld)
+    {
+        return false;
+    }
+
+    let has_dragon_pair = |hand: &[i32]| {
+        unique_tiles(hand).into_iter().any(|tile| {
+            is_dragon(tile) && hand.iter().filter(|hand_tile| **hand_tile == tile).count() >= 2
+        })
+    };
+    let mut hand_before_discard = hand_after_discard.to_vec();
+    hand_before_discard.push(discarded_tile);
+    has_dragon_pair(&hand_before_discard) && !has_dragon_pair(hand_after_discard)
 }
 
 pub(in crate::ai::decision) fn terminal_or_honor_discard_bias(
@@ -71,7 +96,14 @@ pub(in crate::ai::decision) fn violates_basic_heng_discard(
 ) -> bool {
     let had_heng = has_triplet_or_dragon_pair_with_extra(hand_after_discard, melds, Some(tile));
     let has_heng_after = has_triplet_or_dragon_pair(hand_after_discard, melds);
-    if has_heng_after {
+    // A Xi Gang can supply Heng after opening, but cannot replace the dragon pair required here.
+    let lost_closed_dragon_pair = loses_first_chi_disabled_closed_dragon_pair_after_xi_gang(
+        hand_after_discard,
+        melds,
+        table,
+        tile,
+    );
+    if has_heng_after && !lost_closed_dragon_pair {
         return false;
     }
     let mut hand_before_discard = hand_after_discard.to_vec();
@@ -85,7 +117,7 @@ pub(in crate::ai::decision) fn violates_basic_heng_discard(
             position,
             tile,
         );
-    if !had_heng && !lost_recoverable_heng {
+    if !had_heng && !lost_recoverable_heng && !lost_closed_dragon_pair {
         return false;
     }
     if should_preserve_seven_pairs_plan_for_context(hand_after_discard, melds, table, position) {
