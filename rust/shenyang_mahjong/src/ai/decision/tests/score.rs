@@ -548,24 +548,14 @@ fn ready_score_allows_closed_sequence_dragon_pair_win_when_first_chi_disabled() 
         0.0
     );
     assert_eq!(
-        estimated_visible_fan_without_wait_for_table(
-            &win_hand,
-            &[],
-            &table,
-            WIN_RULE_SHENYANG_BASIC
-        ),
+        estimated_visible_fan_without_wait_for_table(&win_hand, &[], &table),
         0
     );
 
     table.allow_first_chi = false;
     assert!(ready_tile_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0);
     assert_eq!(
-        estimated_visible_fan_without_wait_for_table(
-            &win_hand,
-            &[],
-            &table,
-            WIN_RULE_SHENYANG_BASIC
-        ),
+        estimated_visible_fan_without_wait_for_table(&win_hand, &[], &table),
         1
     );
 }
@@ -686,12 +676,7 @@ fn ready_score_keeps_closed_sequence_dragon_pair_route_after_xi_gang() {
     table.allow_first_chi = false;
     assert!(ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0);
     assert_eq!(
-        estimated_visible_fan_without_wait_for_table(
-            &win_hand,
-            melds,
-            &table,
-            WIN_RULE_SHENYANG_BASIC
-        ),
+        estimated_visible_fan_without_wait_for_table(&win_hand, melds, &table),
         2
     );
 }

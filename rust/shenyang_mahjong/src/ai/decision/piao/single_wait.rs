@@ -121,7 +121,6 @@ fn piao_single_wait_tile_score_with_simulated_discards(
         melds,
         wait_tile,
         table,
-        win_rule,
         &known_unavailable_tiles,
     );
     let capped_fan = table

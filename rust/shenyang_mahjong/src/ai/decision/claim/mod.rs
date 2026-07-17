@@ -191,7 +191,6 @@ pub(in crate::ai::decision) fn should_pass_hu_for_capped_live_wait(
         melds,
         tile,
         table,
-        win_rule,
         &current_known_unavailable,
     );
     if current_fan != max_fan - 1 {
@@ -235,7 +234,6 @@ pub(in crate::ai::decision) fn should_pass_hu_for_capped_live_wait(
                     melds,
                     wait_tile,
                     table,
-                    win_rule,
                     &pass_known_unavailable,
                 ) >= max_fan;
             if reaches_cap { remaining } else { 0 }

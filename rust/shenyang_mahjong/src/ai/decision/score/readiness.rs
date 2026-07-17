@@ -55,7 +55,6 @@ fn ready_hand_visible_fan_exceeds_half_cap_with_simulated_discards(
                         melds,
                         tile,
                         table,
-                        win_rule,
                         &known_unavailable_tiles,
                     ) * 2
                         > max_fan
@@ -115,7 +114,6 @@ fn ready_hand_visible_fan_reaches_cap_with_simulated_discards(
                         melds,
                         tile,
                         table,
-                        win_rule,
                         &known_unavailable_tiles,
                     ) >= max_fan
             }

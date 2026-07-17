@@ -162,7 +162,6 @@ pub(in crate::ai::decision) fn estimated_fan_with_known_unavailable_wait_for_tab
     melds: &[WsShenyangMahjongMeld],
     win_tile: i32,
     table: &AiPublicTable,
-    _win_rule: i32,
     known_unavailable_tiles: &[i32],
 ) -> i32 {
     estimated_fan_with_known_unavailable_wait_for_rules(
@@ -225,7 +224,6 @@ pub(in crate::ai::decision) fn estimated_visible_fan_without_wait_for_table(
     win_hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
-    _win_rule: i32,
 ) -> i32 {
     estimated_visible_fan_without_wait_for_rules(win_hand, melds, win_rules_for_table(table))
 }
@@ -258,8 +256,7 @@ pub(in crate::ai::decision) fn fan_wait_bias(
         return 0.0;
     }
     if let Some(max_fan) = table.max_fan {
-        let visible_fan =
-            estimated_visible_fan_without_wait_for_table(win_hand, melds, table, win_rule);
+        let visible_fan = estimated_visible_fan_without_wait_for_table(win_hand, melds, table);
         if visible_fan * 2 > max_fan {
             return 0.0;
         }
@@ -271,7 +268,6 @@ pub(in crate::ai::decision) fn fan_wait_bias(
             melds,
             win_tile,
             table,
-            win_rule,
             known_unavailable_tiles,
         );
         if total_fan >= max_fan {
