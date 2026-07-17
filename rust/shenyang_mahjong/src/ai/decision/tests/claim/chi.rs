@@ -18,10 +18,26 @@ fn claim_chi_blocks_only_first_chi_when_configured() {
         Some(AiClaimChoice::Pass)
     );
 
-    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
-    let opened_hand = vec![4, 5, 6, 11, 12, 13, 21, 23, 31, 35];
+    let closed_meld_hand = vec![4, 5, 6, 11, 12, 13, 21, 23, 31, 35];
+    table.seats.get_mut(&0).unwrap().melds = vec![WsShenyangMahjongMeld {
+        kind: ShenyangMahjongMeldKind::XI_GANG,
+        tiles: vec![35, 36, 37],
+        from_position: None,
+    }];
     assert_eq!(
-        choose_claim_from_view(&opened_hand, &claim, &table, 0, WIN_RULE_RELAXED),
+        choose_claim_from_view(&closed_meld_hand, &claim, &table, 0, WIN_RULE_RELAXED),
+        Some(AiClaimChoice::Pass)
+    );
+
+    table.seats.get_mut(&0).unwrap().melds = vec![test_concealed_gang_meld(9)];
+    assert_eq!(
+        choose_claim_from_view(&closed_meld_hand, &claim, &table, 0, WIN_RULE_RELAXED),
+        Some(AiClaimChoice::Pass)
+    );
+
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
+    assert_eq!(
+        choose_claim_from_view(&closed_meld_hand, &claim, &table, 0, WIN_RULE_RELAXED),
         Some(AiClaimChoice::Chi {
             consume_tiles: vec![21, 23]
         })

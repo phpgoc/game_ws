@@ -3093,6 +3093,25 @@ mod tests {
         state.melds.insert(
             1,
             vec![build_meld(
+                ShenyangMahjongMeldKind::GANG,
+                vec![21, 21, 21, 21],
+                None,
+            )],
+        );
+
+        let options = build_claim_options(&state, 3, 0, &configs);
+        assert!(
+            options
+                .iter()
+                .all(|option| option.position != 1 || option.chi_options.is_empty())
+        );
+
+        state
+            .hands
+            .insert(1, vec![1, 2, 4, 5, 6, 11, 12, 13, 31, 35]);
+        state.melds.insert(
+            1,
+            vec![build_meld(
                 ShenyangMahjongMeldKind::PENG,
                 vec![21, 21, 21],
                 Some(2),
