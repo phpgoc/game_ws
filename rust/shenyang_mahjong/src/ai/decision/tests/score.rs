@@ -31,10 +31,7 @@ fn estimated_fan_counts_honor_single_wait_once() {
     let win_hand = vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35];
     let melds = vec![test_chi_meld(1)];
 
-    assert_eq!(
-        estimated_fan_with_wait(&win_hand, &melds, 35, WIN_RULE_SHENYANG_BASIC),
-        2
-    );
+    assert_eq!(estimated_fan_with_wait(&win_hand, &melds, 35), 2);
 }
 
 #[test]
@@ -42,10 +39,7 @@ fn estimated_fan_counts_terminal_single_wait_once() {
     let win_hand = vec![11, 11, 14, 15, 15, 16, 16, 17, 17, 17, 17];
     let melds = vec![test_chi_meld(12)];
 
-    assert_eq!(
-        estimated_fan_with_wait(&win_hand, &melds, 11, WIN_RULE_SHENYANG_BASIC),
-        6
-    );
+    assert_eq!(estimated_fan_with_wait(&win_hand, &melds, 11), 6);
 }
 
 #[test]
@@ -56,18 +50,9 @@ fn estimated_fan_counts_terminal_single_wait_when_public_discards_exhaust_other_
     let melds = vec![test_chi_meld(11)];
     let known_unavailable = known_unavailable_tiles_with_simulated_discards(&table, 0, &melds, &[]);
 
+    assert_eq!(estimated_fan_with_wait(&win_hand, &melds, 1), 1);
     assert_eq!(
-        estimated_fan_with_wait(&win_hand, &melds, 1, WIN_RULE_SHENYANG_BASIC),
-        1
-    );
-    assert_eq!(
-        estimated_fan_with_known_unavailable_wait(
-            &win_hand,
-            &melds,
-            1,
-            WIN_RULE_SHENYANG_BASIC,
-            &known_unavailable,
-        ),
+        estimated_fan_with_known_unavailable_wait(&win_hand, &melds, 1, &known_unavailable,),
         2
     );
     assert!(
@@ -90,10 +75,7 @@ fn estimated_fan_rejects_invalid_meld_for_single_wait() {
         from_position: Some(1),
     };
 
-    assert_eq!(
-        estimated_fan_with_wait(&win_hand, &[invalid_meld], 35, WIN_RULE_SHENYANG_BASIC),
-        0
-    );
+    assert_eq!(estimated_fan_with_wait(&win_hand, &[invalid_meld], 35), 0);
 }
 
 #[test]
@@ -153,11 +135,11 @@ fn estimated_visible_fan_accepts_closed_piao_with_dragon_pair() {
     let closed_triplet_hand = vec![1, 1, 1, 11, 11, 11, 21, 21, 21, 31, 31, 31, 35, 35];
 
     assert_eq!(
-        estimated_visible_fan_without_wait(&closed_triplet_hand, &[], WIN_RULE_SHENYANG_BASIC),
+        estimated_visible_fan_without_wait(&closed_triplet_hand, &[]),
         3
     );
     assert_eq!(
-        estimated_visible_fan_without_wait(&closed_triplet_hand, &[], WIN_RULE_SHENYANG_BASIC),
+        estimated_visible_fan_without_wait(&closed_triplet_hand, &[]),
         3
     );
 }
@@ -167,20 +149,14 @@ fn estimated_visible_fan_counts_concealed_dragon_triplet() {
     let win_hand = vec![11, 12, 13, 21, 22, 23, 31, 31, 35, 35, 35];
     let melds = vec![test_chi_meld(1)];
 
-    assert_eq!(
-        estimated_visible_fan_without_wait(&win_hand, &melds, WIN_RULE_SHENYANG_BASIC),
-        2
-    );
+    assert_eq!(estimated_visible_fan_without_wait(&win_hand, &melds), 2);
 }
 
 #[test]
 fn estimated_visible_fan_counts_four_concealed_dragons_as_triplet_and_four_gui_yi() {
     let win_hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 35, 35, 35, 35];
 
-    assert_eq!(
-        estimated_visible_fan_without_wait(&win_hand, &[], WIN_RULE_SHENYANG_BASIC),
-        6
-    );
+    assert_eq!(estimated_visible_fan_without_wait(&win_hand, &[]), 6);
 }
 
 #[test]
@@ -188,10 +164,7 @@ fn estimated_visible_fan_counts_four_gui_yi_before_wait_fan() {
     let win_hand = vec![2, 3, 4, 11, 12, 13, 21, 22, 23, 35, 35];
     let melds = vec![test_peng_meld(2)];
 
-    assert_eq!(
-        estimated_visible_fan_without_wait(&win_hand, &melds, WIN_RULE_SHENYANG_BASIC),
-        2
-    );
+    assert_eq!(estimated_visible_fan_without_wait(&win_hand, &melds), 2);
 }
 
 #[test]
@@ -200,11 +173,11 @@ fn estimated_visible_fan_does_not_add_closed_winner_fan() {
     let closed_seven_pairs = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35, 35];
 
     assert_eq!(
-        estimated_visible_fan_without_wait(&closed_pure_one_suit, &[], WIN_RULE_SHENYANG_BASIC),
+        estimated_visible_fan_without_wait(&closed_pure_one_suit, &[]),
         4
     );
     assert_eq!(
-        estimated_visible_fan_without_wait(&closed_seven_pairs, &[], WIN_RULE_SHENYANG_BASIC),
+        estimated_visible_fan_without_wait(&closed_seven_pairs, &[]),
         4
     );
 }
@@ -219,14 +192,8 @@ fn estimated_visible_fan_does_not_count_piao_shou_ba_yi_without_wait_tile() {
         test_peng_meld(31),
     ];
 
-    assert_eq!(
-        estimated_visible_fan_without_wait(&win_hand, &melds, WIN_RULE_SHENYANG_BASIC),
-        3
-    );
-    assert_eq!(
-        estimated_fan_with_wait(&win_hand, &melds, 35, WIN_RULE_SHENYANG_BASIC),
-        5
-    );
+    assert_eq!(estimated_visible_fan_without_wait(&win_hand, &melds), 3);
+    assert_eq!(estimated_fan_with_wait(&win_hand, &melds, 35), 5);
 }
 
 #[test]
@@ -234,23 +201,17 @@ fn estimated_visible_fan_rejects_closed_piao_with_non_dragon_pair() {
     let closed_triplet_hand = vec![1, 1, 1, 11, 11, 11, 21, 21, 21, 31, 31, 35, 35, 35];
 
     assert_eq!(
-        estimated_visible_fan_without_wait(&closed_triplet_hand, &[], WIN_RULE_SHENYANG_BASIC),
+        estimated_visible_fan_without_wait(&closed_triplet_hand, &[]),
         0
     );
 }
 
 #[test]
-fn estimated_visible_fan_uses_win_rule_for_closed_pure_one_suit() {
+fn estimated_visible_fan_uses_shenyang_rule_for_closed_pure_one_suit() {
     let win_hand = vec![1, 2, 3, 2, 3, 4, 4, 5, 6, 7, 7, 7, 9, 9];
 
-    assert_eq!(
-        estimated_visible_fan_without_wait(&win_hand, &[], WIN_RULE_SHENYANG_BASIC),
-        4
-    );
-    assert_eq!(
-        estimated_visible_fan_without_wait(&win_hand, &[], WIN_RULE_SHENYANG_BASIC),
-        4
-    );
+    assert_eq!(estimated_visible_fan_without_wait(&win_hand, &[]), 4);
+    assert_eq!(estimated_visible_fan_without_wait(&win_hand, &[]), 4);
 }
 
 #[test]
@@ -272,14 +233,8 @@ fn fan_wait_bias_counts_single_wait_cap_when_visible_fan_is_half_cap() {
     let win_hand = vec![2, 2, 5, 6, 7, 11, 12, 13, 21, 22, 23];
     let melds = vec![test_peng_meld(31)];
 
-    assert_eq!(
-        estimated_visible_fan_without_wait(&win_hand, &melds, WIN_RULE_SHENYANG_BASIC),
-        1
-    );
-    assert_eq!(
-        estimated_fan_with_wait(&win_hand, &melds, 6, WIN_RULE_SHENYANG_BASIC),
-        2
-    );
+    assert_eq!(estimated_visible_fan_without_wait(&win_hand, &melds), 1);
+    assert_eq!(estimated_fan_with_wait(&win_hand, &melds, 6), 2);
     assert_eq!(
         fan_wait_bias(&win_hand, &melds, &table, 0, 6, 4, &[],),
         14.0
@@ -327,14 +282,8 @@ fn fan_wait_bias_stops_piao_shou_ba_yi_when_visible_fan_exceeds_half_cap() {
         test_peng_meld(31),
     ];
 
-    assert_eq!(
-        estimated_visible_fan_without_wait(&win_hand, &melds, WIN_RULE_SHENYANG_BASIC),
-        3
-    );
-    assert_eq!(
-        estimated_fan_with_wait(&win_hand, &melds, 35, WIN_RULE_SHENYANG_BASIC),
-        5
-    );
+    assert_eq!(estimated_visible_fan_without_wait(&win_hand, &melds), 3);
+    assert_eq!(estimated_fan_with_wait(&win_hand, &melds, 35), 5);
     assert!(3 * 2 > table.max_fan.unwrap());
     assert_eq!(
         fan_wait_bias(&win_hand, &melds, &table, 0, 35, 2, &[],),
@@ -349,14 +298,8 @@ fn fan_wait_bias_stops_terminal_single_wait_when_visible_fan_exceeds_half_cap() 
     let win_hand = vec![11, 11, 14, 15, 15, 16, 16, 17, 17, 17, 17];
     let melds = vec![test_chi_meld(12)];
 
-    assert_eq!(
-        estimated_visible_fan_without_wait(&win_hand, &melds, WIN_RULE_SHENYANG_BASIC),
-        5
-    );
-    assert_eq!(
-        estimated_fan_with_wait(&win_hand, &melds, 11, WIN_RULE_SHENYANG_BASIC),
-        6
-    );
+    assert_eq!(estimated_visible_fan_without_wait(&win_hand, &melds), 5);
+    assert_eq!(estimated_fan_with_wait(&win_hand, &melds, 11), 6);
     assert!(5 * 2 > table.max_fan.unwrap());
 
     assert_eq!(

@@ -46,7 +46,6 @@ fn claim_hu_is_complete(
     claim: &AiClaimView,
     table: &AiPublicTable,
     position: usize,
-    _win_rule: i32,
 ) -> bool {
     let mut win_hand = hand.to_vec();
     win_hand.push(claim.tile);
@@ -208,7 +207,7 @@ pub fn maybe_resolve_ai_claims(
         };
         let choice = if !claim_matches_source {
             AiClaimChoice::Pass
-        } else if is_rob_gang && claim_hu_is_complete(&hand, claim, &table, position, win_rule) {
+        } else if is_rob_gang && claim_hu_is_complete(&hand, claim, &table, position) {
             AiClaimChoice::Hu
         } else {
             choose_claim_from_view(&hand, claim, &table, position, win_rule)
@@ -268,8 +267,7 @@ mod tests {
     use crate::game::build_settlement_event_with_configs;
     use crate::game_state::ClaimWindowState;
     use crate::rules::{
-        ShenyangMahjongWinRules, WIN_RULE_SHENYANG_BASIC, is_complete_win_with_melds,
-        is_complete_win_with_melds_for_rules,
+        ShenyangMahjongWinRules, is_complete_win_with_melds, is_complete_win_with_melds_for_rules,
     };
 
     #[test]
@@ -1121,7 +1119,6 @@ mod tests {
             claim,
             &table,
             0,
-            WIN_RULE_SHENYANG_BASIC,
         ));
         assert!(maybe_resolve_ai_claims(
             &RoomService::default(),
@@ -1528,7 +1525,6 @@ mod tests {
             claim,
             &table,
             0,
-            WIN_RULE_SHENYANG_BASIC,
         ));
         assert!(maybe_resolve_ai_claims(
             &RoomService::default(),
@@ -1583,7 +1579,6 @@ mod tests {
             claim,
             &table,
             0,
-            WIN_RULE_SHENYANG_BASIC,
         ));
         assert!(maybe_resolve_ai_claims(
             &RoomService::default(),

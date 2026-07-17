@@ -121,9 +121,9 @@ pub(super) fn self_gang_score(
         && piao_threat_level(melds) > 0
         && piao_committed_group_count(hand, melds) >= 3;
     let normal_route_projects_cap = has_door_opening_meld(melds, table)
-        && capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table, win_rule)
-        && !capped_normal_route_visible_fan_reaches_cap(hand, melds, table, win_rule)
-        && capped_normal_route_visible_fan_reaches_cap(&next, &next_melds, table, win_rule);
+        && capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table)
+        && !capped_normal_route_visible_fan_reaches_cap(hand, melds, table)
+        && capped_normal_route_visible_fan_reaches_cap(&next, &next_melds, table);
     let piao_route_projects_cap = has_door_opening_meld(melds, table)
         && committed_piao_plan
         && has_piao_route_basics(&next, &next_melds)

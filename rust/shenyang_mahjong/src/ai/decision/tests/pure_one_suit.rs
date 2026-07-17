@@ -11,8 +11,7 @@ fn capped_basic_foundation_disables_redundant_closed_pure_one_suit_plan() {
     assert!(capped_basic_route_foundation_visible_fan_reaches_cap(
         &hand,
         &[],
-        &table,
-        WIN_RULE_SHENYANG_BASIC
+        &table
     ));
     assert!(pure_one_suit_plan_score(&hand, &[]) > 0.0);
     assert_eq!(
@@ -31,8 +30,7 @@ fn capped_basic_foundation_preserves_three_suits_over_pure_one_suit_chase() {
     assert!(capped_basic_route_foundation_visible_fan_reaches_cap(
         &hand,
         &[],
-        &table,
-        WIN_RULE_SHENYANG_BASIC
+        &table
     ));
     assert!(
         three_suits_discard_bias(&after_discard, &[], &table, 0, 11, WIN_RULE_SHENYANG_BASIC)

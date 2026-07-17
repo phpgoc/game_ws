@@ -12,7 +12,7 @@ pub(in crate::ai::decision) fn is_closed_early_piao_candidate(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
+    _win_rule: i32,
 ) -> bool {
     valid_meld_count(melds) == 0
         && pair_count(hand) >= 3
@@ -20,8 +20,8 @@ pub(in crate::ai::decision) fn is_closed_early_piao_candidate(
         && table.dealer_position != position
         && !dealer_opponent_has_major_threat(table, position)
         && !piao_plan_is_capped(table)
-        && !capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table, win_rule)
-        && !capped_normal_route_visible_fan_reaches_cap(hand, melds, table, win_rule)
+        && !capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table)
+        && !capped_normal_route_visible_fan_reaches_cap(hand, melds, table)
         && has_piao_route_basics(hand, melds)
 }
 
@@ -213,7 +213,7 @@ pub(in crate::ai::decision) fn piao_plan_score_for_context(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
+    _win_rule: i32,
 ) -> f64 {
     let score = piao_plan_score(hand, melds);
     if score <= 0.0
@@ -221,8 +221,8 @@ pub(in crate::ai::decision) fn piao_plan_score_for_context(
         || piao_plan_is_capped(table)
         || !has_piao_route_basics(hand, melds)
         || capped_open_basic_route_visible_fan_reaches_cap(hand, melds, table)
-        || capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table, win_rule)
-        || capped_normal_route_visible_fan_reaches_cap(hand, melds, table, win_rule)
+        || capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table)
+        || capped_normal_route_visible_fan_reaches_cap(hand, melds, table)
     {
         return 0.0;
     }

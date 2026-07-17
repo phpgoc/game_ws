@@ -18,7 +18,6 @@ pub(in crate::ai::decision) fn should_claim_capped_dragon_peng_over_five_pairs(
                 hand,
                 current_melds,
                 table,
-                win_rule,
             );
     if !preserves_pair_route {
         return false;

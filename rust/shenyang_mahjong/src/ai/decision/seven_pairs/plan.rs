@@ -42,7 +42,7 @@ pub(in crate::ai::decision) fn seven_pairs_plan_score(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
+    _win_rule: i32,
 ) -> f64 {
     if valid_meld_count(melds) > 0 || !(hand.len() == 13 || hand.len() == 14) {
         return 0.0;
@@ -60,10 +60,10 @@ pub(in crate::ai::decision) fn seven_pairs_plan_score(
     {
         return 0.0;
     }
-    if pairs < 6 && capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table, win_rule) {
+    if pairs < 6 && capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table) {
         return 0.0;
     }
-    if pairs < 6 && capped_normal_route_visible_fan_reaches_cap(hand, melds, table, win_rule) {
+    if pairs < 6 && capped_normal_route_visible_fan_reaches_cap(hand, melds, table) {
         return 0.0;
     }
     if pairs < 6 && missing_suits(hand, melds).is_empty() {
@@ -97,7 +97,7 @@ pub(in crate::ai::decision) fn should_lock_seven_pairs_plan(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
+    _win_rule: i32,
 ) -> bool {
     if valid_meld_count(melds) > 0 || !(hand.len() == 13 || hand.len() == 14) {
         return false;
@@ -121,10 +121,10 @@ pub(in crate::ai::decision) fn should_lock_seven_pairs_plan(
     if pairs < 5 {
         return false;
     }
-    if capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table, win_rule) {
+    if capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table) {
         return false;
     }
-    if capped_normal_route_visible_fan_reaches_cap(hand, melds, table, win_rule) {
+    if capped_normal_route_visible_fan_reaches_cap(hand, melds, table) {
         return false;
     }
     if (table.dealer_position == position || dealer_opponent_has_major_threat(table, position))

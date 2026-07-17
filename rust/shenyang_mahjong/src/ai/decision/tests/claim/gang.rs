@@ -847,16 +847,10 @@ fn half_capped_unready_claim_gang_takes_projected_cap() {
         0.0
     );
     assert!(capped_normal_route_visible_fan_exceeds_half_cap(
-        &hand,
-        melds,
-        &table,
-        WIN_RULE_SHENYANG_BASIC
+        &hand, melds, &table
     ));
     assert!(!capped_normal_route_visible_fan_reaches_cap(
-        &hand,
-        melds,
-        &table,
-        WIN_RULE_SHENYANG_BASIC
+        &hand, melds, &table
     ));
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
@@ -957,8 +951,7 @@ fn three_fan_capped_claim_gang_penges_dragon_over_five_pairs() {
     assert!(capped_basic_route_foundation_visible_fan_exceeds_half_cap(
         &hand,
         &[],
-        &table,
-        WIN_RULE_SHENYANG_BASIC
+        &table
     ));
     let gang_hand = remove_n_tiles(&hand, 35, 3);
     let gang_melds = vec![claim_gang_meld(35, 1)];

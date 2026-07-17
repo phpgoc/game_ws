@@ -17,8 +17,8 @@ fn capped_discard_clears_spare_single_dragon_when_basic_route_is_ready() {
         ready_tile_score(&after_middle, melds, &table, 0, WIN_RULE_SHENYANG_BASIC)
     );
     assert!(
-        capped_spare_dragon_discard_bias(&hand, 35, melds, &table, WIN_RULE_SHENYANG_BASIC)
-            > capped_spare_dragon_discard_bias(&hand, 8, melds, &table, WIN_RULE_SHENYANG_BASIC)
+        capped_spare_dragon_discard_bias(&hand, 35, melds, &table)
+            > capped_spare_dragon_discard_bias(&hand, 8, melds, &table)
     );
     assert_eq!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
@@ -44,10 +44,7 @@ fn capped_discard_does_not_preserve_redundant_four_gui_yi() {
     win_hand.push(35);
     sort_tiles(&mut win_hand);
     assert!(is_complete_win_with_melds(&win_hand, melds));
-    assert_eq!(
-        estimated_visible_fan_without_wait(&win_hand, melds, WIN_RULE_SHENYANG_BASIC),
-        1
-    );
+    assert_eq!(estimated_visible_fan_without_wait(&win_hand, melds), 1);
     assert!(ready_hand_visible_fan_reaches_cap(
         &after_four_gui_yi_discard,
         melds,
@@ -77,8 +74,8 @@ fn capped_open_basic_route_discards_redundant_single_dragon() {
         &table
     ));
     assert!(
-        capped_spare_dragon_discard_bias(&hand, 36, melds, &table, WIN_RULE_SHENYANG_BASIC)
-            > capped_spare_dragon_discard_bias(&hand, 5, melds, &table, WIN_RULE_SHENYANG_BASIC)
+        capped_spare_dragon_discard_bias(&hand, 36, melds, &table)
+            > capped_spare_dragon_discard_bias(&hand, 5, melds, &table)
     );
     assert_eq!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
@@ -536,10 +533,7 @@ fn half_capped_discard_does_not_preserve_four_gui_yi() {
 
     assert_eq!(estimated_four_gui_yi_fan(&hand, melds), 1);
     assert!(capped_normal_route_visible_fan_exceeds_half_cap(
-        &hand,
-        melds,
-        &table,
-        WIN_RULE_SHENYANG_BASIC
+        &hand, melds, &table
     ));
     assert_eq!(
         four_gui_yi_discard_bias(&hand, 2, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
@@ -576,8 +570,7 @@ fn broken_capped_route_can_discard_spare_dragon() {
     assert!(!capped_normal_route_visible_fan_reaches_cap(
         &after_dragon,
         melds,
-        &table,
-        WIN_RULE_SHENYANG_BASIC
+        &table
     ));
     assert_eq!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),

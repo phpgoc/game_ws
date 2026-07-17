@@ -6,17 +6,11 @@ fn capped_basic_foundation_before_discard_reaches_cap(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     discarded_tile: i32,
-    win_rule: i32,
 ) -> bool {
     let mut hand_before_discard = hand_after_discard.to_vec();
     hand_before_discard.push(discarded_tile);
     sort_tiles(&mut hand_before_discard);
-    capped_basic_route_foundation_visible_fan_reaches_cap(
-        &hand_before_discard,
-        melds,
-        table,
-        win_rule,
-    )
+    capped_basic_route_foundation_visible_fan_reaches_cap(&hand_before_discard, melds, table)
 }
 
 pub(in crate::ai::decision) fn terminal_or_honor_discard_bias(
@@ -67,7 +61,6 @@ pub(in crate::ai::decision) fn three_suits_discard_bias(
             melds,
             table,
             tile,
-            win_rule,
         )
         && pure_one_suit_plan_score_for_context(
             hand_after_discard,
@@ -198,13 +191,7 @@ pub(in crate::ai::decision) fn violates_basic_three_suits_discard(
     ) {
         return false;
     }
-    if capped_basic_foundation_before_discard_reaches_cap(
-        hand_after_discard,
-        melds,
-        table,
-        tile,
-        win_rule,
-    ) {
+    if capped_basic_foundation_before_discard_reaches_cap(hand_after_discard, melds, table, tile) {
         return true;
     }
     if table.max_fan.is_some_and(|max_fan| max_fan <= 1) {

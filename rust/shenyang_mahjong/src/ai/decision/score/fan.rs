@@ -6,7 +6,6 @@ pub(in crate::ai::decision) fn capped_basic_route_foundation_visible_fan_exceeds
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
-    _win_rule: i32,
 ) -> bool {
     let Some(max_fan) = table.max_fan.filter(|max_fan| *max_fan > 0) else {
         return false;
@@ -19,7 +18,6 @@ pub(in crate::ai::decision) fn capped_basic_route_foundation_visible_fan_reaches
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
-    _win_rule: i32,
 ) -> bool {
     let Some(max_fan) = table.max_fan.filter(|max_fan| *max_fan > 0) else {
         return false;
@@ -32,7 +30,6 @@ pub(in crate::ai::decision) fn capped_normal_route_visible_fan_exceeds_half_cap(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
-    _win_rule: i32,
 ) -> bool {
     let Some(max_fan) = table.max_fan.filter(|max_fan| *max_fan > 0) else {
         return false;
@@ -45,7 +42,6 @@ pub(in crate::ai::decision) fn capped_normal_route_visible_fan_reaches_cap(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
-    _win_rule: i32,
 ) -> bool {
     let Some(max_fan) = table.max_fan.filter(|max_fan| *max_fan > 0) else {
         return false;
@@ -129,7 +125,6 @@ pub(in crate::ai::decision) fn estimated_fan_with_known_unavailable_wait(
     win_hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
     win_tile: i32,
-    _win_rule: i32,
     known_unavailable_tiles: &[i32],
 ) -> i32 {
     estimated_fan_with_known_unavailable_wait_for_rules(
@@ -178,9 +173,8 @@ pub(in crate::ai::decision) fn estimated_fan_with_wait(
     win_hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
     win_tile: i32,
-    win_rule: i32,
 ) -> i32 {
-    estimated_fan_with_known_unavailable_wait(win_hand, melds, win_tile, win_rule, &[])
+    estimated_fan_with_known_unavailable_wait(win_hand, melds, win_tile, &[])
 }
 
 pub(in crate::ai::decision) fn estimated_four_gui_yi_fan(
@@ -207,7 +201,6 @@ pub(in crate::ai::decision) fn estimated_visible_bonus_fan(
 pub(in crate::ai::decision) fn estimated_visible_fan_without_wait(
     win_hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
-    _win_rule: i32,
 ) -> i32 {
     estimated_visible_fan_without_wait_for_rules(win_hand, melds, ShenyangMahjongWinRules::new())
 }
@@ -309,7 +302,7 @@ pub(in crate::ai::decision) fn four_gui_yi_discard_bias(
     if current_four_gui_yi <= 0 {
         return 0.0;
     }
-    if capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table, win_rule) {
+    if capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table) {
         return 0.0;
     }
     let next = remove_n_tiles(hand, tile, 1);

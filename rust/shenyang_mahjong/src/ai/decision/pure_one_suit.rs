@@ -109,7 +109,7 @@ pub(super) fn pure_one_suit_plan_score_for_context(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    win_rule: i32,
+    _win_rule: i32,
 ) -> f64 {
     let score = pure_one_suit_plan_score(hand, melds);
     if score <= 0.0 {
@@ -131,10 +131,10 @@ pub(super) fn pure_one_suit_plan_score_for_context(
     if table.max_fan.is_some_and(|max_fan| max_fan <= 1) {
         return 0.0;
     }
-    if capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table, win_rule) {
+    if capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table) {
         return 0.0;
     }
-    if capped_normal_route_visible_fan_reaches_cap(hand, melds, table, win_rule) {
+    if capped_normal_route_visible_fan_reaches_cap(hand, melds, table) {
         return 0.0;
     }
     if capped_open_basic_route_visible_fan_reaches_cap(hand, melds, table) {

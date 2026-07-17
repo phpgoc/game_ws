@@ -11,8 +11,7 @@ fn capped_basic_foundation_disables_redundant_closed_piao_plan() {
     assert!(capped_basic_route_foundation_visible_fan_reaches_cap(
         &hand,
         &[],
-        &table,
-        WIN_RULE_SHENYANG_BASIC
+        &table
     ));
     assert!(piao_plan_score(&hand, &[]) >= 20.0);
     assert_eq!(
@@ -195,8 +194,7 @@ fn half_capped_basic_foundation_stops_closed_piao_chase() {
     assert!(capped_basic_route_foundation_visible_fan_exceeds_half_cap(
         &hand,
         &[],
-        &table,
-        WIN_RULE_SHENYANG_BASIC
+        &table
     ));
     assert!(piao_plan_score(&hand, &[]) >= 20.0);
     assert_eq!(

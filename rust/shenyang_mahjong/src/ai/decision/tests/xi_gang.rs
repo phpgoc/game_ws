@@ -150,10 +150,7 @@ fn two_xi_gangs_count_toward_visible_fan_cap() {
     ];
 
     assert_eq!(estimated_visible_bonus_fan(&hand, &melds), 2);
-    assert_eq!(
-        estimated_visible_fan_without_wait(&hand, &melds, WIN_RULE_SHENYANG_BASIC),
-        3
-    );
+    assert_eq!(estimated_visible_fan_without_wait(&hand, &melds), 3);
     assert!(capped_open_basic_route_visible_fan_reaches_cap(
         &hand, &melds, &table
     ));

@@ -107,7 +107,7 @@ fn choose_discard_from_view_inner(
         ) + piao_discard_bias(hand, tile, melds, table, position, win_rule)
             + early_piao_candidate_discard_bias(hand, tile, melds, table, position, win_rule)
             + basic_heng_seed_discard_bias(hand, tile, melds)
-            + capped_spare_dragon_discard_bias(hand, tile, melds, table, win_rule)
+            + capped_spare_dragon_discard_bias(hand, tile, melds, table)
             + seven_pairs_plan_discard_bias(hand, tile, melds, table, position, win_rule)
             + seven_pairs_wait_discard_bias(hand, tile, melds, table, position)
             + four_gui_yi_discard_bias(hand, tile, melds, table, position, win_rule)

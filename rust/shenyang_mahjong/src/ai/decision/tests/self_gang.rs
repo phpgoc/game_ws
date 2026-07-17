@@ -164,14 +164,12 @@ fn half_capped_closed_unready_self_gang_does_not_use_illegal_projection() {
     assert!(capped_normal_route_visible_fan_exceeds_half_cap(
         &hand,
         &[],
-        &table,
-        WIN_RULE_SHENYANG_BASIC
+        &table
     ));
     assert!(!capped_normal_route_visible_fan_reaches_cap(
         &hand,
         &[],
-        &table,
-        WIN_RULE_SHENYANG_BASIC
+        &table
     ));
     assert_eq!(
         choose_self_gang_from_view(&hand, &[9], &table, 0, WIN_RULE_SHENYANG_BASIC),

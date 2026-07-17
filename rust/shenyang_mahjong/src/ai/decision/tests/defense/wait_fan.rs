@@ -8,8 +8,7 @@ fn fan_wait_bias_stops_when_visible_fan_exceeds_half_cap() {
     let melds = vec![test_gang_meld(35)];
     let win_hand = vec![2, 2, 5, 6, 7, 11, 12, 13, 21, 22, 23];
 
-    let visible_fan =
-        estimated_visible_fan_without_wait(&win_hand, &melds, WIN_RULE_SHENYANG_BASIC);
+    let visible_fan = estimated_visible_fan_without_wait(&win_hand, &melds);
     assert_eq!(visible_fan, 3);
     assert!(visible_fan * 2 > table.max_fan.unwrap());
 

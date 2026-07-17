@@ -364,8 +364,7 @@ fn half_capped_basic_foundation_does_not_lock_five_pairs() {
     assert!(capped_basic_route_foundation_visible_fan_exceeds_half_cap(
         &hand,
         &[],
-        &table,
-        WIN_RULE_SHENYANG_BASIC
+        &table
     ));
     assert!(!should_lock_seven_pairs_plan(
         &hand,

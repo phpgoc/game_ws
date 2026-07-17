@@ -131,7 +131,6 @@ fn claim_hu_does_not_double_count_visible_tile_to_create_capped_wait() {
             &current_win,
             melds,
             16,
-            WIN_RULE_SHENYANG_BASIC,
             &current_known_unavailable,
         ),
         1
@@ -152,7 +151,6 @@ fn claim_hu_does_not_double_count_visible_tile_to_create_capped_wait() {
             &capped_wait_win,
             melds,
             13,
-            WIN_RULE_SHENYANG_BASIC,
             &pass_known_unavailable,
         ),
         1
@@ -239,7 +237,6 @@ fn claim_hu_takes_when_current_fan_exceeds_half_cap() {
             &current_win,
             melds,
             36,
-            WIN_RULE_SHENYANG_BASIC,
             &current_known_unavailable,
         ),
         4
@@ -285,23 +282,11 @@ fn claimed_fourth_copy_keeps_seven_pairs_single_wait_fan() {
         0
     );
     assert_eq!(
-        estimated_fan_with_known_unavailable_wait(
-            &win_hand,
-            &[],
-            1,
-            WIN_RULE_SHENYANG_BASIC,
-            &public_unavailable,
-        ),
+        estimated_fan_with_known_unavailable_wait(&win_hand, &[], 1, &public_unavailable,),
         5
     );
     assert_eq!(
-        estimated_fan_with_known_unavailable_wait(
-            &win_hand,
-            &[],
-            1,
-            WIN_RULE_SHENYANG_BASIC,
-            &claimed_unavailable,
-        ),
+        estimated_fan_with_known_unavailable_wait(&win_hand, &[], 1, &claimed_unavailable,),
         6
     );
 }
@@ -598,13 +583,7 @@ fn self_draw_hu_can_pass_one_fan_short_when_capped_wait_is_live() {
         known_unavailable_tiles_with_simulated_discards(&table, 0, melds, &pass_simulated_discards);
 
     assert_eq!(
-        estimated_fan_with_known_unavailable_wait(
-            &win_hand,
-            melds,
-            16,
-            WIN_RULE_SHENYANG_BASIC,
-            &[],
-        ),
+        estimated_fan_with_known_unavailable_wait(&win_hand, melds, 16, &[],),
         1
     );
     assert_eq!(
@@ -623,7 +602,6 @@ fn self_draw_hu_can_pass_one_fan_short_when_capped_wait_is_live() {
             &capped_wait_win,
             melds,
             13,
-            WIN_RULE_SHENYANG_BASIC,
             &pass_known_unavailable,
         ),
         2

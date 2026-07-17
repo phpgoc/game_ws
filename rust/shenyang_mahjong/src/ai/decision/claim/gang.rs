@@ -4,7 +4,6 @@ fn claim_gang_projects_capped_visible_fan(
     hand: &[i32],
     current_melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
-    win_rule: i32,
     tile: i32,
     from_position: usize,
     committed_piao_plan: bool,
@@ -16,14 +15,9 @@ fn claim_gang_projects_capped_visible_fan(
     let mut next_melds = current_melds.to_vec();
     next_melds.push(claim_gang_meld(tile, from_position));
     let normal_route_projects_cap =
-        capped_normal_route_visible_fan_exceeds_half_cap(hand, current_melds, table, win_rule)
-            && !capped_normal_route_visible_fan_reaches_cap(hand, current_melds, table, win_rule)
-            && capped_normal_route_visible_fan_reaches_cap(
-                &next_hand,
-                &next_melds,
-                table,
-                win_rule,
-            );
+        capped_normal_route_visible_fan_exceeds_half_cap(hand, current_melds, table)
+            && !capped_normal_route_visible_fan_reaches_cap(hand, current_melds, table)
+            && capped_normal_route_visible_fan_reaches_cap(&next_hand, &next_melds, table);
     let piao_route_projects_cap = committed_piao_plan
         && has_piao_route_basics(&next_hand, &next_melds)
         && capped_piao_route_visible_fan_projects_cap(
@@ -87,7 +81,6 @@ pub(in crate::ai::decision) fn should_claim_gang_from_discard(
         hand,
         current_melds,
         table,
-        win_rule,
         tile,
         from_position,
         committed_piao_plan,
