@@ -313,6 +313,16 @@ fn claim_peng_passes_when_terminal_or_honor_is_unrecoverable_for_basic() {
         5,
         1
     ));
+    assert!(claim_leaves_unrecoverable_terminal_or_honor(
+        &hand,
+        &[],
+        &table,
+        0,
+        0,
+        ShenyangMahjongMeldKind::PENG,
+        5,
+        1
+    ));
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Pass)

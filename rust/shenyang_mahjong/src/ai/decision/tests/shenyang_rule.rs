@@ -32,6 +32,43 @@ fn basic_heng_filter_ignores_chi_tile_plus_hand_pair() {
 }
 
 #[test]
+fn legacy_rule_number_cannot_disable_shenyang_discard_guards() {
+    let table = table_with_discards(1, Vec::new());
+    let melds = vec![test_chi_meld(11)];
+    let hand_after_discard = vec![1, 1, 21, 22, 23, 24, 25, 26, 31, 35];
+
+    assert!(violates_basic_heng_discard(
+        &hand_after_discard,
+        &melds,
+        &table,
+        0,
+        35,
+        0,
+    ));
+    assert!(basic_heng_seed_discard_bias(&hand_after_discard, 35, &melds, 0) < 0.0);
+
+    let no_terminal_after = vec![2, 3, 4, 12, 13, 14, 22, 23, 24, 5];
+    assert!(violates_basic_terminal_or_honor_discard(
+        &no_terminal_after,
+        &[],
+        &table,
+        0,
+        35,
+        0,
+    ));
+
+    let two_suits_after = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 14, 15, 31, 35];
+    assert!(violates_basic_three_suits_discard(
+        &two_suits_after,
+        &[],
+        &table,
+        0,
+        21,
+        0,
+    ));
+}
+
+#[test]
 fn basic_heng_filter_ignores_invalid_hand_triplet() {
     let hand = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 35, 99, 99, 99];
 

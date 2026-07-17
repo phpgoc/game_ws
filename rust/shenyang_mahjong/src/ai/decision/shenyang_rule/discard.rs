@@ -81,11 +81,7 @@ pub(in crate::ai::decision) fn three_suits_discard_bias(
     }
     let mut bias = 0.0;
     if before[suit as usize] && !after[suit as usize] {
-        bias -= if win_rule == WIN_RULE_SHENYANG_BASIC {
-            80.0
-        } else {
-            14.0
-        };
+        bias -= 80.0;
     }
     if after.into_iter().filter(|present| *present).count() < 3 {
         bias -= 2.5;
@@ -101,9 +97,6 @@ pub(in crate::ai::decision) fn violates_basic_heng_discard(
     tile: i32,
     win_rule: i32,
 ) -> bool {
-    if win_rule != WIN_RULE_SHENYANG_BASIC {
-        return false;
-    }
     let had_heng = has_triplet_or_dragon_pair_with_extra(hand_after_discard, melds, Some(tile));
     let has_heng_after = has_triplet_or_dragon_pair(hand_after_discard, melds);
     if has_heng_after {
@@ -145,7 +138,7 @@ pub(in crate::ai::decision) fn violates_basic_terminal_or_honor_discard(
     tile: i32,
     win_rule: i32,
 ) -> bool {
-    if win_rule != WIN_RULE_SHENYANG_BASIC || !(is_honor(tile) || tile_is_terminal(tile)) {
+    if !(is_honor(tile) || tile_is_terminal(tile)) {
         return false;
     }
     let before = has_terminal_or_honor_with_extra(hand_after_discard, melds, Some(tile));
@@ -181,7 +174,7 @@ pub(in crate::ai::decision) fn violates_basic_three_suits_discard(
     tile: i32,
     win_rule: i32,
 ) -> bool {
-    if win_rule != WIN_RULE_SHENYANG_BASIC || !is_suited(tile) {
+    if !is_suited(tile) {
         return false;
     }
     let before = suit_presence_with_extra(hand_after_discard, melds, Some(tile));

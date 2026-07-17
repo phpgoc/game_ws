@@ -5,9 +5,9 @@ pub(in crate::ai::decision) fn basic_heng_seed_discard_bias(
     hand: &[i32],
     tile: i32,
     melds: &[WsShenyangMahjongMeld],
-    win_rule: i32,
+    _win_rule: i32,
 ) -> f64 {
-    if win_rule != WIN_RULE_SHENYANG_BASIC || has_triplet_or_dragon_pair(hand, melds) {
+    if has_triplet_or_dragon_pair(hand, melds) {
         return 0.0;
     }
     let count = hand.iter().filter(|item| **item == tile).count();
@@ -27,9 +27,7 @@ pub(in crate::ai::decision) fn shenyang_rule_progress_score(
     position: usize,
     win_rule: i32,
 ) -> f64 {
-    if win_rule != WIN_RULE_SHENYANG_BASIC
-        || should_lock_seven_pairs_plan(hand, melds, table, position, win_rule)
-    {
+    if should_lock_seven_pairs_plan(hand, melds, table, position, win_rule) {
         return 0.0;
     }
     let pure_score = pure_one_suit_plan_score_for_context(hand, melds, table, position, win_rule);

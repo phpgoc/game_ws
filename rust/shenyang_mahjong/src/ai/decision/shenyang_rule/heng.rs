@@ -79,10 +79,9 @@ pub(in crate::ai::decision) fn loses_basic_heng_recovery_after_discard(
     table: &AiPublicTable,
     position: usize,
     tile: i32,
-    win_rule: i32,
+    _win_rule: i32,
 ) -> bool {
-    if win_rule != WIN_RULE_SHENYANG_BASIC
-        || has_triplet_or_dragon_pair(hand, melds)
+    if has_triplet_or_dragon_pair(hand, melds)
         || !can_recover_basic_heng(hand, melds, table, position)
     {
         return false;

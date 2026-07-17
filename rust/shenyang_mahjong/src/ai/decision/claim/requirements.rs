@@ -34,15 +34,11 @@ pub(in crate::ai::decision) fn claim_leaves_unrecoverable_missing_suit(
     hand: &[i32],
     current_melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
-    win_rule: i32,
+    _win_rule: i32,
     kind: ShenyangMahjongMeldKind,
     tile: i32,
     from_position: usize,
 ) -> bool {
-    if win_rule != WIN_RULE_SHENYANG_BASIC {
-        return false;
-    }
-
     let (remove_count, claimed_meld) = match kind {
         ShenyangMahjongMeldKind::PENG => (2, claim_peng_meld(tile, from_position)),
         ShenyangMahjongMeldKind::GANG => (3, claim_gang_meld(tile, from_position)),
@@ -76,10 +72,6 @@ pub(in crate::ai::decision) fn claim_leaves_unrecoverable_terminal_or_honor(
     tile: i32,
     from_position: usize,
 ) -> bool {
-    if win_rule != WIN_RULE_SHENYANG_BASIC {
-        return false;
-    }
-
     let (remove_count, claimed_meld) = match kind {
         ShenyangMahjongMeldKind::PENG => (2, claim_peng_meld(tile, from_position)),
         ShenyangMahjongMeldKind::GANG => (3, claim_gang_meld(tile, from_position)),
