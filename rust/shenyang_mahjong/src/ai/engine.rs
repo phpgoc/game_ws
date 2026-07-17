@@ -1347,6 +1347,31 @@ mod tests {
         assert_seeded_settlement_event_is_consistent(&state, &configs, 2026070406);
     }
 
+    #[test]
+    fn four_ai_positions_settle_first_chi_disabled_seeded_round() {
+        let configs = HashMap::from([
+            ("win_rule".to_owned(), WIN_RULE_SHENYANG_BASIC),
+            ("allow_first_chi".to_owned(), 0),
+        ]);
+        let state = run_seeded_ai_round_with_configs(2026070407, 260, &configs);
+        let settlement = state
+            .settlement
+            .as_ref()
+            .expect("AI first-Chi-disabled settlement");
+        let total_discards = state.discards.values().map(Vec::len).sum::<usize>();
+
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert!(
+            settlement.is_self_draw
+                || settlement.from_position.is_some()
+                || settlement.winner_positions.is_empty(),
+            "first-Chi-disabled seeded AI round should settle as a self draw, discard win, or legal draw"
+        );
+        assert!(total_discards > 0);
+        assert_seeded_settlement_winners_are_legal(&state, &configs, 2026070407);
+        assert_seeded_settlement_event_is_consistent(&state, &configs, 2026070407);
+    }
+
     fn one_fan_capped_configs() -> HashMap<String, i32> {
         HashMap::from([("max_fan".to_owned(), 1)])
     }
