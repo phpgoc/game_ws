@@ -3086,6 +3086,22 @@ mod tests {
                 .all(|option| option.position != 1 || option.chi_options.is_empty())
         );
 
+        state.melds.insert(
+            1,
+            vec![build_meld(
+                ShenyangMahjongMeldKind::GANG,
+                vec![9, 9, 9, 9],
+                Some(2),
+            )],
+        );
+
+        let options = build_claim_options(&state, 3, 0, &configs);
+        let gang_opened_player = options
+            .iter()
+            .find(|option| option.position == 1)
+            .expect("open gang next player should retain chi options");
+        assert!(gang_opened_player.chi_options.contains(&vec![1, 2]));
+
         state
             .hands
             .insert(1, vec![1, 2, 4, 5, 6, 11, 12, 13, 31, 35]);

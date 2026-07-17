@@ -35,6 +35,14 @@ fn claim_chi_blocks_only_first_chi_when_configured() {
         Some(AiClaimChoice::Pass)
     );
 
+    table.seats.get_mut(&0).unwrap().melds = vec![test_gang_meld(1)];
+    assert_eq!(
+        choose_claim_from_view(&closed_meld_hand, &claim, &table, 0, WIN_RULE_RELAXED),
+        Some(AiClaimChoice::Chi {
+            consume_tiles: vec![21, 23]
+        })
+    );
+
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
     assert_eq!(
         choose_claim_from_view(&closed_meld_hand, &claim, &table, 0, WIN_RULE_RELAXED),
