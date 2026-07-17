@@ -116,8 +116,7 @@ pub fn maybe_play_ai_turn(
     let xi_gang_options = state.xi_gang_options_for_position(position);
     if !xi_gang_options.is_empty() {
         let table = build_public_table_with_configs(state, configs);
-        if let Some(tiles) =
-            choose_xi_gang_from_view(&hand, &xi_gang_options, &table, position, win_rule)
+        if let Some(tiles) = choose_xi_gang_from_view(&hand, &xi_gang_options, &table, position)
             && can_declare_xi_gang(state, position, &tiles)
         {
             return perform_xi_gang(

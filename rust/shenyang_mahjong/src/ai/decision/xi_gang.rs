@@ -6,7 +6,6 @@ pub fn choose_xi_gang_from_view(
     candidate_options: &[Vec<i32>],
     table: &AiPublicTable,
     position: usize,
-    _win_rule: i32,
 ) -> Option<Vec<i32>> {
     let melds = table
         .seats

@@ -116,9 +116,9 @@ pub(crate) fn is_complete_win_for_table(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
-    win_rule: i32,
+    _win_rule: i32,
 ) -> bool {
-    is_complete_win_with_melds_for_rules(hand, melds, win_rules_for_table(table, win_rule))
+    is_complete_win_with_melds_for_rules(hand, melds, win_rules_for_table(table))
 }
 
 pub(in crate::ai::decision) fn is_single_wait_shape_for_table(
@@ -126,14 +126,14 @@ pub(in crate::ai::decision) fn is_single_wait_shape_for_table(
     melds: &[WsShenyangMahjongMeld],
     win_tile: i32,
     table: &AiPublicTable,
-    win_rule: i32,
+    _win_rule: i32,
     known_unavailable_tiles: &[i32],
 ) -> bool {
     is_single_wait_shape_with_known_unavailable_tiles_for_rules(
         hand,
         melds,
         win_tile,
-        win_rules_for_table(table, win_rule),
+        win_rules_for_table(table),
         known_unavailable_tiles,
     )
 }
@@ -148,7 +148,6 @@ pub(crate) fn position_known_tile_counts_are_possible(
 
 pub(in crate::ai::decision) fn win_rules_for_table(
     table: &AiPublicTable,
-    _win_rule: i32,
 ) -> ShenyangMahjongWinRules {
     ShenyangMahjongWinRules {
         allow_closed_sequence_dragon_pair_win: !table.allow_first_chi,
