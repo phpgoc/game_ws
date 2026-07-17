@@ -69,7 +69,7 @@ pub(in crate::ai::decision) fn should_claim_peng_to_open_capped_basic_route(
         missing_suits(&after_discard, &melds).is_empty()
             && has_terminal_or_honor_with_extra(&after_discard, &melds, None)
             && has_triplet_or_dragon_pair(&after_discard, &melds)
-            && capped_open_basic_route_visible_fan_reaches_cap(&after_discard, &melds, table)
+            && capped_open_normal_route_visible_fan_reaches_cap(&after_discard, &melds, table)
     })
 }
 

@@ -1,14 +1,14 @@
 use super::*;
 
 #[test]
-fn capped_open_basic_route_delays_added_gang_before_ready() {
+fn capped_open_normal_route_delays_added_gang_before_ready() {
     let mut table = table_with_discards(1, Vec::new());
     table.max_fan = Some(2);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(35), test_peng_meld(9)];
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
     let hand = vec![1, 4, 7, 9, 11, 14, 17, 21];
 
-    assert!(capped_open_basic_route_visible_fan_reaches_cap(
+    assert!(capped_open_normal_route_visible_fan_reaches_cap(
         &hand, melds, &table
     ));
     assert_eq!(best_ready_score_after_discard(&hand, melds, &table, 0), 0.0);

@@ -218,7 +218,7 @@ pub(in crate::ai::decision) fn piao_plan_score_for_context(
         || !piao_plan_has_enough_group_opportunities(hand, melds, table, position)
         || piao_plan_is_capped(table)
         || !has_piao_route_basics(hand, melds)
-        || capped_open_basic_route_visible_fan_reaches_cap(hand, melds, table)
+        || capped_open_normal_route_visible_fan_reaches_cap(hand, melds, table)
         || capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table)
         || capped_normal_route_visible_fan_reaches_cap(hand, melds, table)
     {

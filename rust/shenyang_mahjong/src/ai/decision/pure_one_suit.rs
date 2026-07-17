@@ -134,7 +134,7 @@ pub(super) fn pure_one_suit_plan_score_for_context(
     if capped_normal_route_visible_fan_reaches_cap(hand, melds, table) {
         return 0.0;
     }
-    if capped_open_basic_route_visible_fan_reaches_cap(hand, melds, table) {
+    if capped_open_normal_route_visible_fan_reaches_cap(hand, melds, table) {
         return 0.0;
     }
     let marginal_closed_plan_against_dealer_threat =

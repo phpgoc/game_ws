@@ -159,7 +159,7 @@ pub(super) fn self_gang_score(
     }
     if !is_ready
         && !speed_first_concealed_gang
-        && capped_open_basic_route_visible_fan_reaches_cap(hand, melds, table)
+        && capped_open_normal_route_visible_fan_reaches_cap(hand, melds, table)
     {
         return f64::NEG_INFINITY;
     }

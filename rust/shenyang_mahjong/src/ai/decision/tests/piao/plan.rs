@@ -1,14 +1,14 @@
 use super::*;
 
 #[test]
-fn capped_basic_foundation_disables_redundant_closed_piao_plan() {
+fn capped_normal_route_disables_redundant_closed_piao_plan() {
     let mut table = table_with_discards(1, Vec::new());
     table.max_fan = Some(2);
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 13, 21, 22, 35, 35, 35];
 
-    assert!(has_basic_normal_route_foundation(&hand, &[]));
+    assert!(has_normal_route_foundation(&hand, &[]));
     assert_eq!(estimated_visible_bonus_fan(&hand, &[]), 1);
-    assert!(capped_basic_route_foundation_visible_fan_reaches_cap(
+    assert!(capped_normal_route_visible_fan_reaches_cap(
         &hand,
         &[],
         &table
@@ -26,7 +26,7 @@ fn capped_basic_foundation_disables_redundant_closed_piao_plan() {
 }
 
 #[test]
-fn capped_open_basic_route_disables_redundant_piao_plan() {
+fn capped_open_normal_route_disables_redundant_piao_plan() {
     let mut table = table_with_discards(1, Vec::new());
     table.max_fan = Some(2);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(35)];
@@ -115,14 +115,14 @@ fn four_concealed_gang_groups_cannot_open_for_piao() {
 }
 
 #[test]
-fn half_capped_basic_foundation_stops_closed_piao_chase() {
+fn half_capped_normal_route_stops_closed_piao_chase() {
     let mut table = table_with_discards(1, Vec::new());
     table.max_fan = Some(4);
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 13, 21, 22, 35, 35, 35, 35];
 
-    assert!(has_basic_normal_route_foundation(&hand, &[]));
+    assert!(has_normal_route_foundation(&hand, &[]));
     assert_eq!(estimated_visible_bonus_fan(&hand, &[]), 2);
-    assert!(capped_basic_route_foundation_visible_fan_exceeds_half_cap(
+    assert!(capped_normal_route_visible_fan_exceeds_half_cap(
         &hand,
         &[],
         &table

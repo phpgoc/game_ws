@@ -93,7 +93,7 @@ pub(in crate::ai::decision) fn should_claim_gang_from_discard(
         return false;
     }
     if !speed_first_unready
-        && capped_open_basic_route_visible_fan_reaches_cap(hand, current_melds, table)
+        && capped_open_normal_route_visible_fan_reaches_cap(hand, current_melds, table)
     {
         return false;
     }

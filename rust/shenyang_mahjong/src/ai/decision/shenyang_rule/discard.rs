@@ -1,7 +1,7 @@
 use super::super::*;
 use super::heng::loses_basic_heng_recovery_after_discard;
 
-fn capped_basic_foundation_before_discard_reaches_cap(
+fn capped_normal_route_before_discard_reaches_cap(
     hand_after_discard: &[i32],
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
@@ -10,7 +10,7 @@ fn capped_basic_foundation_before_discard_reaches_cap(
     let mut hand_before_discard = hand_after_discard.to_vec();
     hand_before_discard.push(discarded_tile);
     sort_tiles(&mut hand_before_discard);
-    capped_basic_route_foundation_visible_fan_reaches_cap(&hand_before_discard, melds, table)
+    capped_normal_route_visible_fan_reaches_cap(&hand_before_discard, melds, table)
 }
 
 pub(in crate::ai::decision) fn terminal_or_honor_discard_bias(
@@ -47,12 +47,7 @@ pub(in crate::ai::decision) fn three_suits_discard_bias(
     let capped_three_suit_hand =
         table.max_fan.is_some_and(|max_fan| max_fan <= 1) && !was_missing_suit;
     if !capped_three_suit_hand
-        && !capped_basic_foundation_before_discard_reaches_cap(
-            hand_after_discard,
-            melds,
-            table,
-            tile,
-        )
+        && !capped_normal_route_before_discard_reaches_cap(hand_after_discard, melds, table, tile)
         && pure_one_suit_plan_score_for_context(hand_after_discard, melds, table, position) > 0.0
     {
         return 0.0;
@@ -152,7 +147,7 @@ pub(in crate::ai::decision) fn violates_basic_three_suits_discard(
     if should_preserve_seven_pairs_plan_for_context(hand_after_discard, melds, table, position) {
         return false;
     }
-    if capped_basic_foundation_before_discard_reaches_cap(hand_after_discard, melds, table, tile) {
+    if capped_normal_route_before_discard_reaches_cap(hand_after_discard, melds, table, tile) {
         return true;
     }
     if table.max_fan.is_some_and(|max_fan| max_fan <= 1) {

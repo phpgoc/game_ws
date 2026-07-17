@@ -53,7 +53,7 @@ fn capped_discard_does_not_preserve_redundant_four_gui_yi() {
 }
 
 #[test]
-fn capped_open_basic_route_discards_redundant_single_dragon() {
+fn capped_open_normal_route_discards_redundant_single_dragon() {
     let mut table = table_with_discards(1, Vec::new());
     table.max_fan = Some(2);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(35)];
@@ -61,7 +61,7 @@ fn capped_open_basic_route_discards_redundant_single_dragon() {
     let hand = vec![1, 2, 3, 5, 11, 12, 13, 21, 22, 23, 36];
     let after_dragon = remove_n_tiles(&hand, 36, 1);
 
-    assert!(capped_open_basic_route_visible_fan_reaches_cap(
+    assert!(capped_open_normal_route_visible_fan_reaches_cap(
         &after_dragon,
         melds,
         &table
@@ -426,7 +426,7 @@ fn broken_capped_route_can_discard_spare_dragon() {
     let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 36];
     let after_dragon = remove_n_tiles(&hand, 36, 1);
 
-    assert!(!capped_open_basic_route_visible_fan_reaches_cap(
+    assert!(!capped_open_normal_route_visible_fan_reaches_cap(
         &after_dragon,
         melds,
         &table
