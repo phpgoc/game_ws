@@ -400,16 +400,8 @@ pub fn is_complete_win(tiles: &[i32], meld_count: usize) -> bool {
     is_standard_win(tiles)
 }
 
-pub fn is_complete_win_with_melds(
-    tiles: &[i32],
-    melds: &[WsShenyangMahjongMeld],
-    _win_rule: i32,
-) -> bool {
-    is_complete_win_with_melds_for_rules(
-        tiles,
-        melds,
-        ShenyangMahjongWinRules::new(WIN_RULE_SHENYANG_BASIC),
-    )
+pub fn is_complete_win_with_melds(tiles: &[i32], melds: &[WsShenyangMahjongMeld]) -> bool {
+    is_complete_win_with_melds_for_rules(tiles, melds, ShenyangMahjongWinRules::new())
 }
 
 fn is_complete_shape_with_melds(tiles: &[i32], melds: &[WsShenyangMahjongMeld]) -> bool {
@@ -552,14 +544,13 @@ pub fn is_single_wait_shape_with_known_unavailable_tiles(
     tiles: &[i32],
     melds: &[WsShenyangMahjongMeld],
     win_tile: i32,
-    win_rule: i32,
     known_unavailable_tiles: &[i32],
 ) -> bool {
     is_single_wait_shape_with_known_unavailable_tiles_for_rules(
         tiles,
         melds,
         win_tile,
-        ShenyangMahjongWinRules::new(win_rule),
+        ShenyangMahjongWinRules::new(),
         known_unavailable_tiles,
     )
 }
@@ -592,13 +583,12 @@ pub fn is_single_wait_shape_with_known_unavailable_tiles_for_rules(
 }
 
 #[cfg(test)]
-pub fn is_single_wait_shape_with_rule(
+pub fn is_legal_single_wait_shape(
     tiles: &[i32],
     melds: &[WsShenyangMahjongMeld],
     win_tile: i32,
-    win_rule: i32,
 ) -> bool {
-    is_single_wait_shape_with_known_unavailable_tiles(tiles, melds, win_tile, win_rule, &[])
+    is_single_wait_shape_with_known_unavailable_tiles(tiles, melds, win_tile, &[])
 }
 
 pub fn is_standard_win(tiles: &[i32]) -> bool {
@@ -746,11 +736,7 @@ fn same_suit(a: i32, b: i32) -> bool {
 
 #[cfg(test)]
 pub fn satisfies_shenyang_basic_win(tiles: &[i32], melds: &[WsShenyangMahjongMeld]) -> bool {
-    satisfies_shenyang_basic_win_for_rules(
-        tiles,
-        melds,
-        ShenyangMahjongWinRules::new(WIN_RULE_SHENYANG_BASIC),
-    )
+    satisfies_shenyang_basic_win_for_rules(tiles, melds, ShenyangMahjongWinRules::new())
 }
 
 pub fn satisfies_shenyang_basic_win_for_rules(
@@ -965,7 +951,7 @@ impl ShenyangMahjongWinRules {
         }
     }
 
-    pub const fn new(_win_rule: i32) -> Self {
+    pub const fn new() -> Self {
         Self {
             allow_closed_sequence_dragon_pair_win: false,
         }
@@ -979,12 +965,12 @@ mod tests {
     };
 
     use super::{
-        ShenyangMahjongWinRules, WIN_RULE_SHENYANG_BASIC, can_chi, can_concealed_gang, can_gang,
-        can_peng, has_triplet_in_standard_decomposition, is_complete_win,
-        is_complete_win_with_melds, is_complete_win_with_melds_for_rules, is_door_opening_meld,
+        ShenyangMahjongWinRules, can_chi, can_concealed_gang, can_gang, can_peng,
+        has_triplet_in_standard_decomposition, is_complete_win, is_complete_win_with_melds,
+        is_complete_win_with_melds_for_rules, is_door_opening_meld, is_legal_single_wait_shape,
         is_piao_hu_win, is_pure_one_suit_win, is_seven_pairs_win, is_single_wait_shape,
-        is_single_wait_shape_with_known_unavailable_tiles, is_single_wait_shape_with_rule,
-        is_standard_win, is_unique_complete_wait, is_win, satisfies_shenyang_basic_win,
+        is_single_wait_shape_with_known_unavailable_tiles, is_standard_win,
+        is_unique_complete_wait, is_win, satisfies_shenyang_basic_win,
         satisfies_shenyang_basic_win_for_rules, shenyang_score_visible_win_fan,
         shenyang_score_wait_fan, shenyang_win_pattern, shenyang_win_pattern_base_fan,
     };
@@ -1048,16 +1034,8 @@ mod tests {
         let chi_meld = vec![meld(ShenyangMahjongMeldKind::CHI, vec![1, 2, 3], Some(1))];
         let gang_meld = vec![meld(ShenyangMahjongMeldKind::GANG, vec![1, 1, 1, 1], None)];
 
-        assert!(is_complete_win_with_melds(
-            &tiles,
-            &chi_meld,
-            WIN_RULE_SHENYANG_BASIC
-        ));
-        assert!(!is_complete_win_with_melds(
-            &tiles,
-            &gang_meld,
-            WIN_RULE_SHENYANG_BASIC
-        ));
+        assert!(is_complete_win_with_melds(&tiles, &chi_meld));
+        assert!(!is_complete_win_with_melds(&tiles, &gang_meld));
     }
 
     #[test]
@@ -1075,11 +1053,7 @@ mod tests {
         ];
 
         for melds in malformed_melds {
-            assert!(!is_complete_win_with_melds(
-                &tiles,
-                &melds,
-                WIN_RULE_SHENYANG_BASIC
-            ));
+            assert!(!is_complete_win_with_melds(&tiles, &melds));
         }
     }
 
@@ -1089,11 +1063,7 @@ mod tests {
         let melds = vec![meld(ShenyangMahjongMeldKind::PENG, vec![1, 1, 1], Some(2))];
 
         assert!(is_complete_win(&tiles, melds.len()));
-        assert!(!is_complete_win_with_melds(
-            &tiles,
-            &melds,
-            WIN_RULE_SHENYANG_BASIC
-        ));
+        assert!(!is_complete_win_with_melds(&tiles, &melds));
         assert!(!satisfies_shenyang_basic_win(&tiles, &melds));
     }
 
@@ -1137,11 +1107,7 @@ mod tests {
         ];
         let hand = vec![21, 21, 37, 37, 37];
 
-        assert!(is_complete_win_with_melds(
-            &hand,
-            &melds,
-            WIN_RULE_SHENYANG_BASIC,
-        ));
+        assert!(is_complete_win_with_melds(&hand, &melds));
         assert_eq!(super::shenyang_score_meld_fan(&melds), 1);
         assert_eq!(super::shenyang_score_four_gui_yi_fan(&hand, &melds), 1);
     }
@@ -1174,7 +1140,7 @@ mod tests {
 
         assert_eq!(
             ShenyangMahjongWinRules::from_configs(&configs),
-            ShenyangMahjongWinRules::new(WIN_RULE_SHENYANG_BASIC)
+            ShenyangMahjongWinRules::new()
         );
     }
 
@@ -1201,11 +1167,7 @@ mod tests {
         assert!(is_complete_win(&tiles, melds.len()));
         assert!(is_piao_hu_win(&tiles, &melds));
         assert!(satisfies_shenyang_basic_win(&tiles, &melds));
-        assert!(is_complete_win_with_melds(
-            &tiles,
-            &melds,
-            WIN_RULE_SHENYANG_BASIC
-        ));
+        assert!(is_complete_win_with_melds(&tiles, &melds));
     }
 
     #[test]
@@ -1275,11 +1237,7 @@ mod tests {
         ];
 
         assert!(is_complete_win(&tiles, melds.len()));
-        assert!(!is_complete_win_with_melds(
-            &tiles,
-            &melds,
-            WIN_RULE_SHENYANG_BASIC
-        ));
+        assert!(!is_complete_win_with_melds(&tiles, &melds));
         assert!(!is_piao_hu_win(&tiles, &melds));
     }
 
@@ -1382,11 +1340,7 @@ mod tests {
         let melds = vec![meld(ShenyangMahjongMeldKind::PENG, vec![1, 1, 1], Some(2))];
 
         assert!(is_complete_win(&tiles, melds.len()));
-        assert!(!is_complete_win_with_melds(
-            &tiles,
-            &melds,
-            WIN_RULE_SHENYANG_BASIC
-        ));
+        assert!(!is_complete_win_with_melds(&tiles, &melds));
         assert!(!is_pure_one_suit_win(&tiles, &melds));
     }
 
@@ -1435,7 +1389,7 @@ mod tests {
             meld(ShenyangMahjongMeldKind::PENG, vec![31, 31, 31], Some(2)),
         ];
         let hand = vec![35, 35];
-        let rules = ShenyangMahjongWinRules::new(WIN_RULE_SHENYANG_BASIC);
+        let rules = ShenyangMahjongWinRules::new();
 
         assert_eq!(
             shenyang_score_visible_win_fan(&hand, &melds, Some(35), rules, &[]),
@@ -1462,7 +1416,7 @@ mod tests {
         let piao_pair = vec![35, 35];
         let standard_melds = vec![meld(ShenyangMahjongMeldKind::CHI, vec![1, 2, 3], Some(0))];
         let standard = vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35];
-        let rules = ShenyangMahjongWinRules::new(WIN_RULE_SHENYANG_BASIC);
+        let rules = ShenyangMahjongWinRules::new();
 
         assert_eq!(
             shenyang_score_wait_fan(&piao_pair, &piao_melds, Some(35), rules, &[]),
@@ -1614,11 +1568,7 @@ mod tests {
         )];
 
         assert!(satisfies_shenyang_basic_win(&tiles, &melds));
-        assert!(is_complete_win_with_melds(
-            &tiles,
-            &melds,
-            WIN_RULE_SHENYANG_BASIC
-        ));
+        assert!(is_complete_win_with_melds(&tiles, &melds));
     }
 
     #[test]
@@ -1647,11 +1597,7 @@ mod tests {
         let tiles = vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35];
         let melds = vec![meld(ShenyangMahjongMeldKind::GANG, vec![1, 1, 1, 1], None)];
 
-        assert!(!is_complete_win_with_melds(
-            &tiles,
-            &melds,
-            WIN_RULE_SHENYANG_BASIC
-        ));
+        assert!(!is_complete_win_with_melds(&tiles, &melds));
         assert!(!satisfies_shenyang_basic_win(&tiles, &melds));
     }
 
@@ -1672,11 +1618,7 @@ mod tests {
             meld(ShenyangMahjongMeldKind::CHI, vec![21, 22, 24], Some(2)),
         ];
 
-        assert!(!is_complete_win_with_melds(
-            &tiles,
-            &melds,
-            WIN_RULE_SHENYANG_BASIC
-        ));
+        assert!(!is_complete_win_with_melds(&tiles, &melds));
         assert!(!satisfies_shenyang_basic_win(&tiles, &melds));
     }
 
@@ -1703,11 +1645,7 @@ mod tests {
         let tiles = vec![2, 3, 4, 12, 13, 14, 22, 23, 24, 6, 6];
         let melds = vec![meld(ShenyangMahjongMeldKind::PENG, vec![5, 5, 5], Some(1))];
 
-        assert!(!is_complete_win_with_melds(
-            &tiles,
-            &melds,
-            WIN_RULE_SHENYANG_BASIC
-        ));
+        assert!(!is_complete_win_with_melds(&tiles, &melds));
         assert!(!satisfies_shenyang_basic_win(&tiles, &melds));
     }
 
@@ -1728,11 +1666,7 @@ mod tests {
             Some(1),
         )];
 
-        assert!(!is_complete_win_with_melds(
-            &tiles,
-            &melds,
-            WIN_RULE_SHENYANG_BASIC
-        ));
+        assert!(!is_complete_win_with_melds(&tiles, &melds));
         assert!(!satisfies_shenyang_basic_win(&tiles, &melds));
     }
 
@@ -1744,11 +1678,7 @@ mod tests {
             meld(ShenyangMahjongMeldKind::CHI, vec![11, 12, 13], Some(1)),
         ];
 
-        assert!(!is_complete_win_with_melds(
-            &tiles,
-            &melds,
-            WIN_RULE_SHENYANG_BASIC
-        ));
+        assert!(!is_complete_win_with_melds(&tiles, &melds));
         assert!(!has_triplet_in_standard_decomposition(&tiles));
         assert!(!satisfies_shenyang_basic_win(&tiles, &melds));
     }
@@ -1796,12 +1726,7 @@ mod tests {
 
         assert!(is_seven_pairs_win(&tiles));
         assert!(is_single_wait_shape(&tiles, &[], 5));
-        assert!(is_single_wait_shape_with_rule(
-            &tiles,
-            &[],
-            5,
-            WIN_RULE_SHENYANG_BASIC
-        ));
+        assert!(is_legal_single_wait_shape(&tiles, &[], 5));
     }
 
     #[test]
@@ -1836,7 +1761,6 @@ mod tests {
             &tiles,
             &melds,
             35,
-            WIN_RULE_SHENYANG_BASIC,
             &[],
         ));
     }
@@ -1850,11 +1774,7 @@ mod tests {
             Some(2),
         )];
 
-        assert!(is_complete_win_with_melds(
-            &tiles,
-            &melds,
-            WIN_RULE_SHENYANG_BASIC
-        ));
+        assert!(is_complete_win_with_melds(&tiles, &melds));
         assert!(is_unique_complete_wait(&tiles, &melds, 1));
         assert!(is_single_wait_shape(&tiles, &melds, 1));
     }
@@ -1868,17 +1788,11 @@ mod tests {
             Some(2),
         )];
 
-        assert!(!is_single_wait_shape_with_rule(
-            &tiles,
-            &melds,
-            1,
-            WIN_RULE_SHENYANG_BASIC
-        ));
+        assert!(!is_legal_single_wait_shape(&tiles, &melds, 1));
         assert!(is_single_wait_shape_with_known_unavailable_tiles(
             &tiles,
             &melds,
             1,
-            WIN_RULE_SHENYANG_BASIC,
             &[4, 4, 4, 4]
         ));
     }
@@ -1902,12 +1816,7 @@ mod tests {
 
         assert!(is_complete_win(&tiles, invalid_meld.len()));
         assert!(!is_single_wait_shape(&tiles, &invalid_meld, 35));
-        assert!(!is_single_wait_shape_with_rule(
-            &tiles,
-            &invalid_meld,
-            35,
-            WIN_RULE_SHENYANG_BASIC
-        ));
+        assert!(!is_legal_single_wait_shape(&tiles, &invalid_meld, 35));
     }
 
     #[test]
@@ -1926,16 +1835,11 @@ mod tests {
     }
 
     #[test]
-    fn single_wait_shape_with_rule_rejects_closed_standard_basic_win() {
+    fn single_wait_shape_rejects_closed_standard_basic_win() {
         let tiles = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35];
 
         assert!(is_single_wait_shape(&tiles, &[], 35));
-        assert!(!is_single_wait_shape_with_rule(
-            &tiles,
-            &[],
-            35,
-            WIN_RULE_SHENYANG_BASIC
-        ));
+        assert!(!is_legal_single_wait_shape(&tiles, &[], 35));
     }
 
     #[test]
@@ -1964,11 +1868,7 @@ mod tests {
         )];
 
         assert!(is_piao_hu_win(&tiles, &melds));
-        assert!(is_complete_win_with_melds(
-            &tiles,
-            &melds,
-            WIN_RULE_SHENYANG_BASIC,
-        ));
+        assert!(is_complete_win_with_melds(&tiles, &melds));
     }
 
     #[test]
@@ -1979,7 +1879,6 @@ mod tests {
         assert!(!is_complete_win_with_melds(
             &closed_remainder,
             std::slice::from_ref(&xi_gang),
-            WIN_RULE_SHENYANG_BASIC,
         ));
 
         let open_melds = vec![
@@ -1987,11 +1886,7 @@ mod tests {
             meld(ShenyangMahjongMeldKind::CHI, vec![1, 2, 3], Some(1)),
         ];
         let open_remainder = vec![11, 12, 13, 21, 22, 23, 31, 31];
-        assert!(is_complete_win_with_melds(
-            &open_remainder,
-            &open_melds,
-            WIN_RULE_SHENYANG_BASIC,
-        ));
+        assert!(is_complete_win_with_melds(&open_remainder, &open_melds));
     }
 
     #[test]

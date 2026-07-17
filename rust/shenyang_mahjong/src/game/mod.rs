@@ -25,15 +25,15 @@ use crate::game_state::{
     ShenyangMahjongLoopState, build_meld, meld_source_is_valid_for_positions,
 };
 use crate::rules::{
-    ShenyangMahjongWinRules, WIN_RULE_SHENYANG_BASIC, XI_GANG_WINDS, can_chi, can_concealed_gang,
-    can_gang, can_peng, is_complete_win_with_melds_for_rules, is_door_opening_meld, is_valid_meld,
-    is_xi_gang_tiles, remove_tiles, shenyang_score_visible_win_fan, shenyang_win_pattern,
-    tiles_in_hand,
+    ShenyangMahjongWinRules, XI_GANG_WINDS, can_chi, can_concealed_gang, can_gang, can_peng,
+    is_complete_win_with_melds_for_rules, is_door_opening_meld, is_valid_meld, is_xi_gang_tiles,
+    remove_tiles, shenyang_score_visible_win_fan, shenyang_win_pattern, tiles_in_hand,
 };
 #[cfg(test)]
 use crate::rules::{
-    is_seven_pairs_win, is_single_wait_shape_with_known_unavailable_tiles_for_rules,
-    is_single_wait_shape_with_rule, shenyang_score_four_gui_yi_fan, shenyang_score_meld_fan,
+    is_legal_single_wait_shape, is_seven_pairs_win,
+    is_single_wait_shape_with_known_unavailable_tiles_for_rules, shenyang_score_four_gui_yi_fan,
+    shenyang_score_meld_fan,
 };
 
 pub(crate) type LoopStateHandle = Arc<std::sync::Mutex<ShenyangMahjongLoopState>>;
@@ -794,12 +794,11 @@ fn is_single_wait_win(
     hand_tiles: &[i32],
     melds: &[WsShenyangMahjongMeld],
     win_tile: Option<i32>,
-    win_rule: i32,
 ) -> bool {
     let Some(win_tile) = win_tile else {
         return false;
     };
-    is_single_wait_shape_with_rule(hand_tiles, melds, win_tile, win_rule)
+    is_legal_single_wait_shape(hand_tiles, melds, win_tile)
 }
 
 #[cfg(test)]
@@ -807,14 +806,13 @@ fn is_single_wait_win_with_known_unavailable_tiles(
     hand_tiles: &[i32],
     melds: &[WsShenyangMahjongMeld],
     win_tile: Option<i32>,
-    win_rule: i32,
     known_unavailable_tiles: &[i32],
 ) -> bool {
     is_single_wait_win_with_known_unavailable_tiles_for_rules(
         hand_tiles,
         melds,
         win_tile,
-        ShenyangMahjongWinRules::new(win_rule),
+        ShenyangMahjongWinRules::new(),
         known_unavailable_tiles,
     )
 }
@@ -2271,7 +2269,7 @@ fn winner_hand_fan(
     settlement: &crate::game_state::SettlementState,
     winner: usize,
 ) -> i32 {
-    winner_hand_fan_with_rule(state, settlement, winner, WIN_RULE_SHENYANG_BASIC)
+    winner_hand_fan_with_rules(state, settlement, winner, ShenyangMahjongWinRules::new())
 }
 
 fn winner_hand_fan_with_configs(
@@ -2290,21 +2288,6 @@ fn winner_hand_fan_with_configs(
         fan += 1;
     }
     fan
-}
-
-#[cfg(test)]
-fn winner_hand_fan_with_rule(
-    state: &ShenyangMahjongLoopState,
-    settlement: &crate::game_state::SettlementState,
-    winner: usize,
-    win_rule: i32,
-) -> i32 {
-    winner_hand_fan_with_rules(
-        state,
-        settlement,
-        winner,
-        ShenyangMahjongWinRules::new(win_rule),
-    )
 }
 
 fn winner_hand_fan_with_rules(

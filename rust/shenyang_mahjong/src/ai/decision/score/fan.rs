@@ -129,14 +129,14 @@ pub(in crate::ai::decision) fn estimated_fan_with_known_unavailable_wait(
     win_hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
     win_tile: i32,
-    win_rule: i32,
+    _win_rule: i32,
     known_unavailable_tiles: &[i32],
 ) -> i32 {
     estimated_fan_with_known_unavailable_wait_for_rules(
         win_hand,
         melds,
         win_tile,
-        ShenyangMahjongWinRules::new(win_rule),
+        ShenyangMahjongWinRules::new(),
         known_unavailable_tiles,
     )
 }
@@ -208,13 +208,9 @@ pub(in crate::ai::decision) fn estimated_visible_bonus_fan(
 pub(in crate::ai::decision) fn estimated_visible_fan_without_wait(
     win_hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
-    win_rule: i32,
+    _win_rule: i32,
 ) -> i32 {
-    estimated_visible_fan_without_wait_for_rules(
-        win_hand,
-        melds,
-        ShenyangMahjongWinRules::new(win_rule),
-    )
+    estimated_visible_fan_without_wait_for_rules(win_hand, melds, ShenyangMahjongWinRules::new())
 }
 
 fn estimated_visible_fan_without_wait_for_rules(

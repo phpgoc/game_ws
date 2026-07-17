@@ -43,11 +43,7 @@ fn capped_discard_does_not_preserve_redundant_four_gui_yi() {
     let mut win_hand = after_four_gui_yi_discard.clone();
     win_hand.push(35);
     sort_tiles(&mut win_hand);
-    assert!(is_complete_win_with_melds(
-        &win_hand,
-        melds,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(is_complete_win_with_melds(&win_hand, melds));
     assert_eq!(
         estimated_visible_fan_without_wait(&win_hand, melds, WIN_RULE_SHENYANG_BASIC),
         1

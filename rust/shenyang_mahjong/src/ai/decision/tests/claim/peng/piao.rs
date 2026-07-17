@@ -202,11 +202,7 @@ fn ready_piao_claim_peng_takes_fourth_plain_meld_for_shou_ba_yi() {
     let current_ready_score = ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC);
 
     assert!(current_ready_score > 0.0);
-    assert!(!is_complete_win_with_melds(
-        &[5, 5, 5, 6, 8],
-        melds,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(!is_complete_win_with_melds(&[5, 5, 5, 6, 8], melds));
     assert!(should_claim_ready_piao_peng_for_shou_ba_yi(
         &hand,
         melds,

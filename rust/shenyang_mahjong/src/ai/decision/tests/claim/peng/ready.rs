@@ -150,8 +150,7 @@ fn claim_ready_hand_pengs_dragon_when_it_keeps_ready() {
     assert!(current_ready_score > 0.0);
     assert!(!is_complete_win_with_melds(
         &[11, 12, 13, 21, 22, 23, 24, 25, 35, 35, 35],
-        melds,
-        WIN_RULE_SHENYANG_BASIC
+        melds
     ));
     assert!(should_claim_ready_dragon_peng_from_discard(
         &hand,

@@ -425,7 +425,7 @@ mod tests {
             &state,
             &settlement,
             &score_changes,
-            ShenyangMahjongWinRules::new(crate::rules::WIN_RULE_SHENYANG_BASIC),
+            ShenyangMahjongWinRules::new(),
             |position| Some(position as i64 + 10),
         );
 
@@ -466,7 +466,7 @@ mod tests {
             &state,
             &settlement,
             &score_changes,
-            ShenyangMahjongWinRules::new(crate::rules::WIN_RULE_SHENYANG_BASIC),
+            ShenyangMahjongWinRules::new(),
             |position| Some(position as i64 + 10),
         );
 
@@ -540,7 +540,7 @@ mod tests {
                 &seven_pairs_state,
                 seven_pairs_settlement,
                 1,
-                ShenyangMahjongWinRules::new(crate::rules::WIN_RULE_SHENYANG_BASIC)
+                ShenyangMahjongWinRules::new()
             ),
             data::ShenyangMahjongRoundWinPattern::SevenPairs
         );
@@ -572,7 +572,7 @@ mod tests {
                 &piao_state,
                 piao_settlement,
                 2,
-                ShenyangMahjongWinRules::new(crate::rules::WIN_RULE_SHENYANG_BASIC)
+                ShenyangMahjongWinRules::new()
             ),
             data::ShenyangMahjongRoundWinPattern::PiaoHu
         );
@@ -580,7 +580,7 @@ mod tests {
 
     #[cfg(feature = "official")]
     #[test]
-    fn winner_pattern_uses_win_rule_for_closed_pure_one_suit() {
+    fn winner_pattern_uses_shenyang_rules_for_closed_pure_one_suit() {
         let mut state = state_with_players();
         state
             .hands
@@ -597,21 +597,11 @@ mod tests {
         let settlement = state.settlement.as_ref().expect("settlement");
 
         assert_eq!(
-            winner_pattern_for_position(
-                &state,
-                settlement,
-                1,
-                ShenyangMahjongWinRules::new(crate::rules::WIN_RULE_SHENYANG_BASIC)
-            ),
+            winner_pattern_for_position(&state, settlement, 1, ShenyangMahjongWinRules::new()),
             data::ShenyangMahjongRoundWinPattern::PureOneSuit
         );
         assert_eq!(
-            winner_pattern_for_position(
-                &state,
-                settlement,
-                1,
-                ShenyangMahjongWinRules::new(crate::rules::WIN_RULE_SHENYANG_BASIC)
-            ),
+            winner_pattern_for_position(&state, settlement, 1, ShenyangMahjongWinRules::new()),
             data::ShenyangMahjongRoundWinPattern::PureOneSuit
         );
     }

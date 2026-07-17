@@ -761,7 +761,6 @@ mod tests {
         assert!(is_complete_win_with_melds(
             state.hands.get(&0).unwrap(),
             state.melds.get(&0).unwrap(),
-            WIN_RULE_SHENYANG_BASIC,
         ));
         assert!(!can_self_draw_hu_with_configs(
             &state,

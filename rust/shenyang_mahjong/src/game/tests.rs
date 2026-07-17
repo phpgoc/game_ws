@@ -1,6 +1,5 @@
 use std::sync::{Arc, Mutex as StdMutex};
 
-use crate::rules::WIN_RULE_SHENYANG_BASIC;
 use ws_common::CommonGameState;
 
 use super::*;
@@ -4885,10 +4884,7 @@ fn self_draw_hu_rejects_self_sourced_open_meld() {
 
     state.enter_settlement(vec![0], None, Some(35), true);
     let settlement = state.settlement.as_ref().expect("settlement");
-    assert_eq!(
-        winner_hand_fan_with_rule(&state, settlement, 0, WIN_RULE_SHENYANG_BASIC),
-        0
-    );
+    assert_eq!(winner_hand_fan(&state, settlement, 0), 0);
 }
 
 #[test]
@@ -5596,22 +5592,16 @@ fn settlement_fan_accepts_only_dragon_pair_for_closed_piao() {
         winner_pattern_with_rules(
             state.hands.get(&1).unwrap(),
             &[],
-            ShenyangMahjongWinRules::new(WIN_RULE_SHENYANG_BASIC)
+            ShenyangMahjongWinRules::new()
         ),
         ShenyangMahjongWinPattern::PiaoHu
     );
-    assert_eq!(
-        winner_hand_fan_with_rule(&state, settlement, 1, WIN_RULE_SHENYANG_BASIC),
-        3
-    );
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 3);
 
     state
         .hands
         .insert(1, vec![1, 1, 1, 11, 11, 11, 21, 21, 21, 31, 31, 35, 35, 35]);
-    assert_eq!(
-        winner_hand_fan_with_rule(&state, settlement, 1, WIN_RULE_SHENYANG_BASIC),
-        0
-    );
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 0);
 }
 
 #[test]
@@ -5631,10 +5621,7 @@ fn settlement_fan_counts_chi_as_opening_meld() {
     state.enter_settlement(vec![1], Some(0), Some(35), false);
     let settlement = state.settlement.as_ref().expect("settlement");
 
-    assert_eq!(
-        winner_hand_fan_with_rule(&state, settlement, 1, WIN_RULE_SHENYANG_BASIC),
-        2
-    );
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
 }
 
 #[test]
@@ -5808,12 +5795,7 @@ fn settlement_fan_counts_honor_single_wait_once() {
     let hand_tiles = winner_final_hand_tiles(&state, settlement, 1);
     let melds = state.melds.get(&1).map(Vec::as_slice).unwrap_or(&[]);
 
-    assert!(is_single_wait_win(
-        &hand_tiles,
-        melds,
-        settlement.win_tile,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(is_single_wait_win(&hand_tiles, melds, settlement.win_tile));
     assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
 }
 
@@ -5827,10 +5809,7 @@ fn settlement_fan_counts_middle_tile_single_wait_on_seven_pairs() {
     let settlement = state.settlement.as_ref().expect("settlement");
 
     assert_eq!(winner_hand_fan(&state, settlement, 1), 5);
-    assert_eq!(
-        winner_hand_fan_with_rule(&state, settlement, 1, WIN_RULE_SHENYANG_BASIC),
-        5
-    );
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 5);
 }
 
 #[test]
@@ -5923,10 +5902,7 @@ fn settlement_fan_counts_pure_one_suit_with_concealed_gang_and_single_wait() {
     let settlement = state.settlement.as_ref().expect("settlement");
 
     assert_eq!(winner_hand_fan(&state, settlement, 1), 7);
-    assert_eq!(
-        winner_hand_fan_with_rule(&state, settlement, 1, WIN_RULE_SHENYANG_BASIC),
-        7
-    );
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 7);
 }
 
 #[test]
@@ -5961,12 +5937,7 @@ fn settlement_fan_counts_single_middle_pair_wait() {
     let melds = state.melds.get(&1).map(Vec::as_slice).unwrap_or(&[]);
 
     assert_eq!(hand_tiles, vec![11, 12, 13, 21, 22, 23, 25, 25, 31, 31, 31]);
-    assert!(is_single_wait_win(
-        &hand_tiles,
-        melds,
-        settlement.win_tile,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(is_single_wait_win(&hand_tiles, melds, settlement.win_tile));
     assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
 }
 
@@ -5980,12 +5951,7 @@ fn settlement_fan_counts_terminal_single_wait_once() {
     let settlement = state.settlement.as_ref().expect("settlement");
     let hand_tiles = winner_final_hand_tiles(&state, settlement, 1);
 
-    assert!(is_single_wait_win(
-        &hand_tiles,
-        &[],
-        settlement.win_tile,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(is_single_wait_win(&hand_tiles, &[], settlement.win_tile));
     assert_eq!(winner_hand_fan(&state, settlement, 1), 6);
 }
 
@@ -6012,12 +5978,7 @@ fn settlement_fan_counts_terminal_single_wait_when_other_wait_is_discarded_out()
     let melds = state.melds.get(&1).map(Vec::as_slice).unwrap_or(&[]);
     let public_unavailable = public_unavailable_tiles_for_winner(&state, 1);
 
-    assert!(!is_single_wait_win(
-        &hand_tiles,
-        melds,
-        settlement.win_tile,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(!is_single_wait_win(&hand_tiles, melds, settlement.win_tile));
     assert_eq!(
         public_unavailable.iter().filter(|tile| **tile == 4).count(),
         4
@@ -6026,13 +5987,9 @@ fn settlement_fan_counts_terminal_single_wait_when_other_wait_is_discarded_out()
         &hand_tiles,
         melds,
         settlement.win_tile,
-        WIN_RULE_SHENYANG_BASIC,
         &public_unavailable
     ));
-    assert_eq!(
-        winner_hand_fan_with_rule(&state, settlement, 1, WIN_RULE_SHENYANG_BASIC),
-        2
-    );
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
 }
 
 #[test]
@@ -6054,12 +6011,7 @@ fn settlement_fan_counts_terminal_single_wait_when_other_wait_is_exhausted() {
     let hand_tiles = winner_final_hand_tiles(&state, settlement, 1);
     let melds = state.melds.get(&1).map(Vec::as_slice).unwrap_or(&[]);
 
-    assert!(is_single_wait_win(
-        &hand_tiles,
-        melds,
-        settlement.win_tile,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(is_single_wait_win(&hand_tiles, melds, settlement.win_tile));
     assert_eq!(winner_hand_fan(&state, settlement, 1), 3);
 }
 
@@ -6207,13 +6159,9 @@ fn settlement_fan_ignores_invalid_source_melds_for_single_wait() {
         &hand_tiles,
         melds,
         settlement.win_tile,
-        WIN_RULE_SHENYANG_BASIC,
         &public_unavailable
     ));
-    assert_eq!(
-        winner_hand_fan_with_rule(&state, settlement, 1, WIN_RULE_SHENYANG_BASIC),
-        1
-    );
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
 }
 
 #[test]
@@ -6312,12 +6260,7 @@ fn settlement_fan_rejects_invalid_meld_for_single_wait() {
     let hand_tiles = winner_final_hand_tiles(&state, settlement, 1);
     let melds = state.melds.get(&1).map(Vec::as_slice).unwrap_or(&[]);
 
-    assert!(!is_single_wait_win(
-        &hand_tiles,
-        melds,
-        settlement.win_tile,
-        WIN_RULE_SHENYANG_BASIC
-    ));
+    assert!(!is_single_wait_win(&hand_tiles, melds, settlement.win_tile));
     assert_eq!(winner_hand_fan(&state, settlement, 1), 0);
 }
 
@@ -6492,10 +6435,7 @@ fn settlement_fan_uses_shenyang_rules_for_single_wait() {
     let settlement = state.settlement.as_ref().expect("settlement");
 
     assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
-    assert_eq!(
-        winner_hand_fan_with_rule(&state, settlement, 1, WIN_RULE_SHENYANG_BASIC),
-        2
-    );
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
 }
 
 #[test]
@@ -7572,12 +7512,7 @@ fn settlement_winner_details_use_shenyang_rules_for_closed_pure_one_suit() {
         ShenyangMahjongWinPattern::PureOneSuit
     );
     assert_eq!(
-        winner_hand_fan_with_rule(
-            &state,
-            state.settlement.as_ref().expect("settlement"),
-            1,
-            WIN_RULE_SHENYANG_BASIC
-        ),
+        winner_hand_fan(&state, state.settlement.as_ref().expect("settlement"), 1),
         4
     );
     assert_eq!(basic_event.winner_details[0].score, 6);
