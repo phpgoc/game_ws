@@ -454,7 +454,7 @@ mod tests {
         state.melds.insert(1, Vec::new());
         state.discards.insert(1, Vec::new());
         state.last_drawn_tile = Some(37);
-        state.wall = vec![22];
+        state.wall = vec![4];
         state
             .xi_gang_options
             .insert(1, vec![vec![31, 32, 33, 34], vec![35, 36, 37]]);
@@ -484,6 +484,17 @@ mod tests {
         assert_eq!(state.melds.get(&1).unwrap().len(), 2);
         assert!(state.xi_gang_options_for_position(1).is_empty());
         assert!(state.discards.get(&1).unwrap().is_empty());
+
+        assert!(maybe_play_ai_turn(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::new(),
+            &mut dispatch,
+        ));
+        assert!(state.hands.get(&1).unwrap().contains(&21));
+        assert_eq!(state.discards.get(&1).unwrap().len(), 1);
+        assert_ne!(state.discards.get(&1).unwrap()[0], 21);
     }
 
     #[test]
