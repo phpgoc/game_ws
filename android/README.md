@@ -1,188 +1,66 @@
-# Landlord Android WS Server
+# Android WS Server Wrapper
 
-这个目录是 Android 版斗地主 WebSocket 服务。
+这个目录是一套供 5 个服务共用的 Android 前台服务壳：
 
-现在 Android 端不是纯 Kotlin 实现。Kotlin 只负责：
+- `landlord`（斗地主，端口 9001）
+- `shenyang_mahjong`（沈阳麻将，端口 9002）
+- `holdem`（德州扑克合集，端口 9003）
+- `tractor`（拖拉机，端口 9004）
+- `p2p`（P2P 信令与内置 STUN/TURN，端口 9005）
 
-- Activity 界面
-- 前台 Service
-- 通知栏
-- WakeLock / WifiLock
-- 显示连接数和房间数
+Kotlin 负责 Activity、前台 Service、通知、WakeLock/WifiLock 和状态展示；
+WebSocket、房间及游戏逻辑由对应的 Rust `cdylib` 提供。每个 APK 只包含一个游戏的
+`.so`，通过相同的 JNI 接口调用，因此不需要复制 Android 工程。
 
-真正的 WebSocket 服务、房间逻辑、斗地主规则都在：
+## 依赖
 
-```text
-ws/rust/landlord
+- JDK 17
+- Android SDK Platform / Build Tools 35
+- Android NDK 27
+- `cargo-ndk`
+- Rust targets `aarch64-linux-android`、`x86_64-linux-android`
+
+macOS 可在 `ws` 目录运行：
+
+```sh
+./build_script/install_deps_mac.sh
 ```
 
-Gradle 构建 Android App 时，会先用 `cargo-ndk` 把 Rust 编译成：
+## 构建一个 APK
 
-```text
-app/src/main/jniLibs/<abi>/liblandlord.so
+用 `-Pgame` 选择服务；省略时默认构建 `landlord`：
+
+```sh
+cd android
+./gradlew --no-daemon :app:assembleDebug -Pgame=tractor
 ```
 
-然后 Kotlin 通过 JNI 调用它。
+默认同时包含真机 `arm64-v8a` 和模拟器 `x86_64`。也可只构建一个 ABI：
 
-## 需要安装什么
-
-### Android
-
-安装 Android Studio，并在 SDK Manager 里安装：
-
-- Android SDK Platform 35
-- Android NDK
-- Android SDK Build-Tools
-
-### JDK
-
-推荐使用 Android Studio 自带 JDK 17。
-
-### Rust / NDK 工具
-
-```bash
-cargo install cargo-ndk
-rustup target add aarch64-linux-android x86_64-linux-android
+```sh
+./gradlew --no-daemon :app:assembleDebug \
+  -Pgame=shenyang_mahjong \
+  -PrustAbis=arm64-v8a
 ```
 
-如果 `cargo-ndk` 找不到 NDK，设置环境变量：
-
-```bash
-export ANDROID_HOME="$HOME/Library/Android/sdk"
-export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/<你的ndk版本>"
-```
-
-例如本机可能是：
-
-```bash
-export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/30.0.14904198"
-```
-
-## 命令行构建
-
-进入目录：
-
-```bash
-cd ws/android
-```
-
-### 模拟器
-
-大多数模拟器是 `x86_64`：
-
-```bash
-./gradlew --no-daemon :app:assembleDebug -PrustAbis=x86_64
-```
-
-### 真机
-
-大多数 Android 真机是 `arm64-v8a`：
-
-```bash
-./gradlew --no-daemon :app:assembleDebug -PrustAbis=arm64-v8a
-```
-
-### 同时构建真机和模拟器
-
-```bash
-./gradlew --no-daemon :app:assembleDebug
-```
-
-生成 APK：
+Gradle 会先用 `cargo-ndk` 构建所选 Rust 库。产物为：
 
 ```text
 app/build/outputs/apk/debug/app-debug.apk
 ```
 
-## Android Studio 运行
+## 构建全部发布产物
 
-1. Android Studio 打开 `ws/android`。
-2. 等 Gradle Sync 完成。
-3. 选择模拟器或真机。
-4. 点击 Run。
+不要逐个调用 Gradle，直接从 `ws` 目录运行统一脚本：
 
-第一次构建会比较慢，因为会先编译 Rust native library。
-
-如果只想跑模拟器，可以在 Android Studio 的 Gradle 参数里加：
-
-```text
--PrustAbis=x86_64
+```sh
+./build_script/build_all.sh
 ```
 
-如果只想跑真机：
+或让 Docker 安装并隔离全部 Linux / Android 工具链：
 
-```text
--PrustAbis=arm64-v8a
+```sh
+./build_script/build_in_docker.sh
 ```
 
-## 只检查 Kotlin
-
-如果你只是改 UI 或 Service，不想编 Rust：
-
-```bash
-./gradlew --no-daemon :app:compileDebugKotlin -x buildRustLandlord
-```
-
-## 常见问题
-
-### cargo-ndk is required
-
-执行：
-
-```bash
-cargo install cargo-ndk
-```
-
-### target not installed
-
-模拟器：
-
-```bash
-rustup target add x86_64-linux-android
-```
-
-真机：
-
-```bash
-rustup target add aarch64-linux-android
-```
-
-### 找不到 NDK
-
-先确认 SDK 目录：
-
-```bash
-ls "$ANDROID_HOME/ndk"
-```
-
-然后设置：
-
-```bash
-export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/<版本号>"
-```
-
-### 模拟器启动时报找不到 liblandlord.so
-
-通常是 ABI 不匹配。重新构建模拟器 ABI：
-
-```bash
-./gradlew --no-daemon :app:assembleDebug -PrustAbis=x86_64
-```
-
-### 真机启动时报找不到 liblandlord.so
-
-重新构建真机 ABI：
-
-```bash
-./gradlew --no-daemon :app:assembleDebug -PrustAbis=arm64-v8a
-```
-
-## 服务地址
-
-App 启动后会在界面显示局域网地址，例如：
-
-```text
-ws://192.168.1.20:9001
-```
-
-同一局域网里的 web 前端可以用这个地址连接。
+两者都会在 `build_script/output/` 生成 5 个 Linux musl 可执行文件和 5 个 APK。

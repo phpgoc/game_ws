@@ -3,6 +3,9 @@ name = "p2p"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+crate-type = ["rlib", "cdylib"]
+
 [dependencies]
 anyhow = "1"
 base64 = "0.22"
@@ -16,3 +19,6 @@ tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync",
 tokio-tungstenite = "0.29"
 turn = "0.17.1"
 util = { package = "webrtc-util", version = "0.17.1", default-features = false, features = ["conn", "vnet"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+ws_common = { path = "../common" }

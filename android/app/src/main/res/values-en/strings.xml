@@ -1,8 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Landlord WS Server</string>
+    <string name="app_name">LAN Game WS Server</string>
     <string name="game_landlord">Landlord</string>
+    <string name="game_shenyang_mahjong">Shenyang Mahjong</string>
+    <string name="game_holdem">Hold\'em Collection</string>
+    <string name="game_tractor">Tractor</string>
+    <string name="game_p2p">P2P Signaling</string>
     <string name="title_landlord_ws_service">Landlord WS Service</string>
+    <string name="title_shenyang_mahjong_ws_service">Shenyang Mahjong WS Service</string>
+    <string name="title_holdem_ws_service">Hold\'em Collection WS Service</string>
+    <string name="title_tractor_ws_service">Tractor WS Service</string>
+    <string name="title_p2p_ws_service">P2P Signaling Service</string>
     <string name="server_subtitle_format">%1$s · Rust NDK WebSocket service</string>
     <string name="service_status_title">Service status</string>
     <string name="network_section_title">Network address</string>
@@ -23,7 +31,7 @@
     <string name="start_service">Start service</string>
     <string name="stop_service">Stop service</string>
     <string name="battery_optimization_settings">Battery optimization settings</string>
-    <string name="notification_title_running">Landlord WS service running</string>
+    <string name="notification_title_running">LAN game WS service running</string>
     <string name="notification_text_format">ws://%1$s:%2$d · %3$d clients</string>
-    <string name="notification_channel_name">Landlord WS Server</string>
+    <string name="notification_channel_name">LAN Game WS Server</string>
 </resources>

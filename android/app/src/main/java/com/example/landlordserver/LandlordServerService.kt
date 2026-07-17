@@ -1,4 +1,4 @@
-package com.example.landlordserver
+package com.example.langameserver
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -12,7 +12,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
-import com.example.landlordserver.rust.LandlordNativeServer
+import com.example.langameserver.rust.NativeServer
 
 class LandlordServerService : Service() {
     @Volatile
@@ -71,7 +71,7 @@ class LandlordServerService : Service() {
 
         acquireLocks()
         val host = selectedIpv4Address(this)
-        val started = runCatching { LandlordNativeServer.start(port) }.getOrDefault(false)
+        val started = runCatching { NativeServer.start(port) }.getOrDefault(false)
         if (!started) {
             releaseLocks()
             running = false
@@ -89,7 +89,7 @@ class LandlordServerService : Service() {
     private fun stopServer() {
         mainHandler.removeCallbacks(statusTicker)
         if (running) {
-            LandlordNativeServer.stop()
+            NativeServer.stop()
         }
         running = false
         releaseLocks()
@@ -98,12 +98,12 @@ class LandlordServerService : Service() {
 
     private fun acquireLocks() {
         val pm = getSystemService(PowerManager::class.java)
-        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "LandlordWsServer:Wake").apply {
+        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "LanGameWsServer:Wake").apply {
             setReferenceCounted(false)
             acquire()
         }
         val wm = applicationContext.getSystemService(WifiManager::class.java)
-        wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "LandlordWsServer:Wifi").apply {
+        wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "LanGameWsServer:Wifi").apply {
             setReferenceCounted(false)
             acquire()
         }
@@ -128,8 +128,8 @@ class LandlordServerService : Service() {
         running = running,
         host = selectedIpv4Address(this),
         port = port,
-        clientCount = if (running) LandlordNativeServer.clientCount() else 0,
-        roomCount = if (running) LandlordNativeServer.roomCount() else 0,
+        clientCount = if (running) NativeServer.clientCount() else 0,
+        roomCount = if (running) NativeServer.roomCount() else 0,
     )
 
     private fun updateNotification() {
@@ -153,7 +153,7 @@ class LandlordServerService : Service() {
                     R.string.notification_text_format,
                     host,
                     port,
-                    if (running) LandlordNativeServer.clientCount() else 0,
+                    if (running) NativeServer.clientCount() else 0,
                 ),
             )
             .setOngoing(true)
@@ -172,11 +172,11 @@ class LandlordServerService : Service() {
     }
 
     companion object {
-        const val ACTION_STATUS = "com.example.landlordserver.STATUS"
-        private const val ACTION_STOP = "com.example.landlordserver.STOP"
-        private const val ACTION_STATUS_REQUEST = "com.example.landlordserver.STATUS_REQUEST"
-        private const val CHANNEL_ID = "landlord_ws_server"
-        private const val NOTIFICATION_ID = 9001
+        val ACTION_STATUS = "${BuildConfig.APPLICATION_ID}.STATUS"
+        private val ACTION_STOP = "${BuildConfig.APPLICATION_ID}.STOP"
+        private val ACTION_STATUS_REQUEST = "${BuildConfig.APPLICATION_ID}.STATUS_REQUEST"
+        private val CHANNEL_ID = "${ActiveGameServer.id}_ws_server"
+        private val NOTIFICATION_ID = BuildConfig.SERVER_PORT
         private const val STATUS_REFRESH_MS = 2_000L
 
         fun start(context: Context) {

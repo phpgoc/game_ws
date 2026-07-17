@@ -1,8 +1,10 @@
-package com.example.landlordserver.rust
+package com.example.langameserver.rust
 
-object LandlordNativeServer {
+import com.example.langameserver.BuildConfig
+
+object NativeServer {
     init {
-        System.loadLibrary("landlord")
+        System.loadLibrary(BuildConfig.RUST_LIBRARY)
     }
 
     @Synchronized

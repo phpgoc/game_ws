@@ -1,29 +1,33 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-WS_DIR="$(dirname "$SCRIPT_DIR")"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WS_DIR="$(dirname "${SCRIPT_DIR}")"
+IMAGE="${WS_BUILDER_IMAGE:-lan-game-ws-builder}"
+OUTPUT_DIR="${SCRIPT_DIR}/output"
 
-IMAGE="ws-builder"
-OUTPUT_DIR="${WS_DIR}/build_script/output"
+command -v docker >/dev/null 2>&1 || {
+    echo "Docker is required." >&2
+    exit 1
+}
+
 mkdir -p "${OUTPUT_DIR}"
 
-echo "=== Step 1/2: docker build ${IMAGE} ==="
+echo "=== [1/2] Building ${IMAGE} ==="
 docker build \
     --platform linux/amd64 \
-    -t "${IMAGE}" \
-    -f "${SCRIPT_DIR}/Dockerfile" \
+    --tag "${IMAGE}" \
+    --file "${SCRIPT_DIR}/Dockerfile" \
     "${WS_DIR}"
 
-echo ""
-echo "=== Step 2/2: docker run (build 10 artifacts) ==="
+echo
+echo "=== [2/2] Building 10 artifacts in Docker ==="
 docker run \
     --rm \
     --platform linux/amd64 \
-    -v "${OUTPUT_DIR}:/workspace/build_script/output" \
-    "${IMAGE}" \
-    /workspace/build_all.sh
+    --volume "${OUTPUT_DIR}:/workspace/build_script/output" \
+    "${IMAGE}"
 
-echo ""
+echo
 echo "=== Done ==="
-ls -lh "${OUTPUT_DIR}/"
+ls -lh "${OUTPUT_DIR}"

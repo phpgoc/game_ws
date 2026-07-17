@@ -8,6 +8,7 @@ default = []
 official = ["dep:data"]
 
 [lib]
+crate-type = ["rlib", "cdylib"]
 doctest = false
 
 [dependencies]

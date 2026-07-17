@@ -399,6 +399,10 @@ impl RuntimeStopHandle {
 }
 
 impl StopSignal {
+    pub fn into_receiver(self) -> watch::Receiver<bool> {
+        self.rx
+    }
+
     fn is_stopped(&self) -> bool {
         *self.rx.borrow()
     }

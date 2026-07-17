@@ -1,7 +1,6 @@
-use std::{process, time::Duration};
+use std::process;
 
-use holdem::game::HoldemGameHandler;
-use ws_common::run_game_server_with_cli;
+use holdem::server::run_holdem_server_with_cli;
 
 #[tokio::main]
 async fn main() {
@@ -15,10 +14,5 @@ async fn run() -> anyhow::Result<()> {
     #[cfg(feature = "official")]
     data::init().await?;
 
-    run_game_server_with_cli(
-        "holdem",
-        Duration::from_secs(120),
-        HoldemGameHandler::default(),
-    )
-    .await
+    run_holdem_server_with_cli().await
 }

@@ -1,4 +1,4 @@
-package com.example.landlordserver
+package com.example.langameserver
 
 import android.content.Context
 import android.content.res.Configuration
@@ -42,5 +42,5 @@ fun localizedContext(context: Context): Context {
     return context.createConfigurationContext(config)
 }
 
-private const val LOCALE_PREFS_NAME = "landlord_server"
+private val LOCALE_PREFS_NAME = "${BuildConfig.GAME_ID}_server"
 private const val KEY_SELECTED_LANGUAGE = "selected_language"

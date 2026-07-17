@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "LandlordWsServer"
+rootProject.name = "LanGameWsServer"
 include(":app")

@@ -2,6 +2,8 @@ use std::{env, sync::mpsc::SyncSender, time::Duration};
 
 use tokio::net::TcpListener;
 use tokio::sync::watch;
+#[cfg(target_os = "android")]
+use ws_common::StopSignal;
 
 use crate::{
     config::P2pServiceConfig,
@@ -78,6 +80,25 @@ pub async fn run_p2p_server_on_listener_until_stopped(
             Err(error)
         }
     }
+}
+
+#[cfg(target_os = "android")]
+pub async fn run_p2p_android_runtime_until_stopped_with_ready(
+    listen_addr: String,
+    stop_signal: StopSignal,
+    ready: SyncSender<P2pRuntimeStats>,
+) -> anyhow::Result<P2pRuntimeStats> {
+    let listener = TcpListener::bind(listen_addr).await?;
+    let secret = format!(
+        "lan-game-android-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_nanos(),
+    );
+    let config = P2pServiceConfig::for_lan_embedded(0, secret)?;
+    run_p2p_server_on_listener_until_stopped(listener, config, stop_signal.into_receiver(), ready)
+        .await
 }
 
 fn parse_listen_addr() -> anyhow::Result<String> {

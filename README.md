@@ -10,7 +10,7 @@
 - `rust/shenyang_mahjong/`: 沈阳麻将 Rust 服务端。
 - `rust/holdem/`: Hold'em 系列 Rust 服务端，承载德州、明牌德州、短牌德州和奥马哈。
 - `rust/p2p/`: 独立的两人 WebRTC 信令服务与 STUN/TURN 临时凭证签发器，不依赖其他游戏 crate。
-- `android/`: 通用 Android 前台服务壳，当前使用 NDK 运行 `rust/landlord`。
+- `android/`: 5 个 Rust 服务共用的 Android 前台服务壳，每个 APK 只打包对应的 `.so`。
 
 ## 依赖
 
@@ -37,6 +37,30 @@ rustup target add aarch64-linux-android x86_64-linux-android
 ```
 
 并在 Android Studio SDK Manager 中安装 Android NDK。
+
+## 统一构建 10 个产物
+
+`build_script/build_all.sh` 会一次生成 5 个 Linux x86_64 musl 可执行文件和
+5 个 Android APK：
+
+```sh
+./build_script/build_all.sh
+```
+
+macOS 首次构建可先安装全部依赖：
+
+```sh
+./build_script/install_deps_mac.sh
+```
+
+不想在主机安装工具链时使用 Docker：
+
+```sh
+./build_script/build_in_docker.sh
+```
+
+10 个文件统一输出到 `build_script/output/`，名称分别为
+`landlord` / `shenyang_mahjong` / `holdem` / `tractor` / `p2p` 及其同名 `.apk`。
 
 ## 运行 Rust WS 服务
 

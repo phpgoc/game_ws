@@ -1,4 +1,4 @@
-package com.example.landlordserver
+package com.example.langameserver
 
 import android.Manifest
 import android.content.BroadcastReceiver
