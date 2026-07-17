@@ -26,9 +26,8 @@ use crate::game_state::{
 };
 use crate::rules::{
     ShenyangMahjongWinRules, WIN_RULE_SHENYANG_BASIC, XI_GANG_WINDS, can_chi, can_concealed_gang,
-    can_gang, can_peng, is_complete_win_with_melds, is_complete_win_with_melds_for_rules,
-    is_door_opening_meld, is_valid_meld, is_xi_gang_tiles, shenyang_score_visible_win_fan,
-    shenyang_win_pattern, tiles_in_hand, win_rule_from_configs,
+    can_gang, can_peng, is_complete_win_with_melds_for_rules, is_door_opening_meld, is_valid_meld,
+    is_xi_gang_tiles, shenyang_score_visible_win_fan, shenyang_win_pattern, tiles_in_hand,
 };
 #[cfg(test)]
 use crate::rules::{
@@ -347,6 +346,7 @@ fn build_winner_details(
     score_changes: &[WsShenyangMahjongScoreChange],
     configs: &HashMap<String, i32>,
 ) -> Vec<WsShenyangMahjongWinnerDetail> {
+    let rules = ShenyangMahjongWinRules::from_configs(configs);
     let score_by_position = score_changes
         .iter()
         .map(|change| (change.position as usize, change.score))
@@ -362,8 +362,7 @@ fn build_winner_details(
             }
             let hand_tiles = winner_final_hand_tiles(state, settlement, position);
             let melds = state.melds.get(&position).map(Vec::as_slice).unwrap_or(&[]);
-            let pattern =
-                winner_pattern_with_rule(&hand_tiles, melds, win_rule_from_configs(configs));
+            let pattern = winner_pattern_with_rules(&hand_tiles, melds, rules);
             Some(WsShenyangMahjongWinnerDetail {
                 position: position as i32,
                 pattern,
@@ -2207,13 +2206,13 @@ fn winner_has_impossible_known_tile_count(
     })
 }
 
-pub(crate) fn winner_pattern_with_rule(
+pub(crate) fn winner_pattern_with_rules(
     hand_tiles: &[i32],
     melds: &[WsShenyangMahjongMeld],
-    win_rule: i32,
+    rules: ShenyangMahjongWinRules,
 ) -> ShenyangMahjongWinPattern {
-    if win_rule == WIN_RULE_SHENYANG_BASIC
-        && !is_complete_win_with_melds(hand_tiles, melds, win_rule)
+    if rules.win_rule == WIN_RULE_SHENYANG_BASIC
+        && !is_complete_win_with_melds_for_rules(hand_tiles, melds, rules)
     {
         return ShenyangMahjongWinPattern::Standard;
     }
@@ -8248,7 +8247,11 @@ mod tests {
         let settlement = state.settlement.as_ref().expect("settlement");
 
         assert_eq!(
-            winner_pattern_with_rule(state.hands.get(&1).unwrap(), &[], WIN_RULE_SHENYANG_BASIC),
+            winner_pattern_with_rules(
+                state.hands.get(&1).unwrap(),
+                &[],
+                ShenyangMahjongWinRules::new(WIN_RULE_SHENYANG_BASIC)
+            ),
             ShenyangMahjongWinPattern::PiaoHu
         );
         assert_eq!(
@@ -10096,6 +10099,14 @@ mod tests {
             .collect::<Vec<_>>(),
             vec![(0, -6), (1, 16), (2, -5), (3, -5)]
         );
+        let event = build_settlement_event_with_configs(&state, &disabled_configs)
+            .expect("configured closed win settlement event");
+        assert_eq!(event.winner_details.len(), 1);
+        assert_eq!(
+            event.winner_details[0].pattern,
+            ShenyangMahjongWinPattern::Standard
+        );
+        assert_eq!(event.winner_details[0].score, 16);
     }
 
     #[test]
