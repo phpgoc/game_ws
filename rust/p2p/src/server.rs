@@ -3,6 +3,9 @@ use std::{env, sync::mpsc::SyncSender, time::Duration};
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 
+#[cfg(target_os = "android")]
+use ws_common::StopSignal;
+
 use crate::{
     config::P2pServiceConfig,
     runtime::{P2pRuntimeStats, run_p2p_listener, run_p2p_listener_until_stopped},
@@ -102,6 +105,7 @@ pub async fn run_p2p_server_with_cli() -> anyhow::Result<()> {
     let config = P2pServiceConfig::from_env()?;
     let listen_addr = parse_listen_addr()?;
     run_p2p_server(&listen_addr, config).await
+}
 #[cfg(target_os = "android")]
 pub async fn run_p2p_android_runtime_until_stopped_with_ready(
     listen_addr: String,
@@ -119,27 +123,4 @@ pub async fn run_p2p_android_runtime_until_stopped_with_ready(
     let config = P2pServiceConfig::for_lan_embedded(0, secret)?;
     run_p2p_server_on_listener_until_stopped(listener, config, stop_signal.into_receiver(), ready)
         .await
-}
-
-fn parse_listen_addr() -> anyhow::Result<String> {
-    let mut host = "0.0.0.0".to_owned();
-    let mut port = P2P_DEFAULT_PORT;
-    let mut args = env::args().skip(1);
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "--host" => {
-                host = args
-                    .next()
-                    .ok_or_else(|| anyhow::anyhow!("--host requires a value"))?
-            }
-            "--port" => {
-                port = args
-                    .next()
-                    .ok_or_else(|| anyhow::anyhow!("--port requires a value"))?
-                    .parse::<u16>()?;
-            }
-            _ => return Err(anyhow::anyhow!("unknown argument: {arg}")),
-        }
-    }
-    Ok(format!("{host}:{port}"))
 }

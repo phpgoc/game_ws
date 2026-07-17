@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex as StdMutex};
 
-use crate::rules::WIN_RULE_RELAXED;
+use crate::rules::WIN_RULE_SHENYANG_BASIC;
 use ws_common::CommonGameState;
 
 use super::*;
@@ -852,7 +852,10 @@ fn dragon_xi_gang_is_exposed_without_opening_or_replacement_draw() {
     );
     let settlement = state.settlement.as_ref().expect("settlement");
     assert!(!settlement.is_gang_draw);
-    assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
+    assert_eq!(
+        winner_hand_fan_with_configs(&state, settlement, 1, &configs),
+        2
+    );
 }
 
 #[test]
@@ -905,6 +908,14 @@ fn open_peng_meld(tile: i32, from_position: usize) -> WsShenyangMahjongMeld {
         ShenyangMahjongMeldKind::PENG,
         vec![tile, tile, tile],
         Some(from_position),
+    )
+}
+
+fn open_chi_meld(start_tile: i32) -> WsShenyangMahjongMeld {
+    build_meld(
+        ShenyangMahjongMeldKind::CHI,
+        vec![start_tile, start_tile + 1, start_tile + 2],
+        Some(0),
     )
 }
 
@@ -5631,7 +5642,8 @@ fn settlement_fan_counts_concealed_dragon_triplet() {
     let mut state = playable_state();
     state
         .hands
-        .insert(1, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 35, 35, 35, 31, 31]);
+        .insert(1, vec![11, 12, 13, 21, 22, 23, 31, 31, 35, 35, 35]);
+    state.melds.insert(1, vec![open_chi_meld(1)]);
     state.enter_settlement(vec![1], None, None, true);
     let settlement = state.settlement.as_ref().expect("settlement");
 
@@ -5666,16 +5678,13 @@ fn settlement_fan_counts_configured_closed_sequence_dragon_pair_win_as_standard(
 #[test]
 fn settlement_fan_counts_dragon_concealed_gang() {
     let mut state = playable_state();
-    state
-        .hands
-        .insert(1, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31]);
+    state.hands.insert(1, vec![11, 12, 13, 21, 22, 23, 31, 31]);
     state.melds.insert(
         1,
-        vec![build_meld(
-            ShenyangMahjongMeldKind::GANG,
-            vec![35, 35, 35, 35],
-            None,
-        )],
+        vec![
+            open_chi_meld(4),
+            build_meld(ShenyangMahjongMeldKind::GANG, vec![35, 35, 35, 35], None),
+        ],
     );
     state.enter_settlement(vec![1], None, None, true);
     let settlement = state.settlement.as_ref().expect("settlement");
@@ -5792,16 +5801,18 @@ fn settlement_fan_counts_honor_single_wait_once() {
     let mut state = playable_state();
     state
         .hands
-        .insert(1, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35]);
+        .insert(1, vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35]);
+    state.melds.insert(1, vec![open_chi_meld(1)]);
     state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(35), false, false, false, false);
     let settlement = state.settlement.as_ref().expect("settlement");
     let hand_tiles = winner_final_hand_tiles(&state, settlement, 1);
+    let melds = state.melds.get(&1).map(Vec::as_slice).unwrap_or(&[]);
 
     assert!(is_single_wait_win(
         &hand_tiles,
-        &[],
+        melds,
         settlement.win_tile,
-        WIN_RULE_RELAXED
+        WIN_RULE_SHENYANG_BASIC
     ));
     assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
 }
@@ -5825,16 +5836,13 @@ fn settlement_fan_counts_middle_tile_single_wait_on_seven_pairs() {
 #[test]
 fn settlement_fan_counts_ordinary_concealed_gang() {
     let mut state = playable_state();
-    state
-        .hands
-        .insert(1, vec![3, 4, 5, 11, 12, 13, 21, 22, 23, 31, 31]);
+    state.hands.insert(1, vec![11, 12, 13, 21, 22, 23, 31, 31]);
     state.melds.insert(
         1,
-        vec![build_meld(
-            ShenyangMahjongMeldKind::GANG,
-            vec![2, 2, 2, 2],
-            None,
-        )],
+        vec![
+            open_chi_meld(4),
+            build_meld(ShenyangMahjongMeldKind::GANG, vec![2, 2, 2, 2], None),
+        ],
     );
     state.enter_settlement(vec![1], None, None, true);
     let settlement = state.settlement.as_ref().expect("settlement");
@@ -5945,20 +5953,19 @@ fn settlement_fan_counts_single_middle_pair_wait() {
     let mut state = playable_state();
     state
         .hands
-        .insert(1, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 25]);
+        .insert(1, vec![11, 12, 13, 21, 22, 23, 25, 31, 31, 31]);
+    state.melds.insert(1, vec![open_chi_meld(1)]);
     state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(25), false, false, false, false);
     let settlement = state.settlement.as_ref().expect("settlement");
     let hand_tiles = winner_final_hand_tiles(&state, settlement, 1);
+    let melds = state.melds.get(&1).map(Vec::as_slice).unwrap_or(&[]);
 
-    assert_eq!(
-        hand_tiles,
-        vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 25, 25, 31, 31, 31]
-    );
+    assert_eq!(hand_tiles, vec![11, 12, 13, 21, 22, 23, 25, 25, 31, 31, 31]);
     assert!(is_single_wait_win(
         &hand_tiles,
-        &[],
+        melds,
         settlement.win_tile,
-        WIN_RULE_RELAXED
+        WIN_RULE_SHENYANG_BASIC
     ));
     assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
 }
@@ -5977,7 +5984,7 @@ fn settlement_fan_counts_terminal_single_wait_once() {
         &hand_tiles,
         &[],
         settlement.win_tile,
-        WIN_RULE_RELAXED
+        WIN_RULE_SHENYANG_BASIC
     ));
     assert_eq!(winner_hand_fan(&state, settlement, 1), 6);
 }
@@ -6051,7 +6058,7 @@ fn settlement_fan_counts_terminal_single_wait_when_other_wait_is_exhausted() {
         &hand_tiles,
         melds,
         settlement.win_tile,
-        WIN_RULE_RELAXED
+        WIN_RULE_SHENYANG_BASIC
     ));
     assert_eq!(winner_hand_fan(&state, settlement, 1), 3);
 }
@@ -6061,7 +6068,8 @@ fn settlement_fan_does_not_count_closed_middle_shape_with_multiple_waits() {
     let mut state = playable_state();
     state
         .hands
-        .insert(1, vec![6, 7, 7, 8, 9, 11, 12, 13, 15, 15, 15, 22, 22]);
+        .insert(1, vec![6, 7, 7, 8, 9, 15, 15, 15, 22, 22]);
+    state.melds.insert(1, vec![open_chi_meld(11)]);
     state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(8), false, false, false, false);
     let settlement = state.settlement.as_ref().expect("settlement");
 
@@ -6093,7 +6101,8 @@ fn settlement_fan_does_not_count_open_two_sided_wait_as_single_wait() {
     let mut state = playable_state();
     state
         .hands
-        .insert(1, vec![2, 3, 5, 6, 7, 11, 12, 13, 21, 22, 23, 31, 31]);
+        .insert(1, vec![2, 3, 5, 6, 7, 21, 22, 23, 35, 35]);
+    state.melds.insert(1, vec![open_chi_meld(11)]);
     state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(4), false, false, false, false);
     let settlement = state.settlement.as_ref().expect("settlement");
 
@@ -6122,13 +6131,12 @@ fn settlement_fan_does_not_count_shou_ba_yi_for_standard_hand() {
 #[test]
 fn settlement_fan_does_not_count_terminal_triplet_completion_as_single_wait() {
     let mut state = playable_state();
-    state
-        .hands
-        .insert(1, vec![1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 35, 35, 35]);
+    state.hands.insert(1, vec![1, 1, 4, 5, 6, 7, 8, 9, 21, 21]);
+    state.melds.insert(1, vec![open_chi_meld(11)]);
     state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(1), false, false, false, false);
     let settlement = state.settlement.as_ref().expect("settlement");
 
-    assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
 }
 
 #[test]
@@ -6308,7 +6316,7 @@ fn settlement_fan_rejects_invalid_meld_for_single_wait() {
         &hand_tiles,
         melds,
         settlement.win_tile,
-        WIN_RULE_RELAXED
+        WIN_RULE_SHENYANG_BASIC
     ));
     assert_eq!(winner_hand_fan(&state, settlement, 1), 0);
 }
@@ -6474,18 +6482,19 @@ fn settlement_fan_requires_win_tile_for_shou_ba_yi() {
 }
 
 #[test]
-fn settlement_fan_uses_win_rule_for_single_wait() {
+fn settlement_fan_uses_shenyang_rules_for_single_wait() {
     let mut state = playable_state();
     state
         .hands
-        .insert(1, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 31, 31, 35]);
+        .insert(1, vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35]);
+    state.melds.insert(1, vec![open_chi_meld(1)]);
     state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(35), false, false, false, false);
     let settlement = state.settlement.as_ref().expect("settlement");
 
     assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
     assert_eq!(
         winner_hand_fan_with_rule(&state, settlement, 1, WIN_RULE_SHENYANG_BASIC),
-        0
+        2
     );
 }
 
@@ -6551,7 +6560,8 @@ fn settlement_rejects_public_fifth_claim_tile() {
     let mut state = playable_state();
     state
         .hands
-        .insert(1, vec![1, 1, 1, 1, 2, 3, 7, 8, 11, 12, 13, 35, 35]);
+        .insert(1, vec![4, 5, 11, 12, 13, 21, 22, 23, 35, 35]);
+    state.melds.insert(1, vec![open_chi_meld(1)]);
     state.melds.insert(
         2,
         vec![build_meld(

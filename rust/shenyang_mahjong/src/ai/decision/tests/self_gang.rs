@@ -155,31 +155,31 @@ fn half_capped_established_pure_self_gang_takes_projected_cap() {
 }
 
 #[test]
-fn half_capped_unready_self_gang_takes_projected_cap() {
+fn half_capped_closed_unready_self_gang_does_not_use_illegal_projection() {
     let mut table = table_with_discards(1, Vec::new());
     table.dealer_position = 3;
     table.max_fan = Some(3);
     let hand = vec![1, 4, 7, 9, 9, 9, 9, 11, 14, 17, 21, 24, 27, 31];
 
     assert_eq!(
-        best_ready_score_after_discard(&hand, &[], &table, 0, WIN_RULE_RELAXED),
+        best_ready_score_after_discard(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
         0.0
     );
     assert!(capped_normal_route_visible_fan_exceeds_half_cap(
         &hand,
         &[],
         &table,
-        WIN_RULE_RELAXED
+        WIN_RULE_SHENYANG_BASIC
     ));
     assert!(!capped_normal_route_visible_fan_reaches_cap(
         &hand,
         &[],
         &table,
-        WIN_RULE_RELAXED
+        WIN_RULE_SHENYANG_BASIC
     ));
     assert_eq!(
-        choose_self_gang_from_view(&hand, &[9], &table, 0, WIN_RULE_RELAXED),
-        Some(9)
+        choose_self_gang_from_view(&hand, &[9], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        None
     );
 }
 
@@ -233,7 +233,7 @@ fn one_fan_capped_self_gang_takes_closed_plain_for_replacement_draw() {
     let hand = vec![3, 3, 3, 3, 4, 6, 8, 11, 13, 15, 21, 24, 27, 31];
 
     assert_eq!(
-        choose_self_gang_from_view(&hand, &[3], &table, 0, WIN_RULE_RELAXED),
+        choose_self_gang_from_view(&hand, &[3], &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(3)
     );
     assert_eq!(
@@ -256,22 +256,22 @@ fn one_fan_capped_self_gang_takes_concealed_dragon_for_replacement_draw() {
 }
 
 #[test]
-fn relaxed_self_gang_delays_closed_plain_gang_before_ready() {
+fn self_gang_delays_closed_plain_gang_before_ready_without_opening() {
     let mut table = table_with_discards(1, Vec::new());
     let hand = vec![3, 3, 3, 3, 4, 6, 8, 11, 13, 15, 21, 24, 27, 31];
 
     assert_eq!(
-        best_ready_score_after_discard(&hand, &[], &table, 0, WIN_RULE_RELAXED),
+        best_ready_score_after_discard(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
         0.0
     );
     assert_eq!(
-        choose_self_gang_from_view(&hand, &[3], &table, 0, WIN_RULE_RELAXED),
+        choose_self_gang_from_view(&hand, &[3], &table, 0, WIN_RULE_SHENYANG_BASIC),
         None
     );
 
     table.dealer_position = 0;
     assert_eq!(
-        choose_self_gang_from_view(&hand, &[3], &table, 0, WIN_RULE_RELAXED),
+        choose_self_gang_from_view(&hand, &[3], &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(3)
     );
 }
@@ -392,13 +392,13 @@ fn self_gang_allows_ready_main_suit_added_gang_for_pure_one_suit_plan() {
 }
 
 #[test]
-fn self_gang_allows_same_closed_plain_gang_when_opening_is_not_required() {
+fn self_gang_rejects_closed_plain_gang_before_legal_ready() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![3, 3, 3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31];
 
     assert_eq!(
-        choose_self_gang_from_view(&hand, &[3], &table, 0, WIN_RULE_RELAXED),
-        Some(3)
+        choose_self_gang_from_view(&hand, &[3], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        None
     );
 }
 
@@ -506,28 +506,29 @@ fn self_gang_delays_open_piao_plain_gang_until_ready() {
 }
 
 #[test]
-fn self_gang_delays_relaxed_piao_plain_gang_until_ready() {
+fn self_gang_delays_closed_piao_plain_gang_until_ready() {
     let mut table = table_with_discards(1, Vec::new());
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(31)];
     let hand = vec![1, 2, 4, 5, 7, 9, 9, 9, 9, 11, 21];
 
     assert_eq!(
-        choose_self_gang_from_view(&hand, &[9], &table, 0, WIN_RULE_RELAXED),
+        choose_self_gang_from_view(&hand, &[9], &table, 0, WIN_RULE_SHENYANG_BASIC),
         None
     );
 }
 
 #[test]
 fn self_gang_ignores_invalid_candidate_tile() {
-    let table = table_with_discards(1, Vec::new());
-    let hand = vec![3, 3, 3, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 35];
+    let mut table = table_with_discards(1, Vec::new());
+    table.seats.get_mut(&0).unwrap().melds = vec![test_chi_meld(11)];
+    let hand = vec![3, 3, 3, 3, 4, 5, 6, 21, 22, 23, 35];
 
     assert_eq!(
-        choose_self_gang_from_view(&hand, &[3, 35], &table, 0, WIN_RULE_RELAXED),
+        choose_self_gang_from_view(&hand, &[3, 35], &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(3)
     );
     assert_eq!(
-        choose_self_gang_from_view(&hand, &[35], &table, 0, WIN_RULE_RELAXED),
+        choose_self_gang_from_view(&hand, &[35], &table, 0, WIN_RULE_SHENYANG_BASIC),
         None
     );
 }
@@ -574,11 +575,11 @@ fn self_gang_passes_final_unready_hand_for_defense() {
     let hand = vec![1, 2, 3, 3, 3, 3, 11, 12, 21, 22, 35, 35, 35, 35];
 
     assert_eq!(
-        best_ready_score_after_discard(&hand, &[], &table, 0, WIN_RULE_RELAXED),
+        best_ready_score_after_discard(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
         0.0
     );
     assert_eq!(
-        choose_self_gang_from_view(&hand, &[3, 35], &table, 0, WIN_RULE_RELAXED),
+        choose_self_gang_from_view(&hand, &[3, 35], &table, 0, WIN_RULE_SHENYANG_BASIC),
         None
     );
 }
@@ -622,11 +623,12 @@ fn self_gang_passes_pure_plan_when_gang_only_reaches_basic_ready() {
 
 #[test]
 fn self_gang_prefers_dragon_gang_over_plain_gang() {
-    let table = table_with_discards(1, Vec::new());
+    let mut table = table_with_discards(1, Vec::new());
+    table.dealer_position = 0;
     let hand = vec![1, 2, 3, 3, 3, 3, 11, 12, 21, 22, 35, 35, 35, 35];
 
     assert_eq!(
-        choose_self_gang_from_view(&hand, &[3, 35], &table, 0, WIN_RULE_RELAXED),
+        choose_self_gang_from_view(&hand, &[3, 35], &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(35)
     );
 }
@@ -701,7 +703,7 @@ fn self_gang_preserves_locked_seven_pairs_plan() {
     let hand = vec![1, 1, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 31];
 
     assert_eq!(
-        choose_self_gang_from_view(&hand, &[1], &table, 0, WIN_RULE_RELAXED),
+        choose_self_gang_from_view(&hand, &[1], &table, 0, WIN_RULE_SHENYANG_BASIC),
         None
     );
 }
@@ -726,7 +728,7 @@ fn self_gang_rejects_concealed_gang_when_same_peng_meld_exists() {
 
     assert!(!can_self_gang_candidate(&hand, melds, 3));
     assert_eq!(
-        choose_self_gang_from_view(&hand, &[3], &table, 0, WIN_RULE_RELAXED),
+        choose_self_gang_from_view(&hand, &[3], &table, 0, WIN_RULE_SHENYANG_BASIC),
         None
     );
 }
@@ -746,7 +748,7 @@ fn self_gang_rejects_concealed_peng_as_added_gang_source() {
     assert!(!is_open_meld(&melds[0]));
     assert!(!can_self_gang_candidate(&hand, melds, 35));
     assert_eq!(
-        choose_self_gang_from_view(&hand, &[35], &table, 0, WIN_RULE_RELAXED),
+        choose_self_gang_from_view(&hand, &[35], &table, 0, WIN_RULE_SHENYANG_BASIC),
         None
     );
 }
@@ -760,7 +762,7 @@ fn self_gang_rejects_impossible_extra_copy_after_peng() {
 
     assert!(!can_self_gang_candidate(&hand, melds, 3));
     assert_eq!(
-        choose_self_gang_from_view(&hand, &[3], &table, 0, WIN_RULE_RELAXED),
+        choose_self_gang_from_view(&hand, &[3], &table, 0, WIN_RULE_SHENYANG_BASIC),
         None
     );
 }
@@ -770,7 +772,7 @@ fn self_gang_rejects_incomplete_virtual_hand() {
     let table = table_with_discards(1, Vec::new());
 
     assert_eq!(
-        choose_self_gang_from_view(&[35, 35, 35, 35], &[35], &table, 0, WIN_RULE_RELAXED),
+        choose_self_gang_from_view(&[35, 35, 35, 35], &[35], &table, 0, WIN_RULE_SHENYANG_BASIC),
         None
     );
 }
@@ -792,7 +794,7 @@ fn self_gang_rejects_public_fifth_copy() {
             &[35],
             &concealed_table,
             0,
-            WIN_RULE_RELAXED,
+            WIN_RULE_SHENYANG_BASIC,
         ),
         None
     );
@@ -807,7 +809,13 @@ fn self_gang_rejects_public_fifth_copy() {
         35,
     ));
     assert_eq!(
-        choose_self_gang_from_view(&added_hand, &[35], &concealed_table, 0, WIN_RULE_RELAXED,),
+        choose_self_gang_from_view(
+            &added_hand,
+            &[35],
+            &concealed_table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+        ),
         None
     );
 }
@@ -1037,8 +1045,9 @@ fn speed_first_concealed_gang_preserves_unready_pure_one_suit_plan() {
 
     table.dealer_position = 1;
     table.max_fan = Some(1);
-    assert!(
-        pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0
+    assert_eq!(
+        pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        0.0
     );
     assert_eq!(
         choose_self_gang_from_view(&hand, &[1], &table, 0, WIN_RULE_SHENYANG_BASIC),

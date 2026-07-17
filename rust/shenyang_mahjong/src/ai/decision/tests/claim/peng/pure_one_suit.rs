@@ -46,7 +46,7 @@ fn claim_peng_passes_main_suit_pure_one_suit_when_opening_is_not_required() {
     let hand = vec![1, 1, 2, 3, 4, 5, 6, 7, 8, 8, 9, 11, 12];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Pass)
     );
 }
@@ -180,7 +180,7 @@ fn claim_peng_preserves_pure_one_suit_seven_pairs_wait() {
 }
 
 #[test]
-fn one_fan_relaxed_claim_peng_ignores_unfinished_pure_plan() {
+fn one_fan_claim_peng_ignores_unfinished_pure_plan() {
     let mut table = table_with_discards(1, Vec::new());
     table.max_fan = Some(1);
     table.claim_window = Some(AiClaimView {
@@ -192,11 +192,11 @@ fn one_fan_relaxed_claim_peng_ignores_unfinished_pure_plan() {
     let hand = vec![1, 1, 2, 3, 4, 5, 6, 7, 8, 8, 9, 11, 12];
 
     assert_eq!(
-        pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_RELAXED),
+        pure_one_suit_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
         0.0
     );
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Peng)
     );
 }

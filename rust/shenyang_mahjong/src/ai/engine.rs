@@ -269,7 +269,7 @@ mod tests {
     use crate::game::build_settlement_event_with_configs;
     use crate::game_state::ClaimWindowState;
     use crate::rules::{
-        ShenyangMahjongWinRules, WIN_RULE_RELAXED, is_complete_win_with_melds,
+        ShenyangMahjongWinRules, WIN_RULE_SHENYANG_BASIC, is_complete_win_with_melds,
         is_complete_win_with_melds_for_rules,
     };
 
@@ -761,7 +761,7 @@ mod tests {
         assert!(is_complete_win_with_melds(
             state.hands.get(&0).unwrap(),
             state.melds.get(&0).unwrap(),
-            WIN_RULE_RELAXED,
+            WIN_RULE_SHENYANG_BASIC,
         ));
         assert!(!can_self_draw_hu_with_configs(
             &state,

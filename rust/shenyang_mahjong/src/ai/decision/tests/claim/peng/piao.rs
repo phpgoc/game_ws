@@ -15,11 +15,11 @@ fn claim_peng_passes_raw_piao_shape_without_terminal_or_honor() {
 
     assert!(piao_plan_score(&hand, melds) >= 32.0);
     assert_eq!(
-        piao_plan_score_for_context(&hand, melds, &table, 0, WIN_RULE_RELAXED),
+        piao_plan_score_for_context(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
         0.0
     );
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Pass)
     );
 }
@@ -116,19 +116,19 @@ fn closed_early_piao_peng_passes_against_threatening_dealer() {
     assert!(!dealer_opponent_has_major_threat(
         &table,
         0,
-        WIN_RULE_RELAXED,
+        WIN_RULE_SHENYANG_BASIC,
     ));
     assert!(should_claim_peng_for_closed_early_piao_candidate(
         &hand,
         &[],
         &table,
         0,
-        WIN_RULE_RELAXED,
+        WIN_RULE_SHENYANG_BASIC,
         5,
         1,
     ));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Peng)
     );
 
@@ -136,20 +136,20 @@ fn closed_early_piao_peng_passes_against_threatening_dealer() {
     assert!(dealer_opponent_has_major_threat(
         &table,
         0,
-        WIN_RULE_RELAXED,
+        WIN_RULE_SHENYANG_BASIC,
     ));
     assert!(!should_claim_peng_for_closed_early_piao_candidate(
         &hand,
         &[],
         &table,
         0,
-        WIN_RULE_RELAXED,
+        WIN_RULE_SHENYANG_BASIC,
         5,
         1,
     ));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
-        Some(AiClaimChoice::Pass)
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Peng)
     );
 }
 
@@ -285,7 +285,7 @@ fn ready_piao_passes_shou_ba_yi_peng_against_threatening_dealer() {
 }
 
 #[test]
-fn relaxed_claim_peng_takes_closed_early_piao_candidate_over_sequence_shape() {
+fn claim_peng_takes_closed_early_piao_candidate_over_sequence_shape() {
     let mut table = table_with_discards(1, Vec::new());
     table.claim_window = Some(AiClaimView {
         tile: 5,
@@ -301,18 +301,18 @@ fn relaxed_claim_peng_takes_closed_early_piao_candidate_over_sequence_shape() {
         &[],
         &table,
         0,
-        WIN_RULE_RELAXED,
+        WIN_RULE_SHENYANG_BASIC,
         5,
         1
     ));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Peng)
     );
 }
 
 #[test]
-fn relaxed_closed_piao_peng_ignores_malformed_meld() {
+fn closed_piao_peng_ignores_malformed_meld() {
     let mut table = table_with_discards(1, Vec::new());
     let malformed_meld = WsShenyangMahjongMeld {
         kind: ShenyangMahjongMeldKind::PENG,
@@ -334,7 +334,7 @@ fn relaxed_closed_piao_peng_ignores_malformed_meld() {
         &[malformed_meld],
         &table,
         0,
-        WIN_RULE_RELAXED,
+        WIN_RULE_SHENYANG_BASIC,
         5,
         1
     ));
@@ -343,12 +343,12 @@ fn relaxed_closed_piao_peng_ignores_malformed_meld() {
         &[test_peng_meld(31)],
         &table,
         0,
-        WIN_RULE_RELAXED,
+        WIN_RULE_SHENYANG_BASIC,
         5,
         1
     ));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Peng)
     );
 }

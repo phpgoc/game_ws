@@ -128,9 +128,7 @@ pub(super) fn pure_one_suit_plan_score_for_context(
     {
         return 0.0;
     }
-    if table.max_fan.is_some_and(|max_fan| max_fan <= 1)
-        && (win_rule != WIN_RULE_SHENYANG_BASIC || missing_suits(hand, melds).is_empty())
-    {
+    if table.max_fan.is_some_and(|max_fan| max_fan <= 1) {
         return 0.0;
     }
     if capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table, win_rule) {

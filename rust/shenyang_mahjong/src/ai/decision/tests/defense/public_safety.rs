@@ -8,7 +8,7 @@ fn late_defense_avoids_breaking_cold_terminal_pair_against_closed_opponent() {
     let hand = vec![2, 4, 6, 8, 9, 9, 12, 14, 16, 18, 19, 22, 24, 26];
 
     assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(19)
     );
 }
@@ -42,7 +42,7 @@ fn late_defense_can_follow_exposed_terminal_over_live_wind() {
     let hand = vec![2, 4, 6, 8, 9, 12, 14, 16, 18, 22, 24, 26, 28, 31];
 
     assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(9)
     );
 }
@@ -104,7 +104,7 @@ fn mid_round_discard_avoids_live_dragon_against_open_opponent() {
     let hand = vec![1, 2, 3, 11, 12, 13, 14, 16, 18, 21, 22, 23, 31, 35];
 
     assert_ne!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(35)
     );
 }
@@ -117,7 +117,7 @@ fn mid_round_discard_avoids_live_terminal_against_open_opponent() {
     let hand = vec![1, 2, 3, 9, 11, 12, 14, 16, 18, 21, 22, 24, 26, 31];
 
     assert_ne!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(9)
     );
 }
@@ -129,7 +129,7 @@ fn mid_round_discard_follows_public_dragon_over_multiple_public_terminal() {
     let hand = vec![1, 2, 3, 9, 11, 12, 14, 16, 18, 21, 22, 24, 26, 35];
 
     assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(35)
     );
 }
@@ -141,7 +141,7 @@ fn mid_round_discard_follows_public_honor_over_live_dragon() {
     let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 36];
 
     assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(31)
     );
 }
@@ -153,7 +153,7 @@ fn mid_round_discard_follows_public_middle_before_late_round() {
     let hand = vec![1, 2, 3, 9, 11, 12, 14, 16, 18, 21, 22, 24, 26, 35];
 
     assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(14)
     );
 }
@@ -166,7 +166,7 @@ fn mid_round_discard_follows_public_middle_over_cold_wind_against_closed_opponen
     let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 14, 21, 22, 23, 31];
 
     assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(14)
     );
 }
@@ -178,7 +178,7 @@ fn mid_round_discard_follows_public_middle_over_live_terminal() {
     let hand = vec![1, 2, 3, 9, 11, 12, 14, 16, 18, 21, 22, 24, 26, 31];
 
     assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(14)
     );
 }
@@ -279,8 +279,23 @@ fn mid_round_live_suited_risk_discounts_exposed_meld_tiles() {
 
     assert!(live_risk_exposure_scale(&exposed_table, 9) < 1.0);
     assert!(
-        mid_round_live_suited_risk_bias(&hand, &[], &exposed_table, 0, 9, 1, WIN_RULE_RELAXED)
-            > mid_round_live_suited_risk_bias(&hand, &[], &live_table, 0, 9, 1, WIN_RULE_RELAXED)
+        mid_round_live_suited_risk_bias(
+            &hand,
+            &[],
+            &exposed_table,
+            0,
+            9,
+            1,
+            WIN_RULE_SHENYANG_BASIC
+        ) > mid_round_live_suited_risk_bias(
+            &hand,
+            &[],
+            &live_table,
+            0,
+            9,
+            1,
+            WIN_RULE_SHENYANG_BASIC
+        )
     );
 }
 
@@ -289,10 +304,14 @@ fn mid_round_live_suited_risk_grows_when_opponents_are_open() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 37;
     let hand = vec![1, 2, 3, 9, 11, 12, 14, 16, 18, 21, 22, 24, 26, 31];
-    let base = mid_round_live_suited_risk_bias(&hand, &[], &table, 0, 9, 1, WIN_RULE_RELAXED);
+    let base =
+        mid_round_live_suited_risk_bias(&hand, &[], &table, 0, 9, 1, WIN_RULE_SHENYANG_BASIC);
     table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(16)];
 
-    assert!(mid_round_live_suited_risk_bias(&hand, &[], &table, 0, 9, 1, WIN_RULE_RELAXED) < base);
+    assert!(
+        mid_round_live_suited_risk_bias(&hand, &[], &table, 0, 9, 1, WIN_RULE_SHENYANG_BASIC)
+            < base
+    );
 }
 
 #[test]
@@ -300,16 +319,20 @@ fn mid_round_live_suited_risk_ignores_concealed_gang_opponent() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 37;
     let hand = vec![1, 2, 3, 9, 11, 12, 14, 16, 18, 21, 22, 24, 26, 31];
-    let base = mid_round_live_suited_risk_bias(&hand, &[], &table, 0, 9, 1, WIN_RULE_RELAXED);
+    let base =
+        mid_round_live_suited_risk_bias(&hand, &[], &table, 0, 9, 1, WIN_RULE_SHENYANG_BASIC);
 
     table.seats.get_mut(&1).unwrap().melds = vec![test_concealed_gang_meld(16)];
     assert_eq!(
-        mid_round_live_suited_risk_bias(&hand, &[], &table, 0, 9, 1, WIN_RULE_RELAXED),
+        mid_round_live_suited_risk_bias(&hand, &[], &table, 0, 9, 1, WIN_RULE_SHENYANG_BASIC),
         base
     );
 
     table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(16)];
-    assert!(mid_round_live_suited_risk_bias(&hand, &[], &table, 0, 9, 1, WIN_RULE_RELAXED) < base);
+    assert!(
+        mid_round_live_suited_risk_bias(&hand, &[], &table, 0, 9, 1, WIN_RULE_SHENYANG_BASIC)
+            < base
+    );
 }
 
 #[test]
@@ -325,11 +348,20 @@ fn mid_round_live_suited_risk_ignores_tile_fully_accounted_by_meld_and_own_tile(
     assert_eq!(public_discard_count(&accounted_table, 9), 0);
     assert_eq!(exposed_meld_tile_count(&accounted_table, 9), 3);
     assert_eq!(
-        mid_round_live_suited_risk_bias(&hand, &[], &accounted_table, 0, 9, 1, WIN_RULE_RELAXED),
+        mid_round_live_suited_risk_bias(
+            &hand,
+            &[],
+            &accounted_table,
+            0,
+            9,
+            1,
+            WIN_RULE_SHENYANG_BASIC
+        ),
         0.0
     );
     assert!(
-        mid_round_live_suited_risk_bias(&hand, &[], &live_table, 0, 9, 1, WIN_RULE_RELAXED) < 0.0
+        mid_round_live_suited_risk_bias(&hand, &[], &live_table, 0, 9, 1, WIN_RULE_SHENYANG_BASIC)
+            < 0.0
     );
 }
 
@@ -402,7 +434,7 @@ fn mid_round_open_meld_tile_is_safer_than_live_suited_tile() {
         mid_round_open_meld_safety_bias(&table, 14) > mid_round_open_meld_safety_bias(&table, 9)
     );
     assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(14)
     );
 }
@@ -461,7 +493,7 @@ fn mid_round_values_two_open_meld_tiles_over_live_dragon() {
                 + mid_round_live_honor_risk_bias(&table, 0, 35, 1)
     );
     assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(6)
     );
 }

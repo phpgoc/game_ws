@@ -9,7 +9,7 @@ fn discard_avoids_live_pair_against_piao_threat() {
     let hand = vec![2, 3, 4, 5, 5, 6, 7, 11, 12, 13, 21, 22, 23, 31];
 
     assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(31)
     );
 }
@@ -27,7 +27,7 @@ fn discard_follows_public_tile_over_live_pair_against_piao_threat() {
             < opponent_threat_discard_bias(&table, 0, 14, 1)
     );
     assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(14)
     );
 }

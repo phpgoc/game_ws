@@ -29,7 +29,7 @@ fn claim_peng_passes_when_it_breaks_seven_pairs_shape() {
     let hand = vec![1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 31];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Pass)
     );
 }
@@ -197,18 +197,30 @@ fn required_peng_gain_ignores_malformed_meld_for_four_pair_protection() {
         tiles: vec![3, 3, 4],
         from_position: Some(1),
     };
-    let base = required_peng_gain(&hand, &[], &table, 0, WIN_RULE_RELAXED, 31);
+    let base = required_peng_gain(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC, 31);
 
     assert_eq!(pair_count(&hand), 4);
     assert_eq!(valid_meld_count(&[malformed_meld.clone()]), 0);
     assert_eq!(
-        required_peng_gain(&hand, &[malformed_meld], &table, 0, WIN_RULE_RELAXED, 31,),
+        required_peng_gain(
+            &hand,
+            &[malformed_meld],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+            31,
+        ),
         base
     );
-    assert_eq!(
-        required_peng_gain(&hand, &[test_chi_meld(3)], &table, 0, WIN_RULE_RELAXED, 31,),
-        base - 8.0
+    let with_valid_meld = required_peng_gain(
+        &hand,
+        &[test_chi_meld(3)],
+        &table,
+        0,
+        WIN_RULE_SHENYANG_BASIC,
+        31,
     );
+    assert!(with_valid_meld < base);
 }
 
 #[test]

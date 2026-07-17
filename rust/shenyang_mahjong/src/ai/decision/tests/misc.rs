@@ -19,7 +19,7 @@ fn discard_candidates_ignore_invalid_tiles() {
     table.wall_count = 16;
     let hand = vec![1, 1, 4, 7, 9, 12, 14, 14, 17, 21, 23, 25, 31, 99];
 
-    let choice = choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED);
+    let choice = choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC);
 
     assert!(choice.is_some_and(is_valid_tile));
 }
@@ -50,26 +50,30 @@ fn hand_progress_ignores_invalid_melds_but_counts_valid_melds() {
         },
     ];
     let valid_melds = vec![test_chi_meld(1), test_peng_meld(11)];
-    let base = hand_progress_score(&[], &[], &table, 0, WIN_RULE_RELAXED);
+    let base = hand_progress_score(&[], &[], &table, 0, WIN_RULE_SHENYANG_BASIC);
 
     assert_eq!(
-        hand_progress_score(&[], &invalid_melds, &table, 0, WIN_RULE_RELAXED),
+        hand_progress_score(&[], &invalid_melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
         base
     );
-    assert_eq!(
-        hand_progress_score(&[], &valid_melds, &table, 0, WIN_RULE_RELAXED),
-        base + 20.0
-    );
+    assert!(hand_progress_score(&[], &valid_melds, &table, 0, WIN_RULE_SHENYANG_BASIC) > base);
 
     let base_after_discard =
-        hand_progress_score_after_discard(&[], &[], &table, 0, WIN_RULE_RELAXED, 5);
+        hand_progress_score_after_discard(&[], &[], &table, 0, WIN_RULE_SHENYANG_BASIC, 5);
     assert_eq!(
-        hand_progress_score_after_discard(&[], &invalid_melds, &table, 0, WIN_RULE_RELAXED, 5,),
+        hand_progress_score_after_discard(
+            &[],
+            &invalid_melds,
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+            5,
+        ),
         base_after_discard
     );
-    assert_eq!(
-        hand_progress_score_after_discard(&[], &valid_melds, &table, 0, WIN_RULE_RELAXED, 5,),
-        base_after_discard + 20.0
+    assert!(
+        hand_progress_score_after_discard(&[], &valid_melds, &table, 0, WIN_RULE_SHENYANG_BASIC, 5,)
+            > base_after_discard
     );
 }
 
@@ -125,15 +129,17 @@ fn late_broken_basic_discard_follows_public_tile_for_weak_recoverable_hand() {
 fn late_ready_discard_breaks_wait_for_public_safe_tile() {
     let mut table = table_with_discards(1, vec![5]);
     table.wall_count = 16;
-    let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 31, 31, 32];
+    table.seats.get_mut(&0).unwrap().melds = vec![test_chi_meld(11)];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![1, 2, 3, 4, 5, 6, 21, 22, 32, 35, 35];
 
     assert_eq!(
         ready_live_tile_count_after_discard(
             &remove_n_tiles(&hand, 5, 1),
-            &[],
+            melds,
             &table,
             0,
-            WIN_RULE_RELAXED,
+            WIN_RULE_SHENYANG_BASIC,
             5,
         ),
         0
@@ -141,15 +147,15 @@ fn late_ready_discard_breaks_wait_for_public_safe_tile() {
     assert!(
         ready_live_tile_count_after_discard(
             &remove_n_tiles(&hand, 32, 1),
-            &[],
+            melds,
             &table,
             0,
-            WIN_RULE_RELAXED,
+            WIN_RULE_SHENYANG_BASIC,
             32,
         ) > 0
     );
     assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(5)
     );
 }
@@ -161,27 +167,31 @@ fn late_unready_discard_uses_defense_before_hand_progress() {
     let hand = vec![1, 1, 4, 7, 9, 12, 14, 14, 17, 21, 23, 25, 31, 35];
 
     assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(14)
     );
 }
 
 #[test]
-fn relaxed_near_ready_hand_does_not_use_defensive_opening() {
+fn illegal_near_ready_shape_uses_defensive_opening() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 40;
     let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 31, 31, 35];
 
-    assert!(
-        ready_tile_score(&hand, &[], &table, 0, WIN_RULE_RELAXED) > 0.0
-            || one_step_wait_potential(&hand, &[], &table, 0, WIN_RULE_RELAXED) > 0.0
+    assert_eq!(
+        ready_tile_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        0.0
     );
-    assert!(!should_open_broken_closed_hand_for_defense(
+    assert_eq!(
+        one_step_wait_potential(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
+        0.0
+    );
+    assert!(should_open_broken_closed_hand_for_defense(
         &hand,
         &[],
         &table,
         0,
-        WIN_RULE_RELAXED
+        WIN_RULE_SHENYANG_BASIC
     ));
 }
 

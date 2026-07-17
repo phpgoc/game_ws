@@ -144,7 +144,7 @@ fn discard_can_clear_single_dragon_when_pairs_are_many() {
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 23, 24, 26, 35];
 
     assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(35)
     );
 }
@@ -156,7 +156,7 @@ fn discard_clears_isolated_edge_before_core_middle() {
 
     assert!(isolated_suited_singleton_discard_bias(8) > isolated_suited_singleton_discard_bias(5));
     assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(8)
     );
 }
@@ -167,7 +167,7 @@ fn discard_prefers_isolated_honor() {
     let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35];
 
     assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(31)
     );
 }
@@ -178,7 +178,7 @@ fn discard_prefers_wind_before_single_dragon() {
     let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35];
 
     assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(31)
     );
 }
@@ -191,11 +191,11 @@ fn discard_preserves_edge_of_complete_sequence() {
 
     assert!(tile_is_part_of_complete_sequence(&hand, 4));
     assert!(
-        complete_sequence_discard_bias(&hand, 4, &[], &table, 0, WIN_RULE_RELAXED)
-            < complete_sequence_discard_bias(&hand, 8, &[], &table, 0, WIN_RULE_RELAXED)
+        complete_sequence_discard_bias(&hand, 4, &[], &table, 0, WIN_RULE_SHENYANG_BASIC)
+            < complete_sequence_discard_bias(&hand, 8, &[], &table, 0, WIN_RULE_SHENYANG_BASIC)
     );
     assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(8)
     );
 }
@@ -228,7 +228,7 @@ fn discard_preserves_last_tile_of_a_suit_for_three_suits() {
     let hand = vec![1, 11, 12, 13, 14, 15, 16, 21, 22, 23, 24, 25, 26, 31];
 
     assert_ne!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(1)
     );
 }
@@ -239,11 +239,11 @@ fn discard_preserves_middle_of_complete_sequence() {
     let hand = vec![4, 5, 6, 8, 11, 11, 11, 19, 19, 19, 21, 21, 22, 22];
 
     assert!(
-        complete_sequence_discard_bias(&hand, 5, &[], &table, 0, WIN_RULE_RELAXED)
-            < complete_sequence_discard_bias(&hand, 8, &[], &table, 0, WIN_RULE_RELAXED)
+        complete_sequence_discard_bias(&hand, 5, &[], &table, 0, WIN_RULE_SHENYANG_BASIC)
+            < complete_sequence_discard_bias(&hand, 8, &[], &table, 0, WIN_RULE_SHENYANG_BASIC)
     );
     assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(8)
     );
 }
@@ -431,7 +431,7 @@ fn discard_preserves_ready_hand_instead_of_breaking_wait() {
     let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 31, 31, 32];
 
     assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(32)
     );
 }
@@ -443,10 +443,6 @@ fn discard_preserves_single_dragon_as_basic_heng_seed() {
 
     assert!(!has_triplet_or_dragon_pair(&hand, &[]));
     assert!(basic_heng_seed_discard_bias(&hand, 35, &[], WIN_RULE_SHENYANG_BASIC) < 0.0);
-    assert_eq!(
-        basic_heng_seed_discard_bias(&hand, 35, &[], WIN_RULE_RELAXED),
-        0.0
-    );
     assert_ne!(
         choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(35)
@@ -459,18 +455,18 @@ fn discard_rejects_impossible_known_tile_state() {
     let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 35];
 
     assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(31)
     );
 
     table.seats.get_mut(&1).unwrap().discards = vec![1, 1, 1, 1];
     assert_eq!(visible_tile_count(&table, 1), 4);
     assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         None
     );
     assert_eq!(
-        choose_forced_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_forced_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         None
     );
 }
@@ -480,7 +476,7 @@ fn discard_rejects_incomplete_virtual_hand() {
     let table = table_with_discards(1, Vec::new());
 
     assert_eq!(
-        choose_discard_from_view(&[1, 2], &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&[1, 2], &table, 0, WIN_RULE_SHENYANG_BASIC),
         None
     );
 }
@@ -493,7 +489,7 @@ fn discard_uses_own_previous_discard_as_public_safety() {
     let hand = vec![1, 1, 4, 5, 7, 9, 12, 14, 17, 21, 23, 25, 31, 35];
 
     assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(5)
     );
 }
@@ -504,7 +500,7 @@ fn discard_uses_public_discard_safety() {
     let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31, 32];
 
     assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(31)
     );
 }
@@ -548,10 +544,10 @@ fn half_capped_discard_does_not_preserve_four_gui_yi() {
         &hand,
         melds,
         &table,
-        WIN_RULE_RELAXED
+        WIN_RULE_SHENYANG_BASIC
     ));
     assert_eq!(
-        four_gui_yi_discard_bias(&hand, 2, melds, &table, 0, WIN_RULE_RELAXED),
+        four_gui_yi_discard_bias(&hand, 2, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
         0.0
     );
 }
@@ -569,7 +565,7 @@ fn mid_pinghu_route_sequence_bias_turns_off_after_shape_period() {
 }
 
 #[test]
-fn relaxed_capped_route_discards_redundant_single_dragon() {
+fn broken_capped_route_can_discard_spare_dragon() {
     let mut table = table_with_discards(1, Vec::new());
     table.max_fan = Some(2);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(35)];
@@ -582,18 +578,14 @@ fn relaxed_capped_route_discards_redundant_single_dragon() {
         melds,
         &table
     ));
-    assert!(capped_normal_route_visible_fan_reaches_cap(
+    assert!(!capped_normal_route_visible_fan_reaches_cap(
         &after_dragon,
         melds,
         &table,
-        WIN_RULE_RELAXED
+        WIN_RULE_SHENYANG_BASIC
     ));
-    assert!(
-        capped_spare_dragon_discard_bias(&hand, 36, melds, &table, WIN_RULE_RELAXED)
-            > capped_spare_dragon_discard_bias(&hand, 11, melds, &table, WIN_RULE_RELAXED)
-    );
     assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(36)
     );
 }

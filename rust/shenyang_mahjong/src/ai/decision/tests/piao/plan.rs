@@ -24,7 +24,7 @@ fn capped_basic_foundation_disables_redundant_closed_piao_plan() {
         0.0
     );
     assert_eq!(
-        piao_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_RELAXED),
+        piao_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
         0.0
     );
     assert_eq!(
@@ -546,10 +546,10 @@ fn threatening_dealer_disables_closed_marginal_piao_protection() {
     assert!(!dealer_opponent_has_major_threat(
         &table,
         0,
-        WIN_RULE_RELAXED
+        WIN_RULE_SHENYANG_BASIC
     ));
     assert_eq!(
-        piao_plan_score_for_context(&three_pair_hand, &[], &table, 0, WIN_RULE_RELAXED),
+        piao_plan_score_for_context(&three_pair_hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
         15.0
     );
     assert!(is_closed_early_piao_candidate(
@@ -557,33 +557,39 @@ fn threatening_dealer_disables_closed_marginal_piao_protection() {
         &[],
         &table,
         0,
-        WIN_RULE_RELAXED
+        WIN_RULE_SHENYANG_BASIC
     ));
     assert!(has_early_piao_singleton_discard(
         &three_pair_hand,
         &[],
         &table,
         0,
-        WIN_RULE_RELAXED
+        WIN_RULE_SHENYANG_BASIC
     ));
     assert!(
-        early_piao_candidate_discard_bias(&three_pair_hand, 1, &[], &table, 0, WIN_RULE_RELAXED,)
-            < 0.0
+        early_piao_candidate_discard_bias(
+            &three_pair_hand,
+            1,
+            &[],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+        ) < 0.0
     );
-    assert!(piao_discard_bias(&four_pair_hand, 1, &[], &table, 0, WIN_RULE_RELAXED,) < 0.0);
+    assert!(piao_discard_bias(&four_pair_hand, 1, &[], &table, 0, WIN_RULE_SHENYANG_BASIC,) < 0.0);
 
     table.dealer_position = 1;
     assert!(dealer_opponent_has_major_threat(
         &table,
         0,
-        WIN_RULE_RELAXED
+        WIN_RULE_SHENYANG_BASIC
     ));
     assert_eq!(
-        piao_plan_score_for_context(&three_pair_hand, &[], &table, 0, WIN_RULE_RELAXED),
+        piao_plan_score_for_context(&three_pair_hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
         5.25
     );
     assert_eq!(
-        piao_plan_score_for_context(&four_pair_hand, &[], &table, 0, WIN_RULE_RELAXED),
+        piao_plan_score_for_context(&four_pair_hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
         7.0
     );
     assert!(!is_closed_early_piao_candidate(
@@ -591,21 +597,28 @@ fn threatening_dealer_disables_closed_marginal_piao_protection() {
         &[],
         &table,
         0,
-        WIN_RULE_RELAXED
+        WIN_RULE_SHENYANG_BASIC
     ));
     assert!(!has_early_piao_singleton_discard(
         &three_pair_hand,
         &[],
         &table,
         0,
-        WIN_RULE_RELAXED
+        WIN_RULE_SHENYANG_BASIC
     ));
     assert_eq!(
-        early_piao_candidate_discard_bias(&three_pair_hand, 1, &[], &table, 0, WIN_RULE_RELAXED,),
+        early_piao_candidate_discard_bias(
+            &three_pair_hand,
+            1,
+            &[],
+            &table,
+            0,
+            WIN_RULE_SHENYANG_BASIC,
+        ),
         0.0
     );
     assert_eq!(
-        piao_discard_bias(&four_pair_hand, 1, &[], &table, 0, WIN_RULE_RELAXED,),
+        piao_discard_bias(&four_pair_hand, 1, &[], &table, 0, WIN_RULE_SHENYANG_BASIC,),
         0.0
     );
     assert!(!should_preserve_piao_plan_for_chi(
@@ -613,7 +626,7 @@ fn threatening_dealer_disables_closed_marginal_piao_protection() {
         &[],
         &table,
         0,
-        WIN_RULE_RELAXED
+        WIN_RULE_SHENYANG_BASIC
     ));
 }
 
@@ -628,14 +641,14 @@ fn threatening_dealer_preserves_highly_developed_closed_piao_plan() {
     assert!(dealer_opponent_has_major_threat(
         &table,
         0,
-        WIN_RULE_RELAXED
+        WIN_RULE_SHENYANG_BASIC
     ));
     assert_eq!(piao_plan_score(&hand, &[]), 53.0);
     assert_eq!(
-        piao_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_RELAXED),
+        piao_plan_score_for_context(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
         53.0
     );
-    assert!(piao_discard_bias(&hand, 11, &[], &table, 0, WIN_RULE_RELAXED) < 0.0);
+    assert!(piao_discard_bias(&hand, 11, &[], &table, 0, WIN_RULE_SHENYANG_BASIC) < 0.0);
 }
 
 #[test]
@@ -651,14 +664,14 @@ fn threatening_dealer_preserves_open_piao_plan() {
     assert!(dealer_opponent_has_major_threat(
         &table,
         0,
-        WIN_RULE_RELAXED
+        WIN_RULE_SHENYANG_BASIC
     ));
     assert_eq!(piao_plan_score(&hand, melds), 28.0);
     assert_eq!(
-        piao_plan_score_for_context(&hand, melds, &table, 0, WIN_RULE_RELAXED),
+        piao_plan_score_for_context(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
         28.0
     );
-    assert!(piao_discard_bias(&hand, 11, melds, &table, 0, WIN_RULE_RELAXED) < 0.0);
+    assert!(piao_discard_bias(&hand, 11, melds, &table, 0, WIN_RULE_SHENYANG_BASIC) < 0.0);
 }
 
 #[test]

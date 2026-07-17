@@ -601,7 +601,7 @@ mod tests {
                 &state,
                 settlement,
                 1,
-                ShenyangMahjongWinRules::new(crate::rules::WIN_RULE_RELAXED)
+                ShenyangMahjongWinRules::new(crate::rules::WIN_RULE_SHENYANG_BASIC)
             ),
             data::ShenyangMahjongRoundWinPattern::PureOneSuit
         );

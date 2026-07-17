@@ -18,7 +18,7 @@ fn claim_gang_passes_when_terminal_or_honor_is_unrecoverable_for_basic() {
 }
 
 #[test]
-fn claim_peng_opens_broken_closed_hand_for_defense_in_relaxed_rule() {
+fn claim_peng_opens_broken_closed_hand_for_defense() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 40;
     table.claim_window = Some(AiClaimView {
@@ -30,7 +30,7 @@ fn claim_peng_opens_broken_closed_hand_for_defense_in_relaxed_rule() {
     let hand = vec![2, 5, 8, 12, 14, 17, 21, 24, 27, 31, 31, 33, 34];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Peng)
     );
 }
@@ -195,7 +195,7 @@ fn claim_peng_passes_open_basic_pure_defense_hand_to_avoid_more_exposure() {
 }
 
 #[test]
-fn claim_peng_passes_open_relaxed_pure_defense_hand_to_avoid_more_exposure() {
+fn claim_peng_passes_open_pure_defense_hand_to_avoid_more_exposure() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 40;
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(31)];
@@ -209,11 +209,11 @@ fn claim_peng_passes_open_relaxed_pure_defense_hand_to_avoid_more_exposure() {
     let hand = vec![2, 2, 5, 8, 12, 14, 17, 21, 24, 27];
 
     assert_eq!(
-        ready_tile_score(&hand, melds, &table, 0, WIN_RULE_RELAXED),
+        ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
         0.0
     );
     assert_eq!(
-        one_step_wait_potential(&hand, melds, &table, 0, WIN_RULE_RELAXED),
+        one_step_wait_potential(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
         0.0
     );
     assert!(hand_power(&hand) < 18.0);
@@ -222,11 +222,11 @@ fn claim_peng_passes_open_relaxed_pure_defense_hand_to_avoid_more_exposure() {
         melds,
         &table,
         0,
-        WIN_RULE_RELAXED,
+        WIN_RULE_SHENYANG_BASIC,
         2
     ));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Pass)
     );
 }

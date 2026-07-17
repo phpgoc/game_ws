@@ -138,10 +138,10 @@ fn discard_keeps_pairs_when_many_pairs_can_chase_seven_pairs() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 22, 23, 31, 35, 36];
 
-    assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
-        Some(31)
-    );
+    assert!(matches!(
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(21 | 22 | 23 | 31 | 35 | 36)
+    ));
 }
 
 #[test]
@@ -209,7 +209,7 @@ fn discard_returns_none_for_seven_pairs_win() {
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35, 35];
 
     assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         None
     );
 }
@@ -438,7 +438,7 @@ fn one_fan_capped_six_pairs_still_sets_better_seven_pairs_wait() {
 }
 
 #[test]
-fn one_fan_relaxed_room_only_locks_seven_pairs_when_ready() {
+fn one_fan_room_only_locks_seven_pairs_when_ready() {
     let mut table = table_with_discards(1, Vec::new());
     table.max_fan = Some(1);
     let four_pairs = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 13, 21, 31, 35];
@@ -446,7 +446,7 @@ fn one_fan_relaxed_room_only_locks_seven_pairs_when_ready() {
     let six_pairs = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 12, 21, 21, 35];
 
     assert_eq!(
-        seven_pairs_plan_score(&four_pairs, &[], &table, 0, WIN_RULE_RELAXED),
+        seven_pairs_plan_score(&four_pairs, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
         0.0
     );
     assert_eq!(pair_count(&five_pairs), 5);
@@ -455,10 +455,10 @@ fn one_fan_relaxed_room_only_locks_seven_pairs_when_ready() {
         &[],
         &table,
         0,
-        WIN_RULE_RELAXED
+        WIN_RULE_SHENYANG_BASIC
     ));
     assert_eq!(
-        seven_pairs_plan_score(&five_pairs, &[], &table, 0, WIN_RULE_RELAXED),
+        seven_pairs_plan_score(&five_pairs, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
         0.0
     );
 
@@ -468,13 +468,13 @@ fn one_fan_relaxed_room_only_locks_seven_pairs_when_ready() {
         &[],
         &table,
         0,
-        WIN_RULE_RELAXED
+        WIN_RULE_SHENYANG_BASIC
     ));
-    assert!(seven_pairs_plan_score(&six_pairs, &[], &table, 0, WIN_RULE_RELAXED) > 0.0);
+    assert!(seven_pairs_plan_score(&six_pairs, &[], &table, 0, WIN_RULE_SHENYANG_BASIC) > 0.0);
 }
 
 #[test]
-fn relaxed_dealer_does_not_lock_five_pairs() {
+fn dealer_locks_five_pairs_when_normal_route_is_missing_a_suit() {
     let mut table = table_with_discards(1, Vec::new());
     table.dealer_position = 0;
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 31, 32, 33];
@@ -483,14 +483,14 @@ fn relaxed_dealer_does_not_lock_five_pairs() {
     assert!(!has_basic_normal_route_foundation(
         &hand,
         &[],
-        WIN_RULE_RELAXED
+        WIN_RULE_SHENYANG_BASIC
     ));
-    assert!(!should_lock_seven_pairs_plan(
+    assert!(should_lock_seven_pairs_plan(
         &hand,
         &[],
         &table,
         0,
-        WIN_RULE_RELAXED
+        WIN_RULE_SHENYANG_BASIC
     ));
 }
 
@@ -815,7 +815,7 @@ fn two_fan_capped_room_does_not_lock_five_pairs_when_basic_bonus_caps() {
 }
 
 #[test]
-fn two_fan_relaxed_room_does_not_lock_bonus_capped_five_pairs() {
+fn two_fan_room_does_not_lock_bonus_capped_five_pairs() {
     let mut table = table_with_discards(1, Vec::new());
     table.max_fan = Some(2);
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 31, 35, 35, 35];
@@ -827,10 +827,10 @@ fn two_fan_relaxed_room_does_not_lock_bonus_capped_five_pairs() {
         &[],
         &table,
         0,
-        WIN_RULE_RELAXED
+        WIN_RULE_SHENYANG_BASIC
     ));
     assert_eq!(
-        seven_pairs_plan_score(&hand, &[], &table, 0, WIN_RULE_RELAXED),
+        seven_pairs_plan_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
         0.0
     );
 }

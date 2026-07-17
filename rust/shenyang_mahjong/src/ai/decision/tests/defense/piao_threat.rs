@@ -9,7 +9,7 @@ fn late_defense_avoids_breaking_wind_pair_against_piao_threat() {
     let hand = vec![2, 4, 6, 8, 9, 12, 14, 16, 18, 22, 24, 26, 31, 31];
 
     assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(9)
     );
 }
@@ -23,7 +23,7 @@ fn late_defense_avoids_piao_threat_missing_suit_wait_tiles() {
     let hand = vec![2, 3, 5, 6, 8, 12, 13, 15, 16, 18, 22, 23, 25, 28];
 
     assert!(!matches!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(2 | 3 | 5 | 6 | 8)
     ));
 }
@@ -46,7 +46,7 @@ fn late_defense_can_follow_exposed_middle_against_piao_threat() {
     let hand = vec![2, 3, 4, 5, 6, 7, 8, 12, 14, 16, 18, 22, 24, 26];
 
     assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(6)
     );
 }

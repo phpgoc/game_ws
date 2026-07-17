@@ -2271,7 +2271,7 @@ fn winner_hand_fan(
     settlement: &crate::game_state::SettlementState,
     winner: usize,
 ) -> i32 {
-    winner_hand_fan_with_rule(state, settlement, winner, crate::rules::WIN_RULE_RELAXED)
+    winner_hand_fan_with_rule(state, settlement, winner, WIN_RULE_SHENYANG_BASIC)
 }
 
 fn winner_hand_fan_with_configs(
@@ -2382,9 +2382,7 @@ pub(crate) fn winner_pattern_with_rules(
     melds: &[WsShenyangMahjongMeld],
     rules: ShenyangMahjongWinRules,
 ) -> ShenyangMahjongWinPattern {
-    if rules.win_rule == WIN_RULE_SHENYANG_BASIC
-        && !is_complete_win_with_melds_for_rules(hand_tiles, melds, rules)
-    {
+    if !is_complete_win_with_melds_for_rules(hand_tiles, melds, rules) {
         return ShenyangMahjongWinPattern::Standard;
     }
     shenyang_win_pattern(hand_tiles, melds)

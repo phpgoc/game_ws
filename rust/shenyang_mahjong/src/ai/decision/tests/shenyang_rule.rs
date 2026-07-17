@@ -181,15 +181,11 @@ fn broken_closed_defense_opens_mid_when_heng_is_unrecoverable() {
 }
 
 #[test]
-fn broken_closed_defense_uses_basic_rule_instead_of_relaxed_near_ready_shape() {
+fn broken_closed_defense_rejects_illegal_near_ready_shape() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 40;
     let hand = vec![2, 2, 3, 4, 5, 11, 12, 13, 21, 22, 23, 31, 35];
 
-    assert!(
-        ready_tile_score(&hand, &[], &table, 0, WIN_RULE_RELAXED) > 0.0
-            || one_step_wait_potential(&hand, &[], &table, 0, WIN_RULE_RELAXED) > 0.0
-    );
     assert_eq!(
         ready_tile_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
         0.0
@@ -435,17 +431,17 @@ fn recoverable_basic_heng_discounts_projected_meld_tiles() {
 }
 
 #[test]
-fn relaxed_closed_defense_ignores_basic_terminal_requirement() {
+fn closed_defense_requires_terminal_or_honor() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 40;
     let hand = vec![2, 2, 2, 5, 5, 5, 12, 12, 12, 14, 17, 23, 27];
 
     assert_eq!(
-        ready_tile_score(&hand, &[], &table, 0, WIN_RULE_RELAXED),
+        ready_tile_score(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
         0.0
     );
     assert_eq!(
-        one_step_wait_potential(&hand, &[], &table, 0, WIN_RULE_RELAXED),
+        one_step_wait_potential(&hand, &[], &table, 0, WIN_RULE_SHENYANG_BASIC),
         0.0
     );
     assert!(hand_power(&hand) >= 18.0);
@@ -455,13 +451,6 @@ fn relaxed_closed_defense_ignores_basic_terminal_requirement() {
         &table,
         0,
         WIN_RULE_SHENYANG_BASIC
-    ));
-    assert!(!should_open_broken_closed_hand_for_defense(
-        &hand,
-        &[],
-        &table,
-        0,
-        WIN_RULE_RELAXED
     ));
 }
 

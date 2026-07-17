@@ -148,10 +148,9 @@ pub(crate) fn position_known_tile_counts_are_possible(
 
 pub(in crate::ai::decision) fn win_rules_for_table(
     table: &AiPublicTable,
-    win_rule: i32,
+    _win_rule: i32,
 ) -> ShenyangMahjongWinRules {
     ShenyangMahjongWinRules {
-        win_rule,
         allow_closed_sequence_dragon_pair_win: !table.allow_first_chi,
     }
 }

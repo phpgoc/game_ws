@@ -75,7 +75,7 @@ fn claim_gang_beats_peng_when_not_winning() {
     let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 35, 35, 35];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Gang)
     );
 }
@@ -123,7 +123,7 @@ fn claim_gang_delays_open_plain_gang_when_not_ready() {
 }
 
 #[test]
-fn claim_gang_opens_broken_closed_hand_for_defense_in_relaxed_rule() {
+fn claim_gang_opens_broken_closed_hand_for_defense() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 40;
     table.claim_window = Some(AiClaimView {
@@ -139,10 +139,10 @@ fn claim_gang_opens_broken_closed_hand_for_defense_in_relaxed_rule() {
         &[],
         &table,
         0,
-        WIN_RULE_RELAXED
+        WIN_RULE_SHENYANG_BASIC
     ));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Gang)
     );
 }
@@ -278,7 +278,7 @@ fn claim_gang_passes_final_unready_broken_hand_for_defense() {
 }
 
 #[test]
-fn claim_gang_passes_late_ready_hand_when_gang_breaks_ready() {
+fn claim_gang_takes_late_gang_when_closed_shape_is_not_legal_ready() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 36;
     table.claim_window = Some(AiClaimView {
@@ -290,8 +290,8 @@ fn claim_gang_passes_late_ready_hand_when_gang_breaks_ready() {
     let hand = vec![2, 4, 6, 6, 6, 7, 8, 13, 14, 15, 23, 24, 25];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
-        Some(AiClaimChoice::Pass)
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Gang)
     );
 }
 
@@ -453,7 +453,7 @@ fn claim_gang_penges_committed_piao_plan_when_gang_only_reaches_basic_ready() {
 }
 
 #[test]
-fn claim_gang_penges_when_replacement_tile_is_unavailable() {
+fn claim_gang_passes_final_unready_hand_when_replacement_tile_is_unavailable() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 0;
     table.claim_window = Some(AiClaimView {
@@ -465,8 +465,8 @@ fn claim_gang_penges_when_replacement_tile_is_unavailable() {
     let hand = vec![1, 2, 3, 4, 5, 6, 11, 12, 13, 21, 35, 35, 35];
 
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
-        Some(AiClaimChoice::Peng)
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
+        Some(AiClaimChoice::Pass)
     );
 }
 
@@ -851,23 +851,23 @@ fn half_capped_unready_claim_gang_takes_projected_cap() {
     let hand = vec![1, 4, 7, 9, 9, 9, 11, 14, 17, 21];
 
     assert_eq!(
-        ready_tile_score(&hand, melds, &table, 0, WIN_RULE_RELAXED),
+        ready_tile_score(&hand, melds, &table, 0, WIN_RULE_SHENYANG_BASIC),
         0.0
     );
     assert!(capped_normal_route_visible_fan_exceeds_half_cap(
         &hand,
         melds,
         &table,
-        WIN_RULE_RELAXED
+        WIN_RULE_SHENYANG_BASIC
     ));
     assert!(!capped_normal_route_visible_fan_reaches_cap(
         &hand,
         melds,
         &table,
-        WIN_RULE_RELAXED
+        WIN_RULE_SHENYANG_BASIC
     ));
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Gang)
     );
 }
@@ -925,7 +925,7 @@ fn one_fan_capped_claim_gang_takes_dragon_for_replacement_draw() {
 }
 
 #[test]
-fn one_fan_relaxed_claim_gang_does_not_preserve_five_pairs() {
+fn one_fan_claim_gang_does_not_preserve_five_pairs() {
     let mut table = table_with_discards(1, Vec::new());
     table.max_fan = Some(1);
     table.claim_window = Some(AiClaimView {
@@ -938,7 +938,7 @@ fn one_fan_relaxed_claim_gang_does_not_preserve_five_pairs() {
 
     assert_eq!(pair_count(&hand), 5);
     assert_eq!(
-        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_RELAXED),
+        choose_claim_from_view(&hand, &claim, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(AiClaimChoice::Gang)
     );
 }

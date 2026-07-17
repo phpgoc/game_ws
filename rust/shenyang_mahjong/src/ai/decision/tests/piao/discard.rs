@@ -39,46 +39,46 @@ fn discard_preserves_four_pair_piao_candidate_over_public_pair_tile() {
 }
 
 #[test]
-fn discard_preserves_only_terminal_or_honor_for_piao_plan_even_relaxed() {
+fn discard_preserves_only_terminal_or_honor_for_piao_plan() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![2, 2, 5, 5, 8, 8, 12, 12, 15, 16, 18, 22, 24, 31];
 
     assert_ne!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(31)
     );
 }
 
 #[test]
-fn discard_preserves_only_terminal_or_honor_for_three_pair_piao_candidate_even_relaxed() {
+fn discard_preserves_only_terminal_or_honor_for_three_pair_piao_candidate() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![2, 2, 5, 5, 8, 8, 12, 14, 15, 16, 22, 24, 26, 31];
 
     assert_ne!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(31)
     );
 }
 
 #[test]
-fn discard_preserves_only_third_suit_for_piao_plan_even_relaxed() {
+fn discard_preserves_only_third_suit_for_piao_plan() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![2, 2, 2, 5, 5, 8, 8, 12, 12, 12, 15, 15, 22, 31];
 
     assert_ne!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(22)
     );
 }
 
 #[test]
-fn discard_preserves_only_third_suit_for_three_pair_piao_candidate_even_relaxed() {
+fn discard_preserves_only_third_suit_for_three_pair_piao_candidate() {
     let mut table = table_with_discards(1, vec![24]);
     table.wall_count = 36;
     let hand = vec![2, 2, 5, 5, 8, 8, 12, 14, 15, 16, 24, 31, 35, 37];
 
     assert_ne!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(24)
     );
 }

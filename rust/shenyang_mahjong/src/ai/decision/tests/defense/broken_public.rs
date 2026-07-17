@@ -113,10 +113,10 @@ fn mid_broken_discard_uses_opponent_missing_suit_read_without_public_tile() {
         &[],
         &table,
         0,
-        WIN_RULE_RELAXED
+        WIN_RULE_SHENYANG_BASIC
     ));
     assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(12)
     );
 }
@@ -139,7 +139,7 @@ fn mid_broken_public_defense_prefers_honor_between_singleton_safe_tiles() {
             &[],
             &table,
             0,
-            WIN_RULE_RELAXED,
+            WIN_RULE_SHENYANG_BASIC,
             vec![5, 31]
         ),
         Some(31)
@@ -157,14 +157,14 @@ fn mid_broken_public_defense_preserves_dragon_pair_over_public_singleton() {
         &[],
         &table,
         0,
-        WIN_RULE_RELAXED
+        WIN_RULE_SHENYANG_BASIC
     ));
     assert!(
         public_defense_tile_safety_score(&table, 0, 5, 1)
             > public_defense_tile_safety_score(&table, 0, 35, 2)
     );
     assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(5)
     );
 }
@@ -204,7 +204,7 @@ fn mid_broken_public_defense_preserves_triplet_over_public_pair() {
             &[],
             &table,
             0,
-            WIN_RULE_RELAXED,
+            WIN_RULE_SHENYANG_BASIC,
             vec![5, 7]
         ),
         Some(7)
@@ -212,7 +212,7 @@ fn mid_broken_public_defense_preserves_triplet_over_public_pair() {
 }
 
 #[test]
-fn mid_broken_relaxed_discard_follows_public_tile_before_hand_shape() {
+fn mid_broken_closed_discard_follows_public_tile_before_hand_shape() {
     let mut table = table_with_discards(1, vec![5]);
     table.wall_count = 40;
     let hand = vec![2, 5, 8, 12, 14, 17, 22, 24, 27, 31, 32, 33, 35, 37];
@@ -222,10 +222,10 @@ fn mid_broken_relaxed_discard_follows_public_tile_before_hand_shape() {
         &[],
         &table,
         0,
-        WIN_RULE_RELAXED
+        WIN_RULE_SHENYANG_BASIC
     ));
     assert_eq!(
-        choose_discard_from_view(&hand, &table, 0, WIN_RULE_RELAXED),
+        choose_discard_from_view(&hand, &table, 0, WIN_RULE_SHENYANG_BASIC),
         Some(5)
     );
 }
