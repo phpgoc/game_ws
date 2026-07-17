@@ -1169,6 +1169,13 @@ impl RoomService {
         let Some(room_key) = self.room_key_of(session_id) else {
             return self.error_response(session_id, Routes::SWAP as i32, WsResponseCode::NOT_LOGIN);
         };
+        if !self.room_supports_official_swap(&room_key) {
+            return self.error_response(
+                session_id,
+                Routes::SWAP as i32,
+                WsResponseCode::NO_PERMISSION,
+            );
+        }
         // Collect session IDs before mutating
         let sid_a;
         let sid_b;
@@ -1592,6 +1599,34 @@ impl RoomService {
         self.rooms
             .get(room_key)
             .and_then(|entry| entry.official_match_id)
+    }
+
+    /// Seat swapping is a feature of the official landlord, Shenyang Mahjong,
+    /// and tractor rooms only. Custom WS rooms and P2P games must not expose it.
+    pub fn room_supports_official_swap(&self, room_key: &str) -> bool {
+        let Some(entry) = self.rooms.get(room_key) else {
+            return false;
+        };
+        if !matches!(
+            entry.game_id,
+            GameId::LANDLORD | GameId::SHENYANG_MAHJONG | GameId::TRACTOR
+        ) {
+            return false;
+        }
+        let human_session_ids = entry
+            .state
+            .players()
+            .into_iter()
+            .filter(|(position, _)| !entry.state.is_ai_position(*position))
+            .map(|(_, (session_id, _))| session_id)
+            .collect::<Vec<_>>();
+        !human_session_ids.is_empty()
+            && human_session_ids.into_iter().all(|session_id| {
+                self.sessions
+                    .get(&session_id)
+                    .and_then(|session| session.official_session_id.as_deref())
+                    .is_some_and(|value| !value.is_empty())
+            })
     }
 
     pub fn room_official_player_sessions(&self, room_key: &str) -> Vec<OfficialPlayerSession> {
@@ -3238,13 +3273,64 @@ mod tests {
     }
 
     #[test]
-    fn swap_can_exchange_two_non_owner_players() {
+    fn official_games_can_swap_two_non_owner_players() {
+        for game_id in [GameId::LANDLORD, GameId::SHENYANG_MAHJONG, GameId::TRACTOR] {
+            let mut service = RoomService::default();
+            service.connect(1);
+            service.connect(2);
+            service.connect(3);
+
+            for (session_id, name) in [(1_u64, "u1"), (2, "u2"), (3, "u3")] {
+                let _ = service.handle_common_request(
+                    session_id,
+                    &WsRequest {
+                        route: Routes::JOIN as i32,
+                        data: serde_json::json!({
+                            "name": name,
+                            "password": "p1",
+                            "game_id": game_id as i32,
+                            "session_id": format!("official-{session_id}")
+                        }),
+                    },
+                    game_id,
+                    settings,
+                );
+            }
+
+            let swap = service
+                .handle_common_request(
+                    1,
+                    &WsRequest {
+                        route: Routes::SWAP as i32,
+                        data: serde_json::json!({ "a": 1, "b": 2 }),
+                    },
+                    game_id,
+                    settings,
+                )
+                .expect("swap common");
+
+            assert_eq!(service.session_position(1), Some(0));
+            assert_eq!(service.session_position(2), Some(2));
+            assert_eq!(service.session_position(3), Some(1));
+
+            let swap_event = swap.messages.iter().any(|item| match &item.payload {
+                OutboundPayload::Event(event) if event.code == WsCode::SWAP as i32 => {
+                    event.data.get("a").and_then(|v| v.as_u64()) == Some(1)
+                        && event.data.get("b").and_then(|v| v.as_u64()) == Some(2)
+                }
+                _ => false,
+            });
+            assert!(swap_event, "missing swap event for {game_id:?}");
+        }
+    }
+
+    #[test]
+    fn swap_rejects_non_official_room() {
         let mut service = RoomService::default();
         service.connect(1);
         service.connect(2);
-        service.connect(3);
 
-        for (session_id, name) in [(1_u64, "u1"), (2, "u2"), (3, "u3")] {
+        for (session_id, name) in [(1_u64, "u1"), (2, "u2")] {
             let _ = service.handle_common_request(
                 session_id,
                 &WsRequest {
@@ -3265,25 +3351,64 @@ mod tests {
                 1,
                 &WsRequest {
                     route: Routes::SWAP as i32,
-                    data: serde_json::json!({ "a": 1, "b": 2 }),
+                    data: serde_json::json!({ "a": 0, "b": 1 }),
                 },
                 GameId::LANDLORD,
                 settings,
             )
             .expect("swap common");
 
+        assert!(swap.messages.iter().any(|item| matches!(
+            &item.payload,
+            OutboundPayload::Response(RequestResponse::WithoutData(resp))
+                if resp.route == Routes::SWAP as i32
+                    && resp.code as i32 == WsResponseCode::NO_PERMISSION as i32
+        )));
         assert_eq!(service.session_position(1), Some(0));
-        assert_eq!(service.session_position(2), Some(2));
-        assert_eq!(service.session_position(3), Some(1));
+        assert_eq!(service.session_position(2), Some(1));
+    }
 
-        let swap_event = swap.messages.iter().any(|item| match &item.payload {
-            OutboundPayload::Event(event) if event.code == WsCode::SWAP as i32 => {
-                event.data.get("a").and_then(|v| v.as_u64()) == Some(1)
-                    && event.data.get("b").and_then(|v| v.as_u64()) == Some(2)
-            }
-            _ => false,
-        });
-        assert!(swap_event);
+    #[test]
+    fn swap_rejects_unsupported_official_game() {
+        let mut service = RoomService::default();
+        service.connect(1);
+        service.connect(2);
+
+        for (session_id, name) in [(1_u64, "u1"), (2, "u2")] {
+            let _ = service.handle_common_request(
+                session_id,
+                &WsRequest {
+                    route: Routes::JOIN as i32,
+                    data: serde_json::json!({
+                        "name": name,
+                        "password": "p1",
+                        "game_id": GameId::TEXAS_HOLD_EM as i32,
+                        "session_id": format!("official-{session_id}")
+                    }),
+                },
+                GameId::TEXAS_HOLD_EM,
+                settings,
+            );
+        }
+
+        let swap = service
+            .handle_common_request(
+                1,
+                &WsRequest {
+                    route: Routes::SWAP as i32,
+                    data: serde_json::json!({ "a": 0, "b": 1 }),
+                },
+                GameId::TEXAS_HOLD_EM,
+                settings,
+            )
+            .expect("swap common");
+
+        assert!(swap.messages.iter().any(|item| matches!(
+            &item.payload,
+            OutboundPayload::Response(RequestResponse::WithoutData(resp))
+                if resp.route == Routes::SWAP as i32
+                    && resp.code as i32 == WsResponseCode::NO_PERMISSION as i32
+        )));
     }
 
     #[test]
@@ -3300,7 +3425,8 @@ mod tests {
                     data: serde_json::json!({
                         "name": name,
                         "password": "p1",
-                        "game_id": GameId::LANDLORD as i32
+                        "game_id": GameId::LANDLORD as i32,
+                        "session_id": format!("official-{session_id}")
                     }),
                 },
                 GameId::LANDLORD,
