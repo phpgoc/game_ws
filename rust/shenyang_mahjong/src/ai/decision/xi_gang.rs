@@ -12,7 +12,8 @@ pub fn choose_xi_gang_from_view(
         .get(&position)
         .map(|seat| seat.melds.as_slice())
         .unwrap_or(&[]);
-    if !has_virtual_tile_count(hand, melds, 14)
+    if position == table.dealer_position
+        || !has_virtual_tile_count(hand, melds, 14)
         || !position_known_tile_counts_are_possible(hand, melds, table)
     {
         return None;

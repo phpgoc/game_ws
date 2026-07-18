@@ -55,6 +55,18 @@ fn ai_declares_wind_xi_gang_before_dragon_xi_gang() {
 }
 
 #[test]
+fn ai_does_not_choose_xi_gang_for_the_dealer() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.dealer_position = 0;
+    let hand = vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 31, 32, 33, 34, 35];
+
+    assert_eq!(
+        choose_xi_gang_from_view(&hand, &[vec![31, 32, 33, 34]], &table, 0,),
+        None
+    );
+}
+
+#[test]
 fn ai_declares_wind_xi_gang_even_from_locked_seven_pairs() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 31, 32, 33, 34];
