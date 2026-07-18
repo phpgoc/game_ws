@@ -73,9 +73,8 @@ pub(in crate::ai::decision) fn should_claim_gang_from_discard(
 ) -> bool {
     let current_ready_score = ready_tile_score(hand, current_melds, table, position);
     let piao_score = piao_plan_score_for_context(hand, current_melds, table, position);
-    let committed_piao_plan = piao_score >= 22.0
-        && piao_threat_level(current_melds) > 0
-        && piao_committed_group_count(hand, current_melds) >= 3;
+    let committed_piao_plan =
+        piao_score >= 22.0 && piao_committed_group_count(hand, current_melds) >= 3;
     let projected_capped_visible_fan = claim_gang_projects_capped_visible_fan(
         hand,
         current_melds,
