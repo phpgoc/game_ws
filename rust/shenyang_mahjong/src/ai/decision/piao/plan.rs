@@ -36,9 +36,6 @@ fn minimum_acquisitions_for_piao_shape(
     }
     let needed_triplets = 4 - meld_groups;
     let door_is_open = has_door_opening_meld(melds, table);
-    if !door_is_open && needed_triplets == 0 {
-        return None;
-    }
     let pending_claim_tile = pending_piao_claim_tile(melds, table, position);
     let tile_costs = SHENYANG_MAHJONG_TILE_KINDS
         .into_iter()
@@ -70,6 +67,19 @@ fn minimum_acquisitions_for_piao_shape(
                     .map(|(_, cost)| *cost)
                     .sum::<usize>();
             best = Some(best.map_or(total, |current: usize| current.min(total)));
+            continue;
+        }
+
+        if is_dragon(*pair_tile) && triplet_costs.len() >= needed_triplets {
+            let total = *pair_cost
+                + triplet_costs
+                    .iter()
+                    .take(needed_triplets)
+                    .map(|(_, cost)| *cost)
+                    .sum::<usize>();
+            best = Some(best.map_or(total, |current: usize| current.min(total)));
+        }
+        if needed_triplets == 0 {
             continue;
         }
 

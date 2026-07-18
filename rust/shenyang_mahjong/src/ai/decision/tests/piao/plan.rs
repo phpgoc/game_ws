@@ -57,6 +57,24 @@ fn closed_piao_candidate_stops_when_wall_cannot_complete_missing_triplets() {
 }
 
 #[test]
+fn xi_gang_closed_dragon_pair_piao_needs_only_the_missing_triplet_draw() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 1;
+    table.seats.get_mut(&0).unwrap().melds = vec![WsShenyangMahjongMeld {
+        kind: ShenyangMahjongMeldKind::XI_GANG,
+        tiles: vec![35, 36, 37],
+        from_position: None,
+    }];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![1, 1, 1, 11, 11, 11, 21, 21, 35, 35];
+
+    assert!(!has_door_opening_meld(melds, &table));
+    assert_eq!(piao_committed_group_count(&hand, melds), 3);
+    assert!(piao_plan_score(&hand, melds) > 0.0);
+    assert!(piao_plan_score_for_context(&hand, melds, &table, 0) > 0.0);
+}
+
+#[test]
 fn complete_closed_piao_shape_reserves_claim_and_follow_up_draw_to_open() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 1;
@@ -97,7 +115,7 @@ fn dealer_ignores_marginal_piao_discard_bias_for_speed() {
 }
 
 #[test]
-fn four_concealed_gang_groups_cannot_open_for_piao() {
+fn four_concealed_gang_groups_require_dragon_pair_for_closed_piao() {
     let mut table = table_with_discards(1, Vec::new());
     table.seats.get_mut(&0).unwrap().melds = vec![
         test_concealed_gang_meld(1),
@@ -111,7 +129,16 @@ fn four_concealed_gang_groups_cannot_open_for_piao() {
     assert!(!has_door_opening_meld(melds, &table));
     assert_eq!(piao_threat_level(melds), 4);
     assert!(piao_plan_score(&hand, melds) > 0.0);
-    assert_eq!(piao_plan_score_for_context(&hand, melds, &table, 0), 0.0);
+    assert!(is_complete_win_for_table(&hand, melds, &table));
+    assert!(piao_plan_score_for_context(&hand, melds, &table, 0) > 0.0);
+
+    table.wall_count = 0;
+    let ordinary_pair = vec![34, 34];
+    assert!(!is_complete_win_for_table(&ordinary_pair, melds, &table));
+    assert_eq!(
+        piao_plan_score_for_context(&ordinary_pair, melds, &table, 0),
+        0.0,
+    );
 }
 
 #[test]

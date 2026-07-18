@@ -24,6 +24,24 @@ fn discard_preserves_committed_piao_pair_over_public_pair_tile() {
 }
 
 #[test]
+fn discard_preserves_xi_gang_closed_piao_pairs_one_draw_from_win() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 1;
+    table.seats.get_mut(&0).unwrap().melds = vec![WsShenyangMahjongMeld {
+        kind: ShenyangMahjongMeldKind::XI_GANG,
+        tiles: vec![35, 36, 37],
+        from_position: None,
+    }];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![1, 1, 1, 11, 11, 11, 21, 21, 22, 35, 35];
+
+    assert!(piao_plan_score_for_context(&hand, melds, &table, 0) > 0.0);
+    assert!(piao_discard_bias(&hand, 21, melds, &table, 0) < 0.0);
+    assert!(piao_discard_bias(&hand, 35, melds, &table, 0) < 0.0);
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(22));
+}
+
+#[test]
 fn discard_preserves_four_pair_piao_candidate_over_public_pair_tile() {
     let mut table = table_with_discards(1, vec![11, 11]);
     table.wall_count = 36;
