@@ -137,6 +137,20 @@ fn estimated_visible_fan_accepts_closed_piao_with_dragon_pair() {
 }
 
 #[test]
+fn estimated_fan_counts_xi_gang_for_closed_piao_single_wait() {
+    let win_hand = vec![1, 1, 1, 11, 11, 11, 21, 21, 21, 35, 35];
+    let melds = vec![WsShenyangMahjongMeld {
+        kind: ShenyangMahjongMeldKind::XI_GANG,
+        tiles: vec![35, 36, 37],
+        from_position: None,
+    }];
+
+    assert!(!has_open_meld(&melds));
+    assert_eq!(estimated_visible_fan_without_wait(&win_hand, &melds), 4);
+    assert_eq!(estimated_fan_with_wait(&win_hand, &melds, 35), 5);
+}
+
+#[test]
 fn estimated_visible_fan_counts_concealed_dragon_triplet() {
     let win_hand = vec![11, 12, 13, 21, 22, 23, 31, 31, 35, 35, 35];
     let melds = vec![test_chi_meld(1)];

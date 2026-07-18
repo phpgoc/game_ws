@@ -186,6 +186,35 @@ fn settlement_fan_accepts_only_dragon_pair_for_closed_piao() {
 }
 
 #[test]
+fn settlement_fan_counts_closed_piao_single_wait_after_xi_gang() {
+    let mut state = playable_state();
+    state
+        .hands
+        .insert(1, vec![1, 1, 1, 11, 11, 11, 21, 21, 21, 35, 35]);
+    state.melds.insert(
+        1,
+        vec![build_meld(
+            ShenyangMahjongMeldKind::XI_GANG,
+            vec![35, 36, 37],
+            None,
+        )],
+    );
+    state.enter_settlement(vec![1], None, Some(35), true);
+    let settlement = state.settlement.as_ref().expect("settlement");
+
+    assert!(!position_has_open_meld(&state, 1));
+    assert_eq!(
+        winner_pattern_with_context(
+            state.hands.get(&1).unwrap(),
+            state.melds.get(&1).map(Vec::as_slice).unwrap_or(&[]),
+            ShenyangMahjongWinContext::new(),
+        ),
+        ShenyangMahjongWinPattern::PiaoHu,
+    );
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 5);
+}
+
+#[test]
 fn settlement_fan_counts_chi_as_opening_meld() {
     let mut state = playable_state();
     state

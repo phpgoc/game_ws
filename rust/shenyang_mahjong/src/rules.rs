@@ -1869,12 +1869,22 @@ mod tests {
         let tiles = vec![1, 1, 1, 11, 11, 11, 21, 21, 21, 35, 35];
         let melds = vec![meld(
             ShenyangMahjongMeldKind::XI_GANG,
-            vec![31, 32, 33, 34],
+            vec![35, 36, 37],
             None,
         )];
 
         assert!(is_piao_hu_win(&tiles, &melds));
         assert!(is_complete_win_with_melds(&tiles, &melds));
+        assert_eq!(
+            shenyang_score_visible_win_fan(
+                &tiles,
+                &melds,
+                Some(35),
+                ShenyangMahjongWinContext::new(),
+                &[],
+            ),
+            5,
+        );
     }
 
     #[test]
