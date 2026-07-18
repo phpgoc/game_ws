@@ -78,6 +78,58 @@ fn self_draw_broadcasts_exponential_score_changes_to_clients() {
 }
 
 #[test]
+fn discard_multi_hu_caps_each_winner_payment_separately() {
+    let mut state = playable_state();
+    state.dealer_position = 0;
+    state
+        .hands
+        .insert(1, vec![2, 3, 11, 12, 13, 21, 22, 23, 35, 35]);
+    state.melds.insert(
+        1,
+        vec![build_meld(
+            ShenyangMahjongMeldKind::CHI,
+            vec![6, 7, 8],
+            Some(0),
+        )],
+    );
+    state
+        .hands
+        .insert(2, vec![1, 1, 2, 2, 4, 11, 11, 12, 12, 21, 21, 22, 22]);
+    state.discards.insert(0, vec![4]);
+    state.enter_settlement(vec![1, 2], Some(0), Some(4), false);
+    let settlement = state.settlement.as_ref().expect("settlement");
+    let configs = HashMap::from([("max_fan".to_owned(), 50)]);
+
+    assert_eq!(
+        winner_hand_fan_with_configs(&state, settlement, 1, &configs),
+        1
+    );
+    assert_eq!(
+        winner_hand_fan_with_configs(&state, settlement, 2, &configs),
+        5
+    );
+    assert_eq!(
+        settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &configs)
+            .into_iter()
+            .map(|change| (change.position, change.score))
+            .collect::<Vec<_>>(),
+        vec![(0, -58), (1, 8), (2, 50), (3, 0)]
+    );
+
+    let event =
+        build_settlement_event_with_configs(&state, &configs).expect("multi-hu settlement event");
+    assert_eq!(event.winner_positions, vec![1, 2]);
+    assert_eq!(
+        event
+            .winner_details
+            .iter()
+            .map(|detail| (detail.position, detail.score))
+            .collect::<Vec<_>>(),
+        vec![(1, 8), (2, 50)]
+    );
+}
+
+#[test]
 fn settlement_score_adds_closed_fan_when_discard_payer_has_not_opened() {
     let open_non_payer_meld = || vec![open_peng_meld(31, 2)];
     let mut closed_payer_state = playable_state();
