@@ -45,6 +45,22 @@ fn ting_candidates_are_human_only_and_declaration_is_recorded() {
 }
 
 #[test]
+fn ting_candidates_do_not_reveal_wait_tiles_in_opponent_hands() {
+    let mut state = playable_state();
+    state
+        .hands
+        .insert(0, vec![1, 1, 2, 2, 3, 3, 5, 11, 11, 12, 12, 21, 21, 31]);
+    state.hands.insert(1, vec![31]);
+    state.hands.insert(2, vec![31]);
+    state.hands.insert(3, vec![31]);
+    state.last_drawn_tile = Some(5);
+
+    assert_eq!(state.known_tile_count(31), 4);
+    assert!(ting_shape_wait_tiles_after_discard(&state, 0, 5, &default_configs()).contains(&31));
+    assert!(ting_discard_tiles_for_position(&state, 0, &default_configs()).contains(&5));
+}
+
+#[test]
 fn declared_ting_locks_future_discard_to_the_drawn_tile() {
     let mut state = playable_state();
     let mut hand = seven_pairs_ting_hand();
@@ -74,6 +90,33 @@ fn declared_ting_locks_future_discard_to_the_drawn_tile() {
         0,
         5,
     ));
+}
+
+#[test]
+fn declared_ting_can_discard_drawn_tile_after_wait_becomes_dead() {
+    let mut state = playable_state();
+    state
+        .hands
+        .insert(0, vec![1, 1, 2, 2, 3, 3, 5, 11, 11, 12, 12, 21, 21, 31]);
+    state.discards.insert(1, vec![31]);
+    state.discards.insert(2, vec![31]);
+    state.discards.insert(3, vec![31]);
+    state.wall = vec![6];
+    state.last_drawn_tile = Some(5);
+    state.declare_ting(0);
+    let mut dispatch = Dispatch::default();
+
+    assert!(ting_wait_tiles_after_discard(&state, 0, 5, &default_configs()).is_empty());
+    assert!(perform_discard(
+        &RoomService::default(),
+        "room",
+        &mut state,
+        &default_configs(),
+        &mut dispatch,
+        0,
+        5,
+    ));
+    assert_eq!(state.discards.get(&0).unwrap().last(), Some(&5));
 }
 
 #[test]

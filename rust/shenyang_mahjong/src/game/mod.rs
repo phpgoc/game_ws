@@ -730,6 +730,45 @@ fn ting_wait_tiles_after_discard(
     discard_tile: i32,
     configs: &HashMap<String, i32>,
 ) -> Vec<i32> {
+    ting_shape_wait_tiles_after_discard(state, position, discard_tile, configs)
+        .into_iter()
+        .filter(|tile| visible_known_tile_count_for_position(state, position, *tile) < 4)
+        .collect()
+}
+
+fn visible_known_tile_count_for_position(
+    state: &ShenyangMahjongLoopState,
+    position: usize,
+    tile: i32,
+) -> usize {
+    let hand_count = state
+        .hands
+        .get(&position)
+        .map(|hand| hand.iter().filter(|item| **item == tile).count())
+        .unwrap_or(0);
+    let own_meld_count = state
+        .melds
+        .get(&position)
+        .into_iter()
+        .flatten()
+        .filter(|meld| meld_source_is_valid_for_position(state, position, meld))
+        .filter(|meld| meld_shape_is_valid(meld))
+        .flat_map(|meld| meld.tiles.iter())
+        .filter(|item| **item == tile)
+        .count();
+    let public_count = public_unavailable_tiles_for_winner(state, position)
+        .into_iter()
+        .filter(|item| *item == tile)
+        .count();
+    hand_count + own_meld_count + public_count
+}
+
+fn ting_shape_wait_tiles_after_discard(
+    state: &ShenyangMahjongLoopState,
+    position: usize,
+    discard_tile: i32,
+    configs: &HashMap<String, i32>,
+) -> Vec<i32> {
     let Some(mut hand) = state.hands.get(&position).cloned() else {
         return Vec::new();
     };
@@ -739,7 +778,6 @@ fn ting_wait_tiles_after_discard(
     let melds = state.melds.get(&position).map(Vec::as_slice).unwrap_or(&[]);
     SHENYANG_MAHJONG_TILE_KINDS
         .into_iter()
-        .filter(|tile| state.known_tile_count(*tile) < 4)
         .filter(|tile| {
             let mut completed = hand.clone();
             completed.push(*tile);
@@ -947,7 +985,7 @@ pub(crate) fn perform_discard_with_ting(
     }
     if state.is_ting(position) {
         if state.last_drawn_tile != Some(tile)
-            || ting_wait_tiles_after_discard(state, position, tile, configs).is_empty()
+            || ting_shape_wait_tiles_after_discard(state, position, tile, configs).is_empty()
         {
             return false;
         }
