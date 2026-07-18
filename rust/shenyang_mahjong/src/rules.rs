@@ -836,10 +836,11 @@ pub(crate) fn shenyang_score_meld_fan(melds: &[WsShenyangMahjongMeld]) -> i32 {
 }
 
 pub(crate) fn shenyang_score_for_fan(fan: i32) -> i32 {
-    let Ok(exponent) = u32::try_from(fan) else {
-        return 0;
-    };
-    1_i32.checked_shl(exponent).unwrap_or(i32::MAX)
+    match u32::try_from(fan) {
+        Ok(exponent) if exponent < i32::BITS - 1 => 1_i32 << exponent,
+        Ok(_) => i32::MAX,
+        Err(_) => 0,
+    }
 }
 
 pub(crate) fn shenyang_score_for_fan_with_cap(fan: i32, score_cap: Option<i32>) -> i32 {
@@ -872,7 +873,7 @@ pub(crate) fn shenyang_fan_reaches_score_cap(fan: i32, score_cap: i32) -> bool {
 }
 
 pub(crate) fn shenyang_fan_score_exceeds_half_cap(fan: i32, score_cap: i32) -> bool {
-    score_cap > 0 && shenyang_score_for_fan(fan).saturating_mul(2) > score_cap
+    score_cap > 0 && shenyang_score_for_fan(fan) > score_cap / 2
 }
 
 pub(crate) fn shenyang_fan_needed_for_score_cap(score_cap: i32) -> i32 {
@@ -1044,6 +1045,16 @@ mod tests {
         assert!(!shenyang_fan_reaches_score_cap(5, 50));
         assert!(shenyang_fan_reaches_score_cap(6, 50));
         assert_eq!(shenyang_fan_needed_for_score_cap(50), 6);
+
+        assert_eq!(shenyang_score_for_fan(30), 1 << 30);
+        assert_eq!(shenyang_score_for_fan(31), i32::MAX);
+        assert_eq!(shenyang_score_for_fan(32), i32::MAX);
+        assert_eq!(shenyang_score_for_fan_with_cap(31, Some(500)), 500);
+        assert!(!shenyang_fan_score_exceeds_half_cap(29, i32::MAX));
+        assert!(shenyang_fan_score_exceeds_half_cap(30, i32::MAX));
+        assert!(!shenyang_fan_reaches_score_cap(30, i32::MAX));
+        assert!(shenyang_fan_reaches_score_cap(31, i32::MAX));
+        assert_eq!(shenyang_fan_needed_for_score_cap(i32::MAX), 31);
     }
 
     #[test]
