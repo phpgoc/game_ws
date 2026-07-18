@@ -1224,6 +1224,7 @@ pub(crate) fn perform_xi_gang(
         }
     }
 
+    state.pending_gang_draw = false;
     let replacement_tile = if tiles.as_slice() == XI_GANG_WINDS {
         let Some(tile) = state.draw_for_position(position) else {
             return false;
