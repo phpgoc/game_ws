@@ -565,6 +565,43 @@ fn settlement_score_counts_concealed_gang_discard_payer_as_closed() {
 }
 
 #[test]
+fn settlement_score_counts_xi_gang_discard_payer_as_closed() {
+    let mut state = playable_state();
+    state.dealer_position = 2;
+    state
+        .hands
+        .insert(1, vec![2, 3, 5, 6, 7, 11, 12, 13, 35, 35]);
+    state.melds.insert(
+        0,
+        vec![build_meld(
+            ShenyangMahjongMeldKind::XI_GANG,
+            vec![31, 32, 33, 34],
+            None,
+        )],
+    );
+    state.melds.insert(
+        1,
+        vec![build_meld(
+            ShenyangMahjongMeldKind::CHI,
+            vec![21, 22, 23],
+            Some(0),
+        )],
+    );
+    state.melds.insert(3, vec![open_peng_meld(14, 2)]);
+    state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(4), false, false, false, false);
+    let settlement = state.settlement.as_ref().expect("settlement");
+
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
+    assert_eq!(
+        settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &HashMap::new())
+            .into_iter()
+            .map(|change| (change.position, change.score))
+            .collect::<Vec<_>>(),
+        vec![(0, -4), (1, 4), (2, 0), (3, 0)]
+    );
+}
+
+#[test]
 fn settlement_score_counts_three_closed_losers_on_discard_win() {
     let mut state = playable_state();
     state.dealer_position = 2;
