@@ -2101,9 +2101,15 @@ pub(crate) fn settlement_score_changes_for_state(
 ) -> Vec<WsShenyangMahjongScoreChange> {
     let mut sorted_positions = positions.to_vec();
     sorted_positions.sort_unstable();
-    let winner_positions = valid_settlement_winner_positions(&sorted_positions, settlement);
+    let winner_fans = valid_settlement_winner_positions(&sorted_positions, settlement)
+        .into_iter()
+        .filter_map(|winner| {
+            let fan = winner_hand_fan_with_configs(state, settlement, winner, configs);
+            (fan > 0).then_some((winner, fan))
+        })
+        .collect::<Vec<_>>();
 
-    if winner_positions.is_empty() {
+    if winner_fans.is_empty() {
         return sorted_positions
             .into_iter()
             .map(|position| WsShenyangMahjongScoreChange {
@@ -2113,7 +2119,10 @@ pub(crate) fn settlement_score_changes_for_state(
             .collect();
     }
 
-    let winner_set = winner_positions.iter().copied().collect::<HashSet<_>>();
+    let winner_set = winner_fans
+        .iter()
+        .map(|(winner, _)| *winner)
+        .collect::<HashSet<_>>();
     let loser_positions = sorted_positions
         .iter()
         .copied()
@@ -2133,18 +2142,14 @@ pub(crate) fn settlement_score_changes_for_state(
         .map(|position| (*position, 0))
         .collect::<HashMap<_, _>>();
 
-    for winner in &winner_positions {
-        let winner_fan = winner_hand_fan_with_configs(state, settlement, *winner, configs);
-        if winner_fan <= 0 {
-            continue;
-        }
+    for (winner, winner_fan) in &winner_fans {
         for payer in &payers {
             if payer == winner {
                 continue;
             }
             let payer_is_closed = !position_has_open_meld(state, *payer);
             let payment_fan = shenyang_payment_fan(
-                winner_fan,
+                *winner_fan,
                 *winner == state.dealer_position,
                 *payer == state.dealer_position,
                 payer_is_closed,

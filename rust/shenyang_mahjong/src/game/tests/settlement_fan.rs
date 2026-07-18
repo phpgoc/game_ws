@@ -84,7 +84,7 @@ fn settlement_event_normalizes_invalid_reverse_win_as_draw() {
 }
 
 #[test]
-fn settlement_event_skips_zero_score_winners() {
+fn settlement_event_skips_invalid_winner_without_suppressing_three_closed() {
     let mut state = playable_state();
     state.hands.insert(1, vec![1, 1, 35, 35]);
     state.melds.insert(
@@ -121,14 +121,14 @@ fn settlement_event_skips_zero_score_winners() {
     assert_eq!(event.winner_positions, vec![1]);
     assert_eq!(event.winner_details.len(), 1);
     assert_eq!(event.winner_details[0].position, 1);
-    assert!(event.winner_details[0].score > 0);
+    assert_eq!(event.winner_details[0].score, 64);
     assert_eq!(
         event
             .score_changes
             .iter()
             .map(|change| (change.position, change.score))
             .collect::<Vec<_>>(),
-        vec![(0, -32), (1, 32), (2, 0), (3, 0)]
+        vec![(0, -64), (1, 64), (2, 0), (3, 0)]
     );
 
     let valid_winner_snapshot = event
