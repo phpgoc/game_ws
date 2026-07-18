@@ -10,7 +10,7 @@ pub(in crate::ai::decision) fn choose_piao_single_wait_discard(
         return None;
     }
 
-    unique_tiles(hand)
+    let candidates = unique_tiles(hand)
         .into_iter()
         .filter_map(|tile| {
             let next = remove_n_tiles(hand, tile, 1);
@@ -26,21 +26,64 @@ pub(in crate::ai::decision) fn choose_piao_single_wait_discard(
             {
                 return None;
             }
+            let simulated_discards = [tile];
+            let remaining = remaining_tile_count_with_melds_after_discards(
+                &next,
+                melds,
+                table,
+                position,
+                wait_tile,
+                &simulated_discards,
+            );
+            if remaining <= 0 {
+                return None;
+            }
+            let known_unavailable_tiles = known_unavailable_tiles_with_simulated_discards(
+                table,
+                position,
+                melds,
+                &simulated_discards,
+            );
+            let estimated_fan = estimated_fan_with_known_unavailable_wait_for_table(
+                &win_hand,
+                melds,
+                wait_tile,
+                table,
+                &known_unavailable_tiles,
+            );
             let own_tile_count = hand.iter().filter(|item| **item == tile).count();
             Some((
+                remaining,
+                estimated_fan,
                 piao_single_wait_tile_score_after_discard(
                     wait_tile, &next, melds, table, position, tile,
                 ) + wait_setting_discard_safety_adjustment(table, position, tile, own_tile_count),
                 tile,
             ))
         })
-        .max_by(|(left_score, left_tile), (right_score, right_tile)| {
-            left_score
-                .partial_cmp(right_score)
-                .unwrap_or(Ordering::Equal)
-                .then_with(|| right_tile.cmp(left_tile))
+        .collect::<Vec<_>>();
+    let speed_first = table.dealer_position == position
+        || dealer_opponent_has_major_threat(table, position)
+        || is_late_defense_round(table)
+        || table.score_cap.is_some_and(|score_cap| {
+            candidates.iter().any(|(_, estimated_fan, _, _)| {
+                shenyang_fan_score_exceeds_half_cap(*estimated_fan, score_cap)
+            })
+        });
+
+    candidates
+        .into_iter()
+        .max_by(|left, right| {
+            let live_order = if speed_first {
+                left.0.cmp(&right.0)
+            } else {
+                Ordering::Equal
+            };
+            live_order
+                .then_with(|| left.2.partial_cmp(&right.2).unwrap_or(Ordering::Equal))
+                .then_with(|| right.3.cmp(&left.3))
         })
-        .map(|(_, tile)| tile)
+        .map(|(_, _, _, tile)| tile)
 }
 
 #[cfg(test)]

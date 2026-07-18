@@ -566,6 +566,49 @@ fn speed_first_seven_pairs_wait_prefers_three_live_middle_copies_over_two_termin
 }
 
 #[test]
+fn dealer_seven_pairs_wait_keeps_wider_wait_over_safer_discard() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.dealer_position = 0;
+    table.wall_count = 32;
+    let opponent = table.seats.get_mut(&1).unwrap();
+    opponent.hand_count = 2;
+    opponent.melds = vec![
+        test_peng_meld(3),
+        test_peng_meld(13),
+        test_peng_meld(23),
+        test_peng_meld(24),
+    ];
+    table.seats.insert(
+        2,
+        AiSeatView {
+            position: 2,
+            hand_count: 13,
+            discards: vec![31],
+            melds: Vec::new(),
+        },
+    );
+    let hand = vec![5, 6, 6, 7, 7, 16, 16, 17, 17, 26, 26, 27, 27, 31];
+    let middle_wait_hand = remove_n_tiles(&hand, 31, 1);
+    let wind_wait_hand = remove_n_tiles(&hand, 5, 1);
+    let middle_wait_live =
+        remaining_tile_count_with_melds_after_discards(&middle_wait_hand, &[], &table, 0, 5, &[31]);
+    let wind_wait_live =
+        remaining_tile_count_with_melds_after_discards(&wind_wait_hand, &[], &table, 0, 31, &[5]);
+
+    assert_eq!(pair_count(&hand), 6);
+    assert!(middle_wait_live > wind_wait_live);
+    assert!(opponent_threat_discard_bias(&table, 0, 31, 1) < 0.0);
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(31));
+
+    table.dealer_position = 3;
+    table.score_cap = Some(64);
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(5));
+
+    table.score_cap = Some(50);
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(31));
+}
+
+#[test]
 fn two_fan_capped_room_does_not_lock_five_pairs_when_basic_bonus_caps() {
     let mut table = table_with_discards(1, Vec::new());
     table.score_cap = Some(4);

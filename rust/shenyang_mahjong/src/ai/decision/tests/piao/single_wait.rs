@@ -60,6 +60,61 @@ fn dealer_piao_single_wait_still_prefers_wider_middle_wait() {
 }
 
 #[test]
+fn dealer_piao_single_wait_keeps_wider_wait_over_safer_discard() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.dealer_position = 0;
+    table.wall_count = 32;
+    table.seats.get_mut(&0).unwrap().melds = vec![
+        test_peng_meld(1),
+        test_peng_meld(11),
+        test_peng_meld(21),
+        test_peng_meld(32),
+    ];
+    let opponent = table.seats.get_mut(&1).unwrap();
+    opponent.hand_count = 2;
+    opponent.melds = vec![
+        test_peng_meld(2),
+        test_peng_meld(12),
+        test_peng_meld(22),
+        test_peng_meld(23),
+    ];
+    table.seats.insert(
+        2,
+        AiSeatView {
+            position: 2,
+            hand_count: 13,
+            discards: vec![31],
+            melds: Vec::new(),
+        },
+    );
+    let hand = vec![5, 31];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let middle_wait_hand = vec![5];
+    let wind_wait_hand = vec![31];
+    let middle_wait_live = remaining_tile_count_with_melds_after_discards(
+        &middle_wait_hand,
+        melds,
+        &table,
+        0,
+        5,
+        &[31],
+    );
+    let wind_wait_live =
+        remaining_tile_count_with_melds_after_discards(&wind_wait_hand, melds, &table, 0, 31, &[5]);
+
+    assert!(middle_wait_live > wind_wait_live);
+    assert!(opponent_threat_discard_bias(&table, 0, 31, 1) < 0.0);
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(31));
+
+    table.dealer_position = 3;
+    table.score_cap = Some(64);
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(5));
+
+    table.score_cap = Some(50);
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(31));
+}
+
+#[test]
 fn discard_after_four_piao_melds_keeps_live_single_wait() {
     let mut table = table_with_discards(1, vec![36, 36, 36]);
     table.seats.get_mut(&0).unwrap().melds = vec![

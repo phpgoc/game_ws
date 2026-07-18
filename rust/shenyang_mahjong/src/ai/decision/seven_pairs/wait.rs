@@ -15,7 +15,7 @@ pub(in crate::ai::decision) fn choose_seven_pairs_wait_discard(
         return None;
     }
 
-    unique_tiles(hand)
+    let candidates = unique_tiles(hand)
         .into_iter()
         .filter(|tile| hand.iter().filter(|item| **item == *tile).count() % 2 == 1)
         .filter_map(|tile| {
@@ -27,25 +27,55 @@ pub(in crate::ai::decision) fn choose_seven_pairs_wait_discard(
                 return None;
             }
             let wait_tile = single_tile(&next)?;
+            let remaining = remaining_tile_count_with_melds_after_discards(
+                &next,
+                &[],
+                table,
+                position,
+                wait_tile,
+                &[tile],
+            );
+            if remaining <= 0 {
+                return None;
+            }
             let own_tile_count = hand.iter().filter(|item| **item == tile).count();
             Some((
+                remaining,
                 seven_pairs_wait_tile_score_after_discard(wait_tile, &next, table, position, tile)
                     + wait_setting_discard_safety_adjustment(table, position, tile, own_tile_count),
                 tile,
             ))
         })
-        .max_by(|(left_score, left_tile), (right_score, right_tile)| {
-            left_score
-                .partial_cmp(right_score)
-                .unwrap_or(Ordering::Equal)
-                .then_with(|| right_tile.cmp(left_tile))
+        .collect::<Vec<_>>();
+    let speed_first = table.dealer_position == position
+        || dealer_opponent_has_major_threat(table, position)
+        || is_late_defense_round(table)
+        || table.score_cap.is_some_and(|score_cap| {
+            shenyang_fan_score_exceeds_half_cap(
+                SEVEN_PAIRS_VISIBLE_FAN + REGULAR_SINGLE_WAIT_FAN,
+                score_cap,
+            )
+        });
+
+    candidates
+        .into_iter()
+        .max_by(|left, right| {
+            let live_order = if speed_first {
+                left.0.cmp(&right.0)
+            } else {
+                Ordering::Equal
+            };
+            live_order
+                .then_with(|| left.1.partial_cmp(&right.1).unwrap_or(Ordering::Equal))
+                .then_with(|| right.2.cmp(&left.2))
         })
-        .map(|(_, tile)| tile)
+        .map(|(_, _, tile)| tile)
 }
 
+const SEVEN_PAIRS_VISIBLE_FAN: i32 = 4;
+const REGULAR_SINGLE_WAIT_FAN: i32 = 1;
+
 pub(in crate::ai::decision) fn seven_pairs_regular_wait_reaches_cap(table: &AiPublicTable) -> bool {
-    const SEVEN_PAIRS_VISIBLE_FAN: i32 = 4;
-    const REGULAR_SINGLE_WAIT_FAN: i32 = 1;
     table.score_cap.is_some_and(|score_cap| {
         shenyang_fan_reaches_score_cap(SEVEN_PAIRS_VISIBLE_FAN + REGULAR_SINGLE_WAIT_FAN, score_cap)
     })
