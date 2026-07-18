@@ -106,6 +106,66 @@ async fn send_request(client: &mut Client, route: i32, data: Value) {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn shenyang_mahjong_last_human_quit_clears_ai_room() {
+    let port = free_port();
+    let listen_addr = format!("127.0.0.1:{port}");
+    let url = format!("ws://{listen_addr}");
+    let server = tokio::spawn(run_room_runtime(
+        RuntimeConfig {
+            service_name: "shenyang-mahjong-last-human-quit-test",
+            listen_addr,
+            idle_timeout: Duration::from_secs(30),
+            heartbeat_interval: Duration::from_secs(30),
+        },
+        ShenyangMahjongGameHandler::default(),
+    ));
+
+    for _ in 0..50 {
+        if TokioTcpListener::bind(("127.0.0.1", port)).await.is_err() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    let mut owner = connect_client(&url).await;
+    let room = "shenyang-mahjong-last-human-quit-room";
+    let first_join = join(&mut owner, "owner", room).await;
+    assert_eq!(first_join["data"]["existing_members"], json!([]));
+
+    send_request(&mut owner, Routes::ADD_AI as i32, json!({ "count": 3 })).await;
+    for _ in 0..3 {
+        recv_until(&mut owner, "ai join event", |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::JOIN as i64)
+                && value
+                    .get("data")
+                    .and_then(|data| data.get("is_ai"))
+                    .and_then(Value::as_bool)
+                    == Some(true)
+        })
+        .await;
+    }
+    recv_until(&mut owner, "add ai ok", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::ADD_AI as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+
+    send_request(&mut owner, Routes::QUIT as i32, json!({})).await;
+    recv_until(&mut owner, "quit ok", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::QUIT as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+
+    let mut newcomer = connect_client(&url).await;
+    let recreated = join(&mut newcomer, "new-owner", room).await;
+    assert_eq!(recreated["data"]["self_position"], json!(0));
+    assert_eq!(recreated["data"]["existing_members"], json!([]));
+
+    server.abort();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn shenyang_mahjong_nonofficial_away_owner_uses_timeout_fallback() {
     let port = free_port();
     let listen_addr = format!("127.0.0.1:{port}");

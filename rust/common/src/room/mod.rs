@@ -1468,6 +1468,11 @@ impl RoomService {
         };
         session.official_session_id = None;
         let mut leave_name = session.name.clone().unwrap_or_default();
+        // `quit_room` temporarily removes the quitting session from
+        // `self.sessions`, so this contains only other connected humans.
+        // AI seats and disconnected roster entries must not keep the room
+        // alive after the final connected human leaves permanently.
+        let has_other_connected_human = !self.connected_session_ids(&room_key).is_empty();
 
         let mut recipients = Vec::new();
         if let Some(entry) = self.rooms.get_mut(&room_key) {
@@ -1486,17 +1491,15 @@ impl RoomService {
                 entry.state.remove_player(pos);
             }
             recipients.extend(entry.state.players().values().map(|(sid, _)| *sid));
-            let room_is_empty = entry.state.players().is_empty();
             // `/quit` is a permanent departure and always terminates the
             // current game loop. A normal disconnect follows the separate
             // away/reconnect path in `mark_disconnected`.
             entry.state.set_turn_countdown(0);
             entry.state.request_stop();
-            // 如果房间里没人了，删除房间
-            if room_is_empty {
+            if !has_other_connected_human {
                 dlog!(
                     tracing::Level::WARN,
-                    "Room '{}' is now empty and will be removed",
+                    "Last connected human quit room '{}'; removing room",
                     room_key
                 );
                 self.rooms.remove(&room_key);
@@ -2555,6 +2558,105 @@ mod tests {
         assert!(common.stop_requested());
         assert_eq!(common.players.len(), 3);
         assert_eq!(common.ai_positions.len(), 2);
+    }
+
+    #[test]
+    fn ai_players_do_not_keep_room_alive_after_last_human_quits() {
+        fn four_player_settings() -> super::SettingsBuilderResult {
+            (GameSettings::new(4, 4), HashMap::new())
+        }
+
+        let mut service = RoomService::default();
+        let room_key = "ai-quit-room";
+        let joined = service
+            .handle_common_request(
+                1,
+                &WsRequest {
+                    route: Routes::JOIN as i32,
+                    data: serde_json::json!({
+                        "name": "owner",
+                        "password": room_key,
+                        "game_id": GameId::SHENYANG_MAHJONG as i32
+                    }),
+                },
+                GameId::SHENYANG_MAHJONG,
+                four_player_settings,
+            )
+            .expect("join common route");
+        assert!(has_response(&joined, Routes::JOIN, WsResponseCode::JOINED));
+
+        let added = service
+            .handle_common_request(
+                1,
+                &WsRequest {
+                    route: Routes::ADD_AI as i32,
+                    data: serde_json::json!({ "count": 3 }),
+                },
+                GameId::SHENYANG_MAHJONG,
+                four_player_settings,
+            )
+            .expect("add ai common route");
+        assert!(has_response(&added, Routes::ADD_AI, WsResponseCode::OK));
+        let old_common = service
+            .room_common_state(room_key)
+            .expect("old room common state");
+        {
+            let common = old_common.lock().unwrap();
+            assert_eq!(common.players.len(), 4);
+            assert_eq!(common.ai_positions.len(), 3);
+        }
+
+        let quit = service
+            .handle_common_request(
+                1,
+                &WsRequest {
+                    route: Routes::QUIT as i32,
+                    data: serde_json::json!({}),
+                },
+                GameId::SHENYANG_MAHJONG,
+                four_player_settings,
+            )
+            .expect("quit common route");
+
+        assert!(has_response(&quit, Routes::QUIT, WsResponseCode::OK));
+        assert!(!service.room_exists(room_key));
+        assert_eq!(service.room_count(), 0);
+        assert_eq!(service.room_key_of(1), None);
+        {
+            let common = old_common.lock().unwrap();
+            assert!(common.stop_requested());
+            assert_eq!(common.turn_countdown, 0);
+            assert_eq!(common.players.len(), 3);
+            assert_eq!(common.ai_positions.len(), 3);
+        }
+
+        let recreated = service
+            .handle_common_request(
+                2,
+                &WsRequest {
+                    route: Routes::JOIN as i32,
+                    data: serde_json::json!({
+                        "name": "new-owner",
+                        "password": room_key,
+                        "game_id": GameId::SHENYANG_MAHJONG as i32
+                    }),
+                },
+                GameId::SHENYANG_MAHJONG,
+                four_player_settings,
+            )
+            .expect("recreate common route");
+        assert!(has_response(
+            &recreated,
+            Routes::JOIN,
+            WsResponseCode::JOINED
+        ));
+        let new_common = service
+            .room_common_state(room_key)
+            .expect("new room common state");
+        assert!(!Arc::ptr_eq(&old_common, &new_common));
+        let new_common = new_common.lock().unwrap();
+        assert_eq!(new_common.players.len(), 1);
+        assert!(new_common.ai_positions.is_empty());
     }
 
     #[test]
