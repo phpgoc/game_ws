@@ -44,6 +44,33 @@ fn claim_peng_pursues_piao_plan_after_open_triplet() {
 }
 
 #[test]
+fn claim_peng_opens_fully_closed_piao_shape_to_ready() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.claim_window = Some(AiClaimView {
+        tile: 35,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![1, 1, 1, 5, 9, 11, 11, 11, 21, 21, 21, 35, 35];
+
+    assert!(!has_door_opening_meld(&[], &table));
+    assert_eq!(ready_tile_score(&hand, &[], &table, 0), 0.0);
+    assert!(should_claim_peng_for_closed_early_piao_candidate(
+        &hand,
+        &[],
+        &table,
+        0,
+        35,
+        1,
+    ));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0),
+        Some(AiClaimChoice::Peng)
+    );
+}
+
+#[test]
 fn claim_peng_takes_four_pair_three_suit_piao_start() {
     let mut table = table_with_discards(1, Vec::new());
     table.claim_window = Some(AiClaimView {

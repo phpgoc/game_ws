@@ -42,6 +42,42 @@ fn claim_hu_accepts_seven_pairs() {
 }
 
 #[test]
+fn claim_hu_accepts_fully_closed_piao_with_dragon_pair() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.claim_window = Some(AiClaimView {
+        tile: 35,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![1, 1, 1, 11, 11, 11, 21, 21, 21, 31, 31, 31, 35];
+
+    assert!(!has_door_opening_meld(&[], &table));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0),
+        Some(AiClaimChoice::Hu)
+    );
+}
+
+#[test]
+fn claim_hu_rejects_fully_closed_piao_with_ordinary_pair() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.claim_window = Some(AiClaimView {
+        tile: 5,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![1, 1, 1, 11, 11, 11, 21, 21, 21, 31, 31, 31, 5];
+
+    assert!(!has_door_opening_meld(&[], &table));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0),
+        Some(AiClaimChoice::Pass)
+    );
+}
+
+#[test]
 fn claim_hu_allows_closed_sequence_dragon_pair_win_when_first_chi_disabled() {
     let mut table = table_with_discards(1, Vec::new());
     table.claim_window = Some(AiClaimView {
