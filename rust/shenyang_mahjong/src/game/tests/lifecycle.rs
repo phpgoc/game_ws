@@ -178,17 +178,40 @@ fn enabled_ting_setting_adds_one_fan_before_the_cap() {
     let mut state = playable_state();
     state
         .hands
-        .insert(1, vec![2, 3, 5, 6, 7, 11, 12, 13, 21, 22, 23, 31, 31]);
+        .insert(1, vec![2, 3, 5, 6, 7, 11, 12, 13, 31, 31]);
+    state.melds.insert(1, vec![open_peng_meld(21, 0)]);
     state.declare_ting(1);
     state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(4), false, false, false, false);
     let settlement = state.settlement.as_ref().expect("settlement");
     let disabled = HashMap::from([("ting_fan".to_owned(), 0)]);
     let enabled = HashMap::from([("ting_fan".to_owned(), 1)]);
+    let disabled_fan = winner_hand_fan_with_configs(&state, settlement, 1, &disabled);
 
+    assert!(disabled_fan > 0);
     assert_eq!(
         winner_hand_fan_with_configs(&state, settlement, 1, &enabled),
-        winner_hand_fan_with_configs(&state, settlement, 1, &disabled) + 1,
+        disabled_fan + 1,
     );
+}
+
+#[test]
+fn enabled_ting_fan_does_not_restore_an_invalid_winner() {
+    let mut state = playable_state();
+    state.hands.insert(1, vec![1, 2, 3]);
+    state.declare_ting(1);
+    state.enter_settlement(vec![1], Some(0), Some(4), false);
+    let settlement = state.settlement.as_ref().expect("settlement");
+    let configs = HashMap::from([("ting_fan".to_owned(), 1)]);
+
+    assert_eq!(
+        winner_hand_fan_with_configs(&state, settlement, 1, &configs),
+        0
+    );
+    let event = build_settlement_event_with_configs(&state, &configs)
+        .expect("invalid winner settlement event");
+    assert!(event.winner_positions.is_empty());
+    assert!(event.winner_details.is_empty());
+    assert!(event.score_changes.iter().all(|change| change.score == 0));
 }
 
 #[test]

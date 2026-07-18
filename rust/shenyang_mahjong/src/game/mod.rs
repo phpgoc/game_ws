@@ -2269,7 +2269,7 @@ fn winner_hand_fan_with_configs(
         winner,
         ShenyangMahjongWinContext::from_configs(configs),
     );
-    if configs.get("ting_fan").copied() == Some(1) && state.is_ting(winner) {
+    if fan > 0 && configs.get("ting_fan").copied() == Some(1) && state.is_ting(winner) {
         fan += 1;
     }
     fan
