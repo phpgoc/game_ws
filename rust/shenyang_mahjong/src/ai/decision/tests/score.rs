@@ -27,6 +27,92 @@ fn capped_ready_score_prefers_live_middle_over_public_wind_wait() {
 }
 
 #[test]
+fn ready_cap_counts_winner_dealer_payment_fan() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.seats.insert(
+        2,
+        AiSeatView {
+            position: 2,
+            hand_count: 10,
+            discards: Vec::new(),
+            melds: vec![test_peng_meld(14)],
+        },
+    );
+    table.seats.insert(
+        3,
+        AiSeatView {
+            position: 3,
+            hand_count: 10,
+            discards: Vec::new(),
+            melds: vec![test_peng_meld(24)],
+        },
+    );
+    table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(4)];
+    table.seats.get_mut(&0).unwrap().melds = vec![test_chi_meld(1)];
+    table.score_cap = Some(8);
+    let hand = vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35];
+    let melds = table.seats.get(&0).unwrap().melds.clone();
+
+    table.dealer_position = 3;
+    assert!(!ready_hand_visible_fan_reaches_cap(
+        &hand, &melds, &table, 0, 8
+    ));
+
+    table.dealer_position = 0;
+    assert!(ready_hand_visible_fan_reaches_cap(
+        &hand, &melds, &table, 0, 8
+    ));
+
+    table.score_cap = Some(15);
+    table.dealer_position = 3;
+    assert!(!ready_visible_fan_exceeds_half_cap(
+        &hand, &melds, &table, 0
+    ));
+
+    table.dealer_position = 0;
+    assert!(ready_visible_fan_exceeds_half_cap(&hand, &melds, &table, 0));
+}
+
+#[test]
+fn ready_cap_requires_every_potential_payer_to_reach_cap() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.seats.insert(
+        2,
+        AiSeatView {
+            position: 2,
+            hand_count: 13,
+            discards: Vec::new(),
+            melds: Vec::new(),
+        },
+    );
+    table.seats.insert(
+        3,
+        AiSeatView {
+            position: 3,
+            hand_count: 13,
+            discards: Vec::new(),
+            melds: Vec::new(),
+        },
+    );
+    table.dealer_position = 3;
+    table.score_cap = Some(16);
+    table.seats.get_mut(&0).unwrap().melds = vec![test_chi_meld(1)];
+    let hand = vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35];
+    let melds = table.seats.get(&0).unwrap().melds.clone();
+
+    assert!(ready_hand_visible_fan_reaches_cap(
+        &hand, &melds, &table, 0, 16
+    ));
+
+    table.seats.get_mut(&2).unwrap().melds = vec![test_peng_meld(14)];
+    table.seats.get_mut(&2).unwrap().hand_count = 10;
+
+    assert!(!ready_hand_visible_fan_reaches_cap(
+        &hand, &melds, &table, 0, 16
+    ));
+}
+
+#[test]
 fn estimated_fan_counts_honor_single_wait_once() {
     let win_hand = vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35];
     let melds = vec![test_chi_meld(1)];

@@ -2,6 +2,69 @@ use super::*;
 
 const EDGE_WAIT_BONUS: f64 = 10.0;
 
+pub(in crate::ai::decision) fn payment_fans_for_table(
+    winner_fan: i32,
+    table: &AiPublicTable,
+    winner_position: usize,
+    from_position: Option<usize>,
+) -> Vec<i32> {
+    let payer_positions = match from_position {
+        Some(position) => vec![position],
+        None => table
+            .seats
+            .keys()
+            .copied()
+            .filter(|position| *position != winner_position)
+            .collect::<Vec<_>>(),
+    };
+    if payer_positions.is_empty() {
+        return Vec::new();
+    }
+
+    let potential_loser_positions = table
+        .seats
+        .keys()
+        .copied()
+        .filter(|position| *position != winner_position)
+        .collect::<Vec<_>>();
+    let all_losers_closed = potential_loser_positions.len() == 3
+        && potential_loser_positions.iter().all(|position| {
+            table
+                .seats
+                .get(position)
+                .is_some_and(|seat| !has_open_meld(&seat.melds))
+        });
+
+    payer_positions
+        .into_iter()
+        .map(|payer_position| {
+            let payer_is_closed = table
+                .seats
+                .get(&payer_position)
+                .is_some_and(|seat| !has_open_meld(&seat.melds));
+            shenyang_payment_fan(
+                winner_fan,
+                winner_position == table.dealer_position,
+                payer_position == table.dealer_position,
+                payer_is_closed,
+                all_losers_closed,
+            )
+        })
+        .collect()
+}
+
+pub(in crate::ai::decision) fn minimum_potential_payment_fan(
+    winner_fan: i32,
+    table: &AiPublicTable,
+    winner_position: usize,
+) -> i32 {
+    let payment_fans = payment_fans_for_table(winner_fan, table, winner_position, None);
+    if payment_fans.len() != 3 {
+        return winner_fan;
+    }
+    payment_fans.into_iter().min().unwrap_or(winner_fan)
+}
+
 pub(in crate::ai::decision) fn capped_normal_route_visible_fan_exceeds_half_cap(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],

@@ -229,7 +229,7 @@ fn should_pass_hu_for_capped_live_wait_with_payer(
         table,
         &current_known_unavailable,
     );
-    let payment_fans = hu_payment_fans(current_fan, table, position, from_position);
+    let payment_fans = payment_fans_for_table(current_fan, table, position, from_position);
     let one_fan_short = shenyang_fan_needed_for_score_cap(score_cap) - 1;
     if payment_fans.is_empty()
         || payment_fans.iter().any(|fan| {
@@ -285,57 +285,6 @@ fn should_pass_hu_for_capped_live_wait_with_payer(
     capped_wait_copies >= 3
         && capped_hu_chase_wall_hit_probability(table, position, capped_wait_copies)
             >= CAPPED_HU_CHASE_MIN_WALL_HIT_PROBABILITY
-}
-
-fn hu_payment_fans(
-    winner_fan: i32,
-    table: &AiPublicTable,
-    winner_position: usize,
-    from_position: Option<usize>,
-) -> Vec<i32> {
-    let payer_positions = match from_position {
-        Some(position) => vec![position],
-        None => table
-            .seats
-            .keys()
-            .copied()
-            .filter(|position| *position != winner_position)
-            .collect::<Vec<_>>(),
-    };
-    if payer_positions.is_empty() {
-        return Vec::new();
-    }
-
-    let potential_loser_positions = table
-        .seats
-        .keys()
-        .copied()
-        .filter(|position| *position != winner_position)
-        .collect::<Vec<_>>();
-    let all_losers_closed = potential_loser_positions.len() == 3
-        && potential_loser_positions.iter().all(|position| {
-            table
-                .seats
-                .get(position)
-                .is_some_and(|seat| !has_open_meld(&seat.melds))
-        });
-
-    payer_positions
-        .into_iter()
-        .map(|payer_position| {
-            let payer_is_closed = table
-                .seats
-                .get(&payer_position)
-                .is_some_and(|seat| !has_open_meld(&seat.melds));
-            shenyang_payment_fan(
-                winner_fan,
-                winner_position == table.dealer_position,
-                payer_position == table.dealer_position,
-                payer_is_closed,
-                all_losers_closed,
-            )
-        })
-        .collect()
 }
 
 pub fn should_pass_self_draw_hu_from_view(
