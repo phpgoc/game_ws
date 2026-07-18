@@ -434,7 +434,7 @@ fn claim_gang_passes_final_unready_hand_when_replacement_tile_is_unavailable() {
 }
 
 #[test]
-fn claim_gang_preserves_five_pairs_even_for_dragon_gang() {
+fn claim_gang_penges_dragon_from_live_five_pairs() {
     let mut table = table_with_discards(1, Vec::new());
     table.claim_window = Some(AiClaimView {
         tile: 35,
@@ -444,6 +444,42 @@ fn claim_gang_preserves_five_pairs_even_for_dragon_gang() {
     let claim = table.claim_window.clone().unwrap();
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 22, 35, 35, 35];
 
+    assert_eq!(pair_count(&hand), 5);
+    assert!(can_gang(&hand, 35));
+    assert!(should_claim_dragon_peng_over_live_five_pairs(
+        &hand,
+        &[],
+        &table,
+        0,
+        35,
+        1,
+    ));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0),
+        Some(AiClaimChoice::Peng)
+    );
+}
+
+#[test]
+fn claim_gang_preserves_five_pairs_when_a_pair_is_dead() {
+    let mut table = table_with_discards(1, vec![2, 2]);
+    table.claim_window = Some(AiClaimView {
+        tile: 35,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 22, 35, 35, 35];
+
+    assert_eq!(remaining_tile_count(&hand, &table, 0, 2), 0);
+    assert!(!should_claim_dragon_peng_over_live_five_pairs(
+        &hand,
+        &[],
+        &table,
+        0,
+        35,
+        1,
+    ));
     assert_eq!(
         choose_claim_from_view(&hand, &claim, &table, 0),
         Some(AiClaimChoice::Pass)
