@@ -683,6 +683,94 @@ fn late_claim_hu_can_pass_one_fan_short_when_capped_wait_is_live() {
 }
 
 #[test]
+fn claim_hu_counts_closed_payment_fan_for_next_capped_wait() {
+    let mut table = table_with_discards(1, vec![16]);
+    table.dealer_position = 3;
+    table.score_cap = Some(16);
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
+    table.seats.get_mut(&0).unwrap().discards = vec![16];
+    for position in 2..=3 {
+        table.seats.insert(
+            position,
+            AiSeatView {
+                position,
+                hand_count: 13,
+                discards: Vec::new(),
+                melds: Vec::new(),
+            },
+        );
+    }
+    table.claim_window = Some(AiClaimView {
+        tile: 16,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![13, 14, 15, 15, 16, 16, 17, 28, 28, 28];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let mut current_win = hand.clone();
+    current_win.push(16);
+    sort_tiles(&mut current_win);
+    let current_known_unavailable = known_unavailable_tiles_for_claimed_win(&table, 0, 16);
+    let pass_simulated_discards = Vec::new();
+    let pass_known_unavailable =
+        known_unavailable_tiles_with_simulated_discards(&table, 0, melds, &pass_simulated_discards);
+    let mut projected_win = hand.clone();
+    projected_win.push(13);
+    sort_tiles(&mut projected_win);
+
+    assert!(!dealer_opponent_has_major_threat(&table, 0));
+    assert!(claim_tile_already_visible(&table, 16));
+    assert_eq!(
+        estimated_fan_with_known_unavailable_wait(
+            &current_win,
+            melds,
+            16,
+            &current_known_unavailable,
+        ),
+        1
+    );
+    assert_eq!(
+        estimated_fan_with_known_unavailable_wait(
+            &projected_win,
+            melds,
+            13,
+            &pass_known_unavailable,
+        ),
+        2
+    );
+    assert_eq!(
+        remaining_tile_count_with_melds_after_discards(
+            &hand,
+            melds,
+            &table,
+            0,
+            13,
+            &pass_simulated_discards,
+        ),
+        3
+    );
+    assert!(
+        capped_hu_chase_wall_hit_probability(&table, 0, 3)
+            >= CAPPED_HU_CHASE_MIN_WALL_HIT_PROBABILITY
+    );
+    assert_eq!(payment_fans_for_table(1, &table, 0, Some(1)), vec![3]);
+    assert_eq!(payment_fans_for_table(2, &table, 0, Some(1)), vec![4]);
+    assert!(should_pass_hu_for_capped_live_wait(
+        &hand,
+        &current_win,
+        melds,
+        &table,
+        0,
+        16,
+    ));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0),
+        Some(AiClaimChoice::Pass)
+    );
+}
+
+#[test]
 fn late_claim_hu_takes_when_capped_wait_is_unlikely_to_reach_wall() {
     let mut table = table_with_discards(1, vec![16]);
     table.wall_count = 4;
@@ -773,6 +861,43 @@ fn self_draw_hu_takes_when_dealer_payment_reaches_cap() {
     assert!(!should_pass_self_draw_hu_from_view(
         &win_hand, &table, 0, 16,
     ));
+}
+
+#[test]
+fn self_draw_hu_counts_each_payment_fan_for_next_capped_wait() {
+    let mut table = table_with_discards(1, vec![16]);
+    table.dealer_position = 3;
+    table.score_cap = Some(8);
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
+    table.seats.get_mut(&1).unwrap().hand_count = 13;
+    table.seats.insert(
+        2,
+        AiSeatView {
+            position: 2,
+            hand_count: 13,
+            discards: Vec::new(),
+            melds: Vec::new(),
+        },
+    );
+    table.seats.insert(
+        3,
+        AiSeatView {
+            position: 3,
+            hand_count: 10,
+            discards: Vec::new(),
+            melds: vec![test_peng_meld(9)],
+        },
+    );
+    let win_hand = vec![13, 14, 15, 15, 16, 16, 16, 17, 28, 28, 28];
+    let mut current_payment_fans = payment_fans_for_table(1, &table, 0, None);
+    let mut projected_payment_fans = payment_fans_for_table(2, &table, 0, None);
+    current_payment_fans.sort_unstable();
+    projected_payment_fans.sort_unstable();
+
+    assert!(!dealer_opponent_has_major_threat(&table, 0));
+    assert_eq!(current_payment_fans, vec![2, 2, 2]);
+    assert_eq!(projected_payment_fans, vec![3, 3, 3]);
+    assert!(should_pass_self_draw_hu_from_view(&win_hand, &table, 0, 16,));
 }
 
 #[test]

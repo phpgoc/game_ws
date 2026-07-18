@@ -267,17 +267,20 @@ fn should_pass_hu_for_capped_live_wait_with_payer(
             let mut next = hand.to_vec();
             next.push(wait_tile);
             next.sort_unstable();
+            let projected_fan = estimated_fan_with_known_unavailable_wait_for_table(
+                &next,
+                melds,
+                wait_tile,
+                table,
+                &pass_known_unavailable,
+            );
+            let projected_payment_fans =
+                payment_fans_for_table(projected_fan, table, position, from_position);
             let reaches_cap = is_complete_win_for_table(&next, melds, table)
-                && shenyang_fan_reaches_score_cap(
-                    estimated_fan_with_known_unavailable_wait_for_table(
-                        &next,
-                        melds,
-                        wait_tile,
-                        table,
-                        &pass_known_unavailable,
-                    ),
-                    score_cap,
-                );
+                && !projected_payment_fans.is_empty()
+                && projected_payment_fans
+                    .iter()
+                    .all(|fan| shenyang_fan_reaches_score_cap(*fan, score_cap));
             if reaches_cap { remaining } else { 0 }
         })
         .sum::<i32>();
