@@ -382,6 +382,36 @@ fn settlement_fan_counts_four_gui_yi_across_peng_meld_and_hand() {
 }
 
 #[test]
+fn settlement_fan_counts_four_gui_yi_across_xi_gang_and_hand() {
+    let mut state = playable_state();
+    state.hands.insert(1, vec![21, 21, 37, 37, 37]);
+    state.melds.insert(
+        1,
+        vec![
+            build_meld(ShenyangMahjongMeldKind::XI_GANG, vec![35, 36, 37], None),
+            build_meld(ShenyangMahjongMeldKind::CHI, vec![1, 2, 3], Some(0)),
+            build_meld(ShenyangMahjongMeldKind::CHI, vec![11, 12, 13], Some(0)),
+        ],
+    );
+    state.last_drawn_tile = Some(21);
+    state.enter_settlement(vec![1], None, Some(21), true);
+    let settlement = state.settlement.as_ref().expect("settlement");
+
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 5);
+    let event = build_settlement_event(&state).expect("settlement event");
+    assert_eq!(event.winner_details.len(), 1);
+    assert_eq!(event.winner_details[0].score, 512);
+    assert_eq!(
+        event
+            .score_changes
+            .iter()
+            .map(|change| (change.position, change.score))
+            .collect::<Vec<_>>(),
+        vec![(0, -256), (1, 512), (2, -128), (3, -128)]
+    );
+}
+
+#[test]
 fn settlement_fan_counts_four_gui_yi_and_single_wait_on_seven_pairs() {
     let mut state = playable_state();
     state
