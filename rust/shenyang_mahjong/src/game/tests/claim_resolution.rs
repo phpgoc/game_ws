@@ -126,6 +126,57 @@ fn resolve_claim_window_blocks_only_first_chi_when_configured() {
 }
 
 #[test]
+fn resolve_claim_window_keeps_first_chi_blocked_after_xi_gang() {
+    let mut state = playable_state();
+    state
+        .hands
+        .insert(1, vec![1, 2, 4, 5, 6, 11, 12, 13, 21, 31]);
+    state.melds.insert(
+        1,
+        vec![build_meld(
+            ShenyangMahjongMeldKind::XI_GANG,
+            vec![35, 36, 37],
+            None,
+        )],
+    );
+    state.discards.insert(0, vec![3]);
+    state.wall = vec![34];
+    state.current_position = 0;
+    state.claim_window = Some(ClaimWindowState {
+        tile: 3,
+        from_position: 0,
+        kind: ClaimWindowKind::Discard,
+        eligible_positions: vec![1],
+        responses: HashMap::from([(
+            1,
+            ClaimResponse::Chi {
+                consume_tiles: vec![1, 2],
+            },
+        )]),
+    });
+    let configs = HashMap::from([("allow_first_chi".to_owned(), 0)]);
+    let mut dispatch = Dispatch::default();
+
+    resolve_claim_window(
+        &RoomService::default(),
+        "room",
+        &mut state,
+        &configs,
+        &mut dispatch,
+    );
+
+    assert!(state.claim_window.is_none());
+    assert_eq!(state.current_position, 1);
+    assert_eq!(state.discards.get(&0), Some(&vec![3]));
+    assert_eq!(state.melds.get(&1).unwrap().len(), 1);
+    assert_eq!(
+        state.melds.get(&1).unwrap()[0].kind,
+        ShenyangMahjongMeldKind::XI_GANG
+    );
+    assert!(state.hands.get(&1).unwrap().contains(&34));
+}
+
+#[test]
 fn resolve_claim_window_gang_consumes_three_tiles_and_draws_replacement() {
     let mut state = playable_state();
     state
