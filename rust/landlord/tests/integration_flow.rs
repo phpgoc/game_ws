@@ -1,3 +1,5 @@
+#![cfg(not(feature = "official"))]
+
 use std::{
     collections::HashMap,
     net::TcpListener,

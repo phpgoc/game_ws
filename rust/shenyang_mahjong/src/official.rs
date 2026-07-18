@@ -5,6 +5,30 @@ use share_type_public::games::shenyang_mahjong::WsShenyangMahjongScoreChange;
 use ws_common::RoomService;
 
 #[cfg(feature = "official")]
+pub async fn has_active_membership(session_id: String) -> bool {
+    use share_type_public::GameId;
+
+    if session_id.is_empty() {
+        return false;
+    }
+    let Ok(user) = data::cache_get_session(&session_id).await else {
+        return false;
+    };
+    match data::game_pay_has_active_membership(user.id, GameId::SHENYANG_MAHJONG).await {
+        Ok(active) => active,
+        Err(err) => {
+            ws_common::dlog!(
+                ws_common::tracing::Level::WARN,
+                "[shenyang_mahjong][official] membership lookup failed for user {}: {}",
+                user.id,
+                err
+            );
+            false
+        }
+    }
+}
+
+#[cfg(feature = "official")]
 use crate::game::{
     settlement_from_position, settlement_is_reverse_win, settlement_score_changes_for_state,
     winner_pattern_with_rules,

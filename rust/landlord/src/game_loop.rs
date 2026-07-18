@@ -607,7 +607,11 @@ fn handle_automatic_action(
             next_call(state);
         }
         LandlordPhase::Play => {
-            let auto_cards = choose_play(state, pos);
+            let auto_cards = if reason == AutoActionReason::Ai {
+                choose_play(state, pos)
+            } else {
+                choose_timeout_play(state, pos)
+            };
             let name = state.player_name(pos);
             println!(
                 "[landlord][auto-play] pos={} name={} reason={:?} cards={:?}",
@@ -623,6 +627,18 @@ fn handle_automatic_action(
         _ => {}
     }
     (newly_away, auto_event)
+}
+
+fn choose_timeout_play(state: &LandlordLoopState, position: usize) -> Vec<i32> {
+    if !state.last_play.is_empty() && state.last_play_position != position {
+        return Vec::new();
+    }
+    state
+        .hands
+        .get(&position)
+        .and_then(|hand| hand.first().copied())
+        .map(|card| vec![card])
+        .unwrap_or_default()
 }
 
 fn loop_should_stop(state: &Arc<std::sync::Mutex<LandlordLoopState>>) -> bool {
@@ -828,7 +844,7 @@ pub(crate) fn start_game_loop(
                         (!s.action_received()).then_some((
                             s.phase,
                             s.current_position,
-                            s.is_ai_position(s.current_position),
+                            s.is_ai_controlled_position(s.current_position),
                         ))
                     };
                     if let Some((waiting_phase, waiting_position, waiting_for_ai)) = pending_turn {
@@ -849,7 +865,7 @@ pub(crate) fn start_game_loop(
                         }
                         if s.action_received() {
                             // Action received while waiting this tick.
-                        } else if waiting_for_ai && s.is_ai_position(waiting_position) {
+                        } else if waiting_for_ai && s.is_ai_controlled_position(waiting_position) {
                             (away_position, auto_event) =
                                 handle_automatic_action(&mut s, AutoActionReason::Ai);
                         } else if s.turn_countdown() > 0 {
@@ -976,7 +992,7 @@ fn turn_timeout(
 ) -> u32 {
     let away_time = configs.get("away_time").copied().unwrap_or(5).max(0) as u32;
     let play_time = configs.get("play_time").copied().unwrap_or(30).max(0) as u32;
-    if state.is_ai_position(state.current_position) {
+    if state.is_ai_controlled_position(state.current_position) {
         1
     } else if state.is_away(state.current_position) || state.is_disconnected(state.current_position)
     {
@@ -1053,6 +1069,45 @@ mod tests {
         assert_eq!(turn_timeout(&state, &configs), 35);
         state.mark_away(0);
         assert_eq!(turn_timeout(&state, &configs), 4);
+    }
+
+    #[test]
+    fn member_takeover_uses_ai_delay_and_bid_strategy() {
+        let mut state = state_with_ai(2);
+        let configs = HashMap::from([("away_time".to_owned(), 4), ("play_time".to_owned(), 35)]);
+        state.phase = LandlordPhase::CallLandlord;
+        state.current_position = 0;
+        state.mark_away(0);
+        state.base.lock().unwrap().mark_ai_takeover_position(0);
+        let expected_bid = choose_bid(&state, 0);
+
+        assert_eq!(turn_timeout(&state, &configs), 1);
+        let (away_position, event) = handle_automatic_action(&mut state, AutoActionReason::Ai);
+
+        assert_eq!(away_position, None);
+        assert!(matches!(
+            event,
+            Some(AutoBroadcastEvent::Call(WsCallLandlordEvent { score, .. }))
+                if score == expected_bid
+        ));
+    }
+
+    #[test]
+    fn nonmember_away_keeps_timeout_fallback() {
+        let mut state = state_with_ai(2);
+        let configs = HashMap::from([("away_time".to_owned(), 4), ("play_time".to_owned(), 35)]);
+        state.phase = LandlordPhase::Play;
+        state.current_position = 0;
+        state.last_play_position = 1;
+        state.last_play = vec![3];
+        state.mark_away(0);
+
+        assert_eq!(turn_timeout(&state, &configs), 4);
+        let (_, event) = handle_automatic_action(&mut state, AutoActionReason::Timeout);
+        assert!(matches!(
+            event,
+            Some(AutoBroadcastEvent::Play(WsPlayEvent { cards, .. })) if cards.is_empty()
+        ));
     }
 
     #[test]

@@ -1,3 +1,5 @@
+#![cfg(not(feature = "official"))]
+
 use std::{
     net::TcpListener,
     time::{Duration, Instant},

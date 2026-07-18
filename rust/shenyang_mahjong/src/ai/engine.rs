@@ -750,6 +750,7 @@ mod tests {
     fn away_position_discards_complete_shape_after_claim() {
         let mut state = playable_state();
         state.base.lock().unwrap().mark_away(0);
+        state.base.lock().unwrap().mark_ai_takeover_position(0);
         state
             .hands
             .insert(0, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 35, 35]);
@@ -782,6 +783,7 @@ mod tests {
     fn away_position_does_not_self_draw_with_unowned_drawn_tile() {
         let mut state = playable_state();
         state.base.lock().unwrap().mark_away(0);
+        state.base.lock().unwrap().mark_ai_takeover_position(0);
         state
             .hands
             .insert(0, vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35, 35]);
@@ -805,6 +807,7 @@ mod tests {
     fn away_position_does_not_self_draw_without_drawn_tile() {
         let mut state = playable_state();
         state.base.lock().unwrap().mark_away(0);
+        state.base.lock().unwrap().mark_ai_takeover_position(0);
         state
             .hands
             .insert(0, vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35, 35]);
@@ -827,6 +830,7 @@ mod tests {
     fn away_position_passes_late_low_fan_self_draw_for_live_capped_wait() {
         let mut state = playable_state();
         state.base.lock().unwrap().mark_away(0);
+        state.base.lock().unwrap().mark_ai_takeover_position(0);
         state.dealer_position = 1;
         state.wall = vec![37; 20];
         state.discards.insert(1, vec![16]);
@@ -861,6 +865,7 @@ mod tests {
     fn away_position_self_draws_closed_basic_pure_one_suit() {
         let mut state = playable_state();
         state.base.lock().unwrap().mark_away(0);
+        state.base.lock().unwrap().mark_ai_takeover_position(0);
         state
             .hands
             .insert(0, vec![1, 2, 3, 2, 3, 4, 4, 5, 6, 7, 7, 7, 9, 9]);
@@ -889,6 +894,7 @@ mod tests {
     fn away_position_self_draws_configured_closed_sequence_after_xi_gang() {
         let mut state = playable_state();
         state.base.lock().unwrap().mark_away(0);
+        state.base.lock().unwrap().mark_ai_takeover_position(0);
         state
             .hands
             .insert(0, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 35, 35]);
@@ -937,6 +943,7 @@ mod tests {
     fn away_position_takes_gang_draw_self_draw_in_capped_room() {
         let mut state = playable_state();
         state.base.lock().unwrap().mark_away(0);
+        state.base.lock().unwrap().mark_ai_takeover_position(0);
         state.dealer_position = 1;
         state.wall = vec![37; 48];
         state.discards.insert(1, vec![16]);
@@ -977,6 +984,7 @@ mod tests {
     fn away_position_takes_haidilao_self_draw_in_capped_room() {
         let mut state = playable_state();
         state.base.lock().unwrap().mark_away(0);
+        state.base.lock().unwrap().mark_ai_takeover_position(0);
         state.dealer_position = 1;
         state.wall = Vec::new();
         state.discards.insert(1, vec![16]);
@@ -1011,6 +1019,7 @@ mod tests {
     fn away_position_takes_late_low_fan_self_draw_when_capped_wait_is_unlikely() {
         let mut state = playable_state();
         state.base.lock().unwrap().mark_away(0);
+        state.base.lock().unwrap().mark_ai_takeover_position(0);
         state.dealer_position = 1;
         state.wall = vec![37; 4];
         state.discards.insert(1, vec![16]);
@@ -1051,6 +1060,7 @@ mod tests {
     fn away_position_takes_low_fan_self_draw_without_full_wall_cycle() {
         let mut state = playable_state();
         state.base.lock().unwrap().mark_away(0);
+        state.base.lock().unwrap().mark_ai_takeover_position(0);
         state.dealer_position = 1;
         state.wall = vec![37; 3];
         state.discards.insert(1, vec![16]);
@@ -1082,6 +1092,7 @@ mod tests {
     fn away_position_takes_rob_gang_hu_in_capped_room() {
         let mut state = playable_state();
         state.base.lock().unwrap().mark_away(0);
+        state.base.lock().unwrap().mark_ai_takeover_position(0);
         state.current_position = 1;
         state.dealer_position = 1;
         state
@@ -1133,6 +1144,7 @@ mod tests {
     fn away_position_uses_ai_claim_response() {
         let mut state = playable_state();
         state.base.lock().unwrap().mark_away(0);
+        state.base.lock().unwrap().mark_ai_takeover_position(0);
         state.current_position = 1;
         state
             .hands
@@ -1170,6 +1182,7 @@ mod tests {
     fn away_position_uses_ai_discard() {
         let mut state = playable_state();
         state.base.lock().unwrap().mark_away(0);
+        state.base.lock().unwrap().mark_ai_takeover_position(0);
         let mut dispatch = Dispatch::default();
 
         assert!(maybe_play_ai_turn(
@@ -1188,6 +1201,7 @@ mod tests {
     fn away_position_uses_ai_gang_claim_response() {
         let mut state = playable_state();
         state.base.lock().unwrap().mark_away(0);
+        state.base.lock().unwrap().mark_ai_takeover_position(0);
         state.current_position = 1;
         state
             .hands
@@ -1230,6 +1244,7 @@ mod tests {
     fn away_position_uses_ai_self_draw_for_open_basic_pure_one_suit() {
         let mut state = playable_state();
         state.base.lock().unwrap().mark_away(0);
+        state.base.lock().unwrap().mark_ai_takeover_position(0);
         state.hands.insert(0, vec![3, 4, 5, 4, 5, 6, 5, 6, 7, 8, 8]);
         state.melds.insert(
             0,
@@ -1265,6 +1280,7 @@ mod tests {
     fn away_position_uses_ai_self_draw_for_seven_pairs() {
         let mut state = playable_state();
         state.base.lock().unwrap().mark_away(0);
+        state.base.lock().unwrap().mark_ai_takeover_position(0);
         state
             .hands
             .insert(0, vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35, 35]);
@@ -1294,6 +1310,7 @@ mod tests {
     fn away_position_uses_ai_self_gang_before_discard() {
         let mut state = playable_state();
         state.base.lock().unwrap().mark_away(0);
+        state.base.lock().unwrap().mark_ai_takeover_position(0);
         state
             .hands
             .insert(0, vec![4, 5, 6, 11, 12, 13, 31, 35, 35, 35, 35]);
@@ -1325,12 +1342,12 @@ mod tests {
     }
 
     #[test]
-    fn disconnected_position_uses_ai_discard() {
+    fn disconnected_position_waits_for_timeout_fallback_without_takeover() {
         let mut state = playable_state();
         state.base.lock().unwrap().mark_disconnected(0);
         let mut dispatch = Dispatch::default();
 
-        assert!(maybe_play_ai_turn(
+        assert!(!maybe_play_ai_turn(
             &RoomService::default(),
             "room",
             &mut state,
@@ -1338,8 +1355,8 @@ mod tests {
             &mut dispatch,
         ));
 
-        assert_eq!(state.hands.get(&0).unwrap().len(), 13);
-        assert_eq!(state.discards.get(&0).unwrap().len(), 1);
+        assert_eq!(state.hands.get(&0).unwrap().len(), 14);
+        assert!(state.discards.get(&0).unwrap().is_empty());
     }
 
     #[test]
@@ -1482,6 +1499,7 @@ mod tests {
     fn rob_gang_hu_passes_from_impossible_known_tile_state() {
         let mut state = playable_state();
         state.base.lock().unwrap().mark_away(0);
+        state.base.lock().unwrap().mark_ai_takeover_position(0);
         state.current_position = 1;
         state
             .hands
@@ -1536,6 +1554,7 @@ mod tests {
     fn rob_gang_hu_passes_when_unowned_claim_tile_is_fifth_known_copy() {
         let mut state = playable_state();
         state.base.lock().unwrap().mark_away(0);
+        state.base.lock().unwrap().mark_ai_takeover_position(0);
         state.current_position = 1;
         state
             .hands

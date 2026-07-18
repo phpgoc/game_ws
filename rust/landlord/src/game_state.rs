@@ -124,6 +124,14 @@ impl LandlordLoopState {
         self.base.lock().unwrap().is_ai_position(pos)
     }
 
+    pub fn is_ai_takeover_position(&self, pos: usize) -> bool {
+        self.base.lock().unwrap().is_ai_takeover_position(pos)
+    }
+
+    pub fn is_ai_controlled_position(&self, pos: usize) -> bool {
+        self.is_ai_position(pos) || self.is_ai_takeover_position(pos)
+    }
+
     pub fn is_disconnected(&self, pos: usize) -> bool {
         self.base.lock().unwrap().is_disconnected(pos)
     }

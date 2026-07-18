@@ -412,6 +412,24 @@ impl Default for LandlordGameHandler {
 }
 
 impl GameHandler for LandlordGameHandler {
+    #[cfg(feature = "official")]
+    fn authorize_room_creation(
+        &self,
+        join: &share_type_public::WsJoinRequest,
+    ) -> ws_common::MembershipAuthorization {
+        Box::pin(crate::official::has_active_membership(
+            join.session_id.clone(),
+        ))
+    }
+
+    #[cfg(feature = "official")]
+    fn authorize_ai_takeover(
+        &self,
+        official_session_id: String,
+    ) -> ws_common::MembershipAuthorization {
+        Box::pin(crate::official::has_active_membership(official_session_id))
+    }
+
     fn after_common_request(
         &mut self,
         room_service: &mut RoomService,

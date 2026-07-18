@@ -1,6 +1,8 @@
 use std::{
     collections::HashMap,
+    future::Future,
     net::SocketAddr,
+    pin::Pin,
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
@@ -35,6 +37,8 @@ struct ConnectionContext<H> {
     stop_signal: StopSignal,
 }
 
+pub type MembershipAuthorization = Pin<Box<dyn Future<Output = bool> + Send + 'static>>;
+
 pub trait GameHandler: Send + 'static {
     fn accepts_game_id(&self, game_id: share_type_public::GameId) -> bool {
         game_id == self.game_id()
@@ -48,6 +52,17 @@ pub trait GameHandler: Send + 'static {
         _dispatch: &mut Dispatch,
     ) {
         // Optional: override in games that need to enrich common responses/events.
+    }
+
+    fn authorize_room_creation(
+        &self,
+        _join: &share_type_public::WsJoinRequest,
+    ) -> MembershipAuthorization {
+        Box::pin(async { true })
+    }
+
+    fn authorize_ai_takeover(&self, _official_session_id: String) -> MembershipAuthorization {
+        Box::pin(async { false })
     }
     /// 创建游戏状态。
     /// 在首个 JOIN 建房成功后立即调用，并将当前成员 populate 进去。
@@ -179,36 +194,96 @@ where
             }
         };
 
+        let parsed_join = (request.route == share_type_public::Routes::JOIN as i32)
+            .then(|| {
+                serde_json::from_value::<share_type_public::WsJoinRequest>(request.data.clone())
+                    .ok()
+            })
+            .flatten();
+        let join_requires_membership = if let Some(join) = parsed_join.as_ref() {
+            let handler = game_handler.lock().await;
+            !join.name.is_empty()
+                && !join.password.is_empty()
+                && handler.accepts_game_id(join.game_id)
+        } else {
+            false
+        };
+        let room_creation_authorized = if join_requires_membership {
+            let join = parsed_join.as_ref().expect("membership join parsed");
+            let room_exists = room_service.lock().await.room_exists(&join.password);
+            if room_exists {
+                None
+            } else {
+                Some(
+                    game_handler
+                        .lock()
+                        .await
+                        .authorize_room_creation(join)
+                        .await,
+                )
+            }
+        } else {
+            Some(true)
+        };
+        let ai_takeover_authorized = if request.route == share_type_public::Routes::AWAY as i32 {
+            let official_session_id = room_service
+                .lock()
+                .await
+                .session_official_session_id(session_id);
+            if let Some(official_session_id) = official_session_id {
+                game_handler
+                    .lock()
+                    .await
+                    .authorize_ai_takeover(official_session_id)
+                    .await
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
         let dispatch = {
             let mut room = room_service.lock().await;
             let mut handler = game_handler.lock().await;
-            let creates_room_on_join = if request.route == share_type_public::Routes::JOIN as i32 {
-                let join_key = serde_json::from_value::<share_type_public::WsJoinRequest>(
-                    request.data.clone(),
-                )
-                .ok()
-                .map(|join| join.password);
-                join_key
-                    .as_ref()
-                    .map(|room_key| !room.room_exists(room_key))
-                    .unwrap_or(false)
+            let creates_room_on_join = parsed_join
+                .as_ref()
+                .is_some_and(|join| !room.room_exists(&join.password));
+            let was_away = room.session_is_away(session_id);
+            let common_dispatch = if creates_room_on_join && room_creation_authorized != Some(true)
+            {
+                Some(room.error_response(
+                    session_id,
+                    share_type_public::Routes::JOIN as i32,
+                    share_type_public::WsResponseCode::NO_PERMISSION,
+                ))
             } else {
-                false
+                room.handle_common_request_with_game_acceptance(
+                    session_id,
+                    &request,
+                    |game_id| handler.accepts_game_id(game_id),
+                    || handler.build_room_settings(),
+                )
             };
-            if let Some(mut dispatch) = room.handle_common_request_with_game_acceptance(
-                session_id,
-                &request,
-                |game_id| handler.accepts_game_id(game_id),
-                || handler.build_room_settings(),
-            ) {
+            if let Some(mut dispatch) = common_dispatch {
                 // 首个 JOIN 建房成功后，挂载游戏态，确保后续逻辑走具体游戏状态。
-                if creates_room_on_join && let Some(room_key) = room.room_key_of(session_id) {
+                if creates_room_on_join
+                    && let Some(join) = parsed_join.as_ref()
+                    && room.room_key_of(session_id).as_deref() == Some(join.password.as_str())
+                {
+                    let room_key = join.password.clone();
                     let mut gs = handler.build_game_state();
                     for (sid, name, pos, avatar) in room.room_members(&room_key) {
                         gs.add_player(pos, sid, &name);
                         gs.set_avatar(pos, &avatar);
                     }
                     room.set_room_game_state(&room_key, gs);
+                }
+                if request.route == share_type_public::Routes::AWAY as i32
+                    && !was_away
+                    && room.session_is_away(session_id)
+                {
+                    room.set_session_ai_takeover(session_id, ai_takeover_authorized);
                 }
                 handler.after_common_request(&mut room, session_id, &request, &mut dispatch);
                 dispatch
@@ -389,6 +464,13 @@ impl RuntimeStats {
 
     pub async fn room_count(&self) -> usize {
         self.room_service.lock().await.room_count()
+    }
+
+    pub async fn room_position_is_ai_takeover(&self, room_key: &str, position: usize) -> bool {
+        self.room_service
+            .lock()
+            .await
+            .room_position_is_ai_takeover(room_key, position)
     }
 }
 

@@ -68,7 +68,12 @@ fn build_auto_bury_dispatch(
         if !controlled && state.base.lock().unwrap().mark_away(position) {
             away_position = Some(position);
         }
-        let Some(cards) = state.choose_auto_bury() else {
+        let cards = if controlled {
+            state.choose_auto_bury()
+        } else {
+            state.choose_timeout_bury()
+        };
+        let Some(cards) = cards else {
             return dispatch;
         };
         if state.bury_bottom(position, cards).is_err() {
@@ -148,8 +153,7 @@ fn build_auto_dispatch(
         if !controlled && s.base.lock().unwrap().mark_away(position) {
             away_position = Some(position);
         }
-        let is_ai = { s.base.lock().unwrap().is_ai_position(position) };
-        let cards = if is_ai {
+        let cards = if controlled {
             crate::ai::decide(&s, position)
         } else {
             s.choose_auto_play(position)
@@ -289,7 +293,11 @@ fn build_deal_dispatch(
 }
 
 fn current_play_time(configs: &HashMap<String, i32>, state: &TractorGameState) -> u32 {
-    let key = if state.is_ai_controlled_position(state.current_position) {
+    let inactive = {
+        let base = state.base.lock().unwrap();
+        base.is_away(state.current_position) || base.is_disconnected(state.current_position)
+    };
+    let key = if state.is_ai_controlled_position(state.current_position) || inactive {
         KEY_AWAY_TIME
     } else {
         KEY_PLAY_TIME
@@ -601,6 +609,51 @@ mod tests {
         assert_eq!(guard.current_trick[0].cards, vec![1]);
         assert!(!guard.hands.get(&0).unwrap().contains(&1));
         assert!(guard.hands.get(&0).unwrap().contains(&53));
+    }
+
+    #[test]
+    fn member_takeover_uses_smart_ai_and_fast_delay() {
+        let state = test_state_with_ai_leader();
+        {
+            let guard = state.lock().unwrap();
+            let mut base = guard.base.lock().unwrap();
+            base.ai_positions.remove(&0);
+            base.mark_away(0);
+            base.mark_ai_takeover_position(0);
+        }
+        let configs = HashMap::from([(KEY_AI_ACTION_TIME.to_owned(), 75)]);
+        assert_eq!(
+            action_loop_delay(&configs, &state.lock().unwrap()),
+            Duration::from_millis(75)
+        );
+
+        let _ = build_auto_dispatch("room", &RoomService::default(), &state, &configs);
+
+        let guard = state.lock().unwrap();
+        assert_eq!(guard.current_trick[0].cards, vec![1]);
+        assert!(guard.hands.get(&0).unwrap().contains(&53));
+    }
+
+    #[test]
+    fn nonmember_away_uses_human_delay() {
+        let state = test_state_with_ai_leader();
+        {
+            let guard = state.lock().unwrap();
+            let mut base = guard.base.lock().unwrap();
+            base.ai_positions.remove(&0);
+            base.mark_away(0);
+        }
+        let configs = HashMap::from([
+            (KEY_AI_ACTION_TIME.to_owned(), 75),
+            (KEY_AWAY_TIME.to_owned(), 4),
+            (KEY_PLAY_TIME.to_owned(), 30),
+        ]);
+
+        assert_eq!(
+            action_loop_delay(&configs, &state.lock().unwrap()),
+            Duration::from_secs(1)
+        );
+        assert_eq!(current_play_time(&configs, &state.lock().unwrap()), 4);
     }
 
     #[test]

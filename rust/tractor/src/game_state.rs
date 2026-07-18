@@ -388,6 +388,19 @@ impl TractorGameState {
         crate::ai::choose_bury(self)
     }
 
+    pub fn choose_timeout_bury(&self) -> Option<Vec<i32>> {
+        if self.phase != TractorPhase::Bury {
+            return None;
+        }
+        let mut hand = self.hands.get(&self.dealer_position)?.clone();
+        hand.sort_by_key(|card| tractor_card_value(*card, &self.rules, None));
+        (hand.len() >= self.rules.bottom_card_count).then(|| {
+            hand.into_iter()
+                .take(self.rules.bottom_card_count)
+                .collect()
+        })
+    }
+
     /// A safe, rules-correct auto play used for timed-out humans and as the AI
     /// fallback. Leads the lowest single; when following, beats an opponent with
     /// the smallest winning play, feeds points to a winning partner, and
@@ -746,7 +759,7 @@ impl TractorGameState {
 
     pub fn is_ai_controlled_position(&self, position: usize) -> bool {
         let base = self.base.lock().unwrap();
-        base.is_ai_position(position) || base.is_away(position) || base.is_disconnected(position)
+        base.is_ai_position(position) || base.is_ai_takeover_position(position)
     }
 
     pub fn is_finished(&self) -> bool {

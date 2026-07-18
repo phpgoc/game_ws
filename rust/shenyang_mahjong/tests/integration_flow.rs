@@ -1,4 +1,9 @@
-use std::{net::TcpListener, time::Duration};
+#![cfg(not(feature = "official"))]
+
+use std::{
+    net::TcpListener,
+    time::{Duration, Instant},
+};
 
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
@@ -60,7 +65,7 @@ fn my_tiles(event: &Value) -> Vec<i32> {
 
 async fn recv_json(client: &mut Client, label: &str) -> Value {
     loop {
-        let frame = tokio::time::timeout(Duration::from_secs(5), client.next())
+        let frame = tokio::time::timeout(Duration::from_secs(8), client.next())
             .await
             .unwrap_or_else(|_| panic!("websocket message timeout while waiting for {label}"))
             .expect("websocket frame")
@@ -101,7 +106,7 @@ async fn send_request(client: &mut Client, route: i32, data: Value) {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn shenyang_mahjong_away_owner_is_played_by_ai() {
+async fn shenyang_mahjong_nonofficial_away_owner_uses_timeout_fallback() {
     let port = free_port();
     let listen_addr = format!("127.0.0.1:{port}");
     let url = format!("ws://{listen_addr}");
@@ -176,6 +181,7 @@ async fn shenyang_mahjong_away_owner_is_played_by_ai() {
     .await;
 
     send_request(&mut owner, Routes::AWAY as i32, json!({})).await;
+    let away_started = Instant::now();
     let away_event = recv_until(&mut owner, "owner away event", |value| {
         value.get("code").and_then(Value::as_i64) == Some(WsCode::AWAY as i64)
     })
@@ -199,7 +205,7 @@ async fn shenyang_mahjong_away_owner_is_played_by_ai() {
     assert_eq!(owner_snapshot["away"], json!(true));
     assert_eq!(owner_snapshot["is_ai"], json!(false));
 
-    let owner_ai_play = recv_until(&mut owner, "away owner ai play", |value| {
+    let owner_timeout_play = recv_until(&mut owner, "away owner timeout play", |value| {
         value.get("code").and_then(Value::as_i64) == Some(WsCode::PLAY as i64)
             && value
                 .get("data")
@@ -213,13 +219,14 @@ async fn shenyang_mahjong_away_owner_is_played_by_ai() {
                 == Some(2)
     })
     .await;
-    assert_eq!(owner_ai_play["data"]["name"], json!("owner"));
+    assert_eq!(owner_timeout_play["data"]["name"], json!("owner"));
+    assert!(away_started.elapsed() >= Duration::from_millis(750));
 
     server.abort();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn shenyang_mahjong_disconnected_owner_is_played_by_ai() {
+async fn shenyang_mahjong_nonofficial_disconnected_owner_uses_timeout_fallback() {
     let port = free_port();
     let listen_addr = format!("127.0.0.1:{port}");
     let url = format!("ws://{listen_addr}");
@@ -293,6 +300,7 @@ async fn shenyang_mahjong_disconnected_owner_is_played_by_ai() {
     })
     .await;
 
+    let disconnected_started = Instant::now();
     close_client(&mut owner).await;
     let inactive_owner = recv_until(&mut watcher, "owner inactive event", |value| {
         value.get("code").and_then(Value::as_i64) == Some(WsCode::JOIN as i64)
@@ -310,8 +318,8 @@ async fn shenyang_mahjong_disconnected_owner_is_played_by_ai() {
     .await;
     assert_eq!(inactive_owner["data"]["name"], json!("owner"));
 
-    let disconnected_owner_ai_play =
-        recv_until(&mut watcher, "disconnected owner ai play", |value| {
+    let disconnected_owner_timeout_play =
+        recv_until(&mut watcher, "disconnected owner timeout play", |value| {
             value.get("code").and_then(Value::as_i64) == Some(WsCode::PLAY as i64)
                 && value
                     .get("data")
@@ -325,7 +333,11 @@ async fn shenyang_mahjong_disconnected_owner_is_played_by_ai() {
                     == Some(2)
         })
         .await;
-    assert_eq!(disconnected_owner_ai_play["data"]["name"], json!("owner"));
+    assert_eq!(
+        disconnected_owner_timeout_play["data"]["name"],
+        json!("owner")
+    );
+    assert!(disconnected_started.elapsed() >= Duration::from_millis(750));
 
     server.abort();
 }

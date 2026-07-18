@@ -319,7 +319,7 @@ impl ShenyangMahjongLoopState {
 
     pub fn is_ai_controlled_position(&self, position: usize) -> bool {
         let state = self.base.lock().unwrap();
-        state.is_ai_position(position) || state.is_away(position) || state.is_disconnected(position)
+        state.is_ai_position(position) || state.is_ai_takeover_position(position)
     }
 
     pub fn is_ai_position(&self, position: usize) -> bool {
@@ -600,12 +600,12 @@ mod tests {
     }
 
     #[test]
-    fn disconnected_position_is_ai_controlled_until_rejoin() {
+    fn disconnected_position_is_not_ai_controlled_without_member_takeover() {
         let state = state_with_players();
         state.base.lock().unwrap().mark_disconnected(2);
 
         assert!(state.is_disconnected(2));
-        assert!(state.is_ai_controlled_position(2));
+        assert!(!state.is_ai_controlled_position(2));
         assert!(!state.is_ai_position(2));
     }
 

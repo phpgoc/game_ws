@@ -1566,6 +1566,51 @@ impl RoomService {
         self.rooms.get(room_key).map(|entry| entry.game_id)
     }
 
+    pub fn session_official_session_id(&self, session_id: SessionId) -> Option<String> {
+        self.sessions
+            .get(&session_id)
+            .and_then(|session| session.official_session_id.clone())
+    }
+
+    pub fn session_is_away(&self, session_id: SessionId) -> bool {
+        let Some(session) = self.sessions.get(&session_id) else {
+            return false;
+        };
+        let (Some(room_key), Some(position)) = (session.room_key.as_ref(), session.position) else {
+            return false;
+        };
+        self.rooms
+            .get(room_key)
+            .is_some_and(|entry| entry.state.is_away(position))
+    }
+
+    pub fn set_session_ai_takeover(&mut self, session_id: SessionId, enabled: bool) -> bool {
+        let Some(session) = self.sessions.get(&session_id) else {
+            return false;
+        };
+        let (Some(room_key), Some(position)) = (session.room_key.clone(), session.position) else {
+            return false;
+        };
+        let Some(entry) = self.rooms.get_mut(&room_key) else {
+            return false;
+        };
+        if !entry.state.is_away(position) || entry.state.is_ai_position(position) {
+            return false;
+        }
+        if enabled {
+            entry.state.mark_ai_takeover_position(position);
+        } else {
+            entry.state.clear_ai_takeover_position(position);
+        }
+        true
+    }
+
+    pub fn room_position_is_ai_takeover(&self, room_key: &str, position: usize) -> bool {
+        self.rooms
+            .get(room_key)
+            .is_some_and(|entry| entry.state.is_ai_takeover_position(position))
+    }
+
     /// 房间人数是否达到下限（可以开始了）。
     pub fn room_is_ready_to_start(&self, room_key: &str) -> bool {
         let Some(entry) = self.rooms.get(room_key) else {
