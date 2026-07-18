@@ -852,6 +852,55 @@ fn rob_gang_hu_respects_shenyang_open_requirement() {
 }
 
 #[test]
+fn rob_gang_hu_allows_configured_closed_sequence_dragon_pair_win() {
+    let mut state = playable_state();
+    state
+        .hands
+        .insert(0, vec![3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31]);
+    state.melds.insert(
+        0,
+        vec![build_meld(
+            ShenyangMahjongMeldKind::PENG,
+            vec![3, 3, 3],
+            Some(2),
+        )],
+    );
+    state
+        .hands
+        .insert(1, vec![1, 2, 4, 5, 6, 11, 12, 13, 21, 22, 23, 35, 35]);
+    state.wall = vec![36];
+    state.last_drawn_tile = Some(3);
+    state.claim_window = Some(ClaimWindowState {
+        tile: 3,
+        from_position: 0,
+        kind: ClaimWindowKind::RobGang,
+        eligible_positions: vec![1],
+        responses: HashMap::from([(1, ClaimResponse::Hu)]),
+    });
+    let configs = HashMap::from([("allow_first_chi".to_owned(), 0)]);
+    let mut dispatch = Dispatch::default();
+
+    resolve_claim_window(
+        &RoomService::default(),
+        "room",
+        &mut state,
+        &configs,
+        &mut dispatch,
+    );
+
+    let settlement = state.settlement.as_ref().expect("settlement");
+    assert_eq!(settlement.winner_positions, vec![1]);
+    assert_eq!(settlement.from_position, Some(0));
+    assert_eq!(settlement.win_tile, Some(3));
+    assert!(settlement.is_reverse_win);
+    assert!(!state.hands.get(&0).unwrap().contains(&3));
+    assert_eq!(
+        state.melds.get(&0).unwrap().first().unwrap().kind,
+        ShenyangMahjongMeldKind::PENG
+    );
+}
+
+#[test]
 fn rob_gang_hu_settles_without_upgrading_peng() {
     let mut state = playable_state();
     state
