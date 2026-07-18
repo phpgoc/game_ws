@@ -120,8 +120,7 @@ pub(super) fn self_gang_score(
         && capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table)
         && !capped_normal_route_visible_fan_reaches_cap(hand, melds, table)
         && capped_normal_route_visible_fan_reaches_cap(&next, &next_melds, table);
-    let piao_route_projects_cap = has_door_opening_meld(melds, table)
-        && committed_piao_plan
+    let piao_route_projects_cap = committed_piao_plan
         && has_piao_route_basics(&next, &next_melds)
         && capped_piao_route_visible_fan_projects_cap(hand, melds, &next, &next_melds, table);
     let pure_one_suit_route_projects_cap = has_established_pure_one_suit_route(hand, melds)

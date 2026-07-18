@@ -103,6 +103,39 @@ fn half_capped_committed_piao_self_gang_takes_projected_cap() {
 }
 
 #[test]
+fn half_capped_closed_dragon_pair_piao_self_gang_takes_projected_cap() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.dealer_position = 3;
+    table.max_fan = Some(6);
+    table.seats.get_mut(&0).unwrap().melds = vec![WsShenyangMahjongMeld {
+        kind: ShenyangMahjongMeldKind::XI_GANG,
+        tiles: vec![35, 36, 37],
+        from_position: None,
+    }];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![1, 1, 1, 11, 11, 12, 21, 21, 21, 21, 35];
+    let next_hand = remove_n_tiles(&hand, 21, 4);
+    let mut next_melds = melds.to_vec();
+    next_melds.push(test_concealed_gang_meld(21));
+
+    assert!(!has_door_opening_meld(melds, &table));
+    assert!(piao_plan_score_for_context(&hand, melds, &table, 0) >= 40.0);
+    assert!(piao_committed_group_count(&hand, melds) >= 3);
+    assert_eq!(best_ready_score_after_discard(&hand, melds, &table, 0), 0.0);
+    assert!(capped_piao_route_visible_fan_projects_cap(
+        &hand,
+        melds,
+        &next_hand,
+        &next_melds,
+        &table,
+    ));
+    assert_eq!(
+        choose_self_gang_from_view(&hand, &[21], &table, 0),
+        Some(21)
+    );
+}
+
+#[test]
 fn half_capped_established_pure_self_gang_takes_projected_cap() {
     let mut table = table_with_discards(1, Vec::new());
     table.dealer_position = 3;
