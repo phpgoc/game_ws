@@ -123,11 +123,20 @@ fn one_step_wait_potential_with_simulated_discards(
     {
         return 0.0;
     }
-    let open_basic_route_foundation = has_door_opening_meld(melds, table)
+    let open_normal_route_foundation = has_door_opening_meld(melds, table)
         && missing_suits(hand, melds).is_empty()
         && has_terminal_or_honor_with_extra(hand, melds, None)
         && has_triplet_or_dragon_pair(hand, melds);
-    if hand_power(hand) < 50.0 && pair_count(hand) < 4 && !open_basic_route_foundation {
+    let closed_sequence_route_foundation = !table.allow_first_chi
+        && melds.iter().all(is_xi_gang_meld)
+        && missing_suits(hand, melds).is_empty()
+        && has_terminal_or_honor_with_extra(hand, melds, None)
+        && has_dragon_pair(hand);
+    if hand_power(hand) < 50.0
+        && pair_count(hand) < 4
+        && !open_normal_route_foundation
+        && !closed_sequence_route_foundation
+    {
         return 0.0;
     }
 

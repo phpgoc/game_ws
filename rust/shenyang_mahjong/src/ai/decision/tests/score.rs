@@ -353,6 +353,54 @@ fn one_step_wait_potential_values_open_basic_route_foundation() {
 }
 
 #[test]
+fn one_step_wait_potential_values_first_chi_disabled_closed_route_after_xi_gang() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.allow_first_chi = false;
+    table.seats.get_mut(&0).unwrap().melds = vec![WsShenyangMahjongMeld {
+        kind: ShenyangMahjongMeldKind::XI_GANG,
+        tiles: vec![31, 32, 33, 34],
+        from_position: None,
+    }];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![1, 2, 3, 5, 11, 12, 13, 21, 35, 35];
+
+    assert!(hand_power(&hand) < 50.0);
+    assert!(pair_count(&hand) < 4);
+    assert!(!has_open_meld(melds));
+    assert!(missing_suits(&hand, melds).is_empty());
+    assert!(has_terminal_or_honor_with_extra(&hand, melds, None));
+
+    let mut after_draw = hand.clone();
+    after_draw.push(22);
+    let after_discard = remove_n_tiles(&after_draw, 5, 1);
+    assert!(ready_tile_score_after_discard(&after_discard, melds, &table, 0, 5,) > 0.0);
+    assert!(
+        one_step_wait_potential(&hand, melds, &table, 0) > 0.0,
+        "the configured closed route can draw 22, discard 5, and wait on 23"
+    );
+
+    let mut first_chi_allowed = table.clone();
+    first_chi_allowed.allow_first_chi = true;
+    let first_chi_allowed_melds = first_chi_allowed.seats.get(&0).unwrap().melds.as_slice();
+    assert_eq!(
+        one_step_wait_potential(&hand, first_chi_allowed_melds, &first_chi_allowed, 0),
+        0.0,
+    );
+
+    let mut concealed_gang_table = table.clone();
+    concealed_gang_table.seats.get_mut(&0).unwrap().melds = vec![WsShenyangMahjongMeld {
+        kind: ShenyangMahjongMeldKind::GANG,
+        tiles: vec![31, 31, 31, 31],
+        from_position: None,
+    }];
+    let concealed_gang_melds = concealed_gang_table.seats.get(&0).unwrap().melds.as_slice();
+    assert_eq!(
+        one_step_wait_potential(&hand, concealed_gang_melds, &concealed_gang_table, 0),
+        0.0,
+    );
+}
+
+#[test]
 fn ready_cap_counts_single_wait_fan() {
     let mut table = table_with_discards(1, Vec::new());
     table.max_fan = Some(2);

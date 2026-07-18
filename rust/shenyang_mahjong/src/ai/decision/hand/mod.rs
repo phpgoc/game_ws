@@ -15,7 +15,8 @@ use crate::rules::{
 
 use super::meld::{is_triplet_like_meld, valid_meld_count, valid_meld_tiles};
 use super::tile::{
-    is_honor, is_suited, is_valid_tile, tile_is_terminal, tile_rank, tile_suit, unique_tiles,
+    is_dragon, is_honor, is_suited, is_valid_tile, tile_is_terminal, tile_rank, tile_suit,
+    unique_tiles,
 };
 
 pub(super) use counts::*;

@@ -1,4 +1,3 @@
-use super::super::meld::is_xi_gang_meld;
 use super::super::*;
 use super::heng::loses_basic_heng_recovery_after_discard;
 
@@ -28,11 +27,6 @@ fn loses_first_chi_disabled_closed_dragon_pair_after_xi_gang(
         return false;
     }
 
-    let has_dragon_pair = |hand: &[i32]| {
-        unique_tiles(hand).into_iter().any(|tile| {
-            is_dragon(tile) && hand.iter().filter(|hand_tile| **hand_tile == tile).count() >= 2
-        })
-    };
     let mut hand_before_discard = hand_after_discard.to_vec();
     hand_before_discard.push(discarded_tile);
     has_dragon_pair(&hand_before_discard) && !has_dragon_pair(hand_after_discard)

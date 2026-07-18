@@ -52,7 +52,7 @@ use defense::*;
 #[cfg(test)]
 use discard::*;
 use hand::{
-    hand_power, has_terminal_or_honor_with_extra, has_triplet_like_group,
+    hand_power, has_dragon_pair, has_terminal_or_honor_with_extra, has_triplet_like_group,
     has_triplet_or_dragon_pair, has_triplet_or_dragon_pair_with_extra, is_seven_pairs_wait_shape,
     missing_suits, neighbor_count, pair_count, remove_n_tiles, single_tile, suit_presence,
     suit_presence_with_extra, suited_tile_count_for_suit, terminal_or_honor_count,
@@ -62,8 +62,8 @@ use hand::{
 use meld::{
     claim_gang_meld, claim_peng_meld, has_closed_meld, has_open_meld, has_peng_meld,
     has_virtual_tile_count, is_closed_meld, is_open_meld, is_open_peng_meld, is_sequence_meld,
-    is_triplet_like_meld, is_valid_meld, meld_primary_tile, promoted_added_gang_melds,
-    valid_meld_count, valid_meld_tiles,
+    is_triplet_like_meld, is_valid_meld, is_xi_gang_meld, meld_primary_tile,
+    promoted_added_gang_melds, valid_meld_count, valid_meld_tiles,
 };
 use piao::*;
 use pure_one_suit::*;

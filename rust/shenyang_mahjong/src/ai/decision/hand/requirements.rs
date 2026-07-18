@@ -1,5 +1,11 @@
 use super::*;
 
+pub(in crate::ai::decision) fn has_dragon_pair(hand: &[i32]) -> bool {
+    unique_tiles(hand).into_iter().any(|tile| {
+        is_dragon(tile) && hand.iter().filter(|hand_tile| **hand_tile == tile).count() >= 2
+    })
+}
+
 pub(in crate::ai::decision) fn has_terminal_or_honor_with_extra(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
