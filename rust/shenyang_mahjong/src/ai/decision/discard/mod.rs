@@ -115,6 +115,7 @@ fn choose_discard_from_view_inner(
             + opponent_threat_discard_bias(table, position, tile, count)
             + pure_one_suit_threat_discard_bias(table, position, tile, count)
             + closed_opponent_threat_discard_bias(table, position, tile, count)
+            + ting_opponent_threat_discard_bias(table, position, tile, count)
             + late_defense_discard_bias(table, position, tile);
         let combined = score + discard_bias + pressure;
         let ready_live_tiles = if speed_first_wait {

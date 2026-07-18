@@ -52,6 +52,18 @@ fn major_dealer_threat_disables_single_wait_fan_bias() {
 }
 
 #[test]
+fn declared_ting_dealer_is_always_a_major_threat() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.wall_count = 70;
+
+    assert!(!dealer_opponent_has_major_threat(&table, 0));
+
+    table.ting_positions.insert(1);
+
+    assert!(dealer_opponent_has_major_threat(&table, 0));
+}
+
+#[test]
 fn seven_pairs_prefers_live_middle_wait_against_major_dealer_threat() {
     let mut table = table_with_discards(1, Vec::new());
     table.seats.get_mut(&1).unwrap().hand_count = 7;

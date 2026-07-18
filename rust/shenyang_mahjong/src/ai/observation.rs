@@ -20,6 +20,7 @@ pub struct AiPublicTable {
     pub wall_count: usize,
     pub score_cap: Option<i32>,
     pub allow_first_chi: bool,
+    pub ting_positions: HashSet<usize>,
     pub claim_window: Option<AiClaimView>,
     pub seats: HashMap<usize, AiSeatView>,
 }
@@ -77,6 +78,11 @@ pub fn build_public_table_with_configs(
         wall_count: state.wall_count(),
         score_cap: configs.get("max_fan").copied().filter(|fan| *fan > 0),
         allow_first_chi: ShenyangMahjongWinContext::from_configs(configs).allows_first_chi(),
+        ting_positions: seats
+            .keys()
+            .copied()
+            .filter(|position| state.is_ting(*position))
+            .collect(),
         claim_window,
         seats,
     }
@@ -102,6 +108,23 @@ mod tests {
             let configs = HashMap::from([("allow_first_chi".to_owned(), value)]);
             assert!(!build_public_table_with_configs(&state, &configs).allow_first_chi);
         }
+    }
+
+    #[test]
+    fn public_table_exposes_declared_ting_positions() {
+        let base = Arc::new(Mutex::new(CommonGameState::default()));
+        {
+            let mut common = base.lock().unwrap();
+            for position in 0..4 {
+                common.add_player(position, position as u64 + 1, &format!("P{position}"));
+            }
+        }
+        let mut state = ShenyangMahjongLoopState::new(base);
+        state.declare_ting(2);
+
+        let table = build_public_table_with_configs(&state, &HashMap::new());
+
+        assert_eq!(table.ting_positions, HashSet::from([2]));
     }
 
     #[test]

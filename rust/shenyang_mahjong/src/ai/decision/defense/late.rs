@@ -129,5 +129,6 @@ pub(in crate::ai::decision) fn late_defense_tile_safety_score(
         + pure_one_suit_threat_discard_bias(table, position, tile, own_tile_count)
         + opponent_missing_suit_safety_bias(table, position, tile)
         + closed_opponent_threat_discard_bias(table, position, tile, own_tile_count)
+        + ting_opponent_threat_discard_bias(table, position, tile, own_tile_count)
         + estimate_pressure_for_tile(table, position, tile)
 }
