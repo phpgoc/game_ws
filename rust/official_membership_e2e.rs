@@ -160,11 +160,12 @@ async fn official_membership_gate_and_ai_takeover_work_over_websocket() {
     assert_eq!(stats.room_count().await, 1);
 
     send_request(&mut member, Routes::AWAY as i32, json!({})).await;
-    receive_until(&mut member, "member AWAY event", |value| {
+    let member_away = receive_until(&mut member, "member AWAY event", |value| {
         value.get("code").and_then(Value::as_i64) == Some(WsCode::AWAY as i64)
             && value["data"]["position"] == json!(0)
     })
     .await;
+    assert_eq!(member_away["data"]["is_ai_takeover"], json!(true));
     assert!(stats.room_position_is_ai_takeover(&room, 0).await);
 
     send_request(&mut member, Routes::BACK as i32, json!({})).await;
@@ -183,11 +184,12 @@ async fn official_membership_gate_and_ai_takeover_work_over_websocket() {
     assert_eq!(joined_nonmember["data"]["self_position"], json!(1));
 
     send_request(&mut nonmember, Routes::AWAY as i32, json!({})).await;
-    receive_until(&mut nonmember, "nonmember AWAY event", |value| {
+    let nonmember_away = receive_until(&mut nonmember, "nonmember AWAY event", |value| {
         value.get("code").and_then(Value::as_i64) == Some(WsCode::AWAY as i64)
             && value["data"]["position"] == json!(1)
     })
     .await;
+    assert_eq!(nonmember_away["data"]["is_ai_takeover"], json!(false));
     assert!(!stats.room_position_is_ai_takeover(&room, 1).await);
 
     stop_handle.stop();

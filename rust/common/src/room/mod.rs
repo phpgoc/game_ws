@@ -381,6 +381,8 @@ impl RoomService {
                     position: position as i32,
                     is_active: true,
                     is_ai: true,
+                    away: false,
+                    is_ai_takeover: false,
                 },
                 &mut dispatch,
             );
@@ -431,6 +433,7 @@ impl RoomService {
             WsCode::AWAY as i32,
             WsPositionEvent {
                 position: position as i32,
+                is_ai_takeover: false,
             },
             &mut dispatch,
         );
@@ -545,6 +548,7 @@ impl RoomService {
             WsCode::BACK as i32,
             WsPositionEvent {
                 position: position as i32,
+                is_ai_takeover: false,
             },
             &mut dispatch,
         );
@@ -697,6 +701,8 @@ impl RoomService {
                             is_active: entry.state.is_ai_position(*p)
                                 || !entry.state.is_disconnected(*p),
                             is_ai: entry.state.is_ai_position(*p),
+                            away: entry.state.is_away(*p) || entry.state.is_disconnected(*p),
+                            is_ai_takeover: entry.state.is_ai_takeover_position(*p),
                         })
                         .collect();
                     self.push_response_with_data(
@@ -797,6 +803,8 @@ impl RoomService {
                     position: position as i32,
                     is_active: true,
                     is_ai: false,
+                    away: false,
+                    is_ai_takeover: false,
                 },
                 &mut dispatch,
             );
@@ -813,6 +821,8 @@ impl RoomService {
                     position: *p as i32,
                     is_active: entry.state.is_ai_position(*p) || !entry.state.is_disconnected(*p),
                     is_ai: entry.state.is_ai_position(*p),
+                    away: entry.state.is_away(*p) || entry.state.is_disconnected(*p),
+                    is_ai_takeover: entry.state.is_ai_takeover_position(*p),
                 })
                 .collect();
             self.push_response_with_data(
@@ -914,6 +924,8 @@ impl RoomService {
                 position: position as i32,
                 is_active: true,
                 is_ai: false,
+                away: false,
+                is_ai_takeover: false,
             },
             &mut dispatch,
         );
@@ -932,6 +944,8 @@ impl RoomService {
                     position: *p as i32,
                     is_active: entry.state.is_ai_position(*p) || !entry.state.is_disconnected(*p),
                     is_ai: entry.state.is_ai_position(*p),
+                    away: entry.state.is_away(*p) || entry.state.is_disconnected(*p),
+                    is_ai_takeover: entry.state.is_ai_takeover_position(*p),
                 })
                 .collect();
             self.push_response_with_data(
@@ -1337,6 +1351,8 @@ impl RoomService {
                         position: pos as i32,
                         is_active: false,
                         is_ai: false,
+                        away: true,
+                        is_ai_takeover: entry.state.is_ai_takeover_position(pos),
                     })
                     .unwrap_or(Value::Null),
                 };

@@ -405,6 +405,7 @@ impl HoldemGameHandler {
                 WsCode::AWAY as i32,
                 share_type_public::WsPositionEvent {
                     position: position as i32,
+                    is_ai_takeover: false,
                 },
                 dispatch,
             );

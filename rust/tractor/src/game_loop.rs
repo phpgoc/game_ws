@@ -96,6 +96,7 @@ fn build_auto_bury_dispatch(
             WsCode::AWAY as i32,
             WsPositionEvent {
                 position: position as i32,
+                is_ai_takeover: false,
             },
             &mut dispatch,
         );
@@ -192,6 +193,7 @@ fn build_auto_dispatch(
             WsCode::AWAY as i32,
             WsPositionEvent {
                 position: position as i32,
+                is_ai_takeover: false,
             },
             &mut dispatch,
         );

@@ -148,6 +148,8 @@ pub struct WsShenyangMahjongPublicPlayerSnapshot {
     pub away: bool,
     #[serde(default)]
     pub is_ai: bool,
+    #[serde(default)]
+    pub is_ai_takeover: bool,
     pub hand_count: i32,
     pub discards: Vec<i32>,
     pub melds: Vec<WsShenyangMahjongMeld>,

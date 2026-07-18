@@ -21,12 +21,35 @@ use tokio_tungstenite::{accept_async, tungstenite::Message};
 use tracing::{error, info, warn};
 
 use crate::{
-    ClientRequest, Dispatch, RoomService, SessionId, SettingsBuilderResult,
+    ClientRequest, Dispatch, OutboundPayload, RoomService, SessionId, SettingsBuilderResult,
     cli::parse_bind_cli,
     from_message,
     net::{resolve_host, resolve_port},
     to_text_message,
 };
+
+fn set_away_takeover_flag(dispatch: &mut Dispatch, position: usize, is_ai_takeover: bool) {
+    for delivery in &mut dispatch.messages {
+        let OutboundPayload::Event(event) = &mut delivery.payload else {
+            continue;
+        };
+        if event.code != share_type_public::WsCode::AWAY as i32
+            || event
+                .data
+                .get("position")
+                .and_then(serde_json::Value::as_i64)
+                != Some(position as i64)
+        {
+            continue;
+        }
+        if let serde_json::Value::Object(data) = &mut event.data {
+            data.insert(
+                "is_ai_takeover".to_owned(),
+                serde_json::Value::Bool(is_ai_takeover),
+            );
+        }
+    }
+}
 
 struct ConnectionContext<H> {
     idle_timeout: Duration,
@@ -284,6 +307,16 @@ where
                     && room.session_is_away(session_id)
                 {
                     room.set_session_ai_takeover(session_id, ai_takeover_authorized);
+                    if let (Some(position), Some(room_key)) = (
+                        room.session_position(session_id),
+                        room.room_key_of(session_id),
+                    ) {
+                        set_away_takeover_flag(
+                            &mut dispatch,
+                            position,
+                            room.room_position_is_ai_takeover(&room_key, position),
+                        );
+                    }
                 }
                 handler.after_common_request(&mut room, session_id, &request, &mut dispatch);
                 dispatch

@@ -65,6 +65,12 @@ pub struct WsMemberInfo {
     pub is_active: bool,
     #[serde(default)]
     pub is_ai: bool,
+    /// 玩家当前处于托管或离线状态。
+    #[serde(default)]
+    pub away: bool,
+    /// 官方服会员离开后由完整游戏 AI 接管。
+    #[serde(default)]
+    pub is_ai_takeover: bool,
 }
 
 #[typeshare]
@@ -90,6 +96,8 @@ pub struct WsNameEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsPositionEvent {
     pub position: i32,
+    #[serde(default)]
+    pub is_ai_takeover: bool,
 }
 
 #[typeshare]

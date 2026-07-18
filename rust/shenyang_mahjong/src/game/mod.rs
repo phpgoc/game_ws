@@ -277,6 +277,7 @@ pub(crate) fn build_table_snapshot_event_with_configs(
             name,
             away: state.is_away(position) || state.is_disconnected(position),
             is_ai: state.is_ai_position(position),
+            is_ai_takeover: state.base.lock().unwrap().is_ai_takeover_position(position),
             hand_count: state
                 .hands
                 .get(&position)

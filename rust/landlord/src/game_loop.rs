@@ -789,6 +789,7 @@ pub(crate) fn start_game_loop(
                         WsCode::AWAY as i32,
                         serde_json::to_value(WsPositionEvent {
                             position: position as i32,
+                            is_ai_takeover: false,
                         })
                         .unwrap_or_default(),
                         &room_service,
@@ -889,6 +890,7 @@ pub(crate) fn start_game_loop(
                                 WsCode::AWAY as i32,
                                 serde_json::to_value(WsPositionEvent {
                                     position: position as i32,
+                                    is_ai_takeover: false,
                                 })
                                 .unwrap_or_default(),
                                 &rs,
