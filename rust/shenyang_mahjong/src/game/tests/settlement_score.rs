@@ -28,6 +28,56 @@ fn self_draw_converts_each_payers_final_fan_to_score() {
 }
 
 #[test]
+fn self_draw_broadcasts_exponential_score_changes_to_clients() {
+    let (room_service, _handler, room_key, loop_state) =
+        setup_request_room_with_configs(serde_json::json!({
+            "allow_first_chi": 0,
+            "max_fan": 50
+        }));
+    let configs = room_service.room_configs(&room_key).expect("room configs");
+    let mut state = loop_state.lock().unwrap();
+    state.phase = ShenyangMahjongPhase::Play;
+    state.current_position = 3;
+    state.dealer_position = 0;
+    state
+        .hands
+        .insert(3, vec![2, 3, 4, 5, 6, 7, 11, 12, 13, 21, 22, 23, 35, 35]);
+    state.wall = vec![31];
+    state.last_drawn_tile = Some(4);
+    let mut dispatch = Dispatch::default();
+
+    perform_self_draw_hu(
+        &room_service,
+        &room_key,
+        &mut state,
+        &configs,
+        &mut dispatch,
+        3,
+    );
+
+    let event = dispatch
+        .messages
+        .iter()
+        .find_map(|message| match &message.payload {
+            OutboundPayload::Event(event) if event.code == WsCode::GAME_OVER as i32 => {
+                serde_json::from_value::<WsShenyangMahjongSettlementEvent>(event.data.clone()).ok()
+            }
+            _ => None,
+        })
+        .expect("self draw should broadcast a settlement event");
+    assert_eq!(
+        event
+            .score_changes
+            .iter()
+            .map(|change| (change.position, change.score))
+            .collect::<Vec<_>>(),
+        vec![(0, -16), (1, -8), (2, -8), (3, 32)]
+    );
+    assert_eq!(event.winner_details.len(), 1);
+    assert_eq!(event.winner_details[0].score, 32);
+}
+
+#[test]
 fn settlement_score_adds_closed_fan_when_discard_payer_has_not_opened() {
     let open_non_payer_meld = || vec![open_peng_meld(31, 2)];
     let mut closed_payer_state = playable_state();
