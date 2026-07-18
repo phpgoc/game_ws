@@ -899,7 +899,7 @@ mod tests {
     }
 
     #[test]
-    fn away_position_passes_late_low_fan_self_draw_for_live_capped_wait() {
+    fn away_position_takes_self_draw_when_payment_modifiers_reach_cap() {
         let mut state = playable_state();
         state.base.lock().unwrap().mark_away(0);
         state.base.lock().unwrap().mark_ai_takeover_position(0);
@@ -922,15 +922,21 @@ mod tests {
             &mut dispatch,
         ));
 
-        assert_eq!(state.phase, ShenyangMahjongPhase::Play);
-        assert!(state.settlement.is_none());
-        assert_eq!(state.discards.get(&0).unwrap(), &vec![16]);
+        let settlement = state.settlement.as_ref().expect("settlement");
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert_eq!(settlement.winner_positions, vec![0]);
+        assert!(settlement.is_self_draw);
+        assert!(state.discards.get(&0).unwrap().is_empty());
         assert_eq!(state.discards.get(&1).unwrap(), &vec![16]);
-        assert_eq!(state.last_drawn_tile, Some(37));
-        assert_eq!(
-            state.hands.get(&0).unwrap(),
-            &vec![13, 14, 15, 15, 16, 16, 17, 28, 28, 28]
-        );
+        let event = build_settlement_event_with_configs(&state, &configs)
+            .expect("capped self-draw settlement event");
+        assert_eq!(settlement_score_for_position(&event.score_changes, 0), 12);
+        for position in 1..4 {
+            assert_eq!(
+                settlement_score_for_position(&event.score_changes, position),
+                -4
+            );
+        }
     }
 
     #[test]

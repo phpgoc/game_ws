@@ -95,7 +95,15 @@ pub fn choose_claim_from_view(
     win_hand.push(tile);
     win_hand.sort_unstable();
     if is_complete_win_for_table(&win_hand, melds, table) {
-        if should_pass_hu_for_capped_live_wait(hand, &win_hand, melds, table, position, tile) {
+        if should_pass_hu_for_capped_live_wait_with_payer(
+            hand,
+            &win_hand,
+            melds,
+            table,
+            position,
+            tile,
+            Some(claim.from_position),
+        ) {
             return Some(AiClaimChoice::Pass);
         }
         return Some(AiClaimChoice::Hu);
@@ -159,6 +167,7 @@ pub fn choose_claim_from_view(
     Some(AiClaimChoice::Pass)
 }
 
+#[cfg(test)]
 pub(in crate::ai::decision) fn should_pass_hu_for_capped_live_wait(
     hand: &[i32],
     win_hand: &[i32],
@@ -166,6 +175,31 @@ pub(in crate::ai::decision) fn should_pass_hu_for_capped_live_wait(
     table: &AiPublicTable,
     position: usize,
     tile: i32,
+) -> bool {
+    let from_position = table
+        .claim_window
+        .as_ref()
+        .filter(|claim| claim.tile == tile)
+        .map(|claim| claim.from_position);
+    should_pass_hu_for_capped_live_wait_with_payer(
+        hand,
+        win_hand,
+        melds,
+        table,
+        position,
+        tile,
+        from_position,
+    )
+}
+
+fn should_pass_hu_for_capped_live_wait_with_payer(
+    hand: &[i32],
+    win_hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    tile: i32,
+    from_position: Option<usize>,
 ) -> bool {
     let Some(score_cap) = table.score_cap.filter(|score_cap| *score_cap > 2) else {
         return false;
@@ -186,10 +220,13 @@ pub(in crate::ai::decision) fn should_pass_hu_for_capped_live_wait(
         table,
         &current_known_unavailable,
     );
-    if current_fan != shenyang_fan_needed_for_score_cap(score_cap) - 1 {
-        return false;
-    }
-    if shenyang_fan_score_exceeds_half_cap(current_fan, score_cap) {
+    let payment_fans = hu_payment_fans(current_fan, table, position, from_position);
+    let one_fan_short = shenyang_fan_needed_for_score_cap(score_cap) - 1;
+    if payment_fans.is_empty()
+        || payment_fans.iter().any(|fan| {
+            *fan != one_fan_short || shenyang_fan_score_exceeds_half_cap(*fan, score_cap)
+        })
+    {
         return false;
     }
 
@@ -241,6 +278,57 @@ pub(in crate::ai::decision) fn should_pass_hu_for_capped_live_wait(
             >= CAPPED_HU_CHASE_MIN_WALL_HIT_PROBABILITY
 }
 
+fn hu_payment_fans(
+    winner_fan: i32,
+    table: &AiPublicTable,
+    winner_position: usize,
+    from_position: Option<usize>,
+) -> Vec<i32> {
+    let payer_positions = match from_position {
+        Some(position) => vec![position],
+        None => table
+            .seats
+            .keys()
+            .copied()
+            .filter(|position| *position != winner_position)
+            .collect::<Vec<_>>(),
+    };
+    if payer_positions.is_empty() {
+        return Vec::new();
+    }
+
+    let potential_loser_positions = table
+        .seats
+        .keys()
+        .copied()
+        .filter(|position| *position != winner_position)
+        .collect::<Vec<_>>();
+    let all_losers_closed = potential_loser_positions.len() == 3
+        && potential_loser_positions.iter().all(|position| {
+            table
+                .seats
+                .get(position)
+                .is_some_and(|seat| !has_open_meld(&seat.melds))
+        });
+
+    payer_positions
+        .into_iter()
+        .map(|payer_position| {
+            let payer_is_closed = table
+                .seats
+                .get(&payer_position)
+                .is_some_and(|seat| !has_open_meld(&seat.melds));
+            shenyang_payment_fan(
+                winner_fan,
+                winner_position == table.dealer_position,
+                payer_position == table.dealer_position,
+                payer_is_closed,
+                all_losers_closed,
+            )
+        })
+        .collect()
+}
+
 pub fn should_pass_self_draw_hu_from_view(
     win_hand: &[i32],
     table: &AiPublicTable,
@@ -262,12 +350,13 @@ pub fn should_pass_self_draw_hu_from_view(
     hand_before_win.remove(index);
     sort_tiles(&mut hand_before_win);
 
-    should_pass_hu_for_capped_live_wait(
+    should_pass_hu_for_capped_live_wait_with_payer(
         &hand_before_win,
         win_hand,
         melds,
         table,
         position,
         win_tile,
+        None,
     )
 }

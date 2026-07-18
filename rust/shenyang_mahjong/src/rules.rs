@@ -850,6 +850,23 @@ pub(crate) fn shenyang_score_for_fan_with_cap(fan: i32, score_cap: Option<i32>) 
         .unwrap_or(score)
 }
 
+pub(crate) fn shenyang_payment_fan(
+    winner_fan: i32,
+    winner_is_dealer: bool,
+    payer_is_dealer: bool,
+    payer_is_closed: bool,
+    all_losers_closed: bool,
+) -> i32 {
+    winner_fan
+        + i32::from(winner_is_dealer)
+        + i32::from(payer_is_dealer)
+        + if payer_is_closed {
+            if all_losers_closed { 2 } else { 1 }
+        } else {
+            0
+        }
+}
+
 pub(crate) fn shenyang_fan_reaches_score_cap(fan: i32, score_cap: i32) -> bool {
     score_cap > 0 && shenyang_score_for_fan(fan) >= score_cap
 }
@@ -1008,7 +1025,7 @@ mod tests {
         is_single_wait_shape_with_known_unavailable_tiles, is_standard_win,
         is_unique_complete_wait, is_win, satisfies_shenyang_win,
         satisfies_shenyang_win_with_context, shenyang_fan_needed_for_score_cap,
-        shenyang_fan_reaches_score_cap, shenyang_fan_score_exceeds_half_cap,
+        shenyang_fan_reaches_score_cap, shenyang_fan_score_exceeds_half_cap, shenyang_payment_fan,
         shenyang_score_for_fan, shenyang_score_for_fan_with_cap, shenyang_score_visible_win_fan,
         shenyang_score_wait_fan, shenyang_win_pattern, shenyang_win_pattern_base_fan,
     };
@@ -1027,6 +1044,15 @@ mod tests {
         assert!(!shenyang_fan_reaches_score_cap(5, 50));
         assert!(shenyang_fan_reaches_score_cap(6, 50));
         assert_eq!(shenyang_fan_needed_for_score_cap(50), 6);
+    }
+
+    #[test]
+    fn payment_fan_includes_dealer_and_payer_closed_state() {
+        assert_eq!(shenyang_payment_fan(1, false, false, false, false), 1);
+        assert_eq!(shenyang_payment_fan(1, true, false, false, false), 2);
+        assert_eq!(shenyang_payment_fan(1, false, true, false, false), 2);
+        assert_eq!(shenyang_payment_fan(1, false, false, true, false), 2);
+        assert_eq!(shenyang_payment_fan(1, false, true, true, true), 4);
     }
 
     #[test]

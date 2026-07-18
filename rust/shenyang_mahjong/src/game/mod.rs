@@ -27,8 +27,8 @@ use crate::game_state::{
 use crate::rules::{
     ShenyangMahjongWinContext, XI_GANG_WINDS, can_chi, can_concealed_gang, can_gang, can_peng,
     is_complete_win_with_melds_with_context, is_door_opening_meld, is_valid_meld, is_xi_gang_tiles,
-    remove_tiles, shenyang_score_for_fan_with_cap, shenyang_score_visible_win_fan,
-    shenyang_win_pattern, tiles_in_hand,
+    remove_tiles, shenyang_payment_fan, shenyang_score_for_fan_with_cap,
+    shenyang_score_visible_win_fan, shenyang_win_pattern, tiles_in_hand,
 };
 #[cfg(test)]
 use crate::rules::{
@@ -2150,16 +2150,14 @@ pub(crate) fn settlement_score_changes_for_state(
             if payer == winner {
                 continue;
             }
-            let mut payment_fan = winner_fan;
-            if *winner == state.dealer_position {
-                payment_fan += 1;
-            }
-            if *payer == state.dealer_position {
-                payment_fan += 1;
-            }
-            if !position_has_open_meld(state, *payer) {
-                payment_fan += if all_losers_closed { 2 } else { 1 };
-            }
+            let payer_is_closed = !position_has_open_meld(state, *payer);
+            let payment_fan = shenyang_payment_fan(
+                winner_fan,
+                *winner == state.dealer_position,
+                *payer == state.dealer_position,
+                payer_is_closed,
+                all_losers_closed,
+            );
             let payment = shenyang_score_for_fan_with_cap(
                 payment_fan.max(0),
                 score_cap_from_configs(configs),

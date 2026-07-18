@@ -292,6 +292,128 @@ fn claim_hu_takes_when_current_fan_exceeds_half_cap() {
 }
 
 #[test]
+fn claim_hu_takes_five_fan_at_fifty_point_cap() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.dealer_position = 3;
+    table.score_cap = Some(50);
+    table.seats.get_mut(&0).unwrap().melds = vec![test_gang_meld(1), test_gang_meld(35)];
+    table.seats.get_mut(&1).unwrap().melds = vec![WsShenyangMahjongMeld {
+        kind: ShenyangMahjongMeldKind::PENG,
+        tiles: vec![9, 9, 9],
+        from_position: Some(2),
+    }];
+    table.claim_window = Some(AiClaimView {
+        tile: 36,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![11, 12, 13, 21, 22, 23, 36];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let mut current_win = hand.clone();
+    current_win.push(36);
+    sort_tiles(&mut current_win);
+    let current_known_unavailable = known_unavailable_tiles_for_claimed_win(&table, 0, 36);
+
+    assert_eq!(
+        estimated_fan_with_known_unavailable_wait(
+            &current_win,
+            melds,
+            36,
+            &current_known_unavailable,
+        ),
+        5
+    );
+    assert!(shenyang_fan_score_exceeds_half_cap(5, 50));
+    assert!(!should_pass_hu_for_capped_live_wait(
+        &hand,
+        &current_win,
+        melds,
+        &table,
+        0,
+        36,
+    ));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0),
+        Some(AiClaimChoice::Hu)
+    );
+}
+
+#[test]
+fn claim_hu_takes_when_payer_modifier_reaches_cap() {
+    let mut dealer_payer_table = table_with_discards(1, Vec::new());
+    dealer_payer_table.score_cap = Some(4);
+    dealer_payer_table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
+    dealer_payer_table.seats.get_mut(&1).unwrap().melds = vec![WsShenyangMahjongMeld {
+        kind: ShenyangMahjongMeldKind::PENG,
+        tiles: vec![9, 9, 9],
+        from_position: Some(2),
+    }];
+    dealer_payer_table.claim_window = Some(AiClaimView {
+        tile: 16,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let hand = vec![13, 14, 15, 15, 16, 16, 17, 28, 28, 28];
+    let mut win_hand = hand.clone();
+    win_hand.push(16);
+    sort_tiles(&mut win_hand);
+    let melds = dealer_payer_table.seats.get(&0).unwrap().melds.as_slice();
+
+    assert!(!dealer_opponent_has_major_threat(&dealer_payer_table, 0));
+    assert!(!should_pass_hu_for_capped_live_wait(
+        &hand,
+        &win_hand,
+        melds,
+        &dealer_payer_table,
+        0,
+        16,
+    ));
+    assert_eq!(
+        choose_claim_from_view(
+            &hand,
+            dealer_payer_table.claim_window.as_ref().unwrap(),
+            &dealer_payer_table,
+            0,
+        ),
+        Some(AiClaimChoice::Hu)
+    );
+
+    let mut closed_payer_table = dealer_payer_table.clone();
+    closed_payer_table.dealer_position = 3;
+    closed_payer_table.score_cap = Some(8);
+    closed_payer_table.seats.get_mut(&1).unwrap().melds.clear();
+    for position in 2..=3 {
+        closed_payer_table.seats.insert(
+            position,
+            AiSeatView {
+                position,
+                hand_count: 13,
+                discards: Vec::new(),
+                melds: Vec::new(),
+            },
+        );
+    }
+    assert!(!should_pass_hu_for_capped_live_wait(
+        &hand,
+        &win_hand,
+        melds,
+        &closed_payer_table,
+        0,
+        16,
+    ));
+    assert_eq!(
+        choose_claim_from_view(
+            &hand,
+            closed_payer_table.claim_window.as_ref().unwrap(),
+            &closed_payer_table,
+            0,
+        ),
+        Some(AiClaimChoice::Hu)
+    );
+}
+
+#[test]
 fn claimed_fourth_copy_keeps_seven_pairs_single_wait_fan() {
     let mut table = table_with_discards(1, vec![1]);
     table.claim_window = Some(AiClaimView {
@@ -523,10 +645,16 @@ fn hu_takes_one_fan_short_against_threatening_dealer() {
 #[test]
 fn late_claim_hu_can_pass_one_fan_short_when_capped_wait_is_live() {
     let mut table = table_with_discards(1, Vec::new());
+    table.dealer_position = 3;
     table.wall_count = FINAL_DEFENSE_WALL_COUNT;
     table.score_cap = Some(4);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
     table.seats.get_mut(&0).unwrap().discards = vec![16];
+    table.seats.get_mut(&1).unwrap().melds = vec![WsShenyangMahjongMeld {
+        kind: ShenyangMahjongMeldKind::PENG,
+        tiles: vec![9, 9, 9],
+        from_position: Some(2),
+    }];
     table.claim_window = Some(AiClaimView {
         tile: 16,
         from_position: 1,
@@ -605,7 +733,7 @@ fn late_self_draw_hu_takes_when_capped_wait_is_unlikely_to_reach_wall() {
 }
 
 #[test]
-fn self_draw_hu_can_pass_one_fan_short_when_capped_wait_is_live() {
+fn self_draw_hu_takes_when_dealer_payment_reaches_cap() {
     let mut table = table_with_discards(1, vec![16]);
     table.score_cap = Some(4);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
@@ -642,7 +770,9 @@ fn self_draw_hu_can_pass_one_fan_short_when_capped_wait_is_live() {
         ),
         2
     );
-    assert!(should_pass_self_draw_hu_from_view(&win_hand, &table, 0, 16,));
+    assert!(!should_pass_self_draw_hu_from_view(
+        &win_hand, &table, 0, 16,
+    ));
 }
 
 #[test]
