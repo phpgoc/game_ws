@@ -120,6 +120,60 @@ fn declared_ting_can_discard_drawn_tile_after_wait_becomes_dead() {
 }
 
 #[test]
+fn declared_ting_claim_options_allow_only_hu() {
+    let mut state = playable_state();
+    state.current_position = 0;
+    state.discards.insert(0, vec![5]);
+    state
+        .hands
+        .insert(1, vec![4, 5, 5, 5, 6, 11, 12, 13, 35, 35]);
+    state.melds.insert(1, vec![open_chi_meld(21)]);
+    state.wall = vec![31];
+
+    let before_ting = build_claim_options(&state, 5, 0, &default_configs());
+    let before_option = before_ting
+        .iter()
+        .find(|option| option.position == 1)
+        .expect("position 1 claim option before ting");
+    assert!(before_option.can_hu);
+    assert!(before_option.can_peng);
+    assert!(before_option.can_gang);
+    assert_eq!(before_option.chi_options, vec![vec![4, 6]]);
+
+    state.declare_ting(1);
+
+    let after_ting = build_claim_options(&state, 5, 0, &default_configs());
+    let after_option = after_ting
+        .iter()
+        .find(|option| option.position == 1)
+        .expect("ting position should retain its hu option");
+    assert!(after_option.can_hu);
+    assert!(!after_option.can_peng);
+    assert!(!after_option.can_gang);
+    assert!(after_option.chi_options.is_empty());
+}
+
+#[test]
+fn declared_ting_blocks_self_gang_and_xi_gang() {
+    let mut state = playable_state();
+    state.current_position = 1;
+    state
+        .hands
+        .insert(1, vec![3, 3, 3, 3, 4, 5, 6, 11, 12, 13, 31, 32, 33, 34]);
+    state.wall = vec![35];
+    state.last_drawn_tile = Some(3);
+    state.xi_gang_options.insert(1, vec![vec![31, 32, 33, 34]]);
+
+    assert!(can_self_gang(&state, 1, 3));
+    assert!(can_declare_xi_gang(&state, 1, &[31, 32, 33, 34]));
+
+    state.declare_ting(1);
+
+    assert!(!can_self_gang(&state, 1, 3));
+    assert!(!can_declare_xi_gang(&state, 1, &[31, 32, 33, 34]));
+}
+
+#[test]
 fn enabled_ting_setting_adds_one_fan_before_the_cap() {
     let mut state = playable_state();
     state
