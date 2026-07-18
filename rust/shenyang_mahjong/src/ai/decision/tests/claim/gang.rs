@@ -528,6 +528,48 @@ fn claim_gang_skips_ready_plain_gang_when_fan_exceeds_half_cap() {
 }
 
 #[test]
+fn claim_gang_stops_when_closed_payments_already_reach_cap() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.dealer_position = 0;
+    table.score_cap = Some(50);
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(35)];
+    table.claim_window = Some(AiClaimView {
+        tile: 9,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![1, 2, 3, 9, 9, 9, 11, 12, 13, 21];
+    let melds = table.seats.get(&0).unwrap().melds.clone();
+
+    assert!(ready_tile_score(&hand, &melds, &table, 0) > 0.0);
+    assert!(!ready_visible_fan_reaches_cap(&hand, &melds, &table, 0));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0),
+        Some(AiClaimChoice::Gang)
+    );
+
+    for position in [2, 3] {
+        table.seats.insert(
+            position,
+            AiSeatView {
+                position,
+                hand_count: 13,
+                discards: Vec::new(),
+                melds: Vec::new(),
+            },
+        );
+    }
+
+    assert_eq!(minimum_potential_payment_fan(3, &table, 0), 6);
+    assert!(ready_visible_fan_reaches_cap(&hand, &melds, &table, 0));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0),
+        Some(AiClaimChoice::Pass)
+    );
+}
+
+#[test]
 fn half_capped_ready_claim_gang_takes_projected_cap() {
     let mut table = table_with_discards(1, Vec::new());
     table.dealer_position = 3;

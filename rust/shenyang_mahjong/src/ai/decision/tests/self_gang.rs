@@ -722,6 +722,36 @@ fn self_gang_skips_ready_plain_gang_when_fan_exceeds_half_cap() {
 }
 
 #[test]
+fn self_gang_stops_when_closed_payments_already_reach_cap() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.dealer_position = 0;
+    table.score_cap = Some(50);
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(35)];
+    let hand = vec![1, 2, 3, 9, 9, 9, 9, 11, 12, 13, 21];
+    let melds = table.seats.get(&0).unwrap().melds.clone();
+
+    assert!(best_ready_score_after_discard(&hand, &melds, &table, 0) > 0.0);
+    assert!(!ready_visible_fan_reaches_cap(&hand, &melds, &table, 0));
+    assert_eq!(choose_self_gang_from_view(&hand, &[9], &table, 0), Some(9));
+
+    for position in [2, 3] {
+        table.seats.insert(
+            position,
+            AiSeatView {
+                position,
+                hand_count: 13,
+                discards: Vec::new(),
+                melds: Vec::new(),
+            },
+        );
+    }
+
+    assert_eq!(minimum_potential_payment_fan(3, &table, 0), 6);
+    assert!(ready_visible_fan_reaches_cap(&hand, &melds, &table, 0));
+    assert_eq!(choose_self_gang_from_view(&hand, &[9], &table, 0), None);
+}
+
+#[test]
 fn half_capped_ready_self_gang_takes_projected_cap() {
     let mut table = table_with_discards(1, Vec::new());
     table.dealer_position = 3;
