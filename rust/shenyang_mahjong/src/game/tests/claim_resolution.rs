@@ -971,6 +971,37 @@ fn concealed_gang_does_not_count_as_open_for_rob_gang() {
 }
 
 #[test]
+fn rob_gang_options_include_configured_closed_sequence_dragon_pair_win() {
+    let mut state = playable_state();
+    state
+        .hands
+        .insert(0, vec![3, 4, 5, 6, 11, 12, 13, 21, 22, 23, 31]);
+    state.melds.insert(
+        0,
+        vec![build_meld(
+            ShenyangMahjongMeldKind::PENG,
+            vec![3, 3, 3],
+            Some(2),
+        )],
+    );
+    state
+        .hands
+        .insert(1, vec![1, 2, 4, 5, 6, 11, 12, 13, 21, 22, 23, 35, 35]);
+    let configured = HashMap::from([("allow_first_chi".to_owned(), 0)]);
+
+    let default_event = build_rob_gang_claim_window_event(&state, 3, 0, 5, &HashMap::new());
+    let configured_event = build_rob_gang_claim_window_event(&state, 3, 0, 5, &configured);
+
+    assert!(!default_event.eligible_positions.contains(&1));
+    assert_eq!(configured_event.eligible_positions, vec![1]);
+    assert_eq!(configured_event.options.len(), 1);
+    assert!(configured_event.options[0].can_hu);
+    assert!(!configured_event.options[0].can_peng);
+    assert!(!configured_event.options[0].can_gang);
+    assert!(configured_event.options[0].chi_options.is_empty());
+}
+
+#[test]
 fn rob_gang_options_reject_impossible_fifth_tile() {
     let mut state = playable_state();
     state
