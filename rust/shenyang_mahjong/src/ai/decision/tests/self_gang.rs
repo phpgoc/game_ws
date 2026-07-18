@@ -9,7 +9,7 @@ fn capped_open_normal_route_delays_added_gang_before_ready() {
     let hand = vec![1, 4, 7, 9, 11, 14, 17, 21];
 
     assert!(capped_open_normal_route_visible_fan_reaches_cap(
-        &hand, melds, &table
+        &hand, melds, &table, 0
     ));
     assert_eq!(best_ready_score_after_discard(&hand, melds, &table, 0), 0.0);
     assert_eq!(choose_self_gang_from_view(&hand, &[9], &table, 0), None);
@@ -128,6 +128,7 @@ fn half_capped_closed_dragon_pair_piao_self_gang_takes_projected_cap() {
         &next_hand,
         &next_melds,
         &table,
+        0,
     ));
     assert_eq!(
         choose_self_gang_from_view(&hand, &[21], &table, 0),
@@ -161,12 +162,14 @@ fn half_capped_closed_unready_self_gang_does_not_use_illegal_projection() {
     assert!(capped_normal_route_visible_fan_exceeds_half_cap(
         &hand,
         &[],
-        &table
+        &table,
+        0,
     ));
     assert!(!capped_normal_route_visible_fan_reaches_cap(
         &hand,
         &[],
-        &table
+        &table,
+        0,
     ));
     assert_eq!(choose_self_gang_from_view(&hand, &[9], &table, 0), None);
 }

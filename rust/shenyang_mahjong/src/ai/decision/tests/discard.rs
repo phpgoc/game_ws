@@ -17,8 +17,8 @@ fn capped_discard_clears_spare_single_dragon_when_basic_route_is_ready() {
         ready_tile_score(&after_middle, melds, &table, 0)
     );
     assert!(
-        capped_spare_dragon_discard_bias(&hand, 35, melds, &table)
-            > capped_spare_dragon_discard_bias(&hand, 8, melds, &table)
+        capped_spare_dragon_discard_bias(&hand, 35, melds, &table, 0)
+            > capped_spare_dragon_discard_bias(&hand, 8, melds, &table, 0)
     );
     assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(35));
 }
@@ -64,11 +64,12 @@ fn capped_open_normal_route_discards_redundant_single_dragon() {
     assert!(capped_open_normal_route_visible_fan_reaches_cap(
         &after_dragon,
         melds,
-        &table
+        &table,
+        0,
     ));
     assert!(
-        capped_spare_dragon_discard_bias(&hand, 36, melds, &table)
-            > capped_spare_dragon_discard_bias(&hand, 5, melds, &table)
+        capped_spare_dragon_discard_bias(&hand, 36, melds, &table, 0)
+            > capped_spare_dragon_discard_bias(&hand, 5, melds, &table, 0)
     );
     assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(36));
 }
@@ -441,7 +442,7 @@ fn half_capped_discard_does_not_preserve_four_gui_yi() {
 
     assert_eq!(estimated_four_gui_yi_fan(&hand, melds), 1);
     assert!(capped_normal_route_visible_fan_exceeds_half_cap(
-        &hand, melds, &table
+        &hand, melds, &table, 0
     ));
     assert_eq!(four_gui_yi_discard_bias(&hand, 2, melds, &table, 0), 0.0);
 }
@@ -470,12 +471,14 @@ fn broken_capped_route_can_discard_spare_dragon() {
     assert!(!capped_open_normal_route_visible_fan_reaches_cap(
         &after_dragon,
         melds,
-        &table
+        &table,
+        0,
     ));
     assert!(!capped_normal_route_visible_fan_reaches_cap(
         &after_dragon,
         melds,
-        &table
+        &table,
+        0,
     ));
     assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(36));
 }

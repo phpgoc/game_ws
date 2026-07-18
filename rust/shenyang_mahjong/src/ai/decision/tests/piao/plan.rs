@@ -11,7 +11,8 @@ fn capped_normal_route_disables_redundant_closed_piao_plan() {
     assert!(capped_normal_route_visible_fan_reaches_cap(
         &hand,
         &[],
-        &table
+        &table,
+        0,
     ));
     assert!(piao_plan_score(&hand, &[]) >= 20.0);
     assert_eq!(piao_plan_score_for_context(&hand, &[], &table, 0), 0.0);
@@ -152,7 +153,8 @@ fn half_capped_normal_route_stops_closed_piao_chase() {
     assert!(capped_normal_route_visible_fan_exceeds_half_cap(
         &hand,
         &[],
-        &table
+        &table,
+        0,
     ));
     assert!(piao_plan_score(&hand, &[]) >= 20.0);
     assert_eq!(piao_plan_score_for_context(&hand, &[], &table, 0), 0.0);

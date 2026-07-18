@@ -128,13 +128,13 @@ pub(super) fn pure_one_suit_plan_score_for_context(
     if one_fan_reaches_score_cap(table) {
         return 0.0;
     }
-    if capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table) {
+    if capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table, position) {
         return 0.0;
     }
-    if capped_normal_route_visible_fan_reaches_cap(hand, melds, table) {
+    if capped_normal_route_visible_fan_reaches_cap(hand, melds, table, position) {
         return 0.0;
     }
-    if capped_open_normal_route_visible_fan_reaches_cap(hand, melds, table) {
+    if capped_open_normal_route_visible_fan_reaches_cap(hand, melds, table, position) {
         return 0.0;
     }
     let marginal_closed_plan_against_dealer_threat =

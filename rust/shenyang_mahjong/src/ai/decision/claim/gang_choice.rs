@@ -24,6 +24,7 @@ pub(super) fn choose_gang_claim(
             hand,
             current_melds,
             table,
+            position,
             tile,
             from_position,
         )

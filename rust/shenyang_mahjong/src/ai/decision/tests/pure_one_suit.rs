@@ -11,7 +11,8 @@ fn capped_normal_route_disables_redundant_closed_pure_one_suit_plan() {
     assert!(capped_normal_route_visible_fan_reaches_cap(
         &hand,
         &[],
-        &table
+        &table,
+        0,
     ));
     assert!(pure_one_suit_plan_score(&hand, &[]) > 0.0);
     assert_eq!(
@@ -30,7 +31,8 @@ fn capped_normal_route_preserves_three_suits_over_pure_one_suit_chase() {
     assert!(capped_normal_route_visible_fan_reaches_cap(
         &hand,
         &[],
-        &table
+        &table,
+        0,
     ));
     assert!(three_suits_discard_bias(&after_discard, &[], &table, 0, 11) <= -80.0);
     assert!(!matches!(

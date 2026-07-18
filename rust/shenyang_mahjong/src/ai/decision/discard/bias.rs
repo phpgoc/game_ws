@@ -5,6 +5,7 @@ pub(in crate::ai::decision) fn capped_spare_dragon_discard_bias(
     tile: i32,
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
+    position: usize,
 ) -> f64 {
     if !is_dragon(tile)
         || hand.iter().filter(|item| **item == tile).count() != 1
@@ -19,7 +20,7 @@ pub(in crate::ai::decision) fn capped_spare_dragon_discard_bias(
 
     let after_discard = remove_n_tiles(hand, tile, 1);
     if after_discard.len() + 1 == hand.len()
-        && capped_normal_route_visible_fan_reaches_cap(&after_discard, melds, table)
+        && capped_normal_route_visible_fan_reaches_cap(&after_discard, melds, table, position)
     {
         return 6.0;
     }

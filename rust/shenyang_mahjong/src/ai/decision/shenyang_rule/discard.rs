@@ -5,12 +5,13 @@ fn capped_normal_route_before_discard_reaches_cap(
     hand_after_discard: &[i32],
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
+    position: usize,
     discarded_tile: i32,
 ) -> bool {
     let mut hand_before_discard = hand_after_discard.to_vec();
     hand_before_discard.push(discarded_tile);
     sort_tiles(&mut hand_before_discard);
-    capped_normal_route_visible_fan_reaches_cap(&hand_before_discard, melds, table)
+    capped_normal_route_visible_fan_reaches_cap(&hand_before_discard, melds, table, position)
 }
 
 fn loses_first_chi_disabled_closed_dragon_pair_after_xi_gang(
@@ -65,7 +66,13 @@ pub(in crate::ai::decision) fn three_suits_discard_bias(
     }
     let capped_three_suit_hand = one_fan_reaches_score_cap(table) && !was_missing_suit;
     if !capped_three_suit_hand
-        && !capped_normal_route_before_discard_reaches_cap(hand_after_discard, melds, table, tile)
+        && !capped_normal_route_before_discard_reaches_cap(
+            hand_after_discard,
+            melds,
+            table,
+            position,
+            tile,
+        )
         && pure_one_suit_plan_score_for_context(hand_after_discard, melds, table, position) > 0.0
     {
         return 0.0;
@@ -172,7 +179,13 @@ pub(in crate::ai::decision) fn violates_basic_three_suits_discard(
     if should_preserve_seven_pairs_plan_for_context(hand_after_discard, melds, table, position) {
         return false;
     }
-    if capped_normal_route_before_discard_reaches_cap(hand_after_discard, melds, table, tile) {
+    if capped_normal_route_before_discard_reaches_cap(
+        hand_after_discard,
+        melds,
+        table,
+        position,
+        tile,
+    ) {
         return true;
     }
     if one_fan_reaches_score_cap(table) {

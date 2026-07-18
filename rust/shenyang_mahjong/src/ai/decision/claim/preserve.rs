@@ -12,7 +12,7 @@ pub(in crate::ai::decision) fn should_claim_capped_dragon_peng_over_five_pairs(
         return false;
     }
     let preserves_pair_route = should_lock_seven_pairs_plan(hand, current_melds, table, position)
-        || capped_normal_route_visible_fan_exceeds_half_cap(hand, current_melds, table);
+        || capped_normal_route_visible_fan_exceeds_half_cap(hand, current_melds, table, position);
     if !preserves_pair_route {
         return false;
     }
@@ -22,7 +22,7 @@ pub(in crate::ai::decision) fn should_claim_capped_dragon_peng_over_five_pairs(
     }
     let mut next_melds = current_melds.to_vec();
     next_melds.push(claim_peng_meld(tile, from_position));
-    capped_open_normal_route_visible_fan_reaches_cap(&next_hand, &next_melds, table)
+    capped_open_normal_route_visible_fan_reaches_cap(&next_hand, &next_melds, table, position)
 }
 
 pub(in crate::ai::decision) fn should_claim_dragon_peng_over_live_five_pairs(

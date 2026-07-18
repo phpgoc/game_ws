@@ -69,11 +69,16 @@ pub(in crate::ai::decision) fn capped_normal_route_visible_fan_exceeds_half_cap(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
+    position: usize,
 ) -> bool {
     let Some(score_cap) = table.score_cap.filter(|score_cap| *score_cap > 0) else {
         return false;
     };
-    let visible_fan = 1 + estimated_visible_bonus_fan(hand, melds);
+    let visible_fan = minimum_potential_payment_fan(
+        1 + estimated_visible_bonus_fan(hand, melds),
+        table,
+        position,
+    );
     has_normal_route_foundation(hand, melds)
         && shenyang_fan_score_exceeds_half_cap(visible_fan, score_cap)
 }
@@ -82,18 +87,27 @@ pub(in crate::ai::decision) fn capped_normal_route_visible_fan_reaches_cap(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
+    position: usize,
 ) -> bool {
     let Some(score_cap) = table.score_cap.filter(|score_cap| *score_cap > 0) else {
         return false;
     };
     has_normal_route_foundation(hand, melds)
-        && shenyang_fan_reaches_score_cap(1 + estimated_visible_bonus_fan(hand, melds), score_cap)
+        && shenyang_fan_reaches_score_cap(
+            minimum_potential_payment_fan(
+                1 + estimated_visible_bonus_fan(hand, melds),
+                table,
+                position,
+            ),
+            score_cap,
+        )
 }
 
 pub(in crate::ai::decision) fn capped_open_normal_route_visible_fan_reaches_cap(
     hand: &[i32],
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
+    position: usize,
 ) -> bool {
     let Some(score_cap) = table.score_cap.filter(|score_cap| *score_cap > 0) else {
         return false;
@@ -102,7 +116,14 @@ pub(in crate::ai::decision) fn capped_open_normal_route_visible_fan_reaches_cap(
         && missing_suits(hand, melds).is_empty()
         && has_terminal_or_honor_with_extra(hand, melds, None)
         && has_triplet_or_dragon_pair(hand, melds)
-        && shenyang_fan_reaches_score_cap(1 + estimated_visible_bonus_fan(hand, melds), score_cap)
+        && shenyang_fan_reaches_score_cap(
+            minimum_potential_payment_fan(
+                1 + estimated_visible_bonus_fan(hand, melds),
+                table,
+                position,
+            ),
+            score_cap,
+        )
 }
 
 pub(in crate::ai::decision) fn capped_piao_route_visible_fan_projects_cap(
@@ -111,6 +132,7 @@ pub(in crate::ai::decision) fn capped_piao_route_visible_fan_projects_cap(
     next_hand: &[i32],
     next_melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
+    position: usize,
 ) -> bool {
     capped_pattern_route_visible_fan_projects_cap(
         ShenyangMahjongWinPattern::PiaoHu,
@@ -119,6 +141,7 @@ pub(in crate::ai::decision) fn capped_piao_route_visible_fan_projects_cap(
         next_hand,
         next_melds,
         table,
+        position,
     )
 }
 
@@ -129,13 +152,22 @@ fn capped_pattern_route_visible_fan_projects_cap(
     next_hand: &[i32],
     next_melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
+    position: usize,
 ) -> bool {
     let Some(score_cap) = table.score_cap.filter(|score_cap| *score_cap > 0) else {
         return false;
     };
     let base_fan = shenyang_win_pattern_base_fan(pattern);
-    let current_fan = base_fan + estimated_visible_bonus_fan(hand, melds);
-    let projected_fan = base_fan + estimated_visible_bonus_fan(next_hand, next_melds);
+    let current_fan = minimum_potential_payment_fan(
+        base_fan + estimated_visible_bonus_fan(hand, melds),
+        table,
+        position,
+    );
+    let projected_fan = minimum_potential_payment_fan(
+        base_fan + estimated_visible_bonus_fan(next_hand, next_melds),
+        table,
+        position,
+    );
     shenyang_fan_score_exceeds_half_cap(current_fan, score_cap)
         && !shenyang_fan_reaches_score_cap(current_fan, score_cap)
         && shenyang_fan_reaches_score_cap(projected_fan, score_cap)
@@ -147,6 +179,7 @@ pub(in crate::ai::decision) fn capped_pure_one_suit_route_visible_fan_projects_c
     next_hand: &[i32],
     next_melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
+    position: usize,
 ) -> bool {
     capped_pattern_route_visible_fan_projects_cap(
         ShenyangMahjongWinPattern::PureOneSuit,
@@ -155,6 +188,7 @@ pub(in crate::ai::decision) fn capped_pure_one_suit_route_visible_fan_projects_c
         next_hand,
         next_melds,
         table,
+        position,
     )
 }
 
@@ -347,7 +381,7 @@ pub(in crate::ai::decision) fn four_gui_yi_discard_bias(
     if current_four_gui_yi <= 0 {
         return 0.0;
     }
-    if capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table) {
+    if capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table, position) {
         return 0.0;
     }
     let next = remove_n_tiles(hand, tile, 1);

@@ -4,6 +4,7 @@ fn claim_gang_projects_capped_visible_fan(
     hand: &[i32],
     current_melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
+    position: usize,
     tile: i32,
     from_position: usize,
     committed_piao_plan: bool,
@@ -15,9 +16,14 @@ fn claim_gang_projects_capped_visible_fan(
     let mut next_melds = current_melds.to_vec();
     next_melds.push(claim_gang_meld(tile, from_position));
     let normal_route_projects_cap =
-        capped_normal_route_visible_fan_exceeds_half_cap(hand, current_melds, table)
-            && !capped_normal_route_visible_fan_reaches_cap(hand, current_melds, table)
-            && capped_normal_route_visible_fan_reaches_cap(&next_hand, &next_melds, table);
+        capped_normal_route_visible_fan_exceeds_half_cap(hand, current_melds, table, position)
+            && !capped_normal_route_visible_fan_reaches_cap(hand, current_melds, table, position)
+            && capped_normal_route_visible_fan_reaches_cap(
+                &next_hand,
+                &next_melds,
+                table,
+                position,
+            );
     let piao_route_projects_cap = committed_piao_plan
         && has_piao_route_basics(&next_hand, &next_melds)
         && capped_piao_route_visible_fan_projects_cap(
@@ -26,6 +32,7 @@ fn claim_gang_projects_capped_visible_fan(
             &next_hand,
             &next_melds,
             table,
+            position,
         );
     let pure_one_suit_route_projects_cap = has_established_pure_one_suit_route(hand, current_melds)
         && has_established_pure_one_suit_route(&next_hand, &next_melds)
@@ -35,6 +42,7 @@ fn claim_gang_projects_capped_visible_fan(
             &next_hand,
             &next_melds,
             table,
+            position,
         );
     normal_route_projects_cap || piao_route_projects_cap || pure_one_suit_route_projects_cap
 }
@@ -43,6 +51,7 @@ pub(in crate::ai::decision) fn claim_gang_projects_capped_pure_one_suit_fan(
     hand: &[i32],
     current_melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
+    position: usize,
     tile: i32,
     from_position: usize,
 ) -> bool {
@@ -60,6 +69,7 @@ pub(in crate::ai::decision) fn claim_gang_projects_capped_pure_one_suit_fan(
             &next_hand,
             &next_melds,
             table,
+            position,
         )
 }
 
@@ -79,6 +89,7 @@ pub(in crate::ai::decision) fn should_claim_gang_from_discard(
         hand,
         current_melds,
         table,
+        position,
         tile,
         from_position,
         committed_piao_plan,
@@ -92,7 +103,7 @@ pub(in crate::ai::decision) fn should_claim_gang_from_discard(
         return false;
     }
     if !speed_first_unready
-        && capped_open_normal_route_visible_fan_reaches_cap(hand, current_melds, table)
+        && capped_open_normal_route_visible_fan_reaches_cap(hand, current_melds, table, position)
     {
         return false;
     }

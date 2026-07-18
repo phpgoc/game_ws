@@ -278,7 +278,8 @@ fn half_capped_normal_route_does_not_lock_five_pairs() {
     assert!(capped_normal_route_visible_fan_exceeds_half_cap(
         &hand,
         &[],
-        &table
+        &table,
+        0,
     ));
     assert!(!should_lock_seven_pairs_plan(&hand, &[], &table, 0));
     assert_eq!(seven_pairs_plan_score(&hand, &[], &table, 0), 0.0);

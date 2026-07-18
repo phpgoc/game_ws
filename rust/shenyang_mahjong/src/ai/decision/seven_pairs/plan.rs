@@ -59,10 +59,10 @@ pub(in crate::ai::decision) fn seven_pairs_plan_score(
     {
         return 0.0;
     }
-    if pairs < 6 && capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table) {
+    if pairs < 6 && capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table, position) {
         return 0.0;
     }
-    if pairs < 6 && capped_normal_route_visible_fan_reaches_cap(hand, melds, table) {
+    if pairs < 6 && capped_normal_route_visible_fan_reaches_cap(hand, melds, table, position) {
         return 0.0;
     }
     if pairs < 6 && missing_suits(hand, melds).is_empty() {
@@ -119,10 +119,10 @@ pub(in crate::ai::decision) fn should_lock_seven_pairs_plan(
     if pairs < 5 {
         return false;
     }
-    if capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table) {
+    if capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table, position) {
         return false;
     }
-    if capped_normal_route_visible_fan_reaches_cap(hand, melds, table) {
+    if capped_normal_route_visible_fan_reaches_cap(hand, melds, table, position) {
         return false;
     }
     if (table.dealer_position == position || dealer_opponent_has_major_threat(table, position))

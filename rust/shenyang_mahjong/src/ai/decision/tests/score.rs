@@ -113,6 +113,50 @@ fn ready_cap_requires_every_potential_payer_to_reach_cap() {
 }
 
 #[test]
+fn normal_route_cap_counts_winner_dealer_payment_fan() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.seats.insert(
+        2,
+        AiSeatView {
+            position: 2,
+            hand_count: 10,
+            discards: Vec::new(),
+            melds: vec![test_peng_meld(14)],
+        },
+    );
+    table.seats.insert(
+        3,
+        AiSeatView {
+            position: 3,
+            hand_count: 10,
+            discards: Vec::new(),
+            melds: vec![test_peng_meld(24)],
+        },
+    );
+    table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(4)];
+    table.dealer_position = 0;
+    table.score_cap = Some(8);
+    let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 11, 21, 35, 35, 35];
+
+    assert!(has_normal_route_foundation(&hand, &[]));
+    assert_eq!(estimated_visible_bonus_fan(&hand, &[]), 1);
+    assert!(capped_normal_route_visible_fan_reaches_cap(
+        &hand,
+        &[],
+        &table,
+        0
+    ));
+
+    table.score_cap = Some(15);
+    assert!(capped_normal_route_visible_fan_exceeds_half_cap(
+        &hand,
+        &[],
+        &table,
+        0
+    ));
+}
+
+#[test]
 fn estimated_fan_counts_honor_single_wait_once() {
     let win_hand = vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35, 35];
     let melds = vec![test_chi_meld(1)];

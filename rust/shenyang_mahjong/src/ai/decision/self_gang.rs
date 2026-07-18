@@ -117,12 +117,19 @@ pub(super) fn self_gang_score(
         && piao_threat_level(melds) > 0
         && piao_committed_group_count(hand, melds) >= 3;
     let normal_route_projects_cap = has_door_opening_meld(melds, table)
-        && capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table)
-        && !capped_normal_route_visible_fan_reaches_cap(hand, melds, table)
-        && capped_normal_route_visible_fan_reaches_cap(&next, &next_melds, table);
+        && capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table, position)
+        && !capped_normal_route_visible_fan_reaches_cap(hand, melds, table, position)
+        && capped_normal_route_visible_fan_reaches_cap(&next, &next_melds, table, position);
     let piao_route_projects_cap = committed_piao_plan
         && has_piao_route_basics(&next, &next_melds)
-        && capped_piao_route_visible_fan_projects_cap(hand, melds, &next, &next_melds, table);
+        && capped_piao_route_visible_fan_projects_cap(
+            hand,
+            melds,
+            &next,
+            &next_melds,
+            table,
+            position,
+        );
     let pure_one_suit_route_projects_cap = has_established_pure_one_suit_route(hand, melds)
         && has_established_pure_one_suit_route(&next, &next_melds)
         && capped_pure_one_suit_route_visible_fan_projects_cap(
@@ -131,6 +138,7 @@ pub(super) fn self_gang_score(
             &next,
             &next_melds,
             table,
+            position,
         );
     let projected_capped_visible_fan =
         normal_route_projects_cap || piao_route_projects_cap || pure_one_suit_route_projects_cap;
@@ -166,7 +174,7 @@ pub(super) fn self_gang_score(
     }
     if !is_ready
         && !speed_first_concealed_gang
-        && capped_open_normal_route_visible_fan_reaches_cap(hand, melds, table)
+        && capped_open_normal_route_visible_fan_reaches_cap(hand, melds, table, position)
     {
         return f64::NEG_INFINITY;
     }
