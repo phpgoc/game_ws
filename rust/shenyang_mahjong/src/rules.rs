@@ -1058,6 +1058,35 @@ mod tests {
     }
 
     #[test]
+    fn fan_score_cap_invariants_cover_the_configured_range() {
+        for score_cap in 1..=500 {
+            let needed_fan = shenyang_fan_needed_for_score_cap(score_cap);
+            assert!(shenyang_fan_reaches_score_cap(needed_fan, score_cap));
+            if needed_fan > 0 {
+                assert!(!shenyang_fan_reaches_score_cap(needed_fan - 1, score_cap));
+            }
+
+            let mut previous_payment = 0;
+            for fan in 0..=31 {
+                let uncapped_score = if fan < 31 { 1_i32 << fan } else { i32::MAX };
+                let payment = shenyang_score_for_fan_with_cap(fan, Some(score_cap));
+
+                assert_eq!(payment, uncapped_score.min(score_cap));
+                assert!(payment >= previous_payment);
+                assert_eq!(
+                    shenyang_fan_reaches_score_cap(fan, score_cap),
+                    uncapped_score >= score_cap
+                );
+                assert_eq!(
+                    shenyang_fan_score_exceeds_half_cap(fan, score_cap),
+                    uncapped_score > score_cap / 2
+                );
+                previous_payment = payment;
+            }
+        }
+    }
+
+    #[test]
     fn payment_fan_includes_dealer_and_payer_closed_state() {
         assert_eq!(shenyang_payment_fan(1, false, false, false, false), 1);
         assert_eq!(shenyang_payment_fan(1, true, false, false, false), 2);
