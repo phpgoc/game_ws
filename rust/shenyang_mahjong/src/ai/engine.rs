@@ -1275,6 +1275,52 @@ mod tests {
     }
 
     #[test]
+    fn away_ting_position_takes_self_draw_before_capped_wait_chase() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_away(0);
+        state.base.lock().unwrap().mark_ai_takeover_position(0);
+        state.dealer_position = 3;
+        state
+            .hands
+            .insert(0, vec![13, 14, 15, 15, 16, 16, 16, 17, 28, 28, 28]);
+        state.melds.insert(0, vec![test_peng_meld(1)]);
+        state.melds.insert(3, vec![test_peng_meld_from(9, 1)]);
+        state.discards.insert(1, vec![16]);
+        state.wall = vec![
+            2, 3, 4, 5, 6, 7, 8, 11, 12, 18, 19, 21, 23, 24, 25, 26, 27, 29, 31, 32,
+        ];
+        state.last_drawn_tile = Some(16);
+        state.declare_ting(0);
+        let configs = HashMap::from([("max_fan".to_owned(), 8), ("ting_fan".to_owned(), 1)]);
+        let table = build_public_table_with_configs(&state, &configs);
+        let hand = state.hands.get(&0).unwrap().clone();
+        let mut dispatch = Dispatch::default();
+
+        assert!(should_pass_self_draw_hu_from_view(&hand, &table, 0, 16,));
+        assert!(maybe_play_ai_turn(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &configs,
+            &mut dispatch,
+        ));
+
+        let settlement = state.settlement.as_ref().expect("settlement");
+        assert_eq!(settlement.winner_positions, vec![0]);
+        assert!(settlement.is_self_draw);
+        assert!(state.discards.get(&0).unwrap().is_empty());
+        let event = build_settlement_event_with_configs(&state, &configs)
+            .expect("ting self-draw settlement event");
+        assert_eq!(settlement_score_for_position(&event.score_changes, 0), 24);
+        for position in 1..4 {
+            assert_eq!(
+                settlement_score_for_position(&event.score_changes, position),
+                -8
+            );
+        }
+    }
+
+    #[test]
     fn away_position_uses_ai_claim_response() {
         let mut state = playable_state();
         state.base.lock().unwrap().mark_away(0);
