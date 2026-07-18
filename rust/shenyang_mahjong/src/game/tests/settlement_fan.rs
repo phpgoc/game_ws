@@ -15,7 +15,7 @@ fn settlement_deduplicates_restored_winner_positions() {
             .into_iter()
             .map(|change| (change.position, change.score))
             .collect::<Vec<_>>(),
-        vec![(0, -8), (1, -8), (2, 24), (3, -8)]
+        vec![(0, -256), (1, -256), (2, 768), (3, -256)]
     );
 
     let event = build_settlement_event(&state).expect("settlement event");
@@ -128,7 +128,7 @@ fn settlement_event_skips_zero_score_winners() {
             .iter()
             .map(|change| (change.position, change.score))
             .collect::<Vec<_>>(),
-        vec![(0, -5), (1, 5), (2, 0), (3, 0)]
+        vec![(0, -32), (1, 32), (2, 0), (3, 0)]
     );
 
     let valid_winner_snapshot = event

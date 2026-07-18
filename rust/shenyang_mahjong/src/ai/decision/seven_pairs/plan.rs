@@ -50,7 +50,7 @@ pub(in crate::ai::decision) fn seven_pairs_plan_score(
         return 0.0;
     }
     let pairs = pair_count(hand);
-    if pairs < 6 && table.max_fan.is_some_and(|max_fan| max_fan <= 1) {
+    if pairs < 6 && one_fan_reaches_score_cap(table) {
         return 0.0;
     }
     if table.dealer_position == position
@@ -110,7 +110,7 @@ pub(in crate::ai::decision) fn should_lock_seven_pairs_plan(
     if pairs >= 6 {
         return true;
     }
-    if table.max_fan.is_some_and(|max_fan| max_fan <= 1) {
+    if one_fan_reaches_score_cap(table) {
         return false;
     }
     if should_chase_basic_missing_suit_pairs(hand, melds, pairs) {

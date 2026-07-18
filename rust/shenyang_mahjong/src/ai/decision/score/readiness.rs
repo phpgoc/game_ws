@@ -26,7 +26,7 @@ fn ready_hand_visible_fan_exceeds_half_cap_with_simulated_discards(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    max_fan: i32,
+    score_cap: i32,
     simulated_discards: &[i32],
 ) -> bool {
     if hand.len() % 3 != 1 {
@@ -48,14 +48,16 @@ fn ready_hand_visible_fan_exceeds_half_cap_with_simulated_discards(
                 next.push(tile);
                 next.sort_unstable();
                 is_complete_win_for_table(&next, melds, table)
-                    && estimated_fan_with_known_unavailable_wait_for_table(
-                        &next,
-                        melds,
-                        tile,
-                        table,
-                        &known_unavailable_tiles,
-                    ) * 2
-                        > max_fan
+                    && shenyang_fan_score_exceeds_half_cap(
+                        estimated_fan_with_known_unavailable_wait_for_table(
+                            &next,
+                            melds,
+                            tile,
+                            table,
+                            &known_unavailable_tiles,
+                        ),
+                        score_cap,
+                    )
             }
     })
 }
@@ -65,14 +67,14 @@ pub(in crate::ai::decision) fn ready_hand_visible_fan_reaches_cap(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    max_fan: i32,
+    score_cap: i32,
 ) -> bool {
     ready_hand_visible_fan_reaches_cap_with_simulated_discards(
         hand,
         melds,
         table,
         position,
-        max_fan,
+        score_cap,
         &[],
     )
 }
@@ -82,7 +84,7 @@ fn ready_hand_visible_fan_reaches_cap_with_simulated_discards(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
     position: usize,
-    max_fan: i32,
+    score_cap: i32,
     simulated_discards: &[i32],
 ) -> bool {
     if hand.len() % 3 != 1 {
@@ -104,13 +106,16 @@ fn ready_hand_visible_fan_reaches_cap_with_simulated_discards(
                 next.push(tile);
                 next.sort_unstable();
                 is_complete_win_for_table(&next, melds, table)
-                    && estimated_fan_with_known_unavailable_wait_for_table(
-                        &next,
-                        melds,
-                        tile,
-                        table,
-                        &known_unavailable_tiles,
-                    ) >= max_fan
+                    && shenyang_fan_reaches_score_cap(
+                        estimated_fan_with_known_unavailable_wait_for_table(
+                            &next,
+                            melds,
+                            tile,
+                            table,
+                            &known_unavailable_tiles,
+                        ),
+                        score_cap,
+                    )
             }
     })
 }
@@ -328,7 +333,7 @@ pub(in crate::ai::decision) fn ready_visible_fan_exceeds_half_cap(
     table: &AiPublicTable,
     position: usize,
 ) -> bool {
-    let Some(max_fan) = table.max_fan.filter(|max_fan| *max_fan > 0) else {
+    let Some(score_cap) = table.score_cap.filter(|score_cap| *score_cap > 0) else {
         return false;
     };
     if hand.len() % 3 == 2 {
@@ -339,7 +344,7 @@ pub(in crate::ai::decision) fn ready_visible_fan_exceeds_half_cap(
                 melds,
                 table,
                 position,
-                max_fan,
+                score_cap,
                 &[discard],
             )
         });
@@ -349,7 +354,7 @@ pub(in crate::ai::decision) fn ready_visible_fan_exceeds_half_cap(
         melds,
         table,
         position,
-        max_fan,
+        score_cap,
         &[],
     )
 }
@@ -360,7 +365,7 @@ pub(in crate::ai::decision) fn ready_visible_fan_reaches_cap(
     table: &AiPublicTable,
     position: usize,
 ) -> bool {
-    let Some(max_fan) = table.max_fan.filter(|max_fan| *max_fan > 0) else {
+    let Some(score_cap) = table.score_cap.filter(|score_cap| *score_cap > 0) else {
         return false;
     };
     if hand.len() % 3 == 2 {
@@ -371,10 +376,10 @@ pub(in crate::ai::decision) fn ready_visible_fan_reaches_cap(
                 melds,
                 table,
                 position,
-                max_fan,
+                score_cap,
                 &[discard],
             )
         });
     }
-    ready_hand_visible_fan_reaches_cap(hand, melds, table, position, max_fan)
+    ready_hand_visible_fan_reaches_cap(hand, melds, table, position, score_cap)
 }

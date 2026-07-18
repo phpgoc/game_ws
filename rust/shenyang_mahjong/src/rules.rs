@@ -835,6 +835,36 @@ pub(crate) fn shenyang_score_meld_fan(melds: &[WsShenyangMahjongMeld]) -> i32 {
         .sum()
 }
 
+pub(crate) fn shenyang_score_for_fan(fan: i32) -> i32 {
+    let Ok(exponent) = u32::try_from(fan) else {
+        return 0;
+    };
+    1_i32.checked_shl(exponent).unwrap_or(i32::MAX)
+}
+
+pub(crate) fn shenyang_score_for_fan_with_cap(fan: i32, score_cap: Option<i32>) -> i32 {
+    let score = shenyang_score_for_fan(fan);
+    score_cap
+        .filter(|score_cap| *score_cap > 0)
+        .map(|score_cap| score.min(score_cap))
+        .unwrap_or(score)
+}
+
+pub(crate) fn shenyang_fan_reaches_score_cap(fan: i32, score_cap: i32) -> bool {
+    score_cap > 0 && shenyang_score_for_fan(fan) >= score_cap
+}
+
+pub(crate) fn shenyang_fan_score_exceeds_half_cap(fan: i32, score_cap: i32) -> bool {
+    score_cap > 0 && shenyang_score_for_fan(fan).saturating_mul(2) > score_cap
+}
+
+pub(crate) fn shenyang_fan_needed_for_score_cap(score_cap: i32) -> i32 {
+    if score_cap <= 1 {
+        return 0;
+    }
+    i32::try_from(i32::BITS - (score_cap - 1).leading_zeros()).unwrap_or(i32::MAX)
+}
+
 pub(crate) fn shenyang_score_visible_win_fan(
     hand_tiles: &[i32],
     melds: &[WsShenyangMahjongMeld],
@@ -977,9 +1007,27 @@ mod tests {
         is_piao_hu_win, is_pure_one_suit_win, is_seven_pairs_win, is_single_wait_shape,
         is_single_wait_shape_with_known_unavailable_tiles, is_standard_win,
         is_unique_complete_wait, is_win, satisfies_shenyang_win,
-        satisfies_shenyang_win_with_context, shenyang_score_visible_win_fan,
+        satisfies_shenyang_win_with_context, shenyang_fan_needed_for_score_cap,
+        shenyang_fan_reaches_score_cap, shenyang_fan_score_exceeds_half_cap,
+        shenyang_score_for_fan, shenyang_score_for_fan_with_cap, shenyang_score_visible_win_fan,
         shenyang_score_wait_fan, shenyang_win_pattern, shenyang_win_pattern_base_fan,
     };
+
+    #[test]
+    fn fan_scores_double_before_the_per_payer_cap() {
+        assert_eq!(shenyang_score_for_fan(0), 1);
+        assert_eq!(shenyang_score_for_fan(1), 2);
+        assert_eq!(shenyang_score_for_fan(2), 4);
+        assert_eq!(shenyang_score_for_fan(5), 32);
+        assert_eq!(shenyang_score_for_fan_with_cap(5, Some(50)), 32);
+        for fan in [6, 7, 8] {
+            assert_eq!(shenyang_score_for_fan_with_cap(fan, Some(50)), 50);
+        }
+        assert!(shenyang_fan_score_exceeds_half_cap(5, 50));
+        assert!(!shenyang_fan_reaches_score_cap(5, 50));
+        assert!(shenyang_fan_reaches_score_cap(6, 50));
+        assert_eq!(shenyang_fan_needed_for_score_cap(50), 6);
+    }
 
     #[test]
     fn chi_requires_real_sequence() {

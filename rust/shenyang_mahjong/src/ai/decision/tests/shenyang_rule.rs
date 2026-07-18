@@ -280,7 +280,7 @@ fn missing_suits_tracks_three_suits_need() {
 #[test]
 fn near_capped_non_dealer_prefers_wider_wait_over_single_wait_fan() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(4);
+    table.score_cap = Some(16);
     table.seats.get_mut(&0).unwrap().melds = vec![test_gang_meld(35)];
     let hand = vec![2, 2, 4, 5, 7, 11, 12, 13, 21, 22, 23];
 

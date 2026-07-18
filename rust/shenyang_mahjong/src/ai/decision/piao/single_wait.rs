@@ -116,9 +116,9 @@ fn piao_single_wait_tile_score_with_simulated_discards(
         &known_unavailable_tiles,
     );
     let capped_fan = table
-        .max_fan
-        .filter(|max_fan| *max_fan > 0)
-        .map(|max_fan| estimated_fan.min(max_fan))
+        .score_cap
+        .filter(|score_cap| *score_cap > 0)
+        .map(|score_cap| estimated_fan.min(shenyang_fan_needed_for_score_cap(score_cap)))
         .unwrap_or(estimated_fan);
     let speed_first = table.dealer_position == position
         || dealer_opponent_has_major_threat(table, position)
@@ -126,8 +126,8 @@ fn piao_single_wait_tile_score_with_simulated_discards(
     let remaining_weight = if speed_first { 14.0 } else { 7.0 };
     let fan_weight = if speed_first { 2.0 } else { 7.0 };
     let wait_shape_bias = if table
-        .max_fan
-        .is_some_and(|max_fan| max_fan > 0 && estimated_fan >= max_fan)
+        .score_cap
+        .is_some_and(|score_cap| shenyang_fan_reaches_score_cap(estimated_fan, score_cap))
     {
         0.0
     } else {

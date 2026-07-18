@@ -4,7 +4,7 @@ use super::*;
 fn capped_claim_peng_opens_basic_route_over_sequence_preservation() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 52;
-    table.max_fan = Some(2);
+    table.score_cap = Some(4);
     table.claim_window = Some(AiClaimView {
         tile: 5,
         from_position: 1,

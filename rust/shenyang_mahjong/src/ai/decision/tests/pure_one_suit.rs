@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn capped_normal_route_disables_redundant_closed_pure_one_suit_plan() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(2);
+    table.score_cap = Some(4);
     let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 11, 21, 35, 35, 35];
 
     assert!(has_normal_route_foundation(&hand, &[]));
@@ -23,7 +23,7 @@ fn capped_normal_route_disables_redundant_closed_pure_one_suit_plan() {
 #[test]
 fn capped_normal_route_preserves_three_suits_over_pure_one_suit_chase() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(2);
+    table.score_cap = Some(4);
     let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 11, 21, 31, 35, 35, 35];
     let after_discard = remove_n_tiles(&hand, 11, 1);
 
@@ -42,7 +42,7 @@ fn capped_normal_route_preserves_three_suits_over_pure_one_suit_chase() {
 #[test]
 fn capped_discard_does_not_chase_pure_one_suit_when_three_suits_remain() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(1);
+    table.score_cap = Some(2);
     let hand = vec![1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 7, 8, 11, 21];
 
     assert!(!matches!(
@@ -54,7 +54,7 @@ fn capped_discard_does_not_chase_pure_one_suit_when_three_suits_remain() {
 #[test]
 fn capped_open_normal_route_disables_redundant_pure_one_suit_plan() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(2);
+    table.score_cap = Some(4);
     let melds = vec![test_gang_meld(1)];
     let hand = vec![2, 3, 3, 4, 4, 5, 6, 7, 8, 9, 11, 21];
 
@@ -73,7 +73,7 @@ fn capped_open_normal_route_disables_redundant_pure_one_suit_plan() {
 #[test]
 fn one_fan_cap_uses_normal_discard_instead_of_forcing_last_honor() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(1);
+    table.score_cap = Some(2);
     let hand = vec![2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 8, 8, 12, 31];
 
     assert_eq!(
@@ -219,7 +219,7 @@ fn discard_starts_pure_one_suit_plan_at_eight_main_suit_tiles() {
 #[test]
 fn half_capped_normal_route_disables_closed_pure_one_suit_chase() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(4);
+    table.score_cap = Some(15);
     let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 11, 21, 35, 35, 35, 35];
 
     assert!(has_normal_route_foundation(&hand, &[]));
@@ -249,7 +249,7 @@ fn non_dealer_pure_one_suit_plan_can_break_three_suits() {
 #[test]
 fn one_fan_room_does_not_chase_missing_suit_pure_plan() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(1);
+    table.score_cap = Some(2);
     let hand = vec![2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 8, 8, 12];
 
     assert!(pure_one_suit_plan_score(&hand, &[]) > 0.0);
@@ -492,7 +492,7 @@ fn threatening_dealer_preserves_committed_pure_one_suit_plans() {
 #[test]
 fn two_fan_room_can_still_chase_bonus_capped_pure_plan() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(2);
+    table.score_cap = Some(4);
     let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 31, 35, 35, 35];
 
     assert!(pure_one_suit_plan_score(&hand, &[]) > 0.0);

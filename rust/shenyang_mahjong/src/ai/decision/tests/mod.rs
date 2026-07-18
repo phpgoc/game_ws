@@ -71,7 +71,7 @@ fn table_with_discards(position: usize, discards: Vec<i32>) -> AiPublicTable {
         current_position: 0,
         dealer_position: 1,
         wall_count: 60,
-        max_fan: None,
+        score_cap: None,
         allow_first_chi: true,
         claim_window: None,
         seats,

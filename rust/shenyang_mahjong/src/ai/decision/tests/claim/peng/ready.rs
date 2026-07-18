@@ -86,7 +86,7 @@ fn claim_peng_takes_ready_dragon_before_late_round_when_it_keeps_ready() {
 #[test]
 fn claim_ready_hand_passes_dragon_peng_when_visible_fan_is_capped() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(1);
+    table.score_cap = Some(2);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
     table.claim_window = Some(AiClaimView {
         tile: 35,
@@ -105,7 +105,7 @@ fn claim_ready_hand_passes_dragon_peng_when_visible_fan_is_capped() {
 #[test]
 fn claim_ready_hand_passes_peng_when_fan_exceeds_half_cap() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(4);
+    table.score_cap = Some(16);
     table.seats.get_mut(&0).unwrap().melds = vec![test_gang_meld(35)];
     table.claim_window = Some(AiClaimView {
         tile: 9,

@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn capped_non_dealer_prefers_wider_wait_over_single_wait_fan() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(1);
+    table.score_cap = Some(2);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(31)];
     let hand = vec![2, 2, 4, 5, 7, 11, 12, 13, 21, 22, 23];
 
@@ -192,4 +192,48 @@ fn tile_pressure_ignores_invalid_melds_but_counts_valid_melds() {
 #[test]
 fn unique_tiles_ignores_invalid_tiles() {
     assert_eq!(unique_tiles(&[99, 1, 1, 37, 0]), vec![1, 37]);
+}
+
+#[test]
+fn audit_non_dealer_discard_keeps_a_legal_ready_route() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.dealer_position = 3;
+    table.wall_count = 70;
+    let mut random_state = 0x9e37_79b9_7f4a_7c15u64;
+
+    for _ in 0..400 {
+        let mut wall = SHENYANG_MAHJONG_TILE_KINDS
+            .into_iter()
+            .flat_map(|tile| [tile; 4])
+            .collect::<Vec<_>>();
+        for index in (1..wall.len()).rev() {
+            random_state = random_state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            wall.swap(index, random_state as usize % (index + 1));
+        }
+        let mut hand = wall.into_iter().take(14).collect::<Vec<_>>();
+        sort_tiles(&mut hand);
+        if is_complete_win_for_table(&hand, &[], &table) {
+            continue;
+        }
+        let ready_discards = unique_tiles(&hand)
+            .into_iter()
+            .filter(|tile| {
+                let after_discard = remove_n_tiles(&hand, *tile, 1);
+                ready_tile_score_after_discard(&after_discard, &[], &table, 0, *tile) > 0.0
+            })
+            .collect::<Vec<_>>();
+        if ready_discards.is_empty() {
+            continue;
+        }
+
+        let chosen = choose_discard_from_view(&hand, &table, 0)
+            .expect("a valid fourteen-tile hand should choose a discard");
+        let after_chosen = remove_n_tiles(&hand, chosen, 1);
+        assert!(
+            ready_tile_score_after_discard(&after_chosen, &[], &table, 0, chosen) > 0.0,
+            "hand {hand:?} had ready discards {ready_discards:?} but chose {chosen}",
+        );
+    }
 }

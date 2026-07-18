@@ -63,8 +63,7 @@ pub(in crate::ai::decision) fn three_suits_discard_bias(
     if valid_meld_count(melds) == 0 && pair_count(hand_after_discard) >= 4 && was_missing_suit {
         return 0.0;
     }
-    let capped_three_suit_hand =
-        table.max_fan.is_some_and(|max_fan| max_fan <= 1) && !was_missing_suit;
+    let capped_three_suit_hand = one_fan_reaches_score_cap(table) && !was_missing_suit;
     if !capped_three_suit_hand
         && !capped_normal_route_before_discard_reaches_cap(hand_after_discard, melds, table, tile)
         && pure_one_suit_plan_score_for_context(hand_after_discard, melds, table, position) > 0.0
@@ -141,7 +140,7 @@ pub(in crate::ai::decision) fn violates_basic_terminal_or_honor_discard(
     if pure_one_suit_plan_score_for_context(hand_after_discard, melds, table, position) > 0.0 {
         return false;
     }
-    if table.max_fan.is_some_and(|max_fan| max_fan <= 1) {
+    if one_fan_reaches_score_cap(table) {
         return true;
     }
     true
@@ -164,7 +163,7 @@ pub(in crate::ai::decision) fn violates_basic_three_suits_discard(
     {
         return false;
     }
-    if table.max_fan.is_some_and(|max_fan| max_fan <= 1)
+    if one_fan_reaches_score_cap(table)
         && !is_seven_pairs_wait_shape(hand_after_discard)
         && pair_count(hand_after_discard) < 6
     {
@@ -176,7 +175,7 @@ pub(in crate::ai::decision) fn violates_basic_three_suits_discard(
     if capped_normal_route_before_discard_reaches_cap(hand_after_discard, melds, table, tile) {
         return true;
     }
-    if table.max_fan.is_some_and(|max_fan| max_fan <= 1) {
+    if one_fan_reaches_score_cap(table) {
         return true;
     }
     pure_one_suit_plan_score_for_context(hand_after_discard, melds, table, position) <= 0.0

@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn capped_non_dealer_prefers_discard_that_keeps_a_legal_wait() {
     let mut table = table_with_discards(1, vec![24, 24, 24, 27]);
-    table.max_fan = Some(1);
+    table.score_cap = Some(2);
     table.wall_count = 30;
     table.seats.get_mut(&0).unwrap().melds = vec![test_chi_meld(2)];
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
@@ -48,7 +48,7 @@ fn dealer_ignores_shape_wait_that_fails_shenyang_requirements() {
 fn half_capped_non_dealer_prefers_wider_wait_over_single_wait_fan() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 30;
-    table.max_fan = Some(4);
+    table.score_cap = Some(16);
     table.seats.get_mut(&0).unwrap().melds = vec![test_gang_meld(35)];
     let hand = vec![2, 2, 4, 5, 7, 11, 12, 13, 21, 22, 23];
 
@@ -74,7 +74,7 @@ fn late_non_dealer_prefers_public_discard_that_keeps_ready() {
     let hand = vec![19, 19, 19, 21, 22, 23, 25, 26, 27, 27, 29];
 
     assert_ne!(table.dealer_position, 0);
-    assert_eq!(table.max_fan, None);
+    assert_eq!(table.score_cap, None);
     assert_eq!(public_discard_count(&table, 27), 1);
     let after_27 = remove_n_tiles(&hand, 27, 1);
     assert_eq!(

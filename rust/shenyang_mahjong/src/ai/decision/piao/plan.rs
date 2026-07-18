@@ -189,7 +189,7 @@ fn piao_plan_has_enough_group_opportunities(
 }
 
 pub(in crate::ai::decision) fn piao_plan_is_capped(table: &AiPublicTable) -> bool {
-    table.max_fan.is_some_and(|max_fan| max_fan <= 1)
+    one_fan_reaches_score_cap(table)
 }
 
 pub(in crate::ai::decision) fn piao_plan_score(

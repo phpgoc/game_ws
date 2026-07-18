@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn capped_ready_score_keeps_wind_shape_as_seven_pairs_tiebreaker() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(4);
+    table.score_cap = Some(16);
     let wind_wait = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 31];
     let middle_wait = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 21, 21, 22, 22];
 
@@ -16,7 +16,7 @@ fn capped_ready_score_keeps_wind_shape_as_seven_pairs_tiebreaker() {
 #[test]
 fn capped_ready_score_prefers_live_middle_over_public_wind_wait() {
     let mut table = table_with_discards(1, vec![31]);
-    table.max_fan = Some(4);
+    table.score_cap = Some(16);
     let wind_wait = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 31];
     let middle_wait = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 21, 21, 22, 22];
 
@@ -223,7 +223,7 @@ fn estimated_visible_fan_uses_shenyang_rule_for_closed_pure_one_suit() {
 #[test]
 fn fan_wait_bias_counts_middle_tile_seven_pairs_single_wait() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(8);
+    table.score_cap = Some(256);
     let win_hand = vec![1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 11, 11, 21, 21];
 
     assert!(fan_wait_bias(&win_hand, &[], &table, 0, 5, 3, &[]) > 0.0);
@@ -235,7 +235,7 @@ fn fan_wait_bias_counts_middle_tile_seven_pairs_single_wait() {
 #[test]
 fn fan_wait_bias_counts_single_wait_cap_when_visible_fan_is_half_cap() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(2);
+    table.score_cap = Some(4);
     let win_hand = vec![2, 2, 5, 6, 7, 11, 12, 13, 21, 22, 23];
     let melds = vec![test_peng_meld(31)];
 
@@ -279,7 +279,7 @@ fn fan_wait_bias_rewards_edge_wait_decomposition() {
 #[test]
 fn fan_wait_bias_stops_piao_shou_ba_yi_when_visible_fan_exceeds_half_cap() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(5);
+    table.score_cap = Some(15);
     let win_hand = vec![35, 35];
     let melds = vec![
         test_peng_meld(1),
@@ -290,7 +290,10 @@ fn fan_wait_bias_stops_piao_shou_ba_yi_when_visible_fan_exceeds_half_cap() {
 
     assert_eq!(estimated_visible_fan_without_wait(&win_hand, &melds), 3);
     assert_eq!(estimated_fan_with_wait(&win_hand, &melds, 35), 5);
-    assert!(3 * 2 > table.max_fan.unwrap());
+    assert!(shenyang_fan_score_exceeds_half_cap(
+        3,
+        table.score_cap.unwrap()
+    ));
     assert_eq!(
         fan_wait_bias(&win_hand, &melds, &table, 0, 35, 2, &[],),
         0.0
@@ -300,13 +303,16 @@ fn fan_wait_bias_stops_piao_shou_ba_yi_when_visible_fan_exceeds_half_cap() {
 #[test]
 fn fan_wait_bias_stops_terminal_single_wait_when_visible_fan_exceeds_half_cap() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(6);
+    table.score_cap = Some(50);
     let win_hand = vec![11, 11, 14, 15, 15, 16, 16, 17, 17, 17, 17];
     let melds = vec![test_chi_meld(12)];
 
     assert_eq!(estimated_visible_fan_without_wait(&win_hand, &melds), 5);
     assert_eq!(estimated_fan_with_wait(&win_hand, &melds, 11), 6);
-    assert!(5 * 2 > table.max_fan.unwrap());
+    assert!(shenyang_fan_score_exceeds_half_cap(
+        5,
+        table.score_cap.unwrap()
+    ));
 
     assert_eq!(
         fan_wait_bias(&win_hand, &melds, &table, 0, 11, 3, &[],),
@@ -417,7 +423,7 @@ fn one_step_wait_potential_values_first_chi_disabled_closed_route_after_xi_gang(
 #[test]
 fn ready_cap_counts_single_wait_fan() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(2);
+    table.score_cap = Some(4);
     table.seats.get_mut(&0).unwrap().melds = vec![test_chi_meld(1)];
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
     let hand = vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35];
@@ -562,7 +568,7 @@ fn ready_score_values_live_wind_over_middle_for_dealer_seven_pairs() {
 #[test]
 fn ready_visible_cap_counts_concealed_dragon_triplet() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(2);
+    table.score_cap = Some(4);
     table.seats.get_mut(&0).unwrap().melds = vec![test_chi_meld(1)];
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
     let hand = vec![11, 12, 13, 21, 22, 23, 31, 35, 35, 35];
@@ -573,7 +579,7 @@ fn ready_visible_cap_counts_concealed_dragon_triplet() {
 #[test]
 fn ready_visible_cap_counts_four_gui_yi() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(2);
+    table.score_cap = Some(4);
     table.seats.get_mut(&0).unwrap().melds = vec![test_chi_meld(11)];
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
     let hand = vec![1, 2, 3, 7, 8, 9, 9, 9, 9, 21];
@@ -584,7 +590,7 @@ fn ready_visible_cap_counts_four_gui_yi() {
 #[test]
 fn ready_visible_cap_counts_piao_shou_ba_yi() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(4);
+    table.score_cap = Some(16);
     table.seats.get_mut(&0).unwrap().melds = vec![
         test_peng_meld(1),
         test_peng_meld(11),

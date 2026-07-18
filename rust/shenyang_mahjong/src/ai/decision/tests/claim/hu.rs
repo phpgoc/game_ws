@@ -139,7 +139,7 @@ fn claim_hu_counts_chi_as_opening_meld() {
 #[test]
 fn claim_hu_does_not_double_count_visible_tile_to_create_capped_wait() {
     let mut table = table_with_discards(1, vec![16]);
-    table.max_fan = Some(2);
+    table.score_cap = Some(4);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
     table.claim_window = Some(AiClaimView {
         tile: 16,
@@ -252,7 +252,7 @@ fn claim_hu_still_wins_during_final_defense() {
 #[test]
 fn claim_hu_takes_when_current_fan_exceeds_half_cap() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(6);
+    table.score_cap = Some(64);
     table.seats.get_mut(&0).unwrap().melds = vec![test_gang_meld(35)];
     table.seats.get_mut(&0).unwrap().discards = vec![36];
     table.claim_window = Some(AiClaimView {
@@ -331,7 +331,7 @@ fn claimed_fourth_copy_keeps_seven_pairs_single_wait_fan() {
 fn dealer_claim_hu_takes_one_fan_short_instead_of_chasing_cap() {
     let mut table = table_with_discards(1, vec![16]);
     table.dealer_position = 0;
-    table.max_fan = Some(2);
+    table.score_cap = Some(4);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
     table.claim_window = Some(AiClaimView {
         tile: 16,
@@ -363,7 +363,7 @@ fn dealer_claim_hu_takes_one_fan_short_instead_of_chasing_cap() {
 fn dealer_self_draw_hu_takes_one_fan_short_instead_of_chasing_cap() {
     let mut table = table_with_discards(1, Vec::new());
     table.dealer_position = 0;
-    table.max_fan = Some(2);
+    table.score_cap = Some(4);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
     let win_hand = vec![13, 14, 15, 15, 16, 16, 16, 17, 28, 28, 28];
 
@@ -376,7 +376,7 @@ fn dealer_self_draw_hu_takes_one_fan_short_instead_of_chasing_cap() {
 fn final_claim_hu_takes_one_fan_short_without_full_wall_cycle() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = 3;
-    table.max_fan = Some(2);
+    table.score_cap = Some(4);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
     table.seats.get_mut(&0).unwrap().discards = vec![16];
     table.claim_window = Some(AiClaimView {
@@ -409,7 +409,7 @@ fn final_claim_hu_takes_one_fan_short_without_full_wall_cycle() {
 fn final_self_draw_hu_takes_one_fan_short_without_full_wall_cycle() {
     let mut table = table_with_discards(1, vec![16]);
     table.wall_count = 3;
-    table.max_fan = Some(2);
+    table.score_cap = Some(4);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
     let win_hand = vec![13, 14, 15, 15, 16, 16, 16, 17, 28, 28, 28];
 
@@ -422,7 +422,7 @@ fn final_self_draw_hu_takes_one_fan_short_without_full_wall_cycle() {
 fn hu_takes_legal_hand_against_long_closed_dealer() {
     let mut table = table_with_discards(1, vec![31, 32, 33, 34, 35, 16]);
     table.wall_count = FINAL_DEFENSE_WALL_COUNT;
-    table.max_fan = Some(2);
+    table.score_cap = Some(4);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
     table.seats.get_mut(&0).unwrap().discards = vec![16];
     table.seats.get_mut(&1).unwrap().hand_count = 13;
@@ -469,7 +469,7 @@ fn hu_takes_legal_hand_against_long_closed_dealer() {
 fn hu_takes_one_fan_short_against_threatening_dealer() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = FINAL_DEFENSE_WALL_COUNT;
-    table.max_fan = Some(2);
+    table.score_cap = Some(4);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(9)];
     table.seats.get_mut(&0).unwrap().discards = vec![16];
     let dealer = table.seats.get_mut(&1).unwrap();
@@ -524,7 +524,7 @@ fn hu_takes_one_fan_short_against_threatening_dealer() {
 fn late_claim_hu_can_pass_one_fan_short_when_capped_wait_is_live() {
     let mut table = table_with_discards(1, Vec::new());
     table.wall_count = FINAL_DEFENSE_WALL_COUNT;
-    table.max_fan = Some(2);
+    table.score_cap = Some(4);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
     table.seats.get_mut(&0).unwrap().discards = vec![16];
     table.claim_window = Some(AiClaimView {
@@ -558,7 +558,7 @@ fn late_claim_hu_can_pass_one_fan_short_when_capped_wait_is_live() {
 fn late_claim_hu_takes_when_capped_wait_is_unlikely_to_reach_wall() {
     let mut table = table_with_discards(1, vec![16]);
     table.wall_count = 4;
-    table.max_fan = Some(2);
+    table.score_cap = Some(4);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
     table.seats.get_mut(&0).unwrap().discards = vec![16];
     table.claim_window = Some(AiClaimView {
@@ -590,7 +590,7 @@ fn late_claim_hu_takes_when_capped_wait_is_unlikely_to_reach_wall() {
 fn late_self_draw_hu_takes_when_capped_wait_is_unlikely_to_reach_wall() {
     let mut table = table_with_discards(1, vec![16]);
     table.wall_count = 4;
-    table.max_fan = Some(2);
+    table.score_cap = Some(4);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
     let win_hand = vec![13, 14, 15, 15, 16, 16, 16, 17, 28, 28, 28];
 
@@ -607,7 +607,7 @@ fn late_self_draw_hu_takes_when_capped_wait_is_unlikely_to_reach_wall() {
 #[test]
 fn self_draw_hu_can_pass_one_fan_short_when_capped_wait_is_live() {
     let mut table = table_with_discards(1, vec![16]);
-    table.max_fan = Some(2);
+    table.score_cap = Some(4);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
     let win_hand = vec![13, 14, 15, 15, 16, 16, 16, 17, 28, 28, 28];
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
@@ -648,7 +648,7 @@ fn self_draw_hu_can_pass_one_fan_short_when_capped_wait_is_live() {
 #[test]
 fn self_draw_hu_takes_when_current_fan_exceeds_half_cap() {
     let mut table = table_with_discards(1, vec![16]);
-    table.max_fan = Some(6);
+    table.score_cap = Some(64);
     table.seats.get_mut(&0).unwrap().melds = vec![test_concealed_gang_meld(35)];
     let win_hand = vec![13, 14, 15, 15, 16, 16, 16, 17, 28, 28, 28];
 

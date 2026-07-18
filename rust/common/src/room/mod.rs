@@ -381,6 +381,8 @@ impl RoomService {
                     position: position as i32,
                     is_active: true,
                     is_ai: true,
+                    away: false,
+                    is_ai_takeover: false,
                 },
                 &mut dispatch,
             );
@@ -431,6 +433,7 @@ impl RoomService {
             WsCode::AWAY as i32,
             WsPositionEvent {
                 position: position as i32,
+                is_ai_takeover: false,
             },
             &mut dispatch,
         );
@@ -545,6 +548,7 @@ impl RoomService {
             WsCode::BACK as i32,
             WsPositionEvent {
                 position: position as i32,
+                is_ai_takeover: false,
             },
             &mut dispatch,
         );
@@ -697,6 +701,8 @@ impl RoomService {
                             is_active: entry.state.is_ai_position(*p)
                                 || !entry.state.is_disconnected(*p),
                             is_ai: entry.state.is_ai_position(*p),
+                            away: entry.state.is_away(*p) || entry.state.is_disconnected(*p),
+                            is_ai_takeover: entry.state.is_ai_takeover_position(*p),
                         })
                         .collect();
                     self.push_response_with_data(
@@ -797,6 +803,8 @@ impl RoomService {
                     position: position as i32,
                     is_active: true,
                     is_ai: false,
+                    away: false,
+                    is_ai_takeover: false,
                 },
                 &mut dispatch,
             );
@@ -813,6 +821,8 @@ impl RoomService {
                     position: *p as i32,
                     is_active: entry.state.is_ai_position(*p) || !entry.state.is_disconnected(*p),
                     is_ai: entry.state.is_ai_position(*p),
+                    away: entry.state.is_away(*p) || entry.state.is_disconnected(*p),
+                    is_ai_takeover: entry.state.is_ai_takeover_position(*p),
                 })
                 .collect();
             self.push_response_with_data(
@@ -914,6 +924,8 @@ impl RoomService {
                 position: position as i32,
                 is_active: true,
                 is_ai: false,
+                away: false,
+                is_ai_takeover: false,
             },
             &mut dispatch,
         );
@@ -932,6 +944,8 @@ impl RoomService {
                     position: *p as i32,
                     is_active: entry.state.is_ai_position(*p) || !entry.state.is_disconnected(*p),
                     is_ai: entry.state.is_ai_position(*p),
+                    away: entry.state.is_away(*p) || entry.state.is_disconnected(*p),
+                    is_ai_takeover: entry.state.is_ai_takeover_position(*p),
                 })
                 .collect();
             self.push_response_with_data(
@@ -1169,6 +1183,13 @@ impl RoomService {
         let Some(room_key) = self.room_key_of(session_id) else {
             return self.error_response(session_id, Routes::SWAP as i32, WsResponseCode::NOT_LOGIN);
         };
+        if !self.room_supports_official_swap(&room_key) {
+            return self.error_response(
+                session_id,
+                Routes::SWAP as i32,
+                WsResponseCode::NO_PERMISSION,
+            );
+        }
         // Collect session IDs before mutating
         let sid_a;
         let sid_b;
@@ -1330,6 +1351,8 @@ impl RoomService {
                         position: pos as i32,
                         is_active: false,
                         is_ai: false,
+                        away: true,
+                        is_ai_takeover: entry.state.is_ai_takeover_position(pos),
                     })
                     .unwrap_or(Value::Null),
                 };
@@ -1445,6 +1468,9 @@ impl RoomService {
         };
         session.official_session_id = None;
         let mut leave_name = session.name.clone().unwrap_or_default();
+        // `quit_room` temporarily removes this session, so only other live
+        // human sessions remain in the room service lookup.
+        let has_other_connected_human = !self.connected_session_ids(&room_key).is_empty();
 
         let mut recipients = Vec::new();
         if let Some(entry) = self.rooms.get_mut(&room_key) {
@@ -1463,17 +1489,15 @@ impl RoomService {
                 entry.state.remove_player(pos);
             }
             recipients.extend(entry.state.players().values().map(|(sid, _)| *sid));
-            let room_is_empty = entry.state.players().is_empty();
             // `/quit` is a permanent departure and always terminates the
             // current game loop. A normal disconnect follows the separate
             // away/reconnect path in `mark_disconnected`.
             entry.state.set_turn_countdown(0);
             entry.state.request_stop();
-            // 如果房间里没人了，删除房间
-            if room_is_empty {
+            if !has_other_connected_human {
                 dlog!(
                     tracing::Level::WARN,
-                    "Room '{}' is now empty and will be removed",
+                    "Last connected human quit room '{}'; removing room",
                     room_key
                 );
                 self.rooms.remove(&room_key);
@@ -1575,6 +1599,51 @@ impl RoomService {
             .cloned()
     }
 
+    pub fn session_official_session_id(&self, session_id: SessionId) -> Option<String> {
+        self.sessions
+            .get(&session_id)
+            .and_then(|session| session.official_session_id.clone())
+    }
+
+    pub fn session_is_away(&self, session_id: SessionId) -> bool {
+        let Some(session) = self.sessions.get(&session_id) else {
+            return false;
+        };
+        let (Some(room_key), Some(position)) = (session.room_key.as_ref(), session.position) else {
+            return false;
+        };
+        self.rooms
+            .get(room_key)
+            .is_some_and(|entry| entry.state.is_away(position))
+    }
+
+    pub fn set_session_ai_takeover(&mut self, session_id: SessionId, enabled: bool) -> bool {
+        let Some(session) = self.sessions.get(&session_id) else {
+            return false;
+        };
+        let (Some(room_key), Some(position)) = (session.room_key.clone(), session.position) else {
+            return false;
+        };
+        let Some(entry) = self.rooms.get_mut(&room_key) else {
+            return false;
+        };
+        if !entry.state.is_away(position) || entry.state.is_ai_position(position) {
+            return false;
+        }
+        if enabled {
+            entry.state.mark_ai_takeover_position(position);
+        } else {
+            entry.state.clear_ai_takeover_position(position);
+        }
+        true
+    }
+
+    pub fn room_position_is_ai_takeover(&self, room_key: &str, position: usize) -> bool {
+        self.rooms
+            .get(room_key)
+            .is_some_and(|entry| entry.state.is_ai_takeover_position(position))
+    }
+
     /// 返回房间内所有成员 (SessionId, name, position, avatar_url)。
     pub fn room_members(&self, room_key: &str) -> Vec<(SessionId, String, usize, String)> {
         let Some(entry) = self.rooms.get(room_key) else {
@@ -1592,6 +1661,34 @@ impl RoomService {
         self.rooms
             .get(room_key)
             .and_then(|entry| entry.official_match_id)
+    }
+
+    /// Only official landlord, Shenyang Mahjong, and tractor rooms support
+    /// seat swapping. Custom WS rooms and P2P games cannot expose it.
+    pub fn room_supports_official_swap(&self, room_key: &str) -> bool {
+        let Some(entry) = self.rooms.get(room_key) else {
+            return false;
+        };
+        if !matches!(
+            entry.game_id,
+            GameId::LANDLORD | GameId::SHENYANG_MAHJONG | GameId::TRACTOR
+        ) {
+            return false;
+        }
+        let human_session_ids = entry
+            .state
+            .players()
+            .into_iter()
+            .filter(|(position, _)| !entry.state.is_ai_position(*position))
+            .map(|(_, (session_id, _))| session_id)
+            .collect::<Vec<_>>();
+        !human_session_ids.is_empty()
+            && human_session_ids.into_iter().all(|session_id| {
+                self.sessions
+                    .get(&session_id)
+                    .and_then(|session| session.official_session_id.as_deref())
+                    .is_some_and(|value| !value.is_empty())
+            })
     }
 
     pub fn room_official_player_sessions(&self, room_key: &str) -> Vec<OfficialPlayerSession> {

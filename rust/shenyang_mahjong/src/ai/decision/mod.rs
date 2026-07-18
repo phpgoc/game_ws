@@ -36,9 +36,10 @@ use crate::rules::{
     ShenyangMahjongWinContext, can_chi, can_gang, can_peng, has_edge_wait_decomposition,
     is_complete_win_with_melds_with_context, is_piao_hu_win, is_pure_one_suit_win,
     is_seven_pairs_win, is_single_wait_shape_with_known_unavailable_tiles_with_context,
-    shenyang_score_concealed_dragon_triplet_fan, shenyang_score_four_gui_yi_fan,
-    shenyang_score_meld_fan, shenyang_score_visible_win_fan, shenyang_win_pattern_base_fan,
-    sort_tiles,
+    shenyang_fan_needed_for_score_cap, shenyang_fan_reaches_score_cap,
+    shenyang_fan_score_exceeds_half_cap, shenyang_score_concealed_dragon_triplet_fan,
+    shenyang_score_four_gui_yi_fan, shenyang_score_meld_fan, shenyang_score_visible_win_fan,
+    shenyang_win_pattern_base_fan, sort_tiles,
 };
 #[cfg(test)]
 use crate::rules::{
@@ -109,6 +110,12 @@ pub(in crate::ai::decision) fn has_door_opening_meld(
     _table: &AiPublicTable,
 ) -> bool {
     has_open_meld(melds)
+}
+
+pub(in crate::ai::decision) fn one_fan_reaches_score_cap(table: &AiPublicTable) -> bool {
+    table
+        .score_cap
+        .is_some_and(|score_cap| shenyang_fan_reaches_score_cap(1, score_cap))
 }
 
 pub(crate) fn is_complete_win_for_table(

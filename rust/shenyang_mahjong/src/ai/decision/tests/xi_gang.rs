@@ -125,7 +125,7 @@ fn double_xi_gang_discard_keeps_only_tile_of_third_suit() {
 #[test]
 fn two_xi_gangs_count_toward_visible_fan_cap() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(3);
+    table.score_cap = Some(8);
     let hand = vec![11, 12, 13, 21, 21];
     let melds = vec![
         WsShenyangMahjongMeld {

@@ -545,9 +545,9 @@ mod tests {
 
         assert_eq!(winner_scores.len(), 2);
         assert_eq!(winner_scores[0].winner_user_id, 11);
-        assert_eq!(winner_scores[0].score, 4);
+        assert_eq!(winner_scores[0].score, 16);
         assert_eq!(winner_scores[1].winner_user_id, 12);
-        assert_eq!(winner_scores[1].score, 4);
+        assert_eq!(winner_scores[1].score, 16);
         assert!(
             winner_scores
                 .iter()

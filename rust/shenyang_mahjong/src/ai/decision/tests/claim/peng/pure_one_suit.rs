@@ -169,7 +169,7 @@ fn claim_peng_preserves_pure_one_suit_seven_pairs_wait() {
 #[test]
 fn one_fan_claim_peng_ignores_unfinished_pure_plan() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(1);
+    table.score_cap = Some(2);
     table.claim_window = Some(AiClaimView {
         tile: 1,
         from_position: 1,

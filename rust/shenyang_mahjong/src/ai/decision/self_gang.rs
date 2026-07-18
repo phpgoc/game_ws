@@ -136,7 +136,7 @@ pub(super) fn self_gang_score(
         normal_route_projects_cap || piao_route_projects_cap || pure_one_suit_route_projects_cap;
     let speed_first_concealed_gang = !is_added_gang
         && (table.dealer_position == position
-            || table.max_fan.is_some_and(|max_fan| max_fan <= 1)
+            || one_fan_reaches_score_cap(table)
             || dealer_opponent_has_major_threat(table, position)
             || projected_capped_visible_fan);
     let speed_first_pure_concealed_gang = pure_one_suit_score > 0.0
@@ -162,8 +162,7 @@ pub(super) fn self_gang_score(
     {
         return f64::NEG_INFINITY;
     }
-    if !is_ready && !speed_first_concealed_gang && table.max_fan.is_some_and(|max_fan| max_fan <= 1)
-    {
+    if !is_ready && !speed_first_concealed_gang && one_fan_reaches_score_cap(table) {
         return f64::NEG_INFINITY;
     }
     if !is_ready && !is_dragon(tile) && !speed_first_concealed_gang {

@@ -167,7 +167,7 @@ pub(in crate::ai::decision) fn should_pass_hu_for_capped_live_wait(
     position: usize,
     tile: i32,
 ) -> bool {
-    let Some(max_fan) = table.max_fan.filter(|max_fan| *max_fan > 1) else {
+    let Some(score_cap) = table.score_cap.filter(|score_cap| *score_cap > 2) else {
         return false;
     };
     if table.dealer_position == position
@@ -186,10 +186,10 @@ pub(in crate::ai::decision) fn should_pass_hu_for_capped_live_wait(
         table,
         &current_known_unavailable,
     );
-    if current_fan != max_fan - 1 {
+    if current_fan != shenyang_fan_needed_for_score_cap(score_cap) - 1 {
         return false;
     }
-    if current_fan * 2 > max_fan {
+    if shenyang_fan_score_exceeds_half_cap(current_fan, score_cap) {
         return false;
     }
 
@@ -222,13 +222,16 @@ pub(in crate::ai::decision) fn should_pass_hu_for_capped_live_wait(
             next.push(wait_tile);
             next.sort_unstable();
             let reaches_cap = is_complete_win_for_table(&next, melds, table)
-                && estimated_fan_with_known_unavailable_wait_for_table(
-                    &next,
-                    melds,
-                    wait_tile,
-                    table,
-                    &pass_known_unavailable,
-                ) >= max_fan;
+                && shenyang_fan_reaches_score_cap(
+                    estimated_fan_with_known_unavailable_wait_for_table(
+                        &next,
+                        melds,
+                        wait_tile,
+                        table,
+                        &pass_known_unavailable,
+                    ),
+                    score_cap,
+                );
             if reaches_cap { remaining } else { 0 }
         })
         .sum::<i32>();

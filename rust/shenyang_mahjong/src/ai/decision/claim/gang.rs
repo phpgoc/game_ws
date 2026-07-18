@@ -85,7 +85,7 @@ pub(in crate::ai::decision) fn should_claim_gang_from_discard(
     );
     let speed_first_unready = current_ready_score <= 0.0
         && (table.dealer_position == position
-            || table.max_fan.is_some_and(|max_fan| max_fan <= 1)
+            || one_fan_reaches_score_cap(table)
             || dealer_opponent_has_major_threat(table, position)
             || projected_capped_visible_fan);
     if ready_visible_fan_reaches_cap(hand, current_melds, table, position) {
@@ -146,7 +146,7 @@ pub(in crate::ai::decision) fn should_claim_opening_gang_for_basic_hand(
 ) -> bool {
     !has_door_opening_meld(current_melds, table)
         && can_gang(hand, tile)
-        && table.max_fan.is_none_or(|max_fan| max_fan > 1)
+        && !one_fan_reaches_score_cap(table)
         && !is_closed_early_piao_candidate(hand, current_melds, table, position)
         && !should_preserve_seven_pairs_plan_for_context(hand, current_melds, table, position)
         && pure_one_suit_plan_score_for_context(hand, current_melds, table, position) <= 0.0

@@ -1,6 +1,33 @@
 use super::*;
 
 #[test]
+fn self_draw_converts_each_payers_final_fan_to_score() {
+    let mut state = playable_state();
+    state.dealer_position = 0;
+    state
+        .hands
+        .insert(3, vec![2, 3, 5, 6, 7, 11, 12, 13, 21, 22, 23, 35, 35, 4]);
+    state.enter_settlement(vec![3], None, Some(4), true);
+    let settlement = state.settlement.as_ref().expect("settlement");
+    let configs = HashMap::from([
+        ("allow_first_chi".to_owned(), 0),
+        ("max_fan".to_owned(), 50),
+    ]);
+
+    assert_eq!(
+        winner_hand_fan_with_configs(&state, settlement, 3, &configs),
+        1
+    );
+    assert_eq!(
+        settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &configs)
+            .into_iter()
+            .map(|change| (change.position, change.score))
+            .collect::<Vec<_>>(),
+        vec![(0, -16), (1, -8), (2, -8), (3, 32)]
+    );
+}
+
+#[test]
 fn settlement_score_adds_closed_fan_when_discard_payer_has_not_opened() {
     let open_non_payer_meld = || vec![open_peng_meld(31, 2)];
     let mut closed_payer_state = playable_state();
@@ -42,7 +69,7 @@ fn settlement_score_adds_closed_fan_when_discard_payer_has_not_opened() {
         .into_iter()
         .map(|change| (change.position, change.score))
         .collect::<Vec<_>>(),
-        vec![(0, -2), (1, 2), (2, 0), (3, 0)]
+        vec![(0, -4), (1, 4), (2, 0), (3, 0)]
     );
 
     for invalid_source in [0, 9] {
@@ -92,7 +119,7 @@ fn settlement_score_adds_closed_fan_when_discard_payer_has_not_opened() {
             .into_iter()
             .map(|change| (change.position, change.score))
             .collect::<Vec<_>>(),
-            vec![(0, -2), (1, 2), (2, 0), (3, 0)]
+            vec![(0, -4), (1, 4), (2, 0), (3, 0)]
         );
     }
 
@@ -144,7 +171,7 @@ fn settlement_score_adds_closed_fan_when_discard_payer_has_not_opened() {
         .into_iter()
         .map(|change| (change.position, change.score))
         .collect::<Vec<_>>(),
-        vec![(0, -2), (1, 2), (2, 0), (3, 0)]
+        vec![(0, -4), (1, 4), (2, 0), (3, 0)]
     );
 
     let mut invalid_tile_open_payer_state = playable_state();
@@ -195,7 +222,7 @@ fn settlement_score_adds_closed_fan_when_discard_payer_has_not_opened() {
         .into_iter()
         .map(|change| (change.position, change.score))
         .collect::<Vec<_>>(),
-        vec![(0, -2), (1, 2), (2, 0), (3, 0)]
+        vec![(0, -4), (1, 4), (2, 0), (3, 0)]
     );
 
     let mut open_payer_state = playable_state();
@@ -242,7 +269,7 @@ fn settlement_score_adds_closed_fan_when_discard_payer_has_not_opened() {
         .into_iter()
         .map(|change| (change.position, change.score))
         .collect::<Vec<_>>(),
-        vec![(0, -1), (1, 1), (2, 0), (3, 0)]
+        vec![(0, -2), (1, 2), (2, 0), (3, 0)]
     );
 }
 
@@ -261,7 +288,7 @@ fn settlement_score_adds_dealer_fan_when_dealer_self_draws() {
             .into_iter()
             .map(|change| (change.position, change.score))
             .collect::<Vec<_>>(),
-        vec![(0, -8), (1, -8), (2, 24), (3, -8)]
+        vec![(0, -256), (1, -256), (2, 768), (3, -256)]
     );
 }
 
@@ -297,7 +324,7 @@ fn settlement_score_adds_dealer_fan_when_payer_is_open_dealer() {
             .into_iter()
             .map(|change| (change.position, change.score))
             .collect::<Vec<_>>(),
-        vec![(0, -2), (1, 2), (2, 0), (3, 0)]
+        vec![(0, -4), (1, 4), (2, 0), (3, 0)]
     );
 }
 
@@ -325,7 +352,7 @@ fn settlement_score_adds_dealer_fan_when_winner_is_dealer() {
             .into_iter()
             .map(|change| (change.position, change.score))
             .collect::<Vec<_>>(),
-        vec![(0, 6), (1, -6), (2, 0), (3, 0)]
+        vec![(0, 64), (1, -64), (2, 0), (3, 0)]
     );
 }
 
@@ -360,7 +387,7 @@ fn settlement_score_adds_payer_state_after_hand_fan_cap() {
             .into_iter()
             .map(|change| (change.position, change.score))
             .collect::<Vec<_>>(),
-        vec![(0, 0), (1, 5), (2, -5), (3, 0)]
+        vec![(0, 0), (1, 4), (2, -4), (3, 0)]
     );
 }
 
@@ -456,7 +483,7 @@ fn settlement_score_counts_concealed_gang_discard_payer_as_closed() {
             .into_iter()
             .map(|change| (change.position, change.score))
             .collect::<Vec<_>>(),
-        vec![(0, -2), (1, 2), (2, 0), (3, 0)]
+        vec![(0, -4), (1, 4), (2, 0), (3, 0)]
     );
 }
 
@@ -484,7 +511,7 @@ fn settlement_score_counts_three_closed_losers_on_discard_win() {
             .into_iter()
             .map(|change| (change.position, change.score))
             .collect::<Vec<_>>(),
-        vec![(0, -3), (1, 3), (2, 0), (3, 0)]
+        vec![(0, -8), (1, 8), (2, 0), (3, 0)]
     );
 }
 
@@ -544,7 +571,7 @@ fn settlement_scores_closed_sequence_dragon_pair_winner_after_xi_gang() {
             .into_iter()
             .map(|change| (change.position, change.score))
             .collect::<Vec<_>>(),
-        vec![(0, -6), (1, 16), (2, -5), (3, -5)]
+        vec![(0, -64), (1, 128), (2, -32), (3, -32)]
     );
     let event = build_settlement_event_with_configs(&state, &disabled_configs)
         .expect("configured closed win settlement event");
@@ -553,7 +580,7 @@ fn settlement_scores_closed_sequence_dragon_pair_winner_after_xi_gang() {
         event.winner_details[0].pattern,
         ShenyangMahjongWinPattern::Standard
     );
-    assert_eq!(event.winner_details[0].score, 16);
+    assert_eq!(event.winner_details[0].score, 128);
 }
 
 #[test]
@@ -571,7 +598,7 @@ fn settlement_self_draw_counts_all_three_closed_payers() {
             .into_iter()
             .map(|change| (change.position, change.score))
             .collect::<Vec<_>>(),
-        vec![(0, -8), (1, -7), (2, 22), (3, -7)]
+        vec![(0, -256), (1, -128), (2, 512), (3, -128)]
     );
 }
 
@@ -598,7 +625,7 @@ fn settlement_self_draw_counts_concealed_gang_payer_as_closed() {
             .into_iter()
             .map(|change| (change.position, change.score))
             .collect::<Vec<_>>(),
-        vec![(0, -8), (1, -7), (2, 22), (3, -7)]
+        vec![(0, -256), (1, -128), (2, 512), (3, -128)]
     );
 }
 
@@ -625,7 +652,7 @@ fn settlement_self_draw_counts_xi_gang_payer_as_closed() {
             .into_iter()
             .map(|change| (change.position, change.score))
             .collect::<Vec<_>>(),
-        vec![(0, -8), (1, -7), (2, 22), (3, -7)]
+        vec![(0, -256), (1, -128), (2, 512), (3, -128)]
     );
 }
 
@@ -652,7 +679,7 @@ fn settlement_self_draw_treats_chi_only_payer_as_open() {
             .into_iter()
             .map(|change| (change.position, change.score))
             .collect::<Vec<_>>(),
-        vec![(0, -7), (1, -5), (2, 18), (3, -6)]
+        vec![(0, -128), (1, -32), (2, 224), (3, -64)]
     );
 }
 
@@ -679,7 +706,7 @@ fn settlement_self_draw_uses_single_closed_fan_when_any_payer_opened() {
             .into_iter()
             .map(|change| (change.position, change.score))
             .collect::<Vec<_>>(),
-        vec![(0, -7), (1, -5), (2, 18), (3, -6)]
+        vec![(0, -128), (1, -32), (2, 224), (3, -64)]
     );
 }
 
@@ -705,7 +732,7 @@ fn settlement_winner_details_describe_piao_hu() {
         event.winner_details[0].pattern,
         ShenyangMahjongWinPattern::PiaoHu
     );
-    assert_eq!(event.winner_details[0].score, 5);
+    assert_eq!(event.winner_details[0].score, 32);
 }
 
 #[test]
@@ -729,7 +756,7 @@ fn settlement_winner_details_describe_pure_one_suit() {
         event.winner_details[0].pattern,
         ShenyangMahjongWinPattern::PureOneSuit
     );
-    assert_eq!(event.winner_details[0].score, 6);
+    assert_eq!(event.winner_details[0].score, 64);
 }
 
 #[test]
@@ -749,14 +776,14 @@ fn settlement_winner_details_describe_seven_pairs_self_draw() {
         ShenyangMahjongWinPattern::SevenPairs
     );
     assert!(event.winner_details[0].is_self_draw);
-    assert_eq!(event.winner_details[0].score, 22);
+    assert_eq!(event.winner_details[0].score, 512);
     assert_eq!(
         event
             .score_changes
             .iter()
             .map(|change| (change.position, change.score))
             .collect::<Vec<_>>(),
-        vec![(0, -8), (1, -7), (2, 22), (3, -7)]
+        vec![(0, -256), (1, -128), (2, 512), (3, -128)]
     );
 }
 
@@ -784,7 +811,7 @@ fn settlement_winner_details_do_not_describe_sequence_remainder_as_piao_hu() {
         event.winner_details[0].pattern,
         ShenyangMahjongWinPattern::Standard
     );
-    assert_eq!(event.winner_details[0].score, 3);
+    assert_eq!(event.winner_details[0].score, 8);
 }
 
 #[test]
@@ -813,7 +840,7 @@ fn settlement_winner_details_include_reverse_win_and_score() {
         ShenyangMahjongWinPattern::Standard
     );
     assert!(event.winner_details[0].is_reverse_win);
-    assert_eq!(event.winner_details[0].score, 4);
+    assert_eq!(event.winner_details[0].score, 16);
 }
 
 #[test]
@@ -840,5 +867,5 @@ fn settlement_winner_details_use_shenyang_rules_for_closed_pure_one_suit() {
         winner_hand_fan(&state, state.settlement.as_ref().expect("settlement"), 1),
         4
     );
-    assert_eq!(empty_config_event.winner_details[0].score, 6);
+    assert_eq!(empty_config_event.winner_details[0].score, 64);
 }

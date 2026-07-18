@@ -380,14 +380,14 @@ fn table_snapshot_includes_settlement_for_rejoin() {
     assert!(settlement.is_reverse_win);
     assert_eq!(settlement.winner_details.len(), 1);
     assert_eq!(settlement.winner_details[0].position, 1);
-    assert_eq!(settlement.winner_details[0].score, 4);
+    assert_eq!(settlement.winner_details[0].score, 16);
     assert_eq!(
         settlement
             .score_changes
             .iter()
             .map(|change| (change.position, change.score))
             .collect::<Vec<_>>(),
-        vec![(0, -4), (1, 4), (2, 0), (3, 0)]
+        vec![(0, -16), (1, 16), (2, 0), (3, 0)]
     );
 }
 

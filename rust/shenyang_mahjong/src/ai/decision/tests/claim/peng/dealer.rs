@@ -163,7 +163,7 @@ fn dealer_claim_peng_uses_dragon_pair_for_speed_when_basic_route_is_viable() {
 #[test]
 fn one_fan_capped_claim_peng_uses_dragon_pair_for_speed_over_five_pairs() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(1);
+    table.score_cap = Some(2);
     table.claim_window = Some(AiClaimView {
         tile: 35,
         from_position: 1,

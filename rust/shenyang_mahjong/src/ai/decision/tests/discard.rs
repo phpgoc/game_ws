@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn capped_discard_clears_spare_single_dragon_when_basic_route_is_ready() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(1);
+    table.score_cap = Some(2);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(31)];
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
     let hand = vec![1, 2, 3, 4, 5, 6, 8, 21, 22, 23, 35];
@@ -26,7 +26,7 @@ fn capped_discard_clears_spare_single_dragon_when_basic_route_is_ready() {
 #[test]
 fn capped_discard_does_not_preserve_redundant_four_gui_yi() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(1);
+    table.score_cap = Some(2);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(2)];
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
     let hand = vec![2, 3, 4, 5, 11, 12, 13, 21, 22, 23, 35];
@@ -55,7 +55,7 @@ fn capped_discard_does_not_preserve_redundant_four_gui_yi() {
 #[test]
 fn capped_open_normal_route_discards_redundant_single_dragon() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(2);
+    table.score_cap = Some(4);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(35)];
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
     let hand = vec![1, 2, 3, 5, 11, 12, 13, 21, 22, 23, 36];
@@ -434,7 +434,7 @@ fn early_pinghu_route_preserves_core_sequence_over_public_middle() {
 #[test]
 fn half_capped_discard_does_not_preserve_four_gui_yi() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(3);
+    table.score_cap = Some(7);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(2)];
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
     let hand = vec![2, 3, 4, 11, 12, 13, 21, 22, 23, 35, 36];
@@ -461,7 +461,7 @@ fn mid_pinghu_route_sequence_bias_turns_off_after_shape_period() {
 #[test]
 fn broken_capped_route_can_discard_spare_dragon() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(2);
+    table.score_cap = Some(4);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(35)];
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
     let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 36];

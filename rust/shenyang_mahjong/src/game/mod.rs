@@ -27,7 +27,8 @@ use crate::game_state::{
 use crate::rules::{
     ShenyangMahjongWinContext, XI_GANG_WINDS, can_chi, can_concealed_gang, can_gang, can_peng,
     is_complete_win_with_melds_with_context, is_door_opening_meld, is_valid_meld, is_xi_gang_tiles,
-    remove_tiles, shenyang_score_visible_win_fan, shenyang_win_pattern, tiles_in_hand,
+    remove_tiles, shenyang_score_for_fan_with_cap, shenyang_score_visible_win_fan,
+    shenyang_win_pattern, tiles_in_hand,
 };
 #[cfg(test)]
 use crate::rules::{
@@ -501,18 +502,6 @@ pub(crate) fn can_self_gang(
     can_concealed_gang(&hand, target_tile) || can_added_gang(&hand, &melds, target_tile)
 }
 
-fn capped_winner_hand_fan(
-    state: &ShenyangMahjongLoopState,
-    settlement: &crate::game_state::SettlementState,
-    winner: usize,
-    configs: &HashMap<String, i32>,
-) -> i32 {
-    let fan = winner_hand_fan_with_configs(state, settlement, winner, configs);
-    max_fan_from_configs(configs)
-        .map(|max_fan| fan.min(max_fan))
-        .unwrap_or(fan)
-}
-
 fn chi_options_for_hand(hand: &[i32], tile: i32) -> Vec<Vec<i32>> {
     [
         [tile - 2, tile - 1],
@@ -860,8 +849,11 @@ fn known_tile_count(state: &ShenyangMahjongLoopState, tile: i32) -> usize {
     state.known_tile_count(tile)
 }
 
-fn max_fan_from_configs(configs: &HashMap<String, i32>) -> Option<i32> {
-    configs.get("max_fan").copied().filter(|fan| *fan > 0)
+fn score_cap_from_configs(configs: &HashMap<String, i32>) -> Option<i32> {
+    configs
+        .get("max_fan")
+        .copied()
+        .filter(|score_cap| *score_cap > 0)
 }
 
 fn maybe_record_settlement(
@@ -2150,7 +2142,7 @@ pub(crate) fn settlement_score_changes_for_state(
         .collect::<HashMap<_, _>>();
 
     for winner in &winner_positions {
-        let winner_fan = capped_winner_hand_fan(state, settlement, *winner, configs);
+        let winner_fan = winner_hand_fan_with_configs(state, settlement, *winner, configs);
         if winner_fan <= 0 {
             continue;
         }
@@ -2158,17 +2150,20 @@ pub(crate) fn settlement_score_changes_for_state(
             if payer == winner {
                 continue;
             }
-            let mut payment = winner_fan;
+            let mut payment_fan = winner_fan;
             if *winner == state.dealer_position {
-                payment += 1;
+                payment_fan += 1;
             }
             if *payer == state.dealer_position {
-                payment += 1;
+                payment_fan += 1;
             }
             if !position_has_open_meld(state, *payer) {
-                payment += if all_losers_closed { 2 } else { 1 };
+                payment_fan += if all_losers_closed { 2 } else { 1 };
             }
-            payment = payment.max(1);
+            let payment = shenyang_score_for_fan_with_cap(
+                payment_fan.max(0),
+                score_cap_from_configs(configs),
+            );
             *totals.entry(*winner).or_default() += payment;
             *totals.entry(*payer).or_default() -= payment;
         }

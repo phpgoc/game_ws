@@ -31,7 +31,7 @@ fn broken_closed_defense_preserves_seven_pairs_route() {
 #[test]
 fn capped_discard_sets_seven_pairs_wait_on_live_wind_tiebreaker() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(4);
+    table.score_cap = Some(16);
     let hand = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 21, 21, 22, 22, 31];
 
     assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(5));
@@ -40,7 +40,7 @@ fn capped_discard_sets_seven_pairs_wait_on_live_wind_tiebreaker() {
 #[test]
 fn capped_locked_seven_pairs_route_can_break_three_suits_requirement() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(1);
+    table.score_cap = Some(2);
     let hand_after_discard = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 12, 13, 13, 5];
 
     assert!(should_preserve_seven_pairs_plan_for_context(
@@ -61,7 +61,7 @@ fn capped_locked_seven_pairs_route_can_break_three_suits_requirement() {
 #[test]
 fn capped_locked_seven_pairs_route_can_discard_last_honor() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(1);
+    table.score_cap = Some(2);
     let hand = vec![2, 2, 3, 3, 4, 4, 12, 12, 13, 13, 14, 14, 5, 31];
     let after_discard = remove_n_tiles(&hand, 31, 1);
 
@@ -269,7 +269,7 @@ fn four_pair_missing_suit_bias_ignores_malformed_meld() {
 #[test]
 fn half_capped_normal_route_does_not_lock_five_pairs() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(4);
+    table.score_cap = Some(15);
     let hand = vec![1, 1, 2, 2, 11, 11, 21, 22, 31, 35, 35, 35, 35];
 
     assert_eq!(pair_count(&hand), 5);
@@ -304,7 +304,7 @@ fn late_six_pair_hand_breaks_public_pair_instead_of_setting_unsafe_wait() {
 #[test]
 fn one_fan_capped_room_does_not_lock_five_pairs_when_basic_route_is_viable() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(1);
+    table.score_cap = Some(2);
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 22, 31, 35, 35];
 
     assert!(has_normal_route_foundation(&hand, &[]));
@@ -314,7 +314,7 @@ fn one_fan_capped_room_does_not_lock_five_pairs_when_basic_route_is_viable() {
 #[test]
 fn one_fan_capped_six_pairs_still_sets_better_seven_pairs_wait() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(1);
+    table.score_cap = Some(2);
     let hand = vec![1, 1, 2, 2, 5, 11, 11, 12, 12, 21, 21, 22, 22, 31];
 
     assert_eq!(pair_count(&hand), 6);
@@ -324,7 +324,7 @@ fn one_fan_capped_six_pairs_still_sets_better_seven_pairs_wait() {
 #[test]
 fn one_fan_room_only_locks_seven_pairs_when_ready() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(1);
+    table.score_cap = Some(2);
     let four_pairs = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 13, 21, 31, 35];
     let five_pairs = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 12, 21, 31, 35];
     let six_pairs = vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 12, 21, 21, 35];
@@ -568,7 +568,7 @@ fn speed_first_seven_pairs_wait_prefers_three_live_middle_copies_over_two_termin
 #[test]
 fn two_fan_capped_room_does_not_lock_five_pairs_when_basic_bonus_caps() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(2);
+    table.score_cap = Some(4);
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 22, 35, 35, 35];
 
     assert_eq!(pair_count(&hand), 5);
@@ -581,7 +581,7 @@ fn two_fan_capped_room_does_not_lock_five_pairs_when_basic_bonus_caps() {
 #[test]
 fn two_fan_room_does_not_lock_bonus_capped_five_pairs() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(2);
+    table.score_cap = Some(4);
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 31, 35, 35, 35];
 
     assert_eq!(pair_count(&hand), 5);

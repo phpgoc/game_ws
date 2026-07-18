@@ -13,7 +13,7 @@ pub(in crate::ai::decision) fn capped_spare_dragon_discard_bias(
     {
         return 0.0;
     }
-    if table.max_fan.is_some_and(|max_fan| max_fan <= 1) {
+    if one_fan_reaches_score_cap(table) {
         return 5.0;
     }
 

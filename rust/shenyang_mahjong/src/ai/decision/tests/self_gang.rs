@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn capped_open_normal_route_delays_added_gang_before_ready() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(2);
+    table.score_cap = Some(4);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(35), test_peng_meld(9)];
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
     let hand = vec![1, 4, 7, 9, 11, 14, 17, 21];
@@ -65,7 +65,7 @@ fn dealer_takes_unready_concealed_gang_that_preserves_committed_piao() {
 fn half_capped_closed_basic_piao_self_gang_still_prioritizes_opening() {
     let mut table = table_with_discards(1, Vec::new());
     table.dealer_position = 3;
-    table.max_fan = Some(5);
+    table.score_cap = Some(32);
     let hand = vec![1, 1, 1, 11, 11, 11, 21, 21, 21, 21, 31, 31, 35, 36];
 
     assert!(piao_plan_score_for_context(&hand, &[], &table, 0) >= 40.0);
@@ -78,7 +78,7 @@ fn half_capped_closed_basic_piao_self_gang_still_prioritizes_opening() {
 fn half_capped_closed_basic_self_gang_still_prioritizes_opening() {
     let mut table = table_with_discards(1, Vec::new());
     table.dealer_position = 3;
-    table.max_fan = Some(3);
+    table.score_cap = Some(8);
     let hand = vec![1, 4, 7, 9, 9, 9, 9, 11, 14, 17, 21, 24, 27, 31];
 
     assert_eq!(choose_self_gang_from_view(&hand, &[9], &table, 0), None);
@@ -88,7 +88,7 @@ fn half_capped_closed_basic_self_gang_still_prioritizes_opening() {
 fn half_capped_committed_piao_self_gang_takes_projected_cap() {
     let mut table = table_with_discards(1, Vec::new());
     table.dealer_position = 3;
-    table.max_fan = Some(5);
+    table.score_cap = Some(31);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
     let hand = vec![2, 5, 8, 11, 11, 11, 21, 21, 21, 21, 35];
@@ -106,7 +106,7 @@ fn half_capped_committed_piao_self_gang_takes_projected_cap() {
 fn half_capped_closed_dragon_pair_piao_self_gang_takes_projected_cap() {
     let mut table = table_with_discards(1, Vec::new());
     table.dealer_position = 3;
-    table.max_fan = Some(6);
+    table.score_cap = Some(63);
     table.seats.get_mut(&0).unwrap().melds = vec![WsShenyangMahjongMeld {
         kind: ShenyangMahjongMeldKind::XI_GANG,
         tiles: vec![35, 36, 37],
@@ -139,7 +139,7 @@ fn half_capped_closed_dragon_pair_piao_self_gang_takes_projected_cap() {
 fn half_capped_established_pure_self_gang_takes_projected_cap() {
     let mut table = table_with_discards(1, Vec::new());
     table.dealer_position = 3;
-    table.max_fan = Some(6);
+    table.score_cap = Some(63);
     table.seats.get_mut(&0).unwrap().melds = vec![test_chi_meld(2)];
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
     let hand = vec![1, 1, 1, 1, 2, 2, 4, 5, 6, 6, 9];
@@ -154,7 +154,7 @@ fn half_capped_established_pure_self_gang_takes_projected_cap() {
 fn half_capped_closed_unready_self_gang_does_not_use_illegal_projection() {
     let mut table = table_with_discards(1, Vec::new());
     table.dealer_position = 3;
-    table.max_fan = Some(3);
+    table.score_cap = Some(7);
     let hand = vec![1, 4, 7, 9, 9, 9, 9, 11, 14, 17, 21, 24, 27, 31];
 
     assert_eq!(best_ready_score_after_discard(&hand, &[], &table, 0), 0.0);
@@ -193,7 +193,7 @@ fn non_dealer_delays_closed_dragon_gang_but_dealer_takes_replacement_draw() {
 #[test]
 fn one_fan_capped_self_gang_delays_added_dragon_before_ready() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(1);
+    table.score_cap = Some(2);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(35)];
     let hand = vec![2, 5, 8, 11, 14, 17, 21, 31, 32, 33, 35];
 
@@ -203,7 +203,7 @@ fn one_fan_capped_self_gang_delays_added_dragon_before_ready() {
 #[test]
 fn one_fan_capped_self_gang_delays_added_plain_before_ready() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(1);
+    table.score_cap = Some(2);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(9)];
     let hand = vec![1, 2, 4, 6, 8, 9, 11, 13, 16, 21, 24];
 
@@ -213,7 +213,7 @@ fn one_fan_capped_self_gang_delays_added_plain_before_ready() {
 #[test]
 fn one_fan_capped_self_gang_takes_closed_plain_for_replacement_draw() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(1);
+    table.score_cap = Some(2);
     let hand = vec![3, 3, 3, 3, 4, 6, 8, 11, 13, 15, 21, 24, 27, 31];
 
     assert_eq!(choose_self_gang_from_view(&hand, &[3], &table, 0), Some(3));
@@ -223,7 +223,7 @@ fn one_fan_capped_self_gang_takes_closed_plain_for_replacement_draw() {
 #[test]
 fn one_fan_capped_self_gang_takes_concealed_dragon_for_replacement_draw() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(1);
+    table.score_cap = Some(2);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
     let hand = vec![2, 5, 8, 11, 14, 17, 21, 35, 35, 35, 35];
 
@@ -662,7 +662,7 @@ fn self_gang_rejects_unrelated_public_fifth_copy() {
 #[test]
 fn self_gang_skips_plain_gang_when_concealed_dragon_triplet_caps_ready_hand() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(2);
+    table.score_cap = Some(4);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(11)];
     let hand = vec![9, 9, 9, 9, 22, 23, 31, 31, 35, 35, 35];
 
@@ -678,7 +678,7 @@ fn self_gang_skips_plain_gang_when_concealed_dragon_triplet_caps_ready_hand() {
 #[test]
 fn self_gang_skips_plain_gang_when_ready_fan_already_capped() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(1);
+    table.score_cap = Some(2);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(31)];
     let hand = vec![1, 2, 3, 9, 9, 9, 9, 11, 12, 13, 21];
 
@@ -688,7 +688,7 @@ fn self_gang_skips_plain_gang_when_ready_fan_already_capped() {
 #[test]
 fn self_gang_skips_plain_gang_when_single_wait_fan_caps_ready_hand() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(2);
+    table.score_cap = Some(4);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(31)];
     let hand = vec![1, 2, 3, 9, 9, 9, 9, 11, 12, 13, 21];
 
@@ -708,7 +708,7 @@ fn self_gang_skips_ready_gang_when_replacement_tile_is_unavailable() {
 #[test]
 fn self_gang_skips_ready_plain_gang_when_fan_exceeds_half_cap() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(4);
+    table.score_cap = Some(16);
     table.seats.get_mut(&0).unwrap().melds = vec![test_gang_meld(35)];
     let hand = vec![1, 2, 3, 9, 9, 9, 9, 11, 12, 13, 21];
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
@@ -721,7 +721,7 @@ fn self_gang_skips_ready_plain_gang_when_fan_exceeds_half_cap() {
 #[test]
 fn self_gang_skips_ready_pure_one_suit_when_visible_fan_capped() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(4);
+    table.score_cap = Some(16);
     let hand = vec![1, 1, 1, 1, 2, 3, 4, 5, 6, 7, 8, 8, 9, 9];
 
     assert!(ready_visible_fan_reaches_cap(&hand, &[], &table, 0));
@@ -802,7 +802,7 @@ fn speed_first_concealed_gang_preserves_unready_pure_one_suit_plan() {
     assert_eq!(choose_self_gang_from_view(&hand, &[1], &table, 0), Some(1));
 
     table.dealer_position = 1;
-    table.max_fan = Some(1);
+    table.score_cap = Some(2);
     assert_eq!(
         pure_one_suit_plan_score_for_context(&hand, &[], &table, 0),
         0.0

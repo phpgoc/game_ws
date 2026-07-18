@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn capped_normal_route_disables_redundant_closed_piao_plan() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(2);
+    table.score_cap = Some(4);
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 13, 21, 22, 35, 35, 35];
 
     assert!(has_normal_route_foundation(&hand, &[]));
@@ -28,7 +28,7 @@ fn capped_normal_route_disables_redundant_closed_piao_plan() {
 #[test]
 fn capped_open_normal_route_disables_redundant_piao_plan() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(2);
+    table.score_cap = Some(4);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(35)];
     let melds = table.seats.get(&0).unwrap().melds.as_slice();
     let hand = vec![1, 1, 2, 3, 11, 11, 12, 13, 21, 21];
@@ -144,7 +144,7 @@ fn four_concealed_gang_groups_require_dragon_pair_for_closed_piao() {
 #[test]
 fn half_capped_normal_route_stops_closed_piao_chase() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(4);
+    table.score_cap = Some(15);
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 13, 21, 22, 35, 35, 35, 35];
 
     assert!(has_normal_route_foundation(&hand, &[]));
@@ -162,7 +162,7 @@ fn half_capped_normal_route_stops_closed_piao_chase() {
 #[test]
 fn one_fan_capped_room_disables_piao_plan_biases() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(1);
+    table.score_cap = Some(2);
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 13, 21, 21, 22, 31, 32];
 
     assert!(piao_plan_score(&hand, &[]) >= 20.0);
@@ -289,7 +289,7 @@ fn piao_chi_preservation_uses_dealer_and_cap_context() {
     ));
 
     let mut capped_table = table.clone();
-    capped_table.max_fan = Some(1);
+    capped_table.score_cap = Some(2);
     assert!(!should_preserve_piao_plan_for_chi(
         &hand,
         &[],

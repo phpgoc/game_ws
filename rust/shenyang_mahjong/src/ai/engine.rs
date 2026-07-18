@@ -911,7 +911,7 @@ mod tests {
             .insert(0, vec![13, 14, 15, 15, 16, 16, 16, 17, 28, 28, 28]);
         state.melds.insert(0, vec![test_peng_meld(1)]);
         state.last_drawn_tile = Some(16);
-        let configs = HashMap::from([("max_fan".to_owned(), 2)]);
+        let configs = HashMap::from([("max_fan".to_owned(), 4)]);
         let mut dispatch = Dispatch::default();
 
         assert!(maybe_play_ai_turn(
@@ -1032,7 +1032,7 @@ mod tests {
         );
         state.last_drawn_tile = Some(16);
         state.pending_gang_draw = true;
-        let configs = HashMap::from([("max_fan".to_owned(), 2)]);
+        let configs = HashMap::from([("max_fan".to_owned(), 4)]);
         let mut dispatch = Dispatch::default();
 
         assert!(maybe_play_ai_turn(
@@ -1065,7 +1065,7 @@ mod tests {
             .insert(0, vec![13, 14, 15, 15, 16, 16, 16, 17, 28, 28, 28]);
         state.melds.insert(0, vec![test_peng_meld(1)]);
         state.last_drawn_tile = Some(16);
-        let configs = HashMap::from([("max_fan".to_owned(), 2)]);
+        let configs = HashMap::from([("max_fan".to_owned(), 4)]);
         let mut dispatch = Dispatch::default();
 
         assert!(maybe_play_ai_turn(
@@ -1109,7 +1109,7 @@ mod tests {
             .insert(3, vec![8, 8, 9, 9, 9, 9, 11, 11, 11, 11, 12, 12, 12]);
         state.melds.insert(0, vec![test_peng_meld(1)]);
         state.last_drawn_tile = Some(16);
-        let configs = HashMap::from([("max_fan".to_owned(), 2)]);
+        let configs = HashMap::from([("max_fan".to_owned(), 4)]);
         let mut dispatch = Dispatch::default();
 
         assert!(maybe_play_ai_turn(
@@ -1141,7 +1141,7 @@ mod tests {
             .insert(0, vec![13, 14, 15, 15, 16, 16, 16, 17, 28, 28, 28]);
         state.melds.insert(0, vec![test_peng_meld(1)]);
         state.last_drawn_tile = Some(16);
-        let configs = HashMap::from([("max_fan".to_owned(), 2)]);
+        let configs = HashMap::from([("max_fan".to_owned(), 4)]);
         let mut dispatch = Dispatch::default();
 
         assert!(maybe_play_ai_turn(
@@ -1183,7 +1183,7 @@ mod tests {
             eligible_positions: vec![0],
             responses: HashMap::new(),
         });
-        let configs = HashMap::from([("max_fan".to_owned(), 2)]);
+        let configs = HashMap::from([("max_fan".to_owned(), 4)]);
         let table = build_public_table_with_configs(&state, &configs);
         let claim = table.claim_window.as_ref().expect("claim window");
         let mut dispatch = Dispatch::default();
@@ -1534,7 +1534,7 @@ mod tests {
     }
 
     fn one_fan_capped_configs() -> HashMap<String, i32> {
-        HashMap::from([("max_fan".to_owned(), 1)])
+        HashMap::from([("max_fan".to_owned(), 2)])
     }
 
     fn playable_state() -> ShenyangMahjongLoopState {

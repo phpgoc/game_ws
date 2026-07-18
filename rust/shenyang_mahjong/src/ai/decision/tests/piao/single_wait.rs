@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn capped_four_piao_melds_prefers_wider_wait_over_honor_shape() {
     let mut table = table_with_discards(1, vec![31]);
-    table.max_fan = Some(4);
+    table.score_cap = Some(16);
     table.seats.get_mut(&0).unwrap().melds = vec![
         test_peng_meld(1),
         test_peng_meld(11),
@@ -136,7 +136,7 @@ fn late_open_hand_avoids_live_tile_against_four_piao_melds() {
         current_position: 1,
         dealer_position: 0,
         wall_count: 31,
-        max_fan: Some(4),
+        score_cap: Some(16),
         allow_first_chi: true,
         claim_window: None,
         seats,

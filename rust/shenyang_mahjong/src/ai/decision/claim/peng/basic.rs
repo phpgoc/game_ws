@@ -43,7 +43,7 @@ pub(in crate::ai::decision) fn should_claim_peng_to_open_capped_basic_route(
     tile: i32,
     from_position: usize,
 ) -> bool {
-    if table.max_fan.is_none_or(|max_fan| max_fan <= 0)
+    if table.score_cap.is_none()
         || has_door_opening_meld(current_melds, table)
         || !can_peng(hand, tile)
         || !missing_suits(hand, current_melds).is_empty()
@@ -119,7 +119,7 @@ pub(in crate::ai::decision) fn should_pass_closed_basic_peng_to_preserve_sequenc
     !has_door_opening_meld(current_melds, table)
         && table.dealer_position != position
         && !dealer_opponent_has_major_threat(table, position)
-        && table.max_fan.is_none_or(|max_fan| max_fan > 1)
+        && !one_fan_reaches_score_cap(table)
         && !is_late_round(table)
         && can_peng(hand, tile)
         && is_suited(tile)

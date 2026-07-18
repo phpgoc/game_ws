@@ -7,11 +7,12 @@ pub(in crate::ai::decision) fn capped_normal_route_visible_fan_exceeds_half_cap(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
 ) -> bool {
-    let Some(max_fan) = table.max_fan.filter(|max_fan| *max_fan > 0) else {
+    let Some(score_cap) = table.score_cap.filter(|score_cap| *score_cap > 0) else {
         return false;
     };
     let visible_fan = 1 + estimated_visible_bonus_fan(hand, melds);
-    has_normal_route_foundation(hand, melds) && visible_fan * 2 > max_fan
+    has_normal_route_foundation(hand, melds)
+        && shenyang_fan_score_exceeds_half_cap(visible_fan, score_cap)
 }
 
 pub(in crate::ai::decision) fn capped_normal_route_visible_fan_reaches_cap(
@@ -19,11 +20,11 @@ pub(in crate::ai::decision) fn capped_normal_route_visible_fan_reaches_cap(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
 ) -> bool {
-    let Some(max_fan) = table.max_fan.filter(|max_fan| *max_fan > 0) else {
+    let Some(score_cap) = table.score_cap.filter(|score_cap| *score_cap > 0) else {
         return false;
     };
     has_normal_route_foundation(hand, melds)
-        && 1 + estimated_visible_bonus_fan(hand, melds) >= max_fan
+        && shenyang_fan_reaches_score_cap(1 + estimated_visible_bonus_fan(hand, melds), score_cap)
 }
 
 pub(in crate::ai::decision) fn capped_open_normal_route_visible_fan_reaches_cap(
@@ -31,14 +32,14 @@ pub(in crate::ai::decision) fn capped_open_normal_route_visible_fan_reaches_cap(
     melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
 ) -> bool {
-    let Some(max_fan) = table.max_fan.filter(|max_fan| *max_fan > 0) else {
+    let Some(score_cap) = table.score_cap.filter(|score_cap| *score_cap > 0) else {
         return false;
     };
     has_door_opening_meld(melds, table)
         && missing_suits(hand, melds).is_empty()
         && has_terminal_or_honor_with_extra(hand, melds, None)
         && has_triplet_or_dragon_pair(hand, melds)
-        && 1 + estimated_visible_bonus_fan(hand, melds) >= max_fan
+        && shenyang_fan_reaches_score_cap(1 + estimated_visible_bonus_fan(hand, melds), score_cap)
 }
 
 pub(in crate::ai::decision) fn capped_piao_route_visible_fan_projects_cap(
@@ -66,13 +67,15 @@ fn capped_pattern_route_visible_fan_projects_cap(
     next_melds: &[WsShenyangMahjongMeld],
     table: &AiPublicTable,
 ) -> bool {
-    let Some(max_fan) = table.max_fan.filter(|max_fan| *max_fan > 0) else {
+    let Some(score_cap) = table.score_cap.filter(|score_cap| *score_cap > 0) else {
         return false;
     };
     let base_fan = shenyang_win_pattern_base_fan(pattern);
     let current_fan = base_fan + estimated_visible_bonus_fan(hand, melds);
     let projected_fan = base_fan + estimated_visible_bonus_fan(next_hand, next_melds);
-    current_fan * 2 > max_fan && current_fan < max_fan && projected_fan >= max_fan
+    shenyang_fan_score_exceeds_half_cap(current_fan, score_cap)
+        && !shenyang_fan_reaches_score_cap(current_fan, score_cap)
+        && shenyang_fan_reaches_score_cap(projected_fan, score_cap)
 }
 
 pub(in crate::ai::decision) fn capped_pure_one_suit_route_visible_fan_projects_cap(
@@ -226,12 +229,12 @@ pub(in crate::ai::decision) fn fan_wait_bias(
     if remaining <= 1 {
         return 0.0;
     }
-    if let Some(max_fan) = table.max_fan {
+    if let Some(score_cap) = table.score_cap {
         let visible_fan = estimated_visible_fan_without_wait_for_table(win_hand, melds, table);
-        if visible_fan * 2 > max_fan {
+        if shenyang_fan_score_exceeds_half_cap(visible_fan, score_cap) {
             return 0.0;
         }
-        if visible_fan >= max_fan {
+        if shenyang_fan_reaches_score_cap(visible_fan, score_cap) {
             return 0.0;
         }
         let total_fan = estimated_fan_with_known_unavailable_wait_for_table(
@@ -241,8 +244,8 @@ pub(in crate::ai::decision) fn fan_wait_bias(
             table,
             known_unavailable_tiles,
         );
-        if total_fan >= max_fan {
-            let fan_gap = max_fan - visible_fan;
+        if shenyang_fan_reaches_score_cap(total_fan, score_cap) {
+            let fan_gap = shenyang_fan_needed_for_score_cap(score_cap) - visible_fan;
             let wait_fan_gain = total_fan - visible_fan;
             if fan_gap == 1 && remaining >= 3 {
                 return 14.0;
@@ -292,8 +295,8 @@ pub(in crate::ai::decision) fn four_gui_yi_discard_bias(
     if after_four_gui_yi >= current_four_gui_yi {
         return 0.0;
     }
-    if let Some(max_fan) = table.max_fan.filter(|max_fan| *max_fan > 0)
-        && ready_hand_visible_fan_reaches_cap(&next, melds, table, position, max_fan)
+    if let Some(score_cap) = table.score_cap.filter(|score_cap| *score_cap > 0)
+        && ready_hand_visible_fan_reaches_cap(&next, melds, table, position, score_cap)
     {
         return 0.0;
     }

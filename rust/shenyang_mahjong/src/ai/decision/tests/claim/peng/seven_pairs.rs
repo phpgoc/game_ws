@@ -249,7 +249,7 @@ fn threatening_dealer_stops_marginal_five_pair_chase() {
 #[test]
 fn two_fan_capped_claim_peng_uses_dragon_pair_for_speed_over_five_pairs() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(2);
+    table.score_cap = Some(4);
     table.claim_window = Some(AiClaimView {
         tile: 35,
         from_position: 1,

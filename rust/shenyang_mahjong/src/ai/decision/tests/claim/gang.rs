@@ -4,7 +4,7 @@ use super::*;
 fn capped_claim_gang_does_not_peng_to_preserve_redundant_four_gui_yi() {
     let mut table = table_with_discards(1, Vec::new());
     table.dealer_position = 0;
-    table.max_fan = Some(2);
+    table.score_cap = Some(4);
     table.seats.get_mut(&0).unwrap().melds = vec![test_chi_meld(11)];
     table.claim_window = Some(AiClaimView {
         tile: 4,
@@ -33,7 +33,7 @@ fn capped_claim_gang_does_not_peng_to_preserve_redundant_four_gui_yi() {
 #[test]
 fn capped_open_normal_route_delays_plain_gang_before_ready() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(2);
+    table.score_cap = Some(4);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(35)];
     table.claim_window = Some(AiClaimView {
         tile: 9,
@@ -202,7 +202,7 @@ fn claim_gang_opens_mid_missing_suit_no_terminal_hand_for_defense() {
 #[test]
 fn claim_gang_passes_capped_closed_pure_one_suit_wait() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(4);
+    table.score_cap = Some(16);
     table.claim_window = Some(AiClaimView {
         tile: 1,
         from_position: 1,
@@ -318,7 +318,7 @@ fn claim_gang_passes_pure_plan_when_gang_only_reaches_basic_ready() {
 #[test]
 fn claim_gang_passes_ready_pure_one_suit_when_visible_fan_capped() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(4);
+    table.score_cap = Some(16);
     table.seats.get_mut(&0).unwrap().melds = vec![test_chi_meld(2)];
     table.claim_window = Some(AiClaimView {
         tile: 1,
@@ -453,7 +453,7 @@ fn claim_gang_preserves_five_pairs_even_for_dragon_gang() {
 #[test]
 fn claim_gang_skips_plain_gang_when_ready_fan_already_capped() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(3);
+    table.score_cap = Some(8);
     table.seats.get_mut(&0).unwrap().melds = vec![test_gang_meld(35)];
     table.claim_window = Some(AiClaimView {
         tile: 9,
@@ -472,7 +472,7 @@ fn claim_gang_skips_plain_gang_when_ready_fan_already_capped() {
 #[test]
 fn claim_gang_skips_ready_plain_gang_when_fan_exceeds_half_cap() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(4);
+    table.score_cap = Some(16);
     table.seats.get_mut(&0).unwrap().melds = vec![test_gang_meld(35)];
     table.claim_window = Some(AiClaimView {
         tile: 9,
@@ -709,7 +709,7 @@ fn dealer_takes_unready_discard_gang_that_preserves_committed_piao() {
 fn half_capped_committed_piao_claim_gang_takes_projected_cap() {
     let mut table = table_with_discards(1, Vec::new());
     table.dealer_position = 3;
-    table.max_fan = Some(4);
+    table.score_cap = Some(15);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(1)];
     table.claim_window = Some(AiClaimView {
         tile: 21,
@@ -733,7 +733,7 @@ fn half_capped_committed_piao_claim_gang_takes_projected_cap() {
 fn half_capped_fully_closed_piao_claim_gang_takes_projected_cap() {
     let mut table = table_with_discards(1, Vec::new());
     table.dealer_position = 3;
-    table.max_fan = Some(4);
+    table.score_cap = Some(15);
     table.claim_window = Some(AiClaimView {
         tile: 21,
         from_position: 1,
@@ -758,7 +758,7 @@ fn half_capped_fully_closed_piao_claim_gang_takes_projected_cap() {
 fn half_capped_established_pure_claim_gang_takes_projected_cap() {
     let mut table = table_with_discards(1, Vec::new());
     table.dealer_position = 3;
-    table.max_fan = Some(5);
+    table.score_cap = Some(31);
     table.claim_window = Some(AiClaimView {
         tile: 1,
         from_position: 1,
@@ -780,7 +780,7 @@ fn half_capped_established_pure_claim_gang_takes_projected_cap() {
 fn half_capped_unready_claim_gang_takes_projected_cap() {
     let mut table = table_with_discards(1, Vec::new());
     table.dealer_position = 3;
-    table.max_fan = Some(3);
+    table.score_cap = Some(7);
     table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(35)];
     table.claim_window = Some(AiClaimView {
         tile: 9,
@@ -840,7 +840,7 @@ fn non_dealer_claim_gang_penges_to_preserve_four_gui_yi_when_peng_stays_ready() 
 #[test]
 fn one_fan_capped_claim_gang_takes_dragon_for_replacement_draw() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(1);
+    table.score_cap = Some(2);
     table.claim_window = Some(AiClaimView {
         tile: 35,
         from_position: 1,
@@ -858,7 +858,7 @@ fn one_fan_capped_claim_gang_takes_dragon_for_replacement_draw() {
 #[test]
 fn one_fan_claim_gang_does_not_preserve_five_pairs() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(1);
+    table.score_cap = Some(2);
     table.claim_window = Some(AiClaimView {
         tile: 1,
         from_position: 1,
@@ -877,7 +877,7 @@ fn one_fan_claim_gang_does_not_preserve_five_pairs() {
 #[test]
 fn three_fan_capped_claim_gang_penges_dragon_over_five_pairs() {
     let mut table = table_with_discards(1, Vec::new());
-    table.max_fan = Some(3);
+    table.score_cap = Some(7);
     table.claim_window = Some(AiClaimView {
         tile: 35,
         from_position: 1,
