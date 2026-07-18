@@ -137,6 +137,36 @@ pub(in crate::ai::decision) fn should_claim_gang_from_discard(
     reaches_ready
 }
 
+pub(in crate::ai::decision) fn ready_claim_gang_projects_cap(
+    hand: &[i32],
+    current_melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    tile: i32,
+    from_position: usize,
+) -> bool {
+    let Some(score_cap) = table.score_cap.filter(|score_cap| *score_cap > 0) else {
+        return false;
+    };
+    if table.wall_count == 0
+        || !can_gang(hand, tile)
+        || ready_tile_score(hand, current_melds, table, position) <= 0.0
+        || !ready_visible_fan_exceeds_half_cap(hand, current_melds, table, position)
+        || ready_visible_fan_reaches_cap(hand, current_melds, table, position)
+    {
+        return false;
+    }
+
+    let mut next_hand = remove_n_tiles(hand, tile, 3);
+    if next_hand.len() + 3 != hand.len() {
+        return false;
+    }
+    sort_tiles(&mut next_hand);
+    let mut next_melds = current_melds.to_vec();
+    next_melds.push(claim_gang_meld(tile, from_position));
+    ready_hand_visible_fan_reaches_cap(&next_hand, &next_melds, table, position, score_cap)
+}
+
 pub(in crate::ai::decision) fn should_claim_opening_gang_for_basic_hand(
     hand: &[i32],
     current_melds: &[WsShenyangMahjongMeld],

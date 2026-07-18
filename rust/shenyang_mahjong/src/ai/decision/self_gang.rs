@@ -150,10 +150,18 @@ pub(super) fn self_gang_score(
     {
         return f64::NEG_INFINITY;
     }
-    if is_ready && ready_visible_fan_reaches_cap(hand, melds, table, position) {
+    let ready_fan_reaches_cap =
+        is_ready && ready_visible_fan_reaches_cap(hand, melds, table, position);
+    if ready_fan_reaches_cap {
         return f64::NEG_INFINITY;
     }
-    if is_ready && ready_visible_fan_exceeds_half_cap(hand, melds, table, position) {
+    let ready_fan_exceeds_half_cap =
+        is_ready && ready_visible_fan_exceeds_half_cap(hand, melds, table, position);
+    let ready_gang_projects_cap = ready_fan_exceeds_half_cap
+        && table.score_cap.is_some_and(|score_cap| {
+            ready_hand_visible_fan_reaches_cap(&next, &next_melds, table, position, score_cap)
+        });
+    if ready_fan_exceeds_half_cap && !ready_gang_projects_cap {
         return f64::NEG_INFINITY;
     }
     if !is_ready
@@ -199,7 +207,7 @@ pub(super) fn self_gang_score(
     if is_ready && after_ready_score <= 0.0 {
         return f64::NEG_INFINITY;
     }
-    if is_added_gang && should_preserve_four_gui_yi(tile) {
+    if is_added_gang && should_preserve_four_gui_yi(tile) && !ready_gang_projects_cap {
         let loses_four_gui_yi =
             estimated_four_gui_yi_fan(hand, melds) > estimated_four_gui_yi_fan(&next, &next_melds);
         let visible_fan_gain = estimated_visible_bonus_fan(&next, &next_melds)

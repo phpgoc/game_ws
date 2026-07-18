@@ -719,6 +719,55 @@ fn self_gang_skips_ready_plain_gang_when_fan_exceeds_half_cap() {
 }
 
 #[test]
+fn half_capped_ready_self_gang_takes_projected_cap() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.dealer_position = 3;
+    table.score_cap = Some(7);
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(9)];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![1, 2, 3, 9, 11, 12, 13, 21, 22, 23, 35];
+    let after_gang = remove_n_tiles(&hand, 9, 1);
+    let after_melds = vec![test_gang_meld(9)];
+
+    assert!(best_ready_score_after_discard(&hand, melds, &table, 0) > 0.0);
+    assert!(ready_visible_fan_exceeds_half_cap(&hand, melds, &table, 0));
+    assert!(!ready_visible_fan_reaches_cap(&hand, melds, &table, 0));
+    assert!(ready_hand_visible_fan_reaches_cap(
+        &after_gang,
+        &after_melds,
+        &table,
+        0,
+        table.score_cap.unwrap(),
+    ));
+    assert_eq!(choose_self_gang_from_view(&hand, &[9], &table, 0), Some(9));
+}
+
+#[test]
+fn half_capped_ready_concealed_gang_takes_projected_cap() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.dealer_position = 3;
+    table.score_cap = Some(7);
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(31)];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let hand = vec![1, 2, 3, 9, 9, 9, 9, 11, 12, 13, 21];
+    let after_gang = remove_n_tiles(&hand, 9, 4);
+    let mut after_melds = melds.to_vec();
+    after_melds.push(test_concealed_gang_meld(9));
+
+    assert!(best_ready_score_after_discard(&hand, melds, &table, 0) > 0.0);
+    assert!(ready_visible_fan_exceeds_half_cap(&hand, melds, &table, 0));
+    assert!(!ready_visible_fan_reaches_cap(&hand, melds, &table, 0));
+    assert!(ready_hand_visible_fan_reaches_cap(
+        &after_gang,
+        &after_melds,
+        &table,
+        0,
+        table.score_cap.unwrap(),
+    ));
+    assert_eq!(choose_self_gang_from_view(&hand, &[9], &table, 0), Some(9));
+}
+
+#[test]
 fn self_gang_skips_ready_pure_one_suit_when_visible_fan_capped() {
     let mut table = table_with_discards(1, Vec::new());
     table.score_cap = Some(16);

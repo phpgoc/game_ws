@@ -121,8 +121,17 @@ pub fn choose_claim_from_view(
     if ready_visible_fan_reaches_cap(hand, &current_melds, table, position) {
         return Some(AiClaimChoice::Pass);
     }
+    let ready_gang_projects_cap = ready_claim_gang_projects_cap(
+        hand,
+        &current_melds,
+        table,
+        position,
+        tile,
+        claim.from_position,
+    );
     if current_ready_score > 0.0
         && ready_visible_fan_exceeds_half_cap(hand, &current_melds, table, position)
+        && !ready_gang_projects_cap
     {
         return Some(AiClaimChoice::Pass);
     }
