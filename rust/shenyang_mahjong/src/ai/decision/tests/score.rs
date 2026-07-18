@@ -407,6 +407,41 @@ fn fan_wait_bias_rewards_edge_wait_decomposition() {
 }
 
 #[test]
+fn fan_wait_bias_stops_when_closed_payers_exceed_half_cap() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.seats.insert(
+        2,
+        AiSeatView {
+            position: 2,
+            hand_count: 13,
+            discards: Vec::new(),
+            melds: Vec::new(),
+        },
+    );
+    table.seats.insert(
+        3,
+        AiSeatView {
+            position: 3,
+            hand_count: 13,
+            discards: Vec::new(),
+            melds: Vec::new(),
+        },
+    );
+    table.dealer_position = 3;
+    table.score_cap = Some(15);
+    let melds = vec![test_peng_meld(11), test_chi_meld(21)];
+    let edge_win = vec![1, 2, 3, 4, 4, 6, 7, 8];
+
+    assert_eq!(estimated_visible_fan_without_wait(&edge_win, &melds), 1);
+    assert_eq!(
+        minimum_potential_payment_fan(1, &table, 0),
+        3,
+        "three closed payers should add two fan to every payment",
+    );
+    assert_eq!(fan_wait_bias(&edge_win, &melds, &table, 0, 3, 4, &[]), 0.0);
+}
+
+#[test]
 fn fan_wait_bias_stops_piao_shou_ba_yi_when_visible_fan_exceeds_half_cap() {
     let mut table = table_with_discards(1, Vec::new());
     table.score_cap = Some(15);

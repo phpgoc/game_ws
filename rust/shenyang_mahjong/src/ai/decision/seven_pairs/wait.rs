@@ -52,7 +52,11 @@ pub(in crate::ai::decision) fn choose_seven_pairs_wait_discard(
         || is_late_defense_round(table)
         || table.score_cap.is_some_and(|score_cap| {
             shenyang_fan_score_exceeds_half_cap(
-                SEVEN_PAIRS_VISIBLE_FAN + REGULAR_SINGLE_WAIT_FAN,
+                minimum_potential_payment_fan(
+                    SEVEN_PAIRS_VISIBLE_FAN + REGULAR_SINGLE_WAIT_FAN,
+                    table,
+                    position,
+                ),
                 score_cap,
             )
         });
@@ -75,9 +79,19 @@ pub(in crate::ai::decision) fn choose_seven_pairs_wait_discard(
 const SEVEN_PAIRS_VISIBLE_FAN: i32 = 4;
 const REGULAR_SINGLE_WAIT_FAN: i32 = 1;
 
-pub(in crate::ai::decision) fn seven_pairs_regular_wait_reaches_cap(table: &AiPublicTable) -> bool {
+pub(in crate::ai::decision) fn seven_pairs_regular_wait_reaches_cap(
+    table: &AiPublicTable,
+    position: usize,
+) -> bool {
     table.score_cap.is_some_and(|score_cap| {
-        shenyang_fan_reaches_score_cap(SEVEN_PAIRS_VISIBLE_FAN + REGULAR_SINGLE_WAIT_FAN, score_cap)
+        shenyang_fan_reaches_score_cap(
+            minimum_potential_payment_fan(
+                SEVEN_PAIRS_VISIBLE_FAN + REGULAR_SINGLE_WAIT_FAN,
+                table,
+                position,
+            ),
+            score_cap,
+        )
     })
 }
 
@@ -174,7 +188,7 @@ fn seven_pairs_wait_tile_score_with_simulated_discards(
     let speed_first = table.dealer_position == position
         || dealer_opponent_has_major_threat(table, position)
         || is_late_defense_round(table);
-    if speed_first || seven_pairs_regular_wait_reaches_cap(table) {
+    if speed_first || seven_pairs_regular_wait_reaches_cap(table, position) {
         let remaining_weight = if speed_first { 14.0 } else { 6.0 };
         return remaining * remaining_weight + seven_pairs_wait_shape_tiebreaker(wait_tile)
             - public_discards * 12.0;

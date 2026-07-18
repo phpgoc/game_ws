@@ -38,6 +38,38 @@ fn capped_discard_sets_seven_pairs_wait_on_live_wind_tiebreaker() {
 }
 
 #[test]
+fn seven_pairs_wait_cap_counts_every_closed_payer() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.seats.insert(
+        2,
+        AiSeatView {
+            position: 2,
+            hand_count: 13,
+            discards: Vec::new(),
+            melds: Vec::new(),
+        },
+    );
+    table.seats.insert(
+        3,
+        AiSeatView {
+            position: 3,
+            hand_count: 13,
+            discards: Vec::new(),
+            melds: Vec::new(),
+        },
+    );
+    table.dealer_position = 3;
+    table.score_cap = Some(64);
+
+    assert!(seven_pairs_regular_wait_reaches_cap(&table, 0));
+
+    table.seats.get_mut(&2).unwrap().melds = vec![test_peng_meld(14)];
+    table.seats.get_mut(&2).unwrap().hand_count = 10;
+
+    assert!(!seven_pairs_regular_wait_reaches_cap(&table, 0));
+}
+
+#[test]
 fn capped_locked_seven_pairs_route_can_break_three_suits_requirement() {
     let mut table = table_with_discards(1, Vec::new());
     table.score_cap = Some(2);

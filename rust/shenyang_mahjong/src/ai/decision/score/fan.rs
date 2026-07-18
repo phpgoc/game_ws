@@ -327,19 +327,27 @@ pub(in crate::ai::decision) fn fan_wait_bias(
         return 0.0;
     }
     if let Some(score_cap) = table.score_cap {
-        let visible_fan = estimated_visible_fan_without_wait_for_table(win_hand, melds, table);
+        let visible_fan = minimum_potential_payment_fan(
+            estimated_visible_fan_without_wait_for_table(win_hand, melds, table),
+            table,
+            position,
+        );
         if shenyang_fan_score_exceeds_half_cap(visible_fan, score_cap) {
             return 0.0;
         }
         if shenyang_fan_reaches_score_cap(visible_fan, score_cap) {
             return 0.0;
         }
-        let total_fan = estimated_fan_with_known_unavailable_wait_for_table(
-            win_hand,
-            melds,
-            win_tile,
+        let total_fan = minimum_potential_payment_fan(
+            estimated_fan_with_known_unavailable_wait_for_table(
+                win_hand,
+                melds,
+                win_tile,
+                table,
+                known_unavailable_tiles,
+            ),
             table,
-            known_unavailable_tiles,
+            position,
         );
         if shenyang_fan_reaches_score_cap(total_fan, score_cap) {
             let fan_gap = shenyang_fan_needed_for_score_cap(score_cap) - visible_fan;

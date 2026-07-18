@@ -44,12 +44,16 @@ pub(in crate::ai::decision) fn choose_piao_single_wait_discard(
                 melds,
                 &simulated_discards,
             );
-            let estimated_fan = estimated_fan_with_known_unavailable_wait_for_table(
-                &win_hand,
-                melds,
-                wait_tile,
+            let estimated_fan = minimum_potential_payment_fan(
+                estimated_fan_with_known_unavailable_wait_for_table(
+                    &win_hand,
+                    melds,
+                    wait_tile,
+                    table,
+                    &known_unavailable_tiles,
+                ),
                 table,
-                &known_unavailable_tiles,
+                position,
             );
             let own_tile_count = hand.iter().filter(|item| **item == tile).count();
             Some((
@@ -151,12 +155,16 @@ fn piao_single_wait_tile_score_with_simulated_discards(
 
     let known_unavailable_tiles =
         known_unavailable_tiles_with_simulated_discards(table, position, melds, simulated_discards);
-    let estimated_fan = estimated_fan_with_known_unavailable_wait_for_table(
-        &win_hand,
-        melds,
-        wait_tile,
+    let estimated_fan = minimum_potential_payment_fan(
+        estimated_fan_with_known_unavailable_wait_for_table(
+            &win_hand,
+            melds,
+            wait_tile,
+            table,
+            &known_unavailable_tiles,
+        ),
         table,
-        &known_unavailable_tiles,
+        position,
     );
     let capped_fan = table
         .score_cap
