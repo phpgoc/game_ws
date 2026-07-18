@@ -2054,53 +2054,6 @@ pub(crate) fn settlement_is_reverse_win(
         })
 }
 
-#[cfg(test)]
-pub(crate) fn settlement_score_changes_for_positions(
-    positions: &[usize],
-    winner_positions: &[usize],
-    from_position: Option<usize>,
-    is_self_draw: bool,
-) -> Vec<WsShenyangMahjongScoreChange> {
-    let mut sorted_positions = positions.to_vec();
-    sorted_positions.sort_unstable();
-
-    if winner_positions.is_empty() {
-        return sorted_positions
-            .into_iter()
-            .map(|position| WsShenyangMahjongScoreChange {
-                position: position as i32,
-                score: 0,
-            })
-            .collect();
-    }
-
-    let winner_set = winner_positions.iter().copied().collect::<HashSet<_>>();
-    let winner_count = winner_set.len() as i32;
-    let loser_count = sorted_positions
-        .iter()
-        .filter(|position| !winner_set.contains(position))
-        .count() as i32;
-
-    sorted_positions
-        .into_iter()
-        .map(|position| {
-            let score = if winner_set.contains(&position) {
-                if is_self_draw { loser_count } else { 1 }
-            } else if is_self_draw {
-                -1
-            } else if Some(position) == from_position {
-                -winner_count
-            } else {
-                0
-            };
-            WsShenyangMahjongScoreChange {
-                position: position as i32,
-                score,
-            }
-        })
-        .collect()
-}
-
 pub(crate) fn settlement_score_changes_for_state(
     state: &ShenyangMahjongLoopState,
     positions: &[usize],

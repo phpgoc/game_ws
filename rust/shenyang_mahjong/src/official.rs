@@ -33,7 +33,9 @@ use crate::game::{
     settlement_from_position, settlement_is_reverse_win, settlement_score_changes_for_state,
     winner_pattern_with_context,
 };
-use crate::game_state::{SettlementState, ShenyangMahjongLoopState};
+#[cfg(feature = "official")]
+use crate::game_state::SettlementState;
+use crate::game_state::ShenyangMahjongLoopState;
 #[cfg(feature = "official")]
 use crate::rules::ShenyangMahjongWinContext;
 
@@ -223,23 +225,6 @@ fn winner_pattern_for_position(
 }
 
 #[allow(dead_code)]
-pub(crate) fn winner_score_for_settlement(
-    settlement: &SettlementState,
-    player_count: usize,
-    winner_position: usize,
-) -> i64 {
-    let winner_positions = settlement.unique_winner_positions();
-    if winner_positions.is_empty() || !winner_positions.contains(&winner_position) {
-        return 0;
-    }
-    if settlement.is_self_draw {
-        player_count.saturating_sub(winner_positions.len()).max(1) as i64
-    } else {
-        1
-    }
-}
-
-#[allow(dead_code)]
 fn winner_score_from_changes(
     score_changes: &[share_type_public::games::shenyang_mahjong::WsShenyangMahjongScoreChange],
     winner_position: usize,
@@ -287,9 +272,8 @@ mod tests {
         sync::{Arc, Mutex},
     };
 
-    use crate::game_state::SettlementState;
     #[cfg(feature = "official")]
-    use crate::game_state::{ShenyangMahjongLoopState, build_meld};
+    use crate::game_state::{SettlementState, ShenyangMahjongLoopState, build_meld};
     #[cfg(feature = "official")]
     use crate::rules::ShenyangMahjongWinContext;
 
@@ -299,28 +283,12 @@ mod tests {
     #[cfg(feature = "official")]
     use ws_common::CommonGameState;
 
+    use super::winner_score_from_changes;
     #[cfg(feature = "official")]
     use super::{
         official_discard_context_for_settlement, winner_pattern_for_position,
         winner_scores_for_settlement,
     };
-    use super::{winner_score_for_settlement, winner_score_from_changes};
-
-    #[test]
-    fn discard_win_scores_one_per_winner() {
-        let settlement = SettlementState {
-            winner_positions: vec![0, 2],
-            from_position: Some(1),
-            win_tile: Some(3),
-            is_self_draw: false,
-            is_reverse_win: false,
-            is_gang_draw: false,
-            is_haidilao: false,
-        };
-
-        assert_eq!(winner_score_for_settlement(&settlement, 4, 0), 1);
-        assert_eq!(winner_score_for_settlement(&settlement, 4, 2), 1);
-    }
 
     #[cfg(feature = "official")]
     #[test]
@@ -555,36 +523,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn self_draw_score_counts_each_loser() {
-        let settlement = SettlementState {
-            winner_positions: vec![2],
-            from_position: None,
-            win_tile: Some(3),
-            is_self_draw: true,
-            is_reverse_win: false,
-            is_gang_draw: false,
-            is_haidilao: false,
-        };
-
-        assert_eq!(winner_score_for_settlement(&settlement, 4, 2), 3);
-    }
-
-    #[test]
-    fn self_draw_score_ignores_duplicate_winner_positions() {
-        let settlement = SettlementState {
-            winner_positions: vec![2, 2],
-            from_position: None,
-            win_tile: Some(3),
-            is_self_draw: true,
-            is_reverse_win: false,
-            is_gang_draw: false,
-            is_haidilao: false,
-        };
-
-        assert_eq!(winner_score_for_settlement(&settlement, 4, 2), 3);
-    }
-
     #[cfg(feature = "official")]
     fn state_with_players() -> ShenyangMahjongLoopState {
         let base = Arc::new(Mutex::new(CommonGameState::default()));
@@ -713,14 +651,14 @@ mod tests {
             },
             WsShenyangMahjongScoreChange {
                 position: 1,
-                score: 5,
+                score: 32,
             },
             WsShenyangMahjongScoreChange {
                 position: 2,
-                score: -5,
+                score: -32,
             },
         ];
 
-        assert_eq!(winner_score_from_changes(&score_changes, 1), 5);
+        assert_eq!(winner_score_from_changes(&score_changes, 1), 32);
     }
 }

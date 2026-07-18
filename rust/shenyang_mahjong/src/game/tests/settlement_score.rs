@@ -426,31 +426,6 @@ fn settlement_score_caps_winner_hand_fan() {
 }
 
 #[test]
-fn settlement_score_changes_cover_discard_self_draw_and_draw() {
-    assert_eq!(
-        settlement_score_changes_for_positions(&[0, 1, 2, 3], &[0, 2], Some(1), false)
-            .into_iter()
-            .map(|change| (change.position, change.score))
-            .collect::<Vec<_>>(),
-        vec![(0, 1), (1, -2), (2, 1), (3, 0)]
-    );
-    assert_eq!(
-        settlement_score_changes_for_positions(&[0, 1, 2, 3], &[2], None, true)
-            .into_iter()
-            .map(|change| (change.position, change.score))
-            .collect::<Vec<_>>(),
-        vec![(0, -1), (1, -1), (2, 3), (3, -1)]
-    );
-    assert_eq!(
-        settlement_score_changes_for_positions(&[0, 1, 2, 3], &[], None, false)
-            .into_iter()
-            .map(|change| (change.position, change.score))
-            .collect::<Vec<_>>(),
-        vec![(0, 0), (1, 0), (2, 0), (3, 0)]
-    );
-}
-
-#[test]
 fn settlement_score_counts_concealed_gang_discard_payer_as_closed() {
     let mut state = playable_state();
     state.dealer_position = 2;
