@@ -1325,6 +1325,64 @@ mod tests {
     }
 
     #[test]
+    fn away_position_stacks_gang_draw_and_haidilao_at_fifty_point_cap() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_away(0);
+        state.base.lock().unwrap().mark_ai_takeover_position(0);
+        state.dealer_position = 1;
+        state.wall.clear();
+        state
+            .hands
+            .insert(0, vec![2, 3, 4, 11, 12, 13, 21, 22, 23, 35, 35]);
+        state.melds.insert(
+            0,
+            vec![WsShenyangMahjongMeld {
+                kind: ShenyangMahjongMeldKind::GANG,
+                tiles: vec![1, 1, 1, 1],
+                from_position: Some(1),
+            }],
+        );
+        state.last_drawn_tile = Some(4);
+        state.pending_gang_draw = true;
+        let configs = HashMap::from([("max_fan".to_owned(), 50)]);
+        let table = build_public_table_with_configs(&state, &configs);
+        let mut dispatch = Dispatch::default();
+
+        assert_eq!(table.current_self_draw_bonus_fan, 2);
+        assert!(!should_pass_self_draw_hu_from_view(
+            state.hands.get(&0).unwrap(),
+            &table,
+            0,
+            4,
+        ));
+        assert!(maybe_play_ai_turn(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &configs,
+            &mut dispatch,
+        ));
+
+        let settlement = state.settlement.as_ref().expect("settlement");
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert_eq!(settlement.winner_positions, vec![0]);
+        assert!(settlement.is_gang_draw);
+        assert!(settlement.is_haidilao);
+        let event = build_settlement_event_with_configs(&state, &configs)
+            .expect("settlement event should be buildable");
+        assert!(event.winner_details[0].is_gang_draw);
+        assert!(event.winner_details[0].is_haidilao);
+        assert_eq!(event.winner_details[0].score, 150);
+        assert_eq!(settlement_score_for_position(&event.score_changes, 0), 150);
+        for position in 1..4 {
+            assert_eq!(
+                settlement_score_for_position(&event.score_changes, position),
+                -50
+            );
+        }
+    }
+
+    #[test]
     fn away_position_takes_haidilao_self_draw_in_capped_room() {
         let mut state = playable_state();
         state.base.lock().unwrap().mark_away(0);
