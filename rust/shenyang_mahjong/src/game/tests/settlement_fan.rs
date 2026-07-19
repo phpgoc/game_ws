@@ -882,6 +882,37 @@ fn settlement_fan_ignores_reverse_win_flag_on_self_draw() {
 }
 
 #[test]
+fn ordinary_self_draw_does_not_add_fan_over_the_same_discard_win() {
+    let complete_hand = vec![2, 3, 4, 11, 12, 13, 31, 31, 31, 35, 35];
+
+    let mut self_draw_state = playable_state();
+    self_draw_state.hands.insert(1, complete_hand.clone());
+    self_draw_state.melds.insert(1, vec![open_peng_meld(21, 3)]);
+    self_draw_state.enter_settlement(vec![1], None, Some(4), true);
+    let self_draw_fan = winner_hand_fan(
+        &self_draw_state,
+        self_draw_state.settlement.as_ref().expect("settlement"),
+        1,
+    );
+
+    let mut discard_state = playable_state();
+    let mut waiting_hand = complete_hand;
+    waiting_hand.remove(waiting_hand.iter().position(|tile| *tile == 4).unwrap());
+    discard_state.hands.insert(1, waiting_hand);
+    discard_state.melds.insert(1, vec![open_peng_meld(21, 3)]);
+    discard_state.discards.insert(0, vec![4]);
+    discard_state.enter_settlement(vec![1], Some(0), Some(4), false);
+    let discard_fan = winner_hand_fan(
+        &discard_state,
+        discard_state.settlement.as_ref().expect("settlement"),
+        1,
+    );
+
+    assert_eq!(self_draw_fan, 1);
+    assert_eq!(discard_fan, 1);
+}
+
+#[test]
 fn settlement_fan_rejects_invalid_meld_for_single_wait() {
     let mut state = playable_state();
     state
