@@ -1309,7 +1309,10 @@ fn position_has_open_meld(state: &ShenyangMahjongLoopState, position: usize) -> 
     })
 }
 
-fn position_has_valid_gang_meld(state: &ShenyangMahjongLoopState, position: usize) -> bool {
+pub(crate) fn position_has_valid_gang_meld(
+    state: &ShenyangMahjongLoopState,
+    position: usize,
+) -> bool {
     state.melds.get(&position).is_some_and(|melds| {
         melds.iter().any(|meld| {
             meld.kind == ShenyangMahjongMeldKind::GANG && meld_primary_tile(meld).is_some()

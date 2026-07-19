@@ -79,8 +79,6 @@ pub fn maybe_play_ai_turn(
         let table = build_public_table_with_configs(state, configs);
         if let Some(win_tile) = state.last_drawn_tile
             && !state.is_ting(position)
-            && !state.pending_gang_draw
-            && state.wall_count() > 0
             && should_pass_self_draw_hu_from_view(&hand, &table, position, win_tile)
         {
             passed_self_draw_tile = Some(win_tile);
@@ -1044,8 +1042,16 @@ mod tests {
         state.last_drawn_tile = Some(16);
         state.pending_gang_draw = true;
         let configs = HashMap::from([("max_fan".to_owned(), 4)]);
+        let table = build_public_table_with_configs(&state, &configs);
         let mut dispatch = Dispatch::default();
 
+        assert_eq!(table.current_self_draw_bonus_fan, 1);
+        assert!(!should_pass_self_draw_hu_from_view(
+            state.hands.get(&0).unwrap(),
+            &table,
+            0,
+            16,
+        ));
         assert!(maybe_play_ai_turn(
             &RoomService::default(),
             "room",
@@ -1077,8 +1083,16 @@ mod tests {
         state.melds.insert(0, vec![test_peng_meld(1)]);
         state.last_drawn_tile = Some(16);
         let configs = HashMap::from([("max_fan".to_owned(), 4)]);
+        let table = build_public_table_with_configs(&state, &configs);
         let mut dispatch = Dispatch::default();
 
+        assert_eq!(table.current_self_draw_bonus_fan, 1);
+        assert!(!should_pass_self_draw_hu_from_view(
+            state.hands.get(&0).unwrap(),
+            &table,
+            0,
+            16,
+        ));
         assert!(maybe_play_ai_turn(
             &RoomService::default(),
             "room",
@@ -1261,7 +1275,7 @@ mod tests {
 
         assert_eq!(
             choose_claim_from_view(hand, claim, &table, 0),
-            Some(AiClaimChoice::Pass)
+            Some(AiClaimChoice::Hu)
         );
         assert!(maybe_resolve_ai_claims(
             &RoomService::default(),
@@ -1300,7 +1314,7 @@ mod tests {
         let hand = state.hands.get(&0).unwrap().clone();
         let mut dispatch = Dispatch::default();
 
-        assert!(should_pass_self_draw_hu_from_view(&hand, &table, 0, 16,));
+        assert!(!should_pass_self_draw_hu_from_view(&hand, &table, 0, 16,));
         assert!(maybe_play_ai_turn(
             &RoomService::default(),
             "room",

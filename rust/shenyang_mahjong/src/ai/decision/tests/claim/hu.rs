@@ -1052,6 +1052,11 @@ fn self_draw_hu_counts_each_payment_fan_for_next_capped_wait() {
     assert_eq!(current_payment_fans, vec![2, 2, 2]);
     assert_eq!(projected_payment_fans, vec![3, 3, 3]);
     assert!(should_pass_self_draw_hu_from_view(&win_hand, &table, 0, 16,));
+
+    table.current_self_draw_bonus_fan = 1;
+    assert!(!should_pass_self_draw_hu_from_view(
+        &win_hand, &table, 0, 16,
+    ));
 }
 
 #[test]

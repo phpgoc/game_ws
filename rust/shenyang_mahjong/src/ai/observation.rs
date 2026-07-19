@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use share_type_public::games::shenyang_mahjong::WsShenyangMahjongMeld;
 
-use crate::game::public_discards_for_position;
+use crate::game::{position_has_valid_gang_meld, public_discards_for_position};
 use crate::game_state::{
     ClaimWindowKind, ShenyangMahjongLoopState, meld_source_is_valid_for_positions,
 };
@@ -22,7 +22,9 @@ pub struct AiPublicTable {
     pub wall_count: usize,
     pub score_cap: Option<i32>,
     pub allow_first_chi: bool,
+    pub ting_fan_enabled: bool,
     pub ting_positions: HashSet<usize>,
+    pub current_self_draw_bonus_fan: i32,
     pub claim_is_rob_gang: bool,
     pub claim_window: Option<AiClaimView>,
     pub seats: HashMap<usize, AiSeatView>,
@@ -81,11 +83,15 @@ pub fn build_public_table_with_configs(
         wall_count: state.wall_count(),
         score_cap: configs.get("max_fan").copied().filter(|fan| *fan > 0),
         allow_first_chi: ShenyangMahjongWinContext::from_configs(configs).allows_first_chi(),
+        ting_fan_enabled: configs.get("ting_fan").copied() == Some(1),
         ting_positions: seats
             .keys()
             .copied()
             .filter(|position| state.is_ting(*position))
             .collect(),
+        current_self_draw_bonus_fan: i32::from(
+            state.pending_gang_draw && position_has_valid_gang_meld(state, state.current_position),
+        ) + i32::from(state.wall_count() == 0),
         claim_is_rob_gang: state
             .claim_window
             .as_ref()
@@ -151,6 +157,45 @@ mod tests {
         let table = build_public_table_with_configs(&state, &HashMap::new());
 
         assert_eq!(table.ting_positions, HashSet::from([2]));
+        assert!(!table.ting_fan_enabled);
+        assert!(
+            build_public_table_with_configs(&state, &HashMap::from([("ting_fan".to_owned(), 1)]),)
+                .ting_fan_enabled
+        );
+    }
+
+    #[test]
+    fn public_table_exposes_current_self_draw_bonus_fan() {
+        let base = Arc::new(Mutex::new(CommonGameState::default()));
+        {
+            let mut common = base.lock().unwrap();
+            for position in 0..4 {
+                common.add_player(position, position as u64 + 1, &format!("P{position}"));
+            }
+        }
+        let mut state = ShenyangMahjongLoopState::new(base);
+        state.current_position = 0;
+        state.pending_gang_draw = true;
+        state.wall.clear();
+        state.melds.insert(
+            0,
+            vec![WsShenyangMahjongMeld {
+                kind: ShenyangMahjongMeldKind::GANG,
+                tiles: vec![4, 4, 4, 4],
+                from_position: None,
+            }],
+        );
+
+        assert_eq!(
+            build_public_table_with_configs(&state, &HashMap::new()).current_self_draw_bonus_fan,
+            2
+        );
+
+        state.melds.clear();
+        assert_eq!(
+            build_public_table_with_configs(&state, &HashMap::new()).current_self_draw_bonus_fan,
+            1
+        );
     }
 
     #[test]

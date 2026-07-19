@@ -222,19 +222,26 @@ fn should_pass_hu_for_capped_live_wait_with_payer(
     }
 
     let current_known_unavailable = known_unavailable_tiles_for_claimed_win(table, position, tile);
-    let claim_bonus_fan = i32::from(
-        table.claim_is_rob_gang
-            && table.claim_window.as_ref().is_some_and(|claim| {
-                claim.tile == tile && from_position == Some(claim.from_position)
-            }),
-    );
+    let persistent_bonus_fan =
+        i32::from(table.ting_fan_enabled && table.ting_positions.contains(&position));
+    let action_bonus_fan = match from_position {
+        Some(from_position) => i32::from(
+            table.claim_is_rob_gang
+                && table.claim_window.as_ref().is_some_and(|claim| {
+                    claim.tile == tile && from_position == claim.from_position
+                }),
+        ),
+        None if table.current_position == position => table.current_self_draw_bonus_fan,
+        None => 0,
+    };
     let current_fan = estimated_fan_with_known_unavailable_wait_for_table(
         win_hand,
         melds,
         tile,
         table,
         &current_known_unavailable,
-    ) + claim_bonus_fan;
+    ) + persistent_bonus_fan
+        + action_bonus_fan;
     let payment_fans = payment_fans_for_table(current_fan, table, position, from_position);
     let one_fan_short = shenyang_fan_needed_for_score_cap(score_cap) - 1;
     if payment_fans.is_empty()
@@ -279,7 +286,7 @@ fn should_pass_hu_for_capped_live_wait_with_payer(
                 wait_tile,
                 table,
                 &pass_known_unavailable,
-            );
+            ) + persistent_bonus_fan;
             // A future win may be self-drawn or paid by any opponent.
             let projected_payment_fans =
                 payment_fans_for_table(projected_fan, table, position, None);
