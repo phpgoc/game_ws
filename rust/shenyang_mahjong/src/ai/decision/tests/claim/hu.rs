@@ -698,6 +698,80 @@ fn late_claim_hu_can_pass_one_fan_short_when_capped_wait_is_live() {
 }
 
 #[test]
+fn rob_gang_hu_takes_when_its_bonus_fan_reaches_cap() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.dealer_position = 3;
+    table.score_cap = Some(4);
+    table.seats.get_mut(&0).unwrap().melds = vec![test_peng_meld(9)];
+    table.seats.get_mut(&1).unwrap().melds = vec![test_peng_meld(4)];
+    table.claim_window = Some(AiClaimView {
+        tile: 4,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![2, 3, 11, 12, 13, 21, 22, 23, 35, 35];
+    let melds = table.seats.get(&0).unwrap().melds.as_slice();
+    let mut current_win = hand.clone();
+    current_win.push(4);
+    sort_tiles(&mut current_win);
+
+    assert!(claim_known_tile_counts_are_possible(
+        &hand, melds, &claim, &table,
+    ));
+    let current_known_unavailable = known_unavailable_tiles_for_claimed_win(&table, 0, 4);
+    assert_eq!(
+        estimated_fan_with_known_unavailable_wait(
+            &current_win,
+            melds,
+            4,
+            &current_known_unavailable,
+        ),
+        1
+    );
+    let pass_known_unavailable =
+        known_unavailable_tiles_with_simulated_discards(&table, 0, melds, &[4]);
+    let mut projected_win = hand.clone();
+    projected_win.push(1);
+    sort_tiles(&mut projected_win);
+    assert_eq!(
+        estimated_fan_with_known_unavailable_wait(
+            &projected_win,
+            melds,
+            1,
+            &pass_known_unavailable,
+        ),
+        2
+    );
+    assert_eq!(
+        remaining_tile_count_with_melds_after_discards(&hand, melds, &table, 0, 1, &[4]),
+        4
+    );
+    assert!(should_pass_hu_for_capped_live_wait(
+        &hand,
+        &current_win,
+        melds,
+        &table,
+        0,
+        4,
+    ));
+
+    table.claim_is_rob_gang = true;
+    assert!(!should_pass_hu_for_capped_live_wait(
+        &hand,
+        &current_win,
+        melds,
+        &table,
+        0,
+        4,
+    ));
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0),
+        Some(AiClaimChoice::Hu)
+    );
+}
+
+#[test]
 fn claim_hu_does_not_reuse_current_payer_for_projected_capped_wait() {
     let mut table = table_with_discards(1, vec![16]);
     table.score_cap = Some(8);

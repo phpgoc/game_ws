@@ -204,8 +204,6 @@ pub fn maybe_resolve_ai_claims(
             } else {
                 AiClaimChoice::Pass
             }
-        } else if is_rob_gang && claim_hu_is_complete(&hand, claim, &table, position) {
-            AiClaimChoice::Hu
         } else {
             choose_claim_from_view(&hand, claim, &table, position).unwrap_or(AiClaimChoice::Pass)
         };
@@ -1179,18 +1177,18 @@ mod tests {
         state.base.lock().unwrap().mark_away(0);
         state.base.lock().unwrap().mark_ai_takeover_position(0);
         state.current_position = 1;
-        state.dealer_position = 1;
+        state.dealer_position = 3;
         state
             .hands
-            .insert(0, vec![14, 15, 17, 18, 19, 21, 22, 23, 35, 35]);
-        state.melds.insert(0, vec![test_peng_meld(1)]);
+            .insert(0, vec![2, 3, 11, 12, 13, 21, 22, 23, 35, 35]);
+        state.melds.insert(0, vec![test_peng_meld(9)]);
         state
             .hands
-            .insert(1, vec![2, 5, 8, 11, 14, 16, 17, 21, 31, 32, 33]);
-        state.melds.insert(1, vec![test_peng_meld_from(16, 2)]);
-        state.last_drawn_tile = Some(16);
+            .insert(1, vec![4, 5, 6, 7, 8, 11, 14, 16, 17, 31, 32]);
+        state.melds.insert(1, vec![test_peng_meld_from(4, 2)]);
+        state.last_drawn_tile = Some(4);
         state.claim_window = Some(ClaimWindowState {
-            tile: 16,
+            tile: 4,
             from_position: 1,
             kind: ClaimWindowKind::RobGang,
             eligible_positions: vec![0],
@@ -1201,12 +1199,17 @@ mod tests {
         let claim = table.claim_window.as_ref().expect("claim window");
         let mut dispatch = Dispatch::default();
 
+        assert!(table.claim_is_rob_gang);
         assert!(claim_hu_is_complete(
             state.hands.get(&0).unwrap(),
             claim,
             &table,
             0,
         ));
+        assert_eq!(
+            choose_claim_from_view(state.hands.get(&0).unwrap(), claim, &table, 0),
+            Some(AiClaimChoice::Hu)
+        );
         assert!(maybe_resolve_ai_claims(
             &RoomService::default(),
             "room",
@@ -1218,6 +1221,7 @@ mod tests {
         let settlement = state.settlement.as_ref().expect("settlement");
         assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
         assert_eq!(settlement.winner_positions, vec![0]);
+        assert_eq!(settlement.win_tile, Some(4));
         assert!(settlement.is_reverse_win);
         let event = build_settlement_event_with_configs(&state, &configs)
             .expect("settlement event should be buildable");

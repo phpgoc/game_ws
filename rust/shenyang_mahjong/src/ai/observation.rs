@@ -3,7 +3,9 @@ use std::collections::{HashMap, HashSet};
 use share_type_public::games::shenyang_mahjong::WsShenyangMahjongMeld;
 
 use crate::game::public_discards_for_position;
-use crate::game_state::{ShenyangMahjongLoopState, meld_source_is_valid_for_positions};
+use crate::game_state::{
+    ClaimWindowKind, ShenyangMahjongLoopState, meld_source_is_valid_for_positions,
+};
 use crate::rules::{ShenyangMahjongWinContext, is_valid_meld};
 
 #[derive(Debug, Clone)]
@@ -21,6 +23,7 @@ pub struct AiPublicTable {
     pub score_cap: Option<i32>,
     pub allow_first_chi: bool,
     pub ting_positions: HashSet<usize>,
+    pub claim_is_rob_gang: bool,
     pub claim_window: Option<AiClaimView>,
     pub seats: HashMap<usize, AiSeatView>,
 }
@@ -83,6 +86,10 @@ pub fn build_public_table_with_configs(
             .copied()
             .filter(|position| state.is_ting(*position))
             .collect(),
+        claim_is_rob_gang: state
+            .claim_window
+            .as_ref()
+            .is_some_and(|window| matches!(window.kind, ClaimWindowKind::RobGang)),
         claim_window,
         seats,
     }
@@ -98,6 +105,7 @@ mod tests {
     use ws_common::CommonGameState;
 
     use super::*;
+    use crate::game_state::{ClaimResponse, ClaimWindowState};
 
     #[test]
     fn public_table_reuses_first_chi_win_context() {
@@ -108,6 +116,24 @@ mod tests {
             let configs = HashMap::from([("allow_first_chi".to_owned(), value)]);
             assert!(!build_public_table_with_configs(&state, &configs).allow_first_chi);
         }
+    }
+
+    #[test]
+    fn public_table_exposes_rob_gang_claim_kind() {
+        let mut state =
+            ShenyangMahjongLoopState::new(Arc::new(Mutex::new(CommonGameState::default())));
+        state.claim_window = Some(ClaimWindowState {
+            tile: 4,
+            from_position: 1,
+            kind: ClaimWindowKind::RobGang,
+            eligible_positions: vec![0],
+            responses: HashMap::<usize, ClaimResponse>::new(),
+        });
+
+        let table = build_public_table_with_configs(&state, &HashMap::new());
+
+        assert!(table.claim_is_rob_gang);
+        assert_eq!(table.claim_window.as_ref().map(|claim| claim.tile), Some(4));
     }
 
     #[test]

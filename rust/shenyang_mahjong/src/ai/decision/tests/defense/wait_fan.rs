@@ -72,6 +72,7 @@ fn mid_round_open_hand_does_not_chase_wait_fan_with_live_terminal_discard() {
         score_cap: Some(16),
         allow_first_chi: true,
         ting_positions: Default::default(),
+        claim_is_rob_gang: false,
         claim_window: None,
         seats,
     };

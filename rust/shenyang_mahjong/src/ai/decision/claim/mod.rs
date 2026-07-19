@@ -222,13 +222,19 @@ fn should_pass_hu_for_capped_live_wait_with_payer(
     }
 
     let current_known_unavailable = known_unavailable_tiles_for_claimed_win(table, position, tile);
+    let claim_bonus_fan = i32::from(
+        table.claim_is_rob_gang
+            && table.claim_window.as_ref().is_some_and(|claim| {
+                claim.tile == tile && from_position == Some(claim.from_position)
+            }),
+    );
     let current_fan = estimated_fan_with_known_unavailable_wait_for_table(
         win_hand,
         melds,
         tile,
         table,
         &current_known_unavailable,
-    );
+    ) + claim_bonus_fan;
     let payment_fans = payment_fans_for_table(current_fan, table, position, from_position);
     let one_fan_short = shenyang_fan_needed_for_score_cap(score_cap) - 1;
     if payment_fans.is_empty()
