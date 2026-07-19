@@ -45,6 +45,34 @@ fn ting_candidates_are_human_only_and_declaration_is_recorded() {
 }
 
 #[test]
+fn ting_candidates_follow_human_control_across_ai_takeover() {
+    let mut state = playable_state();
+    state.hands.insert(0, seven_pairs_ting_hand());
+    state.last_drawn_tile = Some(32);
+
+    assert_eq!(
+        ting_discard_tiles_for_position(&state, 0, &default_configs()),
+        vec![31, 32]
+    );
+
+    {
+        let mut base = state.base.lock().unwrap();
+        base.mark_away(0);
+        base.mark_ai_takeover_position(0);
+    }
+    assert!(!state.is_ai_position(0));
+    assert!(state.is_ai_controlled_position(0));
+    assert!(ting_discard_tiles_for_position(&state, 0, &default_configs()).is_empty());
+
+    state.base.lock().unwrap().clear_away();
+    assert!(!state.is_ai_controlled_position(0));
+    assert_eq!(
+        ting_discard_tiles_for_position(&state, 0, &default_configs()),
+        vec![31, 32]
+    );
+}
+
+#[test]
 fn ting_candidates_do_not_reveal_wait_tiles_in_opponent_hands() {
     let mut state = playable_state();
     state

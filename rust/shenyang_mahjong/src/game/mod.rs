@@ -796,7 +796,7 @@ pub(crate) fn ting_discard_tiles_for_position(
         || state.current_position != position
         || state.claim_window.is_some()
         || state.is_ting(position)
-        || state.is_ai_position(position)
+        || state.is_ai_controlled_position(position)
         || !position_has_discardable_tile_count(state, position)
         || !position_hand_tiles_are_valid(state, position)
         || position_has_impossible_known_tile_count(state, position)
