@@ -27,7 +27,8 @@ pub(in crate::ai::decision) fn payment_fans_for_table(
         .copied()
         .filter(|position| *position != winner_position)
         .collect::<Vec<_>>();
-    let all_losers_closed = potential_loser_positions.len() == 3
+    let all_losers_closed = !table.claim_has_hu_response
+        && potential_loser_positions.len() == 3
         && potential_loser_positions.iter().all(|position| {
             table
                 .seats

@@ -925,6 +925,28 @@ fn claim_hu_counts_closed_payment_fan_for_next_capped_wait() {
 }
 
 #[test]
+fn confirmed_multi_hu_uses_single_closed_payer_fan() {
+    let mut table = table_with_discards(1, vec![16]);
+    table.dealer_position = 3;
+    for position in 2..=3 {
+        table.seats.insert(
+            position,
+            AiSeatView {
+                position,
+                hand_count: 13,
+                discards: Vec::new(),
+                melds: Vec::new(),
+            },
+        );
+    }
+
+    assert_eq!(payment_fans_for_table(1, &table, 0, Some(1)), vec![3]);
+
+    table.claim_has_hu_response = true;
+    assert_eq!(payment_fans_for_table(1, &table, 0, Some(1)), vec![2]);
+}
+
+#[test]
 fn late_claim_hu_takes_when_capped_wait_is_unlikely_to_reach_wall() {
     let mut table = table_with_discards(1, vec![16]);
     table.wall_count = 4;
