@@ -89,6 +89,36 @@ fn ting_candidates_do_not_reveal_wait_tiles_in_opponent_hands() {
 }
 
 #[test]
+fn ting_candidates_reject_publicly_exhausted_wait_tile() {
+    let mut state = playable_state();
+    state
+        .hands
+        .insert(0, vec![1, 1, 2, 2, 3, 3, 5, 11, 11, 12, 12, 21, 21, 31]);
+    state.discards.insert(1, vec![31]);
+    state.discards.insert(2, vec![31]);
+    state.discards.insert(3, vec![31]);
+    state.last_drawn_tile = Some(5);
+
+    assert!(ting_shape_wait_tiles_after_discard(&state, 0, 5, &default_configs()).contains(&31));
+    assert!(ting_wait_tiles_after_discard(&state, 0, 5, &default_configs()).is_empty());
+    assert!(!ting_discard_tiles_for_position(&state, 0, &default_configs()).contains(&5));
+
+    let mut dispatch = Dispatch::default();
+    assert!(!perform_discard_with_ting(
+        &RoomService::default(),
+        "room",
+        &mut state,
+        &default_configs(),
+        &mut dispatch,
+        0,
+        5,
+        true,
+    ));
+    assert!(!state.is_ting(0));
+    assert!(dispatch.messages.is_empty());
+}
+
+#[test]
 fn ting_candidates_honor_closed_sequence_exception_after_xi_gang() {
     let mut state = playable_state();
     state
