@@ -1,6 +1,21 @@
 use super::*;
 
 #[test]
+fn claim_tile_is_visible_only_when_source_latest_discard_matches() {
+    let mut table = table_with_discards(1, vec![16, 17]);
+    table.claim_window = Some(AiClaimView {
+        tile: 16,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+
+    assert!(!claim_tile_already_visible(&table, 16));
+
+    table.seats.get_mut(&1).unwrap().discards.push(16);
+    assert!(claim_tile_already_visible(&table, 16));
+}
+
+#[test]
 fn claim_hu_accepts_open_meld_remainder() {
     let mut table = table_with_discards(1, Vec::new());
     table.claim_window = Some(AiClaimView {

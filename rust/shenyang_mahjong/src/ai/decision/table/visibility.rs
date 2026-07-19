@@ -19,7 +19,8 @@ pub(in crate::ai::decision) fn claim_tile_already_visible(
         && table
             .seats
             .get(&claim_window.from_position)
-            .is_some_and(|seat| seat.discards.contains(&tile))
+            .and_then(|seat| seat.discards.last().copied())
+            == Some(tile)
 }
 
 pub(in crate::ai::decision) fn exposed_meld_tile_count(table: &AiPublicTable, tile: i32) -> usize {
