@@ -1970,6 +1970,29 @@ mod tests {
     }
 
     #[test]
+    fn four_ai_positions_settle_fifty_point_capped_seeded_round() {
+        let configs = HashMap::from([("max_fan".to_owned(), 50)]);
+        let state = run_seeded_ai_round_with_configs(2026070408, 260, &configs);
+        let settlement = state.settlement.as_ref().expect("AI capped settlement");
+        let total_discards = state.discards.values().map(Vec::len).sum::<usize>();
+
+        assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+        assert!(
+            !settlement.winner_positions.is_empty(),
+            "50-point capped seeded AI round should end with a winner"
+        );
+        assert!(
+            settlement.is_self_draw
+                || settlement.from_position.is_some()
+                || settlement.winner_positions.is_empty(),
+            "50-point capped seeded AI round should settle as a self draw, discard win, or legal draw"
+        );
+        assert!(total_discards > 0);
+        assert_seeded_settlement_winners_are_legal(&state, &configs, 2026070408);
+        assert_seeded_settlement_event_is_consistent(&state, &configs, 2026070408);
+    }
+
+    #[test]
     fn four_ai_positions_settle_standard_seeded_round() {
         let configs = default_configs();
         let state = run_seeded_ai_round_with_configs(2026070406, 260, &configs);
