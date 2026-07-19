@@ -399,6 +399,7 @@ pub fn is_complete_win(tiles: &[i32], meld_count: usize) -> bool {
     is_standard_win(tiles)
 }
 
+#[cfg(test)]
 pub fn is_complete_win_with_melds(tiles: &[i32], melds: &[WsShenyangMahjongMeld]) -> bool {
     is_complete_win_with_melds_with_context(tiles, melds, ShenyangMahjongWinContext::new())
 }
@@ -1007,6 +1008,7 @@ impl ShenyangMahjongWinContext {
         self.allow_first_chi
     }
 
+    #[cfg(test)]
     pub const fn new() -> Self {
         Self::from_allow_first_chi(true)
     }
