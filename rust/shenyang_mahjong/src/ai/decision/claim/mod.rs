@@ -213,7 +213,8 @@ fn should_pass_hu_for_capped_live_wait_with_payer(
     let Some(score_cap) = table.score_cap.filter(|score_cap| *score_cap > 2) else {
         return false;
     };
-    if table.dealer_position == position
+    if (from_position.is_some() && table.claim_has_hu_response)
+        || table.dealer_position == position
         || dealer_opponent_has_major_threat(table, position)
         || table.wall_count < MIN_WALL_TILES_FOR_CAPPED_HU_CHASE
         || hand.len() % 3 != 1

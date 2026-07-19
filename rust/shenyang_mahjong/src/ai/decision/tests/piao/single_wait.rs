@@ -197,6 +197,7 @@ fn late_open_hand_avoids_live_tile_against_four_piao_melds() {
         ting_positions: Default::default(),
         current_self_draw_bonus_fan: 0,
         claim_is_rob_gang: false,
+        claim_has_hu_response: false,
         claim_window: None,
         seats,
     };

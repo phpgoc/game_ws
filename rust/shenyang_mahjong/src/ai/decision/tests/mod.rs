@@ -77,6 +77,7 @@ fn table_with_discards(position: usize, discards: Vec<i32>) -> AiPublicTable {
         ting_positions: Default::default(),
         current_self_draw_bonus_fan: 0,
         claim_is_rob_gang: false,
+        claim_has_hu_response: false,
         claim_window: None,
         seats,
     }

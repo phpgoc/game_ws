@@ -75,6 +75,7 @@ fn mid_round_open_hand_does_not_chase_wait_fan_with_live_terminal_discard() {
         ting_positions: Default::default(),
         current_self_draw_bonus_fan: 0,
         claim_is_rob_gang: false,
+        claim_has_hu_response: false,
         claim_window: None,
         seats,
     };

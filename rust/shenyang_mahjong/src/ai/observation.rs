@@ -4,7 +4,7 @@ use share_type_public::games::shenyang_mahjong::WsShenyangMahjongMeld;
 
 use crate::game::{position_has_valid_gang_meld, public_discards_for_position};
 use crate::game_state::{
-    ClaimWindowKind, ShenyangMahjongLoopState, meld_source_is_valid_for_positions,
+    ClaimResponse, ClaimWindowKind, ShenyangMahjongLoopState, meld_source_is_valid_for_positions,
 };
 use crate::rules::{ShenyangMahjongWinContext, is_valid_meld};
 
@@ -26,6 +26,7 @@ pub struct AiPublicTable {
     pub ting_positions: HashSet<usize>,
     pub current_self_draw_bonus_fan: i32,
     pub claim_is_rob_gang: bool,
+    pub claim_has_hu_response: bool,
     pub claim_window: Option<AiClaimView>,
     pub seats: HashMap<usize, AiSeatView>,
 }
@@ -96,6 +97,12 @@ pub fn build_public_table_with_configs(
             .claim_window
             .as_ref()
             .is_some_and(|window| matches!(window.kind, ClaimWindowKind::RobGang)),
+        claim_has_hu_response: state.claim_window.as_ref().is_some_and(|window| {
+            window
+                .responses
+                .values()
+                .any(|response| matches!(response, ClaimResponse::Hu))
+        }),
         claim_window,
         seats,
     }
@@ -117,7 +124,9 @@ mod tests {
     fn public_table_reuses_first_chi_win_context() {
         let state = ShenyangMahjongLoopState::new(Arc::new(Mutex::new(CommonGameState::default())));
 
-        assert!(build_public_table_with_configs(&state, &HashMap::new()).allow_first_chi);
+        let default_table = build_public_table_with_configs(&state, &HashMap::new());
+        assert!(default_table.allow_first_chi);
+        assert!(!default_table.claim_has_hu_response);
         for value in [0, 2] {
             let configs = HashMap::from([("allow_first_chi".to_owned(), value)]);
             assert!(!build_public_table_with_configs(&state, &configs).allow_first_chi);
@@ -133,12 +142,13 @@ mod tests {
             from_position: 1,
             kind: ClaimWindowKind::RobGang,
             eligible_positions: vec![0],
-            responses: HashMap::<usize, ClaimResponse>::new(),
+            responses: HashMap::from([(0, ClaimResponse::Hu)]),
         });
 
         let table = build_public_table_with_configs(&state, &HashMap::new());
 
         assert!(table.claim_is_rob_gang);
+        assert!(table.claim_has_hu_response);
         assert_eq!(table.claim_window.as_ref().map(|claim| claim.tile), Some(4));
     }
 

@@ -178,8 +178,7 @@ pub fn maybe_resolve_ai_claims(
         return false;
     };
     let is_rob_gang = matches!(claim_window.kind, ClaimWindowKind::RobGang);
-    let table = build_public_table_with_configs(state, configs);
-    let Some(claim) = table.claim_window.as_ref() else {
+    let Some(claim) = build_public_table_with_configs(state, configs).claim_window else {
         return false;
     };
     let claim_matches_source = claim_window_matches_source(state, &claim_window);
@@ -194,16 +193,17 @@ pub fn maybe_resolve_ai_claims(
         let Some(hand) = self_hand(state, position) else {
             continue;
         };
+        let table = build_public_table_with_configs(state, configs);
         let choice = if !claim_matches_source {
             AiClaimChoice::Pass
         } else if state.is_ting(position) {
-            if claim_hu_is_complete(&hand, claim, &table, position) {
+            if claim_hu_is_complete(&hand, &claim, &table, position) {
                 AiClaimChoice::Hu
             } else {
                 AiClaimChoice::Pass
             }
         } else {
-            choose_claim_from_view(&hand, claim, &table, position).unwrap_or(AiClaimChoice::Pass)
+            choose_claim_from_view(&hand, &claim, &table, position).unwrap_or(AiClaimChoice::Pass)
         };
         let response = match choice {
             AiClaimChoice::Hu => ClaimResponse::Hu,
@@ -456,6 +456,64 @@ mod tests {
         assert_eq!(settlement.from_position, Some(0));
         assert_eq!(settlement.win_tile, Some(3));
         assert_eq!(state.discards.get(&0), Some(&Vec::<i32>::new()));
+    }
+
+    #[test]
+    fn ai_claim_hu_does_not_chase_cap_after_human_hu() {
+        let mut state = capped_multi_hu_claim_state();
+        state.base.lock().unwrap().mark_ai_position(0);
+        state
+            .claim_window
+            .as_mut()
+            .unwrap()
+            .responses
+            .insert(2, ClaimResponse::Hu);
+        let configs = HashMap::from([("max_fan".to_owned(), 4)]);
+        let mut dispatch = Dispatch::default();
+
+        assert!(maybe_resolve_ai_claims(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &configs,
+            &mut dispatch,
+        ));
+
+        let settlement = state.settlement.as_ref().expect("settlement");
+        let mut winners = settlement.winner_positions.clone();
+        winners.sort_unstable();
+        assert_eq!(winners, vec![0, 2]);
+        assert_eq!(settlement.from_position, Some(1));
+        assert_eq!(settlement.win_tile, Some(16));
+    }
+
+    #[test]
+    fn later_ai_claim_hu_does_not_chase_cap_after_ai_hu() {
+        let mut state = capped_multi_hu_claim_state();
+        {
+            let mut base = state.base.lock().unwrap();
+            base.mark_ai_position(0);
+            base.mark_ai_position(2);
+        }
+        state.declare_ting(2);
+        state.claim_window.as_mut().unwrap().eligible_positions = vec![2, 0];
+        let configs = HashMap::from([("max_fan".to_owned(), 4)]);
+        let mut dispatch = Dispatch::default();
+
+        assert!(maybe_resolve_ai_claims(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &configs,
+            &mut dispatch,
+        ));
+
+        let settlement = state.settlement.as_ref().expect("settlement");
+        let mut winners = settlement.winner_positions.clone();
+        winners.sort_unstable();
+        assert_eq!(winners, vec![0, 2]);
+        assert_eq!(settlement.from_position, Some(1));
+        assert_eq!(settlement.win_tile, Some(16));
     }
 
     #[test]
@@ -1662,6 +1720,33 @@ mod tests {
 
     fn one_fan_capped_configs() -> HashMap<String, i32> {
         HashMap::from([("max_fan".to_owned(), 2)])
+    }
+
+    fn capped_multi_hu_claim_state() -> ShenyangMahjongLoopState {
+        let mut state = playable_state();
+        state.current_position = 1;
+        state.dealer_position = 3;
+        state
+            .hands
+            .insert(0, vec![13, 14, 15, 15, 16, 16, 17, 28, 28, 28]);
+        state.hands.insert(1, Vec::new());
+        state
+            .hands
+            .insert(2, vec![2, 3, 4, 11, 12, 13, 14, 15, 35, 35]);
+        state.hands.insert(3, Vec::new());
+        state.melds.insert(0, vec![test_peng_meld_from(1, 3)]);
+        state.melds.insert(1, vec![test_peng_meld_from(9, 3)]);
+        state.melds.insert(2, vec![test_peng_meld_from(21, 3)]);
+        state.discards.insert(0, vec![16]);
+        state.discards.insert(1, vec![16]);
+        state.claim_window = Some(ClaimWindowState {
+            tile: 16,
+            from_position: 1,
+            kind: ClaimWindowKind::Discard,
+            eligible_positions: vec![0, 2],
+            responses: HashMap::new(),
+        });
+        state
     }
 
     fn playable_state() -> ShenyangMahjongLoopState {
