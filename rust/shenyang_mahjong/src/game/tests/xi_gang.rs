@@ -42,6 +42,52 @@ fn two_xi_gangs_stack_two_fan_and_keep_hand_closed() {
 }
 
 #[test]
+fn drawn_dragon_moved_into_xi_gang_can_complete_self_draw_without_gang_draw() {
+    let mut state = playable_state();
+    state.current_position = 1;
+    state
+        .hands
+        .insert(1, vec![1, 1, 1, 11, 11, 11, 21, 21, 21, 35, 35, 35, 36, 37]);
+    state.melds.insert(1, Vec::new());
+    state.last_drawn_tile = Some(37);
+    state.wall = vec![31];
+    state.xi_gang_options.insert(1, vec![vec![35, 36, 37]]);
+    let mut dispatch = Dispatch::default();
+
+    assert!(perform_xi_gang(
+        &RoomService::default(),
+        "room",
+        &mut state,
+        &default_configs(),
+        &mut dispatch,
+        1,
+        &[35, 36, 37],
+    ));
+    assert_eq!(state.last_drawn_tile, Some(37));
+    assert!(!state.hands.get(&1).unwrap().contains(&37));
+    assert!(!state.pending_gang_draw);
+    assert!(can_self_draw_hu_with_configs(&state, 1, &default_configs()));
+
+    perform_self_draw_hu(
+        &RoomService::default(),
+        "room",
+        &mut state,
+        &default_configs(),
+        &mut dispatch,
+        1,
+    );
+
+    let settlement = state.settlement.as_ref().expect("settlement");
+    assert!(settlement.is_self_draw);
+    assert!(!settlement.is_gang_draw);
+    assert_eq!(settlement.win_tile, Some(37));
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 4);
+    let event = build_settlement_event(&state).expect("settlement event");
+    assert!(!event.is_gang_draw);
+    assert!(!event.winner_details[0].is_gang_draw);
+}
+
+#[test]
 fn wind_xi_gang_draws_replacement_without_creating_gang_draw() {
     let mut state = playable_state();
     state.current_position = 1;
