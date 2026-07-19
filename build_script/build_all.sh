@@ -78,7 +78,8 @@ for game in "${GAMES[@]}"; do
             -o "${JNI_DIR}/${game}" \
             build \
             --release \
-            --lib
+            --lib \
+            --features android-jni
     )
 done
 

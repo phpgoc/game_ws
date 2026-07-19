@@ -1,5 +1,5 @@
 pub mod ai;
-#[cfg(target_os = "android")]
+#[cfg(all(target_os = "android", feature = "android-jni"))]
 mod android_jni;
 pub mod combo;
 pub mod game;

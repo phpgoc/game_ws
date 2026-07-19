@@ -5,6 +5,7 @@ edition = "2024"
 
 [features]
 default = []
+android-jni = []
 official = ["dep:data"]
 
 [lib]
