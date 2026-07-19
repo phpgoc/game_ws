@@ -571,7 +571,7 @@ mod tests {
     }
 
     #[test]
-    fn ai_turn_self_draws_after_dragon_xi_gang_without_gang_draw() {
+    fn ai_turn_last_draw_self_draws_after_dragon_xi_gang_as_haidilao() {
         let mut state = playable_state();
         state.current_position = 1;
         state.base.lock().unwrap().mark_ai_position(1);
@@ -581,6 +581,7 @@ mod tests {
         state.melds.insert(1, Vec::new());
         state.discards.insert(1, Vec::new());
         state.last_drawn_tile = Some(37);
+        state.wall.clear();
         state.xi_gang_options.insert(1, vec![vec![35, 36, 37]]);
         let configs = HashMap::new();
         let mut dispatch = Dispatch::default();
@@ -612,6 +613,7 @@ mod tests {
         assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
         assert_eq!(settlement.winner_positions, vec![1]);
         assert!(settlement.is_self_draw);
+        assert!(settlement.is_haidilao);
         assert!(!settlement.is_gang_draw);
         assert!(state.discards.get(&1).unwrap().is_empty());
         let event = build_settlement_event_with_configs(&state, &configs)
@@ -620,6 +622,8 @@ mod tests {
             event.winner_details[0].pattern,
             ShenyangMahjongWinPattern::PiaoHu
         );
+        assert!(event.is_haidilao);
+        assert!(event.winner_details[0].is_haidilao);
         assert!(!event.winner_details[0].is_gang_draw);
     }
 
