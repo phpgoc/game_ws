@@ -33,9 +33,10 @@ fn late_defense_candidates_avoid_piao_needed_suit_over_missing_suit_read() {
 }
 
 #[test]
-fn late_defense_chi_only_closed_opponent_blocks_missing_suit_read_when_chi_does_not_open_door() {
+fn late_defense_counts_existing_chi_as_open_when_first_chi_is_disabled() {
     let mut table = table_with_discards(1, vec![1, 4, 9]);
     table.wall_count = 16;
+    table.allow_first_chi = false;
     table.seats.insert(
         2,
         AiSeatView {
@@ -55,6 +56,10 @@ fn late_defense_chi_only_closed_opponent_blocks_missing_suit_read_when_chi_does_
         },
     );
 
+    let chi_seat = table.seats.get(&3).unwrap();
+    assert!(has_door_opening_meld(&chi_seat.melds, &table));
+    assert!(!is_closed_opponent_threat_candidate(chi_seat, &table));
+    assert!(!closed_opponent_may_need_suit(&table, 0, 0));
     assert!(opponent_missing_suit_safety_bias(&table, 0, 5) > 0.0);
 }
 
