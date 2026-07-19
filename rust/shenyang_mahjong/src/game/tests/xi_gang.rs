@@ -42,6 +42,53 @@ fn two_xi_gangs_stack_two_fan_and_keep_hand_closed() {
 }
 
 #[test]
+fn two_xi_gangs_can_be_declared_dragon_first() {
+    let mut state = playable_state();
+    state.current_position = 1;
+    state
+        .hands
+        .insert(1, vec![1, 2, 3, 11, 12, 13, 21, 31, 32, 33, 34, 35, 36, 37]);
+    state.melds.insert(1, Vec::new());
+    state.last_drawn_tile = Some(37);
+    state.wall = vec![22];
+    state
+        .xi_gang_options
+        .insert(1, vec![vec![31, 32, 33, 34], vec![35, 36, 37]]);
+    let mut dispatch = Dispatch::default();
+
+    assert!(perform_xi_gang(
+        &RoomService::default(),
+        "room",
+        &mut state,
+        &HashMap::new(),
+        &mut dispatch,
+        1,
+        &[35, 36, 37],
+    ));
+    assert_eq!(state.hands.get(&1).unwrap().len(), 11);
+    assert_eq!(state.last_drawn_tile, Some(37));
+
+    assert!(perform_xi_gang(
+        &RoomService::default(),
+        "room",
+        &mut state,
+        &HashMap::new(),
+        &mut dispatch,
+        1,
+        &[31, 32, 33, 34],
+    ));
+
+    let melds = state.melds.get(&1).unwrap();
+    assert_eq!(melds.len(), 2);
+    assert_eq!(shenyang_score_meld_fan(melds), 2);
+    assert!(!position_has_open_meld(&state, 1));
+    assert_eq!(state.hands.get(&1).unwrap().len(), 8);
+    assert_eq!(state.last_drawn_tile, Some(22));
+    assert!(state.wall.is_empty());
+    assert!(!state.pending_gang_draw);
+}
+
+#[test]
 fn drawn_dragon_moved_into_xi_gang_can_complete_self_draw_without_gang_draw() {
     let mut state = playable_state();
     state.current_position = 1;
