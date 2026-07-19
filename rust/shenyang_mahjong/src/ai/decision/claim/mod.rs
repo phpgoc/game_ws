@@ -274,8 +274,9 @@ fn should_pass_hu_for_capped_live_wait_with_payer(
                 table,
                 &pass_known_unavailable,
             );
+            // A future win may be self-drawn or paid by any opponent.
             let projected_payment_fans =
-                payment_fans_for_table(projected_fan, table, position, from_position);
+                payment_fans_for_table(projected_fan, table, position, None);
             let reaches_cap = is_complete_win_for_table(&next, melds, table)
                 && !projected_payment_fans.is_empty()
                 && projected_payment_fans
