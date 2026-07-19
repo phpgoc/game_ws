@@ -459,7 +459,7 @@ fn settlement_score_adds_dealer_fan_when_winner_is_dealer() {
 }
 
 #[test]
-fn settlement_score_adds_payer_state_after_hand_fan_cap() {
+fn settlement_caps_after_adding_dealer_payer_fan() {
     let mut state = playable_state();
     state.dealer_position = 2;
     state.hands.insert(1, vec![35]);
@@ -482,19 +482,20 @@ fn settlement_score_adds_payer_state_after_hand_fan_cap() {
     );
     state.enter_settlement(vec![1], Some(2), Some(35), false);
     let settlement = state.settlement.as_ref().expect("settlement");
-    let configs = HashMap::from([("max_fan".to_owned(), 4)]);
+    let configs = HashMap::from([("max_fan".to_owned(), 50)]);
 
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 5);
     assert_eq!(
         settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &configs)
             .into_iter()
             .map(|change| (change.position, change.score))
             .collect::<Vec<_>>(),
-        vec![(0, 0), (1, 4), (2, -4), (3, 0)]
+        vec![(0, 0), (1, 50), (2, -50), (3, 0)]
     );
 }
 
 #[test]
-fn settlement_score_caps_winner_hand_fan() {
+fn settlement_treats_max_fan_as_payment_score_cap() {
     let mut state = playable_state();
     state.hands.insert(1, vec![35]);
     state.melds.insert(
@@ -518,6 +519,7 @@ fn settlement_score_caps_winner_hand_fan() {
     let settlement = state.settlement.as_ref().expect("settlement");
     let configs = HashMap::from([("max_fan".to_owned(), 4)]);
 
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 5);
     assert_eq!(
         settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &configs)
             .into_iter()
