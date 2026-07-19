@@ -517,6 +517,30 @@ mod tests {
     }
 
     #[test]
+    fn ai_turn_does_not_declare_ting_when_bonus_is_enabled() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_ai_position(0);
+        state
+            .hands
+            .insert(0, vec![1, 1, 2, 2, 3, 3, 11, 11, 12, 12, 21, 21, 31, 32]);
+        state.last_drawn_tile = Some(32);
+        let configs = HashMap::from([("ting_fan".to_owned(), 1)]);
+        let mut dispatch = Dispatch::default();
+
+        assert!(crate::game::ting_discard_tiles_for_position(&state, 0, &configs).is_empty());
+        assert!(maybe_play_ai_turn(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &configs,
+            &mut dispatch,
+        ));
+
+        assert!(!state.is_ting(0));
+        assert_eq!(state.discards.get(&0).map(Vec::len), Some(1));
+    }
+
+    #[test]
     fn ai_turn_actively_declares_available_xi_gang() {
         let mut state = playable_state();
         state.current_position = 1;
