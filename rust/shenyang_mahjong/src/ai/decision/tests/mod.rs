@@ -10,7 +10,7 @@ mod seven_pairs;
 mod shenyang_rule;
 mod xi_gang;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use super::*;
 use crate::ai::observation::{AiClaimView, AiSeatView};
@@ -48,7 +48,7 @@ fn dead_terminal_or_honor_discards() -> Vec<i32> {
 }
 
 fn table_with_discards(position: usize, discards: Vec<i32>) -> AiPublicTable {
-    let mut seats = HashMap::new();
+    let mut seats = BTreeMap::new();
     seats.insert(
         0,
         AiSeatView {

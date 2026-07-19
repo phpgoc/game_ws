@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use share_type_public::games::shenyang_mahjong::WsShenyangMahjongMeld;
 
@@ -28,7 +28,7 @@ pub struct AiPublicTable {
     pub claim_is_rob_gang: bool,
     pub claim_has_hu_response: bool,
     pub claim_window: Option<AiClaimView>,
-    pub seats: HashMap<usize, AiSeatView>,
+    pub seats: BTreeMap<usize, AiSeatView>,
 }
 
 #[derive(Debug, Clone)]
@@ -45,7 +45,7 @@ pub fn build_public_table_with_configs(
 ) -> AiPublicTable {
     let players = state.players_snapshot();
     let player_positions = players.keys().copied().collect::<HashSet<_>>();
-    let mut seats = HashMap::new();
+    let mut seats = BTreeMap::new();
     for (position, _) in players {
         seats.insert(
             position,

@@ -32,6 +32,48 @@ fn hand_power_ignores_invalid_tiles() {
 }
 
 #[test]
+fn hand_power_is_stable_across_repeated_evaluations() {
+    let hand = vec![1, 2, 3, 4, 5, 7, 9, 11, 13, 15, 17, 21, 31, 35];
+    let expected = hand_power(&hand).to_bits();
+
+    for _ in 0..2_048 {
+        assert_eq!(hand_power(&hand).to_bits(), expected);
+    }
+}
+
+#[test]
+fn opponent_pressure_is_stable_across_rebuilt_tables() {
+    let score = || {
+        let mut table = table_with_discards(1, vec![1]);
+        table.wall_count = 25;
+        table.seats.insert(
+            2,
+            AiSeatView {
+                position: 2,
+                hand_count: 8,
+                discards: Vec::new(),
+                melds: vec![test_peng_meld(1), test_peng_meld(11)],
+            },
+        );
+        table.seats.insert(
+            3,
+            AiSeatView {
+                position: 3,
+                hand_count: 10,
+                discards: Vec::new(),
+                melds: Vec::new(),
+            },
+        );
+        estimate_pressure_for_tile(&table, 0, 1).to_bits()
+    };
+    let expected = score();
+
+    for _ in 0..2_048 {
+        assert_eq!(score(), expected);
+    }
+}
+
+#[test]
 fn hand_progress_ignores_invalid_melds_but_counts_valid_melds() {
     let table = table_with_discards(1, Vec::new());
     let invalid_melds = vec![

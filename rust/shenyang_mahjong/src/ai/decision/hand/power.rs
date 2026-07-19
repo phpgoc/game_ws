@@ -7,11 +7,12 @@ pub(in crate::ai::decision) fn hand_power(hand: &[i32]) -> f64 {
     }
 
     let mut score = 0.0;
-    let mut used = HashSet::new();
-    for (&tile, &count) in &counts {
+    let mut triplet_count = 0;
+    for tile in unique_tiles(hand) {
+        let count = counts.get(&tile).copied().unwrap_or(0);
         if count >= 3 {
             score += 18.0;
-            used.insert(tile);
+            triplet_count += 1;
         } else if count == 2 {
             score += 7.0;
         }
@@ -59,6 +60,6 @@ pub(in crate::ai::decision) fn hand_power(hand: &[i32]) -> f64 {
         }
     }
 
-    score -= used.len() as f64 * 0.2;
+    score -= triplet_count as f64 * 0.2;
     score
 }

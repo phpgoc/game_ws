@@ -23,7 +23,7 @@ fn fan_wait_bias_stops_when_visible_fan_exceeds_half_cap() {
 
 #[test]
 fn mid_round_open_hand_does_not_chase_wait_fan_with_live_terminal_discard() {
-    let mut seats = HashMap::new();
+    let mut seats = BTreeMap::new();
     seats.insert(
         0,
         AiSeatView {

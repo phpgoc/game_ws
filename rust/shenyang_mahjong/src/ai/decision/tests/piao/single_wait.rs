@@ -145,7 +145,7 @@ fn discard_after_four_piao_melds_rejects_dead_exposed_wind_wait() {
 
 #[test]
 fn late_open_hand_avoids_live_tile_against_four_piao_melds() {
-    let mut seats = HashMap::new();
+    let mut seats = BTreeMap::new();
     seats.insert(
         0,
         AiSeatView {

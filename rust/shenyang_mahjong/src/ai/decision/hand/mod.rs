@@ -4,7 +4,7 @@ mod requirements;
 mod sequences;
 mod suits;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use share_type_public::games::shenyang_mahjong::WsShenyangMahjongMeld;
 
