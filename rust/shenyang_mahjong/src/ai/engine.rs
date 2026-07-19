@@ -78,7 +78,6 @@ pub fn maybe_play_ai_turn(
     if can_self_draw_hu_with_configs(state, position, configs) {
         let table = build_public_table_with_configs(state, configs);
         if let Some(win_tile) = state.last_drawn_tile
-            && !state.is_ting(position)
             && should_pass_self_draw_hu_from_view(&hand, &table, position, win_tile)
         {
             passed_self_draw_tile = Some(win_tile);
@@ -197,10 +196,13 @@ pub fn maybe_resolve_ai_claims(
         let choice = if !claim_matches_source {
             AiClaimChoice::Pass
         } else if state.is_ting(position) {
-            if claim_hu_is_complete(&hand, &claim, &table, position) {
-                AiClaimChoice::Hu
-            } else {
-                AiClaimChoice::Pass
+            match choose_claim_from_view(&hand, &claim, &table, position) {
+                Some(AiClaimChoice::Hu)
+                    if claim_hu_is_complete(&hand, &claim, &table, position) =>
+                {
+                    AiClaimChoice::Hu
+                }
+                _ => AiClaimChoice::Pass,
             }
         } else {
             choose_claim_from_view(&hand, &claim, &table, position).unwrap_or(AiClaimChoice::Pass)
@@ -249,11 +251,12 @@ fn self_hand(state: &ShenyangMahjongLoopState, position: usize) -> Option<Vec<i3
 mod tests {
     use std::sync::{Arc, Mutex};
 
+    use share_type_public::WsCode;
     use share_type_public::games::shenyang_mahjong::{
         SHENYANG_MAHJONG_TILE_KINDS, ShenyangMahjongMeldKind, ShenyangMahjongPhase,
         ShenyangMahjongWinPattern, WsShenyangMahjongMeld, WsShenyangMahjongScoreChange,
     };
-    use ws_common::CommonGameState;
+    use ws_common::{CommonGameState, OutboundPayload};
 
     use super::*;
     use crate::game::build_settlement_event_with_configs;
@@ -1379,6 +1382,59 @@ mod tests {
     }
 
     #[test]
+    fn away_ting_position_passes_one_fan_short_discard_hu_for_live_capped_wait() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_away(0);
+        state.base.lock().unwrap().mark_ai_takeover_position(0);
+        state.current_position = 1;
+        state.dealer_position = 3;
+        state
+            .hands
+            .insert(0, vec![13, 14, 15, 15, 16, 16, 17, 28, 28, 28]);
+        state.melds.insert(0, vec![test_peng_meld(1)]);
+        state.discards.insert(0, vec![16]);
+        state.melds.insert(1, vec![test_peng_meld_from(9, 2)]);
+        state.discards.insert(1, vec![16]);
+        state.wall = vec![
+            2, 3, 4, 5, 6, 7, 8, 11, 12, 18, 19, 21, 23, 24, 25, 26, 27, 29, 31, 32,
+        ];
+        state.claim_window = Some(ClaimWindowState {
+            tile: 16,
+            from_position: 1,
+            kind: ClaimWindowKind::Discard,
+            eligible_positions: vec![0],
+            responses: HashMap::new(),
+        });
+        state.declare_ting(0);
+        let configs = HashMap::from([("max_fan".to_owned(), 4), ("ting_fan".to_owned(), 0)]);
+        let table = build_public_table_with_configs(&state, &configs);
+        let claim = table.claim_window.as_ref().expect("claim window");
+        let hand = state.hands.get(&0).unwrap();
+        let mut dispatch = Dispatch::default();
+
+        assert_eq!(
+            choose_claim_from_view(hand, claim, &table, 0),
+            Some(AiClaimChoice::Pass)
+        );
+        assert!(maybe_resolve_ai_claims(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &configs,
+            &mut dispatch,
+        ));
+
+        assert!(state.settlement.is_none());
+        assert!(state.is_ting(0));
+        assert!(dispatch.messages.iter().all(|message| {
+            !matches!(
+                &message.payload,
+                OutboundPayload::Event(event) if event.code == WsCode::GAME_OVER as i32
+            )
+        }));
+    }
+
+    #[test]
     fn away_ting_position_takes_self_draw_before_capped_wait_chase() {
         let mut state = playable_state();
         state.base.lock().unwrap().mark_away(0);
@@ -1422,6 +1478,48 @@ mod tests {
                 -8
             );
         }
+    }
+
+    #[test]
+    fn away_ting_position_discards_one_fan_short_self_draw_for_live_capped_wait() {
+        let mut state = playable_state();
+        state.base.lock().unwrap().mark_away(0);
+        state.base.lock().unwrap().mark_ai_takeover_position(0);
+        state.dealer_position = 3;
+        state
+            .hands
+            .insert(0, vec![13, 14, 15, 15, 16, 16, 16, 17, 28, 28, 28]);
+        state.melds.insert(0, vec![test_peng_meld(1)]);
+        state.melds.insert(3, vec![test_peng_meld_from(9, 1)]);
+        state.discards.insert(1, vec![16]);
+        state.wall = vec![
+            2, 3, 4, 5, 6, 7, 8, 11, 12, 18, 19, 21, 23, 24, 25, 26, 27, 29, 31, 32,
+        ];
+        state.last_drawn_tile = Some(16);
+        state.declare_ting(0);
+        let configs = HashMap::from([("max_fan".to_owned(), 8), ("ting_fan".to_owned(), 0)]);
+        let table = build_public_table_with_configs(&state, &configs);
+        let hand = state.hands.get(&0).unwrap().clone();
+        let mut dispatch = Dispatch::default();
+
+        assert!(should_pass_self_draw_hu_from_view(&hand, &table, 0, 16));
+        assert!(maybe_play_ai_turn(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &configs,
+            &mut dispatch,
+        ));
+
+        assert!(state.settlement.is_none());
+        assert!(state.is_ting(0));
+        assert_eq!(state.discards.get(&0).unwrap().last(), Some(&16));
+        assert!(dispatch.messages.iter().all(|message| {
+            !matches!(
+                &message.payload,
+                OutboundPayload::Event(event) if event.code == WsCode::GAME_OVER as i32
+            )
+        }));
     }
 
     #[test]
