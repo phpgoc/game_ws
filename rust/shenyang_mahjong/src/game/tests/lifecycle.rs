@@ -89,6 +89,49 @@ fn ting_candidates_do_not_reveal_wait_tiles_in_opponent_hands() {
 }
 
 #[test]
+fn ting_candidates_honor_closed_sequence_exception_after_xi_gang() {
+    let mut state = playable_state();
+    state
+        .hands
+        .insert(0, vec![1, 2, 3, 11, 12, 13, 21, 22, 24, 35, 35]);
+    state.melds.insert(
+        0,
+        vec![build_meld(
+            ShenyangMahjongMeldKind::XI_GANG,
+            vec![31, 32, 33, 34],
+            None,
+        )],
+    );
+    state.last_drawn_tile = Some(24);
+    let bonus_only = HashMap::from([("ting_fan".to_owned(), 1)]);
+    let closed_sequence = HashMap::from([
+        ("allow_first_chi".to_owned(), 0),
+        ("ting_fan".to_owned(), 1),
+    ]);
+
+    assert!(!ting_discard_tiles_for_position(&state, 0, &default_configs()).contains(&24));
+    assert!(!ting_discard_tiles_for_position(&state, 0, &bonus_only).contains(&24));
+    assert!(ting_discard_tiles_for_position(&state, 0, &closed_sequence).contains(&24));
+    assert_eq!(
+        ting_shape_wait_tiles_after_discard(&state, 0, 24, &closed_sequence),
+        vec![23]
+    );
+
+    let mut dispatch = Dispatch::default();
+    assert!(perform_discard_with_ting(
+        &RoomService::default(),
+        "room",
+        &mut state,
+        &closed_sequence,
+        &mut dispatch,
+        0,
+        24,
+        true,
+    ));
+    assert!(state.is_ting(0));
+}
+
+#[test]
 fn declared_ting_locks_future_discard_to_the_drawn_tile() {
     let mut state = playable_state();
     let mut hand = seven_pairs_ting_hand();
