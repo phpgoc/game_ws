@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
+use std::collections::HashMap;
 use std::fmt::Display;
 use typeshare::typeshare;
 
@@ -179,6 +180,8 @@ pub struct WsShenyangMahjongSettlementEvent {
     pub is_haidilao: bool,
     pub score_changes: Vec<WsShenyangMahjongScoreChange>,
     #[serde(default)]
+    pub player_scores: HashMap<i32, i32>,
+    #[serde(default)]
     pub winner_details: Vec<WsShenyangMahjongWinnerDetail>,
     pub players: Vec<WsShenyangMahjongPlayerSnapshot>,
 }
@@ -193,6 +196,8 @@ pub struct WsShenyangMahjongTableSnapshotEvent {
     pub dealer_position: i32,
     pub wall_count: i32,
     pub turn_countdown: i32,
+    #[serde(default)]
+    pub player_scores: HashMap<i32, i32>,
     #[serde(default)]
     pub last_drawn_tile: Option<i32>,
     #[serde(default)]

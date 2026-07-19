@@ -56,6 +56,7 @@ pub struct TractorGameState {
     pub declaration: Option<WsTractorTrumpDeclaration>,
     pub bottom_multiplier: i32,
     pub collected_scores: HashMap<usize, i32>,
+    pub player_scores: HashMap<usize, i32>,
     pub last_trick_winner: Option<usize>,
     pub dealer_position: usize,
     pub current_position: usize,
@@ -739,6 +740,7 @@ impl TractorGameState {
             declaration: None,
             bottom_multiplier: 1,
             collected_scores: HashMap::new(),
+            player_scores: HashMap::new(),
             last_trick_winner: None,
             dealer_position: 0,
             current_position: 0,
@@ -895,6 +897,7 @@ impl TractorGameState {
                 *self.collected_scores.entry(last_winner).or_default() += bottom_score;
             }
             self.phase = TractorPhase::Settlement;
+            self.record_settlement_scores();
         }
         self.base.lock().unwrap().action_received = true;
         Ok(played)
@@ -952,6 +955,34 @@ impl TractorGameState {
         }
     }
 
+    fn record_settlement_scores(&mut self) {
+        let score = self.settlement_score();
+        let winners = self.winner_positions_usize();
+        for position in self.active_positions() {
+            let delta = if winners.contains(&position) {
+                score
+            } else {
+                -score
+            };
+            *self.player_scores.entry(position).or_default() += delta;
+        }
+    }
+
+    pub fn player_scores_snapshot(&self) -> HashMap<i32, i32> {
+        self.active_positions()
+            .into_iter()
+            .map(|position| {
+                (
+                    position as i32,
+                    self.player_scores
+                        .get(&position)
+                        .copied()
+                        .unwrap_or_default(),
+                )
+            })
+            .collect()
+    }
+
     pub fn snapshot(&self) -> WsTractorTableSnapshotEvent {
         let mut player_hand_counts: Vec<_> = self
             .hands
@@ -962,6 +993,8 @@ impl TractorGameState {
             })
             .collect();
         player_hand_counts.sort_by_key(|player| player.position);
+        let turn_countdown = self.base.lock().unwrap().turn_countdown as i32;
+        let player_scores = self.player_scores_snapshot();
         WsTractorTableSnapshotEvent {
             phase: self.phase,
             deck_count: self.rules.deck_count as i32,
@@ -983,7 +1016,8 @@ impl TractorGameState {
             current_position: self.current_position as i32,
             trick_index: self.trick_index,
             current_trick: self.current_trick.clone(),
-            turn_countdown: self.base.lock().unwrap().turn_countdown as i32,
+            turn_countdown,
+            player_scores,
         }
     }
 
@@ -1476,6 +1510,14 @@ mod tests {
         assert_eq!(state.attacking_score(), 80);
         assert_eq!(state.winner_positions(), vec![1, 3]);
         assert_eq!(state.settlement_score(), 80);
+        assert_eq!(state.player_scores.get(&0), Some(&-80));
+        assert_eq!(state.player_scores.get(&1), Some(&80));
+        assert_eq!(state.player_scores.get(&2), Some(&-80));
+        assert_eq!(state.player_scores.get(&3), Some(&80));
+        assert_eq!(
+            state.snapshot().player_scores,
+            state.player_scores_snapshot()
+        );
     }
 
     #[test]

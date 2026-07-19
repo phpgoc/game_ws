@@ -82,6 +82,19 @@ fn default_room_self_draw_broadcasts_exponential_score_changes_to_clients() {
     );
     assert_eq!(event.winner_details.len(), 1);
     assert_eq!(event.winner_details[0].score, 32);
+    assert_eq!(event.player_scores.get(&0), Some(&-16));
+    assert_eq!(event.player_scores.get(&1), Some(&-8));
+    assert_eq!(event.player_scores.get(&2), Some(&-8));
+    assert_eq!(event.player_scores.get(&3), Some(&32));
+
+    let scores = state.player_scores_snapshot();
+    finalize_settlement(&room_service, &room_key, &mut state, &configs);
+    assert_eq!(state.player_scores_snapshot(), scores);
+
+    let snapshot = build_table_snapshot_event_with_configs(&state, 0, &configs);
+    assert_eq!(snapshot.player_scores, scores);
+    redeal_after_settlement_with_configs(&mut state, &configs);
+    assert_eq!(state.player_scores_snapshot(), scores);
 }
 
 #[test]

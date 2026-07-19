@@ -393,6 +393,7 @@ fn settlement_event(state: &TractorGameState) -> WsTractorSettlementEvent {
         target_rank: state.rules.target_rank,
         match_finished: state.match_finished(),
         next_target_rank: state.next_target_rank(),
+        player_scores: state.player_scores_snapshot(),
     }
 }
 

@@ -300,6 +300,7 @@ impl TractorGameHandler {
                         target_rank: s.rules.target_rank,
                         match_finished: s.match_finished(),
                         next_target_rank: s.next_target_rank(),
+                        player_scores: s.player_scores_snapshot(),
                     },
                     s.rules.trump_suit,
                 )
@@ -601,6 +602,7 @@ impl GameHandler for TractorGameHandler {
                         target_rank: state.rules.target_rank,
                         match_finished: state.match_finished(),
                         next_target_rank: state.next_target_rank(),
+                        player_scores: state.player_scores_snapshot(),
                     }
                 }),
             )

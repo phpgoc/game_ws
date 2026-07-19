@@ -255,6 +255,7 @@ pub(crate) fn build_settlement_event_with_configs(
         is_gang_draw: has_effective_winner && settlement_is_gang_draw(state, settlement),
         is_haidilao: has_effective_winner && settlement_is_haidilao(state, settlement),
         score_changes,
+        player_scores: state.player_scores_snapshot(),
         winner_details,
         players: snapshots,
     })
@@ -302,6 +303,7 @@ pub(crate) fn build_table_snapshot_event_with_configs(
         dealer_position: state.dealer_position as i32,
         wall_count: state.wall_count() as i32,
         turn_countdown: state.turn_countdown() as i32,
+        player_scores: state.player_scores_snapshot(),
         last_drawn_tile: if state.current_position == viewer_position
             && position_owns_last_drawn_tile(state, viewer_position)
         {
@@ -894,13 +896,36 @@ fn score_cap_from_configs(configs: &HashMap<String, i32>) -> Option<i32> {
         .filter(|score_cap| *score_cap > 0)
 }
 
-fn maybe_record_settlement(
+fn finalize_settlement(
     room_service: &RoomService,
     room_key: &str,
-    state: &ShenyangMahjongLoopState,
+    state: &mut ShenyangMahjongLoopState,
     configs: &HashMap<String, i32>,
 ) {
     crate::official::settle_round(room_service, room_key, state, configs);
+    apply_settlement_scores_with_configs(state, configs);
+}
+
+fn apply_settlement_scores_with_configs(
+    state: &mut ShenyangMahjongLoopState,
+    configs: &HashMap<String, i32>,
+) {
+    if state.settlement_scores_applied {
+        return;
+    }
+    let Some(settlement) = state.settlement.as_ref() else {
+        return;
+    };
+    let mut positions = state.players_snapshot().keys().copied().collect::<Vec<_>>();
+    positions.sort_unstable();
+    let score_changes = settlement_score_changes_for_state(state, &positions, settlement, configs);
+    for change in score_changes {
+        let Ok(position) = usize::try_from(change.position) else {
+            continue;
+        };
+        *state.player_scores.entry(position).or_default() += change.score;
+    }
+    state.settlement_scores_applied = true;
 }
 
 fn meld_primary_tile(meld: &WsShenyangMahjongMeld) -> Option<i32> {
@@ -1088,7 +1113,7 @@ pub(crate) fn perform_self_draw_hu(
         is_gang_draw,
         is_haidilao,
     );
-    maybe_record_settlement(room_service, room_key, state, configs);
+    finalize_settlement(room_service, room_key, state, configs);
     push_phase_change(
         room_service,
         room_key,
@@ -1797,7 +1822,7 @@ pub(crate) fn resolve_claim_window(
             false,
             false,
         );
-        maybe_record_settlement(room_service, room_key, state, configs);
+        finalize_settlement(room_service, room_key, state, configs);
         push_phase_change(
             room_service,
             room_key,
@@ -2045,7 +2070,7 @@ pub(crate) fn settle_draw(
     dispatch: &mut Dispatch,
 ) {
     state.enter_settlement(Vec::new(), None, None, false);
-    maybe_record_settlement(room_service, room_key, state, configs);
+    finalize_settlement(room_service, room_key, state, configs);
     push_phase_change(
         room_service,
         room_key,

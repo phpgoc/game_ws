@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
+use std::collections::HashMap;
 use std::fmt::Display;
 use typeshare::typeshare;
 
@@ -160,6 +161,8 @@ pub struct WsTractorSettlementEvent {
     pub target_rank: TractorRank,
     pub match_finished: bool,
     pub next_target_rank: Option<TractorRank>,
+    #[serde(default)]
+    pub player_scores: HashMap<i32, i32>,
 }
 
 #[typeshare]
@@ -186,6 +189,8 @@ pub struct WsTractorTableSnapshotEvent {
     pub trick_index: i32,
     pub current_trick: Vec<WsTractorPlayedCards>,
     pub turn_countdown: i32,
+    #[serde(default)]
+    pub player_scores: HashMap<i32, i32>,
 }
 
 #[typeshare]

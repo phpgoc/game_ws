@@ -72,6 +72,8 @@ pub struct ShenyangMahjongLoopState {
     pub xi_gang_options: HashMap<usize, Vec<Vec<i32>>>,
     pub ting_positions: HashSet<usize>,
     pub settlement: Option<SettlementState>,
+    pub player_scores: HashMap<usize, i32>,
+    pub settlement_scores_applied: bool,
     wall_seed_base: Option<u64>,
     wall_round_index: u64,
     last_wall_seed: Option<u64>,
@@ -192,6 +194,7 @@ impl ShenyangMahjongLoopState {
         self.xi_gang_options.clear();
         self.ting_positions.clear();
         self.settlement = None;
+        self.settlement_scores_applied = false;
         let seed = self.next_wall_seed();
         self.wall = Self::shuffle_wall_with_seed(seed);
         self.last_wall_seed = Some(seed);
@@ -310,6 +313,7 @@ impl ShenyangMahjongLoopState {
             is_gang_draw,
             is_haidilao,
         });
+        self.settlement_scores_applied = false;
         self.set_action_received(false);
     }
 
@@ -405,6 +409,8 @@ impl ShenyangMahjongLoopState {
             xi_gang_options: HashMap::new(),
             ting_positions: HashSet::new(),
             settlement: None,
+            player_scores: HashMap::new(),
+            settlement_scores_applied: false,
             wall_seed_base: wall_seed_base_from_env(),
             wall_round_index: 0,
             last_wall_seed: None,
@@ -442,6 +448,21 @@ impl ShenyangMahjongLoopState {
         self.base.lock().unwrap().players.clone()
     }
 
+    pub fn player_scores_snapshot(&self) -> HashMap<i32, i32> {
+        self.players_snapshot()
+            .keys()
+            .map(|position| {
+                (
+                    *position as i32,
+                    self.player_scores
+                        .get(position)
+                        .copied()
+                        .unwrap_or_default(),
+                )
+            })
+            .collect()
+    }
+
     pub fn redeal(&mut self) {
         let dealer_should_continue = self
             .settlement
@@ -467,6 +488,7 @@ impl ShenyangMahjongLoopState {
         self.xi_gang_options.clear();
         self.ting_positions.clear();
         self.settlement = None;
+        self.settlement_scores_applied = false;
         self.set_action_received(false);
         self.set_turn_countdown(0);
     }
