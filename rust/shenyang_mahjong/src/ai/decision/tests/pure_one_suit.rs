@@ -262,6 +262,16 @@ fn one_fan_room_does_not_chase_missing_suit_pure_plan() {
 }
 
 #[test]
+fn one_fan_room_preserves_established_pure_one_suit_fallback() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.score_cap = Some(2);
+    let hand = vec![1, 1, 2, 3, 4, 5, 5, 6, 6, 7, 8, 8, 9];
+
+    assert!(has_established_pure_one_suit_route(&hand, &[]));
+    assert!(pure_one_suit_plan_score_for_context(&hand, &[], &table, 0) > 0.0);
+}
+
+#[test]
 fn pure_one_suit_plan_abandons_exhausted_main_suit() {
     let hand = vec![1, 1, 2, 2, 3, 3, 4, 4, 11, 12, 21, 22, 31, 35];
     let live_table = table_with_discards(1, Vec::new());

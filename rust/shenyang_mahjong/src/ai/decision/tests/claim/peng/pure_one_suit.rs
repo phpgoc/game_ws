@@ -187,3 +187,23 @@ fn one_fan_claim_peng_ignores_unfinished_pure_plan() {
         Some(AiClaimChoice::Peng)
     );
 }
+
+#[test]
+fn one_fan_claim_peng_preserves_established_pure_one_suit_fallback() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.score_cap = Some(2);
+    table.claim_window = Some(AiClaimView {
+        tile: 1,
+        from_position: 1,
+        eligible_positions: vec![0],
+    });
+    let claim = table.claim_window.clone().unwrap();
+    let hand = vec![1, 1, 2, 3, 4, 5, 5, 6, 6, 7, 8, 8, 9];
+
+    assert!(has_established_pure_one_suit_route(&hand, &[]));
+    assert!(pure_one_suit_plan_score_for_context(&hand, &[], &table, 0) > 0.0);
+    assert_eq!(
+        choose_claim_from_view(&hand, &claim, &table, 0),
+        Some(AiClaimChoice::Pass)
+    );
+}

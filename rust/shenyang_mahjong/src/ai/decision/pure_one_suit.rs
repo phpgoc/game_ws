@@ -125,7 +125,7 @@ pub(super) fn pure_one_suit_plan_score_for_context(
     {
         return 0.0;
     }
-    if one_fan_reaches_score_cap(table) {
+    if one_fan_reaches_score_cap(table) && !has_established_pure_one_suit_route(hand, melds) {
         return 0.0;
     }
     if capped_normal_route_visible_fan_exceeds_half_cap(hand, melds, table, position) {
