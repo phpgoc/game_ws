@@ -2020,6 +2020,29 @@ mod tests {
     }
 
     #[test]
+    fn xi_gang_honors_satisfy_terminal_or_honor_requirement() {
+        let melds = vec![
+            meld(ShenyangMahjongMeldKind::XI_GANG, vec![35, 36, 37], None),
+            meld(ShenyangMahjongMeldKind::PENG, vec![5, 5, 5], Some(1)),
+            meld(ShenyangMahjongMeldKind::CHI, vec![12, 13, 14], Some(2)),
+        ];
+        let remainder = vec![22, 23, 24, 6, 6];
+
+        assert!(is_complete_win_with_melds(&remainder, &melds));
+    }
+
+    #[test]
+    fn xi_gang_honors_do_not_supply_a_missing_suit() {
+        let melds = vec![
+            meld(ShenyangMahjongMeldKind::XI_GANG, vec![31, 32, 33, 34], None),
+            meld(ShenyangMahjongMeldKind::CHI, vec![2, 3, 4], Some(1)),
+        ];
+        let remainder = vec![5, 6, 7, 12, 13, 14, 8, 8];
+
+        assert!(!is_complete_win_with_melds(&remainder, &melds));
+    }
+
+    #[test]
     fn xi_gang_is_valid_only_as_a_source_less_special_meld() {
         let dragons = meld(ShenyangMahjongMeldKind::XI_GANG, vec![35, 36, 37], None);
         let winds = meld(ShenyangMahjongMeldKind::XI_GANG, vec![34, 31, 33, 32], None);
