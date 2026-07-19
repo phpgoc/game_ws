@@ -1741,6 +1741,21 @@ pub(crate) fn resolve_claim_window(
     }
 
     if !hu_positions.is_empty() {
+        for position in &claim_window.eligible_positions {
+            if *position != claim_window.from_position
+                && matches!(
+                    claim_window.responses.get(position),
+                    Some(ClaimResponse::AiPass)
+                )
+                && claim_matches_source
+                && can_claim_hu_with_configs(state, *position, claim_window.tile, configs)
+            {
+                hu_positions.push(*position);
+            }
+        }
+    }
+
+    if !hu_positions.is_empty() {
         if is_rob_gang {
             let _ = state.remove_tiles_from_hand(claim_window.from_position, &[claim_window.tile]);
         } else {

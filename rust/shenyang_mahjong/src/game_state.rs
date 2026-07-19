@@ -14,7 +14,11 @@ const WALL_SEED_ENV: &str = "SHENYANG_MAHJONG_WALL_SEED";
 #[derive(Debug, Clone)]
 pub enum ClaimResponse {
     Pass,
-    Chi { consume_tiles: Vec<i32> },
+    /// AI pass that may join a later confirmed multi-Hu settlement.
+    AiPass,
+    Chi {
+        consume_tiles: Vec<i32>,
+    },
     Peng,
     Gang,
     Hu,
@@ -88,7 +92,7 @@ pub fn build_meld(
 
 pub fn claim_action_to_play_action(response: &ClaimResponse) -> ShenyangMahjongAction {
     match response {
-        ClaimResponse::Pass => ShenyangMahjongAction::PASS,
+        ClaimResponse::Pass | ClaimResponse::AiPass => ShenyangMahjongAction::PASS,
         ClaimResponse::Chi { .. } => ShenyangMahjongAction::CHI,
         ClaimResponse::Peng => ShenyangMahjongAction::PENG,
         ClaimResponse::Gang => ShenyangMahjongAction::GANG,

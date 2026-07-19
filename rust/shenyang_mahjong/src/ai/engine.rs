@@ -214,8 +214,8 @@ pub fn maybe_resolve_ai_claims(
             AiClaimChoice::Chi { consume_tiles } if !is_rob_gang => {
                 ClaimResponse::Chi { consume_tiles }
             }
-            AiClaimChoice::Pass => ClaimResponse::Pass,
-            _ => ClaimResponse::Pass,
+            AiClaimChoice::Pass => ClaimResponse::AiPass,
+            _ => ClaimResponse::AiPass,
         };
         if let Some(current) = state.claim_window.as_mut() {
             current.responses.insert(position, response);
@@ -304,7 +304,7 @@ mod tests {
             .expect("claim window stays open");
         assert!(matches!(
             claim_window.responses.get(&0),
-            Some(ClaimResponse::Pass)
+            Some(ClaimResponse::AiPass)
         ));
         assert!(!claim_window.responses.contains_key(&2));
         assert!(dispatch.messages.is_empty());
@@ -342,7 +342,7 @@ mod tests {
             .expect("claim window stays open");
         assert!(matches!(
             claim_window.responses.get(&0),
-            Some(ClaimResponse::Pass)
+            Some(ClaimResponse::AiPass)
         ));
         assert!(!claim_window.responses.contains_key(&2));
         assert!(dispatch.messages.is_empty());
@@ -414,7 +414,7 @@ mod tests {
         let claim_window = state.claim_window.as_ref().expect("claim window");
         assert!(matches!(
             claim_window.responses.get(&0),
-            Some(ClaimResponse::Pass)
+            Some(ClaimResponse::AiPass)
         ));
         assert!(!claim_window.responses.contains_key(&1));
         assert_eq!(state.phase, ShenyangMahjongPhase::Play);
@@ -488,6 +488,172 @@ mod tests {
         assert_eq!(winners, vec![0, 2]);
         assert_eq!(settlement.from_position, Some(1));
         assert_eq!(settlement.win_tile, Some(16));
+    }
+
+    #[test]
+    fn earlier_ai_claim_pass_joins_later_human_hu() {
+        let mut state = capped_multi_hu_claim_state();
+        state.base.lock().unwrap().mark_ai_position(0);
+        let configs = HashMap::from([("max_fan".to_owned(), 4)]);
+        let mut dispatch = Dispatch::default();
+
+        assert!(maybe_resolve_ai_claims(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &configs,
+            &mut dispatch,
+        ));
+        assert!(matches!(
+            state
+                .claim_window
+                .as_ref()
+                .and_then(|window| window.responses.get(&0)),
+            Some(ClaimResponse::AiPass)
+        ));
+
+        state
+            .claim_window
+            .as_mut()
+            .unwrap()
+            .responses
+            .insert(2, ClaimResponse::Hu);
+        resolve_claim_window(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &configs,
+            &mut dispatch,
+        );
+
+        let settlement = state.settlement.as_ref().expect("settlement");
+        let mut winners = settlement.winner_positions.clone();
+        winners.sort_unstable();
+        assert_eq!(winners, vec![0, 2]);
+        assert_eq!(settlement.from_position, Some(1));
+        assert_eq!(settlement.win_tile, Some(16));
+    }
+
+    #[test]
+    fn earlier_human_claim_pass_does_not_join_later_hu() {
+        let mut state = capped_multi_hu_claim_state();
+        state.base.lock().unwrap().mark_ai_position(0);
+        state.claim_window.as_mut().unwrap().responses =
+            HashMap::from([(0, ClaimResponse::Pass), (2, ClaimResponse::Hu)]);
+        let mut dispatch = Dispatch::default();
+
+        resolve_claim_window(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::from([("max_fan".to_owned(), 4)]),
+            &mut dispatch,
+        );
+
+        let settlement = state.settlement.as_ref().expect("settlement");
+        assert_eq!(settlement.winner_positions, vec![2]);
+    }
+
+    #[test]
+    fn earlier_ai_claim_pass_stays_pass_when_everyone_passes() {
+        let mut state = capped_multi_hu_claim_state();
+        state.base.lock().unwrap().mark_ai_position(0);
+        let configs = HashMap::from([("max_fan".to_owned(), 4)]);
+        let mut dispatch = Dispatch::default();
+
+        assert!(maybe_resolve_ai_claims(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &configs,
+            &mut dispatch,
+        ));
+        state
+            .claim_window
+            .as_mut()
+            .unwrap()
+            .responses
+            .insert(2, ClaimResponse::Pass);
+        resolve_claim_window(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &configs,
+            &mut dispatch,
+        );
+
+        assert!(state.settlement.is_none());
+        assert!(state.claim_window.is_none());
+        assert_eq!(state.phase, ShenyangMahjongPhase::Play);
+        assert_eq!(state.current_position, 2);
+    }
+
+    #[test]
+    fn earlier_ai_claim_pass_does_not_join_invalid_hu_response() {
+        let mut state = capped_multi_hu_claim_state();
+        state.hands.insert(2, Vec::new());
+        state.claim_window.as_mut().unwrap().responses =
+            HashMap::from([(0, ClaimResponse::AiPass), (2, ClaimResponse::Hu)]);
+        let mut dispatch = Dispatch::default();
+
+        resolve_claim_window(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::from([("max_fan".to_owned(), 4)]),
+            &mut dispatch,
+        );
+
+        assert!(state.settlement.is_none());
+        assert!(state.claim_window.is_none());
+        assert_eq!(state.phase, ShenyangMahjongPhase::Play);
+    }
+
+    #[test]
+    fn earlier_ai_claim_pass_joins_later_rob_gang_hu() {
+        let mut state = playable_state();
+        state.current_position = 1;
+        state.dealer_position = 3;
+        state
+            .hands
+            .insert(0, vec![2, 3, 11, 12, 13, 21, 22, 23, 35, 35]);
+        state
+            .hands
+            .insert(1, vec![4, 5, 6, 7, 8, 11, 14, 16, 17, 31, 32]);
+        state
+            .hands
+            .insert(2, vec![2, 3, 14, 15, 16, 24, 25, 26, 36, 36]);
+        state.hands.insert(3, Vec::new());
+        state.melds.insert(0, vec![test_peng_meld(9)]);
+        state.melds.insert(1, vec![test_peng_meld_from(4, 2)]);
+        state.melds.insert(2, vec![test_peng_meld_from(32, 3)]);
+        state.wall = vec![37];
+        state.last_drawn_tile = Some(4);
+        state.claim_window = Some(ClaimWindowState {
+            tile: 4,
+            from_position: 1,
+            kind: ClaimWindowKind::RobGang,
+            eligible_positions: vec![0, 2],
+            responses: HashMap::from([(0, ClaimResponse::AiPass), (2, ClaimResponse::Hu)]),
+        });
+        let mut dispatch = Dispatch::default();
+
+        resolve_claim_window(
+            &RoomService::default(),
+            "room",
+            &mut state,
+            &HashMap::new(),
+            &mut dispatch,
+        );
+
+        let settlement = state.settlement.as_ref().expect("settlement");
+        let mut winners = settlement.winner_positions.clone();
+        winners.sort_unstable();
+        assert_eq!(winners, vec![0, 2]);
+        assert!(settlement.is_reverse_win);
+        assert_eq!(settlement.from_position, Some(1));
+        assert_eq!(settlement.win_tile, Some(4));
+        assert!(!state.hands.get(&1).unwrap().contains(&4));
     }
 
     #[test]
@@ -1952,7 +2118,7 @@ mod tests {
             .expect("claim window stays open");
         assert!(matches!(
             claim_window.responses.get(&0),
-            Some(ClaimResponse::Pass)
+            Some(ClaimResponse::AiPass)
         ));
         assert!(!claim_window.responses.contains_key(&2));
         assert!(dispatch.messages.is_empty());
@@ -2006,7 +2172,7 @@ mod tests {
             .expect("claim window stays open");
         assert!(matches!(
             claim_window.responses.get(&0),
-            Some(ClaimResponse::Pass)
+            Some(ClaimResponse::AiPass)
         ));
         assert!(!claim_window.responses.contains_key(&2));
         assert!(dispatch.messages.is_empty());
