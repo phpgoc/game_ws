@@ -1,6 +1,36 @@
 use super::*;
 
 #[test]
+fn xi_gang_supplies_ai_heng_and_yaojiu_without_opening() {
+    let melds = vec![WsShenyangMahjongMeld {
+        kind: ShenyangMahjongMeldKind::XI_GANG,
+        tiles: vec![35, 36, 37],
+        from_position: None,
+    }];
+    let hand = vec![2, 3, 4, 5, 12, 13, 14, 22, 23, 24];
+
+    assert!(has_triplet_like_group(&hand, &melds));
+    assert!(has_triplet_or_dragon_pair(&hand, &melds));
+    assert!(has_terminal_or_honor_with_extra(&hand, &melds, None));
+    assert!(!has_open_meld(&melds));
+    assert_eq!(suit_presence(&hand, &melds), [true, true, true]);
+}
+
+#[test]
+fn xi_gang_does_not_supply_ai_numbered_suit() {
+    let melds = vec![WsShenyangMahjongMeld {
+        kind: ShenyangMahjongMeldKind::XI_GANG,
+        tiles: vec![31, 32, 33, 34],
+        from_position: None,
+    }];
+    let hand = vec![2, 3, 4, 5, 6, 7, 12, 13, 14, 15];
+
+    assert!(has_terminal_or_honor_with_extra(&hand, &melds, None));
+    assert_eq!(suit_presence(&hand, &melds), [true, true, false]);
+    assert_eq!(missing_suits(&hand, &melds), vec![2]);
+}
+
+#[test]
 fn ai_declares_dragon_xi_gang_even_from_live_pure_one_suit_plan() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 2, 3, 4, 5, 6, 7, 8, 31, 32, 33, 35, 36, 37];
