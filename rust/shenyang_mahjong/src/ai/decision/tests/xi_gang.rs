@@ -43,6 +43,29 @@ fn ai_declares_dragon_xi_gang_when_multiple_dragons_are_triplets() {
 }
 
 #[test]
+fn ai_declares_dragon_xi_gang_with_one_pair_and_one_triplet() {
+    let table = table_with_discards(1, Vec::new());
+    let hand = vec![1, 2, 3, 11, 12, 13, 21, 22, 35, 35, 36, 36, 36, 37];
+
+    assert_eq!(
+        choose_xi_gang_from_view(&hand, &[vec![35, 36, 37]], &table, 0),
+        Some(vec![35, 36, 37])
+    );
+}
+
+#[test]
+fn ai_declares_dragon_xi_gang_even_from_locked_seven_pairs() {
+    let table = table_with_discards(1, Vec::new());
+    let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 31, 35, 36, 37];
+
+    assert!(should_lock_seven_pairs_plan(&hand, &[], &table, 0));
+    assert_eq!(
+        choose_xi_gang_from_view(&hand, &[vec![35, 36, 37]], &table, 0),
+        Some(vec![35, 36, 37])
+    );
+}
+
+#[test]
 fn ai_declares_wind_xi_gang_before_dragon_xi_gang() {
     let table = table_with_discards(1, Vec::new());
     let hand = vec![1, 2, 3, 11, 12, 13, 21, 31, 32, 33, 34, 35, 36, 37];
