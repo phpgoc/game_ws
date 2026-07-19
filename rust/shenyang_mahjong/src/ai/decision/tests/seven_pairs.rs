@@ -60,13 +60,67 @@ fn seven_pairs_wait_cap_counts_every_closed_payer() {
     );
     table.dealer_position = 3;
     table.score_cap = Some(64);
+    let wait_hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 31];
 
-    assert!(seven_pairs_regular_wait_reaches_cap(&table, 0));
+    assert!(seven_pairs_wait_reaches_cap(31, &wait_hand, &table, 0, &[]));
 
     table.seats.get_mut(&2).unwrap().melds = vec![test_peng_meld(14)];
     table.seats.get_mut(&2).unwrap().hand_count = 10;
 
-    assert!(!seven_pairs_regular_wait_reaches_cap(&table, 0));
+    assert!(!seven_pairs_wait_reaches_cap(
+        31,
+        &wait_hand,
+        &table,
+        0,
+        &[],
+    ));
+}
+
+#[test]
+fn four_gui_yi_capped_seven_pairs_wait_prefers_more_live_tiles() {
+    let mut table = table_with_discards(1, Vec::new());
+    table.dealer_position = 3;
+    table.score_cap = Some(64);
+    table.seats.get_mut(&1).unwrap().hand_count = 7;
+    table.seats.get_mut(&1).unwrap().melds = vec![
+        test_chi_meld(7),
+        WsShenyangMahjongMeld {
+            kind: ShenyangMahjongMeldKind::XI_GANG,
+            tiles: vec![31, 32, 33, 34],
+            from_position: None,
+        },
+    ];
+    for position in [2, 3] {
+        table.seats.insert(
+            position,
+            AiSeatView {
+                position,
+                hand_count: 10,
+                discards: Vec::new(),
+                melds: vec![test_chi_meld(7)],
+            },
+        );
+    }
+    let hand = vec![1, 1, 1, 1, 5, 11, 11, 12, 12, 21, 21, 22, 22, 31];
+    let middle_wait = remove_n_tiles(&hand, 31, 1);
+    let wind_wait = remove_n_tiles(&hand, 5, 1);
+    let mut middle_win = middle_wait.clone();
+    middle_win.push(5);
+    sort_tiles(&mut middle_win);
+
+    assert_eq!(pair_count(&hand), 6);
+    assert_eq!(estimated_fan_with_wait(&middle_win, &[], 5), 6);
+    assert_eq!(minimum_potential_payment_fan(6, &table, 0), 6);
+    assert!(seven_pairs_wait_reaches_cap(
+        5,
+        &middle_wait,
+        &table,
+        0,
+        &[31],
+    ));
+    assert_eq!(remaining_tile_count(&middle_wait, &table, 0, 5), 3);
+    assert_eq!(remaining_tile_count(&wind_wait, &table, 0, 31), 2);
+    assert_eq!(choose_discard_from_view(&hand, &table, 0), Some(31));
 }
 
 #[test]

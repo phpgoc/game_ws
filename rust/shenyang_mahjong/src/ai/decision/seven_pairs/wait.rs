@@ -38,9 +38,12 @@ pub(in crate::ai::decision) fn choose_seven_pairs_wait_discard(
             if remaining <= 0 {
                 return None;
             }
+            let payment_fan =
+                seven_pairs_wait_payment_fan(wait_tile, &next, table, position, &[tile])?;
             let own_tile_count = hand.iter().filter(|item| **item == tile).count();
             Some((
                 remaining,
+                payment_fan,
                 seven_pairs_wait_tile_score_after_discard(wait_tile, &next, table, position, tile)
                     + wait_setting_discard_safety_adjustment(table, position, tile, own_tile_count),
                 tile,
@@ -51,14 +54,9 @@ pub(in crate::ai::decision) fn choose_seven_pairs_wait_discard(
         || dealer_opponent_has_major_threat(table, position)
         || is_late_defense_round(table)
         || table.score_cap.is_some_and(|score_cap| {
-            shenyang_fan_score_exceeds_half_cap(
-                minimum_potential_payment_fan(
-                    SEVEN_PAIRS_VISIBLE_FAN + REGULAR_SINGLE_WAIT_FAN,
-                    table,
-                    position,
-                ),
-                score_cap,
-            )
+            candidates.iter().any(|(_, payment_fan, _, _)| {
+                shenyang_fan_score_exceeds_half_cap(*payment_fan, score_cap)
+            })
         });
 
     candidates
@@ -70,28 +68,56 @@ pub(in crate::ai::decision) fn choose_seven_pairs_wait_discard(
                 Ordering::Equal
             };
             live_order
-                .then_with(|| left.1.partial_cmp(&right.1).unwrap_or(Ordering::Equal))
-                .then_with(|| right.2.cmp(&left.2))
+                .then_with(|| left.2.partial_cmp(&right.2).unwrap_or(Ordering::Equal))
+                .then_with(|| right.3.cmp(&left.3))
         })
-        .map(|(_, _, tile)| tile)
+        .map(|(_, _, _, tile)| tile)
 }
 
-const SEVEN_PAIRS_VISIBLE_FAN: i32 = 4;
-const REGULAR_SINGLE_WAIT_FAN: i32 = 1;
-
-pub(in crate::ai::decision) fn seven_pairs_regular_wait_reaches_cap(
+fn seven_pairs_wait_payment_fan(
+    wait_tile: i32,
+    hand_after_discard: &[i32],
     table: &AiPublicTable,
     position: usize,
+    simulated_discards: &[i32],
+) -> Option<i32> {
+    let mut win_hand = hand_after_discard.to_vec();
+    win_hand.push(wait_tile);
+    sort_tiles(&mut win_hand);
+    if !is_seven_pairs_win(&win_hand) || !is_complete_win_for_table(&win_hand, &[], table) {
+        return None;
+    }
+    let known_unavailable_tiles =
+        known_unavailable_tiles_with_simulated_discards(table, position, &[], simulated_discards);
+    Some(minimum_potential_payment_fan(
+        estimated_fan_with_known_unavailable_wait_for_table(
+            &win_hand,
+            &[],
+            wait_tile,
+            table,
+            &known_unavailable_tiles,
+        ),
+        table,
+        position,
+    ))
+}
+
+pub(in crate::ai::decision) fn seven_pairs_wait_reaches_cap(
+    wait_tile: i32,
+    hand_after_discard: &[i32],
+    table: &AiPublicTable,
+    position: usize,
+    simulated_discards: &[i32],
 ) -> bool {
     table.score_cap.is_some_and(|score_cap| {
-        shenyang_fan_reaches_score_cap(
-            minimum_potential_payment_fan(
-                SEVEN_PAIRS_VISIBLE_FAN + REGULAR_SINGLE_WAIT_FAN,
-                table,
-                position,
-            ),
-            score_cap,
+        seven_pairs_wait_payment_fan(
+            wait_tile,
+            hand_after_discard,
+            table,
+            position,
+            simulated_discards,
         )
+        .is_some_and(|fan| shenyang_fan_reaches_score_cap(fan, score_cap))
     })
 }
 
@@ -188,7 +214,15 @@ fn seven_pairs_wait_tile_score_with_simulated_discards(
     let speed_first = table.dealer_position == position
         || dealer_opponent_has_major_threat(table, position)
         || is_late_defense_round(table);
-    if speed_first || seven_pairs_regular_wait_reaches_cap(table, position) {
+    if speed_first
+        || seven_pairs_wait_reaches_cap(
+            wait_tile,
+            hand_after_discard,
+            table,
+            position,
+            simulated_discards,
+        )
+    {
         let remaining_weight = if speed_first { 14.0 } else { 6.0 };
         return remaining * remaining_weight + seven_pairs_wait_shape_tiebreaker(wait_tile)
             - public_discards * 12.0;
