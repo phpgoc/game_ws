@@ -28,23 +28,30 @@ fn self_draw_converts_each_payers_final_fan_to_score() {
 }
 
 #[test]
-fn self_draw_broadcasts_exponential_score_changes_to_clients() {
-    let (room_service, _handler, room_key, loop_state) =
-        setup_request_room_with_configs(serde_json::json!({
-            "allow_first_chi": 0,
-            "max_fan": 50
-        }));
+fn default_room_self_draw_broadcasts_exponential_score_changes_to_clients() {
+    let (room_service, _handler, room_key, loop_state) = setup_request_room();
     let configs = room_service.room_configs(&room_key).expect("room configs");
+    assert_eq!(configs.get("max_fan"), Some(&50));
     let mut state = loop_state.lock().unwrap();
     state.phase = ShenyangMahjongPhase::Play;
     state.current_position = 3;
     state.dealer_position = 0;
     state
         .hands
-        .insert(3, vec![2, 3, 4, 5, 6, 7, 11, 12, 13, 21, 22, 23, 35, 35]);
+        .insert(3, vec![5, 6, 7, 11, 12, 13, 21, 22, 23, 35, 35]);
+    state.melds.insert(
+        3,
+        vec![build_meld(
+            ShenyangMahjongMeldKind::CHI,
+            vec![2, 3, 4],
+            Some(2),
+        )],
+    );
     state.wall = vec![31];
-    state.last_drawn_tile = Some(4);
+    state.last_drawn_tile = Some(7);
     let mut dispatch = Dispatch::default();
+
+    assert!(can_self_draw_hu_with_configs(&state, 3, &configs));
 
     perform_self_draw_hu(
         &room_service,
