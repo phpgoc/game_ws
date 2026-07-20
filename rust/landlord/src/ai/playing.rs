@@ -8,6 +8,8 @@ use super::{
     search::choose_endgame_play,
 };
 
+const SAFE_RESPONSE_FINISH_RISK: f64 = 0.05;
+
 pub(super) fn choose_play(observation: &AiObservation) -> Vec<i32> {
     choose_play_with_search(observation, true)
 }
@@ -94,7 +96,13 @@ fn choose_play_with_search(observation: &AiObservation, use_search: bool) -> Vec
     let has_non_bomb = candidates
         .iter()
         .any(|candidate| !is_power_combo(candidate));
-    if has_non_bomb {
+    let has_safe_non_bomb = urgent
+        && candidates.iter().any(|candidate| {
+            !is_power_combo(candidate)
+                && belief.probability_enemies_can_finish_over(&candidate.combo)
+                    < SAFE_RESPONSE_FINISH_RISK
+        });
+    if has_non_bomb && (!urgent || has_safe_non_bomb) {
         candidates.retain(|candidate| !is_power_combo(candidate));
     } else if !urgent
         && candidates.iter().all(|candidate| {
@@ -527,6 +535,39 @@ mod tests {
         AiObservation::from_state(&state, 1).expect("observation")
     }
 
+    fn known_landlord_last_card_response(own_hand: Vec<i32>, landlord_card: i32) -> AiObservation {
+        let held = own_hand
+            .iter()
+            .copied()
+            .chain([landlord_card, 12, 53])
+            .collect::<std::collections::HashSet<_>>();
+        let ally_hand = (1..=54)
+            .filter(|card| !held.contains(card))
+            .take(10)
+            .collect::<Vec<_>>();
+        let mut state =
+            state_with_hands(&[(0, vec![landlord_card]), (1, own_hand), (2, ally_hand)]);
+        state.phase = LandlordPhase::Play;
+        state.landlord_position = Some(0);
+        state.current_position = 1;
+        state.last_play_position = 0;
+        state.last_play = vec![12]; // 地主刚出 A
+        state.hidden_cards = vec![landlord_card, 12, 53];
+        state.play_history.extend([
+            LandlordPlayRecord {
+                position: 0,
+                cards: vec![53],
+                benchmark: Vec::new(),
+            },
+            LandlordPlayRecord {
+                position: 0,
+                cards: vec![12],
+                benchmark: Vec::new(),
+            },
+        ]);
+        AiObservation::from_state(&state, 1).expect("observation")
+    }
+
     #[test]
     fn farmer_search_overtakes_teammate_before_a_dangerous_landlord() {
         let observation = play_observation(
@@ -734,6 +775,26 @@ mod tests {
         );
 
         assert_eq!(choose_play(&observation), vec![1, 14, 27, 40]);
+    }
+
+    #[test]
+    fn heuristic_farmer_bombs_when_an_ordinary_response_can_be_finished_over() {
+        let observation = known_landlord_last_card_response(
+            vec![1, 14, 27, 40, 13], // 炸弹 3333 和单张 2
+            54,                      // 地主最后一张大王
+        );
+
+        assert_eq!(choose_heuristic_play(&observation), vec![1, 14, 27, 40]);
+    }
+
+    #[test]
+    fn heuristic_farmer_preserves_bomb_when_ordinary_response_is_safe() {
+        let observation = known_landlord_last_card_response(
+            vec![2, 15, 28, 41, 13], // 炸弹 4444 和单张 2
+            1,                       // 地主最后一张 3
+        );
+
+        assert_eq!(choose_heuristic_play(&observation), vec![13]);
     }
 
     #[test]
