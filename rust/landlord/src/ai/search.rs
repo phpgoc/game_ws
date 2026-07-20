@@ -439,11 +439,21 @@ impl SearchState {
             .filter(|(position, _)| !self.same_team(*position, self.current))
             .any(|(_, hand)| hand.len() <= 2);
         let Some(candidate) = candidate else {
-            return if previous_is_ally && !enemy_is_urgent {
-                35.0
-            } else {
-                -30.0
-            };
+            if previous_is_ally && !enemy_is_urgent {
+                let enemy_can_take_control = self.benchmark.as_ref().is_some_and(|benchmark| {
+                    self.hands
+                        .iter()
+                        .enumerate()
+                        .filter(|(position, _)| !self.same_team(*position, self.current))
+                        .any(|(_, hand)| {
+                            all_candidates(hand)
+                                .iter()
+                                .any(|response| can_beat(&response.combo, benchmark))
+                        })
+                });
+                return if enemy_can_take_control { -5.0 } else { 35.0 };
+            }
+            return -30.0;
         };
 
         let mut remaining = self.hands[self.current].clone();
@@ -892,6 +902,43 @@ mod tests {
             state.rollout_action_score(Some(low_kicker))
                 > state.rollout_action_score(Some(high_kicker))
         );
+    }
+
+    #[test]
+    fn rollout_overtakes_teammate_when_landlord_can_take_control() {
+        let state = SearchState {
+            hands: vec![
+                vec![1, 14, 9, 22],  // 地主：对 3、对 J
+                vec![3],             // 主跑农民
+                vec![2, 15, 10, 23], // 支援农民：对 4、对 Q
+            ],
+            current: 2,
+            landlord: 0,
+            trick_owner: 1,
+            benchmark: classify(&[8, 21]), // 队友出对 10
+        };
+
+        assert_eq!(
+            state.rollout_action().map(|candidate| candidate.cards),
+            Some(vec![10, 23])
+        );
+    }
+
+    #[test]
+    fn rollout_passes_when_teammate_already_holds_control() {
+        let state = SearchState {
+            hands: vec![
+                vec![1, 14, 7, 20],  // 地主：对 3、对 9
+                vec![3],             // 主跑农民
+                vec![2, 15, 10, 23], // 支援农民：对 4、对 Q
+            ],
+            current: 2,
+            landlord: 0,
+            trick_owner: 1,
+            benchmark: classify(&[8, 21]), // 队友出对 10
+        };
+
+        assert!(state.rollout_action().is_none());
     }
 
     #[test]
