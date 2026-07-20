@@ -41,7 +41,7 @@ pub struct AiObservation {
     pub last_play_position: usize,
     pub last_play: Vec<i32>,
     pub play_history: Vec<LandlordPlayRecord>,
-    /// 只向另一个 AI 农民公开的队友炸弹延迟信号。
+    /// 只供两名 AI 农民协调角色的队友炸弹延迟信号。
     pub ai_bomb_signal_position: Option<usize>,
 }
 
@@ -59,8 +59,7 @@ impl AiObservation {
             .then(|| state.hidden_cards.clone())
             .unwrap_or_default();
         let ai_bomb_signal_position = state.ai_bomb_signal_position.filter(|signal_position| {
-            *signal_position != position
-                && state.is_ai_controlled_position(position)
+            state.is_ai_controlled_position(position)
                 && state
                     .landlord_position
                     .is_some_and(|landlord| landlord != position && landlord != *signal_position)
@@ -188,7 +187,7 @@ mod tests {
     }
 
     #[test]
-    fn bomb_signal_is_visible_only_to_the_other_ai_farmer() {
+    fn bomb_signal_is_visible_to_ai_farmers_only() {
         let mut state =
             state_with_hands(&[(0, vec![1, 2, 3]), (1, vec![4, 5, 6]), (2, vec![7, 8, 9])]);
         state.phase = LandlordPhase::Play;
@@ -217,7 +216,7 @@ mod tests {
             AiObservation::from_state(&state, 1)
                 .expect("signaler observation")
                 .ai_bomb_signal_position,
-            None
+            Some(1)
         );
 
         state.base.lock().unwrap().clear_ai_takeover_position(1);
@@ -226,6 +225,12 @@ mod tests {
                 .expect("AI farmer observation after teammate resumes")
                 .ai_bomb_signal_position,
             Some(1)
+        );
+        assert_eq!(
+            AiObservation::from_state(&state, 1)
+                .expect("human signaler observation")
+                .ai_bomb_signal_position,
+            None
         );
 
         state.base.lock().unwrap().ai_positions.remove(&2);

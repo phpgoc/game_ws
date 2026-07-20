@@ -492,23 +492,31 @@ impl CardBelief {
 
     pub fn farmer_runner(&self, observation: &AiObservation) -> Option<FarmerRunnerEstimate> {
         let landlord = observation.landlord_position?;
-        if observation
-            .ai_bomb_signal_position
-            .is_some_and(|position| position != observation.position && position != landlord)
-            && observation.position != landlord
-        {
-            return Some(FarmerRunnerEstimate {
-                position: observation.position,
-                confidence: 0.9,
-                expected_turns: estimate_turns(&observation.hand) as f64,
-            });
-        }
         let farmers = observation
             .positions
             .iter()
             .copied()
             .filter(|position| *position != landlord)
             .collect::<Vec<_>>();
+        if let Some(signaler) = observation.ai_bomb_signal_position
+            && observation.position != landlord
+            && farmers.contains(&signaler)
+        {
+            let runner = farmers
+                .iter()
+                .copied()
+                .find(|position| *position != signaler)?;
+            let expected_turns = if runner == observation.position {
+                estimate_turns(&observation.hand) as f64
+            } else {
+                self.opponents.get(&runner)?.expected_turns_to_finish()
+            };
+            return Some(FarmerRunnerEstimate {
+                position: runner,
+                confidence: 0.9,
+                expected_turns,
+            });
+        }
         let [left, right] = farmers.as_slice() else {
             return None;
         };
@@ -1498,6 +1506,13 @@ mod tests {
                 })
             })
         }));
+
+        let signaler_observation = AiObservation::from_state(&state, 1).expect("observation");
+        let signaler_runner = CardBelief::from_observation(&signaler_observation)
+            .farmer_runner(&signaler_observation)
+            .expect("signaler runner estimate");
+        assert_eq!(signaler_runner.position, 2);
+        assert_eq!(signaler_runner.confidence, 0.9);
     }
 
     #[test]

@@ -48,7 +48,7 @@ pub struct LandlordLoopState {
     pub play_history: Vec<LandlordPlayRecord>,
     /// 本副牌是否已经使用过一次 AI 炸弹延迟信号。
     pub ai_bomb_signal_used: bool,
-    /// 当前仍持有炸弹的信号方；仅供另一个 AI 农民内部决策使用。
+    /// 当前仍持有炸弹的信号方；仅供两名 AI 农民内部协调角色。
     pub ai_bomb_signal_position: Option<usize>,
 }
 

@@ -373,7 +373,18 @@ impl SearchState {
         };
         let preferred_farmer_runner = observation
             .ai_bomb_signal_position
-            .and((current != landlord).then_some(current));
+            .filter(|_| current != landlord)
+            .and_then(|signaler| {
+                let runner_position = observation
+                    .positions
+                    .iter()
+                    .copied()
+                    .find(|position| *position != landlord_position && *position != signaler)?;
+                observation
+                    .positions
+                    .iter()
+                    .position(|position| *position == runner_position)
+            });
         Some(Self {
             hands: hands.to_vec(),
             current,
@@ -865,6 +876,24 @@ mod tests {
             signaled_state.rollout_action_score(Some(&candidate))
                 > support_state.rollout_action_score(Some(&candidate))
         );
+    }
+
+    #[test]
+    fn bomb_signal_sender_and_receiver_search_use_the_same_runner() {
+        let hands = vec![vec![8], vec![1, 12], vec![2, 15, 28, 41]];
+        let mut receiver = observation_for_runner();
+        receiver.hand_sizes = BTreeMap::from([(0, 1), (1, 2), (2, 4)]);
+        receiver.ai_bomb_signal_position = Some(2);
+        let receiver_state = SearchState::from_world(&receiver, &hands, None).expect("state");
+
+        let mut sender = receiver.clone();
+        sender.position = 2;
+        sender.current_position = 2;
+        sender.hand = hands[2].clone();
+        let sender_state = SearchState::from_world(&sender, &hands, None).expect("state");
+
+        assert_eq!(receiver_state.preferred_farmer_runner, Some(1));
+        assert_eq!(sender_state.preferred_farmer_runner, Some(1));
     }
 
     #[test]

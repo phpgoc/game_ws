@@ -819,4 +819,36 @@ mod tests {
         assert_eq!(before, vec![7, 8, 9, 33, 34, 35]);
         assert_eq!(after, vec![6]);
     }
+
+    #[test]
+    fn bomb_signal_changes_the_sending_farmer_to_support() {
+        let mut state = state_with_hands(&[
+            (0, vec![34, 11]),
+            (1, vec![1, 14, 27, 40, 35, 12, 36, 13]),
+            (2, vec![37, 38, 15, 39, 16, 17, 18, 42]),
+        ]);
+        state.phase = LandlordPhase::Play;
+        state.landlord_position = Some(0);
+        state.current_position = 1;
+        state.last_play_position = 2;
+        state.last_play = vec![41]; // 主跑队友出单 4
+        state.play_history.push(LandlordPlayRecord {
+            position: 2,
+            cards: vec![41],
+            benchmark: Vec::new(),
+        });
+        {
+            let mut common = state.base.lock().unwrap();
+            common.mark_ai_position(1);
+            common.mark_ai_position(2);
+        }
+
+        let before = choose_play(&AiObservation::from_state(&state, 1).expect("observation"));
+        state.ai_bomb_signal_used = true;
+        state.ai_bomb_signal_position = Some(1);
+        let after = choose_play(&AiObservation::from_state(&state, 1).expect("observation"));
+
+        assert_eq!(before, vec![36]); // 未分工时只用 Q 接管
+        assert_eq!(after, vec![13]); // 支援角色用 2 阻断地主反压
+    }
 }
