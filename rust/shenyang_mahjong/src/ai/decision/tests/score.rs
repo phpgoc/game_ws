@@ -753,6 +753,24 @@ fn ready_visible_cap_counts_four_gui_yi() {
 }
 
 #[test]
+fn hand_progress_score_matches_the_public_component_formula() {
+    let table = table_with_discards(36, vec![9, 19, 29]);
+    let melds = vec![test_peng_meld(35)];
+    let hand = vec![1, 2, 3, 4, 11, 12, 13, 21, 22, 23];
+
+    let ready_score = ready_tile_score(&hand, &melds, &table, 0);
+    let expected = hand_power(&hand)
+        + valid_meld_count(&melds) as f64 * 10.0
+        + ready_score
+        + one_step_wait_potential(&hand, &melds, &table, 0)
+        + seven_pairs_plan_score(&hand, &melds, &table, 0)
+        + piao_plan_score_for_context(&hand, &melds, &table, 0)
+        + shenyang_rule_progress_score(&hand, &melds, &table, 0);
+
+    assert!((hand_progress_score(&hand, &melds, &table, 0) - expected).abs() < f64::EPSILON);
+}
+
+#[test]
 fn ready_visible_cap_counts_piao_shou_ba_yi() {
     let mut table = table_with_discards(1, Vec::new());
     table.score_cap = Some(16);

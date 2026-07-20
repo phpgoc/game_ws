@@ -49,10 +49,18 @@ pub(in crate::ai::decision) fn hand_progress_score(
     table: &AiPublicTable,
     position: usize,
 ) -> f64 {
+    let ready_score = ready_tile_score(hand, melds, table, position);
     hand_power(hand)
         + valid_meld_count(melds) as f64 * 10.0
-        + ready_tile_score(hand, melds, table, position)
-        + one_step_wait_potential(hand, melds, table, position)
+        + ready_score
+        + one_step_wait_potential_with_known_ready_score(
+            hand,
+            melds,
+            table,
+            position,
+            &[],
+            ready_score,
+        )
         + seven_pairs_plan_score(hand, melds, table, position)
         + piao_plan_score_for_context(hand, melds, table, position)
         + shenyang_rule_progress_score(hand, melds, table, position)
@@ -65,15 +73,18 @@ pub(in crate::ai::decision) fn hand_progress_score_after_discard(
     position: usize,
     discarded_tile: i32,
 ) -> f64 {
+    let ready_score =
+        ready_tile_score_after_discard(hand_after_discard, melds, table, position, discarded_tile);
     hand_power(hand_after_discard)
         + valid_meld_count(melds) as f64 * 10.0
-        + ready_tile_score_after_discard(hand_after_discard, melds, table, position, discarded_tile)
-        + one_step_wait_potential_after_discard(
+        + ready_score
+        + one_step_wait_potential_with_known_ready_score(
             hand_after_discard,
             melds,
             table,
             position,
-            discarded_tile,
+            &[discarded_tile],
+            ready_score,
         )
         + seven_pairs_plan_score(hand_after_discard, melds, table, position)
         + piao_plan_score_for_context(hand_after_discard, melds, table, position)
@@ -112,15 +123,27 @@ fn one_step_wait_potential_with_simulated_discards(
     position: usize,
     simulated_discards: &[i32],
 ) -> f64 {
-    if hand.len() % 3 != 1
-        || ready_tile_score_with_simulated_discards(
-            hand,
-            melds,
-            table,
-            position,
-            simulated_discards,
-        ) > 0.0
-    {
+    let ready_score =
+        ready_tile_score_with_simulated_discards(hand, melds, table, position, simulated_discards);
+    one_step_wait_potential_with_known_ready_score(
+        hand,
+        melds,
+        table,
+        position,
+        simulated_discards,
+        ready_score,
+    )
+}
+
+fn one_step_wait_potential_with_known_ready_score(
+    hand: &[i32],
+    melds: &[WsShenyangMahjongMeld],
+    table: &AiPublicTable,
+    position: usize,
+    simulated_discards: &[i32],
+    ready_score: f64,
+) -> f64 {
+    if hand.len() % 3 != 1 || ready_score > 0.0 {
         return 0.0;
     }
     let open_normal_route_foundation = has_door_opening_meld(melds, table)
