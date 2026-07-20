@@ -883,13 +883,14 @@ fn play_choice_likelihood(
     {
         likelihood *= UNNECESSARY_POWER_PLAY_LIKELIHOOD;
     }
-    if let Some(minimum_rank) = legal_responses
-        .iter()
-        .filter(|candidate| {
-            candidate.kind == played.kind && candidate.sequence_len == played.sequence_len
-        })
-        .map(|candidate| candidate.main_rank)
-        .min()
+    if benchmark.is_some()
+        && let Some(minimum_rank) = legal_responses
+            .iter()
+            .filter(|candidate| {
+                candidate.kind == played.kind && candidate.sequence_len == played.sequence_len
+            })
+            .map(|candidate| candidate.main_rank)
+            .min()
         && played.main_rank > minimum_rank
     {
         likelihood *=
@@ -1161,6 +1162,41 @@ mod tests {
             play_choice_likelihood(&record, &without_lower, &without_lower_combos, false);
         assert!(lower_likelihood > 0.0);
         assert!(lower_likelihood < clean_likelihood);
+    }
+
+    #[test]
+    fn high_lead_does_not_imply_lower_cards_are_absent() {
+        let record = LandlordPlayRecord {
+            position: 1,
+            cards: vec![9], // 主动首出 J
+            benchmark: Vec::new(),
+        };
+        let hand = vec![1, 9]; // 同时持有更小的 3
+        let combos = all_candidates(&hand)
+            .into_iter()
+            .map(|candidate| candidate.combo)
+            .collect::<Vec<_>>();
+
+        assert_eq!(play_choice_likelihood(&record, &hand, &combos, false), 1.0);
+    }
+
+    #[test]
+    fn non_minimal_response_remains_soft_negative_evidence() {
+        let record = LandlordPlayRecord {
+            position: 1,
+            cards: vec![10], // 用 Q 压 10
+            benchmark: vec![8],
+        };
+        let hand = vec![9, 10]; // J 已经足够压牌
+        let combos = all_candidates(&hand)
+            .into_iter()
+            .map(|candidate| candidate.combo)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            play_choice_likelihood(&record, &hand, &combos, false),
+            NON_MINIMAL_RESPONSE_LIKELIHOOD
+        );
     }
 
     #[test]
