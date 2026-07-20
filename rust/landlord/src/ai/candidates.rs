@@ -18,6 +18,29 @@ pub struct Candidate {
     pub combo: Combo,
 }
 
+pub(super) fn attachment_cost(candidate: &Candidate) -> u32 {
+    let body_start = candidate
+        .combo
+        .main_rank
+        .saturating_sub(candidate.combo.sequence_len.saturating_sub(1) as u8);
+    candidate
+        .cards
+        .iter()
+        .map(|card| card_rank(*card))
+        .filter(|rank| match candidate.combo.kind {
+            ComboKind::TripleSingle | ComboKind::TriplePair => *rank != candidate.combo.main_rank,
+            ComboKind::PlaneWithSingles | ComboKind::PlaneWithPairs => {
+                *rank < body_start || *rank > candidate.combo.main_rank
+            }
+            ComboKind::FourWithTwoSingles | ComboKind::FourWithTwoPairs => {
+                *rank != candidate.combo.main_rank
+            }
+            _ => false,
+        })
+        .map(u32::from)
+        .sum()
+}
+
 pub(super) fn power_structure_cost(hand: &[i32], candidate: &Candidate) -> u32 {
     let mut held = [0_u8; 18];
     let mut used = [0_u8; 18];

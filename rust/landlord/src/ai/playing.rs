@@ -4,7 +4,9 @@ use crate::core::play::{ComboKind, can_beat, card_rank, classify};
 
 use super::{
     AiObservation, CardBelief, FarmerRunnerEstimate, Relationship,
-    candidates::{Candidate, all_candidates, estimate_turns, power_structure_cost},
+    candidates::{
+        Candidate, all_candidates, attachment_cost, estimate_turns, power_structure_cost,
+    },
     search::choose_endgame_play,
 };
 
@@ -324,7 +326,7 @@ fn candidate_score(
     } else {
         high_cards_spent
     };
-    score -= attachment_cost(candidate) * if urgent { 0.08 } else { 0.28 };
+    score -= f64::from(attachment_cost(candidate)) * if urgent { 0.08 } else { 0.28 };
     score -= f64::from(power_structure_cost(&observation.hand, candidate))
         * if urgent { 0.28 } else { 1.0 };
 
@@ -391,29 +393,6 @@ fn lead_single_score(belief: &CardBelief, candidate: &Candidate) -> f64 {
         0.0
     };
     control + candidate.combo.main_rank as f64
-}
-
-fn attachment_cost(candidate: &Candidate) -> f64 {
-    let body_start = candidate
-        .combo
-        .main_rank
-        .saturating_sub(candidate.combo.sequence_len.saturating_sub(1) as u8);
-    candidate
-        .cards
-        .iter()
-        .map(|card| card_rank(*card))
-        .filter(|rank| match candidate.combo.kind {
-            ComboKind::TripleSingle | ComboKind::TriplePair => *rank != candidate.combo.main_rank,
-            ComboKind::PlaneWithSingles | ComboKind::PlaneWithPairs => {
-                *rank < body_start || *rank > candidate.combo.main_rank
-            }
-            ComboKind::FourWithTwoSingles | ComboKind::FourWithTwoPairs => {
-                *rank != candidate.combo.main_rank
-            }
-            _ => false,
-        })
-        .map(f64::from)
-        .sum()
 }
 
 fn is_power_combo(candidate: &Candidate) -> bool {

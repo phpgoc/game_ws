@@ -4,7 +4,9 @@ use crate::core::play::{Combo, ComboKind, can_beat, card_rank, classify};
 
 use super::{
     AiObservation, CardBelief,
-    candidates::{Candidate, all_candidates, estimate_turns, power_structure_cost},
+    candidates::{
+        Candidate, all_candidates, attachment_cost, estimate_turns, power_structure_cost,
+    },
 };
 
 const SEARCH_CARD_LIMIT: usize = 14;
@@ -94,6 +96,7 @@ type RootActionTiebreak = (
     Reverse<u32>,
     Reverse<u8>,
     usize,
+    Reverse<u32>,
     Reverse<u8>,
 );
 
@@ -109,6 +112,7 @@ fn root_action_tiebreak(
             Reverse(0),
             Reverse(0),
             0,
+            Reverse(0),
             Reverse(0),
         );
     };
@@ -138,6 +142,7 @@ fn root_action_tiebreak(
         Reverse(control_cost),
         Reverse(power_cost),
         candidate.cards.len(),
+        Reverse(attachment_cost(candidate)),
         Reverse(if leading {
             0
         } else {
@@ -425,6 +430,7 @@ impl SearchState {
         }
         let turns = estimate_turns(&remaining);
         let mut score = candidate.cards.len() as f64 * 7.0 - turns as f64 * 16.0;
+        score -= f64::from(attachment_cost(candidate)) * if enemy_is_urgent { 0.08 } else { 0.28 };
         score -= f64::from(power_structure_cost(&self.hands[self.current], candidate))
             * if enemy_is_urgent { 0.28 } else { 1.0 };
         if self.benchmark.is_some() {
@@ -805,6 +811,59 @@ mod tests {
         assert!(
             root_action_tiebreak(&hand, Some(low_kicker), true)
                 > root_action_tiebreak(&hand, Some(high_kicker), true)
+        );
+    }
+
+    #[test]
+    fn equal_value_tiebreak_uses_the_cheaper_ordinary_kicker() {
+        let hand = vec![10, 23, 49, 41, 7]; // QQQ + 4、9
+        let candidates = all_candidates(&hand);
+        let low_kicker = candidates
+            .iter()
+            .find(|candidate| {
+                candidate.combo.kind == ComboKind::TripleSingle && candidate.cards.contains(&41)
+            })
+            .expect("triple with four kicker");
+        let high_kicker = candidates
+            .iter()
+            .find(|candidate| {
+                candidate.combo.kind == ComboKind::TripleSingle && candidate.cards.contains(&7)
+            })
+            .expect("triple with nine kicker");
+
+        assert!(
+            root_action_tiebreak(&hand, Some(low_kicker), true)
+                > root_action_tiebreak(&hand, Some(high_kicker), true)
+        );
+    }
+
+    #[test]
+    fn rollout_uses_the_cheaper_ordinary_kicker() {
+        let hand = vec![10, 23, 49, 41, 7]; // QQQ + 4、9
+        let candidates = all_candidates(&hand);
+        let low_kicker = candidates
+            .iter()
+            .find(|candidate| {
+                candidate.combo.kind == ComboKind::TripleSingle && candidate.cards.contains(&41)
+            })
+            .expect("triple with four kicker");
+        let high_kicker = candidates
+            .iter()
+            .find(|candidate| {
+                candidate.combo.kind == ComboKind::TripleSingle && candidate.cards.contains(&7)
+            })
+            .expect("triple with nine kicker");
+        let state = SearchState {
+            hands: vec![hand, vec![1, 2, 3], vec![4, 5, 6]],
+            current: 0,
+            landlord: 0,
+            trick_owner: 0,
+            benchmark: None,
+        };
+
+        assert!(
+            state.rollout_action_score(Some(low_kicker))
+                > state.rollout_action_score(Some(high_kicker))
         );
     }
 
