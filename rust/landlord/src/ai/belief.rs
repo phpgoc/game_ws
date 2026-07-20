@@ -492,6 +492,17 @@ impl CardBelief {
 
     pub fn farmer_runner(&self, observation: &AiObservation) -> Option<FarmerRunnerEstimate> {
         let landlord = observation.landlord_position?;
+        if observation
+            .ai_bomb_signal_position
+            .is_some_and(|position| position != observation.position && position != landlord)
+            && observation.position != landlord
+        {
+            return Some(FarmerRunnerEstimate {
+                position: observation.position,
+                confidence: 0.9,
+                expected_turns: estimate_turns(&observation.hand) as f64,
+            });
+        }
         let farmers = observation
             .positions
             .iter()
@@ -1368,5 +1379,43 @@ mod tests {
         assert_eq!(runner.position, 1);
         assert!(runner.confidence > 0.9);
         assert!((runner.expected_turns - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn bomb_signal_makes_the_other_ai_farmer_the_main_runner() {
+        let mut state = state_with_hands(&[
+            (0, vec![3, 5, 7, 9, 11, 13]),
+            (1, vec![1, 14, 27, 40]),
+            (2, vec![2, 4, 6, 8, 10, 15, 19, 24]),
+        ]);
+        state.phase = LandlordPhase::Play;
+        state.landlord_position = Some(0);
+        {
+            let mut common = state.base.lock().unwrap();
+            common.mark_ai_position(1);
+            common.mark_ai_position(2);
+        }
+
+        let before_signal = AiObservation::from_state(&state, 2).expect("observation");
+        assert_eq!(
+            CardBelief::from_observation(&before_signal).farmer_runner_position(&before_signal),
+            Some(1)
+        );
+
+        state.ai_bomb_signal_used = true;
+        state.ai_bomb_signal_position = Some(1);
+
+        let observation = AiObservation::from_state(&state, 2).expect("observation");
+        assert_eq!(observation.ai_bomb_signal_position, Some(1));
+        let runner = CardBelief::from_observation(&observation)
+            .farmer_runner(&observation)
+            .expect("runner estimate");
+
+        assert_eq!(runner.position, 2);
+        assert_eq!(runner.confidence, 0.9);
+        assert_eq!(
+            runner.expected_turns,
+            estimate_turns(&observation.hand) as f64
+        );
     }
 }

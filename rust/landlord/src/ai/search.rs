@@ -760,6 +760,7 @@ mod tests {
             last_play_position: 1,
             last_play: Vec::new(),
             play_history: Vec::new(),
+            ai_bomb_signal_position: None,
         }
     }
 

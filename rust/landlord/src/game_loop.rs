@@ -12,14 +12,23 @@ use share_type_public::{
 use tokio::sync::Mutex;
 use ws_common::{Delivery, OutboundPayload, RoomService, SessionSenders, dlog};
 
-use crate::ai::{choose_bid, choose_play};
+use crate::ai::{choose_bid, choose_play, hand_has_bomb};
 use crate::game_state::{LandlordLoopState, LandlordPlayRecord};
 
 const AI_ACTION_DELAY: Duration = Duration::from_millis(300);
+const AI_BOMB_SIGNAL_DELAY: Duration = Duration::from_millis(1_200);
+const AI_BOMB_SIGNAL_MIN_HISTORY: usize = 3;
 
 enum AutoBroadcastEvent {
     Call(WsCallLandlordEvent),
     Play(WsPlayEvent),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct PlannedAiAction {
+    delay: Duration,
+    bomb_signal: bool,
+    play: Option<Vec<i32>>,
 }
 
 type CallLandlordTransition = (Option<(String, Vec<i32>)>, Option<usize>, bool);
@@ -274,6 +283,7 @@ async fn handle_play_phase(
                     game_over = true;
                 }
             }
+            clear_stale_ai_bomb_signal(&mut s, pos);
         }
 
         if !game_over {
@@ -566,11 +576,72 @@ enum AutoActionReason {
     Timeout,
 }
 
+fn should_signal_ai_bomb(state: &LandlordLoopState, position: usize, planned_play: &[i32]) -> bool {
+    state.phase == LandlordPhase::Play
+        && state.current_position == position
+        && state.is_ai_controlled_position(position)
+        && state
+            .landlord_position
+            .is_some_and(|landlord| landlord != position)
+        && !state.ai_bomb_signal_used
+        && state.play_history.len() >= AI_BOMB_SIGNAL_MIN_HISTORY
+        && !state.last_play.is_empty()
+        && state.last_play_position != position
+        && state
+            .hands
+            .get(&position)
+            .is_some_and(|hand| hand_has_bomb(hand))
+        && planned_play.is_empty()
+}
+
+fn plan_ai_action(state: &LandlordLoopState, position: usize) -> PlannedAiAction {
+    let play = (state.phase == LandlordPhase::Play).then(|| choose_play(state, position));
+    let bomb_signal = play
+        .as_deref()
+        .is_some_and(|cards| should_signal_ai_bomb(state, position, cards));
+    PlannedAiAction {
+        delay: if bomb_signal {
+            AI_BOMB_SIGNAL_DELAY
+        } else {
+            AI_ACTION_DELAY
+        },
+        bomb_signal,
+        play,
+    }
+}
+
+fn activate_ai_bomb_signal(state: &mut LandlordLoopState, position: usize) {
+    if state.ai_bomb_signal_used {
+        return;
+    }
+    state.ai_bomb_signal_used = true;
+    state.ai_bomb_signal_position = Some(position);
+}
+
+fn clear_stale_ai_bomb_signal(state: &mut LandlordLoopState, position: usize) {
+    if state.ai_bomb_signal_position == Some(position)
+        && state
+            .hands
+            .get(&position)
+            .is_none_or(|hand| !hand_has_bomb(hand))
+    {
+        state.ai_bomb_signal_position = None;
+    }
+}
+
 /// Execute an AI action or take over a timed-out human action. Only real
 /// timeouts mark a seat away; an AI seat remains an active virtual player.
 fn handle_automatic_action(
     state: &mut LandlordLoopState,
     reason: AutoActionReason,
+) -> (Option<usize>, Option<AutoBroadcastEvent>) {
+    handle_automatic_action_with_play(state, reason, None)
+}
+
+fn handle_automatic_action_with_play(
+    state: &mut LandlordLoopState,
+    reason: AutoActionReason,
+    planned_play: Option<Vec<i32>>,
 ) -> (Option<usize>, Option<AutoBroadcastEvent>) {
     let pos = state.current_position;
     let newly_away = if matches!(
@@ -613,7 +684,7 @@ fn handle_automatic_action(
         }
         LandlordPhase::Play => {
             let auto_cards = if reason != AutoActionReason::Timeout {
-                choose_play(state, pos)
+                planned_play.unwrap_or_else(|| choose_play(state, pos))
             } else {
                 choose_timeout_play(state, pos)
             };
@@ -863,18 +934,23 @@ pub(crate) fn start_game_loop(
                     let mut auto_event: Option<AutoBroadcastEvent> = None;
                     let pending_turn = {
                         let s = state.lock().unwrap();
-                        (!s.action_received()).then_some((
-                            s.phase,
-                            s.current_position,
-                            s.is_ai_controlled_position(s.current_position),
-                        ))
+                        (!s.action_received()).then(|| {
+                            let waiting_for_ai = s.is_ai_controlled_position(s.current_position);
+                            let ai_plan = if waiting_for_ai {
+                                Some(plan_ai_action(&s, s.current_position))
+                            } else {
+                                None
+                            };
+                            (s.phase, s.current_position, waiting_for_ai, ai_plan)
+                        })
                     };
-                    if let Some((waiting_phase, waiting_position, waiting_for_ai)) = pending_turn {
-                        let wait_duration = if waiting_for_ai {
-                            AI_ACTION_DELAY
-                        } else {
-                            Duration::from_secs(1)
-                        };
+                    if let Some((waiting_phase, waiting_position, waiting_for_ai, ai_plan)) =
+                        pending_turn
+                    {
+                        let wait_duration = ai_plan
+                            .as_ref()
+                            .map(|plan| plan.delay)
+                            .unwrap_or(Duration::from_secs(1));
                         if sleep_or_stop(&state, wait_duration).await {
                             break;
                         }
@@ -907,8 +983,15 @@ pub(crate) fn start_game_loop(
                         if s.action_received() {
                             // Action received while waiting this tick.
                         } else if waiting_for_ai && s.is_ai_controlled_position(waiting_position) {
-                            (away_position, auto_event) =
-                                handle_automatic_action(&mut s, AutoActionReason::Ai);
+                            let ai_plan = ai_plan.expect("AI turn should have a planned action");
+                            if ai_plan.bomb_signal {
+                                activate_ai_bomb_signal(&mut s, waiting_position);
+                            }
+                            (away_position, auto_event) = handle_automatic_action_with_play(
+                                &mut s,
+                                AutoActionReason::Ai,
+                                ai_plan.play,
+                            );
                         } else if s.turn_countdown() > 0 {
                             let next_countdown = s.turn_countdown() - 1;
                             s.set_turn_countdown(next_countdown);
@@ -1080,6 +1163,38 @@ mod tests {
         state
     }
 
+    fn bomb_signal_state(ai_takeover: bool) -> LandlordLoopState {
+        let mut state = state_with_ai(2);
+        state.phase = LandlordPhase::Play;
+        state.landlord_position = Some(0);
+        state.current_position = 2;
+        state.last_play_position = 1;
+        state.last_play = vec![8, 21]; // 队友出对 10
+        state.hands = HashMap::from([
+            (
+                0,
+                vec![
+                    17, 19, 20, 22, 23, 24, 25, 26, 28, 29, 30, 31, 32, 33, 34, 35, 36,
+                ],
+            ),
+            (1, vec![2, 4, 6, 7, 9, 10, 11, 12, 13, 15]),
+            (2, vec![1, 14, 27, 40, 3, 16, 5, 18]), // 炸弹 3、对 5、对 7
+        ]);
+        state.play_history = (0..AI_BOMB_SIGNAL_MIN_HISTORY)
+            .map(|position| LandlordPlayRecord {
+                position: position % 3,
+                cards: Vec::new(),
+                benchmark: Vec::new(),
+            })
+            .collect();
+        if ai_takeover {
+            let mut common = state.base.lock().unwrap();
+            common.ai_positions.remove(&2);
+            common.mark_ai_takeover_position(2);
+        }
+        state
+    }
+
     #[test]
     fn ai_play_acts_without_becoming_away() {
         let mut state = state_with_ai(1);
@@ -1096,6 +1211,91 @@ mod tests {
         assert!(state.action_received());
         assert!(!state.current_play.is_empty());
         assert!(matches!(event, Some(AutoBroadcastEvent::Play(_))));
+    }
+
+    #[test]
+    fn ai_farmer_delays_once_when_passing_with_a_bomb() {
+        let mut state = bomb_signal_state(false);
+        assert!(choose_play(&state, 2).is_empty());
+
+        let plan = plan_ai_action(&state, 2);
+        assert_eq!(
+            plan,
+            PlannedAiAction {
+                delay: AI_BOMB_SIGNAL_DELAY,
+                bomb_signal: true,
+                play: Some(Vec::new()),
+            }
+        );
+        activate_ai_bomb_signal(&mut state, 2);
+        let (_, event) =
+            handle_automatic_action_with_play(&mut state, AutoActionReason::Ai, plan.play);
+        assert!(state.ai_bomb_signal_used);
+        assert_eq!(state.ai_bomb_signal_position, Some(2));
+        assert!(matches!(
+            event,
+            Some(AutoBroadcastEvent::Play(WsPlayEvent { cards, .. })) if cards.is_empty()
+        ));
+        assert_eq!(plan_ai_action(&state, 2).delay, AI_ACTION_DELAY);
+    }
+
+    #[test]
+    fn ai_bomb_signal_waits_until_after_the_opening_actions() {
+        let mut state = bomb_signal_state(false);
+        state.play_history.truncate(AI_BOMB_SIGNAL_MIN_HISTORY - 1);
+
+        assert_eq!(plan_ai_action(&state, 2).delay, AI_ACTION_DELAY);
+    }
+
+    #[test]
+    fn ai_takeover_farmer_uses_the_same_bomb_signal_delay() {
+        let state = bomb_signal_state(true);
+
+        assert!(state.is_ai_takeover_position(2));
+        assert!(!state.is_ai_position(2));
+        assert_eq!(
+            plan_ai_action(&state, 2),
+            PlannedAiAction {
+                delay: AI_BOMB_SIGNAL_DELAY,
+                bomb_signal: true,
+                play: Some(Vec::new()),
+            }
+        );
+    }
+
+    #[test]
+    fn ordinary_human_delay_never_creates_an_ai_bomb_signal() {
+        let state = bomb_signal_state(false);
+        state.base.lock().unwrap().ai_positions.remove(&2);
+
+        assert!(!should_signal_ai_bomb(&state, 2, &[]));
+        assert_eq!(plan_ai_action(&state, 2).delay, AI_ACTION_DELAY);
+        assert!(!state.ai_bomb_signal_used);
+        assert_eq!(state.ai_bomb_signal_position, None);
+    }
+
+    #[test]
+    fn bomb_signal_expires_without_becoming_reusable() {
+        let mut state = bomb_signal_state(false);
+        activate_ai_bomb_signal(&mut state, 2);
+        state.hands.insert(2, vec![3, 16, 5, 18]);
+
+        clear_stale_ai_bomb_signal(&mut state, 2);
+
+        assert!(state.ai_bomb_signal_used);
+        assert_eq!(state.ai_bomb_signal_position, None);
+        assert_eq!(plan_ai_action(&state, 2).delay, AI_ACTION_DELAY);
+    }
+
+    #[test]
+    fn redeal_resets_the_once_per_deal_bomb_signal() {
+        let mut state = bomb_signal_state(false);
+        activate_ai_bomb_signal(&mut state, 2);
+
+        state.redeal();
+
+        assert!(!state.ai_bomb_signal_used);
+        assert_eq!(state.ai_bomb_signal_position, None);
     }
 
     #[test]

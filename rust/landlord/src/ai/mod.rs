@@ -12,7 +12,10 @@ use share_type_public::LandlordPhase;
 
 pub use belief::{CardBelief, FarmerRunnerEstimate, OpponentEstimate};
 
+use crate::core::play::ComboKind;
 use crate::game_state::{LandlordLoopState, LandlordPlayRecord};
+
+use self::candidates::all_candidates;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Relationship {
@@ -38,6 +41,8 @@ pub struct AiObservation {
     pub last_play_position: usize,
     pub last_play: Vec<i32>,
     pub play_history: Vec<LandlordPlayRecord>,
+    /// 只向另一个 AI 农民公开的队友炸弹延迟信号。
+    pub ai_bomb_signal_position: Option<usize>,
 }
 
 impl AiObservation {
@@ -53,6 +58,14 @@ impl AiObservation {
         let hidden_cards = matches!(state.phase, LandlordPhase::Play | LandlordPhase::Settlement)
             .then(|| state.hidden_cards.clone())
             .unwrap_or_default();
+        let ai_bomb_signal_position = state.ai_bomb_signal_position.filter(|signal_position| {
+            *signal_position != position
+                && state.is_ai_controlled_position(position)
+                && state.is_ai_controlled_position(*signal_position)
+                && state
+                    .landlord_position
+                    .is_some_and(|landlord| landlord != position && landlord != *signal_position)
+        });
         Some(Self {
             position,
             phase: state.phase,
@@ -67,6 +80,7 @@ impl AiObservation {
             last_play_position: state.last_play_position,
             last_play: state.last_play.clone(),
             play_history: state.play_history.clone(),
+            ai_bomb_signal_position,
         })
     }
 
@@ -101,6 +115,12 @@ pub fn choose_play(state: &LandlordLoopState, position: usize) -> Vec<i32> {
     AiObservation::from_state(state, position)
         .map(|observation| playing::choose_play(&observation))
         .unwrap_or_default()
+}
+
+pub fn hand_has_bomb(hand: &[i32]) -> bool {
+    all_candidates(hand)
+        .iter()
+        .any(|candidate| matches!(candidate.combo.kind, ComboKind::Bomb | ComboKind::Rocket))
 }
 
 #[cfg(test)]
@@ -166,5 +186,47 @@ mod tests {
 
         assert_eq!(left_observation, right_observation);
         assert_eq!(choose_play(&left, 0), choose_play(&right, 0));
+    }
+
+    #[test]
+    fn bomb_signal_is_visible_only_to_the_other_ai_farmer() {
+        let mut state =
+            state_with_hands(&[(0, vec![1, 2, 3]), (1, vec![4, 5, 6]), (2, vec![7, 8, 9])]);
+        state.phase = LandlordPhase::Play;
+        state.landlord_position = Some(0);
+        state.ai_bomb_signal_used = true;
+        state.ai_bomb_signal_position = Some(1);
+        {
+            let mut common = state.base.lock().unwrap();
+            common.mark_ai_position(1);
+            common.mark_ai_position(2);
+        }
+
+        assert_eq!(
+            AiObservation::from_state(&state, 2)
+                .expect("AI farmer observation")
+                .ai_bomb_signal_position,
+            Some(1)
+        );
+        assert_eq!(
+            AiObservation::from_state(&state, 0)
+                .expect("landlord observation")
+                .ai_bomb_signal_position,
+            None
+        );
+        assert_eq!(
+            AiObservation::from_state(&state, 1)
+                .expect("signaler observation")
+                .ai_bomb_signal_position,
+            None
+        );
+
+        state.base.lock().unwrap().ai_positions.remove(&2);
+        assert_eq!(
+            AiObservation::from_state(&state, 2)
+                .expect("human farmer observation")
+                .ai_bomb_signal_position,
+            None
+        );
     }
 }

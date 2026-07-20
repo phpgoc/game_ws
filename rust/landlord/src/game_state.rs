@@ -46,6 +46,10 @@ pub struct LandlordLoopState {
     pub current_play: Vec<i32>,
     /// 本副牌从开打起的完整公开动作历史，结算或重发牌时清空。
     pub play_history: Vec<LandlordPlayRecord>,
+    /// 本副牌是否已经使用过一次 AI 炸弹延迟信号。
+    pub ai_bomb_signal_used: bool,
+    /// 当前仍持有炸弹的信号方；仅供另一个 AI 农民内部决策使用。
+    pub ai_bomb_signal_position: Option<usize>,
 }
 
 impl LandlordGameState {
@@ -164,6 +168,8 @@ impl LandlordLoopState {
             last_play: Vec::new(),
             current_play: Vec::new(),
             play_history: Vec::new(),
+            ai_bomb_signal_used: false,
+            ai_bomb_signal_position: None,
         }
     }
 
@@ -209,6 +215,8 @@ impl LandlordLoopState {
         self.last_play.clear();
         self.current_play.clear();
         self.play_history.clear();
+        self.ai_bomb_signal_used = false;
+        self.ai_bomb_signal_position = None;
         self.set_action_received(false);
         self.set_turn_countdown(0);
         self.clear_away();
