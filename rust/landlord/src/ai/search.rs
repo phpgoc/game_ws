@@ -74,7 +74,14 @@ pub(super) fn choose_endgame_play(
 
     let action_tiebreaks = actions
         .iter()
-        .map(|action| root_action_tiebreak(&observation.hand, action.as_ref(), leading))
+        .map(|action| {
+            root_action_tiebreak(
+                &observation.hand,
+                action.as_ref(),
+                leading,
+                root_is_landlord,
+            )
+        })
         .collect::<Vec<_>>();
     let best_index = (0..actions.len()).max_by(|left, right| {
         action_scores[*left]
@@ -97,6 +104,7 @@ type RootActionTiebreak = (
     Reverse<u8>,
     usize,
     Reverse<u32>,
+    u8,
     Reverse<u8>,
 );
 
@@ -104,6 +112,7 @@ fn root_action_tiebreak(
     hand: &[i32],
     action: Option<&Candidate>,
     leading: bool,
+    root_is_landlord: bool,
 ) -> RootActionTiebreak {
     let mut remaining = hand.to_vec();
     let Some(candidate) = action else {
@@ -113,6 +122,7 @@ fn root_action_tiebreak(
             Reverse(0),
             0,
             Reverse(0),
+            0,
             Reverse(0),
         );
     };
@@ -133,6 +143,17 @@ fn root_action_tiebreak(
         })
         .sum::<u32>()
         + power_structure_cost(hand, candidate);
+    let mut rank_counts = [0_u8; 18];
+    for card in hand {
+        rank_counts[card_rank(*card) as usize] += 1;
+    }
+    let singleton_lead = leading
+        && root_is_landlord
+        && candidate.combo.kind == ComboKind::Single
+        && hand.len() == 5
+        && rank_counts.iter().all(|count| *count <= 1)
+        // K、A、2、王至少三张时，才有足够的控制阶梯支撑顶高首出。
+        && rank_counts[13..=17].iter().sum::<u8>() >= 3;
     let power_cost = u8::from(matches!(
         candidate.combo.kind,
         ComboKind::Bomb | ComboKind::Rocket
@@ -143,6 +164,12 @@ fn root_action_tiebreak(
         Reverse(power_cost),
         candidate.cards.len(),
         Reverse(attachment_cost(candidate)),
+        // 地主等值首出顶高一些以迫使农民交控制牌；农民喂牌和跟牌仍优先用低牌。
+        if singleton_lead {
+            candidate.combo.main_rank
+        } else {
+            0
+        },
         Reverse(if leading {
             0
         } else {
@@ -809,8 +836,8 @@ mod tests {
             .expect("triple with four kicker");
 
         assert!(
-            root_action_tiebreak(&hand, Some(low_kicker), true)
-                > root_action_tiebreak(&hand, Some(high_kicker), true)
+            root_action_tiebreak(&hand, Some(low_kicker), true, true)
+                > root_action_tiebreak(&hand, Some(high_kicker), true, true)
         );
     }
 
@@ -832,8 +859,8 @@ mod tests {
             .expect("triple with nine kicker");
 
         assert!(
-            root_action_tiebreak(&hand, Some(low_kicker), true)
-                > root_action_tiebreak(&hand, Some(high_kicker), true)
+            root_action_tiebreak(&hand, Some(low_kicker), true, true)
+                > root_action_tiebreak(&hand, Some(high_kicker), true, true)
         );
     }
 
@@ -881,8 +908,8 @@ mod tests {
             .expect("straight splitting bomb");
 
         assert!(
-            root_action_tiebreak(&hand, Some(preserving), true)
-                > root_action_tiebreak(&hand, Some(splitting), true)
+            root_action_tiebreak(&hand, Some(preserving), true, true)
+                > root_action_tiebreak(&hand, Some(splitting), true, true)
         );
     }
 
