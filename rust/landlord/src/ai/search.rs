@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{cmp::Reverse, collections::HashMap};
 
 use crate::core::play::{Combo, ComboKind, can_beat, card_rank, classify};
 
@@ -70,23 +70,79 @@ pub(super) fn choose_endgame_play(
         }
     }
 
-    actions
-        .into_iter()
-        .zip(action_scores)
-        .enumerate()
-        .max_by(
-            |(left_index, (_, left_score)), (right_index, (_, right_score))| {
-                left_score
-                    .total_cmp(right_score)
-                    // 搜索值完全相同时保持候选生成顺序，避免随机抖动。
-                    .then_with(|| right_index.cmp(left_index))
-            },
-        )
-        .and_then(|(_, (action, score))| {
-            score
-                .is_finite()
-                .then(|| action.map(|candidate| candidate.cards).unwrap_or_default())
+    let action_tiebreaks = actions
+        .iter()
+        .map(|action| root_action_tiebreak(&observation.hand, action.as_ref(), leading))
+        .collect::<Vec<_>>();
+    let best_index = (0..actions.len()).max_by(|left, right| {
+        action_scores[*left]
+            .total_cmp(&action_scores[*right])
+            .then_with(|| action_tiebreaks[*left].cmp(&action_tiebreaks[*right]))
+            // 估值和结构代价完全相同时保持候选生成顺序，避免随机抖动。
+            .then_with(|| right.cmp(left))
+    })?;
+    action_scores[best_index].is_finite().then(|| {
+        actions[best_index]
+            .as_ref()
+            .map(|candidate| candidate.cards.clone())
+            .unwrap_or_default()
+    })
+}
+
+type RootActionTiebreak = (
+    Reverse<usize>,
+    Reverse<u32>,
+    Reverse<u8>,
+    usize,
+    Reverse<u8>,
+);
+
+fn root_action_tiebreak(
+    hand: &[i32],
+    action: Option<&Candidate>,
+    leading: bool,
+) -> RootActionTiebreak {
+    let mut remaining = hand.to_vec();
+    let Some(candidate) = action else {
+        return (
+            Reverse(estimate_turns(&remaining)),
+            Reverse(0),
+            Reverse(0),
+            0,
+            Reverse(0),
+        );
+    };
+    for card in &candidate.cards {
+        if let Some(index) = remaining.iter().position(|held| held == card) {
+            remaining.remove(index);
+        }
+    }
+    let control_cost = candidate
+        .cards
+        .iter()
+        .map(|card| match card_rank(*card) {
+            17 => 8,
+            16 => 6,
+            15 => 3,
+            14 => 1,
+            _ => 0,
         })
+        .sum();
+    let power_cost = u8::from(matches!(
+        candidate.combo.kind,
+        ComboKind::Bomb | ComboKind::Rocket
+    ));
+    (
+        Reverse(estimate_turns(&remaining)),
+        Reverse(control_cost),
+        Reverse(power_cost),
+        candidate.cards.len(),
+        Reverse(if leading {
+            0
+        } else {
+            candidate.combo.main_rank
+        }),
+    )
 }
 
 fn rollout_value(mut state: SearchState, root_is_landlord: bool) -> f64 {
@@ -723,6 +779,29 @@ mod tests {
         assert_eq!(
             choose_endgame_play(&observation, &low_lead_loses, &candidates, true),
             Some(vec![12])
+        );
+    }
+
+    #[test]
+    fn equal_value_tiebreak_preserves_a_control_kicker() {
+        let hand = vec![10, 23, 38, 39, 41, 42, 49]; // QQQ + A、2、4、5
+        let candidates = all_candidates(&hand);
+        let high_kicker = candidates
+            .iter()
+            .find(|candidate| {
+                candidate.combo.kind == ComboKind::TripleSingle && candidate.cards.contains(&38)
+            })
+            .expect("triple with ace kicker");
+        let low_kicker = candidates
+            .iter()
+            .find(|candidate| {
+                candidate.combo.kind == ComboKind::TripleSingle && candidate.cards.contains(&41)
+            })
+            .expect("triple with four kicker");
+
+        assert!(
+            root_action_tiebreak(&hand, Some(low_kicker), true)
+                > root_action_tiebreak(&hand, Some(high_kicker), true)
         );
     }
 }

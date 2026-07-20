@@ -125,6 +125,28 @@ fn search_ai_beats_the_same_team_heuristic_without_search() {
     );
 }
 
+#[test]
+fn landlord_search_preserves_control_cards_in_a_seeded_endgame() {
+    let seed = 115;
+    let landlord = 0;
+    let mut state = prepared_play_state(seed, landlord);
+    for _ in 0..12 {
+        let position = state.current_position;
+        let cards = if position == landlord {
+            choose_play(&state, position)
+        } else {
+            let observation = AiObservation::from_state(&state, position).expect("observation");
+            choose_heuristic_play(&observation)
+        };
+        apply_simulated_play(&mut state, position, cards);
+        advance_simulated_turn(&mut state, position);
+    }
+
+    assert_eq!(state.current_position, landlord);
+    assert_eq!(state.hands[&landlord], vec![10, 23, 38, 39, 41, 42, 49]);
+    assert_eq!(choose_play(&state, landlord), vec![10, 23, 41, 49]);
+}
+
 fn dealt_state(seed: u64) -> LandlordLoopState {
     let mut common = CommonGameState::new();
     for position in POSITIONS {
