@@ -754,7 +754,8 @@ fn world_likelihood(
     let mut weight = bidding_likelihood(observation, hands);
     let mut reconstructed_hands = hands.clone();
     let mut evidence_counts = HashMap::<usize, usize>::new();
-    for record in observation.play_history.iter().rev() {
+    let benchmark_owners = benchmark_owners(&observation.play_history);
+    for (record_index, record) in observation.play_history.iter().enumerate().rev() {
         let Some(hand_at_action) = reconstructed_hands.get_mut(&record.position) else {
             continue;
         };
@@ -771,9 +772,30 @@ fn world_likelihood(
                 .map(|candidate| candidate.combo)
                 .collect()
         });
-        weight *= play_choice_likelihood(record, hand_at_action, combos);
+        let passing_over_ally = observation
+            .landlord_position
+            .zip(benchmark_owners[record_index])
+            .is_some_and(|(landlord, owner)| (record.position == landlord) == (owner == landlord));
+        weight *= play_choice_likelihood(record, hand_at_action, combos, passing_over_ally);
     }
     weight
+}
+
+fn benchmark_owners(play_history: &[crate::game_state::LandlordPlayRecord]) -> Vec<Option<usize>> {
+    let mut current_owner = None;
+    play_history
+        .iter()
+        .map(|record| {
+            if record.benchmark.is_empty() {
+                current_owner = None;
+            }
+            let owner = current_owner;
+            if !record.cards.is_empty() {
+                current_owner = Some(record.position);
+            }
+            owner
+        })
+        .collect()
 }
 
 fn bidding_likelihood(observation: &AiObservation, hands: &BTreeMap<usize, Vec<i32>>) -> f64 {
@@ -821,6 +843,7 @@ fn play_choice_likelihood(
     record: &crate::game_state::LandlordPlayRecord,
     hand_at_action: &[i32],
     combos: &[Combo],
+    passing_over_ally: bool,
 ) -> f64 {
     let benchmark = classify(&record.benchmark);
     if record.cards.is_empty() {
@@ -829,7 +852,11 @@ fn play_choice_likelihood(
                 .iter()
                 .any(|candidate| can_beat(candidate, benchmark))
         }) {
-            PASS_CAN_BEAT_LIKELIHOOD
+            if passing_over_ally {
+                1.0
+            } else {
+                PASS_CAN_BEAT_LIKELIHOOD
+            }
         } else {
             1.0
         };
@@ -1128,11 +1155,91 @@ mod tests {
             .map(|candidate| candidate.combo)
             .collect::<Vec<_>>();
 
-        let lower_likelihood = play_choice_likelihood(&record, &with_lower, &with_lower_combos);
+        let lower_likelihood =
+            play_choice_likelihood(&record, &with_lower, &with_lower_combos, false);
         let clean_likelihood =
-            play_choice_likelihood(&record, &without_lower, &without_lower_combos);
+            play_choice_likelihood(&record, &without_lower, &without_lower_combos, false);
         assert!(lower_likelihood > 0.0);
         assert!(lower_likelihood < clean_likelihood);
+    }
+
+    #[test]
+    fn passing_over_teammate_is_not_negative_control_evidence() {
+        let records = vec![
+            LandlordPlayRecord {
+                position: 1,
+                cards: vec![8],
+                benchmark: Vec::new(),
+            },
+            LandlordPlayRecord {
+                position: 2,
+                cards: Vec::new(),
+                benchmark: vec![8],
+            },
+        ];
+        assert_eq!(benchmark_owners(&records), vec![None, Some(1)]);
+
+        let hand = vec![9];
+        let combos = all_candidates(&hand)
+            .into_iter()
+            .map(|candidate| candidate.combo)
+            .collect::<Vec<_>>();
+        let pass = &records[1];
+
+        assert_eq!(play_choice_likelihood(pass, &hand, &combos, true), 1.0);
+        assert_eq!(
+            play_choice_likelihood(pass, &hand, &combos, false),
+            PASS_CAN_BEAT_LIKELIHOOD
+        );
+    }
+
+    #[test]
+    fn world_likelihood_distinguishes_ally_and_enemy_passes() {
+        let mut ally_pass = state_with_hands(&[(0, vec![1]), (1, Vec::new()), (2, vec![9])]);
+        ally_pass.phase = LandlordPhase::Play;
+        ally_pass.landlord_position = Some(0);
+        ally_pass.play_history = vec![
+            LandlordPlayRecord {
+                position: 1,
+                cards: vec![8],
+                benchmark: Vec::new(),
+            },
+            LandlordPlayRecord {
+                position: 2,
+                cards: Vec::new(),
+                benchmark: vec![8],
+            },
+        ];
+        let ally_observation = AiObservation::from_state(&ally_pass, 0).expect("observation");
+        let ally_hands = BTreeMap::from([(1, Vec::new()), (2, vec![9])]);
+        let ally_weight = world_likelihood(&ally_observation, &ally_hands, &mut HashMap::new());
+
+        let mut enemy_pass = state_with_hands(&[(0, Vec::new()), (1, vec![1]), (2, vec![9])]);
+        enemy_pass.phase = LandlordPhase::Play;
+        enemy_pass.landlord_position = Some(0);
+        enemy_pass.play_history = vec![
+            LandlordPlayRecord {
+                position: 0,
+                cards: vec![8],
+                benchmark: Vec::new(),
+            },
+            LandlordPlayRecord {
+                position: 1,
+                cards: Vec::new(),
+                benchmark: vec![8],
+            },
+            LandlordPlayRecord {
+                position: 2,
+                cards: Vec::new(),
+                benchmark: vec![8],
+            },
+        ];
+        let enemy_observation = AiObservation::from_state(&enemy_pass, 1).expect("observation");
+        let enemy_hands = BTreeMap::from([(0, Vec::new()), (2, vec![9])]);
+        let enemy_weight = world_likelihood(&enemy_observation, &enemy_hands, &mut HashMap::new());
+
+        assert_eq!(ally_weight, 1.0);
+        assert_eq!(enemy_weight, PASS_CAN_BEAT_LIKELIHOOD);
     }
 
     #[test]
