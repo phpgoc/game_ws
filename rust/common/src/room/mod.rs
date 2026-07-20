@@ -272,11 +272,24 @@ impl RoomService {
     }
 
     pub fn disconnect(&mut self, session_id: SessionId) -> Dispatch {
+        self.disconnect_with_ai_takeover(session_id, false)
+    }
+
+    pub fn disconnect_with_ai_takeover(
+        &mut self,
+        session_id: SessionId,
+        ai_takeover_authorized: bool,
+    ) -> Dispatch {
         let mut dispatch = Dispatch::default();
         let Some(mut session) = self.sessions.remove(&session_id) else {
             return dispatch;
         };
-        self.mark_disconnected(session_id, &mut session, &mut dispatch);
+        self.mark_disconnected(
+            session_id,
+            &mut session,
+            ai_takeover_authorized,
+            &mut dispatch,
+        );
         dispatch
     }
 
@@ -1286,6 +1299,7 @@ impl RoomService {
         &mut self,
         session_id: SessionId,
         session: &mut SessionState,
+        ai_takeover_authorized: bool,
         dispatch: &mut Dispatch,
     ) {
         let Some(room_key) = session.room_key.take() else {
@@ -1315,6 +1329,11 @@ impl RoomService {
 
             if let Some(pos) = position {
                 entry.state.mark_disconnected(pos);
+                if ai_takeover_authorized && !entry.state.is_ai_position(pos) {
+                    entry.state.mark_ai_takeover_position(pos);
+                } else {
+                    entry.state.clear_ai_takeover_position(pos);
+                }
             }
 
             if !has_connected_human {
@@ -1717,6 +1736,23 @@ impl RoomService {
             .collect::<Vec<_>>();
         players.sort_by_key(|player| player.position);
         players
+    }
+
+    pub fn room_position_official_session_id(
+        &self,
+        room_key: &str,
+        position: usize,
+    ) -> Option<String> {
+        let entry = self.rooms.get(room_key)?;
+        if entry.state.is_ai_position(position) {
+            return None;
+        }
+        let session_id = entry.state.players().get(&position)?.0;
+        self.sessions
+            .get(&session_id)
+            .and_then(|session| session.official_session_id.as_ref())
+            .filter(|session_id| !session_id.is_empty())
+            .cloned()
     }
 
     pub fn room_official_user_id(&self, room_key: &str, position: usize) -> Option<i64> {

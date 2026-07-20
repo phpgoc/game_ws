@@ -328,7 +328,25 @@ where
         deliver(dispatch, &senders).await?;
     }
 
-    let disconnect_dispatch = room_service.lock().await.disconnect(session_id);
+    let disconnect_ai_takeover_authorized = {
+        let official_session_id = room_service
+            .lock()
+            .await
+            .session_official_session_id(session_id);
+        if let Some(official_session_id) = official_session_id {
+            game_handler
+                .lock()
+                .await
+                .authorize_ai_takeover(official_session_id)
+                .await
+        } else {
+            false
+        }
+    };
+    let disconnect_dispatch = room_service
+        .lock()
+        .await
+        .disconnect_with_ai_takeover(session_id, disconnect_ai_takeover_authorized);
     senders.lock().await.remove(&session_id);
     deliver(disconnect_dispatch, &senders).await?;
     heartbeat.abort();

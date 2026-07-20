@@ -28,6 +28,11 @@ pub async fn has_active_membership(session_id: String) -> bool {
     }
 }
 
+#[cfg(not(feature = "official"))]
+pub async fn has_active_membership(_session_id: String) -> bool {
+    false
+}
+
 #[cfg(feature = "official")]
 use crate::game::{
     settlement_from_position, settlement_is_reverse_win, settlement_score_changes_for_state,

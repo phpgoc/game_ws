@@ -24,6 +24,11 @@ pub async fn has_active_membership(session_id: String) -> bool {
     }
 }
 
+#[cfg(not(feature = "official"))]
+pub async fn has_active_membership(_session_id: String) -> bool {
+    false
+}
+
 #[cfg(feature = "official")]
 fn block_on_official<F>(future: F) -> Option<F::Output>
 where

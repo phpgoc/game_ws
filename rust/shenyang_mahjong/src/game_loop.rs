@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use share_type_public::WsCode;
+use share_type_public::{WsCode, WsPositionEvent};
 use tokio::sync::Mutex;
 use ws_common::{RoomService, SessionSenders};
 
@@ -90,8 +90,64 @@ fn settlement_should_stop(state: &Arc<std::sync::Mutex<ShenyangMahjongLoopState>
     state.players_snapshot().len() != 4 || state.stop_requested()
 }
 
+#[cfg(test)]
 fn should_resolve_timed_out_claims(state: &ShenyangMahjongLoopState) -> bool {
     state.turn_countdown() == 0 && state.claim_window.is_some()
+}
+
+fn timed_out_positions(state: &ShenyangMahjongLoopState) -> Vec<usize> {
+    if state.turn_countdown() != 0 {
+        return Vec::new();
+    }
+    if let Some(claim_window) = &state.claim_window {
+        return claim_window
+            .eligible_positions
+            .iter()
+            .copied()
+            .filter(|position| !claim_window.responses.contains_key(position))
+            .collect();
+    }
+    vec![state.current_position]
+}
+
+async fn position_has_active_membership(
+    room_service: &Arc<Mutex<RoomService>>,
+    room_key: &str,
+    position: usize,
+) -> bool {
+    let official_session_id = room_service
+        .lock()
+        .await
+        .room_position_official_session_id(room_key, position);
+    match official_session_id {
+        Some(session_id) => crate::official::has_active_membership(session_id).await,
+        None => false,
+    }
+}
+
+fn apply_timeout_control(
+    state: &mut ShenyangMahjongLoopState,
+    authorizations: &[(usize, bool)],
+) -> Vec<(usize, bool)> {
+    if state.turn_countdown() != 0 {
+        return Vec::new();
+    }
+    let still_waiting = timed_out_positions(state);
+    let mut newly_away = Vec::new();
+    for &(position, authorized) in authorizations {
+        if !still_waiting.contains(&position) || state.is_ai_controlled_position(position) {
+            continue;
+        }
+        let mut base = state.base.lock().unwrap();
+        let marked_away = base.mark_away(position);
+        if authorized {
+            base.mark_ai_takeover_position(position);
+        }
+        if marked_away {
+            newly_away.push((position, authorized));
+        }
+    }
+    newly_away
 }
 
 async fn sleep_or_stop(
@@ -213,26 +269,22 @@ pub(crate) fn start_game_loop(
                         continue;
                     }
 
-                    let mut should_resolve_claims = false;
-                    let mut should_auto_discard = None;
-                    {
+                    let timed_out = {
                         let guard = state.lock().unwrap();
                         if guard.stop_requested() {
                             break;
                         }
-                        if guard.turn_countdown() == 0 {
-                            if guard.claim_window.is_some() {
-                                should_resolve_claims = should_resolve_timed_out_claims(&guard);
-                            } else {
-                                should_auto_discard = Some((
-                                    guard.current_position,
-                                    auto_discard_tile(&guard, guard.current_position),
-                                ));
-                            }
+                        timed_out_positions(&guard)
+                    };
+                    if !timed_out.is_empty() {
+                        let mut authorizations = Vec::with_capacity(timed_out.len());
+                        for position in timed_out {
+                            authorizations.push((
+                                position,
+                                position_has_active_membership(&room_service, &room_key, position)
+                                    .await,
+                            ));
                         }
-                    }
-
-                    if should_resolve_claims {
                         let mut dispatch = ws_common::Dispatch::default();
                         {
                             let room = room_service.lock().await;
@@ -240,46 +292,64 @@ pub(crate) fn start_game_loop(
                                 break;
                             }
                             let mut guard = state.lock().unwrap();
-                            if let Some(claim_window) = guard.claim_window.as_mut() {
-                                for position in claim_window.eligible_positions.clone() {
-                                    claim_window
-                                        .responses
-                                        .entry(position)
-                                        .or_insert(ClaimResponse::Pass);
+                            let newly_away = apply_timeout_control(&mut guard, &authorizations);
+                            for (position, is_ai_takeover) in newly_away {
+                                push_room_event(
+                                    &room,
+                                    &room_key,
+                                    &mut dispatch,
+                                    WsCode::AWAY as i32,
+                                    WsPositionEvent {
+                                        position: position as i32,
+                                        is_ai_takeover,
+                                    },
+                                );
+                            }
+                            let resolving_claims = guard.claim_window.is_some();
+                            if resolving_claims {
+                                let _ = maybe_resolve_ai_claims(
+                                    &room,
+                                    &room_key,
+                                    &mut guard,
+                                    &configs,
+                                    &mut dispatch,
+                                );
+                                if let Some(claim_window) = guard.claim_window.as_mut() {
+                                    for position in claim_window.eligible_positions.clone() {
+                                        claim_window
+                                            .responses
+                                            .entry(position)
+                                            .or_insert(ClaimResponse::Pass);
+                                    }
+                                    resolve_claim_window(
+                                        &room,
+                                        &room_key,
+                                        &mut guard,
+                                        &configs,
+                                        &mut dispatch,
+                                    );
+                                }
+                            } else {
+                                let position = guard.current_position;
+                                if !maybe_play_ai_turn(
+                                    &room,
+                                    &room_key,
+                                    &mut guard,
+                                    &configs,
+                                    &mut dispatch,
+                                ) {
+                                    let tile = auto_discard_tile(&guard, position);
+                                    let _ = perform_auto_discard_or_settle(
+                                        &room,
+                                        &room_key,
+                                        &mut guard,
+                                        &configs,
+                                        &mut dispatch,
+                                        position,
+                                        tile,
+                                    );
                                 }
                             }
-                            resolve_claim_window(
-                                &room,
-                                &room_key,
-                                &mut guard,
-                                &configs,
-                                &mut dispatch,
-                            );
-                        }
-                        deliver(dispatch, &senders).await;
-                        continue;
-                    }
-
-                    if let Some((position, tile)) = should_auto_discard {
-                        let mut dispatch = ws_common::Dispatch::default();
-                        {
-                            let room = room_service.lock().await;
-                            if !room_uses_common_state(&room, &room_key, &common) {
-                                break;
-                            }
-                            let mut guard = state.lock().unwrap();
-                            if guard.current_position != position || guard.claim_window.is_some() {
-                                continue;
-                            }
-                            let _ = perform_auto_discard_or_settle(
-                                &room,
-                                &room_key,
-                                &mut guard,
-                                &configs,
-                                &mut dispatch,
-                                position,
-                                tile,
-                            );
                         }
                         deliver(dispatch, &senders).await;
                         continue;
@@ -488,5 +558,37 @@ mod tests {
         state.set_turn_countdown(0);
 
         assert!(should_resolve_timed_out_claims(&state));
+    }
+
+    #[test]
+    fn member_timeout_marks_away_and_enables_ai_takeover() {
+        let base = Arc::new(Mutex::new(CommonGameState::default()));
+        base.lock().unwrap().add_player(0, 1, "member");
+        let mut state = ShenyangMahjongLoopState::new(base);
+        state.phase = ShenyangMahjongPhase::Play;
+        state.current_position = 0;
+        state.set_turn_countdown(0);
+
+        let newly_away = apply_timeout_control(&mut state, &[(0, true)]);
+
+        assert_eq!(newly_away, vec![(0, true)]);
+        assert!(state.is_away(0));
+        assert!(state.is_ai_controlled_position(0));
+    }
+
+    #[test]
+    fn nonmember_timeout_marks_away_without_ai_takeover() {
+        let base = Arc::new(Mutex::new(CommonGameState::default()));
+        base.lock().unwrap().add_player(0, 1, "nonmember");
+        let mut state = ShenyangMahjongLoopState::new(base);
+        state.phase = ShenyangMahjongPhase::Play;
+        state.current_position = 0;
+        state.set_turn_countdown(0);
+
+        let newly_away = apply_timeout_control(&mut state, &[(0, false)]);
+
+        assert_eq!(newly_away, vec![(0, false)]);
+        assert!(state.is_away(0));
+        assert!(!state.is_ai_controlled_position(0));
     }
 }

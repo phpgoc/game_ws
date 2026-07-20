@@ -192,6 +192,55 @@ async fn official_membership_gate_and_ai_takeover_work_over_websocket() {
     assert_eq!(nonmember_away["data"]["is_ai_takeover"], json!(false));
     assert!(!stats.room_position_is_ai_takeover(&room, 1).await);
 
+    send_request(&mut nonmember, Routes::BACK as i32, json!({})).await;
+    receive_until(&mut nonmember, "nonmember BACK event", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::BACK as i64)
+            && value["data"]["position"] == json!(1)
+    })
+    .await;
+
+    member.close(None).await.expect("disconnect member websocket");
+    let member_disconnected = receive_until(&mut nonmember, "member disconnect event", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::JOIN as i64)
+            && value["data"]["position"] == json!(0)
+            && value["data"]["is_active"] == json!(false)
+    })
+    .await;
+    assert_eq!(
+        member_disconnected["data"]["is_ai_takeover"],
+        json!(true)
+    );
+    assert!(stats.room_position_is_ai_takeover(&room, 0).await);
+
+    let mut member_rejoined = connect_client(&url).await;
+    let rejoined = join(
+        &mut member_rejoined,
+        "member",
+        &room,
+        &member_session,
+    )
+    .await;
+    assert_eq!(rejoined["code"], json!(WsResponseCode::JOINED as i32));
+    assert_eq!(rejoined["data"]["self_position"], json!(0));
+    assert!(!stats.room_position_is_ai_takeover(&room, 0).await);
+
+    nonmember
+        .close(None)
+        .await
+        .expect("disconnect nonmember websocket");
+    let nonmember_disconnected =
+        receive_until(&mut member_rejoined, "nonmember disconnect event", |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::JOIN as i64)
+                && value["data"]["position"] == json!(1)
+                && value["data"]["is_active"] == json!(false)
+        })
+        .await;
+    assert_eq!(
+        nonmember_disconnected["data"]["is_ai_takeover"],
+        json!(false)
+    );
+    assert!(!stats.room_position_is_ai_takeover(&room, 1).await);
+
     stop_handle.stop();
     server
         .await

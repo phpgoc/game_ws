@@ -50,6 +50,7 @@ fn build_auto_bury_dispatch(
     room_service: &RoomService,
     state: &TractorStateHandle,
     configs: &HashMap<String, i32>,
+    member_timeout_position: Option<usize>,
 ) -> Dispatch {
     let mut dispatch = Dispatch::default();
     let mut away_position = None;
@@ -59,7 +60,7 @@ fn build_auto_bury_dispatch(
             return dispatch;
         }
         let position = state.dealer_position;
-        let controlled = state.is_ai_controlled_position(position);
+        let mut controlled = state.is_ai_controlled_position(position);
         if !controlled && state.base.lock().unwrap().turn_countdown > 0 {
             let next = state.base.lock().unwrap().turn_countdown.saturating_sub(1);
             state.set_turn_countdown(next);
@@ -67,6 +68,14 @@ fn build_auto_bury_dispatch(
         }
         if !controlled && state.base.lock().unwrap().mark_away(position) {
             away_position = Some(position);
+        }
+        if !controlled && member_timeout_position == Some(position) {
+            state
+                .base
+                .lock()
+                .unwrap()
+                .mark_ai_takeover_position(position);
+            controlled = true;
         }
         let cards = if controlled {
             state.choose_auto_bury()
@@ -96,7 +105,7 @@ fn build_auto_bury_dispatch(
             WsCode::AWAY as i32,
             WsPositionEvent {
                 position: position as i32,
-                is_ai_takeover: false,
+                is_ai_takeover: state.lock().unwrap().is_ai_controlled_position(position),
             },
             &mut dispatch,
         );
@@ -136,6 +145,7 @@ fn build_auto_dispatch(
     room_service: &RoomService,
     state: &TractorStateHandle,
     configs: &HashMap<String, i32>,
+    member_timeout_position: Option<usize>,
 ) -> Dispatch {
     let mut dispatch = Dispatch::default();
     let mut away_position = None;
@@ -145,7 +155,7 @@ fn build_auto_dispatch(
             return dispatch;
         }
         let position = s.current_position;
-        let controlled = s.is_ai_controlled_position(position);
+        let mut controlled = s.is_ai_controlled_position(position);
         if !controlled && s.base.lock().unwrap().turn_countdown > 0 {
             let next = s.base.lock().unwrap().turn_countdown.saturating_sub(1);
             s.set_turn_countdown(next);
@@ -153,6 +163,10 @@ fn build_auto_dispatch(
         }
         if !controlled && s.base.lock().unwrap().mark_away(position) {
             away_position = Some(position);
+        }
+        if !controlled && member_timeout_position == Some(position) {
+            s.base.lock().unwrap().mark_ai_takeover_position(position);
+            controlled = true;
         }
         let cards = if controlled {
             crate::ai::decide(&s, position)
@@ -193,7 +207,7 @@ fn build_auto_dispatch(
             WsCode::AWAY as i32,
             WsPositionEvent {
                 position: position as i32,
-                is_ai_takeover: false,
+                is_ai_takeover: state.lock().unwrap().is_ai_controlled_position(position),
             },
             &mut dispatch,
         );
@@ -337,6 +351,31 @@ async fn deliver(dispatch: Dispatch, senders: &SessionSenders) {
     }
 }
 
+async fn position_has_active_membership(
+    room_service: &Arc<Mutex<RoomService>>,
+    room_key: &str,
+    position: usize,
+) -> bool {
+    let official_session_id = room_service
+        .lock()
+        .await
+        .room_position_official_session_id(room_key, position);
+    match official_session_id {
+        Some(session_id) => crate::official::has_active_membership(session_id).await,
+        None => false,
+    }
+}
+
+fn timed_out_human_position(state: &TractorGameState, phase: TractorPhase) -> Option<usize> {
+    let position = match phase {
+        TractorPhase::Bury => state.dealer_position,
+        TractorPhase::Play => state.current_position,
+        _ => return None,
+    };
+    (!state.is_ai_controlled_position(position) && state.base.lock().unwrap().turn_countdown == 0)
+        .then_some(position)
+}
+
 fn push_direct_event<T: serde::Serialize>(
     dispatch: &mut Dispatch,
     recipient: SessionId,
@@ -475,12 +514,29 @@ pub(crate) fn start_game_loop(
                     }
                 }
                 TractorPhase::Bury => {
+                    let timed_out_position = {
+                        let guard = state.lock().unwrap();
+                        timed_out_human_position(&guard, TractorPhase::Bury)
+                    };
+                    let member_timeout_position = if let Some(position) = timed_out_position
+                        && position_has_active_membership(&room_service, &room_key, position).await
+                    {
+                        Some(position)
+                    } else {
+                        None
+                    };
                     let dispatch = {
                         let room = room_service.lock().await;
                         if !room_uses_common_state(&room, &room_key, &common) {
                             break;
                         }
-                        build_auto_bury_dispatch(&room_key, &room, &state, &configs)
+                        build_auto_bury_dispatch(
+                            &room_key,
+                            &room,
+                            &state,
+                            &configs,
+                            member_timeout_position,
+                        )
                     };
                     if !dispatch.messages.is_empty() {
                         deliver(dispatch, &senders).await;
@@ -494,12 +550,29 @@ pub(crate) fn start_game_loop(
                     }
                 }
                 TractorPhase::Play => {
+                    let timed_out_position = {
+                        let guard = state.lock().unwrap();
+                        timed_out_human_position(&guard, TractorPhase::Play)
+                    };
+                    let member_timeout_position = if let Some(position) = timed_out_position
+                        && position_has_active_membership(&room_service, &room_key, position).await
+                    {
+                        Some(position)
+                    } else {
+                        None
+                    };
                     let dispatch = {
                         let room = room_service.lock().await;
                         if !room_uses_common_state(&room, &room_key, &common) {
                             break;
                         }
-                        build_auto_dispatch(&room_key, &room, &state, &configs)
+                        build_auto_dispatch(
+                            &room_key,
+                            &room,
+                            &state,
+                            &configs,
+                            member_timeout_position,
+                        )
                     };
                     if !dispatch.messages.is_empty() {
                         deliver(dispatch, &senders).await;
@@ -602,7 +675,7 @@ mod tests {
         let room = RoomService::default();
         let configs = HashMap::new();
 
-        let _ = build_auto_dispatch("room", &room, &state, &configs);
+        let _ = build_auto_dispatch("room", &room, &state, &configs, None);
 
         let guard = state.lock().unwrap();
         assert_eq!(guard.current_trick.len(), 1);
@@ -630,9 +703,36 @@ mod tests {
             Duration::from_millis(75)
         );
 
-        let _ = build_auto_dispatch("room", &RoomService::default(), &state, &configs);
+        let _ = build_auto_dispatch("room", &RoomService::default(), &state, &configs, None);
 
         let guard = state.lock().unwrap();
+        assert_eq!(guard.current_trick[0].cards, vec![1]);
+        assert!(guard.hands.get(&0).unwrap().contains(&53));
+    }
+
+    #[test]
+    fn member_timeout_marks_away_and_uses_smart_ai_immediately() {
+        let state = test_state_with_ai_leader();
+        {
+            let guard = state.lock().unwrap();
+            let mut base = guard.base.lock().unwrap();
+            base.ai_positions.remove(&0);
+            base.turn_countdown = 0;
+        }
+
+        let _ = build_auto_dispatch(
+            "room",
+            &RoomService::default(),
+            &state,
+            &HashMap::new(),
+            Some(0),
+        );
+
+        let guard = state.lock().unwrap();
+        let base = guard.base.lock().unwrap();
+        assert!(base.is_away(0));
+        assert!(base.is_ai_takeover_position(0));
+        drop(base);
         assert_eq!(guard.current_trick[0].cards, vec![1]);
         assert!(guard.hands.get(&0).unwrap().contains(&53));
     }

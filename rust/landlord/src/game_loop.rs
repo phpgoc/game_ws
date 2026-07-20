@@ -562,6 +562,7 @@ async fn handle_start_phase(
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum AutoActionReason {
     Ai,
+    MemberTimeout,
     Timeout,
 }
 
@@ -572,7 +573,11 @@ fn handle_automatic_action(
     reason: AutoActionReason,
 ) -> (Option<usize>, Option<AutoBroadcastEvent>) {
     let pos = state.current_position;
-    let newly_away = if reason == AutoActionReason::Timeout && state.mark_away(pos) {
+    let newly_away = if matches!(
+        reason,
+        AutoActionReason::MemberTimeout | AutoActionReason::Timeout
+    ) && state.mark_away(pos)
+    {
         Some(pos)
     } else {
         None
@@ -582,7 +587,7 @@ fn handle_automatic_action(
 
     match state.phase {
         LandlordPhase::CallLandlord => {
-            let score = if reason == AutoActionReason::Ai {
+            let score = if reason != AutoActionReason::Timeout {
                 choose_bid(state, pos)
             } else {
                 0
@@ -607,7 +612,7 @@ fn handle_automatic_action(
             next_call(state);
         }
         LandlordPhase::Play => {
-            let auto_cards = if reason == AutoActionReason::Ai {
+            let auto_cards = if reason != AutoActionReason::Timeout {
                 choose_play(state, pos)
             } else {
                 choose_timeout_play(state, pos)
@@ -673,6 +678,21 @@ async fn send_dispatch(dispatch: Vec<Delivery>, senders: &SessionSenders) {
         if let Some(tx) = senders.get(&recipient) {
             let _ = tx.send(frame);
         }
+    }
+}
+
+async fn position_has_active_membership(
+    room_service: &Arc<Mutex<RoomService>>,
+    room_key: &str,
+    position: usize,
+) -> bool {
+    let official_session_id = room_service
+        .lock()
+        .await
+        .room_position_official_session_id(room_key, position);
+    match official_session_id {
+        Some(session_id) => crate::official::has_active_membership(session_id).await,
+        None => false,
     }
 }
 
@@ -789,7 +809,8 @@ pub(crate) fn start_game_loop(
                         WsCode::AWAY as i32,
                         serde_json::to_value(WsPositionEvent {
                             position: position as i32,
-                            is_ai_takeover: false,
+                            is_ai_takeover: room_service
+                                .room_position_is_ai_takeover(&room_key, position),
                         })
                         .unwrap_or_default(),
                         &room_service,
@@ -860,6 +881,25 @@ pub(crate) fn start_game_loop(
                         if state.lock().unwrap().is_paused() {
                             continue;
                         }
+                        let member_timeout_authorized = if waiting_for_ai {
+                            false
+                        } else {
+                            let timed_out = {
+                                let s = state.lock().unwrap();
+                                s.phase == waiting_phase
+                                    && s.current_position == waiting_position
+                                    && !s.action_received()
+                                    && s.turn_countdown() == 0
+                                    && !s.is_ai_controlled_position(waiting_position)
+                            };
+                            timed_out
+                                && position_has_active_membership(
+                                    &room_service,
+                                    &room_key,
+                                    waiting_position,
+                                )
+                                .await
+                        };
                         let mut s = state.lock().unwrap();
                         if s.phase != waiting_phase || s.current_position != waiting_position {
                             continue;
@@ -874,8 +914,20 @@ pub(crate) fn start_game_loop(
                             s.set_turn_countdown(next_countdown);
                             continue;
                         } else {
-                            (away_position, auto_event) =
-                                handle_automatic_action(&mut s, AutoActionReason::Timeout);
+                            if member_timeout_authorized {
+                                s.base
+                                    .lock()
+                                    .unwrap()
+                                    .mark_ai_takeover_position(waiting_position);
+                            }
+                            (away_position, auto_event) = handle_automatic_action(
+                                &mut s,
+                                if member_timeout_authorized {
+                                    AutoActionReason::MemberTimeout
+                                } else {
+                                    AutoActionReason::Timeout
+                                },
+                            );
                         }
                     }
                     if away_position.is_some() || auto_event.is_some() {
@@ -890,7 +942,8 @@ pub(crate) fn start_game_loop(
                                 WsCode::AWAY as i32,
                                 serde_json::to_value(WsPositionEvent {
                                     position: position as i32,
-                                    is_ai_takeover: false,
+                                    is_ai_takeover: rs
+                                        .room_position_is_ai_takeover(&room_key, position),
                                 })
                                 .unwrap_or_default(),
                                 &rs,
@@ -1057,6 +1110,30 @@ mod tests {
         assert!(state.is_away(0));
         assert_eq!(state.call_history, vec![(0, 0)]);
         assert!(matches!(event, Some(AutoBroadcastEvent::Call(_))));
+    }
+
+    #[test]
+    fn member_timeout_marks_away_and_uses_ai_for_the_same_action() {
+        let mut state = state_with_ai(2);
+        state.phase = LandlordPhase::Play;
+        state.landlord_position = Some(0);
+        state.current_position = 0;
+        state.last_play_position = 0;
+        state.last_play.clear();
+        let expected = choose_play(&state, 0);
+        assert!(
+            expected.len() > 1,
+            "test hand must distinguish AI from fallback"
+        );
+        state.base.lock().unwrap().mark_ai_takeover_position(0);
+
+        let (away_position, event) =
+            handle_automatic_action(&mut state, AutoActionReason::MemberTimeout);
+
+        assert_eq!(away_position, Some(0));
+        assert!(state.is_away(0));
+        assert_eq!(state.current_play, expected);
+        assert!(matches!(event, Some(AutoBroadcastEvent::Play(_))));
     }
 
     #[test]

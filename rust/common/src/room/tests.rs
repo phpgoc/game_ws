@@ -662,6 +662,58 @@ fn disconnect_removes_room_only_after_last_connected_human_leaves() {
 }
 
 #[test]
+fn authorized_disconnect_marks_the_retained_seat_for_ai_takeover() {
+    let mut service = RoomService::default();
+    let _ = join_room(&mut service, 1, "u1", "takeover-room", GameId::LANDLORD);
+    let _ = join_room(&mut service, 2, "u2", "takeover-room", GameId::LANDLORD);
+    let common = service
+        .room_common_state("takeover-room")
+        .expect("room common state");
+
+    let disconnect = service.disconnect_with_ai_takeover(1, true);
+
+    let common = common.lock().unwrap();
+    assert!(common.is_disconnected(0));
+    assert!(common.is_ai_takeover_position(0));
+    assert!(disconnect.messages.iter().any(|message| {
+        message.recipient == 2
+            && matches!(
+                &message.payload,
+                OutboundPayload::Event(event)
+                    if event.code == WsCode::JOIN as i32
+                        && event.data.get("is_ai_takeover").and_then(Value::as_bool)
+                            == Some(true)
+            )
+    }));
+}
+
+#[test]
+fn official_session_can_be_resolved_by_room_position() {
+    let mut service = RoomService::default();
+    let _ = common_request(
+        &mut service,
+        1,
+        GameId::LANDLORD,
+        Routes::JOIN,
+        serde_json::json!({
+            "name": "member",
+            "password": "official-session-room",
+            "game_id": GameId::LANDLORD as i32,
+            "session_id": "official-session-token"
+        }),
+    );
+
+    assert_eq!(
+        service.room_position_official_session_id("official-session-room", 0),
+        Some("official-session-token".to_owned())
+    );
+    assert_eq!(
+        service.room_position_official_session_id("official-session-room", 1),
+        None
+    );
+}
+
+#[test]
 fn ai_players_do_not_keep_room_alive_after_last_human_disconnects() {
     let mut service = RoomService::default();
     let _ = join_room(
