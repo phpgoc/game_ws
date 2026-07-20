@@ -345,6 +345,7 @@ struct SearchState {
     landlord: usize,
     trick_owner: usize,
     benchmark: Option<Combo>,
+    preferred_farmer_runner: Option<usize>,
 }
 
 impl SearchState {
@@ -370,12 +371,16 @@ impl SearchState {
         } else {
             current
         };
+        let preferred_farmer_runner = observation
+            .ai_bomb_signal_position
+            .and((current != landlord).then_some(current));
         Some(Self {
             hands: hands.to_vec(),
             current,
             landlord,
             trick_owner,
             benchmark,
+            preferred_farmer_runner,
         })
     }
 
@@ -527,13 +532,14 @@ impl SearchState {
         }
 
         if self.current != self.landlord {
-            let runner = self
-                .hands
-                .iter()
-                .enumerate()
-                .filter(|(position, _)| *position != self.landlord)
-                .min_by_key(|(_, hand)| (estimate_turns(hand), hand.len()))
-                .map(|(position, _)| position);
+            let runner = self.preferred_farmer_runner.or_else(|| {
+                self.hands
+                    .iter()
+                    .enumerate()
+                    .filter(|(position, _)| *position != self.landlord)
+                    .min_by_key(|(_, hand)| (estimate_turns(hand), hand.len()))
+                    .map(|(position, _)| position)
+            });
             if runner == Some(self.current) {
                 score += candidate.cards.len() as f64 * 2.0;
             } else {
@@ -607,6 +613,7 @@ impl SearchState {
             hands: self.hands.iter().map(|hand| encode_hand(hand)).collect(),
             current: self.current as u8,
             trick_owner: self.trick_owner as u8,
+            preferred_farmer_runner: self.preferred_farmer_runner.map(|position| position as u8),
             benchmark_kind,
             benchmark_rank,
             benchmark_len,
@@ -619,6 +626,7 @@ struct SearchKey {
     hands: Vec<u64>,
     current: u8,
     trick_owner: u8,
+    preferred_farmer_runner: Option<u8>,
     benchmark_kind: u8,
     benchmark_rank: u8,
     benchmark_len: u8,
@@ -784,6 +792,7 @@ mod tests {
             landlord: 0,
             trick_owner: 1,
             benchmark: None,
+            preferred_farmer_runner: None,
         };
         let landlord_win = SearchState {
             hands: vec![Vec::new(), vec![1], vec![2]],
@@ -791,6 +800,7 @@ mod tests {
             landlord: 0,
             trick_owner: 0,
             benchmark: None,
+            preferred_farmer_runner: None,
         };
 
         assert!(farmer_win.terminal_value(false).unwrap() > 0.0);
@@ -806,6 +816,7 @@ mod tests {
             landlord: 0,
             trick_owner: 0,
             benchmark: classify(&[4]),
+            preferred_farmer_runner: None,
         };
         let after_first_pass = state.after_action(None).expect("first pass");
         assert!(after_first_pass.benchmark.is_some());
@@ -829,6 +840,30 @@ mod tests {
         assert_eq!(
             choose_endgame_play(&observation, &low_lead_loses, &candidates, true),
             Some(vec![12])
+        );
+    }
+
+    #[test]
+    fn bomb_signal_receiver_is_scored_as_the_rollout_runner() {
+        let hand = vec![53, 1, 14]; // 小王、对 3
+        let candidate = all_candidates(&hand)
+            .into_iter()
+            .find(|candidate| candidate.cards == vec![53])
+            .expect("small joker single");
+        let support_state = SearchState {
+            hands: vec![vec![3, 16, 5, 18], hand, vec![2, 15, 28, 41]],
+            current: 1,
+            landlord: 0,
+            trick_owner: 1,
+            benchmark: None,
+            preferred_farmer_runner: None,
+        };
+        let mut signaled_state = support_state.clone();
+        signaled_state.preferred_farmer_runner = Some(1);
+
+        assert!(
+            signaled_state.rollout_action_score(Some(&candidate))
+                > support_state.rollout_action_score(Some(&candidate))
         );
     }
 
@@ -900,6 +935,7 @@ mod tests {
             landlord: 0,
             trick_owner: 0,
             benchmark: None,
+            preferred_farmer_runner: None,
         };
 
         assert!(
@@ -920,6 +956,7 @@ mod tests {
             landlord: 0,
             trick_owner: 1,
             benchmark: classify(&[8, 21]), // 队友出对 10
+            preferred_farmer_runner: None,
         };
 
         assert_eq!(
@@ -940,6 +977,7 @@ mod tests {
             landlord: 0,
             trick_owner: 1,
             benchmark: classify(&[8, 21]), // 队友出对 10
+            preferred_farmer_runner: None,
         };
 
         assert!(state.rollout_action().is_none());
@@ -957,6 +995,7 @@ mod tests {
             landlord: 0,
             trick_owner: 1,
             benchmark: classify(&[8, 21]), // 队友出对 10
+            preferred_farmer_runner: None,
         };
 
         assert!(state.rollout_action().is_none());
@@ -974,6 +1013,7 @@ mod tests {
             landlord: 0,
             trick_owner: 1,
             benchmark: classify(&[8, 21]), // 队友出对 10
+            preferred_farmer_runner: None,
         };
 
         assert!(state.rollout_action().is_none());
@@ -1016,6 +1056,7 @@ mod tests {
             landlord: 0,
             trick_owner: 0,
             benchmark: None,
+            preferred_farmer_runner: None,
         };
 
         assert!(

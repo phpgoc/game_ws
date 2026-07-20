@@ -738,15 +738,38 @@ fn sample_conditioned_hands(
     let mut pool = unknown_cards.to_vec();
     shuffle_cards(&mut pool, seed);
 
+    let signal_position = observation
+        .ai_bomb_signal_position
+        .filter(|position| opponents.contains(position));
+    let reserved_signal_cards = if let Some(position) = signal_position {
+        let original_size = original_hand_sizes.get(&position).copied().unwrap_or(0);
+        let known_size = known_original.get(&position).map(Vec::len).unwrap_or(0);
+        let unknown_slots = original_size.saturating_sub(known_size);
+        let cards = choose_signal_bomb_cards(&pool, unknown_slots, seed)?;
+        for card in &cards {
+            let index = pool.iter().position(|candidate| candidate == card)?;
+            pool.remove(index);
+        }
+        cards
+    } else {
+        Vec::new()
+    };
+
     let mut hands = BTreeMap::new();
     for &position in opponents {
         let mut hand = known_original.get(&position).cloned().unwrap_or_default();
         let original_size = original_hand_sizes.get(&position).copied().unwrap_or(0);
         let unknown_slots = original_size.saturating_sub(hand.len());
-        if unknown_slots > pool.len() {
+        let reserved = if signal_position == Some(position) {
+            reserved_signal_cards.as_slice()
+        } else {
+            &[]
+        };
+        if reserved.len() > unknown_slots || unknown_slots - reserved.len() > pool.len() {
             return None;
         }
-        hand.extend(pool.drain(..unknown_slots));
+        hand.extend_from_slice(reserved);
+        hand.extend(pool.drain(..unknown_slots - reserved.len()));
         hand.retain(|card| !played_ids.contains(card));
         hand.sort_unstable();
         if hand.len() != observation.hand_sizes.get(&position).copied().unwrap_or(0) {
@@ -755,6 +778,31 @@ fn sample_conditioned_hands(
         hands.insert(position, hand);
     }
     Some(hands)
+}
+
+fn choose_signal_bomb_cards(pool: &[i32], maximum_cards: usize, seed: u64) -> Option<Vec<i32>> {
+    let mut grouped = BTreeMap::<u8, Vec<i32>>::new();
+    for &card in pool {
+        grouped.entry(card_rank(card)).or_default().push(card);
+    }
+    let mut choices = grouped
+        .into_iter()
+        .filter(|(rank, cards)| *rank <= 15 && cards.len() == 4 && maximum_cards >= 4)
+        .map(|(_, mut cards)| {
+            cards.sort_unstable();
+            cards
+        })
+        .collect::<Vec<_>>();
+    if maximum_cards >= 2
+        && let (Some(small_joker), Some(big_joker)) = (
+            pool.iter().find(|card| card_rank(**card) == 16),
+            pool.iter().find(|card| card_rank(**card) == 17),
+        )
+    {
+        choices.push(vec![*small_joker, *big_joker]);
+    }
+    let index = ((seed ^ (seed >> 32)) as usize) % choices.len().max(1);
+    choices.into_iter().nth(index)
 }
 
 fn world_likelihood(
@@ -1407,15 +1455,49 @@ mod tests {
 
         let observation = AiObservation::from_state(&state, 2).expect("observation");
         assert_eq!(observation.ai_bomb_signal_position, Some(1));
-        let runner = CardBelief::from_observation(&observation)
-            .farmer_runner(&observation)
-            .expect("runner estimate");
+        let belief = CardBelief::from_observation(&observation);
+        let runner = belief.farmer_runner(&observation).expect("runner estimate");
 
         assert_eq!(runner.position, 2);
         assert_eq!(runner.confidence, 0.9);
         assert_eq!(
             runner.expected_turns,
             estimate_turns(&observation.hand) as f64
+        );
+        assert!((belief.opponents[&1].probability_has_bomb_or_rocket() - 1.0).abs() < 1e-10);
+        assert_eq!(belief.worlds.len(), BELIEF_WORLD_COUNT);
+        assert!(belief.worlds.iter().all(|world| {
+            world.hands.get(&1).is_some_and(|hand| {
+                all_candidates(hand).iter().any(|candidate| {
+                    matches!(candidate.combo.kind, ComboKind::Bomb | ComboKind::Rocket)
+                })
+            })
+        }));
+    }
+
+    #[test]
+    fn bomb_signal_conditions_a_two_card_signaler_on_the_rocket() {
+        let mut state =
+            state_with_hands(&[(0, vec![1, 2, 3]), (1, vec![53, 54]), (2, vec![4, 5, 6])]);
+        state.phase = LandlordPhase::Play;
+        state.landlord_position = Some(0);
+        state.ai_bomb_signal_used = true;
+        state.ai_bomb_signal_position = Some(1);
+        {
+            let mut common = state.base.lock().unwrap();
+            common.mark_ai_position(1);
+            common.mark_ai_position(2);
+        }
+
+        let observation = AiObservation::from_state(&state, 2).expect("observation");
+        let belief = CardBelief::from_observation(&observation);
+
+        assert_eq!(belief.worlds.len(), BELIEF_WORLD_COUNT);
+        assert!(
+            belief
+                .worlds
+                .iter()
+                .all(|world| world.hands[&1] == vec![53, 54])
         );
     }
 }

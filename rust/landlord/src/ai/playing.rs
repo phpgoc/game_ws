@@ -794,4 +794,29 @@ mod tests {
             "split rocket: {cards:?}"
         );
     }
+
+    #[test]
+    fn bomb_signal_changes_the_receiving_farmer_play_plan() {
+        let mut state = state_with_hands(&[
+            (0, vec![19, 46, 20, 47, 21, 48, 22, 49]),
+            (1, vec![1, 14, 27, 40, 23, 50, 24, 51]),
+            (2, vec![25, 52, 26, 53, 54, 28, 2, 29]),
+        ]);
+        state.phase = LandlordPhase::Play;
+        state.landlord_position = Some(0);
+        state.current_position = 2;
+        {
+            let mut common = state.base.lock().unwrap();
+            common.mark_ai_position(1);
+            common.mark_ai_position(2);
+        }
+
+        let before = choose_play(&AiObservation::from_state(&state, 2).expect("observation"));
+        state.ai_bomb_signal_used = true;
+        state.ai_bomb_signal_position = Some(1);
+        let after = choose_play(&AiObservation::from_state(&state, 2).expect("observation"));
+
+        assert_eq!(before, vec![2, 28]); // 支援角色先走对 4
+        assert_eq!(after, vec![2]); // 主跑角色保留对 2 和王炸的控制阶梯
+    }
 }
