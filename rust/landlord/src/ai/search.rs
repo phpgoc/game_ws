@@ -439,7 +439,7 @@ impl SearchState {
             .filter(|(position, _)| !self.same_team(*position, self.current))
             .any(|(_, hand)| hand.len() <= 2);
         let Some(candidate) = candidate else {
-            if previous_is_ally && !enemy_is_urgent {
+            if previous_is_ally {
                 let enemy_can_take_control = self.benchmark.as_ref().is_some_and(|benchmark| {
                     self.hands
                         .iter()
@@ -451,7 +451,10 @@ impl SearchState {
                                 .any(|response| can_beat(&response.combo, benchmark))
                         })
                 });
-                return if enemy_can_take_control { -5.0 } else { 35.0 };
+                if !enemy_can_take_control {
+                    return 35.0;
+                }
+                return if enemy_is_urgent { -30.0 } else { -5.0 };
             }
             return -30.0;
         };
@@ -931,6 +934,40 @@ mod tests {
                 vec![1, 14, 7, 20],  // 地主：对 3、对 9
                 vec![3],             // 主跑农民
                 vec![2, 15, 10, 23], // 支援农民：对 4、对 Q
+            ],
+            current: 2,
+            landlord: 0,
+            trick_owner: 1,
+            benchmark: classify(&[8, 21]), // 队友出对 10
+        };
+
+        assert!(state.rollout_action().is_none());
+    }
+
+    #[test]
+    fn rollout_trusts_teammate_pair_against_two_unpaired_enemy_cards() {
+        let state = SearchState {
+            hands: vec![
+                vec![1, 3],          // 地主：单 3、单 5
+                vec![6],             // 主跑农民
+                vec![2, 15, 10, 23], // 支援农民：对 4、对 Q
+            ],
+            current: 2,
+            landlord: 0,
+            trick_owner: 1,
+            benchmark: classify(&[8, 21]), // 队友出对 10
+        };
+
+        assert!(state.rollout_action().is_none());
+    }
+
+    #[test]
+    fn rollout_does_not_overtake_for_a_nonfinishing_enemy_bomb() {
+        let state = SearchState {
+            hands: vec![
+                vec![1, 14, 27, 40, 3, 16, 5, 18], // 地主：炸弹 3、对 5、对 7
+                vec![4],                           // 主跑农民
+                vec![2, 15, 10, 23],               // 支援农民：对 4、对 Q
             ],
             current: 2,
             landlord: 0,
