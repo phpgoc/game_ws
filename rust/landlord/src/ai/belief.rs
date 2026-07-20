@@ -781,6 +781,9 @@ fn sample_conditioned_hands(
 }
 
 fn choose_signal_bomb_cards(pool: &[i32], maximum_cards: usize, seed: u64) -> Option<Vec<i32>> {
+    if maximum_cards > pool.len() {
+        return None;
+    }
     let mut grouped = BTreeMap::<u8, Vec<i32>>::new();
     for &card in pool {
         grouped.entry(card_rank(card)).or_default().push(card);
@@ -790,7 +793,8 @@ fn choose_signal_bomb_cards(pool: &[i32], maximum_cards: usize, seed: u64) -> Op
         .filter(|(rank, cards)| *rank <= 15 && cards.len() == 4 && maximum_cards >= 4)
         .map(|(_, mut cards)| {
             cards.sort_unstable();
-            cards
+            let weight = combination(pool.len() - cards.len(), maximum_cards - cards.len());
+            (cards, weight)
         })
         .collect::<Vec<_>>();
     if maximum_cards >= 2
@@ -799,10 +803,31 @@ fn choose_signal_bomb_cards(pool: &[i32], maximum_cards: usize, seed: u64) -> Op
             pool.iter().find(|card| card_rank(**card) == 17),
         )
     {
-        choices.push(vec![*small_joker, *big_joker]);
+        let cards = vec![*small_joker, *big_joker];
+        let weight = combination(pool.len() - cards.len(), maximum_cards - cards.len());
+        choices.push((cards, weight));
     }
-    let index = ((seed ^ (seed >> 32)) as usize) % choices.len().max(1);
-    choices.into_iter().nth(index)
+    let total_weight = choices.iter().map(|(_, weight)| *weight).sum::<f64>();
+    if !total_weight.is_finite() || total_weight <= 0.0 {
+        return None;
+    }
+    let mut target = deterministic_unit(seed) * total_weight;
+    let mut fallback = None;
+    for (cards, weight) in choices {
+        target -= weight;
+        if target <= 0.0 {
+            return Some(cards);
+        }
+        fallback = Some(cards);
+    }
+    fallback
+}
+
+fn deterministic_unit(mut value: u64) -> f64 {
+    value = (value ^ (value >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    value ^= value >> 31;
+    (value >> 11) as f64 / (1_u64 << 53) as f64
 }
 
 fn world_likelihood(
@@ -1499,5 +1524,21 @@ mod tests {
                 .iter()
                 .all(|world| world.hands[&1] == vec![53, 54])
         );
+    }
+
+    #[test]
+    fn short_signal_hands_weight_the_rocket_by_compatible_completions() {
+        let pool = (1..=54).collect::<Vec<_>>();
+        let samples = 1_024_u64;
+        let rocket_samples = (0..samples)
+            .filter(|sample| {
+                choose_signal_bomb_cards(&pool, 8, sample.wrapping_mul(0x9E37_79B9_7F4A_7C15))
+                    .is_some_and(|cards| cards == vec![53, 54])
+            })
+            .count() as u64;
+
+        // 八张随机牌包含王炸的组合数远多于包含任意指定四张炸弹的组合数。
+        assert!(rocket_samples * 4 > samples * 3);
+        assert!(rocket_samples * 20 < samples * 19);
     }
 }
