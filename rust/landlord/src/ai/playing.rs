@@ -132,11 +132,7 @@ fn choose_lead(
             .unwrap_or(usize::MAX);
         match observation.relationship_to(next) {
             Relationship::Ally if next_cards == 1 => {
-                if let Some(single) = candidates
-                    .iter()
-                    .filter(|candidate| candidate.combo.kind == ComboKind::Single)
-                    .min_by_key(|candidate| candidate.combo.main_rank)
-                {
+                if let Some(single) = choose_feed_single(observation, belief, &candidates, next) {
                     return single.cards.clone();
                 }
             }
@@ -159,6 +155,39 @@ fn choose_lead(
     best_candidate(observation, belief, &candidates, true, false, farmer_runner)
         .map(|candidate| candidate.cards.clone())
         .unwrap_or_default()
+}
+
+fn choose_feed_single<'a>(
+    observation: &AiObservation,
+    belief: &CardBelief,
+    candidates: &'a [Candidate],
+    ally_position: usize,
+) -> Option<&'a Candidate> {
+    const MIN_FEED_SUCCESS_PROBABILITY: f64 = 0.35;
+
+    let ally = belief.opponents.get(&ally_position)?;
+    candidates
+        .iter()
+        .filter(|candidate| candidate.combo.kind == ComboKind::Single)
+        .filter_map(|candidate| {
+            let success_probability = ally.probability_can_beat(&candidate.combo);
+            if success_probability < MIN_FEED_SUCCESS_PROBABILITY {
+                return None;
+            }
+            let mut remaining = observation.hand.clone();
+            remove_cards(&mut remaining, &candidate.cards);
+            let score = success_probability * 100.0
+                - estimate_turns(&remaining) as f64 * 12.0
+                - power_structure_cost(&observation.hand, candidate)
+                - candidate.combo.main_rank as f64 * 0.25;
+            Some((candidate, score))
+        })
+        .max_by(|(left, left_score), (right, right_score)| {
+            left_score
+                .total_cmp(right_score)
+                .then_with(|| right.combo.main_rank.cmp(&left.combo.main_rank))
+        })
+        .map(|(candidate, _)| candidate)
 }
 
 fn choose_over_ally_if_required<'a>(
@@ -450,6 +479,54 @@ mod tests {
         AiObservation::from_state(&state, position).expect("observation")
     }
 
+    fn fully_known_support_lead(
+        own_hand: Vec<i32>,
+        ally_card: i32,
+        landlord_card: i32,
+    ) -> AiObservation {
+        let held = own_hand
+            .iter()
+            .copied()
+            .chain([ally_card, landlord_card])
+            .collect::<std::collections::HashSet<_>>();
+        let mut played = (1..=54)
+            .filter(|card| !held.contains(card))
+            .collect::<Vec<_>>();
+        let own_played = played.drain(..17 - own_hand.len()).collect::<Vec<_>>();
+        let ally_played = played.drain(..16).collect::<Vec<_>>();
+        let landlord_played = played;
+        assert_eq!(landlord_played.len(), 19);
+
+        let mut state = state_with_hands(&[
+            (0, vec![landlord_card]),
+            (1, own_hand),
+            (2, vec![ally_card]),
+        ]);
+        state.phase = LandlordPhase::Play;
+        state.landlord_position = Some(0);
+        state.current_position = 1;
+        state.last_play_position = 1;
+        state.hidden_cards = vec![landlord_card, landlord_played[0], landlord_played[1]];
+        state.play_history.extend([
+            LandlordPlayRecord {
+                position: 1,
+                cards: own_played,
+                benchmark: Vec::new(),
+            },
+            LandlordPlayRecord {
+                position: 2,
+                cards: ally_played,
+                benchmark: Vec::new(),
+            },
+            LandlordPlayRecord {
+                position: 0,
+                cards: landlord_played,
+                benchmark: Vec::new(),
+            },
+        ]);
+        AiObservation::from_state(&state, 1).expect("observation")
+    }
+
     #[test]
     fn farmer_search_overtakes_teammate_before_a_dangerous_landlord() {
         let observation = play_observation(
@@ -508,6 +585,32 @@ mod tests {
             Vec::new(),
         );
         assert_eq!(choose_play(&observation), vec![1]);
+    }
+
+    #[test]
+    fn support_farmer_preserves_a_bomb_when_feeding_one_card_teammate() {
+        let observation = fully_known_support_lead(
+            vec![1, 14, 27, 40, 2], // 炸弹 3333 和单张 4
+            12,                     // 队友最后一张 A
+            54,
+        );
+
+        assert_eq!(choose_heuristic_play(&observation), vec![2]);
+    }
+
+    #[test]
+    fn support_farmer_does_not_feed_a_single_teammate_cannot_beat() {
+        let observation = fully_known_support_lead(
+            vec![2, 15, 12], // 对 4 和单张 A
+            1,               // 队友最后一张 3
+            54,
+        );
+
+        let cards = choose_heuristic_play(&observation);
+        assert_eq!(
+            crate::core::play::classify(&cards).unwrap().kind,
+            ComboKind::Pair
+        );
     }
 
     #[test]
