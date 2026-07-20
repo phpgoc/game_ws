@@ -115,6 +115,14 @@ fn search_ai_beats_the_same_team_heuristic_without_search() {
         search_wins * 3 >= matches * 2,
         "belief search won only {search_wins}/{matches} matches against its strong heuristic ablation"
     );
+    assert!(
+        search_landlord_wins * 2 >= 24,
+        "search landlord won only {search_landlord_wins}/24 matches against heuristic farmers"
+    );
+    assert!(
+        search_farmer_wins * 4 >= 24 * 3,
+        "search farmers won only {search_farmer_wins}/24 matches against the heuristic landlord"
+    );
 }
 
 fn dealt_state(seed: u64) -> LandlordLoopState {

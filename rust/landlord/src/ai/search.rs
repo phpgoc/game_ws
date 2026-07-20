@@ -379,20 +379,29 @@ impl SearchState {
             };
         }
 
-        let enemy_can_beat = self
+        let mut enemy_can_beat = false;
+        let mut enemy_can_finish = false;
+        for (_, hand) in self
             .hands
             .iter()
             .enumerate()
             .filter(|(position, _)| !self.same_team(*position, self.current))
-            .any(|(_, hand)| {
-                all_candidates(hand)
-                    .iter()
-                    .any(|response| can_beat(&response.combo, &candidate.combo))
-            });
+        {
+            for response in all_candidates(hand) {
+                if !can_beat(&response.combo, &candidate.combo) {
+                    continue;
+                }
+                enemy_can_beat = true;
+                enemy_can_finish |= response.cards.len() == hand.len();
+            }
+        }
         if enemy_can_beat {
             score -= 12.0;
         } else {
             score += 10.0;
+        }
+        if enemy_can_finish {
+            score -= 100.0;
         }
 
         let next = (self.current + 1) % self.hands.len();

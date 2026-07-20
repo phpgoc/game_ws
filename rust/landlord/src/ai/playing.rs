@@ -243,7 +243,11 @@ fn candidate_score(
     remove_cards(&mut remaining, &candidate.cards);
     let turns = estimate_turns(&remaining);
     let risk = belief.probability_enemies_can_beat(&candidate.combo);
-    let mut score = candidate.cards.len() as f64 * 7.0 - turns as f64 * 15.0 - risk * 18.0;
+    let finish_risk = belief.probability_enemies_can_finish_over(&candidate.combo);
+    let mut score = candidate.cards.len() as f64 * 7.0
+        - turns as f64 * 15.0
+        - risk * 18.0
+        - finish_risk * if urgent { 120.0 } else { 80.0 };
 
     score += match candidate.combo.kind {
         ComboKind::Straight | ComboKind::StraightPairs => 10.0,
@@ -428,7 +432,7 @@ mod tests {
 
     use crate::core::play::ComboKind;
 
-    use super::choose_play;
+    use super::{choose_heuristic_play, choose_play};
 
     fn play_observation(
         position: usize,
@@ -578,6 +582,37 @@ mod tests {
         assert_ne!(
             crate::core::play::classify(&cards).unwrap().kind,
             ComboKind::Pair
+        );
+    }
+
+    #[test]
+    fn heuristic_farmer_does_not_feed_a_two_card_landlord_pair() {
+        let own_hand = vec![1, 14, 2]; // 一对 3 和单 4
+        let landlord_hand = vec![3, 16]; // 一对 5
+        let ally_hand = vec![54];
+        let held = own_hand
+            .iter()
+            .chain(&landlord_hand)
+            .chain(&ally_hand)
+            .copied()
+            .collect::<std::collections::HashSet<_>>();
+        let mut state = state_with_hands(&[(0, landlord_hand), (1, ally_hand), (2, own_hand)]);
+        state.phase = LandlordPhase::Play;
+        state.landlord_position = Some(0);
+        state.current_position = 2;
+        state.last_play_position = 2;
+        state.play_history.push(LandlordPlayRecord {
+            position: 0,
+            cards: (1..=54).filter(|card| !held.contains(card)).collect(),
+            benchmark: Vec::new(),
+        });
+        let observation = AiObservation::from_state(&state, 2).expect("observation");
+
+        let cards = choose_heuristic_play(&observation);
+        assert_eq!(
+            crate::core::play::classify(&cards).unwrap().kind,
+            ComboKind::Single,
+            "feeding a low pair lets the two-card landlord finish: {cards:?}"
         );
     }
 

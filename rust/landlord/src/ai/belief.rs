@@ -438,6 +438,54 @@ impl CardBelief {
         (1.0 - none).clamp(0.0, 1.0)
     }
 
+    pub fn probability_enemies_can_finish_over(&self, combo: &Combo) -> f64 {
+        let enemies = self
+            .opponents
+            .values()
+            .filter(|estimate| estimate.relationship == Relationship::Enemy)
+            .collect::<Vec<_>>();
+        if let Some(sample_count) = enemies.first().map(|estimate| estimate.samples.len())
+            && sample_count > 0
+            && enemies
+                .iter()
+                .all(|estimate| estimate.samples.len() == sample_count)
+        {
+            return (0..sample_count)
+                .filter(|sample_index| {
+                    enemies.iter().any(|estimate| {
+                        estimate.samples[*sample_index]
+                            .combos
+                            .iter()
+                            .any(|candidate| {
+                                combo_card_count(candidate) == estimate.hand_size
+                                    && can_beat(candidate, combo)
+                            })
+                    })
+                })
+                .map(|sample_index| enemies[0].samples[sample_index].weight)
+                .sum::<f64>()
+                .clamp(0.0, 1.0);
+        }
+
+        let mut none = 1.0;
+        for estimate in enemies {
+            let probability = estimate
+                .samples
+                .iter()
+                .filter(|sample| {
+                    sample.combos.iter().any(|candidate| {
+                        combo_card_count(candidate) == estimate.hand_size
+                            && can_beat(candidate, combo)
+                    })
+                })
+                .map(|sample| sample.weight)
+                .sum::<f64>()
+                .clamp(0.0, 1.0);
+            none *= 1.0 - probability;
+        }
+        (1.0 - none).clamp(0.0, 1.0)
+    }
+
     pub fn rank_is_control(&self, rank: u8) -> bool {
         ((rank + 1)..=LAST_RANK).all(|higher| self.remaining_outside_hand[higher as usize] == 0)
     }
@@ -510,6 +558,23 @@ impl CardBelief {
     pub fn farmer_runner_position(&self, observation: &AiObservation) -> Option<usize> {
         self.farmer_runner(observation)
             .map(|runner| runner.position)
+    }
+}
+
+fn combo_card_count(combo: &Combo) -> usize {
+    match combo.kind {
+        ComboKind::Rocket | ComboKind::Pair => 2,
+        ComboKind::Bomb | ComboKind::TripleSingle => 4,
+        ComboKind::Single => 1,
+        ComboKind::Triple => 3,
+        ComboKind::TriplePair => 5,
+        ComboKind::Straight => combo.sequence_len,
+        ComboKind::StraightPairs => combo.sequence_len * 2,
+        ComboKind::Plane => combo.sequence_len * 3,
+        ComboKind::PlaneWithSingles => combo.sequence_len * 4,
+        ComboKind::PlaneWithPairs => combo.sequence_len * 5,
+        ComboKind::FourWithTwoSingles => 6,
+        ComboKind::FourWithTwoPairs => 8,
     }
 }
 
