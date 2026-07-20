@@ -104,14 +104,7 @@ fn setup_request_room() -> (
     setup_request_room_with_configs(serde_json::json!({}))
 }
 
-fn setup_request_room_with_configs(
-    configs: serde_json::Value,
-) -> (
-    RoomService,
-    ShenyangMahjongGameHandler,
-    String,
-    LoopStateHandle,
-) {
+fn setup_unstarted_request_room() -> (RoomService, String) {
     let mut room_service = RoomService::default();
     for session_id in 1..=4 {
         room_service.connect(session_id);
@@ -129,6 +122,19 @@ fn setup_request_room_with_configs(
             build_shenyang_mahjong_settings,
         );
     }
+    let room_key = room_service.room_key_of(1).expect("room key");
+    (room_service, room_key)
+}
+
+fn setup_request_room_with_configs(
+    configs: serde_json::Value,
+) -> (
+    RoomService,
+    ShenyangMahjongGameHandler,
+    String,
+    LoopStateHandle,
+) {
+    let (mut room_service, room_key) = setup_unstarted_request_room();
     if configs.as_object().is_some_and(|items| !items.is_empty()) {
         let _ = room_service.handle_common_request(
             1,
@@ -140,7 +146,6 @@ fn setup_request_room_with_configs(
             build_shenyang_mahjong_settings,
         );
     }
-    let room_key = room_service.room_key_of(1).expect("room key");
     let common = room_service
         .room_common_state(&room_key)
         .expect("common state");

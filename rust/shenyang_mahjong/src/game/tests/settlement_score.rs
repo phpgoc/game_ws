@@ -98,6 +98,47 @@ fn default_room_self_draw_broadcasts_exponential_score_changes_to_clients() {
 }
 
 #[test]
+fn room_accepts_only_payment_caps_between_twenty_and_two_hundred() {
+    for (max_fan, expected_code, expected_config) in [
+        (20, WsResponseCode::OK, 20),
+        (200, WsResponseCode::OK, 200),
+        (19, WsResponseCode::ERROR_FORMAT, 50),
+        (201, WsResponseCode::ERROR_FORMAT, 50),
+    ] {
+        let (mut room_service, room_key) = setup_unstarted_request_room();
+        let dispatch = room_service
+            .handle_common_request(
+                1,
+                &ClientRequest {
+                    route: Routes::SETTING as i32,
+                    data: serde_json::json!({
+                        "current_configs": {
+                            "max_fan": max_fan
+                        }
+                    }),
+                },
+                GameId::SHENYANG_MAHJONG,
+                build_shenyang_mahjong_settings,
+            )
+            .expect("setting request should dispatch a response");
+
+        assert_eq!(
+            response_code(&dispatch, 1, Routes::SETTING),
+            Some(expected_code as i32),
+            "max_fan={max_fan} should return the expected setting response",
+        );
+        assert_eq!(
+            room_service
+                .room_configs(&room_key)
+                .expect("room configs")
+                .get("max_fan"),
+            Some(&expected_config),
+            "max_fan={max_fan} should leave the expected room config",
+        );
+    }
+}
+
+#[test]
 fn self_draw_broadcast_caps_six_and_seven_payment_fan_at_fifty() {
     let (room_service, _handler, room_key, loop_state) =
         setup_request_room_with_configs(serde_json::json!({
