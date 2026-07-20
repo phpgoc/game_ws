@@ -54,16 +54,18 @@ fn choose_play_with_search(observation: &AiObservation, use_search: bool) -> Vec
     let previous_relationship = observation.relationship_to(observation.last_play_position);
     let farmer_runner = belief.farmer_runner(observation);
     if !leading && previous_relationship == Relationship::Ally {
-        let tactical =
-            choose_over_ally_if_required(observation, &belief, &candidates, farmer_runner);
-        let Some(tactical) = tactical else {
-            return Vec::new();
-        };
+        // 残局中“是否压队友”可能取决于数轮之后的牌权。先让搜索同时比较过牌和
+        // 全部合法压牌；搜索未覆盖的中盘再使用下面的公开信息风险规则。
         if use_search
             && let Some(cards) = choose_endgame_play(observation, &belief, &candidates, false)
         {
             return cards;
         }
+        let tactical =
+            choose_over_ally_if_required(observation, &belief, &candidates, farmer_runner);
+        let Some(tactical) = tactical else {
+            return Vec::new();
+        };
         return tactical.cards.clone();
     }
     if use_search
@@ -445,12 +447,24 @@ mod tests {
     }
 
     #[test]
-    fn farmer_does_not_overtake_safe_teammate() {
+    fn farmer_search_overtakes_teammate_before_a_dangerous_landlord() {
         let observation = play_observation(
             2,
             0,
             &[(0, vec![8, 9, 10]), (1, vec![5, 18]), (2, vec![6, 19, 32])],
             1,
+            vec![5],
+        );
+        assert!(!choose_play(&observation).is_empty());
+    }
+
+    #[test]
+    fn farmer_does_not_overtake_after_landlord_has_already_passed() {
+        let observation = play_observation(
+            1,
+            0,
+            &[(0, vec![8, 9, 10]), (1, vec![6, 19, 32]), (2, vec![5, 18])],
+            2,
             vec![5],
         );
         assert!(choose_play(&observation).is_empty());

@@ -5,11 +5,11 @@ use std::{
 
 use crate::core::play::{Combo, ComboKind, card_rank, classify};
 
-const LOOKAHEAD_TURN_CARD_LIMIT: usize = 10;
-const LOOKAHEAD_TURN_CACHE_LIMIT: usize = 50_000;
+const EXACT_TURN_CARD_LIMIT: usize = 12;
+const EXACT_TURN_CACHE_LIMIT: usize = 50_000;
 
 thread_local! {
-    static LOOKAHEAD_TURN_CACHE: RefCell<HashMap<u64, usize>> = RefCell::new(HashMap::new());
+    static EXACT_TURN_CACHE: RefCell<HashMap<u64, usize>> = RefCell::new(HashMap::new());
 }
 
 #[derive(Clone, Debug)]
@@ -68,8 +68,8 @@ pub fn estimate_turns_from_candidates(hand: &[i32], candidates: &[Candidate]) ->
 }
 
 fn estimate_turns_with_candidates(hand: &[i32], initial_candidates: Option<&[Candidate]>) -> usize {
-    if hand.len() <= LOOKAHEAD_TURN_CARD_LIMIT {
-        return lookahead_turns(hand);
+    if hand.len() <= EXACT_TURN_CARD_LIMIT {
+        return exact_turns(hand);
     }
     greedy_turns(hand, initial_candidates)
 }
@@ -112,17 +112,17 @@ fn greedy_turns(hand: &[i32], initial_candidates: Option<&[Candidate]>) -> usize
     turns
 }
 
-fn lookahead_turns(hand: &[i32]) -> usize {
+fn exact_turns(hand: &[i32]) -> usize {
     if hand.is_empty() {
         return 0;
     }
     let key = rank_count_key(hand);
-    if let Some(cached) = LOOKAHEAD_TURN_CACHE.with(|cache| cache.borrow().get(&key).copied()) {
+    if let Some(cached) = EXACT_TURN_CACHE.with(|cache| cache.borrow().get(&key).copied()) {
         return cached;
     }
 
     let candidates = all_candidates(hand);
-    let mut best = greedy_turns(hand, Some(&candidates));
+    let mut best = hand.len();
     for candidate in candidates {
         if candidate.cards.len() == hand.len() {
             best = 1;
@@ -134,15 +134,15 @@ fn lookahead_turns(hand: &[i32]) -> usize {
                 remaining.remove(index);
             }
         }
-        best = best.min(1 + greedy_turns(&remaining, None));
+        best = best.min(1 + exact_turns(&remaining));
         if best == 2 {
             // 不是一次能走完已经在上方排除，二手是当前状态的理论下界。
             break;
         }
     }
-    LOOKAHEAD_TURN_CACHE.with(|cache| {
+    EXACT_TURN_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
-        if cache.len() >= LOOKAHEAD_TURN_CACHE_LIMIT {
+        if cache.len() >= EXACT_TURN_CACHE_LIMIT {
             cache.clear();
         }
         cache.insert(key, best);
@@ -413,11 +413,34 @@ mod tests {
     }
 
     #[test]
-    fn lookahead_turn_estimate_finds_a_non_greedy_partition() {
+    fn exact_turn_estimate_finds_a_non_greedy_partition() {
         let hand = vec![1, 14, 15, 29, 33, 40, 45, 50, 53, 54];
 
         assert_eq!(super::greedy_turns(&hand, None), 7);
-        assert_eq!(super::lookahead_turns(&hand), 6);
+        assert_eq!(super::exact_turns(&hand), 6);
         assert_eq!(super::estimate_turns(&hand), 6);
+    }
+
+    #[test]
+    fn exact_turn_estimate_looks_beyond_the_first_partition() {
+        fn one_ply_turns(hand: &[i32]) -> usize {
+            let candidates = super::all_candidates(hand);
+            let mut best = super::greedy_turns(hand, Some(&candidates));
+            for candidate in candidates {
+                let mut remaining = hand.to_vec();
+                for card in candidate.cards {
+                    let index = remaining.iter().position(|held| *held == card).unwrap();
+                    remaining.remove(index);
+                }
+                best = best.min(1 + super::greedy_turns(&remaining, None));
+            }
+            best
+        }
+
+        let hand = vec![2, 7, 8, 10, 14, 23, 34, 36, 44, 47, 53, 54];
+
+        assert_eq!(one_ply_turns(&hand), 6);
+        assert_eq!(super::exact_turns(&hand), 5);
+        assert_eq!(super::estimate_turns(&hand), 5);
     }
 }
