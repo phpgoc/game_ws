@@ -4,7 +4,7 @@ use crate::core::play::{ComboKind, can_beat, card_rank, classify};
 
 use super::{
     AiObservation, CardBelief, FarmerRunnerEstimate, Relationship,
-    candidates::{Candidate, all_candidates, estimate_turns},
+    candidates::{Candidate, all_candidates, estimate_turns, power_structure_cost},
     search::choose_endgame_play,
 };
 
@@ -186,7 +186,7 @@ fn choose_feed_single<'a>(
             remove_cards(&mut remaining, &candidate.cards);
             let score = success_probability * 100.0
                 - estimate_turns(&remaining) as f64 * 12.0
-                - power_structure_cost(&observation.hand, candidate)
+                - f64::from(power_structure_cost(&observation.hand, candidate))
                 - candidate.combo.main_rank as f64 * 0.25;
             Some((candidate, score))
         })
@@ -325,7 +325,8 @@ fn candidate_score(
         high_cards_spent
     };
     score -= attachment_cost(candidate) * if urgent { 0.08 } else { 0.28 };
-    score -= power_structure_cost(&observation.hand, candidate) * if urgent { 0.28 } else { 1.0 };
+    score -= f64::from(power_structure_cost(&observation.hand, candidate))
+        * if urgent { 0.28 } else { 1.0 };
 
     if !leading {
         // 管牌时同牌型优先用最小代价，给后续回合保留控制牌。
@@ -413,39 +414,6 @@ fn attachment_cost(candidate: &Candidate) -> f64 {
         })
         .map(f64::from)
         .sum()
-}
-
-fn power_structure_cost(hand: &[i32], candidate: &Candidate) -> f64 {
-    let mut held = [0_u8; 18];
-    let mut used = [0_u8; 18];
-    for &card in hand {
-        held[card_rank(card) as usize] += 1;
-    }
-    for &card in &candidate.cards {
-        used[card_rank(card) as usize] += 1;
-    }
-
-    let mut cost = 0.0;
-    for rank in 3..=15 {
-        if held[rank] != 4 || used[rank] == 0 {
-            continue;
-        }
-        cost += if candidate.combo.kind == ComboKind::Bomb && used[rank] == 4 {
-            0.0
-        } else if used[rank] == 4 {
-            18.0
-        } else {
-            24.0 + f64::from(used[rank]) * 2.0
-        };
-    }
-    if held[16] == 1
-        && held[17] == 1
-        && candidate.combo.kind != ComboKind::Rocket
-        && (used[16] == 1 || used[17] == 1)
-    {
-        cost += 22.0;
-    }
-    cost
 }
 
 fn is_power_combo(candidate: &Candidate) -> bool {

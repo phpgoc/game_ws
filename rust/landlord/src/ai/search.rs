@@ -4,7 +4,7 @@ use crate::core::play::{Combo, ComboKind, can_beat, card_rank, classify};
 
 use super::{
     AiObservation, CardBelief,
-    candidates::{Candidate, all_candidates, estimate_turns},
+    candidates::{Candidate, all_candidates, estimate_turns, power_structure_cost},
 };
 
 const SEARCH_CARD_LIMIT: usize = 14;
@@ -127,7 +127,8 @@ fn root_action_tiebreak(
             14 => 1,
             _ => 0,
         })
-        .sum();
+        .sum::<u32>()
+        + power_structure_cost(hand, candidate);
     let power_cost = u8::from(matches!(
         candidate.combo.kind,
         ComboKind::Bomb | ComboKind::Rocket
@@ -424,6 +425,8 @@ impl SearchState {
         }
         let turns = estimate_turns(&remaining);
         let mut score = candidate.cards.len() as f64 * 7.0 - turns as f64 * 16.0;
+        score -= f64::from(power_structure_cost(&self.hands[self.current], candidate))
+            * if enemy_is_urgent { 0.28 } else { 1.0 };
         if self.benchmark.is_some() {
             score -= candidate.combo.main_rank as f64 * 0.65;
         }
@@ -802,6 +805,51 @@ mod tests {
         assert!(
             root_action_tiebreak(&hand, Some(low_kicker), true)
                 > root_action_tiebreak(&hand, Some(high_kicker), true)
+        );
+    }
+
+    #[test]
+    fn equal_value_tiebreak_preserves_a_bomb_outside_a_straight() {
+        let hand = vec![1, 14, 27, 40, 2, 3, 4, 5, 6]; // 3333 + 45678
+        let candidates = all_candidates(&hand);
+        let preserving = candidates
+            .iter()
+            .find(|candidate| candidate.cards == vec![2, 3, 4, 5, 6])
+            .expect("straight preserving bomb");
+        let splitting = candidates
+            .iter()
+            .find(|candidate| candidate.cards == vec![1, 2, 3, 4, 5])
+            .expect("straight splitting bomb");
+
+        assert!(
+            root_action_tiebreak(&hand, Some(preserving), true)
+                > root_action_tiebreak(&hand, Some(splitting), true)
+        );
+    }
+
+    #[test]
+    fn rollout_prefers_an_equivalent_straight_that_preserves_a_bomb() {
+        let hand = vec![1, 14, 27, 40, 2, 3, 4, 5, 6]; // 3333 + 45678
+        let candidates = all_candidates(&hand);
+        let preserving = candidates
+            .iter()
+            .find(|candidate| candidate.cards == vec![2, 3, 4, 5, 6])
+            .expect("straight preserving bomb");
+        let splitting = candidates
+            .iter()
+            .find(|candidate| candidate.cards == vec![1, 2, 3, 4, 5])
+            .expect("straight splitting bomb");
+        let state = SearchState {
+            hands: vec![hand, vec![7, 20, 33], vec![8, 21, 34]],
+            current: 0,
+            landlord: 0,
+            trick_owner: 0,
+            benchmark: None,
+        };
+
+        assert!(
+            state.rollout_action_score(Some(preserving))
+                > state.rollout_action_score(Some(splitting))
         );
     }
 }

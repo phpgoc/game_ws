@@ -18,6 +18,39 @@ pub struct Candidate {
     pub combo: Combo,
 }
 
+pub(super) fn power_structure_cost(hand: &[i32], candidate: &Candidate) -> u32 {
+    let mut held = [0_u8; 18];
+    let mut used = [0_u8; 18];
+    for &card in hand {
+        held[card_rank(card) as usize] += 1;
+    }
+    for &card in &candidate.cards {
+        used[card_rank(card) as usize] += 1;
+    }
+
+    let mut cost = 0;
+    for rank in 3..=15 {
+        if held[rank] != 4 || used[rank] == 0 {
+            continue;
+        }
+        cost += if candidate.combo.kind == ComboKind::Bomb && used[rank] == 4 {
+            0
+        } else if used[rank] == 4 {
+            18
+        } else {
+            24 + u32::from(used[rank]) * 2
+        };
+    }
+    if held[16] == 1
+        && held[17] == 1
+        && candidate.combo.kind != ComboKind::Rocket
+        && (used[16] == 1 || used[17] == 1)
+    {
+        cost += 22;
+    }
+    cost
+}
+
 pub fn all_candidates(hand: &[i32]) -> Vec<Candidate> {
     let grouped = group_by_rank(hand);
     let mut candidates = Vec::new();
