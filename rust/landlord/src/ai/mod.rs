@@ -61,7 +61,6 @@ impl AiObservation {
         let ai_bomb_signal_position = state.ai_bomb_signal_position.filter(|signal_position| {
             *signal_position != position
                 && state.is_ai_controlled_position(position)
-                && state.is_ai_controlled_position(*signal_position)
                 && state
                     .landlord_position
                     .is_some_and(|landlord| landlord != position && landlord != *signal_position)
@@ -198,7 +197,7 @@ mod tests {
         state.ai_bomb_signal_position = Some(1);
         {
             let mut common = state.base.lock().unwrap();
-            common.mark_ai_position(1);
+            common.mark_ai_takeover_position(1);
             common.mark_ai_position(2);
         }
 
@@ -221,12 +220,28 @@ mod tests {
             None
         );
 
+        state.base.lock().unwrap().clear_ai_takeover_position(1);
+        assert_eq!(
+            AiObservation::from_state(&state, 2)
+                .expect("AI farmer observation after teammate resumes")
+                .ai_bomb_signal_position,
+            Some(1)
+        );
+
         state.base.lock().unwrap().ai_positions.remove(&2);
         assert_eq!(
             AiObservation::from_state(&state, 2)
                 .expect("human farmer observation")
                 .ai_bomb_signal_position,
             None
+        );
+
+        state.base.lock().unwrap().mark_ai_takeover_position(2);
+        assert_eq!(
+            AiObservation::from_state(&state, 2)
+                .expect("AI takeover farmer observation")
+                .ai_bomb_signal_position,
+            Some(1)
         );
     }
 }
