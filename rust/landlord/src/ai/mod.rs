@@ -12,10 +12,8 @@ use share_type_public::LandlordPhase;
 
 pub use belief::{CardBelief, FarmerRunnerEstimate, OpponentEstimate};
 
-use crate::core::play::ComboKind;
+use crate::core::play::card_rank;
 use crate::game_state::{LandlordLoopState, LandlordPlayRecord};
-
-use self::candidates::all_candidates;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Relationship {
@@ -116,9 +114,11 @@ pub fn choose_play(state: &LandlordLoopState, position: usize) -> Vec<i32> {
 }
 
 pub fn hand_has_bomb(hand: &[i32]) -> bool {
-    all_candidates(hand)
-        .iter()
-        .any(|candidate| matches!(candidate.combo.kind, ComboKind::Bomb | ComboKind::Rocket))
+    let mut counts = [0_u8; 18];
+    for &card in hand {
+        counts[card_rank(card) as usize] += 1;
+    }
+    counts[3..=15].contains(&4) || (counts[16] == 1 && counts[17] == 1)
 }
 
 #[cfg(test)]
@@ -248,5 +248,14 @@ mod tests {
                 .ai_bomb_signal_position,
             Some(1)
         );
+    }
+
+    #[test]
+    fn bomb_detection_covers_four_of_a_kind_and_the_rocket() {
+        assert!(super::hand_has_bomb(&[1, 14, 27, 40]));
+        assert!(super::hand_has_bomb(&[13, 26, 39, 52]));
+        assert!(super::hand_has_bomb(&[53, 54]));
+        assert!(!super::hand_has_bomb(&[1, 14, 27, 53]));
+        assert!(!super::hand_has_bomb(&[1, 14, 27, 2, 54]));
     }
 }

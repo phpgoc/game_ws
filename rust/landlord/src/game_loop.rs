@@ -587,11 +587,11 @@ fn should_signal_ai_bomb(state: &LandlordLoopState, position: usize, planned_pla
         && state.play_history.len() >= AI_BOMB_SIGNAL_MIN_HISTORY
         && !state.last_play.is_empty()
         && state.last_play_position != position
+        && planned_play.is_empty()
         && state
             .hands
             .get(&position)
             .is_some_and(|hand| hand_has_bomb(hand))
-        && planned_play.is_empty()
 }
 
 fn plan_ai_action(state: &LandlordLoopState, position: usize) -> PlannedAiAction {
