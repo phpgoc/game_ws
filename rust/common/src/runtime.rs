@@ -87,6 +87,10 @@ pub trait GameHandler: Send + 'static {
     fn authorize_ai_takeover(&self, _official_session_id: String) -> MembershipAuthorization {
         Box::pin(async { false })
     }
+
+    fn supports_ai_players(&self) -> bool {
+        false
+    }
     /// 创建游戏状态。
     /// 在首个 JOIN 建房成功后立即调用，并将当前成员 populate 进去。
     fn build_game_state(&self) -> Box<dyn crate::game_state::GameState>;
@@ -440,7 +444,9 @@ where
     info!(service = config.service_name, listen = %format!(" ws://{listen_addr}"), "ws server started");
 
     let senders: SessionSenders = Arc::new(Mutex::new(HashMap::new()));
-    let room_service = Arc::new(Mutex::new(RoomService::default()));
+    let room_service = Arc::new(Mutex::new(RoomService::with_ai_players_enabled(
+        handler.supports_ai_players(),
+    )));
     let stats = RuntimeStats {
         room_service: Arc::clone(&room_service),
         senders: Arc::clone(&senders),

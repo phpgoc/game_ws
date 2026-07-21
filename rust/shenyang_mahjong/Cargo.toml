@@ -6,7 +6,7 @@ edition = "2024"
 [features]
 default = []
 android-jni = []
-official = ["dep:data"]
+official = []
 
 [lib]
 crate-type = ["rlib", "cdylib"]
@@ -14,7 +14,6 @@ doctest = false
 
 [dependencies]
 anyhow = "1"
-data = { path = "../../../data", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 share_type_public = { path = "../../share_type_public" }

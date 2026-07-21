@@ -1,13 +1,14 @@
 #![cfg(not(feature = "official"))]
 
-use std::{
-    net::TcpListener,
-    time::{Duration, Instant},
-};
+use std::{net::TcpListener, time::Duration};
+#[cfg(feature = "official")]
+use std::time::Instant;
 
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
-use share_type_public::{GameId, Routes, WsCode, WsResponseCode};
+use share_type_public::{GameId, Routes, WsResponseCode};
+#[cfg(feature = "official")]
+use share_type_public::WsCode;
 use shenyang_mahjong::game::ShenyangMahjongGameHandler;
 use tokio::net::TcpListener as TokioTcpListener;
 use tokio_tungstenite::{WebSocketStream, connect_async, tungstenite::Message};
@@ -15,6 +16,7 @@ use ws_common::{RuntimeConfig, run_room_runtime};
 
 type Client = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
+#[cfg(feature = "official")]
 async fn close_client(client: &mut Client) {
     client
         .send(Message::Close(None))
@@ -54,6 +56,7 @@ async fn join(client: &mut Client, name: &str, password: &str) -> Value {
     .await
 }
 
+#[cfg(feature = "official")]
 fn my_tiles(event: &Value) -> Vec<i32> {
     event["data"]["my_tiles"]
         .as_array()
@@ -105,6 +108,48 @@ async fn send_request(client: &mut Client, route: i32, data: Value) {
         .expect("send request");
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn shenyang_mahjong_nonofficial_rejects_ai_management() {
+    let port = free_port();
+    let listen_addr = format!("127.0.0.1:{port}");
+    let url = format!("ws://{listen_addr}");
+    let server = tokio::spawn(run_room_runtime(
+        RuntimeConfig {
+            service_name: "shenyang-mahjong-no-ai-test",
+            listen_addr,
+            idle_timeout: Duration::from_secs(30),
+            heartbeat_interval: Duration::from_secs(30),
+        },
+        ShenyangMahjongGameHandler::default(),
+    ));
+    for _ in 0..50 {
+        if TokioTcpListener::bind(("127.0.0.1", port)).await.is_err() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    let mut owner = connect_client(&url).await;
+    let _ = join(&mut owner, "owner", "mahjong-no-ai-room").await;
+    for (route, data) in [
+        (Routes::ADD_AI, json!({ "count": 1 })),
+        (Routes::REMOVE_AI, json!({ "position": 1 })),
+    ] {
+        send_request(&mut owner, route as i32, data).await;
+        let response = recv_until(&mut owner, "AI management rejected", |value| {
+            value.get("route").and_then(Value::as_i64) == Some(route as i64)
+        })
+        .await;
+        assert_eq!(
+            response.get("code").and_then(Value::as_i64),
+            Some(WsResponseCode::NO_PERMISSION as i64)
+        );
+    }
+
+    server.abort();
+}
+
+#[cfg(feature = "official")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn shenyang_mahjong_last_human_quit_clears_ai_room() {
     let port = free_port();
@@ -166,6 +211,7 @@ async fn shenyang_mahjong_last_human_quit_clears_ai_room() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[cfg(feature = "official")]
 async fn shenyang_mahjong_nonofficial_away_owner_uses_timeout_fallback() {
     let port = free_port();
     let listen_addr = format!("127.0.0.1:{port}");
@@ -286,6 +332,7 @@ async fn shenyang_mahjong_nonofficial_away_owner_uses_timeout_fallback() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[cfg(feature = "official")]
 async fn shenyang_mahjong_nonofficial_disconnected_owner_uses_timeout_fallback() {
     let port = free_port();
     let listen_addr = format!("127.0.0.1:{port}");
@@ -403,6 +450,7 @@ async fn shenyang_mahjong_nonofficial_disconnected_owner_uses_timeout_fallback()
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[cfg(feature = "official")]
 async fn shenyang_mahjong_owner_can_start_with_ai_and_receive_ai_play() {
     let port = free_port();
     let listen_addr = format!("127.0.0.1:{port}");

@@ -6,14 +6,13 @@ edition = "2024"
 [features]
 default = []
 android-jni = []
-official = ["dep:data"]
+official = []
 
 [lib]
 crate-type = ["rlib", "cdylib"]
 
 [dependencies]
 anyhow = "1"
-data = { path = "../../../data", optional = true }
 serde_json = "1"
 share_type_public = { path = "../../share_type_public" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }

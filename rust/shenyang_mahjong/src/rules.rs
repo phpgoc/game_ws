@@ -869,14 +869,17 @@ pub(crate) fn shenyang_payment_fan(
         }
 }
 
+#[cfg_attr(not(feature = "official"), allow(dead_code))]
 pub(crate) fn shenyang_fan_reaches_score_cap(fan: i32, score_cap: i32) -> bool {
     score_cap > 0 && shenyang_score_for_fan(fan) >= score_cap
 }
 
+#[cfg_attr(not(feature = "official"), allow(dead_code))]
 pub(crate) fn shenyang_fan_score_exceeds_half_cap(fan: i32, score_cap: i32) -> bool {
     score_cap > 0 && shenyang_score_for_fan(fan) > score_cap / 2
 }
 
+#[cfg_attr(not(feature = "official"), allow(dead_code))]
 pub(crate) fn shenyang_fan_needed_for_score_cap(score_cap: i32) -> i32 {
     if score_cap <= 1 {
         return 0;

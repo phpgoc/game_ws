@@ -1338,6 +1338,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "official")]
     fn member_timeout_marks_away_and_uses_ai_for_the_same_action() {
         let mut state = state_with_ai(2);
         state.phase = LandlordPhase::Play;

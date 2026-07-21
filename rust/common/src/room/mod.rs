@@ -42,6 +42,7 @@ pub struct RoomService {
     sessions: HashMap<SessionId, SessionState>,
     rooms: HashMap<String, RoomEntry>,
     next_ai_sequence: u64,
+    ai_players_enabled: bool,
 }
 
 #[derive(Debug, Default)]
@@ -75,6 +76,13 @@ impl std::fmt::Debug for RoomEntry {
 }
 
 impl RoomService {
+    pub fn with_ai_players_enabled(ai_players_enabled: bool) -> Self {
+        Self {
+            ai_players_enabled,
+            ..Self::default()
+        }
+    }
+
     fn allocate_ai_session_id(&mut self) -> SessionId {
         loop {
             self.next_ai_sequence = self.next_ai_sequence.saturating_add(1);
@@ -305,6 +313,13 @@ impl RoomService {
     }
 
     fn handle_add_ai_request(&mut self, session_id: SessionId, data: Value) -> Dispatch {
+        if !self.ai_players_enabled {
+            return self.error_response(
+                session_id,
+                Routes::ADD_AI as i32,
+                WsResponseCode::NO_PERMISSION,
+            );
+        }
         let mut dispatch = Dispatch::default();
         if !self.require_room_membership(session_id, Routes::ADD_AI as i32, &mut dispatch) {
             return dispatch;
@@ -454,6 +469,13 @@ impl RoomService {
     }
 
     fn handle_remove_ai_request(&mut self, session_id: SessionId, data: Value) -> Dispatch {
+        if !self.ai_players_enabled {
+            return self.error_response(
+                session_id,
+                Routes::REMOVE_AI as i32,
+                WsResponseCode::NO_PERMISSION,
+            );
+        }
         let mut dispatch = Dispatch::default();
         if !self.require_room_membership(session_id, Routes::REMOVE_AI as i32, &mut dispatch) {
             return dispatch;

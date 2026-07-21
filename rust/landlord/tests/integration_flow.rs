@@ -1,10 +1,8 @@
 #![cfg(not(feature = "official"))]
 
-use std::{
-    collections::HashMap,
-    net::TcpListener,
-    time::{Duration, Instant},
-};
+use std::{collections::HashMap, net::TcpListener, time::Duration};
+#[cfg(feature = "official")]
+use std::time::Instant;
 
 use futures_util::{SinkExt, StreamExt};
 use landlord::game::LandlordGameHandler;
@@ -59,6 +57,49 @@ async fn join(client: &mut Client, name: &str, password: &str) -> Value {
     .await
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn landlord_nonofficial_rejects_ai_management() {
+    let port = free_port();
+    let listen_addr = format!("127.0.0.1:{port}");
+    let url = format!("ws://{listen_addr}");
+    let server = tokio::spawn(run_room_runtime(
+        RuntimeConfig {
+            service_name: "landlord-no-ai-test",
+            listen_addr,
+            idle_timeout: Duration::from_secs(30),
+            heartbeat_interval: Duration::from_secs(30),
+        },
+        LandlordGameHandler::default(),
+    ));
+
+    for _ in 0..50 {
+        if TokioTcpListener::bind(("127.0.0.1", port)).await.is_err() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    let mut owner = connect_client(&url).await;
+    let _ = join(&mut owner, "owner", "landlord-no-ai-room").await;
+    for (route, data) in [
+        (Routes::ADD_AI, json!({ "count": 1 })),
+        (Routes::REMOVE_AI, json!({ "position": 1 })),
+    ] {
+        send_request(&mut owner, route as i32, data).await;
+        let response = recv_until(&mut owner, "AI management rejected", |value| {
+            value.get("route").and_then(Value::as_i64) == Some(route as i64)
+        })
+        .await;
+        assert_eq!(
+            response.get("code").and_then(Value::as_i64),
+            Some(WsResponseCode::NO_PERMISSION as i64)
+        );
+    }
+
+    server.abort();
+}
+
+#[cfg(feature = "official")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn landlord_ai_seats_call_and_play_without_becoming_away() {
     let port = free_port();

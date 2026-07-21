@@ -1030,6 +1030,7 @@ mod tests {
     use share_type_public::{WsJoinRequest, WsJoinResponse};
 
     #[test]
+    #[cfg(feature = "official")]
     fn ai_positions_raise_premium_hand_instead_of_stale_strategy() {
         let handler = HoldemGameHandler::default();
         let mut room = RoomService::default();

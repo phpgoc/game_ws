@@ -236,6 +236,7 @@ pub fn removed_tractor_ranks(removed_rank_count: usize) -> Vec<TractorRank> {
 }
 
 /// Two seats are partners when they sit across from each other (0&2, 1&3).
+#[cfg(feature = "official")]
 pub(crate) fn same_team(a: usize, b: usize) -> bool {
     a % 2 == b % 2
 }
@@ -1273,6 +1274,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "official")]
     fn later_round_trump_is_selected_only_by_the_established_dealer() {
         let mut state = test_state();
         state.phase = TractorPhase::Deal;
@@ -1361,6 +1363,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "official")]
     fn strong_ai_pair_can_counter_a_human_single_after_hand_evaluation() {
         let mut state = test_state();
         state.phase = TractorPhase::Deal;

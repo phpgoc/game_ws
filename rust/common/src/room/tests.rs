@@ -16,6 +16,10 @@ struct NoAcceptState {
     common: Arc<Mutex<CommonGameState>>,
 }
 
+fn room_service_with_ai() -> RoomService {
+    RoomService::with_ai_players_enabled(true)
+}
+
 fn common_request(
     service: &mut RoomService,
     session_id: u64,
@@ -73,7 +77,7 @@ fn has_response(dispatch: &Dispatch, route: Routes, code: WsResponseCode) -> boo
 
 #[test]
 fn ai_name_prefix_matches_game_family() {
-    let service = RoomService::default();
+    let service = room_service_with_ai();
 
     assert_eq!(
         service.next_ai_name("texas-room", GameId::TEXAS_HOLD_EM, 1),
@@ -100,7 +104,7 @@ fn every_non_p2p_game_id_can_add_ai_through_common_room_service() {
         GameId::SHORT_DECK_HOLD_EM,
         GameId::OMAHA_HOLD_EM,
     ] {
-        let mut service = RoomService::default();
+        let mut service = room_service_with_ai();
         let room_key = format!("ai-room-{}", game_id as i32);
         let joined = join_room(&mut service, 1, "owner", &room_key, game_id);
         assert!(has_response(&joined, Routes::JOIN, WsResponseCode::JOINED));
@@ -124,8 +128,40 @@ fn every_non_p2p_game_id_can_add_ai_through_common_room_service() {
 }
 
 #[test]
-fn ai_counts_toward_capacity_and_removal_frees_the_seat_for_a_human() {
+fn default_room_service_rejects_ai_management() {
     let mut service = RoomService::default();
+    let _ = join_room(&mut service, 1, "owner", "no-ai-room", GameId::LANDLORD);
+
+    let added = common_request(
+        &mut service,
+        1,
+        GameId::LANDLORD,
+        Routes::ADD_AI,
+        serde_json::json!({ "count": 1 }),
+    );
+    assert!(has_response(
+        &added,
+        Routes::ADD_AI,
+        WsResponseCode::NO_PERMISSION
+    ));
+
+    let removed = common_request(
+        &mut service,
+        1,
+        GameId::LANDLORD,
+        Routes::REMOVE_AI,
+        serde_json::json!({ "position": 1 }),
+    );
+    assert!(has_response(
+        &removed,
+        Routes::REMOVE_AI,
+        WsResponseCode::NO_PERMISSION
+    ));
+}
+
+#[test]
+fn ai_counts_toward_capacity_and_removal_frees_the_seat_for_a_human() {
+    let mut service = room_service_with_ai();
     let _ = join_room(&mut service, 1, "owner", "capacity-room", GameId::LANDLORD);
     let added = common_request(
         &mut service,
@@ -172,7 +208,7 @@ fn ai_counts_toward_capacity_and_removal_frees_the_seat_for_a_human() {
 
 #[test]
 fn only_owner_can_manage_ai_and_only_before_start() {
-    let mut service = RoomService::default();
+    let mut service = room_service_with_ai();
     let _ = join_room(&mut service, 1, "owner", "remove-room", GameId::LANDLORD);
     let _ = join_room(&mut service, 2, "member", "remove-room", GameId::LANDLORD);
     let member_add = common_request(
@@ -245,7 +281,7 @@ fn only_owner_can_manage_ai_and_only_before_start() {
     ));
     assert!(common.lock().unwrap().is_ai_position(2));
 
-    let mut started_service = RoomService::default();
+    let mut started_service = room_service_with_ai();
     let _ = join_room(
         &mut started_service,
         10,
@@ -280,7 +316,7 @@ fn only_owner_can_manage_ai_and_only_before_start() {
 
 #[test]
 fn clear_game_state_if_same_restores_room_acceptance() {
-    let mut service = RoomService::default();
+    let mut service = room_service_with_ai();
     service.connect(1);
     service.connect(2);
     service.connect(3);
@@ -342,7 +378,7 @@ fn clear_game_state_if_same_restores_room_acceptance() {
 
 #[test]
 fn clearing_game_state_preserves_room_members() {
-    let mut service = RoomService::default();
+    let mut service = room_service_with_ai();
     service.connect(1);
     service.connect(2);
 
@@ -404,7 +440,7 @@ fn clearing_game_state_preserves_room_members() {
 
 #[test]
 fn disband_allows_join_recreate_room() {
-    let mut service = RoomService::default();
+    let mut service = room_service_with_ai();
     service.connect(1);
     service.connect(2);
     service.connect(3);
@@ -462,7 +498,7 @@ fn disband_allows_join_recreate_room() {
 
 #[test]
 fn disconnected_name_can_rejoin_same_position() {
-    let mut service = RoomService::default();
+    let mut service = room_service_with_ai();
     service.connect(1);
     service.connect(2);
     service.connect(3);
@@ -545,7 +581,7 @@ fn disconnected_name_can_rejoin_same_position() {
 
 #[test]
 fn different_name_replaces_disconnected_position_when_new_seats_are_locked() {
-    let mut service = RoomService::default();
+    let mut service = room_service_with_ai();
     let _ = join_room(&mut service, 1, "owner", "locked-room", GameId::LANDLORD);
     let _ = common_request(
         &mut service,
@@ -618,7 +654,7 @@ fn different_name_replaces_disconnected_position_when_new_seats_are_locked() {
 
 #[test]
 fn disconnect_removes_room_only_after_last_connected_human_leaves() {
-    let mut service = RoomService::default();
+    let mut service = room_service_with_ai();
     let _ = join_room(&mut service, 1, "u1", "disconnect-room", GameId::LANDLORD);
     let _ = join_room(&mut service, 2, "u2", "disconnect-room", GameId::LANDLORD);
     let common = service
@@ -663,7 +699,7 @@ fn disconnect_removes_room_only_after_last_connected_human_leaves() {
 
 #[test]
 fn authorized_disconnect_marks_the_retained_seat_for_ai_takeover() {
-    let mut service = RoomService::default();
+    let mut service = room_service_with_ai();
     let _ = join_room(&mut service, 1, "u1", "takeover-room", GameId::LANDLORD);
     let _ = join_room(&mut service, 2, "u2", "takeover-room", GameId::LANDLORD);
     let common = service
@@ -689,7 +725,7 @@ fn authorized_disconnect_marks_the_retained_seat_for_ai_takeover() {
 
 #[test]
 fn new_game_reset_preserves_takeover_until_the_human_rejoins() {
-    let mut service = RoomService::default();
+    let mut service = room_service_with_ai();
     let _ = join_room(
         &mut service,
         1,
@@ -749,7 +785,7 @@ fn new_game_reset_preserves_takeover_until_the_human_rejoins() {
 
 #[test]
 fn official_session_can_be_resolved_by_room_position() {
-    let mut service = RoomService::default();
+    let mut service = room_service_with_ai();
     let _ = common_request(
         &mut service,
         1,
@@ -775,7 +811,7 @@ fn official_session_can_be_resolved_by_room_position() {
 
 #[test]
 fn ai_players_do_not_keep_room_alive_after_last_human_disconnects() {
-    let mut service = RoomService::default();
+    let mut service = room_service_with_ai();
     let _ = join_room(
         &mut service,
         1,
@@ -810,7 +846,7 @@ fn ai_players_do_not_keep_room_alive_after_last_human_quits() {
         (GameSettings::new(4, 4), HashMap::new())
     }
 
-    let mut service = RoomService::default();
+    let mut service = room_service_with_ai();
     let room_key = "ai-quit-room";
     let joined = service
         .handle_common_request(
@@ -905,7 +941,7 @@ fn ai_players_do_not_keep_room_alive_after_last_human_quits() {
 
 #[test]
 fn last_disconnect_releases_name_and_old_cleanup_cannot_clear_recreated_room() {
-    let mut service = RoomService::default();
+    let mut service = room_service_with_ai();
     let _ = join_room(
         &mut service,
         1,
@@ -971,7 +1007,7 @@ fn last_disconnect_releases_name_and_old_cleanup_cannot_clear_recreated_room() {
 
 #[test]
 fn quit_permanently_removes_player_and_always_requests_loop_stop() {
-    let mut service = RoomService::default();
+    let mut service = room_service_with_ai();
     let _ = join_room(&mut service, 1, "quitter", "quit-room", GameId::LANDLORD);
     let _ = join_room(&mut service, 2, "remaining", "quit-room", GameId::LANDLORD);
     let common = service
@@ -1000,7 +1036,7 @@ fn quit_permanently_removes_player_and_always_requests_loop_stop() {
 
 #[test]
 fn join_accepts_multiple_game_ids_but_room_keeps_created_game() {
-    let mut service = RoomService::default();
+    let mut service = room_service_with_ai();
     service.connect(1);
     service.connect(2);
     service.connect(3);
@@ -1089,7 +1125,7 @@ fn join_accepts_multiple_game_ids_but_room_keeps_created_game() {
 
 #[test]
 fn join_idempotent_for_same_room_same_name() {
-    let mut service = RoomService::default();
+    let mut service = room_service_with_ai();
     service.connect(1);
 
     let _ = service.handle_common_request(
@@ -1146,7 +1182,7 @@ fn join_idempotent_for_same_room_same_name() {
 
 #[test]
 fn join_rejects_duplicate_name_and_overflow() {
-    let mut service = RoomService::default();
+    let mut service = room_service_with_ai();
     service.connect(1);
     service.connect(2);
     service.connect(3);
@@ -1221,7 +1257,7 @@ fn join_rejects_duplicate_name_and_overflow() {
 
 #[test]
 fn join_rejects_wrong_game_id() {
-    let mut service = RoomService::default();
+    let mut service = room_service_with_ai();
     service.connect(1);
 
     let dispatch = service
@@ -1252,7 +1288,7 @@ fn join_rejects_wrong_game_id() {
 
 #[test]
 fn message_pause_resume_go_to_other_only() {
-    let mut service = RoomService::default();
+    let mut service = room_service_with_ai();
     service.connect(1);
     service.connect(2);
     service.connect(3);
@@ -1363,7 +1399,7 @@ fn message_pause_resume_go_to_other_only() {
 
 #[test]
 fn non_owner_join_receives_param_descriptions_for_viewing_settings() {
-    let mut service = RoomService::default();
+    let mut service = room_service_with_ai();
     service.connect(1);
     service.connect(2);
 
@@ -1407,7 +1443,7 @@ fn non_owner_join_receives_param_descriptions_for_viewing_settings() {
 
 #[test]
 fn pause_resume_must_follow_state() {
-    let mut service = RoomService::default();
+    let mut service = room_service_with_ai();
     service.connect(1);
     service.connect(2);
 
@@ -1483,7 +1519,7 @@ fn pause_resume_must_follow_state() {
 
 #[test]
 fn position_hole_reused_after_quit() {
-    let mut service = RoomService::default();
+    let mut service = room_service_with_ai();
     service.connect(1);
     service.connect(2);
     service.connect(3);
@@ -1561,7 +1597,7 @@ fn recipients_of(code: i32, dispatch: &Dispatch) -> HashSet<u64> {
 
 #[test]
 fn setting_updates_room_broadcasts_and_affects_later_join() {
-    let mut service = RoomService::default();
+    let mut service = room_service_with_ai();
     service.connect(1);
     service.connect(2);
     service.connect(3);
@@ -1680,7 +1716,7 @@ fn settings() -> super::SettingsBuilderResult {
 #[test]
 fn official_games_can_swap_two_non_owner_players() {
     for game_id in [GameId::LANDLORD, GameId::SHENYANG_MAHJONG, GameId::TRACTOR] {
-        let mut service = RoomService::default();
+        let mut service = room_service_with_ai();
         service.connect(1);
         service.connect(2);
         service.connect(3);
@@ -1731,7 +1767,7 @@ fn official_games_can_swap_two_non_owner_players() {
 
 #[test]
 fn swap_rejects_non_official_room() {
-    let mut service = RoomService::default();
+    let mut service = room_service_with_ai();
     service.connect(1);
     service.connect(2);
 
@@ -1775,7 +1811,7 @@ fn swap_rejects_non_official_room() {
 
 #[test]
 fn swap_rejects_unsupported_official_game() {
-    let mut service = RoomService::default();
+    let mut service = room_service_with_ai();
     service.connect(1);
     service.connect(2);
 
@@ -1818,7 +1854,7 @@ fn swap_rejects_unsupported_official_game() {
 
 #[test]
 fn swap_rejects_state_that_disallows_swap() {
-    let mut service = RoomService::default();
+    let mut service = room_service_with_ai();
     service.connect(1);
     service.connect(2);
 

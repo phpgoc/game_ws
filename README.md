@@ -64,28 +64,21 @@ macOS 首次构建可先安装全部依赖：
 
 ## 运行 Rust WS 服务
 
-在项目根目录运行更方便：
+在公版仓库根目录运行：
 
 ```sh
-cargo run -p landlord -- --host 0.0.0.0 --port 9001
-cargo run -p shenyang_mahjong -- --host 0.0.0.0 --port 9002
-cargo run -p holdem -- --host 0.0.0.0 --port 9003
-cargo run -p tractor -- --host 0.0.0.0 --port 9004
+cargo run --manifest-path rust/landlord/Cargo.toml -- --host 0.0.0.0 --port 9001
+cargo run --manifest-path rust/shenyang_mahjong/Cargo.toml -- --host 0.0.0.0 --port 9002
+cargo run --manifest-path rust/holdem/Cargo.toml -- --host 0.0.0.0 --port 9003
+cargo run --manifest-path rust/tractor/Cargo.toml -- --host 0.0.0.0 --port 9004
 P2P_TURN_SECRET='replace-with-a-long-random-secret' \
 P2P_TURN_PUBLIC_IP='203.0.113.10' \
-cargo run -p p2p -- --host 0.0.0.0 --port 9005
+cargo run --manifest-path rust/p2p/Cargo.toml -- --host 0.0.0.0 --port 9005
 ```
 
 `p2p` 会在同一 Rust 进程内监听 UDP 3478 提供 STUN/TURN，并使用 UDP
 49160-49200 作为 relay 端口；不依赖外部 coturn。局域网运行可以省略
 `P2P_TURN_PUBLIC_IP` 自动选择本机地址，公网 NAT 部署必须配置公网 IP 和端口映射。
-
-也可以在本目录运行：
-
-```sh
-cd ws
-cargo run -p landlord -- --host 0.0.0.0 --port 9001
-```
 
 参数：
 
@@ -96,18 +89,23 @@ cargo run -p landlord -- --host 0.0.0.0 --port 9001
 ## 检查和测试
 
 ```sh
-cargo check -p landlord
-cargo test -p landlord
-cargo check -p shenyang_mahjong -p holdem -p tractor -p p2p
-cargo test -p tractor
-cargo test -p p2p
+cargo check --manifest-path rust/landlord/Cargo.toml
+cargo test --manifest-path rust/landlord/Cargo.toml
+cargo check --manifest-path rust/shenyang_mahjong/Cargo.toml
+cargo check --manifest-path rust/holdem/Cargo.toml
+cargo check --manifest-path rust/tractor/Cargo.toml
+cargo check --manifest-path rust/p2p/Cargo.toml
+cargo test --manifest-path rust/tractor/Cargo.toml
+cargo test --manifest-path rust/p2p/Cargo.toml
 ```
 
 拖拉机房间开始后会锁定设置。当前主要设置包括：`deck_count`（几副牌）、`removed_rank_count`（按 `3/4/6/7/8/9/J/Q/A` 的顺序删掉前 N 个点数，`0` 表示不删）、`first_deal_time`（首局发牌总时间，毫秒）、`deal_time`（后续局发牌总时间，毫秒）、`ai_action_time`（AI/托管行动间隔，毫秒）、`target_rank`（最终目标 rank）、`blood_enabled` / `blood_start_score` / `blood_score_per_unit`（喝血相关）。首局发牌中由所有玩家抢主/反主并决定首庄；第二局起只由既定庄家选择主花色。发完后庄家收底并扣回相同张数，随后进入出牌。
 
 ## 发布 Rust WS 服务端
 
-公版自建 WS 服务端不包含 official 统计和 SQLite；官方服需要统计时再使用带 `data`/SQLite 的构建或独立服务。
+公版自建 WS 服务端不包含 official 统计、SQLite 或游戏 AI，也不接受添加/删除 AI
+座位。斗地主、沈阳麻将和拖拉机需要真人凑齐人数；超时只执行保证牌局可继续的合法兜底动作。
+官方服的统计与 AI 源码保存在私有仓库，并由私有 `official` 构建接入。
 
 推荐下载 Linux x86_64 musl release 产物。该产物是静态单文件，适合大多数 x86_64 Linux 服务器直接运行。
 
@@ -123,12 +121,7 @@ rustup target add x86_64-unknown-linux-musl
 构建发布包：
 
 ```sh
-cargo build --release --target x86_64-unknown-linux-musl \
-  -p landlord \
-  -p shenyang_mahjong \
-  -p holdem \
-  -p tractor \
-  -p p2p
+./build_script/build_all.sh
 ```
 
 产物位置：
@@ -163,12 +156,7 @@ which x86_64-linux-musl-cc
 
 ```sh
 CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=x86_64-linux-musl-gcc \
-cargo build --release --target x86_64-unknown-linux-musl \
-  -p landlord \
-  -p shenyang_mahjong \
-  -p holdem \
-  -p tractor \
-  -p p2p
+./build_script/build_all.sh
 ```
 
 也可以写进本机 `~/.cargo/config.toml`，这样以后不用每次传环境变量：

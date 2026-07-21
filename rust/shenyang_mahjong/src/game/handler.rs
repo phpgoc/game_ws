@@ -481,6 +481,10 @@ impl Default for ShenyangMahjongGameHandler {
 }
 
 impl GameHandler for ShenyangMahjongGameHandler {
+    fn supports_ai_players(&self) -> bool {
+        cfg!(feature = "official")
+    }
+
     #[cfg(feature = "official")]
     fn authorize_room_creation(
         &self,
