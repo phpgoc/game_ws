@@ -174,19 +174,23 @@ fn choose_feed_ally_finish<'a>(
     candidates: &'a [Candidate],
     ally_position: usize,
 ) -> Option<&'a Candidate> {
-    const MIN_FEED_SUCCESS_PROBABILITY: f64 = 0.35;
+    const MIN_FEED_NET_SUCCESS_PROBABILITY: f64 = 0.35;
 
     let ally = belief.opponents.get(&ally_position)?;
     candidates
         .iter()
         .filter_map(|candidate| {
-            let success_probability = ally.probability_can_finish_over(&candidate.combo);
-            if success_probability < MIN_FEED_SUCCESS_PROBABILITY {
+            let ally_finish_probability = ally.probability_can_finish_over(&candidate.combo);
+            let enemy_interception_probability =
+                belief.probability_enemies_can_beat(&candidate.combo);
+            let net_success_probability =
+                ally_finish_probability * (1.0 - enemy_interception_probability);
+            if net_success_probability < MIN_FEED_NET_SUCCESS_PROBABILITY {
                 return None;
             }
             let mut remaining = observation.hand.clone();
             remove_cards(&mut remaining, &candidate.cards);
-            let score = success_probability * 100.0
+            let score = net_success_probability * 100.0 + ally_finish_probability * 20.0
                 - estimate_turns(&remaining) as f64 * 12.0
                 - f64::from(power_structure_cost(&observation.hand, candidate))
                 - candidate.combo.main_rank as f64 * 0.25;
@@ -599,6 +603,19 @@ mod tests {
     }
 
     #[test]
+    fn support_farmer_does_not_feed_a_pair_the_landlord_can_intercept() {
+        let observation = fully_known_support_lead_with_hands(
+            vec![1, 14, 2, 15, 3], // 对 3、对 4、单 5
+            vec![6, 19],           // 队友最后一手是对 8
+            vec![7, 20],           // 地主持有更大的对 9
+        );
+        let belief = CardBelief::from_observation(&observation);
+        let candidates = super::super::candidates::all_candidates(&observation.hand);
+
+        assert!(super::choose_feed_ally_finish(&observation, &belief, &candidates, 2).is_none());
+    }
+
+    #[test]
     fn teammate_finish_probability_rejects_two_unpaired_cards() {
         let pair_observation =
             fully_known_support_lead_with_hands(vec![1, 14, 2, 15, 3], vec![6, 19], vec![54]);
@@ -618,12 +635,12 @@ mod tests {
     #[test]
     fn support_farmer_preserves_a_bomb_when_feeding_one_card_teammate() {
         let observation = fully_known_support_lead(
-            vec![1, 14, 27, 40, 2], // 炸弹 3333 和单张 4
+            vec![2, 15, 28, 41, 3], // 炸弹 4444 和单张 5
             12,                     // 队友最后一张 A
-            54,
+            1,                      // 地主没有能压过 5 的牌
         );
 
-        assert_eq!(choose_heuristic_play(&observation), vec![2]);
+        assert_eq!(choose_heuristic_play(&observation), vec![3]);
     }
 
     #[test]
