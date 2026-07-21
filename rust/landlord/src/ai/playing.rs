@@ -11,6 +11,7 @@ use super::{
 };
 
 const SAFE_RESPONSE_FINISH_RISK: f64 = 0.05;
+const MIN_FEED_NET_SUCCESS_PROBABILITY: f64 = 0.35;
 
 pub(super) fn choose_play(observation: &AiObservation) -> Vec<i32> {
     choose_play_with_search(observation, true)
@@ -76,6 +77,15 @@ fn choose_play_with_search(observation: &AiObservation, use_search: bool) -> Vec
         && let Some(cards) = choose_endgame_play(observation, &belief, &candidates, leading)
     {
         return cards;
+    }
+    if !leading
+        && previous_relationship == Relationship::Enemy
+        && observation.landlord_position != Some(observation.position)
+        && let Some(next) = observation.next_position(observation.position)
+        && observation.relationship_to(next) == Relationship::Ally
+        && let Some(feed) = choose_feed_ally_response(observation, &belief, &candidates, next)
+    {
+        return feed.cards.clone();
     }
     if leading {
         return choose_lead(observation, &belief, candidates, farmer_runner);
@@ -174,8 +184,6 @@ fn choose_feed_ally_finish<'a>(
     candidates: &'a [Candidate],
     ally_position: usize,
 ) -> Option<&'a Candidate> {
-    const MIN_FEED_NET_SUCCESS_PROBABILITY: f64 = 0.35;
-
     let ally = belief.opponents.get(&ally_position)?;
     candidates
         .iter()
@@ -195,6 +203,43 @@ fn choose_feed_ally_finish<'a>(
                 - estimate_turns(&remaining) as f64 * 12.0
                 - f64::from(power_structure_cost(&observation.hand, candidate))
                 - candidate.combo.main_rank as f64 * 0.25;
+            Some((candidate, score))
+        })
+        .max_by(|(left, left_score), (right, right_score)| {
+            left_score
+                .total_cmp(right_score)
+                .then_with(|| right.combo.main_rank.cmp(&left.combo.main_rank))
+        })
+        .map(|(candidate, _)| candidate)
+}
+
+fn choose_feed_ally_response<'a>(
+    observation: &AiObservation,
+    belief: &CardBelief,
+    candidates: &'a [Candidate],
+    ally_position: usize,
+) -> Option<&'a Candidate> {
+    let ally = belief.opponents.get(&ally_position)?;
+    candidates
+        .iter()
+        .filter(|candidate| !is_power_combo(candidate))
+        .filter_map(|candidate| {
+            let ally_finish_probability = ally.probability_can_finish_over(&candidate.combo);
+            let net_success_probability = belief
+                .probability_ally_can_finish_without_enemy_interception(
+                    ally_position,
+                    &candidate.combo,
+                );
+            if net_success_probability < MIN_FEED_NET_SUCCESS_PROBABILITY {
+                return None;
+            }
+            let mut remaining = observation.hand.clone();
+            remove_cards(&mut remaining, &candidate.cards);
+            let score = net_success_probability * 100.0 + ally_finish_probability * 15.0
+                - estimate_turns(&remaining) as f64 * 14.0
+                - f64::from(attachment_cost(candidate)) * 0.1
+                - candidate.combo.main_rank as f64 * 0.2
+                - f64::from(power_structure_cost(&observation.hand, candidate));
             Some((candidate, score))
         })
         .max_by(|(left, left_score), (right, right_score)| {
@@ -636,6 +681,33 @@ mod tests {
                 .map(|candidate| candidate.cards.clone()),
             Some(vec![1])
         );
+    }
+
+    #[test]
+    fn support_farmer_feeds_response_to_next_ally_after_landlord_lead() {
+        let mut observation = fully_known_support_lead_with_hands(
+            vec![2, 15, 4], // 对 4、单 6，均可接地主的 3
+            vec![13],       // 队友持有 2，可以收尾
+            vec![12],       // 地主只有 A，接不回队友的 2
+        );
+        observation.last_play_position = 0;
+        observation.last_play = vec![1];
+
+        let belief = CardBelief::from_observation(&observation);
+        let previous = crate::core::play::classify(&observation.last_play).expect("single");
+        let candidates = super::super::candidates::all_candidates(&observation.hand)
+            .into_iter()
+            .filter(|candidate| crate::core::play::can_beat(&candidate.combo, &previous))
+            .collect::<Vec<_>>();
+        let feed = super::choose_feed_ally_response(&observation, &belief, &candidates, 2)
+            .expect("feed response to ally");
+        let expected = feed.cards.clone();
+
+        assert_eq!(feed.combo.kind, ComboKind::Single);
+        assert!(
+            belief.probability_ally_can_finish_without_enemy_interception(2, &feed.combo) > 0.999
+        );
+        assert_eq!(choose_heuristic_play(&observation), expected);
     }
 
     #[test]
