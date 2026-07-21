@@ -78,6 +78,14 @@ fn evolved_ai_beats_a_fixed_greedy_baseline_with_rotated_roles() {
     eprintln!(
         "belief AI vs greedy: {evolved_wins}/{matches} (landlord {evolved_landlord_wins}/12, farmers {evolved_farmer_wins}/12)"
     );
+    assert_eq!(
+        evolved_landlord_wins, 9,
+        "landlord baseline changed unexpectedly: {evolved_landlord_wins}/12"
+    );
+    assert_eq!(
+        evolved_farmer_wins, 12,
+        "farmer baseline changed unexpectedly: {evolved_farmer_wins}/12"
+    );
     assert!(
         evolved_wins * 4 >= matches * 3,
         "evolved AI won only {evolved_wins}/{matches} fixed matches against the greedy baseline"
