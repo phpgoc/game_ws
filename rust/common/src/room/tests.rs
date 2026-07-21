@@ -688,6 +688,66 @@ fn authorized_disconnect_marks_the_retained_seat_for_ai_takeover() {
 }
 
 #[test]
+fn new_game_reset_preserves_takeover_until_the_human_rejoins() {
+    let mut service = RoomService::default();
+    let _ = join_room(
+        &mut service,
+        1,
+        "u1",
+        "reset-takeover-room",
+        GameId::LANDLORD,
+    );
+    let _ = join_room(
+        &mut service,
+        2,
+        "u2",
+        "reset-takeover-room",
+        GameId::LANDLORD,
+    );
+
+    let disconnect = service.disconnect_with_ai_takeover(1, true);
+    assert!(disconnect.messages.iter().any(|message| {
+        matches!(
+            &message.payload,
+            OutboundPayload::Event(event)
+                if event.data.get("is_ai_takeover").and_then(Value::as_bool) == Some(true)
+        )
+    }));
+    let common = service
+        .room_common_state("reset-takeover-room")
+        .expect("common state");
+    common.lock().unwrap().mark_away(0);
+
+    let next_common = service
+        .reset_room_common_state_for_new_game("reset-takeover-room")
+        .expect("reset common state");
+    {
+        let common = next_common.lock().unwrap();
+        assert!(common.is_away(0));
+        assert!(common.is_disconnected(0));
+        assert!(common.is_ai_takeover_position(0));
+        assert!(!common.is_ai_position(0));
+    }
+
+    let rejoin = join_room(
+        &mut service,
+        3,
+        "u1",
+        "reset-takeover-room",
+        GameId::LANDLORD,
+    );
+    assert!(has_response(&rejoin, Routes::JOIN, WsResponseCode::JOINED));
+    assert_eq!(service.session_position(3), Some(0));
+    let common = service
+        .room_common_state("reset-takeover-room")
+        .expect("common state after rejoin");
+    let common = common.lock().unwrap();
+    assert!(!common.is_away(0));
+    assert!(!common.is_disconnected(0));
+    assert!(!common.is_ai_takeover_position(0));
+}
+
+#[test]
 fn official_session_can_be_resolved_by_room_position() {
     let mut service = RoomService::default();
     let _ = common_request(

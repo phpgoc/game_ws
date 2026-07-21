@@ -1567,7 +1567,10 @@ impl RoomService {
         let mut next = crate::game_state::CommonGameState::new();
         next.players = current.players.clone();
         next.avatars = current.avatars.clone();
+        next.away_positions = current.away_positions.clone();
+        next.disconnected_positions = current.disconnected_positions.clone();
         next.ai_positions = current.ai_positions.clone();
+        next.ai_takeover_positions = current.ai_takeover_positions.clone();
         let next = Arc::new(std::sync::Mutex::new(next));
         entry.state = Box::new(crate::game_state::SharedGameState::from_common(Arc::clone(
             &next,
