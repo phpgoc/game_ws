@@ -1,8 +1,8 @@
 #![cfg(not(feature = "official"))]
 
-use std::{collections::HashMap, net::TcpListener, time::Duration};
 #[cfg(feature = "official")]
 use std::time::Instant;
+use std::{collections::HashMap, net::TcpListener, time::Duration};
 
 use futures_util::{SinkExt, StreamExt};
 use landlord::game::LandlordGameHandler;
