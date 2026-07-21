@@ -544,8 +544,39 @@ impl TractorGameState {
         self.deal_current_round()
     }
 
-    /// Deal exactly one public-progress/private-card step. The final step moves
-    /// the table into Bury and gives the dealer the bottom cards.
+    fn best_ai_declaration(&self, forced: bool) -> Option<(usize, crate::ai::DeclarationDecision)> {
+        let current_strength = if forced {
+            0
+        } else {
+            self.declaration
+                .as_ref()
+                .map(|declaration| declaration.strength)
+                .unwrap_or_default()
+        };
+        self.active_positions()
+            .into_iter()
+            .filter(|position| self.is_ai_controlled_position(*position))
+            .filter_map(|position| {
+                crate::ai::declaration_decision(self, position, current_strength, forced)
+                    .map(|decision| (position, decision))
+            })
+            .max_by(|(_, left), (_, right)| {
+                left.cards
+                    .len()
+                    .cmp(&right.cards.len())
+                    .then_with(|| {
+                        left.assessment
+                            .success_probability
+                            .total_cmp(&right.assessment.success_probability)
+                    })
+                    .then_with(|| left.assessment.score.cmp(&right.assessment.score))
+            })
+    }
+
+    /// Deal exactly one public-progress/private-card step. During the first
+    /// deal, an AI may declare as soon as its currently dealt hand clears the
+    /// normal threshold. The final step moves the table into Bury and applies
+    /// the marginal fallback when nobody has declared.
     pub fn deal_next_card(
         &mut self,
     ) -> Option<(usize, i32, bool, Option<WsTractorTrumpDeclaration>)> {
@@ -559,63 +590,18 @@ impl TractorGameState {
         self.dealt_count += 1;
         let finished = self.deal_queue.is_empty();
         let mut auto_declaration = None;
+        if self.round_index == 0 {
+            let best_ai_declaration = self.best_ai_declaration(false).or_else(|| {
+                (finished && self.declaration.is_none())
+                    .then(|| self.best_ai_declaration(true))
+                    .flatten()
+            });
+            if let Some((position, decision)) = best_ai_declaration {
+                auto_declaration = self.declare_trump(position, decision.cards).ok();
+            }
+        }
         if finished {
             if self.round_index == 0 {
-                // Evaluate AI contracts from the completed first-round hand.
-                // Existing declarations set the counter strength; an AI still
-                // has to clear the probability threshold before overtaking it.
-                let current_strength = self
-                    .declaration
-                    .as_ref()
-                    .map(|declaration| declaration.strength)
-                    .unwrap_or_default();
-                let ai_positions: Vec<_> = self
-                    .active_positions()
-                    .into_iter()
-                    .filter(|position| self.is_ai_controlled_position(*position))
-                    .collect();
-                let assessed = ai_positions
-                    .iter()
-                    .filter_map(|position| {
-                        crate::ai::declaration_decision(self, *position, current_strength, false)
-                            .map(|decision| (*position, decision))
-                    })
-                    .max_by(|(_, left), (_, right)| {
-                        left.cards.len().cmp(&right.cards.len()).then_with(|| {
-                            left.assessment
-                                .success_probability
-                                .total_cmp(&right.assessment.success_probability)
-                        })
-                    });
-                // If everybody passed, let a marginal-but-credible AI hand use
-                // a slightly lower final threshold. A weak lone level card is
-                // still a pass; the initial dealer and no-suit trump remain a
-                // valid outcome under the table rules.
-                let best_ai_declaration = assessed.or_else(|| {
-                    self.declaration
-                        .is_none()
-                        .then(|| {
-                            ai_positions
-                                .iter()
-                                .filter_map(|position| {
-                                    crate::ai::declaration_decision(self, *position, 0, true)
-                                        .map(|decision| (*position, decision))
-                                })
-                                .max_by(|(_, left), (_, right)| {
-                                    left.assessment
-                                        .success_probability
-                                        .total_cmp(&right.assessment.success_probability)
-                                        .then_with(|| {
-                                            left.assessment.score.cmp(&right.assessment.score)
-                                        })
-                                })
-                        })
-                        .flatten()
-                });
-                if let Some((position, decision)) = best_ai_declaration {
-                    let cards = decision.cards;
-                    auto_declaration = self.declare_trump(position, cards).ok();
-                }
                 if let Some(declaration) = &self.declaration {
                     self.dealer_position = declaration.position as usize;
                 }
@@ -1389,6 +1375,32 @@ mod tests {
         assert_eq!(state.dealer_position, 1);
         assert_eq!(state.rules.trump_suit, Some(TractorSuit::SPADE));
         assert_eq!(state.phase, TractorPhase::Bury);
+    }
+
+    #[test]
+    #[cfg(feature = "official")]
+    fn ai_can_declare_before_first_deal_finishes() {
+        let mut state = test_state();
+        state.phase = TractorPhase::Deal;
+        state.round_index = 0;
+        state.rules.target_rank = TractorRank::TWO;
+        state.hands.insert(1, vec![1, 101]);
+        state.deal_queue.push_back((2, 3));
+        state.deal_queue.push_back((3, 4));
+        state.total_deal_count = 2;
+        state.base.lock().unwrap().mark_ai_position(1);
+
+        let (_, _, finished, auto_declaration) =
+            state.deal_next_card().expect("deal the first card");
+
+        assert!(!finished);
+        assert_eq!(auto_declaration.as_ref().map(|item| item.strength), Some(2));
+        assert_eq!(
+            state.declaration.as_ref().map(|item| item.position),
+            Some(1)
+        );
+        assert_eq!(state.rules.trump_suit, Some(TractorSuit::SPADE));
+        assert_eq!(state.phase, TractorPhase::Deal);
     }
 
     #[test]
