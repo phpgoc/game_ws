@@ -98,6 +98,8 @@ async fn landlord_ai_seats_call_and_play_without_becoming_away() {
         })
         .await;
         assert_eq!(joined_ai["data"]["position"], json!(expected_position));
+        assert_eq!(joined_ai["data"]["is_ai_takeover"], json!(false));
+        assert_eq!(joined_ai["data"]["away"], json!(false));
     }
     recv_until(&mut owner, "add ai ok", |value| {
         value.get("route").and_then(Value::as_i64) == Some(Routes::ADD_AI as i64)
