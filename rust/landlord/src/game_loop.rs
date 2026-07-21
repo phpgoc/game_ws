@@ -1214,8 +1214,9 @@ mod tests {
     }
 
     #[test]
-    fn ai_farmer_delays_once_when_passing_with_a_bomb() {
+    fn ai_farmer_delays_once_to_signal_a_human_teammate() {
         let mut state = bomb_signal_state(false);
+        assert!(!state.is_ai_controlled_position(1));
         assert!(choose_play(&state, 2).is_empty());
 
         let plan = plan_ai_action(&state, 2);
@@ -1264,10 +1265,34 @@ mod tests {
     }
 
     #[test]
+    fn ai_farmer_signals_a_native_ai_teammate() {
+        let state = bomb_signal_state(false);
+        state.base.lock().unwrap().mark_ai_position(1);
+
+        assert!(state.is_ai_position(1));
+        assert_eq!(plan_ai_action(&state, 2).delay, AI_BOMB_SIGNAL_DELAY);
+    }
+
+    #[test]
+    fn ai_farmer_signals_an_ai_takeover_teammate() {
+        let state = bomb_signal_state(false);
+        state.base.lock().unwrap().mark_ai_takeover_position(1);
+
+        assert!(state.is_ai_takeover_position(1));
+        assert_eq!(plan_ai_action(&state, 2).delay, AI_BOMB_SIGNAL_DELAY);
+    }
+
+    #[test]
     fn ordinary_human_delay_never_creates_an_ai_bomb_signal() {
         let state = bomb_signal_state(false);
-        state.base.lock().unwrap().ai_positions.remove(&2);
+        {
+            let mut common = state.base.lock().unwrap();
+            common.ai_positions.remove(&2);
+            common.mark_ai_position(1);
+        }
 
+        assert!(state.is_ai_position(1));
+        assert!(!state.is_ai_controlled_position(2));
         assert!(!should_signal_ai_bomb(&state, 2, &[]));
         assert_eq!(plan_ai_action(&state, 2).delay, AI_ACTION_DELAY);
         assert!(!state.ai_bomb_signal_used);

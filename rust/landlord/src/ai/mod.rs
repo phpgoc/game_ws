@@ -39,7 +39,7 @@ pub struct AiObservation {
     pub last_play_position: usize,
     pub last_play: Vec<i32>,
     pub play_history: Vec<LandlordPlayRecord>,
-    /// 只供两名 AI 农民协调角色的队友炸弹延迟信号。
+    /// 服务端只记录 AI 农民发出的炸弹延迟信号，并只向 AI 农民观察暴露。
     pub ai_bomb_signal_position: Option<usize>,
 }
 
