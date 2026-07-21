@@ -1021,6 +1021,9 @@ pub(crate) fn perform_discard_with_ting(
         return false;
     }
     if state.is_ting(position) {
+        if declare_ting {
+            return false;
+        }
         if state.last_drawn_tile != Some(tile)
             || ting_shape_wait_tiles_after_discard(state, position, tile, configs).is_empty()
         {

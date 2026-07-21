@@ -200,6 +200,35 @@ fn declared_ting_locks_future_discard_to_the_drawn_tile() {
 }
 
 #[test]
+fn declared_ting_cannot_be_declared_again() {
+    let mut state = playable_state();
+    let mut hand = seven_pairs_ting_hand();
+    hand.retain(|tile| *tile != 32);
+    hand.push(5);
+    hand.sort_unstable();
+    state.hands.insert(0, hand);
+    state.last_drawn_tile = Some(5);
+    state.declare_ting(0);
+    let mut dispatch = Dispatch::default();
+
+    assert!(!perform_discard_with_ting(
+        &RoomService::default(),
+        "room",
+        &mut state,
+        &default_configs(),
+        &mut dispatch,
+        DiscardAction {
+            position: 0,
+            tile: 5,
+            declare_ting: true,
+        },
+    ));
+    assert!(state.is_ting(0));
+    assert_eq!(state.last_drawn_tile, Some(5));
+    assert!(dispatch.messages.is_empty());
+}
+
+#[test]
 fn declared_ting_can_discard_drawn_tile_after_wait_becomes_dead() {
     let mut state = playable_state();
     state
