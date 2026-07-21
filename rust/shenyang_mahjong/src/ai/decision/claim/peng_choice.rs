@@ -1,5 +1,11 @@
 use super::*;
 
+#[derive(Clone, Copy)]
+pub(super) struct PengClaimScores {
+    pub progress: f64,
+    pub ready: f64,
+}
+
 pub(super) fn choose_peng_claim(
     hand: &[i32],
     current_melds: &[WsShenyangMahjongMeld],
@@ -7,8 +13,7 @@ pub(super) fn choose_peng_claim(
     position: usize,
     tile: i32,
     from_position: usize,
-    current_score: f64,
-    current_ready_score: f64,
+    scores: PengClaimScores,
 ) -> Option<AiClaimChoice> {
     if !can_peng(hand, tile) {
         return None;
@@ -54,7 +59,7 @@ pub(super) fn choose_peng_claim(
     if should_pass_peng_for_open_pure_defense(hand, current_melds, table, position, tile) {
         return Some(AiClaimChoice::Pass);
     }
-    if current_ready_score > 0.0 {
+    if scores.ready > 0.0 {
         if should_claim_ready_piao_peng_for_shou_ba_yi(
             hand,
             current_melds,
@@ -62,7 +67,7 @@ pub(super) fn choose_peng_claim(
             position,
             tile,
             from_position,
-            current_ready_score,
+            scores.ready,
         ) {
             return Some(AiClaimChoice::Peng);
         }
@@ -73,7 +78,7 @@ pub(super) fn choose_peng_claim(
             position,
             tile,
             from_position,
-            current_ready_score,
+            scores.ready,
         ) {
             return Some(AiClaimChoice::Peng);
         }
@@ -153,7 +158,7 @@ pub(super) fn choose_peng_claim(
         return Some(AiClaimChoice::Pass);
     }
     let required_gain = required_peng_gain(hand, current_melds, table, position, tile);
-    (after >= current_score + required_gain).then_some(AiClaimChoice::Peng)
+    (after >= scores.progress + required_gain).then_some(AiClaimChoice::Peng)
 }
 
 pub(in crate::ai::decision) fn required_peng_gain(

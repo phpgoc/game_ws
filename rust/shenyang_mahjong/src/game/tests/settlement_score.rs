@@ -260,7 +260,7 @@ fn settlement_score_adds_closed_fan_when_discard_payer_has_not_opened() {
             Some(0),
         )],
     );
-    closed_payer_state.enter_settlement_with_reverse_win(
+    closed_payer_state.enter_settlement_with_reverse_win(SettlementState::new(
         vec![1],
         Some(0),
         Some(4),
@@ -268,7 +268,7 @@ fn settlement_score_adds_closed_fan_when_discard_payer_has_not_opened() {
         false,
         false,
         false,
-    );
+    ));
     let closed_settlement = closed_payer_state.settlement.as_ref().expect("settlement");
 
     assert_eq!(
@@ -311,7 +311,7 @@ fn settlement_score_adds_closed_fan_when_discard_payer_has_not_opened() {
                 Some(0),
             )],
         );
-        invalid_source_state.enter_settlement_with_reverse_win(
+        invalid_source_state.enter_settlement_with_reverse_win(SettlementState::new(
             vec![1],
             Some(0),
             Some(4),
@@ -319,7 +319,7 @@ fn settlement_score_adds_closed_fan_when_discard_payer_has_not_opened() {
             false,
             false,
             false,
-        );
+        ));
         let settlement = invalid_source_state
             .settlement
             .as_ref()
@@ -363,7 +363,7 @@ fn settlement_score_adds_closed_fan_when_discard_payer_has_not_opened() {
             Some(0),
         )],
     );
-    malformed_open_payer_state.enter_settlement_with_reverse_win(
+    malformed_open_payer_state.enter_settlement_with_reverse_win(SettlementState::new(
         vec![1],
         Some(0),
         Some(4),
@@ -371,7 +371,7 @@ fn settlement_score_adds_closed_fan_when_discard_payer_has_not_opened() {
         false,
         false,
         false,
-    );
+    ));
     let malformed_open_settlement = malformed_open_payer_state
         .settlement
         .as_ref()
@@ -414,7 +414,7 @@ fn settlement_score_adds_closed_fan_when_discard_payer_has_not_opened() {
             Some(0),
         )],
     );
-    invalid_tile_open_payer_state.enter_settlement_with_reverse_win(
+    invalid_tile_open_payer_state.enter_settlement_with_reverse_win(SettlementState::new(
         vec![1],
         Some(0),
         Some(4),
@@ -422,7 +422,7 @@ fn settlement_score_adds_closed_fan_when_discard_payer_has_not_opened() {
         false,
         false,
         false,
-    );
+    ));
     let invalid_tile_open_settlement = invalid_tile_open_payer_state
         .settlement
         .as_ref()
@@ -463,7 +463,7 @@ fn settlement_score_adds_closed_fan_when_discard_payer_has_not_opened() {
             Some(0),
         )],
     );
-    open_payer_state.enter_settlement_with_reverse_win(
+    open_payer_state.enter_settlement_with_reverse_win(SettlementState::new(
         vec![1],
         Some(0),
         Some(4),
@@ -471,7 +471,7 @@ fn settlement_score_adds_closed_fan_when_discard_payer_has_not_opened() {
         false,
         false,
         false,
-    );
+    ));
     let open_settlement = open_payer_state.settlement.as_ref().expect("settlement");
 
     assert_eq!(winner_hand_fan(&open_payer_state, open_settlement, 1), 1);
@@ -531,7 +531,15 @@ fn settlement_score_adds_dealer_fan_when_payer_is_open_dealer() {
             Some(0),
         )],
     );
-    state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(4), false, false, false, false);
+    state.enter_settlement_with_reverse_win(SettlementState::new(
+        vec![1],
+        Some(0),
+        Some(4),
+        false,
+        false,
+        false,
+        false,
+    ));
     let settlement = state.settlement.as_ref().expect("settlement");
 
     assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
@@ -667,7 +675,15 @@ fn settlement_score_counts_concealed_gang_discard_payer_as_closed() {
         )],
     );
     state.melds.insert(3, vec![open_peng_meld(34, 2)]);
-    state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(4), false, false, false, false);
+    state.enter_settlement_with_reverse_win(SettlementState::new(
+        vec![1],
+        Some(0),
+        Some(4),
+        false,
+        false,
+        false,
+        false,
+    ));
     let settlement = state.settlement.as_ref().expect("settlement");
 
     assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
@@ -704,7 +720,15 @@ fn settlement_score_counts_xi_gang_discard_payer_as_closed() {
         )],
     );
     state.melds.insert(3, vec![open_peng_meld(14, 2)]);
-    state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(4), false, false, false, false);
+    state.enter_settlement_with_reverse_win(SettlementState::new(
+        vec![1],
+        Some(0),
+        Some(4),
+        false,
+        false,
+        false,
+        false,
+    ));
     let settlement = state.settlement.as_ref().expect("settlement");
 
     assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
@@ -759,7 +783,15 @@ fn settlement_score_ignores_illegal_winner_hand() {
             Some(0),
         )],
     );
-    state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(35), false, false, false, false);
+    state.enter_settlement_with_reverse_win(SettlementState::new(
+        vec![1],
+        Some(0),
+        Some(35),
+        false,
+        false,
+        false,
+        false,
+    ));
     let settlement = state.settlement.as_ref().expect("settlement");
 
     assert_eq!(winner_hand_fan(&state, settlement, 1), 0);
@@ -953,7 +985,15 @@ fn settlement_winner_details_describe_piao_hu() {
         ],
     );
     state.melds.insert(3, vec![open_peng_meld(34, 2)]);
-    state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(1), false, false, false, false);
+    state.enter_settlement_with_reverse_win(SettlementState::new(
+        vec![1],
+        Some(0),
+        Some(1),
+        false,
+        false,
+        false,
+        false,
+    ));
 
     let event = build_settlement_event_with_configs(&state, &default_configs()).unwrap();
 
@@ -977,7 +1017,15 @@ fn settlement_winner_details_describe_pure_one_suit() {
         ],
     );
     state.melds.insert(3, vec![open_peng_meld(34, 2)]);
-    state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(7), false, false, false, false);
+    state.enter_settlement_with_reverse_win(SettlementState::new(
+        vec![1],
+        Some(0),
+        Some(7),
+        false,
+        false,
+        false,
+        false,
+    ));
 
     let event = build_settlement_event_with_configs(&state, &default_configs()).unwrap();
 
@@ -1030,7 +1078,15 @@ fn settlement_winner_details_do_not_describe_sequence_remainder_as_piao_hu() {
         ],
     );
     state.melds.insert(3, vec![open_peng_meld(34, 2)]);
-    state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(4), false, false, false, false);
+    state.enter_settlement_with_reverse_win(SettlementState::new(
+        vec![1],
+        Some(0),
+        Some(4),
+        false,
+        false,
+        false,
+        false,
+    ));
 
     let settlement = state.settlement.as_ref().expect("settlement");
     let event = build_settlement_event_with_configs(&state, &default_configs()).unwrap();
@@ -1059,7 +1115,15 @@ fn settlement_winner_details_include_reverse_win_and_score() {
             Some(2),
         )],
     );
-    state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(3), false, true, false, false);
+    state.enter_settlement_with_reverse_win(SettlementState::new(
+        vec![1],
+        Some(0),
+        Some(3),
+        false,
+        true,
+        false,
+        false,
+    ));
 
     let event = build_settlement_event_with_configs(&state, &default_configs()).unwrap();
 
@@ -1080,7 +1144,15 @@ fn settlement_winner_details_use_shenyang_rules_for_closed_pure_one_suit() {
         .hands
         .insert(1, vec![1, 2, 3, 2, 3, 4, 4, 5, 6, 7, 7, 7, 9]);
     state.melds.insert(3, vec![open_peng_meld(34, 2)]);
-    state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(9), false, false, false, false);
+    state.enter_settlement_with_reverse_win(SettlementState::new(
+        vec![1],
+        Some(0),
+        Some(9),
+        false,
+        false,
+        false,
+        false,
+    ));
 
     let default_event = build_settlement_event_with_configs(&state, &default_configs()).unwrap();
     let empty_config_event = build_settlement_event_with_configs(&state, &HashMap::new()).unwrap();

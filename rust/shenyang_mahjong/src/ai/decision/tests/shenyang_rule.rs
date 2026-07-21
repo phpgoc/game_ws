@@ -358,7 +358,7 @@ fn open_meld_filter_ignores_malformed_melds() {
 
     assert!(!has_open_meld(&[malformed_peng]));
     assert!(!has_open_meld(&[malformed_chi]));
-    assert!(!has_open_meld(&[invalid_tile_peng.clone()]));
+    assert!(!has_open_meld(std::slice::from_ref(&invalid_tile_peng)));
     assert!(!is_triplet_like_meld(&invalid_tile_peng));
     assert_eq!(piao_threat_level(&[invalid_tile_peng]), 0);
     assert!(has_open_meld(&[test_chi_meld(1)]));
@@ -458,12 +458,12 @@ fn route_requirement_scans_ignore_malformed_meld_tiles() {
 
     assert!(!has_terminal_or_honor_with_extra(
         &hand,
-        &[malformed_terminal.clone()],
+        std::slice::from_ref(&malformed_terminal),
         None
     ));
     assert_eq!(terminal_or_honor_count(&hand, &[malformed_terminal]), 0);
     assert_eq!(
-        missing_suits(&hand, &[malformed_third_suit.clone()]),
+        missing_suits(&hand, std::slice::from_ref(&malformed_third_suit)),
         vec![2]
     );
     assert_eq!(

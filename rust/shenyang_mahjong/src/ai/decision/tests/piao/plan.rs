@@ -357,13 +357,13 @@ fn piao_plan_ignores_malformed_chi_meld() {
 
     assert!(piao_plan_score(&hand, &[]) > 0.0);
     assert_eq!(
-        piao_plan_score(&hand, &[malformed_chi.clone()]),
+        piao_plan_score(&hand, std::slice::from_ref(&malformed_chi)),
         piao_plan_score(&hand, &[])
     );
     assert_eq!(piao_plan_score(&hand, &[valid_chi]), 0.0);
     assert!(is_closed_early_piao_candidate(
         &hand,
-        &[malformed_chi.clone()],
+        std::slice::from_ref(&malformed_chi),
         &table,
         0
     ));

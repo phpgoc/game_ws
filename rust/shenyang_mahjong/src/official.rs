@@ -547,7 +547,7 @@ mod tests {
         seven_pairs_state
             .hands
             .insert(1, vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35]);
-        seven_pairs_state.enter_settlement_with_reverse_win(
+        seven_pairs_state.enter_settlement_with_reverse_win(SettlementState::new(
             vec![1],
             Some(0),
             Some(35),
@@ -555,7 +555,7 @@ mod tests {
             false,
             false,
             false,
-        );
+        ));
         let seven_pairs_settlement = seven_pairs_state.settlement.as_ref().expect("settlement");
 
         assert_eq!(
@@ -579,7 +579,7 @@ mod tests {
                 build_meld(ShenyangMahjongMeldKind::PENG, vec![31, 31, 31], Some(0)),
             ],
         );
-        piao_state.enter_settlement_with_reverse_win(
+        piao_state.enter_settlement_with_reverse_win(SettlementState::new(
             vec![2],
             None,
             Some(35),
@@ -587,7 +587,7 @@ mod tests {
             false,
             false,
             false,
-        );
+        ));
         let piao_settlement = piao_state.settlement.as_ref().expect("settlement");
 
         assert_eq!(
@@ -608,7 +608,7 @@ mod tests {
         state
             .hands
             .insert(1, vec![1, 2, 3, 2, 3, 4, 4, 5, 6, 7, 7, 7, 9]);
-        state.enter_settlement_with_reverse_win(
+        state.enter_settlement_with_reverse_win(SettlementState::new(
             vec![1],
             Some(0),
             Some(9),
@@ -616,7 +616,7 @@ mod tests {
             false,
             false,
             false,
-        );
+        ));
         let settlement = state.settlement.as_ref().expect("settlement");
 
         assert_eq!(

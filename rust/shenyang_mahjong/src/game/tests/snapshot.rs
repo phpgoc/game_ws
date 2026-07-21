@@ -368,7 +368,15 @@ fn table_snapshot_includes_settlement_for_rejoin() {
             Some(2),
         )],
     );
-    state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(3), false, true, false, false);
+    state.enter_settlement_with_reverse_win(SettlementState::new(
+        vec![1],
+        Some(0),
+        Some(3),
+        false,
+        true,
+        false,
+        false,
+    ));
 
     let snapshot = build_table_snapshot_event_with_configs(&state, 1, &default_configs());
     let settlement = snapshot.settlement.expect("settlement");

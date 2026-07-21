@@ -463,16 +463,16 @@ fn seven_pairs_plan_ignores_malformed_melds_but_rejects_valid_melds() {
     let base_score = seven_pairs_plan_score(&hand, &[], &table, 0);
     let base_bias = seven_pairs_plan_discard_bias(&discard_hand, 1, &[], &table, 0);
 
-    assert_eq!(valid_meld_count(&[malformed_meld.clone()]), 0);
-    assert_eq!(valid_meld_count(&[valid_meld.clone()]), 1);
+    assert_eq!(valid_meld_count(std::slice::from_ref(&malformed_meld)), 0);
+    assert_eq!(valid_meld_count(std::slice::from_ref(&valid_meld)), 1);
     assert!(should_lock_seven_pairs_plan(
         &hand,
-        &[malformed_meld.clone()],
+        std::slice::from_ref(&malformed_meld),
         &table,
         0,
     ));
     assert_eq!(
-        seven_pairs_plan_score(&hand, &[malformed_meld.clone()], &table, 0,),
+        seven_pairs_plan_score(&hand, std::slice::from_ref(&malformed_meld), &table, 0,),
         base_score
     );
     assert_eq!(
@@ -482,12 +482,12 @@ fn seven_pairs_plan_ignores_malformed_melds_but_rejects_valid_melds() {
 
     assert!(!should_lock_seven_pairs_plan(
         &hand,
-        &[valid_meld.clone()],
+        std::slice::from_ref(&valid_meld),
         &table,
         0,
     ));
     assert_eq!(
-        seven_pairs_plan_score(&hand, &[valid_meld.clone()], &table, 0,),
+        seven_pairs_plan_score(&hand, std::slice::from_ref(&valid_meld), &table, 0,),
         0.0
     );
     assert_eq!(

@@ -124,16 +124,16 @@ fn claim_peng_takes_dragon_from_live_five_pairs_with_malformed_meld() {
     let claim = table.claim_window.clone().unwrap();
     let hand = vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 22, 31, 35, 35];
 
-    assert_eq!(valid_meld_count(&[malformed_meld.clone()]), 0);
+    assert_eq!(valid_meld_count(std::slice::from_ref(&malformed_meld)), 0);
     assert!(should_lock_seven_pairs_plan(
         &hand,
-        &[malformed_meld.clone()],
+        std::slice::from_ref(&malformed_meld),
         &table,
         0,
     ));
     assert!(should_claim_dragon_peng_over_live_five_pairs(
         &hand,
-        &[malformed_meld.clone()],
+        std::slice::from_ref(&malformed_meld),
         &table,
         0,
         35,
@@ -194,7 +194,7 @@ fn required_peng_gain_ignores_malformed_meld_for_four_pair_protection() {
     assert_eq!(required_peng_gain(&hand, &[], &table, 0, 31), base);
 
     assert_eq!(pair_count(&hand), 4);
-    assert_eq!(valid_meld_count(&[malformed_meld.clone()]), 0);
+    assert_eq!(valid_meld_count(std::slice::from_ref(&malformed_meld)), 0);
     assert_eq!(
         required_peng_gain(&hand, &[malformed_meld], &table, 0, 31,),
         base

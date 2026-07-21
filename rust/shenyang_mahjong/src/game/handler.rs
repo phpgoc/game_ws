@@ -245,9 +245,11 @@ impl ShenyangMahjongGameHandler {
                             &mut state,
                             &configs,
                             &mut dispatch,
-                            position,
-                            tile,
-                            payload.declare_ting.unwrap_or(false),
+                            DiscardAction {
+                                position,
+                                tile,
+                                declare_ting: payload.declare_ting.unwrap_or(false),
+                            },
                         ) {
                             return room_service.error_response(
                                 session_id,

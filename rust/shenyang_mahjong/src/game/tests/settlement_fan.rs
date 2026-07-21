@@ -39,7 +39,15 @@ fn settlement_event_normalizes_invalid_gang_haidilao_as_draw() {
         )],
     );
     state.wall.clear();
-    state.enter_settlement_with_reverse_win(vec![1], None, Some(31), true, false, true, true);
+    state.enter_settlement_with_reverse_win(SettlementState::new(
+        vec![1],
+        None,
+        Some(31),
+        true,
+        false,
+        true,
+        true,
+    ));
 
     let event =
         build_settlement_event_with_configs(&state, &default_configs()).expect("settlement event");
@@ -68,7 +76,15 @@ fn settlement_event_normalizes_invalid_reverse_win_as_draw() {
             Some(2),
         )],
     );
-    state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(4), false, true, false, false);
+    state.enter_settlement_with_reverse_win(SettlementState::new(
+        vec![1],
+        Some(0),
+        Some(4),
+        false,
+        true,
+        false,
+        false,
+    ));
 
     let event =
         build_settlement_event_with_configs(&state, &default_configs()).expect("settlement event");
@@ -106,7 +122,7 @@ fn settlement_event_skips_invalid_winner_without_suppressing_three_closed() {
             Some(0),
         )],
     );
-    state.enter_settlement_with_reverse_win(
+    state.enter_settlement_with_reverse_win(SettlementState::new(
         vec![1, 2],
         Some(0),
         Some(1),
@@ -114,7 +130,7 @@ fn settlement_event_skips_invalid_winner_without_suppressing_three_closed() {
         false,
         false,
         false,
-    );
+    ));
 
     let event = build_settlement_event(&state).expect("settlement event");
 
@@ -430,7 +446,15 @@ fn settlement_fan_counts_honor_single_wait_once() {
         .hands
         .insert(1, vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35]);
     state.melds.insert(1, vec![open_chi_meld(1)]);
-    state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(35), false, false, false, false);
+    state.enter_settlement_with_reverse_win(SettlementState::new(
+        vec![1],
+        Some(0),
+        Some(35),
+        false,
+        false,
+        false,
+        false,
+    ));
     let settlement = state.settlement.as_ref().expect("settlement");
     let hand_tiles = winner_final_hand_tiles(&state, settlement, 1);
     let melds = state.melds.get(&1).map(Vec::as_slice).unwrap_or(&[]);
@@ -445,7 +469,15 @@ fn settlement_fan_counts_middle_tile_single_wait_on_seven_pairs() {
     state
         .hands
         .insert(1, vec![1, 1, 2, 2, 3, 3, 4, 4, 5, 11, 11, 21, 21]);
-    state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(5), false, false, false, false);
+    state.enter_settlement_with_reverse_win(SettlementState::new(
+        vec![1],
+        Some(0),
+        Some(5),
+        false,
+        false,
+        false,
+        false,
+    ));
     let settlement = state.settlement.as_ref().expect("settlement");
 
     assert_eq!(winner_hand_fan(&state, settlement, 1), 5);
@@ -571,7 +603,15 @@ fn settlement_fan_counts_single_middle_pair_wait() {
         .hands
         .insert(1, vec![11, 12, 13, 21, 22, 23, 25, 31, 31, 31]);
     state.melds.insert(1, vec![open_chi_meld(1)]);
-    state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(25), false, false, false, false);
+    state.enter_settlement_with_reverse_win(SettlementState::new(
+        vec![1],
+        Some(0),
+        Some(25),
+        false,
+        false,
+        false,
+        false,
+    ));
     let settlement = state.settlement.as_ref().expect("settlement");
     let hand_tiles = winner_final_hand_tiles(&state, settlement, 1);
     let melds = state.melds.get(&1).map(Vec::as_slice).unwrap_or(&[]);
@@ -587,7 +627,15 @@ fn settlement_fan_counts_terminal_single_wait_once() {
     state
         .hands
         .insert(1, vec![11, 11, 13, 14, 15, 16, 17, 17, 17, 17, 18, 18, 19]);
-    state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(11), false, false, false, false);
+    state.enter_settlement_with_reverse_win(SettlementState::new(
+        vec![1],
+        Some(0),
+        Some(11),
+        false,
+        false,
+        false,
+        false,
+    ));
     let settlement = state.settlement.as_ref().expect("settlement");
     let hand_tiles = winner_final_hand_tiles(&state, settlement, 1);
 
@@ -612,7 +660,15 @@ fn settlement_fan_counts_terminal_single_wait_when_other_wait_is_discarded_out()
     for position in 0..4 {
         state.discards.insert(position, vec![4]);
     }
-    state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(1), false, false, false, false);
+    state.enter_settlement_with_reverse_win(SettlementState::new(
+        vec![1],
+        Some(0),
+        Some(1),
+        false,
+        false,
+        false,
+        false,
+    ));
     let settlement = state.settlement.as_ref().expect("settlement");
     let hand_tiles = winner_final_hand_tiles(&state, settlement, 1);
     let melds = state.melds.get(&1).map(Vec::as_slice).unwrap_or(&[]);
@@ -646,7 +702,15 @@ fn settlement_fan_counts_terminal_single_wait_when_other_wait_is_exhausted() {
             Some(0),
         )],
     );
-    state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(1), false, false, false, false);
+    state.enter_settlement_with_reverse_win(SettlementState::new(
+        vec![1],
+        Some(0),
+        Some(1),
+        false,
+        false,
+        false,
+        false,
+    ));
     let settlement = state.settlement.as_ref().expect("settlement");
     let hand_tiles = winner_final_hand_tiles(&state, settlement, 1);
     let melds = state.melds.get(&1).map(Vec::as_slice).unwrap_or(&[]);
@@ -662,7 +726,15 @@ fn settlement_fan_does_not_count_closed_middle_shape_with_multiple_waits() {
         .hands
         .insert(1, vec![6, 7, 7, 8, 9, 15, 15, 15, 22, 22]);
     state.melds.insert(1, vec![open_chi_meld(11)]);
-    state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(8), false, false, false, false);
+    state.enter_settlement_with_reverse_win(SettlementState::new(
+        vec![1],
+        Some(0),
+        Some(8),
+        false,
+        false,
+        false,
+        false,
+    ));
     let settlement = state.settlement.as_ref().expect("settlement");
 
     assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
@@ -695,7 +767,15 @@ fn settlement_fan_does_not_count_open_two_sided_wait_as_single_wait() {
         .hands
         .insert(1, vec![2, 3, 5, 6, 7, 21, 22, 23, 35, 35]);
     state.melds.insert(1, vec![open_chi_meld(11)]);
-    state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(4), false, false, false, false);
+    state.enter_settlement_with_reverse_win(SettlementState::new(
+        vec![1],
+        Some(0),
+        Some(4),
+        false,
+        false,
+        false,
+        false,
+    ));
     let settlement = state.settlement.as_ref().expect("settlement");
 
     assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
@@ -725,7 +805,15 @@ fn settlement_fan_does_not_count_terminal_triplet_completion_as_single_wait() {
     let mut state = playable_state();
     state.hands.insert(1, vec![1, 1, 4, 5, 6, 7, 8, 9, 21, 21]);
     state.melds.insert(1, vec![open_chi_meld(11)]);
-    state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(1), false, false, false, false);
+    state.enter_settlement_with_reverse_win(SettlementState::new(
+        vec![1],
+        Some(0),
+        Some(1),
+        false,
+        false,
+        false,
+        false,
+    ));
     let settlement = state.settlement.as_ref().expect("settlement");
 
     assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
@@ -738,7 +826,15 @@ fn settlement_fan_ignores_gang_draw_flag_on_discard_win() {
         .hands
         .insert(1, vec![2, 3, 11, 12, 13, 31, 31, 31, 35, 35]);
     state.melds.insert(1, vec![open_peng_meld(21, 3)]);
-    state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(4), false, false, true, false);
+    state.enter_settlement_with_reverse_win(SettlementState::new(
+        vec![1],
+        Some(0),
+        Some(4),
+        false,
+        false,
+        true,
+        false,
+    ));
     let settlement = state.settlement.as_ref().expect("settlement");
 
     assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
@@ -754,7 +850,15 @@ fn settlement_fan_ignores_haidilao_flag_on_discard_win() {
         .hands
         .insert(1, vec![2, 3, 11, 12, 13, 31, 31, 31, 35, 35]);
     state.melds.insert(1, vec![open_peng_meld(21, 3)]);
-    state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(4), false, false, false, true);
+    state.enter_settlement_with_reverse_win(SettlementState::new(
+        vec![1],
+        Some(0),
+        Some(4),
+        false,
+        false,
+        false,
+        true,
+    ));
     let settlement = state.settlement.as_ref().expect("settlement");
 
     assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
@@ -785,7 +889,15 @@ fn settlement_fan_ignores_invalid_source_melds_for_single_wait() {
             Some(2),
         )],
     );
-    state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(1), false, false, false, false);
+    state.enter_settlement_with_reverse_win(SettlementState::new(
+        vec![1],
+        Some(0),
+        Some(1),
+        false,
+        false,
+        false,
+        false,
+    ));
     let settlement = state.settlement.as_ref().expect("settlement");
     let hand_tiles = winner_final_hand_tiles(&state, settlement, 1);
     let melds = state.melds.get(&1).map(Vec::as_slice).unwrap_or(&[]);
@@ -871,7 +983,15 @@ fn settlement_fan_ignores_reverse_win_flag_on_self_draw() {
         .hands
         .insert(1, vec![2, 3, 4, 11, 12, 13, 31, 31, 31, 35, 35]);
     state.melds.insert(1, vec![open_peng_meld(21, 3)]);
-    state.enter_settlement_with_reverse_win(vec![1], Some(0), None, true, true, false, false);
+    state.enter_settlement_with_reverse_win(SettlementState::new(
+        vec![1],
+        Some(0),
+        None,
+        true,
+        true,
+        false,
+        false,
+    ));
     let settlement = state.settlement.as_ref().expect("settlement");
 
     assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
@@ -926,7 +1046,15 @@ fn settlement_fan_rejects_invalid_meld_for_single_wait() {
             Some(0),
         )],
     );
-    state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(35), false, false, false, false);
+    state.enter_settlement_with_reverse_win(SettlementState::new(
+        vec![1],
+        Some(0),
+        Some(35),
+        false,
+        false,
+        false,
+        false,
+    ));
     let settlement = state.settlement.as_ref().expect("settlement");
     let hand_tiles = winner_final_hand_tiles(&state, settlement, 1);
     let melds = state.melds.get(&1).map(Vec::as_slice).unwrap_or(&[]);
@@ -1008,7 +1136,15 @@ fn settlement_fan_requires_gang_meld_and_empty_wall_for_draw_bonuses() {
         .hands
         .insert(1, vec![2, 3, 4, 11, 12, 13, 31, 31, 31, 35, 35]);
     state.melds.insert(1, vec![open_peng_meld(21, 3)]);
-    state.enter_settlement_with_reverse_win(vec![1], None, None, true, false, true, true);
+    state.enter_settlement_with_reverse_win(SettlementState::new(
+        vec![1],
+        None,
+        None,
+        true,
+        false,
+        true,
+        true,
+    ));
     let settlement = state.settlement.clone().expect("settlement");
 
     assert_eq!(winner_hand_fan(&state, &settlement, 1), 2);
@@ -1052,7 +1188,15 @@ fn settlement_fan_requires_open_peng_source_for_rob_gang() {
         .hands
         .insert(1, vec![2, 3, 11, 12, 13, 31, 31, 31, 35, 35]);
     state.melds.insert(1, vec![open_peng_meld(21, 3)]);
-    state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(4), false, true, false, false);
+    state.enter_settlement_with_reverse_win(SettlementState::new(
+        vec![1],
+        Some(0),
+        Some(4),
+        false,
+        true,
+        false,
+        false,
+    ));
     let settlement = state.settlement.clone().expect("settlement");
 
     assert_eq!(winner_hand_fan(&state, &settlement, 1), 1);
@@ -1102,7 +1246,15 @@ fn settlement_fan_uses_shenyang_rules_for_single_wait() {
         .hands
         .insert(1, vec![11, 12, 13, 21, 22, 23, 31, 31, 31, 35]);
     state.melds.insert(1, vec![open_chi_meld(1)]);
-    state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(35), false, false, false, false);
+    state.enter_settlement_with_reverse_win(SettlementState::new(
+        vec![1],
+        Some(0),
+        Some(35),
+        false,
+        false,
+        false,
+        false,
+    ));
     let settlement = state.settlement.as_ref().expect("settlement");
 
     assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
@@ -1181,7 +1333,15 @@ fn settlement_rejects_public_fifth_claim_tile() {
             None,
         )],
     );
-    state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(6), false, false, false, false);
+    state.enter_settlement_with_reverse_win(SettlementState::new(
+        vec![1],
+        Some(0),
+        Some(6),
+        false,
+        false,
+        false,
+        false,
+    ));
     let settlement = state.settlement.clone().expect("settlement");
 
     assert_eq!(known_tile_count(&state, 6), 4);

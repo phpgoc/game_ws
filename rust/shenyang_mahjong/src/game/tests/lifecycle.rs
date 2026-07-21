@@ -27,9 +27,11 @@ fn ting_candidates_are_human_only_and_declaration_is_recorded() {
         &mut human_state,
         &default_configs(),
         &mut dispatch,
-        0,
-        32,
-        true,
+        DiscardAction {
+            position: 0,
+            tile: 32,
+            declare_ting: true,
+        },
     ));
     assert!(human_state.is_ting(0));
     let declared_event = dispatch.messages.iter().find_map(|message| {
@@ -110,9 +112,11 @@ fn ting_candidates_reject_publicly_exhausted_wait_tile() {
         &mut state,
         &default_configs(),
         &mut dispatch,
-        0,
-        5,
-        true,
+        DiscardAction {
+            position: 0,
+            tile: 5,
+            declare_ting: true,
+        },
     ));
     assert!(!state.is_ting(0));
     assert!(dispatch.messages.is_empty());
@@ -154,9 +158,11 @@ fn ting_candidates_honor_closed_sequence_exception_after_xi_gang() {
         &mut state,
         &closed_sequence,
         &mut dispatch,
-        0,
-        24,
-        true,
+        DiscardAction {
+            position: 0,
+            tile: 24,
+            declare_ting: true,
+        },
     ));
     assert!(state.is_ting(0));
 }
@@ -282,7 +288,15 @@ fn enabled_ting_setting_adds_one_fan_before_the_cap() {
         .insert(1, vec![2, 3, 5, 6, 7, 11, 12, 13, 31, 31]);
     state.melds.insert(1, vec![open_peng_meld(21, 0)]);
     state.declare_ting(1);
-    state.enter_settlement_with_reverse_win(vec![1], Some(0), Some(4), false, false, false, false);
+    state.enter_settlement_with_reverse_win(SettlementState::new(
+        vec![1],
+        Some(0),
+        Some(4),
+        false,
+        false,
+        false,
+        false,
+    ));
     let settlement = state.settlement.as_ref().expect("settlement");
     let disabled = HashMap::from([("ting_fan".to_owned(), 0)]);
     let enabled = HashMap::from([("ting_fan".to_owned(), 1)]);
@@ -477,7 +491,7 @@ fn redeal_uses_only_positive_score_winners_for_dealer_rotation() {
             build_meld(ShenyangMahjongMeldKind::PENG, vec![31, 31, 31], Some(3)),
         ],
     );
-    state.enter_settlement_with_reverse_win(
+    state.enter_settlement_with_reverse_win(SettlementState::new(
         vec![0, 1],
         Some(2),
         Some(1),
@@ -485,7 +499,7 @@ fn redeal_uses_only_positive_score_winners_for_dealer_rotation() {
         false,
         false,
         false,
-    );
+    ));
     let settlement = state.settlement.as_ref().expect("settlement");
 
     assert_eq!(winner_hand_fan(&state, settlement, 0), 0);

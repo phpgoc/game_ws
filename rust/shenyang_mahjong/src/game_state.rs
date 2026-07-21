@@ -50,6 +50,28 @@ pub struct SettlementState {
     pub is_haidilao: bool,
 }
 
+impl SettlementState {
+    pub fn new(
+        winner_positions: Vec<usize>,
+        from_position: Option<usize>,
+        win_tile: Option<i32>,
+        is_self_draw: bool,
+        is_reverse_win: bool,
+        is_gang_draw: bool,
+        is_haidilao: bool,
+    ) -> Self {
+        Self {
+            winner_positions,
+            from_position,
+            win_tile,
+            is_self_draw,
+            is_reverse_win,
+            is_gang_draw,
+            is_haidilao,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ShenyangMahjongGameState {
     inner: Arc<Mutex<ShenyangMahjongLoopState>>,
@@ -278,7 +300,7 @@ impl ShenyangMahjongLoopState {
         win_tile: Option<i32>,
         is_self_draw: bool,
     ) {
-        self.enter_settlement_with_reverse_win(
+        self.enter_settlement_with_reverse_win(SettlementState::new(
             winner_positions,
             from_position,
             win_tile,
@@ -286,33 +308,16 @@ impl ShenyangMahjongLoopState {
             false,
             false,
             false,
-        );
+        ));
     }
 
-    pub fn enter_settlement_with_reverse_win(
-        &mut self,
-        winner_positions: Vec<usize>,
-        from_position: Option<usize>,
-        win_tile: Option<i32>,
-        is_self_draw: bool,
-        is_reverse_win: bool,
-        is_gang_draw: bool,
-        is_haidilao: bool,
-    ) {
+    pub fn enter_settlement_with_reverse_win(&mut self, settlement: SettlementState) {
         self.phase = ShenyangMahjongPhase::Settlement;
         self.claim_window = None;
         self.last_drawn_tile = None;
         self.pending_gang_draw = false;
         self.xi_gang_options.clear();
-        self.settlement = Some(SettlementState {
-            winner_positions,
-            from_position,
-            win_tile,
-            is_self_draw,
-            is_reverse_win,
-            is_gang_draw,
-            is_haidilao,
-        });
+        self.settlement = Some(settlement);
         self.settlement_scores_applied = false;
         self.set_action_received(false);
     }

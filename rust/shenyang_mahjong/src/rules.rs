@@ -204,7 +204,7 @@ fn can_form_triplets_with_dragon_pair(tiles: &[i32]) -> bool {
                 if tile == pair_tile {
                     count -= 2;
                 }
-                count % 3 == 0
+                count.is_multiple_of(3)
             })
     })
 }
@@ -222,7 +222,7 @@ fn can_form_triplets_with_pair(tiles: &[i32]) -> bool {
                 if tile == pair_tile {
                     count -= 2;
                 }
-                count % 3 == 0
+                count.is_multiple_of(3)
             })
     })
 }

@@ -21,7 +21,7 @@ use ws_common::{
 use crate::game_loop::start_game_loop;
 use crate::game_setting::build_shenyang_mahjong_settings;
 use crate::game_state::{
-    ClaimResponse, ClaimWindowKind, ClaimWindowState, ShenyangMahjongGameState,
+    ClaimResponse, ClaimWindowKind, ClaimWindowState, SettlementState, ShenyangMahjongGameState,
     ShenyangMahjongLoopState, build_meld, meld_source_is_valid_for_positions,
 };
 use crate::rules::{
@@ -980,10 +980,19 @@ pub(crate) fn perform_discard(
         state,
         configs,
         dispatch,
-        position,
-        tile,
-        false,
+        DiscardAction {
+            position,
+            tile,
+            declare_ting: false,
+        },
     )
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct DiscardAction {
+    pub position: usize,
+    pub tile: i32,
+    pub declare_ting: bool,
 }
 
 pub(crate) fn perform_discard_with_ting(
@@ -992,10 +1001,13 @@ pub(crate) fn perform_discard_with_ting(
     state: &mut ShenyangMahjongLoopState,
     configs: &HashMap<String, i32>,
     dispatch: &mut Dispatch,
-    position: usize,
-    tile: i32,
-    declare_ting: bool,
+    action: DiscardAction,
 ) -> bool {
+    let DiscardAction {
+        position,
+        tile,
+        declare_ting,
+    } = action;
     if state.phase != ShenyangMahjongPhase::Play
         || state.current_position != position
         || state.claim_window.is_some()
@@ -1104,7 +1116,7 @@ pub(crate) fn perform_self_draw_hu(
     let win_tile = state.last_drawn_tile;
     let is_gang_draw = state.pending_gang_draw;
     let is_haidilao = state.wall_count() == 0;
-    state.enter_settlement_with_reverse_win(
+    state.enter_settlement_with_reverse_win(SettlementState::new(
         vec![position],
         None,
         win_tile,
@@ -1112,7 +1124,7 @@ pub(crate) fn perform_self_draw_hu(
         false,
         is_gang_draw,
         is_haidilao,
-    );
+    ));
     finalize_settlement(room_service, room_key, state, configs);
     push_phase_change(
         room_service,
@@ -1813,7 +1825,7 @@ pub(crate) fn resolve_claim_window(
                 },
             );
         }
-        state.enter_settlement_with_reverse_win(
+        state.enter_settlement_with_reverse_win(SettlementState::new(
             winners,
             Some(claim_window.from_position),
             Some(claim_window.tile),
@@ -1821,7 +1833,7 @@ pub(crate) fn resolve_claim_window(
             is_rob_gang,
             false,
             false,
-        );
+        ));
         finalize_settlement(room_service, room_key, state, configs);
         push_phase_change(
             room_service,
@@ -1918,66 +1930,66 @@ pub(crate) fn resolve_claim_window(
                     );
                 }
             }
-            ClaimResponse::Gang => {
+            ClaimResponse::Gang
                 if state.remove_tiles_from_hand(
                     winner,
                     &[claim_window.tile, claim_window.tile, claim_window.tile],
-                ) {
-                    state.remove_last_discard(claim_window.from_position);
-                    state.melds.entry(winner).or_default().push(build_meld(
-                        ShenyangMahjongMeldKind::GANG,
-                        vec![
-                            claim_window.tile,
-                            claim_window.tile,
-                            claim_window.tile,
-                            claim_window.tile,
-                        ],
-                        Some(claim_window.from_position),
-                    ));
-                    state.current_position = winner;
-                    state.last_drawn_tile = None;
-                    state.claim_window = None;
-                    push_room_event(
+                ) =>
+            {
+                state.remove_last_discard(claim_window.from_position);
+                state.melds.entry(winner).or_default().push(build_meld(
+                    ShenyangMahjongMeldKind::GANG,
+                    vec![
+                        claim_window.tile,
+                        claim_window.tile,
+                        claim_window.tile,
+                        claim_window.tile,
+                    ],
+                    Some(claim_window.from_position),
+                ));
+                state.current_position = winner;
+                state.last_drawn_tile = None;
+                state.claim_window = None;
+                push_room_event(
+                    room_service,
+                    room_key,
+                    dispatch,
+                    WsCode::PLAY as i32,
+                    WsShenyangMahjongPlayEvent {
+                        name: state.player_name(winner),
+                        position: winner as i32,
+                        action: ShenyangMahjongAction::GANG,
+                        tiles: vec![claim_window.tile, claim_window.tile, claim_window.tile],
+                        target_tile: Some(claim_window.tile),
+                        from_position: Some(claim_window.from_position as i32),
+                        wall_count: state.wall_count() as i32,
+                        xi_gang_options: Vec::new(),
+                        ting_discard_tiles: Vec::new(),
+                        is_ting: None,
+                    },
+                );
+                if let Some(tile) = state.draw_for_position(winner) {
+                    state.pending_gang_draw = true;
+                    state.set_turn_countdown(current_play_time(configs));
+                    push_draw_events(
+                        room_service,
+                        room_key,
+                        state,
+                        configs,
+                        dispatch,
+                        winner,
+                        tile,
+                    );
+                    push_phase_change(
                         room_service,
                         room_key,
                         dispatch,
-                        WsCode::PLAY as i32,
-                        WsShenyangMahjongPlayEvent {
-                            name: state.player_name(winner),
-                            position: winner as i32,
-                            action: ShenyangMahjongAction::GANG,
-                            tiles: vec![claim_window.tile, claim_window.tile, claim_window.tile],
-                            target_tile: Some(claim_window.tile),
-                            from_position: Some(claim_window.from_position as i32),
-                            wall_count: state.wall_count() as i32,
-                            xi_gang_options: Vec::new(),
-                            ting_discard_tiles: Vec::new(),
-                            is_ting: None,
-                        },
+                        state.phase,
+                        state.current_position,
+                        state.turn_countdown(),
                     );
-                    if let Some(tile) = state.draw_for_position(winner) {
-                        state.pending_gang_draw = true;
-                        state.set_turn_countdown(current_play_time(configs));
-                        push_draw_events(
-                            room_service,
-                            room_key,
-                            state,
-                            configs,
-                            dispatch,
-                            winner,
-                            tile,
-                        );
-                        push_phase_change(
-                            room_service,
-                            room_key,
-                            dispatch,
-                            state.phase,
-                            state.current_position,
-                            state.turn_countdown(),
-                        );
-                    } else {
-                        settle_draw(room_service, room_key, state, configs, dispatch);
-                    }
+                } else {
+                    settle_draw(room_service, room_key, state, configs, dispatch);
                 }
             }
             _ => {}
@@ -2267,9 +2279,11 @@ fn valid_settlement_winner_positions(
         .collect::<Vec<_>>();
 
     if settlement.is_self_draw {
-        return (winner_positions.len() == 1)
-            .then_some(winner_positions)
-            .unwrap_or_default();
+        return if winner_positions.len() == 1 {
+            winner_positions
+        } else {
+            Vec::new()
+        };
     }
 
     settlement

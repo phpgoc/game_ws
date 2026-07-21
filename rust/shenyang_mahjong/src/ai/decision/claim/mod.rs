@@ -21,7 +21,7 @@ pub(super) use requirements::*;
 
 use chi_choice::choose_chi_claim;
 use gang_choice::choose_gang_claim;
-use peng_choice::choose_peng_claim;
+use peng_choice::{PengClaimScores, choose_peng_claim};
 
 pub(in crate::ai::decision) const CAPPED_HU_CHASE_MIN_WALL_HIT_PROBABILITY: f64 = 2.0 / 3.0;
 const EXPECTED_OPPONENT_COUNT: usize = 3;
@@ -155,8 +155,10 @@ pub fn choose_claim_from_view(
         position,
         tile,
         claim.from_position,
-        current_score,
-        current_ready_score,
+        PengClaimScores {
+            progress: current_score,
+            ready: current_ready_score,
+        },
     ) {
         return Some(choice);
     }

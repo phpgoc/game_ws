@@ -120,7 +120,7 @@ fn dealer_can_start_overwhelming_pure_one_suit_by_clearing_third_blocker() {
 
     assert!(matches!(
         choose_discard_from_view(&hand, &table, 0),
-        Some(11 | 12 | 13)
+        Some(11..=13)
     ));
 }
 

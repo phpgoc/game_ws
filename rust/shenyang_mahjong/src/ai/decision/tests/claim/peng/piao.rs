@@ -325,7 +325,7 @@ fn closed_piao_peng_ignores_malformed_meld() {
     let claim = table.claim_window.clone().unwrap();
     let hand = vec![1, 1, 4, 5, 5, 6, 11, 12, 13, 21, 21, 35, 35];
 
-    assert_eq!(valid_meld_count(&[malformed_meld.clone()]), 0);
+    assert_eq!(valid_meld_count(std::slice::from_ref(&malformed_meld)), 0);
     assert!(should_claim_peng_for_closed_early_piao_candidate(
         &hand,
         &[malformed_meld],
