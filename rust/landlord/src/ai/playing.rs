@@ -181,10 +181,11 @@ fn choose_feed_ally_finish<'a>(
         .iter()
         .filter_map(|candidate| {
             let ally_finish_probability = ally.probability_can_finish_over(&candidate.combo);
-            let enemy_interception_probability =
-                belief.probability_enemies_can_beat(&candidate.combo);
-            let net_success_probability =
-                ally_finish_probability * (1.0 - enemy_interception_probability);
+            let net_success_probability = belief
+                .probability_ally_can_finish_without_enemy_interception(
+                    ally_position,
+                    &candidate.combo,
+                );
             if net_success_probability < MIN_FEED_NET_SUCCESS_PROBABILITY {
                 return None;
             }
@@ -613,6 +614,28 @@ mod tests {
         let candidates = super::super::candidates::all_candidates(&observation.hand);
 
         assert!(super::choose_feed_ally_finish(&observation, &belief, &candidates, 2).is_none());
+    }
+
+    #[test]
+    fn support_farmer_checks_interception_after_the_teammate_finishes() {
+        let observation = fully_known_support_lead_with_hands(
+            vec![1, 14], // 对 3，只能拆出一张单 3
+            vec![13],    // 队友用 2 收尾
+            vec![12],    // 地主只有 A，压不住队友的 2
+        );
+        let belief = CardBelief::from_observation(&observation);
+        let fed = crate::core::play::classify(&[1]).expect("single");
+
+        assert!(
+            belief.probability_ally_can_finish_without_enemy_interception(2, &fed) > 0.999,
+            "the landlord must be checked against the teammate's finishing 2"
+        );
+        let candidates = super::super::candidates::all_candidates(&observation.hand);
+        assert_eq!(
+            super::choose_feed_ally_finish(&observation, &belief, &candidates, 2)
+                .map(|candidate| candidate.cards.clone()),
+            Some(vec![1])
+        );
     }
 
     #[test]

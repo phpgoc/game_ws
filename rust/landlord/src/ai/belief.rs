@@ -506,6 +506,60 @@ impl CardBelief {
         (1.0 - none).clamp(0.0, 1.0)
     }
 
+    /// Estimate whether an ally can finish over a fed combo and keep that
+    /// finish after the enemy gets the next turn. The enemy must be checked
+    /// against the ally's actual finishing combo, not the initial feed.
+    pub fn probability_ally_can_finish_without_enemy_interception(
+        &self,
+        ally_position: usize,
+        combo: &Combo,
+    ) -> f64 {
+        let Some(ally) = self.opponents.get(&ally_position) else {
+            return 0.0;
+        };
+        let enemies = self
+            .opponents
+            .values()
+            .filter(|estimate| estimate.relationship == Relationship::Enemy)
+            .collect::<Vec<_>>();
+        if self.worlds.is_empty()
+            || ally.samples.len() != self.worlds.len()
+            || enemies
+                .iter()
+                .any(|estimate| estimate.samples.len() != self.worlds.len())
+        {
+            let finish_probability = ally.probability_can_finish_over(combo);
+            return (finish_probability * (1.0 - self.probability_enemies_can_beat(combo)))
+                .clamp(0.0, 1.0);
+        }
+
+        self.worlds
+            .iter()
+            .enumerate()
+            .filter(|(world_index, world)| {
+                let Some(ally_hand) = world.hands.get(&ally_position) else {
+                    return false;
+                };
+                ally.samples[*world_index]
+                    .combos
+                    .iter()
+                    .filter(|candidate| {
+                        combo_card_count(candidate) == ally_hand.len() && can_beat(candidate, combo)
+                    })
+                    .any(|finish| {
+                        enemies.iter().all(|enemy| {
+                            enemy.samples[*world_index]
+                                .combos
+                                .iter()
+                                .all(|response| !can_beat(response, finish))
+                        })
+                    })
+            })
+            .map(|(_, world)| world.weight)
+            .sum::<f64>()
+            .clamp(0.0, 1.0)
+    }
+
     pub fn rank_is_control(&self, rank: u8) -> bool {
         ((rank + 1)..=LAST_RANK).all(|higher| self.remaining_outside_hand[higher as usize] == 0)
     }
