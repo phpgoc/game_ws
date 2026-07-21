@@ -58,6 +58,7 @@ fn raw_hand_strength(hand: &[i32]) -> f64 {
     strength += bombs as f64 * 5.0;
     strength += grouped.get(&15).copied().unwrap_or(0) as f64 * 1.55;
     strength += grouped.get(&14).copied().unwrap_or(0) as f64 * 0.65;
+    strength += grouped.get(&13).copied().unwrap_or(0) as f64 * 0.4;
     strength += (8_usize.saturating_sub(turns)) as f64 * 1.15;
 
     strength
@@ -109,6 +110,7 @@ fn expected_bottom_gain(hand: &[i32]) -> f64 {
                     16 => 2.3,
                     15 => 1.55,
                     14 => 0.65,
+                    13 => 0.4,
                     _ => 0.0,
                 })
                 .sum::<f64>();
@@ -141,7 +143,7 @@ mod tests {
 
     use crate::ai::{AiObservation, tests::state_with_hands};
 
-    use super::{choose_bid, expected_bottom_gain};
+    use super::{choose_bid, expected_bottom_gain, raw_hand_strength};
 
     fn observation(hand: Vec<i32>, current_score: u8) -> AiObservation {
         let mut state = state_with_hands(&[(0, hand), (1, vec![2, 3, 4]), (2, vec![5, 6, 7])]);
@@ -163,6 +165,14 @@ mod tests {
     fn scattered_low_cards_pass() {
         let weak = vec![1, 2, 3, 4, 5, 6, 14, 16, 18, 20, 28, 30, 32, 34, 42, 44, 46];
         assert_eq!(choose_bid(&observation(weak, 0)), 0);
+    }
+
+    #[test]
+    fn kings_add_high_card_strength_at_the_same_hand_size() {
+        let weak = vec![1, 2, 3, 4, 5, 6, 14, 16, 18, 20, 28, 30, 32, 34, 42, 44, 46];
+        let with_kings = vec![1, 2, 3, 4, 5, 6, 14, 16, 18, 20, 28, 30, 32, 34, 11, 24, 46];
+
+        assert!(raw_hand_strength(&with_kings) > raw_hand_strength(&weak));
     }
 
     #[test]
