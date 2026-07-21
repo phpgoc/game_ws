@@ -1259,7 +1259,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_win_rule_config_is_ignored() {
+    fn unknown_win_rule_config_is_ignored() {
         let configs = std::collections::HashMap::from([("win_rule".to_owned(), 0)]);
 
         assert_eq!(

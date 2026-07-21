@@ -1251,7 +1251,7 @@ fn play_request_gang_rejects_without_triplet() {
 }
 
 #[test]
-fn play_request_legacy_nearest_config_still_allows_multiple_hu() {
+fn play_request_ignores_unknown_rule_configs_and_allows_multiple_hu() {
     let (mut room_service, mut handler, _room_key, loop_state) =
         setup_request_room_with_configs(serde_json::json!({"multi_hu_mode":0,"win_rule":0}));
     {

@@ -31,7 +31,7 @@ fn basic_heng_filter_ignores_chi_tile_plus_hand_pair() {
 }
 
 #[test]
-fn legacy_rule_number_cannot_disable_shenyang_discard_guards() {
+fn shenyang_rule_guards_are_unconditional() {
     let table = table_with_discards(1, Vec::new());
     let melds = vec![test_chi_meld(11)];
     let hand_after_discard = vec![1, 1, 21, 22, 23, 24, 25, 26, 31, 35];

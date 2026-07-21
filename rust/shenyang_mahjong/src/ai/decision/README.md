@@ -21,7 +21,7 @@ decision/
   score/              # progress, readiness, fan, and pressure scoring
   self_gang.rs        # concealed and added-gang choices on own turn
   seven_pairs/        # seven-pairs planning, waits, and discard choices
-  shenyang_rule/      # Shenyang-basic progress and requirement guards
+  shenyang_rule/      # Shenyang rule progress and requirement guards
   table/              # public table reads, visibility, remaining tiles, and turn order
   tile.rs             # tile predicates and identity helpers
   types.rs            # small shared decision types
@@ -62,7 +62,7 @@ root.
 - `piao/`: Piao-hu planning and discard helpers.
 - `seven_pairs/`: seven-pairs planning, waits, and discard choices.
 - `pure_one_suit.rs`: pure-one-suit planning.
-- `shenyang_rule/`: Shenyang-basic rule progress, recovery checks, and discard
+- `shenyang_rule/`: Shenyang rule progress, recovery checks, and discard
   requirement guards.
 - `round.rs`: round-phase helpers.
 
