@@ -99,6 +99,26 @@ impl OpponentEstimate {
         combine_probabilities(same_kind, bomb_or_rocket).clamp(0.0, 1.0)
     }
 
+    pub fn probability_can_finish_over(&self, combo: &Combo) -> f64 {
+        if self.samples.is_empty() {
+            return if self.hand_size == 1 {
+                self.probability_can_beat(combo)
+            } else {
+                0.0
+            };
+        }
+        self.samples
+            .iter()
+            .filter(|sample| {
+                sample.combos.iter().any(|candidate| {
+                    combo_card_count(candidate) == self.hand_size && can_beat(candidate, combo)
+                })
+            })
+            .map(|sample| sample.weight)
+            .sum::<f64>()
+            .clamp(0.0, 1.0)
+    }
+
     pub fn probability_has_pair(&self) -> f64 {
         if self.samples.is_empty() {
             let mut none = 1.0;

@@ -141,9 +141,10 @@ fn choose_lead(
             .copied()
             .unwrap_or(usize::MAX);
         match observation.relationship_to(next) {
-            Relationship::Ally if next_cards == 1 => {
-                if let Some(single) = choose_feed_single(observation, belief, &candidates, next) {
-                    return single.cards.clone();
+            Relationship::Ally => {
+                if let Some(feed) = choose_feed_ally_finish(observation, belief, &candidates, next)
+                {
+                    return feed.cards.clone();
                 }
             }
             Relationship::Enemy if next_cards == 1 => {
@@ -167,7 +168,7 @@ fn choose_lead(
         .unwrap_or_default()
 }
 
-fn choose_feed_single<'a>(
+fn choose_feed_ally_finish<'a>(
     observation: &AiObservation,
     belief: &CardBelief,
     candidates: &'a [Candidate],
@@ -178,9 +179,8 @@ fn choose_feed_single<'a>(
     let ally = belief.opponents.get(&ally_position)?;
     candidates
         .iter()
-        .filter(|candidate| candidate.combo.kind == ComboKind::Single)
         .filter_map(|candidate| {
-            let success_probability = ally.probability_can_beat(&candidate.combo);
+            let success_probability = ally.probability_can_finish_over(&candidate.combo);
             if success_probability < MIN_FEED_SUCCESS_PROBABILITY {
                 return None;
             }
@@ -411,7 +411,7 @@ fn remove_cards(hand: &mut Vec<i32>, cards: &[i32]) {
 mod tests {
     use share_type_public::LandlordPhase;
 
-    use crate::ai::{AiObservation, tests::state_with_hands};
+    use crate::ai::{AiObservation, CardBelief, tests::state_with_hands};
     use crate::game_state::LandlordPlayRecord;
 
     use crate::core::play::ComboKind;
@@ -439,29 +439,41 @@ mod tests {
         ally_card: i32,
         landlord_card: i32,
     ) -> AiObservation {
+        fully_known_support_lead_with_hands(own_hand, vec![ally_card], vec![landlord_card])
+    }
+
+    fn fully_known_support_lead_with_hands(
+        own_hand: Vec<i32>,
+        ally_hand: Vec<i32>,
+        landlord_hand: Vec<i32>,
+    ) -> AiObservation {
         let held = own_hand
             .iter()
             .copied()
-            .chain([ally_card, landlord_card])
+            .chain(ally_hand.iter().copied())
+            .chain(landlord_hand.iter().copied())
             .collect::<std::collections::HashSet<_>>();
         let mut played = (1..=54)
             .filter(|card| !held.contains(card))
             .collect::<Vec<_>>();
         let own_played = played.drain(..17 - own_hand.len()).collect::<Vec<_>>();
-        let ally_played = played.drain(..16).collect::<Vec<_>>();
+        let ally_played = played.drain(..17 - ally_hand.len()).collect::<Vec<_>>();
         let landlord_played = played;
-        assert_eq!(landlord_played.len(), 19);
+        assert_eq!(landlord_played.len(), 20 - landlord_hand.len());
+        let hidden_cards = landlord_hand
+            .iter()
+            .chain(&landlord_played)
+            .take(3)
+            .copied()
+            .collect::<Vec<_>>();
+        assert_eq!(hidden_cards.len(), 3);
 
-        let mut state = state_with_hands(&[
-            (0, vec![landlord_card]),
-            (1, own_hand),
-            (2, vec![ally_card]),
-        ]);
+        let mut state = state_with_hands(&[(0, landlord_hand), (1, own_hand), (2, ally_hand)]);
         state.phase = LandlordPhase::Play;
         state.landlord_position = Some(0);
         state.current_position = 1;
         state.last_play_position = 1;
-        state.hidden_cards = vec![landlord_card, landlord_played[0], landlord_played[1]];
+        state.hidden_cards = hidden_cards;
         state.play_history.extend([
             LandlordPlayRecord {
                 position: 1,
@@ -573,6 +585,34 @@ mod tests {
             Vec::new(),
         );
         assert_eq!(choose_play(&observation), vec![1]);
+    }
+
+    #[test]
+    fn support_farmer_feeds_a_pair_to_two_card_teammate() {
+        let observation = fully_known_support_lead_with_hands(
+            vec![1, 14, 2, 15, 3], // 对 3、对 4、单 5
+            vec![6, 19],           // 队友最后一手是对 8
+            vec![54],
+        );
+
+        assert_eq!(choose_heuristic_play(&observation), vec![1, 14]);
+    }
+
+    #[test]
+    fn teammate_finish_probability_rejects_two_unpaired_cards() {
+        let pair_observation =
+            fully_known_support_lead_with_hands(vec![1, 14, 2, 15, 3], vec![6, 19], vec![54]);
+        let unpaired_observation =
+            fully_known_support_lead_with_hands(vec![1, 14, 2, 15, 3], vec![6, 20], vec![54]);
+        let benchmark = crate::core::play::classify(&[1, 14]).expect("pair");
+        let pair_belief = CardBelief::from_observation(&pair_observation);
+        let unpaired_belief = CardBelief::from_observation(&unpaired_observation);
+
+        assert!(pair_belief.opponents[&2].probability_can_finish_over(&benchmark) > 0.999);
+        assert_eq!(
+            unpaired_belief.opponents[&2].probability_can_finish_over(&benchmark),
+            0.0
+        );
     }
 
     #[test]
