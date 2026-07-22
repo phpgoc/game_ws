@@ -2417,6 +2417,26 @@ fn play_request_rob_gang_allows_multiple_hu() {
     );
     assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
     assert_eq!(winner_hand_fan(&state, settlement, 2), 2);
+
+    let event = build_settlement_event(&state).expect("settlement event");
+    assert!(event.is_reverse_win);
+    assert_eq!(event.winner_positions, vec![1, 2]);
+    assert_eq!(
+        event
+            .score_changes
+            .iter()
+            .map(|change| (change.position, change.score))
+            .collect::<Vec<_>>(),
+        vec![(0, -16), (1, 8), (2, 8), (3, 0)]
+    );
+    assert_eq!(
+        event
+            .winner_details
+            .iter()
+            .map(|detail| (detail.position, detail.score, detail.is_reverse_win))
+            .collect::<Vec<_>>(),
+        vec![(1, 8, true), (2, 8, true)]
+    );
 }
 
 #[test]

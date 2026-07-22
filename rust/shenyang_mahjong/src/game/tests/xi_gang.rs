@@ -89,6 +89,39 @@ fn two_xi_gangs_can_be_declared_dragon_first() {
 }
 
 #[test]
+fn first_discard_closes_undeclared_xi_gang_window_permanently() {
+    let mut state = playable_state();
+    state.current_position = 1;
+    state
+        .hands
+        .insert(1, vec![1, 2, 3, 11, 12, 13, 21, 22, 31, 32, 33, 34, 35]);
+    state.melds.insert(1, Vec::new());
+    state.wall = vec![8, 9, 36];
+
+    assert_eq!(state.draw_for_next_turn(1), Some(36));
+    assert_eq!(
+        state.xi_gang_options_for_position(1),
+        vec![vec![31, 32, 33, 34]]
+    );
+
+    let mut dispatch = Dispatch::default();
+    assert!(perform_discard(
+        &RoomService::default(),
+        "room",
+        &mut state,
+        &HashMap::new(),
+        &mut dispatch,
+        1,
+        35,
+    ));
+    assert!(state.xi_gang_options_for_position(1).is_empty());
+
+    assert_eq!(state.draw_for_next_turn(1), Some(8));
+    assert!(state.xi_gang_options_for_position(1).is_empty());
+    assert!(!can_declare_xi_gang(&state, 1, &[31, 32, 33, 34]));
+}
+
+#[test]
 fn drawn_dragon_moved_into_xi_gang_can_complete_self_draw_without_gang_draw() {
     let mut state = playable_state();
     state.current_position = 1;
