@@ -383,22 +383,31 @@ async fn handle_play_phase(
         }
 
         // Broadcast game over
-        let (is_landlord_win, landlord_position, score) = {
+        let (is_landlord_win, landlord_position, settlement, player_scores) = {
             let mut s = state.lock().unwrap();
             let is_win = s
                 .landlord_position
                 .map(|lp| winner_pos == Some(lp))
                 .unwrap_or(false);
             let landlord_position = s.landlord_position;
-            let score = s.score;
-            s.apply_settlement_scores(is_win);
-            (is_win, landlord_position, score)
+            let settlement = s.apply_settlement_scores(is_win);
+            let player_scores = s
+                .player_scores
+                .iter()
+                .map(|(position, score)| (*position as i32, *score))
+                .collect();
+            (is_win, landlord_position, settlement, player_scores)
         };
         dispatch.extend(dispatch_all(
             room_key,
             WsCode::GAME_OVER as i32,
             serde_json::to_value(WsLandlordGameOverEvent {
                 is_landlord: is_landlord_win,
+                round_score: settlement.round_score,
+                multiplier: settlement.multiplier,
+                bomb_count: settlement.bomb_count,
+                spring: settlement.spring,
+                player_scores,
             })
             .unwrap_or_default(),
             &rs,
@@ -410,7 +419,7 @@ async fn handle_play_phase(
             expected_common,
             landlord_position,
             is_landlord_win,
-            score,
+            settlement.round_score,
         )
         .await;
         send_dispatch(dispatch, senders).await;

@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
+use std::collections::HashMap;
 use std::fmt::Display;
 use typeshare::typeshare;
 
@@ -143,6 +144,11 @@ pub struct WsDealRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsLandlordGameOverEvent {
     pub is_landlord: bool,
+    pub round_score: u32,
+    pub multiplier: u32,
+    pub bomb_count: u32,
+    pub spring: bool,
+    pub player_scores: HashMap<i32, i32>,
 }
 
 #[typeshare]
