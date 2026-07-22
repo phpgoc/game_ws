@@ -1153,7 +1153,11 @@ fn turn_timeout(
 mod tests {
     use std::sync::{Arc, Mutex};
 
-    use ws_common::CommonGameState;
+    use share_type_public::{GameId, Routes};
+    use tokio_tungstenite::tungstenite::Message;
+    use ws_common::{ClientRequest, CommonGameState};
+
+    use crate::game_setting::build_landlord_settings;
 
     use super::*;
 
@@ -1470,6 +1474,107 @@ mod tests {
         assert_eq!(state.turn_countdown(), 4);
         assert_eq!(turn_timeout(&state, &configs), 4);
         assert!(synchronize_disconnected_players(&mut state, &configs).is_empty());
+    }
+
+    #[tokio::test]
+    async fn final_bomb_broadcasts_spring_multiplier_and_cumulative_scores() {
+        let room_key = "landlord-settlement-room";
+        let mut room = RoomService::default();
+        for session_id in 1..=3 {
+            room.connect(session_id);
+            room.handle_common_request(
+                session_id,
+                &ClientRequest {
+                    route: Routes::JOIN as i32,
+                    data: serde_json::json!({
+                        "name": format!("P{}", session_id - 1),
+                        "password": room_key,
+                        "game_id": GameId::LANDLORD as i32,
+                    }),
+                },
+                GameId::LANDLORD,
+                build_landlord_settings,
+            )
+            .expect("join should be handled");
+        }
+
+        let common = room.room_common_state(room_key).expect("room common state");
+        let mut state = LandlordLoopState::new(Arc::clone(&common));
+        state.phase = LandlordPhase::Play;
+        state.landlord_position = Some(0);
+        state.current_position = 0;
+        state.score = 2;
+        state.last_play_position = 0;
+        state.last_play = vec![2];
+        state.current_play = vec![1, 14, 27, 40];
+        state.hands = HashMap::from([(0, vec![1, 14, 27, 40]), (1, vec![3, 4]), (2, vec![5, 6])]);
+        state.hidden_cards = vec![7, 8, 9];
+        state.play_history = vec![
+            LandlordPlayRecord {
+                position: 0,
+                cards: vec![2],
+                benchmark: Vec::new(),
+            },
+            LandlordPlayRecord {
+                position: 1,
+                cards: Vec::new(),
+                benchmark: vec![2],
+            },
+            LandlordPlayRecord {
+                position: 2,
+                cards: Vec::new(),
+                benchmark: vec![2],
+            },
+        ];
+        let state = Arc::new(Mutex::new(state));
+        let room = Arc::new(tokio::sync::Mutex::new(room));
+        let senders: SessionSenders = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        senders.lock().await.insert(1, sender);
+
+        assert!(
+            handle_play_phase(
+                &state,
+                &[0, 1, 2],
+                &HashMap::new(),
+                room_key,
+                &room,
+                &senders,
+                &common,
+            )
+            .await
+        );
+
+        let game_over = loop {
+            let frame = tokio::time::timeout(Duration::from_secs(1), receiver.recv())
+                .await
+                .expect("game over event timeout")
+                .expect("game over event channel");
+            let Message::Text(text) = frame else {
+                continue;
+            };
+            let value: serde_json::Value = serde_json::from_str(text.as_ref()).expect("event json");
+            if value.get("code").and_then(serde_json::Value::as_i64)
+                == Some(WsCode::GAME_OVER as i64)
+            {
+                break serde_json::from_value::<WsLandlordGameOverEvent>(value["data"].clone())
+                    .expect("landlord game over event");
+            }
+        };
+
+        assert!(game_over.is_landlord);
+        assert_eq!(game_over.round_score, 8);
+        assert_eq!(game_over.multiplier, 4);
+        assert_eq!(game_over.bomb_count, 1);
+        assert!(game_over.spring);
+        assert_eq!(
+            game_over.player_scores,
+            HashMap::from([(0, 16), (1, -8), (2, -8)])
+        );
+
+        let state = state.lock().unwrap();
+        assert_eq!(state.phase, LandlordPhase::Settlement);
+        assert_eq!(state.player_scores.values().sum::<i32>(), 0);
     }
 
     #[test]
