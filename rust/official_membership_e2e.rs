@@ -114,6 +114,21 @@ async fn join(client: &mut Client, name: &str, room: &str, session_id: &str) -> 
     .await
 }
 
+fn assert_member_state(
+    member: &Value,
+    position: i32,
+    is_active: bool,
+    is_ai: bool,
+    away: bool,
+    is_ai_takeover: bool,
+) {
+    assert_eq!(member["position"], json!(position));
+    assert_eq!(member["is_active"], json!(is_active));
+    assert_eq!(member["is_ai"], json!(is_ai));
+    assert_eq!(member["away"], json!(away));
+    assert_eq!(member["is_ai_takeover"], json!(is_ai_takeover));
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn official_membership_gate_and_ai_takeover_work_over_websocket() {
     let database_directory = temporary_database_directory();
@@ -165,6 +180,13 @@ async fn official_membership_gate_and_ai_takeover_work_over_websocket() {
         json!(WsResponseCode::JOINED as i32)
     );
     assert_eq!(joined_nonmember["data"]["self_position"], json!(1));
+    let existing_member = joined_nonmember["data"]["existing_members"]
+        .as_array()
+        .expect("existing members")
+        .iter()
+        .find(|member| member["position"] == json!(0))
+        .expect("member at position 0");
+    assert_member_state(existing_member, 0, true, false, false, false);
 
     send_request(&mut member, Routes::AWAY as i32, json!({})).await;
     let member_away = receive_until(&mut member, "member AWAY event", |value| {
@@ -186,11 +208,12 @@ async fn official_membership_gate_and_ai_takeover_work_over_websocket() {
     assert!(stats.room_position_is_ai_takeover(&room, 0).await);
 
     send_request(&mut member, Routes::BACK as i32, json!({})).await;
-    receive_until(&mut member, "member BACK event", |value| {
+    let member_back = receive_until(&mut member, "member BACK event", |value| {
         value.get("code").and_then(Value::as_i64) == Some(WsCode::BACK as i64)
             && value["data"]["position"] == json!(0)
     })
     .await;
+    assert_eq!(member_back["data"]["is_ai_takeover"], json!(false));
     let member_back_seen_by_other =
         receive_until(&mut nonmember, "member BACK event observed by other", |value| {
             value.get("code").and_then(Value::as_i64) == Some(WsCode::BACK as i64)
@@ -250,6 +273,7 @@ async fn official_membership_gate_and_ai_takeover_work_over_websocket() {
         member_disconnected["data"]["is_ai_takeover"],
         json!(true)
     );
+    assert_member_state(&member_disconnected["data"], 0, false, false, true, true);
     assert!(stats.room_position_is_ai_takeover(&room, 0).await);
 
     let mut member_rejoined = connect_client(&url).await;
@@ -262,6 +286,21 @@ async fn official_membership_gate_and_ai_takeover_work_over_websocket() {
     .await;
     assert_eq!(rejoined["code"], json!(WsResponseCode::JOINED as i32));
     assert_eq!(rejoined["data"]["self_position"], json!(0));
+    let member_rejoined_seen_by_other =
+        receive_until(&mut nonmember, "member rejoin event observed by other", |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::JOIN as i64)
+                && value["data"]["position"] == json!(0)
+                && value["data"]["is_active"] == json!(true)
+        })
+        .await;
+    assert_member_state(
+        &member_rejoined_seen_by_other["data"],
+        0,
+        true,
+        false,
+        false,
+        false,
+    );
     assert!(!stats.room_position_is_ai_takeover(&room, 0).await);
 
     nonmember
@@ -278,6 +317,14 @@ async fn official_membership_gate_and_ai_takeover_work_over_websocket() {
     assert_eq!(
         nonmember_disconnected["data"]["is_ai_takeover"],
         json!(false)
+    );
+    assert_member_state(
+        &nonmember_disconnected["data"],
+        1,
+        false,
+        false,
+        true,
+        false,
     );
     assert!(!stats.room_position_is_ai_takeover(&room, 1).await);
 
