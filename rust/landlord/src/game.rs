@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use share_type_public::games::landlord::{WsCallLandlordEvent, WsCallLandlordRequest, WsPlayEvent};
+use share_type_public::games::landlord::{
+    WsCallLandlordEvent, WsCallLandlordRequest, WsPlayEvent, WsPlayRequest,
+};
 use share_type_public::{GameId, LandlordRoutes, Routes, WsCode, WsReJoinResponse, WsResponseCode};
 use tokio::sync::Mutex;
 use ws_common::{
@@ -348,10 +350,14 @@ impl LandlordGameHandler {
             );
         };
 
-        let cards: Vec<i32> = data
-            .get("cards")
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .unwrap_or_default();
+        let Ok(payload) = RoomService::parse_payload::<WsPlayRequest>(data) else {
+            return room_service.error_response(
+                session_id,
+                Routes::PLAY as i32,
+                WsResponseCode::ERROR_FORMAT,
+            );
+        };
+        let cards = payload.cards;
 
         let Some(loop_state) = self.current_loop_state(room_service, &room_key) else {
             return room_service.error_response(
@@ -584,5 +590,102 @@ mod tests {
             &loop_state,
             &same_common
         ));
+    }
+
+    fn playable_request_state() -> (
+        RoomService,
+        LandlordGameHandler,
+        Arc<Mutex<LandlordLoopState>>,
+    ) {
+        let mut room_service = RoomService::default();
+        let room_key = "landlord-play-request-room";
+        for session_id in 1..=3 {
+            room_service.connect(session_id);
+            room_service
+                .handle_common_request(
+                    session_id,
+                    &ClientRequest {
+                        route: Routes::JOIN as i32,
+                        data: serde_json::json!({
+                            "name": format!("P{}", session_id - 1),
+                            "password": room_key,
+                            "game_id": GameId::LANDLORD as i32,
+                        }),
+                    },
+                    GameId::LANDLORD,
+                    build_landlord_settings,
+                )
+                .expect("join should be handled");
+        }
+
+        let common = room_service
+            .room_common_state(room_key)
+            .expect("room common state");
+        let mut state = LandlordLoopState::new(common);
+        state.phase = LandlordPhase::Play;
+        state.landlord_position = Some(0);
+        state.current_position = 1;
+        state.last_play_position = 0;
+        state.last_play = vec![2];
+        state.hands = HashMap::from([(0, vec![2]), (1, vec![3]), (2, vec![4])]);
+        let state = Arc::new(Mutex::new(state));
+
+        let handler = LandlordGameHandler::default();
+        handler
+            .loop_states
+            .lock()
+            .unwrap()
+            .insert(room_key.to_owned(), Arc::clone(&state));
+        (room_service, handler, state)
+    }
+
+    fn has_response(dispatch: &Dispatch, route: Routes, code: WsResponseCode) -> bool {
+        dispatch.messages.iter().any(|message| {
+            matches!(
+                &message.payload,
+                OutboundPayload::Response(RequestResponse::WithoutData(response))
+                    if response.route == route as i32 && response.code as i32 == code as i32
+            )
+        })
+    }
+
+    #[test]
+    fn malformed_play_cards_are_not_silently_accepted_as_a_pass() {
+        let (mut room_service, handler, state) = playable_request_state();
+
+        for data in [
+            serde_json::json!({}),
+            serde_json::json!({ "cards": "invalid" }),
+            serde_json::json!({ "cards": [3, "invalid"] }),
+        ] {
+            let dispatch = handler.handle_play(&mut room_service, 2, data);
+
+            assert!(has_response(
+                &dispatch,
+                Routes::PLAY,
+                WsResponseCode::ERROR_FORMAT
+            ));
+            let state = state.lock().unwrap();
+            assert!(!state.action_received());
+            assert!(state.current_play.is_empty());
+        }
+    }
+
+    #[test]
+    fn explicit_empty_cards_remain_a_legal_pass() {
+        let (mut room_service, handler, state) = playable_request_state();
+
+        let dispatch =
+            handler.handle_play(&mut room_service, 2, serde_json::json!({ "cards": [] }));
+
+        assert!(has_response(&dispatch, Routes::PLAY, WsResponseCode::OK));
+        assert!(dispatch.messages.iter().any(|message| {
+            matches!(
+                &message.payload,
+                OutboundPayload::Event(event)
+                    if event.code == WsCode::PLAY as i32 && event.data["cards"] == serde_json::json!([])
+            )
+        }));
+        assert!(state.lock().unwrap().action_received());
     }
 }
