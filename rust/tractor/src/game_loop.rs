@@ -103,10 +103,7 @@ fn build_auto_bury_dispatch(
         room_service.broadcast(
             room_key,
             WsCode::AWAY as i32,
-            WsPositionEvent {
-                position: position as i32,
-                is_ai_takeover: state.lock().unwrap().is_ai_controlled_position(position),
-            },
+            away_position_event(state, position),
             &mut dispatch,
         );
     }
@@ -205,10 +202,7 @@ fn build_auto_dispatch(
         room_service.broadcast(
             room_key,
             WsCode::AWAY as i32,
-            WsPositionEvent {
-                position: position as i32,
-                is_ai_takeover: state.lock().unwrap().is_ai_controlled_position(position),
-            },
+            away_position_event(state, position),
             &mut dispatch,
         );
     }
@@ -235,6 +229,17 @@ fn build_auto_dispatch(
         );
     }
     dispatch
+}
+
+fn away_position_event(state: &TractorStateHandle, position: usize) -> WsPositionEvent {
+    let is_ai_takeover = {
+        let state = state.lock().unwrap();
+        state.base.lock().unwrap().is_ai_takeover_position(position)
+    };
+    WsPositionEvent {
+        position: position as i32,
+        is_ai_takeover,
+    }
 }
 
 fn build_deal_dispatch(
@@ -708,6 +713,21 @@ mod tests {
         let guard = state.lock().unwrap();
         assert_eq!(guard.current_trick[0].cards, vec![1]);
         assert!(guard.hands.get(&0).unwrap().contains(&53));
+    }
+
+    #[test]
+    fn away_event_distinguishes_native_ai_from_ai_takeover() {
+        let state = test_state_with_ai_leader();
+        assert!(!away_position_event(&state, 0).is_ai_takeover);
+
+        {
+            let guard = state.lock().unwrap();
+            let mut base = guard.base.lock().unwrap();
+            base.ai_positions.remove(&0);
+            base.mark_ai_takeover_position(0);
+        }
+
+        assert!(away_position_event(&state, 0).is_ai_takeover);
     }
 
     #[test]
