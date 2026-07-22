@@ -1274,6 +1274,36 @@ mod tests {
     }
 
     #[test]
+    fn member_timeout_does_not_relabel_human_wait_as_bomb_signal() {
+        let mut state = bomb_signal_state(false);
+        state.base.lock().unwrap().ai_positions.remove(&2);
+        assert!(!state.is_ai_controlled_position(2));
+
+        state.base.lock().unwrap().mark_ai_takeover_position(2);
+        let (away_position, event) =
+            handle_automatic_action(&mut state, AutoActionReason::MemberTimeout);
+
+        assert_eq!(away_position, Some(2));
+        assert!(state.is_ai_takeover_position(2));
+        assert!(matches!(
+            event,
+            Some(AutoBroadcastEvent::Play(WsPlayEvent { cards, .. })) if cards.is_empty()
+        ));
+        assert!(!state.ai_bomb_signal_used);
+        assert_eq!(state.ai_bomb_signal_position, None);
+
+        state.set_action_received(false);
+        assert_eq!(
+            plan_ai_action(&state, 2),
+            PlannedAiAction {
+                delay: AI_BOMB_SIGNAL_DELAY,
+                bomb_signal: true,
+                play: Some(Vec::new()),
+            }
+        );
+    }
+
+    #[test]
     fn ai_farmer_signals_a_native_ai_teammate() {
         let state = bomb_signal_state(false);
         state.base.lock().unwrap().mark_ai_position(1);
