@@ -1,8 +1,8 @@
-#![cfg(not(feature = "official"))]
-
+#[cfg(not(feature = "official"))]
+use std::collections::HashMap;
 #[cfg(feature = "official")]
 use std::time::Instant;
-use std::{collections::HashMap, net::TcpListener, time::Duration};
+use std::{net::TcpListener, time::Duration};
 
 use futures_util::{SinkExt, StreamExt};
 use landlord::game::LandlordGameHandler;
@@ -10,9 +10,73 @@ use serde_json::{Value, json};
 use share_type_public::{GameId, LandlordRoutes, Routes, WsCode, WsResponseCode};
 use tokio::net::TcpListener as TokioTcpListener;
 use tokio_tungstenite::{WebSocketStream, connect_async, tungstenite::Message};
+#[cfg(feature = "official")]
+use ws_common::{
+    ClientRequest, Dispatch, GameHandler, GameState, MembershipAuthorization, RoomService,
+    SessionId, SessionSenders, SettingsBuilderResult,
+};
 use ws_common::{RuntimeConfig, run_room_runtime};
 
 type Client = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
+#[cfg(feature = "official")]
+#[derive(Default)]
+struct TestOfficialLandlordHandler(LandlordGameHandler);
+
+#[cfg(feature = "official")]
+impl GameHandler for TestOfficialLandlordHandler {
+    fn after_common_request(
+        &mut self,
+        room_service: &mut RoomService,
+        session_id: SessionId,
+        request: &ClientRequest,
+        dispatch: &mut Dispatch,
+    ) {
+        self.0
+            .after_common_request(room_service, session_id, request, dispatch);
+    }
+
+    fn authorize_room_creation(
+        &self,
+        _join: &share_type_public::WsJoinRequest,
+    ) -> MembershipAuthorization {
+        Box::pin(async { true })
+    }
+
+    fn supports_ai_players(&self) -> bool {
+        self.0.supports_ai_players()
+    }
+
+    fn build_game_state(&self) -> Box<dyn GameState> {
+        self.0.build_game_state()
+    }
+
+    fn build_room_settings(&self) -> SettingsBuilderResult {
+        self.0.build_room_settings()
+    }
+
+    fn game_id(&self) -> GameId {
+        self.0.game_id()
+    }
+
+    fn handle_game_request(
+        &mut self,
+        room_service: &mut RoomService,
+        session_id: SessionId,
+        request: ClientRequest,
+    ) -> Dispatch {
+        self.0
+            .handle_game_request(room_service, session_id, request)
+    }
+
+    fn set_context(
+        &mut self,
+        senders: SessionSenders,
+        room_service: std::sync::Arc<tokio::sync::Mutex<RoomService>>,
+    ) {
+        self.0.set_context(senders, room_service);
+    }
+}
 
 fn cards_from_deal(event: &Value) -> Vec<i32> {
     event
@@ -57,6 +121,7 @@ async fn join(client: &mut Client, name: &str, password: &str) -> Value {
     .await
 }
 
+#[cfg(not(feature = "official"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn landlord_nonofficial_rejects_ai_management() {
     let port = free_port();
@@ -112,7 +177,7 @@ async fn landlord_ai_seats_call_and_play_without_becoming_away() {
             idle_timeout: Duration::from_secs(30),
             heartbeat_interval: Duration::from_secs(30),
         },
-        LandlordGameHandler::default(),
+        TestOfficialLandlordHandler::default(),
     ));
 
     for _ in 0..50 {
@@ -260,6 +325,7 @@ async fn landlord_ai_seats_call_and_play_without_becoming_away() {
     server.abort();
 }
 
+#[cfg(not(feature = "official"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn landlord_three_players_can_start_call_and_play_over_ws() {
     let port = free_port();
