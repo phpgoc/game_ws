@@ -202,7 +202,9 @@ pub fn enumerate_follows(hand: &[i32], lead: &Combo, rules: &TractorRules) -> Ve
     const SUBSET_LIMIT: usize = 4_096;
 
     let mut out = Vec::new();
-    if let Some(cards) = forced_follow(hand, lead, rules) {
+    if let Some(cards) = forced_follow(hand, lead, rules)
+        && follow_is_legal(hand, &cards, lead, rules)
+    {
         out.push(cards);
     }
     for cards in enumerate_leads(hand, rules) {
@@ -268,24 +270,47 @@ pub fn enumerate_leads(hand: &[i32], rules: &TractorRules) -> Vec<Vec<i32>> {
 
     for (group, by_base) in &groups {
         // Pairs.
+        // A three- or four-deck table can hold more than one pair of the same
+        // identity. Keep every disjoint pair, plus the odd leftover singleton,
+        // so the AI can consider legal pair/single and multi-pair throws.
         let mut pairs: Vec<(i32, Vec<i32>)> = by_base
             .iter()
-            .filter(|(_, cards)| cards.len() >= 2)
-            .map(|(base, cards)| (*base, cards[..2].to_vec()))
+            .flat_map(|(base, cards)| {
+                cards
+                    .chunks_exact(2)
+                    .map(move |pair| (*base, pair.to_vec()))
+            })
             .collect();
+        pairs.sort_by_key(|(base, pair)| (pair_position(*base, rules), *base, pair[0]));
+        // Extra copies cannot extend a tractor at the same rank. Retain one
+        // representative pair per identity for ordinary mid-hand tractors and
+        // throws, then expose duplicate pairs only for short-hand exits.
+        let mut primary_pairs: Vec<(i32, Vec<i32>)> = Vec::new();
+        for (base, pair) in &pairs {
+            if primary_pairs
+                .last()
+                .is_none_or(|(previous_base, _)| previous_base != base)
+            {
+                primary_pairs.push((*base, pair.clone()));
+            }
+        }
+        let mut singles: Vec<i32> = by_base
+            .values()
+            .flat_map(|cards| cards.chunks_exact(2).remainder().iter().copied())
+            .collect();
+        singles.sort_unstable();
         for (_, pair) in &pairs {
             out.push(pair.clone());
         }
         // Tractors: consecutive pair positions.
-        pairs.sort_by_key(|(base, _)| pair_position(*base, rules));
-        let positions: Vec<i32> = pairs
+        let positions: Vec<i32> = primary_pairs
             .iter()
             .map(|(base, _)| pair_position(*base, rules))
             .collect();
         let mut start = 0;
-        while start < pairs.len() {
+        while start < primary_pairs.len() {
             let mut end = start;
-            while end + 1 < pairs.len() && positions[end + 1] == positions[end] + 1 {
+            while end + 1 < primary_pairs.len() && positions[end + 1] == positions[end] + 1 {
                 end += 1;
             }
             if end > start {
@@ -293,7 +318,7 @@ pub fn enumerate_leads(hand: &[i32], rules: &TractorRules) -> Vec<Vec<i32>> {
                 for from in start..end {
                     for to in (from + 1)..=end {
                         let mut cards = Vec::new();
-                        for (_, pair) in &pairs[from..=to] {
+                        for (_, pair) in &primary_pairs[from..=to] {
                             cards.extend_from_slice(pair);
                         }
                         out.push(cards);
@@ -304,14 +329,34 @@ pub fn enumerate_leads(hand: &[i32], rules: &TractorRules) -> Vec<Vec<i32>> {
         }
         let _ = group;
 
-        // Useful throw candidates: every two-pair combination plus the full
-        // set of pairs in this group. This covers A-pair/Q-pair judgements
-        // without enumerating the exponential power set of a 52-card hand.
-        if pairs.len() >= 2 {
-            for left in 0..pairs.len() {
-                for right in (left + 1)..pairs.len() {
-                    let mut cards = pairs[left].1.clone();
-                    cards.extend_from_slice(&pairs[right].1);
+        // Useful throw candidates are kept deliberately bounded. Pair/single
+        // and duplicate-pair throws become relevant only in a short-hand exit;
+        // a bare two-single throw stays out so normal low-single probing wins.
+        let throw_pairs = if hand.len() <= 8 {
+            &pairs
+        } else {
+            &primary_pairs
+        };
+        if hand.len() <= 8 {
+            for (_, pair) in throw_pairs {
+                for single in &singles {
+                    let mut cards = pair.clone();
+                    cards.push(*single);
+                    if matches!(
+                        classify(&cards, rules).map(|combo| combo.kind),
+                        Some(ComboKind::Throw { .. })
+                    ) && !out.contains(&cards)
+                    {
+                        out.push(cards);
+                    }
+                }
+            }
+        }
+        if throw_pairs.len() >= 2 {
+            for left in 0..throw_pairs.len() {
+                for right in (left + 1)..throw_pairs.len() {
+                    let mut cards = throw_pairs[left].1.clone();
+                    cards.extend_from_slice(&throw_pairs[right].1);
                     if matches!(
                         classify(&cards, rules).map(|combo| combo.kind),
                         Some(ComboKind::Throw { .. })
@@ -321,7 +366,7 @@ pub fn enumerate_leads(hand: &[i32], rules: &TractorRules) -> Vec<Vec<i32>> {
                 }
             }
             let mut all_pairs = Vec::new();
-            for (_, pair) in &pairs {
+            for (_, pair) in throw_pairs {
                 all_pairs.extend_from_slice(pair);
             }
             if matches!(
@@ -443,8 +488,12 @@ pub fn forced_follow(hand: &[i32], lead: &Combo, rules: &TractorRules) -> Option
         }
         by_base
             .into_values()
-            .filter(|cards| cards.len() >= 2)
-            .map(|cards| cards[..2].to_vec())
+            .flat_map(|cards| {
+                cards
+                    .chunks_exact(2)
+                    .map(|pair| pair.to_vec())
+                    .collect::<Vec<_>>()
+            })
             .collect()
     };
     group_pairs.sort_by_key(|pair| pair.iter().map(&value).max().unwrap_or(0));
@@ -702,6 +751,42 @@ mod tests {
     }
 
     #[test]
+    fn enumerate_leads_keeps_pair_single_and_multi_deck_pair_throws() {
+        let rules = rules(TractorRank::TWO);
+        let pair_single = enumerate_leads(&[11, 111, 13], &rules);
+        assert!(pair_single.iter().any(|cards| {
+            cards == &vec![11, 111, 13]
+                && classify(cards, &rules).map(|combo| combo.kind)
+                    == Some(ComboKind::Throw { cards: 3, pairs: 1 })
+        }));
+
+        let mut four_deck_rules = rules.clone();
+        four_deck_rules.deck_count = 4;
+        let two_identical_pairs = enumerate_leads(&[2, 102, 202, 302], &four_deck_rules);
+        assert!(two_identical_pairs.iter().any(|cards| {
+            cards == &vec![2, 102, 202, 302]
+                && classify(cards, &four_deck_rules).map(|combo| combo.kind)
+                    == Some(ComboKind::Throw { cards: 4, pairs: 2 })
+        }));
+    }
+
+    #[test]
+    fn multi_deck_duplicate_pair_throw_follows_stay_legal() {
+        let mut rules = rules(TractorRank::TWO);
+        rules.deck_count = 4;
+        let lead = classify(&[2, 102, 202, 302], &rules).expect("two-pair throw");
+        let hand = vec![3, 103, 203, 303];
+        let candidates = enumerate_follows(&hand, &lead, &rules);
+
+        assert!(candidates.contains(&hand));
+        assert!(
+            candidates
+                .iter()
+                .all(|cards| follow_is_legal(&hand, cards, &lead, &rules))
+        );
+    }
+
+    #[test]
     fn follow_candidates_include_point_avoiding_single_combinations() {
         let rules = rules(TractorRank::TWO);
         let lead = classify(&[8, 108], &rules).expect("pair lead");
@@ -725,6 +810,17 @@ mod tests {
         assert!(follow_is_legal(&hand, &follow, &lead, &rules));
         // Must reuse the held pair.
         assert_eq!(follow, vec![3, 103]);
+    }
+
+    #[test]
+    fn forced_tractor_follow_uses_multiple_pairs_of_one_identity() {
+        let rules = rules(TractorRank::TWO);
+        let lead = classify(&[16, 116, 17, 117, 18, 118], &rules).expect("three-pair tractor");
+        let hand = vec![15, 20, 120, 320, 21, 22, 122, 222, 322, 23];
+        let follow = forced_follow(&hand, &lead, &rules).expect("forced follow");
+
+        assert!(follow_is_legal(&hand, &follow, &lead, &rules));
+        assert_eq!(count_group_pairs(&follow, lead.suit, &rules), 3);
     }
 
     #[test]
