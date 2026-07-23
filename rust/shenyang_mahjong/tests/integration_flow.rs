@@ -1,5 +1,3 @@
-#![cfg(not(feature = "official"))]
-
 #[cfg(feature = "official")]
 use std::time::Instant;
 use std::{net::TcpListener, time::Duration};
@@ -12,9 +10,73 @@ use share_type_public::{GameId, Routes, WsResponseCode};
 use shenyang_mahjong::game::ShenyangMahjongGameHandler;
 use tokio::net::TcpListener as TokioTcpListener;
 use tokio_tungstenite::{WebSocketStream, connect_async, tungstenite::Message};
+#[cfg(feature = "official")]
+use ws_common::{
+    ClientRequest, Dispatch, GameHandler, GameState, MembershipAuthorization, RoomService,
+    SessionId, SessionSenders, SettingsBuilderResult,
+};
 use ws_common::{RuntimeConfig, run_room_runtime};
 
 type Client = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
+#[cfg(feature = "official")]
+#[derive(Default)]
+struct TestOfficialShenyangMahjongHandler(ShenyangMahjongGameHandler);
+
+#[cfg(feature = "official")]
+impl GameHandler for TestOfficialShenyangMahjongHandler {
+    fn after_common_request(
+        &mut self,
+        room_service: &mut RoomService,
+        session_id: SessionId,
+        request: &ClientRequest,
+        dispatch: &mut Dispatch,
+    ) {
+        self.0
+            .after_common_request(room_service, session_id, request, dispatch);
+    }
+
+    fn authorize_room_creation(
+        &self,
+        _join: &share_type_public::WsJoinRequest,
+    ) -> MembershipAuthorization {
+        Box::pin(async { true })
+    }
+
+    fn supports_ai_players(&self) -> bool {
+        self.0.supports_ai_players()
+    }
+
+    fn build_game_state(&self) -> Box<dyn GameState> {
+        self.0.build_game_state()
+    }
+
+    fn build_room_settings(&self) -> SettingsBuilderResult {
+        self.0.build_room_settings()
+    }
+
+    fn game_id(&self) -> GameId {
+        self.0.game_id()
+    }
+
+    fn handle_game_request(
+        &mut self,
+        room_service: &mut RoomService,
+        session_id: SessionId,
+        request: ClientRequest,
+    ) -> Dispatch {
+        self.0
+            .handle_game_request(room_service, session_id, request)
+    }
+
+    fn set_context(
+        &mut self,
+        senders: SessionSenders,
+        room_service: std::sync::Arc<tokio::sync::Mutex<RoomService>>,
+    ) {
+        self.0.set_context(senders, room_service);
+    }
+}
 
 #[cfg(feature = "official")]
 async fn close_client(client: &mut Client) {
@@ -109,6 +171,7 @@ async fn send_request(client: &mut Client, route: i32, data: Value) {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[cfg(not(feature = "official"))]
 async fn shenyang_mahjong_nonofficial_rejects_ai_management() {
     let port = free_port();
     let listen_addr = format!("127.0.0.1:{port}");
@@ -162,7 +225,7 @@ async fn shenyang_mahjong_last_human_quit_clears_ai_room() {
             idle_timeout: Duration::from_secs(30),
             heartbeat_interval: Duration::from_secs(30),
         },
-        ShenyangMahjongGameHandler::default(),
+        TestOfficialShenyangMahjongHandler::default(),
     ));
 
     for _ in 0..50 {
@@ -223,7 +286,7 @@ async fn shenyang_mahjong_nonofficial_away_owner_uses_timeout_fallback() {
             idle_timeout: Duration::from_secs(30),
             heartbeat_interval: Duration::from_secs(30),
         },
-        ShenyangMahjongGameHandler::default(),
+        TestOfficialShenyangMahjongHandler::default(),
     ));
 
     for _ in 0..50 {
@@ -344,7 +407,7 @@ async fn shenyang_mahjong_nonofficial_disconnected_owner_uses_timeout_fallback()
             idle_timeout: Duration::from_secs(30),
             heartbeat_interval: Duration::from_secs(30),
         },
-        ShenyangMahjongGameHandler::default(),
+        TestOfficialShenyangMahjongHandler::default(),
     ));
 
     for _ in 0..50 {
@@ -462,7 +525,7 @@ async fn shenyang_mahjong_owner_can_start_with_ai_and_receive_ai_play() {
             idle_timeout: Duration::from_secs(30),
             heartbeat_interval: Duration::from_secs(30),
         },
-        ShenyangMahjongGameHandler::default(),
+        TestOfficialShenyangMahjongHandler::default(),
     ));
 
     for _ in 0..50 {
