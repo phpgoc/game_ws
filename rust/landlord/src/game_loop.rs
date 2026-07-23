@@ -17,7 +17,7 @@ use crate::game_state::{LandlordLoopState, LandlordPlayRecord};
 
 const AI_ACTION_DELAY: Duration = Duration::from_millis(300);
 const AI_BOMB_SIGNAL_DELAY: Duration = Duration::from_millis(1_200);
-const AI_BOMB_SIGNAL_MIN_HISTORY: usize = 3;
+const AI_BOMB_SIGNAL_MIN_HISTORY: usize = 6;
 
 enum AutoBroadcastEvent {
     Call(WsCallLandlordEvent),
@@ -1254,11 +1254,18 @@ mod tests {
     }
 
     #[test]
-    fn ai_bomb_signal_waits_until_after_the_opening_actions() {
-        let mut state = bomb_signal_state(false);
-        state.play_history.truncate(AI_BOMB_SIGNAL_MIN_HISTORY - 1);
+    fn ai_bomb_signal_waits_until_after_two_action_cycles() {
+        let mut opening_round = bomb_signal_state(false);
+        let player_count = opening_round.players_snapshot().len();
+        opening_round.play_history.truncate(player_count);
 
-        assert_eq!(plan_ai_action(&state, 2).delay, AI_ACTION_DELAY);
+        assert_eq!(plan_ai_action(&opening_round, 2).delay, AI_ACTION_DELAY);
+
+        let coordination_stage = bomb_signal_state(false);
+        assert_eq!(
+            plan_ai_action(&coordination_stage, 2).delay,
+            AI_BOMB_SIGNAL_DELAY
+        );
     }
 
     #[test]
