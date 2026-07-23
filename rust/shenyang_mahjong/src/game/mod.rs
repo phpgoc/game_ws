@@ -19,7 +19,7 @@ use ws_common::{
 };
 
 use crate::game_loop::start_game_loop;
-use crate::game_setting::build_shenyang_mahjong_settings;
+use crate::game_setting::{build_shenyang_mahjong_settings, payment_score_cap_from_configs};
 use crate::game_state::{
     ClaimResponse, ClaimWindowKind, ClaimWindowState, SettlementState, ShenyangMahjongGameState,
     ShenyangMahjongLoopState, build_meld, meld_source_is_valid_for_positions,
@@ -890,10 +890,7 @@ fn known_tile_count(state: &ShenyangMahjongLoopState, tile: i32) -> usize {
 }
 
 fn score_cap_from_configs(configs: &HashMap<String, i32>) -> Option<i32> {
-    configs
-        .get("max_fan")
-        .copied()
-        .filter(|score_cap| *score_cap > 0)
+    Some(payment_score_cap_from_configs(configs))
 }
 
 fn finalize_settlement(

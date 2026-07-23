@@ -3,6 +3,18 @@ use std::collections::HashMap;
 use share_type_public::{GameParam, GameParamRange, settings::GameParamEnum};
 use ws_common::GameSettings;
 
+pub(crate) const DEFAULT_PAYMENT_SCORE_CAP: i32 = 50;
+pub(crate) const MAX_PAYMENT_SCORE_CAP: i32 = 200;
+pub(crate) const MIN_PAYMENT_SCORE_CAP: i32 = 20;
+
+pub(crate) fn payment_score_cap_from_configs(configs: &HashMap<String, i32>) -> i32 {
+    configs
+        .get("max_fan")
+        .copied()
+        .filter(|score_cap| (MIN_PAYMENT_SCORE_CAP..=MAX_PAYMENT_SCORE_CAP).contains(score_cap))
+        .unwrap_or(DEFAULT_PAYMENT_SCORE_CAP)
+}
+
 pub fn build_shenyang_mahjong_settings() -> (GameSettings, HashMap<String, GameParam>) {
     let params: HashMap<String, GameParam> = [
         (
@@ -32,9 +44,9 @@ pub fn build_shenyang_mahjong_settings() -> (GameSettings, HashMap<String, GameP
         (
             "max_fan".into(),
             GameParam::Range(GameParamRange {
-                default: 50,
-                min: 20,
-                max: 200,
+                default: DEFAULT_PAYMENT_SCORE_CAP,
+                min: MIN_PAYMENT_SCORE_CAP,
+                max: MAX_PAYMENT_SCORE_CAP,
             }),
         ),
         (
@@ -72,7 +84,9 @@ pub fn build_shenyang_mahjong_settings() -> (GameSettings, HashMap<String, GameP
 
 #[cfg(test)]
 mod tests {
-    use super::build_shenyang_mahjong_settings;
+    use std::collections::HashMap;
+
+    use super::{build_shenyang_mahjong_settings, payment_score_cap_from_configs};
     use share_type_public::GameParam;
 
     #[test]
@@ -103,5 +117,18 @@ mod tests {
         assert!(descriptions.contains_key("ting_fan"));
         assert!(!settings.values.contains_key("allow_chi"));
         assert!(!settings.values.contains_key("chi_opens_door"));
+    }
+
+    #[test]
+    fn payment_score_cap_defaults_invalid_or_missing_configs_to_fifty() {
+        assert_eq!(payment_score_cap_from_configs(&HashMap::new()), 50);
+        for invalid in [i32::MIN, -1, 0, 19, 201, i32::MAX] {
+            let configs = HashMap::from([("max_fan".to_owned(), invalid)]);
+            assert_eq!(payment_score_cap_from_configs(&configs), 50);
+        }
+        for valid in [20, 50, 200] {
+            let configs = HashMap::from([("max_fan".to_owned(), valid)]);
+            assert_eq!(payment_score_cap_from_configs(&configs), valid);
+        }
     }
 }

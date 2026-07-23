@@ -498,13 +498,14 @@ fn settlement_score_adds_dealer_fan_when_dealer_self_draws() {
         .insert(2, vec![1, 1, 2, 2, 11, 11, 12, 12, 21, 21, 22, 22, 35, 35]);
     state.enter_settlement(vec![2], None, Some(35), true);
     let settlement = state.settlement.as_ref().expect("settlement");
+    let configs = HashMap::from([("max_fan".to_owned(), 200)]);
 
     assert_eq!(
-        settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &HashMap::new())
+        settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &configs)
             .into_iter()
             .map(|change| (change.position, change.score))
             .collect::<Vec<_>>(),
-        vec![(0, -256), (1, -256), (2, 768), (3, -256)]
+        vec![(0, -200), (1, -200), (2, 600), (3, -200)]
     );
 }
 
@@ -569,10 +570,11 @@ fn settlement_score_adds_dealer_fan_when_winner_is_dealer() {
     );
     state.enter_settlement(vec![0], Some(1), Some(35), false);
     let settlement = state.settlement.as_ref().expect("settlement");
+    let configs = HashMap::from([("max_fan".to_owned(), 200)]);
 
     assert_eq!(winner_hand_fan(&state, settlement, 0), 5);
     assert_eq!(
-        settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &HashMap::new())
+        settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &configs)
             .into_iter()
             .map(|change| (change.position, change.score))
             .collect::<Vec<_>>(),
@@ -617,7 +619,7 @@ fn settlement_caps_after_adding_dealer_payer_fan() {
 }
 
 #[test]
-fn settlement_treats_max_fan_as_payment_score_cap() {
+fn settlement_defaults_out_of_range_payment_score_cap_to_fifty() {
     let mut state = playable_state();
     state.hands.insert(1, vec![35]);
     state.melds.insert(
@@ -647,7 +649,7 @@ fn settlement_treats_max_fan_as_payment_score_cap() {
             .into_iter()
             .map(|change| (change.position, change.score))
             .collect::<Vec<_>>(),
-        vec![(0, 0), (1, 4), (2, -4), (3, 0)]
+        vec![(0, 0), (1, 32), (2, -32), (3, 0)]
     );
 }
 
@@ -821,7 +823,10 @@ fn settlement_scores_closed_sequence_dragon_pair_winner_after_xi_gang() {
     state.enter_settlement(vec![1], None, Some(35), true);
     let settlement = state.settlement.as_ref().expect("settlement");
     let default_configs = HashMap::new();
-    let disabled_configs = HashMap::from([("allow_first_chi".to_owned(), 0)]);
+    let disabled_configs = HashMap::from([
+        ("allow_first_chi".to_owned(), 0),
+        ("max_fan".to_owned(), 200),
+    ]);
 
     assert!(
         settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &default_configs)
@@ -854,13 +859,14 @@ fn settlement_self_draw_counts_all_three_closed_payers() {
     state.enter_settlement(vec![2], None, Some(35), true);
 
     let settlement = state.settlement.as_ref().expect("settlement");
+    let configs = HashMap::from([("max_fan".to_owned(), 200)]);
 
     assert_eq!(
-        settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &HashMap::new())
+        settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &configs)
             .into_iter()
             .map(|change| (change.position, change.score))
             .collect::<Vec<_>>(),
-        vec![(0, -256), (1, -128), (2, 512), (3, -128)]
+        vec![(0, -200), (1, -128), (2, 456), (3, -128)]
     );
 }
 
@@ -881,13 +887,14 @@ fn settlement_self_draw_counts_concealed_gang_payer_as_closed() {
     state.enter_settlement(vec![2], None, Some(35), true);
 
     let settlement = state.settlement.as_ref().expect("settlement");
+    let configs = HashMap::from([("max_fan".to_owned(), 200)]);
 
     assert_eq!(
-        settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &HashMap::new())
+        settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &configs)
             .into_iter()
             .map(|change| (change.position, change.score))
             .collect::<Vec<_>>(),
-        vec![(0, -256), (1, -128), (2, 512), (3, -128)]
+        vec![(0, -200), (1, -128), (2, 456), (3, -128)]
     );
 }
 
@@ -908,13 +915,14 @@ fn settlement_self_draw_counts_xi_gang_payer_as_closed() {
     state.enter_settlement(vec![2], None, Some(35), true);
 
     let settlement = state.settlement.as_ref().expect("settlement");
+    let configs = HashMap::from([("max_fan".to_owned(), 200)]);
 
     assert_eq!(
-        settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &HashMap::new())
+        settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &configs)
             .into_iter()
             .map(|change| (change.position, change.score))
             .collect::<Vec<_>>(),
-        vec![(0, -256), (1, -128), (2, 512), (3, -128)]
+        vec![(0, -200), (1, -128), (2, 456), (3, -128)]
     );
 }
 
@@ -935,9 +943,10 @@ fn settlement_self_draw_treats_chi_only_payer_as_open() {
     state.enter_settlement(vec![2], None, Some(35), true);
 
     let settlement = state.settlement.as_ref().expect("settlement");
+    let configs = HashMap::from([("max_fan".to_owned(), 200)]);
 
     assert_eq!(
-        settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &HashMap::new())
+        settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &configs)
             .into_iter()
             .map(|change| (change.position, change.score))
             .collect::<Vec<_>>(),
@@ -962,9 +971,10 @@ fn settlement_self_draw_uses_single_closed_fan_when_any_payer_opened() {
     state.enter_settlement(vec![2], None, Some(35), true);
 
     let settlement = state.settlement.as_ref().expect("settlement");
+    let configs = HashMap::from([("max_fan".to_owned(), 200)]);
 
     assert_eq!(
-        settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &HashMap::new())
+        settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &configs)
             .into_iter()
             .map(|change| (change.position, change.score))
             .collect::<Vec<_>>(),
@@ -1034,7 +1044,7 @@ fn settlement_winner_details_describe_pure_one_suit() {
         event.winner_details[0].pattern,
         ShenyangMahjongWinPattern::PureOneSuit
     );
-    assert_eq!(event.winner_details[0].score, 64);
+    assert_eq!(event.winner_details[0].score, 50);
 }
 
 #[test]
@@ -1054,14 +1064,14 @@ fn settlement_winner_details_describe_seven_pairs_self_draw() {
         ShenyangMahjongWinPattern::SevenPairs
     );
     assert!(event.winner_details[0].is_self_draw);
-    assert_eq!(event.winner_details[0].score, 512);
+    assert_eq!(event.winner_details[0].score, 150);
     assert_eq!(
         event
             .score_changes
             .iter()
             .map(|change| (change.position, change.score))
             .collect::<Vec<_>>(),
-        vec![(0, -256), (1, -128), (2, 512), (3, -128)]
+        vec![(0, -50), (1, -50), (2, 150), (3, -50)]
     );
 }
 
@@ -1169,5 +1179,5 @@ fn settlement_winner_details_use_shenyang_rules_for_closed_pure_one_suit() {
         winner_hand_fan(&state, state.settlement.as_ref().expect("settlement"), 1),
         4
     );
-    assert_eq!(empty_config_event.winner_details[0].score, 64);
+    assert_eq!(empty_config_event.winner_details[0].score, 50);
 }

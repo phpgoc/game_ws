@@ -15,7 +15,7 @@ fn settlement_deduplicates_restored_winner_positions() {
             .into_iter()
             .map(|change| (change.position, change.score))
             .collect::<Vec<_>>(),
-        vec![(0, -256), (1, -256), (2, 768), (3, -256)]
+        vec![(0, -50), (1, -50), (2, 150), (3, -50)]
     );
 
     let event = build_settlement_event(&state).expect("settlement event");
@@ -137,14 +137,14 @@ fn settlement_event_skips_invalid_winner_without_suppressing_three_closed() {
     assert_eq!(event.winner_positions, vec![1]);
     assert_eq!(event.winner_details.len(), 1);
     assert_eq!(event.winner_details[0].position, 1);
-    assert_eq!(event.winner_details[0].score, 64);
+    assert_eq!(event.winner_details[0].score, 50);
     assert_eq!(
         event
             .score_changes
             .iter()
             .map(|change| (change.position, change.score))
             .collect::<Vec<_>>(),
-        vec![(0, -64), (1, 64), (2, 0), (3, 0)]
+        vec![(0, -50), (1, 50), (2, 0), (3, 0)]
     );
 
     let valid_winner_snapshot = event
@@ -416,14 +416,14 @@ fn settlement_fan_counts_four_gui_yi_across_xi_gang_and_hand() {
     assert_eq!(winner_hand_fan(&state, settlement, 1), 5);
     let event = build_settlement_event(&state).expect("settlement event");
     assert_eq!(event.winner_details.len(), 1);
-    assert_eq!(event.winner_details[0].score, 512);
+    assert_eq!(event.winner_details[0].score, 150);
     assert_eq!(
         event
             .score_changes
             .iter()
             .map(|change| (change.position, change.score))
             .collect::<Vec<_>>(),
-        vec![(0, -256), (1, 512), (2, -128), (3, -128)]
+        vec![(0, -50), (1, 150), (2, -50), (3, -50)]
     );
 }
 
