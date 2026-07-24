@@ -269,7 +269,8 @@ impl HoldemGameHandler {
 
         if should_settle {
             let settlement = settle_hand(state);
-            crate::official::settle_round(room_service, room_key);
+            let initial_chips = state.lock().unwrap().initial_chips;
+            crate::official::settle_round(room_service, room_key, &settlement, initial_chips);
             room_service.broadcast(room_key, WsCode::GAME_OVER as i32, settlement, dispatch);
             let common = Self::common_state(state);
             self.remove_registered_state_if_same(room_key, state);
