@@ -135,3 +135,154 @@ pub fn settle_round(
     _initial_chips: i32,
 ) {
 }
+
+#[cfg(all(test, feature = "official"))]
+mod tests {
+    use super::*;
+    use crate::game::HoldemGameHandler;
+    use share_type_public::{Routes, WsJoinRequest, WsTexasHoldEmSettlementPlayer};
+    use ws_common::{ClientRequest, GameHandler};
+
+    fn join_request(name: &str, official_session_id: String) -> ClientRequest {
+        ClientRequest {
+            route: Routes::JOIN as i32,
+            data: serde_json::to_value(WsJoinRequest {
+                name: name.to_owned(),
+                password: "official-holdem-room".to_owned(),
+                game_id: GameId::TEXAS_HOLD_EM,
+                session_id: official_session_id,
+                avatar_url: String::new(),
+            })
+            .expect("serialize join request"),
+        }
+    }
+
+    fn settled_player(position: i32, chips: i32) -> WsTexasHoldEmSettlementPlayer {
+        WsTexasHoldEmSettlementPlayer {
+            position,
+            name: format!("player-{position}"),
+            cards: Vec::new(),
+            open_cards: Vec::new(),
+            folded: false,
+            chips,
+            hand_rank: 0,
+            hand_name: String::new(),
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn standard_table_creates_match_and_persists_net_chip_results() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "lan-game-official-holdem-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock after unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&temp_dir).expect("create temp data directory");
+        let db_path = temp_dir.join("official-holdem.data");
+        data::init_with_config(data::DataConfig::sqlite_file(
+            db_path.to_string_lossy().as_ref(),
+        ))
+        .await
+        .expect("initialize data store");
+
+        let first = data::user_create(data::UserCreateInput {
+            name: "holdem-winner".to_owned(),
+            account: "holdem-winner-account".to_owned(),
+            email: None,
+            third_platform: 2,
+            avatar_url: "https://example.com/winner.png".to_owned(),
+            share_id: 0,
+        })
+        .await
+        .expect("create first user");
+        let second = data::user_create(data::UserCreateInput {
+            name: "holdem-loser".to_owned(),
+            account: "holdem-loser-account".to_owned(),
+            email: None,
+            third_platform: 2,
+            avatar_url: "https://example.com/loser.png".to_owned(),
+            share_id: 0,
+        })
+        .await
+        .expect("create second user");
+        let first_session = data::cache_set_session(first.id)
+            .await
+            .expect("create first session");
+        let second_session = data::cache_set_session(second.id)
+            .await
+            .expect("create second session");
+
+        let handler = HoldemGameHandler::default();
+        let mut room = RoomService::default();
+        for (connection_id, name, session) in [
+            (1, "holdem-winner", first_session),
+            (2, "holdem-loser", second_session),
+        ] {
+            room.handle_common_request(
+                connection_id,
+                &join_request(name, session),
+                handler.game_id(),
+                || handler.build_room_settings(),
+            )
+            .expect("handle official join");
+        }
+
+        create_match(&mut room, "official-holdem-room", GameId::OMAHA_HOLD_EM);
+        assert_eq!(room.room_official_match_id("official-holdem-room"), None);
+
+        create_match(&mut room, "official-holdem-room", GameId::TEXAS_HOLD_EM);
+        assert!(
+            room.room_official_match_id("official-holdem-room")
+                .is_some()
+        );
+
+        settle_round(
+            &room,
+            "official-holdem-room",
+            &WsTexasHoldEmSettlementEvent {
+                winners: vec![0],
+                pot: 500,
+                public_cards: Vec::new(),
+                players: vec![settled_player(0, 1250), settled_player(1, 750)],
+            },
+            1000,
+        );
+
+        let mut first_stats = None;
+        for _ in 0..100 {
+            let stats = data::game_user_stats_get_by_user_game(first.id, GameId::TEXAS_HOLD_EM)
+                .await
+                .expect("read first user stats");
+            if stats.round_count == 1 {
+                first_stats = Some(stats);
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        let first_stats = first_stats.expect("settlement task persisted the round");
+        let second_stats = data::game_user_stats_get_by_user_game(second.id, GameId::TEXAS_HOLD_EM)
+            .await
+            .expect("read second user stats");
+
+        assert_eq!(first_stats.match_count, 1);
+        assert_eq!(first_stats.round_count, 1);
+        assert_eq!(first_stats.win_count, 1);
+        assert_eq!(first_stats.lose_count, 0);
+        assert_eq!(first_stats.draw_count, 0);
+        assert_eq!(first_stats.win_score, 250);
+        assert_eq!(first_stats.lose_score, 0);
+        assert_eq!(second_stats.match_count, 1);
+        assert_eq!(second_stats.round_count, 1);
+        assert_eq!(second_stats.win_count, 0);
+        assert_eq!(second_stats.lose_count, 1);
+        assert_eq!(second_stats.draw_count, 0);
+        assert_eq!(second_stats.win_score, 0);
+        assert_eq!(second_stats.lose_score, 250);
+
+        data::shutdown().await;
+        std::fs::remove_dir_all(temp_dir).expect("remove temp data directory");
+    }
+}
