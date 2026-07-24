@@ -1,17 +1,17 @@
 use std::{net::TcpListener, time::Duration};
 
-#[cfg(not(feature = "official"))]
+#[cfg(not(feature = "ai"))]
 use std::time::Instant;
 
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use share_type_public::{GameId, Routes, TractorWsCode, WsCode, WsResponseCode};
-#[cfg(not(feature = "official"))]
+#[cfg(not(feature = "ai"))]
 use share_type_public::{TractorPhase, TractorRoutes};
 use tokio::net::TcpListener as TokioTcpListener;
 use tokio_tungstenite::{WebSocketStream, connect_async, tungstenite::Message};
 use tractor::game::TractorGameHandler;
-#[cfg(feature = "official")]
+#[cfg(feature = "ai")]
 use ws_common::{
     ClientRequest, Dispatch, GameHandler, GameState, MembershipAuthorization, RoomService,
     SessionId, SessionSenders, SettingsBuilderResult,
@@ -20,12 +20,12 @@ use ws_common::{RuntimeConfig, run_room_runtime};
 
 type Client = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
-#[cfg(feature = "official")]
+#[cfg(feature = "ai")]
 #[derive(Default)]
-struct TestOfficialTractorHandler(TractorGameHandler);
+struct TestAiTractorHandler(TractorGameHandler);
 
-#[cfg(feature = "official")]
-impl GameHandler for TestOfficialTractorHandler {
+#[cfg(feature = "ai")]
+impl GameHandler for TestAiTractorHandler {
     fn after_common_request(
         &mut self,
         room_service: &mut RoomService,
@@ -79,7 +79,7 @@ impl GameHandler for TestOfficialTractorHandler {
     }
 }
 
-#[cfg(not(feature = "official"))]
+#[cfg(not(feature = "ai"))]
 fn card_rank(card: i32) -> i32 {
     let base = ((card - 1) % 100) + 1;
     if base <= 52 {
@@ -168,7 +168,7 @@ async fn send_request(client: &mut Client, route: i32, data: Value) {
         .expect("send request");
 }
 
-#[cfg(feature = "official")]
+#[cfg(feature = "ai")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn tractor_ai_dealer_declares_buries_and_leads_over_websocket() {
     let port = free_port();
@@ -181,7 +181,7 @@ async fn tractor_ai_dealer_declares_buries_and_leads_over_websocket() {
             idle_timeout: Duration::from_secs(30),
             heartbeat_interval: Duration::from_secs(30),
         },
-        TestOfficialTractorHandler::default(),
+        TestAiTractorHandler::default(),
     ));
 
     for _ in 0..50 {
@@ -239,19 +239,19 @@ async fn tractor_ai_dealer_declares_buries_and_leads_over_websocket() {
     })
     .await;
 
-    let declaration = recv_until(&mut owner, "AI trump declaration", |value| {
-        value.get("code").and_then(Value::as_i64) == Some(TractorWsCode::TRUMP_DECLARED as i64)
-    })
-    .await;
-    let dealer_position = declaration["data"]["position"]
-        .as_i64()
-        .expect("AI dealer position");
+    let mut dealer_position = None;
+    let buried = loop {
+        let value = recv_json(&mut owner, "AI declaration or bottom buried").await;
+        match value.get("code").and_then(Value::as_i64) {
+            Some(code) if code == TractorWsCode::TRUMP_DECLARED as i64 => {
+                dealer_position = value["data"]["position"].as_i64();
+            }
+            Some(code) if code == TractorWsCode::BOTTOM_BURIED as i64 => break value,
+            _ => {}
+        }
+    };
+    let dealer_position = dealer_position.expect("AI dealer position");
     assert!((1..=3).contains(&dealer_position));
-
-    let buried = recv_until(&mut owner, "AI bottom buried", |value| {
-        value.get("code").and_then(Value::as_i64) == Some(TractorWsCode::BOTTOM_BURIED as i64)
-    })
-    .await;
     assert_eq!(buried["data"]["position"], json!(dealer_position));
 
     let lead = recv_until(&mut owner, "AI opening play", |value| {
@@ -272,7 +272,7 @@ async fn tractor_ai_dealer_declares_buries_and_leads_over_websocket() {
     server.abort();
 }
 
-#[cfg(not(feature = "official"))]
+#[cfg(not(feature = "ai"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn tractor_incremental_deal_compact_deck_and_bury_flow() {
     let port = free_port();

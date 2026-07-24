@@ -1143,7 +1143,7 @@ mod tests {
 
     use share_type_public::{GameId, Routes};
     use tokio_tungstenite::tungstenite::Message;
-    use ws_common::{ClientRequest, CommonGameState};
+    use ws_common::{ClientRequest, CommonGameState, session_sender_channel};
 
     use crate::game_setting::build_landlord_settings;
 
@@ -1524,7 +1524,7 @@ mod tests {
         let state = Arc::new(Mutex::new(state));
         let room = Arc::new(tokio::sync::Mutex::new(room));
         let senders: SessionSenders = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
-        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let (sender, mut receiver, _disconnected) = session_sender_channel(16);
         senders.lock().await.insert(1, sender);
 
         assert!(

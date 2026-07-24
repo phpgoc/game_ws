@@ -1,16 +1,16 @@
-#[cfg(feature = "official")]
+#[cfg(feature = "ai")]
 use std::time::Instant;
 use std::{net::TcpListener, time::Duration};
 
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
-#[cfg(feature = "official")]
+#[cfg(feature = "ai")]
 use share_type_public::WsCode;
 use share_type_public::{GameId, Routes, WsResponseCode};
 use shenyang_mahjong::game::ShenyangMahjongGameHandler;
 use tokio::net::TcpListener as TokioTcpListener;
 use tokio_tungstenite::{WebSocketStream, connect_async, tungstenite::Message};
-#[cfg(feature = "official")]
+#[cfg(feature = "ai")]
 use ws_common::{
     ClientRequest, Dispatch, GameHandler, GameState, MembershipAuthorization, RoomService,
     SessionId, SessionSenders, SettingsBuilderResult,
@@ -19,12 +19,12 @@ use ws_common::{RuntimeConfig, run_room_runtime};
 
 type Client = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
-#[cfg(feature = "official")]
+#[cfg(feature = "ai")]
 #[derive(Default)]
-struct TestOfficialShenyangMahjongHandler(ShenyangMahjongGameHandler);
+struct TestAiShenyangMahjongHandler(ShenyangMahjongGameHandler);
 
-#[cfg(feature = "official")]
-impl GameHandler for TestOfficialShenyangMahjongHandler {
+#[cfg(feature = "ai")]
+impl GameHandler for TestAiShenyangMahjongHandler {
     fn after_common_request(
         &mut self,
         room_service: &mut RoomService,
@@ -78,7 +78,7 @@ impl GameHandler for TestOfficialShenyangMahjongHandler {
     }
 }
 
-#[cfg(feature = "official")]
+#[cfg(feature = "ai")]
 async fn close_client(client: &mut Client) {
     client
         .send(Message::Close(None))
@@ -118,7 +118,7 @@ async fn join(client: &mut Client, name: &str, password: &str) -> Value {
     .await
 }
 
-#[cfg(feature = "official")]
+#[cfg(feature = "ai")]
 fn my_tiles(event: &Value) -> Vec<i32> {
     event["data"]["my_tiles"]
         .as_array()
@@ -171,7 +171,7 @@ async fn send_request(client: &mut Client, route: i32, data: Value) {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[cfg(not(feature = "official"))]
+#[cfg(not(feature = "ai"))]
 async fn shenyang_mahjong_nonofficial_rejects_ai_management() {
     let port = free_port();
     let listen_addr = format!("127.0.0.1:{port}");
@@ -212,7 +212,7 @@ async fn shenyang_mahjong_nonofficial_rejects_ai_management() {
     server.abort();
 }
 
-#[cfg(feature = "official")]
+#[cfg(feature = "ai")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn shenyang_mahjong_last_human_quit_clears_ai_room() {
     let port = free_port();
@@ -225,7 +225,7 @@ async fn shenyang_mahjong_last_human_quit_clears_ai_room() {
             idle_timeout: Duration::from_secs(30),
             heartbeat_interval: Duration::from_secs(30),
         },
-        TestOfficialShenyangMahjongHandler::default(),
+        TestAiShenyangMahjongHandler::default(),
     ));
 
     for _ in 0..50 {
@@ -274,7 +274,7 @@ async fn shenyang_mahjong_last_human_quit_clears_ai_room() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[cfg(feature = "official")]
+#[cfg(feature = "ai")]
 async fn shenyang_mahjong_nonofficial_away_owner_uses_timeout_fallback() {
     let port = free_port();
     let listen_addr = format!("127.0.0.1:{port}");
@@ -286,7 +286,7 @@ async fn shenyang_mahjong_nonofficial_away_owner_uses_timeout_fallback() {
             idle_timeout: Duration::from_secs(30),
             heartbeat_interval: Duration::from_secs(30),
         },
-        TestOfficialShenyangMahjongHandler::default(),
+        TestAiShenyangMahjongHandler::default(),
     ));
 
     for _ in 0..50 {
@@ -395,7 +395,7 @@ async fn shenyang_mahjong_nonofficial_away_owner_uses_timeout_fallback() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[cfg(feature = "official")]
+#[cfg(feature = "ai")]
 async fn shenyang_mahjong_nonofficial_disconnected_owner_uses_timeout_fallback() {
     let port = free_port();
     let listen_addr = format!("127.0.0.1:{port}");
@@ -407,7 +407,7 @@ async fn shenyang_mahjong_nonofficial_disconnected_owner_uses_timeout_fallback()
             idle_timeout: Duration::from_secs(30),
             heartbeat_interval: Duration::from_secs(30),
         },
-        TestOfficialShenyangMahjongHandler::default(),
+        TestAiShenyangMahjongHandler::default(),
     ));
 
     for _ in 0..50 {
@@ -513,7 +513,7 @@ async fn shenyang_mahjong_nonofficial_disconnected_owner_uses_timeout_fallback()
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[cfg(feature = "official")]
+#[cfg(feature = "ai")]
 async fn shenyang_mahjong_owner_can_start_with_ai_and_receive_ai_play() {
     let port = free_port();
     let listen_addr = format!("127.0.0.1:{port}");
@@ -525,7 +525,7 @@ async fn shenyang_mahjong_owner_can_start_with_ai_and_receive_ai_play() {
             idle_timeout: Duration::from_secs(30),
             heartbeat_interval: Duration::from_secs(30),
         },
-        TestOfficialShenyangMahjongHandler::default(),
+        TestAiShenyangMahjongHandler::default(),
     ));
 
     for _ in 0..50 {

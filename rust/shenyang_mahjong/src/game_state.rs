@@ -531,8 +531,7 @@ impl ShenyangMahjongLoopState {
         self.base.lock().unwrap().turn_countdown = turn_countdown;
     }
 
-    #[cfg(test)]
-    #[cfg(feature = "official")]
+    #[cfg(all(test, feature = "ai"))]
     pub(crate) fn set_wall_seed_base_for_test(&mut self, seed: Option<u64>) {
         self.wall_seed_base = seed;
         self.wall_round_index = 0;

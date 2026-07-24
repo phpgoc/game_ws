@@ -1,6 +1,6 @@
-#[cfg(not(feature = "official"))]
+#[cfg(not(feature = "ai"))]
 use std::collections::HashMap;
-#[cfg(feature = "official")]
+#[cfg(feature = "ai")]
 use std::time::Instant;
 use std::{net::TcpListener, time::Duration};
 
@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use share_type_public::{GameId, LandlordRoutes, Routes, WsCode, WsResponseCode};
 use tokio::net::TcpListener as TokioTcpListener;
 use tokio_tungstenite::{WebSocketStream, connect_async, tungstenite::Message};
-#[cfg(feature = "official")]
+#[cfg(feature = "ai")]
 use ws_common::{
     ClientRequest, Dispatch, GameHandler, GameState, MembershipAuthorization, RoomService,
     SessionId, SessionSenders, SettingsBuilderResult,
@@ -19,12 +19,12 @@ use ws_common::{RuntimeConfig, run_room_runtime};
 
 type Client = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
-#[cfg(feature = "official")]
+#[cfg(feature = "ai")]
 #[derive(Default)]
-struct TestOfficialLandlordHandler(LandlordGameHandler);
+struct TestAiLandlordHandler(LandlordGameHandler);
 
-#[cfg(feature = "official")]
-impl GameHandler for TestOfficialLandlordHandler {
+#[cfg(feature = "ai")]
+impl GameHandler for TestAiLandlordHandler {
     fn after_common_request(
         &mut self,
         room_service: &mut RoomService,
@@ -121,7 +121,7 @@ async fn join(client: &mut Client, name: &str, password: &str) -> Value {
     .await
 }
 
-#[cfg(not(feature = "official"))]
+#[cfg(not(feature = "ai"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn landlord_nonofficial_rejects_ai_management() {
     let port = free_port();
@@ -164,7 +164,7 @@ async fn landlord_nonofficial_rejects_ai_management() {
     server.abort();
 }
 
-#[cfg(feature = "official")]
+#[cfg(feature = "ai")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn landlord_ai_seats_call_and_play_without_becoming_away() {
     let port = free_port();
@@ -177,7 +177,7 @@ async fn landlord_ai_seats_call_and_play_without_becoming_away() {
             idle_timeout: Duration::from_secs(30),
             heartbeat_interval: Duration::from_secs(30),
         },
-        TestOfficialLandlordHandler::default(),
+        TestAiLandlordHandler::default(),
     ));
 
     for _ in 0..50 {
@@ -325,7 +325,7 @@ async fn landlord_ai_seats_call_and_play_without_becoming_away() {
     server.abort();
 }
 
-#[cfg(not(feature = "official"))]
+#[cfg(not(feature = "ai"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn landlord_three_players_can_start_call_and_play_over_ws() {
     let port = free_port();

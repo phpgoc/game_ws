@@ -192,6 +192,21 @@ impl SessionSender {
     }
 }
 
+/// Create a bounded session sender and its matching receivers.
+///
+/// Game crates use this to exercise dispatch paths without opening a socket.
+pub fn session_sender_channel(
+    capacity: usize,
+) -> (
+    SessionSender,
+    mpsc::Receiver<Message>,
+    watch::Receiver<bool>,
+) {
+    let (tx, rx) = mpsc::channel(capacity);
+    let (disconnect, disconnected) = watch::channel(false);
+    (SessionSender { tx, disconnect }, rx, disconnected)
+}
+
 pub type SessionSenders = Arc<Mutex<HashMap<SessionId, SessionSender>>>;
 
 #[derive(Clone)]
@@ -239,12 +254,8 @@ where
     websocket_config.max_frame_size = Some(16 * 1024);
     let ws = accept_async_with_config(stream, Some(websocket_config)).await?;
     let (mut sink, mut source) = ws.split();
-    let (disconnect_tx, mut disconnect_rx) = watch::channel(false);
-    let (tx, mut rx) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
-    let session_sender = SessionSender {
-        tx,
-        disconnect: disconnect_tx,
-    };
+    let (session_sender, mut rx, mut disconnect_rx) =
+        session_sender_channel(OUTBOUND_QUEUE_CAPACITY);
     let heartbeat_tx = session_sender.clone();
 
     senders
@@ -663,7 +674,6 @@ mod tests {
     use std::{collections::HashMap, sync::mpsc::sync_channel, time::Duration};
 
     use share_type_public::GameId;
-    use tokio::sync::{mpsc, watch};
     use tokio_tungstenite::tungstenite::Message;
 
     use crate::{
@@ -672,7 +682,7 @@ mod tests {
 
     use super::{
         GameHandler, INBOUND_MESSAGE_BURST, MessageRateLimiter, RuntimeConfig, SessionSendError,
-        SessionSender, run_room_runtime_until_stopped_with_ready, runtime_stop_channel,
+        run_room_runtime_until_stopped_with_ready, runtime_stop_channel, session_sender_channel,
     };
 
     struct TestHandler;
@@ -688,9 +698,7 @@ mod tests {
 
     #[tokio::test]
     async fn full_outbound_queue_signals_disconnect() {
-        let (tx, _rx) = mpsc::channel(1);
-        let (disconnect, mut disconnected) = watch::channel(false);
-        let sender = SessionSender { tx, disconnect };
+        let (sender, _rx, mut disconnected) = session_sender_channel(1);
 
         assert!(sender.send(Message::Text("first".into())).is_ok());
         assert_eq!(
