@@ -2,6 +2,10 @@
 
 `ws` 是可开源的 WebSocket 游戏服务端目录。
 
+## License
+
+本目录以 MIT License 发布；详见 [LICENSE](LICENSE)。
+
 ## 目录
 
 - `share_type_public/`: 公共协议类型，用于 web / ws / Android。
