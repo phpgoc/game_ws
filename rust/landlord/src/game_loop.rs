@@ -677,14 +677,6 @@ fn handle_automatic_action_with_play(
                 state.score = score as u32;
             }
             state.call_history.push((pos, score));
-            println!(
-                "[landlord][auto-call] pos={} name={} reason={:?} score={} history_len={}",
-                pos,
-                name,
-                reason,
-                score,
-                state.call_history.len()
-            );
             auto_event = Some(AutoBroadcastEvent::Call(WsCallLandlordEvent {
                 name,
                 score,
@@ -698,10 +690,6 @@ fn handle_automatic_action_with_play(
                 choose_timeout_play(state, pos)
             };
             let name = state.player_name(pos);
-            println!(
-                "[landlord][auto-play] pos={} name={} reason={:?} cards={:?}",
-                pos, name, reason, auto_cards
-            );
             auto_event = Some(AutoBroadcastEvent::Play(WsPlayEvent {
                 name,
                 cards: auto_cards.clone(),

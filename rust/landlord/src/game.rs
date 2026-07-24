@@ -299,15 +299,6 @@ impl LandlordGameHandler {
             // 本轮叫分/不叫已收到
             s.set_action_received(true);
             name = s.player_name(pos);
-            println!(
-                "[landlord][call] room={} pos={} name={} score={} current_max={} history_len={}",
-                room_key,
-                pos,
-                name,
-                score,
-                s.score,
-                s.call_history.len()
-            );
         }
 
         // 广播叫分事件给所有人（含自己，方便前端统一处理）
@@ -382,10 +373,6 @@ impl LandlordGameHandler {
             s.current_play = cards.clone();
             s.set_action_received(true);
             name = s.player_name(pos);
-            println!(
-                "[landlord][play] room={} pos={} name={} cards={:?}",
-                room_key, pos, name, cards
-            );
         }
 
         let mut dispatch = Dispatch::default();
