@@ -79,6 +79,36 @@ fn has_response(dispatch: &Dispatch, route: Routes, code: WsResponseCode) -> boo
         })
 }
 
+fn join_supports_ai_players(dispatch: &Dispatch) -> Option<bool> {
+    dispatch.messages.iter().find_map(|message| {
+        let OutboundPayload::Response(RequestResponse::WithData(response)) = &message.payload
+        else {
+            return None;
+        };
+        (response.route == Routes::JOIN as i32
+            && response.code as i32 == WsResponseCode::JOINED as i32)
+            .then(|| response.data.get("supports_ai_players")?.as_bool())
+            .flatten()
+    })
+}
+
+#[test]
+fn join_reports_server_ai_capability() {
+    let mut without_ai = RoomService::default();
+    let regular_join = join_room(
+        &mut without_ai,
+        1,
+        "owner",
+        "regular-room",
+        GameId::LANDLORD,
+    );
+    assert_eq!(join_supports_ai_players(&regular_join), Some(false));
+
+    let mut with_ai = room_service_with_ai();
+    let ai_join = join_room(&mut with_ai, 1, "owner", "ai-room", GameId::LANDLORD);
+    assert_eq!(join_supports_ai_players(&ai_join), Some(true));
+}
+
 #[test]
 fn join_rejects_oversized_identity_fields() {
     for data in [

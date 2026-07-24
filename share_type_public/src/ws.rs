@@ -48,6 +48,9 @@ pub struct WsJoinRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsJoinResponse {
     pub self_position: i32,
+    /// 当前 WS Server 是否支持服务端 AI 玩家。
+    #[serde(default)]
+    pub supports_ai_players: bool,
     pub current_configs: HashMap<String, i32>,
     pub existing_members: Vec<WsMemberInfo>,
     pub param_descriptions: Option<HashMap<String, GameParam>>,

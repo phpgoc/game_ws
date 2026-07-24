@@ -482,7 +482,7 @@ impl Default for ShenyangMahjongGameHandler {
 
 impl GameHandler for ShenyangMahjongGameHandler {
     fn supports_ai_players(&self) -> bool {
-        cfg!(feature = "official")
+        cfg!(feature = "ai")
     }
 
     #[cfg(feature = "official")]

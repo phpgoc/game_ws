@@ -549,7 +549,7 @@ impl Default for TractorGameHandler {
 
 impl GameHandler for TractorGameHandler {
     fn supports_ai_players(&self) -> bool {
-        cfg!(feature = "official")
+        cfg!(feature = "ai")
     }
 
     #[cfg(feature = "official")]

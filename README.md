@@ -109,7 +109,7 @@ cargo test --manifest-path rust/p2p/Cargo.toml
 
 公版自建 WS 服务端不包含 official 统计、SQLite 或游戏 AI，也不接受添加/删除 AI
 座位。斗地主、沈阳麻将和拖拉机需要真人凑齐人数；超时只执行保证牌局可继续的合法兜底动作。
-官方服的统计与 AI 源码保存在私有仓库，并由私有 `official` 构建接入。
+AI 源码保存在私有仓库。私有 `ai` feature 只接入服务端 AI；`official` feature 会包含 `ai`，并额外接入会员校验与统计数据。JOIN 响应通过 `supports_ai_players` 声明当前 WS 实例是否支持 AI，客户端不得根据连接地址或自身打包类型推断该能力。
 
 推荐下载 Linux x86_64 musl release 产物。该产物是静态单文件，适合大多数 x86_64 Linux 服务器直接运行。
 

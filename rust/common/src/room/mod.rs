@@ -752,6 +752,7 @@ impl RoomService {
                         WsResponseCode::JOINED,
                         share_type_public::WsJoinResponse {
                             self_position: position as i32,
+                            supports_ai_players: self.ai_players_enabled,
                             current_configs: entry.configs.clone(),
                             existing_members,
                             param_descriptions: Some(entry.param_descriptions.clone()),
@@ -879,6 +880,7 @@ impl RoomService {
                 WsResponseCode::JOINED,
                 share_type_public::WsJoinResponse {
                     self_position: position as i32,
+                    supports_ai_players: self.ai_players_enabled,
                     current_configs: entry.configs.clone(),
                     existing_members,
                     param_descriptions: Some(entry.param_descriptions.clone()),
@@ -1002,6 +1004,7 @@ impl RoomService {
                 WsResponseCode::JOINED,
                 share_type_public::WsJoinResponse {
                     self_position: position as i32,
+                    supports_ai_players: self.ai_players_enabled,
                     current_configs: entry.configs.clone(),
                     existing_members,
                     param_descriptions: Some(entry.param_descriptions.clone()),
