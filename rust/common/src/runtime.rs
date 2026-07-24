@@ -8,16 +8,22 @@ use std::{
         atomic::{AtomicU64, Ordering},
         mpsc::SyncSender,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use anyhow::Context;
 use futures_util::{SinkExt, StreamExt};
 use tokio::{
     net::{TcpListener, TcpStream},
-    sync::{Mutex, mpsc, watch},
+    sync::{Mutex, OwnedSemaphorePermit, Semaphore, mpsc, watch},
 };
-use tokio_tungstenite::{accept_async, tungstenite::Message};
+use tokio_tungstenite::{
+    accept_async_with_config,
+    tungstenite::{
+        Message,
+        protocol::{CloseFrame, WebSocketConfig, frame::coding::CloseCode},
+    },
+};
 use tracing::{error, info, warn};
 
 use crate::{
@@ -27,6 +33,11 @@ use crate::{
     net::{resolve_host, resolve_port},
     to_text_message,
 };
+
+const MAX_CONNECTIONS: usize = 4_096;
+const OUTBOUND_QUEUE_CAPACITY: usize = 256;
+const INBOUND_MESSAGES_PER_SECOND: f64 = 30.0;
+const INBOUND_MESSAGE_BURST: f64 = 60.0;
 
 fn set_away_takeover_flag(dispatch: &mut Dispatch, position: usize, is_ai_takeover: bool) {
     for delivery in &mut dispatch.messages {
@@ -58,6 +69,34 @@ struct ConnectionContext<H> {
     room_service: Arc<Mutex<RoomService>>,
     game_handler: Arc<Mutex<H>>,
     stop_signal: StopSignal,
+    connection_permit: OwnedSemaphorePermit,
+}
+
+struct MessageRateLimiter {
+    tokens: f64,
+    last_refill: Instant,
+}
+
+impl MessageRateLimiter {
+    fn new() -> Self {
+        Self {
+            tokens: INBOUND_MESSAGE_BURST,
+            last_refill: Instant::now(),
+        }
+    }
+
+    fn allow(&mut self) -> bool {
+        let now = Instant::now();
+        let elapsed = now.duration_since(self.last_refill).as_secs_f64();
+        self.last_refill = now;
+        self.tokens =
+            (self.tokens + elapsed * INBOUND_MESSAGES_PER_SECOND).min(INBOUND_MESSAGE_BURST);
+        if self.tokens < 1.0 {
+            return false;
+        }
+        self.tokens -= 1.0;
+        true
+    }
 }
 
 pub type MembershipAuthorization = Pin<Box<dyn Future<Output = bool> + Send + 'static>>;
@@ -128,7 +167,31 @@ pub struct RuntimeStopHandle {
     tx: watch::Sender<bool>,
 }
 
-type SessionSender = mpsc::UnboundedSender<Message>;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionSendError {
+    Full,
+    Closed,
+}
+
+#[derive(Clone)]
+pub struct SessionSender {
+    tx: mpsc::Sender<Message>,
+    disconnect: watch::Sender<bool>,
+}
+
+impl SessionSender {
+    pub fn send(&self, frame: Message) -> Result<(), SessionSendError> {
+        match self.tx.try_send(frame) {
+            Ok(()) => Ok(()),
+            Err(mpsc::error::TrySendError::Full(_)) => {
+                let _ = self.disconnect.send(true);
+                Err(SessionSendError::Full)
+            }
+            Err(mpsc::error::TrySendError::Closed(_)) => Err(SessionSendError::Closed),
+        }
+    }
+}
+
 pub type SessionSenders = Arc<Mutex<HashMap<SessionId, SessionSender>>>;
 
 #[derive(Clone)]
@@ -145,7 +208,9 @@ async fn deliver(dispatch: Dispatch, senders: &SessionSenders) -> anyhow::Result
     let senders = senders.lock().await;
     for (recipient, frame) in encoded {
         if let Some(tx) = senders.get(&recipient) {
-            let _ = tx.send(frame);
+            if let Err(err) = tx.send(frame) {
+                warn!(recipient, ?err, "outbound queue rejected frame");
+            }
         }
     }
     Ok(())
@@ -167,13 +232,25 @@ where
         room_service,
         game_handler,
         mut stop_signal,
+        connection_permit: _connection_permit,
     } = context;
-    let ws = accept_async(stream).await?;
+    let mut websocket_config = WebSocketConfig::default();
+    websocket_config.max_message_size = Some(64 * 1024);
+    websocket_config.max_frame_size = Some(16 * 1024);
+    let ws = accept_async_with_config(stream, Some(websocket_config)).await?;
     let (mut sink, mut source) = ws.split();
-    let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
-    let heartbeat_tx = tx.clone();
+    let (disconnect_tx, mut disconnect_rx) = watch::channel(false);
+    let (tx, mut rx) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
+    let session_sender = SessionSender {
+        tx,
+        disconnect: disconnect_tx,
+    };
+    let heartbeat_tx = session_sender.clone();
 
-    senders.lock().await.insert(session_id, tx);
+    senders
+        .lock()
+        .await
+        .insert(session_id, session_sender.clone());
     room_service.lock().await.connect(session_id);
 
     let writer = tokio::spawn(async move {
@@ -192,10 +269,17 @@ where
             }
         }
     });
+    let mut rate_limiter = MessageRateLimiter::new();
 
     loop {
         let frame = tokio::select! {
             _ = stop_signal.stopped() => break,
+            changed = disconnect_rx.changed() => {
+                if changed.is_ok() && *disconnect_rx.borrow() {
+                    warn!(session_id, peer = %peer, "slow client exceeded outbound queue");
+                }
+                break;
+            },
             result = tokio::time::timeout(idle_timeout, source.next()) => {
                 match result {
                     Ok(Some(Ok(frame))) => frame,
@@ -211,6 +295,15 @@ where
                 }
             }
         };
+
+        if !rate_limiter.allow() {
+            warn!(session_id, peer = %peer, "inbound message rate limit exceeded");
+            let _ = session_sender.send(Message::Close(Some(CloseFrame {
+                code: CloseCode::Policy,
+                reason: "message rate limit exceeded".into(),
+            })));
+            break;
+        }
 
         let request = match from_message::<ClientRequest>(frame) {
             Ok(Some(request)) => request,
@@ -465,11 +558,17 @@ where
     }
 
     let next_session = Arc::new(AtomicU64::new(1));
+    let connection_slots = Arc::new(Semaphore::new(MAX_CONNECTIONS));
 
     loop {
         let (stream, peer) = tokio::select! {
             _ = stop_signal.stopped() => break,
             result = listener.accept() => result?,
+        };
+        let Ok(connection_permit) = Arc::clone(&connection_slots).try_acquire_owned() else {
+            warn!(peer = %peer, max_connections = MAX_CONNECTIONS, "connection limit reached");
+            drop(stream);
+            continue;
         };
         let session_id = next_session.fetch_add(1, Ordering::Relaxed);
         let context = ConnectionContext {
@@ -479,6 +578,7 @@ where
             room_service: Arc::clone(&room_service),
             game_handler: Arc::clone(&game_handler),
             stop_signal: stop_signal.clone(),
+            connection_permit,
         };
 
         tokio::spawn(async move {
@@ -563,16 +663,43 @@ mod tests {
     use std::{collections::HashMap, sync::mpsc::sync_channel, time::Duration};
 
     use share_type_public::GameId;
+    use tokio::sync::{mpsc, watch};
+    use tokio_tungstenite::tungstenite::Message;
 
     use crate::{
         ClientRequest, Dispatch, GameSettings, RoomService, SessionId, game_state::SharedGameState,
     };
 
     use super::{
-        GameHandler, RuntimeConfig, run_room_runtime_until_stopped_with_ready, runtime_stop_channel,
+        GameHandler, INBOUND_MESSAGE_BURST, MessageRateLimiter, RuntimeConfig, SessionSendError,
+        SessionSender, run_room_runtime_until_stopped_with_ready, runtime_stop_channel,
     };
 
     struct TestHandler;
+
+    #[test]
+    fn inbound_rate_limiter_rejects_messages_past_burst() {
+        let mut limiter = MessageRateLimiter::new();
+        for _ in 0..INBOUND_MESSAGE_BURST as usize {
+            assert!(limiter.allow());
+        }
+        assert!(!limiter.allow());
+    }
+
+    #[tokio::test]
+    async fn full_outbound_queue_signals_disconnect() {
+        let (tx, _rx) = mpsc::channel(1);
+        let (disconnect, mut disconnected) = watch::channel(false);
+        let sender = SessionSender { tx, disconnect };
+
+        assert!(sender.send(Message::Text("first".into())).is_ok());
+        assert_eq!(
+            sender.send(Message::Text("second".into())),
+            Err(SessionSendError::Full)
+        );
+        disconnected.changed().await.unwrap();
+        assert!(*disconnected.borrow());
+    }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn runtime_reports_ready_and_stops_cleanly() {

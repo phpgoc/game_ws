@@ -8,7 +8,11 @@ use share_type_public::{
     GameId, GameParam, GameParamRange, Routes, WsCode, WsRequest, WsResponseCode,
 };
 
-use super::{Dispatch, OutboundPayload, RequestResponse, RoomService};
+use super::{
+    Dispatch, MAX_AVATAR_URL_BYTES, MAX_CHAT_MESSAGE_BYTES, MAX_OFFICIAL_SESSION_ID_BYTES,
+    MAX_PLAYER_NAME_BYTES, MAX_ROOM_KEY_BYTES, MAX_ROOMS, OutboundPayload, RequestResponse,
+    RoomService,
+};
 use crate::game_setting::GameSettings;
 use crate::game_state::{CommonGameState, GameState};
 
@@ -73,6 +77,90 @@ fn has_response(dispatch: &Dispatch, route: Routes, code: WsResponseCode) -> boo
             }
             OutboundPayload::Event(_) => false,
         })
+}
+
+#[test]
+fn join_rejects_oversized_identity_fields() {
+    for data in [
+        serde_json::json!({
+            "name": "n".repeat(MAX_PLAYER_NAME_BYTES + 1),
+            "password": "room",
+            "game_id": GameId::LANDLORD as i32,
+        }),
+        serde_json::json!({
+            "name": "owner",
+            "password": "r".repeat(MAX_ROOM_KEY_BYTES + 1),
+            "game_id": GameId::LANDLORD as i32,
+        }),
+        serde_json::json!({
+            "name": "owner",
+            "password": "room",
+            "game_id": GameId::LANDLORD as i32,
+            "avatar_url": "a".repeat(MAX_AVATAR_URL_BYTES + 1),
+        }),
+        serde_json::json!({
+            "name": "owner",
+            "password": "room",
+            "game_id": GameId::LANDLORD as i32,
+            "session_id": "s".repeat(MAX_OFFICIAL_SESSION_ID_BYTES + 1),
+        }),
+    ] {
+        let mut service = RoomService::default();
+        let rejected = common_request(&mut service, 1, GameId::LANDLORD, Routes::JOIN, data);
+        assert!(has_response(
+            &rejected,
+            Routes::JOIN,
+            WsResponseCode::ERROR_FORMAT
+        ));
+        assert_eq!(service.room_count(), 0);
+    }
+}
+
+#[test]
+fn chat_rejects_oversized_messages() {
+    let mut service = RoomService::default();
+    let _ = join_room(&mut service, 1, "owner", "room", GameId::LANDLORD);
+    let rejected = common_request(
+        &mut service,
+        1,
+        GameId::LANDLORD,
+        Routes::MESSAGE,
+        serde_json::json!({ "message": "m".repeat(MAX_CHAT_MESSAGE_BYTES + 1) }),
+    );
+    assert!(has_response(
+        &rejected,
+        Routes::MESSAGE,
+        WsResponseCode::ERROR_FORMAT
+    ));
+}
+
+#[test]
+fn room_count_is_bounded() {
+    let mut service = RoomService::default();
+    for index in 0..MAX_ROOMS {
+        let joined = join_room(
+            &mut service,
+            index as u64 + 1,
+            "owner",
+            &format!("room-{index}"),
+            GameId::LANDLORD,
+        );
+        assert!(has_response(&joined, Routes::JOIN, WsResponseCode::JOINED));
+    }
+
+    let rejected = join_room(
+        &mut service,
+        MAX_ROOMS as u64 + 1,
+        "owner",
+        "one-room-too-many",
+        GameId::LANDLORD,
+    );
+    assert!(has_response(
+        &rejected,
+        Routes::JOIN,
+        WsResponseCode::NO_PERMISSION
+    ));
+    assert_eq!(service.room_count(), MAX_ROOMS);
 }
 
 #[test]

@@ -21,6 +21,12 @@ pub use model::{
 };
 
 const AI_SESSION_ID_BASE: SessionId = 9_000_000_000_000_000_000;
+const MAX_ROOMS: usize = 1_000;
+const MAX_ROOM_KEY_BYTES: usize = 128;
+const MAX_PLAYER_NAME_BYTES: usize = 64;
+const MAX_AVATAR_URL_BYTES: usize = 1_024;
+const MAX_OFFICIAL_SESSION_ID_BYTES: usize = 512;
+const MAX_CHAT_MESSAGE_BYTES: usize = 4 * 1024;
 
 /// 一个房间，由 password（room_key）标识。
 /// `configs` — 可配置参数的当前值（HashMap<String, i32>）。
@@ -697,21 +703,21 @@ impl RoomService {
                 WsResponseCode::WRONG_GAME,
             );
         }
-        if password.is_empty() || name.is_empty() {
+        if password.is_empty()
+            || name.is_empty()
+            || password.len() > MAX_ROOM_KEY_BYTES
+            || name.len() > MAX_PLAYER_NAME_BYTES
+            || avatar_url.len() > MAX_AVATAR_URL_BYTES
+            || official_session_id
+                .as_ref()
+                .is_some_and(|value| value.len() > MAX_OFFICIAL_SESSION_ID_BYTES)
+        {
             return self.error_response(
                 session_id,
                 Routes::JOIN as i32,
                 WsResponseCode::ERROR_FORMAT,
             );
         }
-        dlog!(
-            tracing::Level::INFO,
-            "Session {} attempts to join room '{}' with name '{}'",
-            session_id,
-            password,
-            name
-        );
-
         if let Some(current_room) = self.room_key_of(session_id) {
             let current_name = self.session_name(session_id);
             if current_room == password && current_name == name {
@@ -764,6 +770,13 @@ impl RoomService {
         }
 
         if !self.rooms.contains_key(&password) {
+            if self.rooms.len() >= MAX_ROOMS {
+                return self.error_response(
+                    session_id,
+                    Routes::JOIN as i32,
+                    WsResponseCode::NO_PERMISSION,
+                );
+            }
             let (settings, param_descriptions) = room_settings_builder();
             self.rooms.insert(
                 password.clone(),
@@ -1012,6 +1025,13 @@ impl RoomService {
                 WsResponseCode::ERROR_FORMAT,
             );
         };
+        if payload.message.len() > MAX_CHAT_MESSAGE_BYTES {
+            return self.error_response(
+                session_id,
+                Routes::MESSAGE as i32,
+                WsResponseCode::ERROR_FORMAT,
+            );
+        }
         let Some(room_key) = self.room_key_of(session_id) else {
             return self.error_response(
                 session_id,
