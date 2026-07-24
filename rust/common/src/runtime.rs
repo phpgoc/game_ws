@@ -180,6 +180,10 @@ pub struct SessionSender {
 }
 
 impl SessionSender {
+    pub fn new(tx: mpsc::Sender<Message>, disconnect: watch::Sender<bool>) -> Self {
+        Self { tx, disconnect }
+    }
+
     pub fn send(&self, frame: Message) -> Result<(), SessionSendError> {
         match self.tx.try_send(frame) {
             Ok(()) => Ok(()),

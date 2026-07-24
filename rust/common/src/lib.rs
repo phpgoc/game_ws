@@ -38,7 +38,7 @@ pub use room::{
 };
 pub use runtime::{
     GameHandler, MembershipAuthorization, RuntimeConfig, RuntimeStats, RuntimeStopHandle,
-    SessionSenders, StopSignal, run_game_server_with_cli, run_room_runtime,
+    SessionSender, SessionSenders, StopSignal, run_game_server_with_cli, run_room_runtime,
     run_room_runtime_until_stopped, run_room_runtime_until_stopped_with_ready,
     runtime_stop_channel, session_sender_channel,
 };
