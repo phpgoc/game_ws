@@ -18,30 +18,6 @@ pub(crate) fn payment_score_cap_from_configs(configs: &HashMap<String, i32>) -> 
 pub fn build_shenyang_mahjong_settings() -> (GameSettings, HashMap<String, GameParam>) {
     let params: HashMap<String, GameParam> = [
         (
-            "play_time".into(),
-            GameParam::Range(GameParamRange {
-                default: 20,
-                min: 5,
-                max: 50,
-            }),
-        ),
-        (
-            "claim_time".into(),
-            GameParam::Range(GameParamRange {
-                default: 5,
-                min: 3,
-                max: 15,
-            }),
-        ),
-        (
-            "settlement_time".into(),
-            GameParam::Range(GameParamRange {
-                default: 5,
-                min: 2,
-                max: 20,
-            }),
-        ),
-        (
             "max_fan".into(),
             GameParam::Range(GameParamRange {
                 default: DEFAULT_PAYMENT_SCORE_CAP,
@@ -99,8 +75,9 @@ mod tests {
         assert!(!descriptions.contains_key("animation_time"));
         assert!(!settings.values.contains_key("away_time"));
         assert!(!descriptions.contains_key("away_time"));
-        assert!(settings.values.contains_key("play_time"));
-        assert!(settings.values.contains_key("claim_time"));
+        assert!(!settings.values.contains_key("play_time"));
+        assert!(!settings.values.contains_key("claim_time"));
+        assert!(!settings.values.contains_key("settlement_time"));
         assert_eq!(settings.values.get("max_fan"), Some(&50));
         assert!(matches!(
             descriptions.get("max_fan"),

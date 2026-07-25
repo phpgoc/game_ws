@@ -29,25 +29,6 @@ pub fn build_tractor_settings() -> (GameSettings, HashMap<String, GameParam>) {
             }),
         ),
         (
-            // Total duration of the first round's incremental deal. It is
-            // intentionally slow so players have time to declare/counter trump.
-            KEY_FIRST_DEAL_TIME.into(),
-            GameParam::Range(GameParamRange {
-                default: 15_000,
-                min: 1_000,
-                max: 60_000,
-            }),
-        ),
-        (
-            // Later rounds already have an established dealer and use a faster deal.
-            KEY_DEAL_TIME.into(),
-            GameParam::Range(GameParamRange {
-                default: 3_000,
-                min: 500,
-                max: 30_000,
-            }),
-        ),
-        (
             KEY_BLOOD_ENABLED.into(),
             GameParam::Enum(GameParamEnum {
                 default: 1,
@@ -107,38 +88,6 @@ pub fn build_tractor_settings() -> (GameSettings, HashMap<String, GameParam>) {
                 max: 32,
             }),
         ),
-        (
-            KEY_AI_ACTION_TIME.into(),
-            GameParam::Range(GameParamRange {
-                default: 1_000,
-                min: 20,
-                max: 3_000,
-            }),
-        ),
-        (
-            KEY_AWAY_TIME.into(),
-            GameParam::Range(GameParamRange {
-                default: 5,
-                min: 2,
-                max: 20,
-            }),
-        ),
-        (
-            KEY_PLAY_TIME.into(),
-            GameParam::Range(GameParamRange {
-                default: 30,
-                min: 5,
-                max: 120,
-            }),
-        ),
-        (
-            KEY_SETTLEMENT_TIME.into(),
-            GameParam::Range(GameParamRange {
-                default: 5,
-                min: 2,
-                max: 30,
-            }),
-        ),
     ]
     .into_iter()
     .collect();
@@ -165,9 +114,13 @@ mod tests {
     #[test]
     fn first_deal_is_slower_and_compact_deck_is_a_count() {
         let (settings, params) = build_tractor_settings();
-        assert!(settings.values[KEY_FIRST_DEAL_TIME] > settings.values[KEY_DEAL_TIME]);
+        assert!(!settings.values.contains_key(KEY_FIRST_DEAL_TIME));
+        assert!(!settings.values.contains_key(KEY_DEAL_TIME));
+        assert!(!settings.values.contains_key(KEY_AI_ACTION_TIME));
+        assert!(!settings.values.contains_key(KEY_AWAY_TIME));
+        assert!(!settings.values.contains_key(KEY_PLAY_TIME));
+        assert!(!settings.values.contains_key(KEY_SETTLEMENT_TIME));
         assert_eq!(settings.values[KEY_REMOVED_RANK_COUNT], 0);
-        assert_eq!(settings.values[KEY_AI_ACTION_TIME], 1_000);
         let GameParam::Range(removed) = &params[KEY_REMOVED_RANK_COUNT] else {
             panic!("removed rank count must be a range");
         };
