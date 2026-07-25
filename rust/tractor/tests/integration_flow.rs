@@ -5,7 +5,9 @@ use std::time::Instant;
 
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
-use share_type_public::{GameId, Routes, TractorWsCode, WsCode, WsResponseCode};
+use share_type_public::{
+    GameId, GameParam, GameParamRange, Routes, TractorWsCode, WsCode, WsResponseCode,
+};
 #[cfg(not(feature = "ai"))]
 use share_type_public::{TractorPhase, TractorRoutes};
 use tokio::net::TcpListener as TokioTcpListener;
@@ -53,7 +55,26 @@ impl GameHandler for TestAiTractorHandler {
     }
 
     fn build_room_settings(&self) -> SettingsBuilderResult {
-        self.0.build_room_settings()
+        let (mut settings, mut params) = self.0.build_room_settings();
+        // Timing controls are intentionally not public room settings anymore,
+        // but this integration test still needs a fast deterministic round.
+        for (key, default) in [
+            ("first_deal_time", 1_000),
+            ("deal_time", 500),
+            ("ai_action_time", 20),
+            ("play_time", 5),
+        ] {
+            settings.values.insert(key.to_owned(), default);
+            params.insert(
+                key.to_owned(),
+                GameParam::Range(GameParamRange {
+                    default,
+                    min: 1,
+                    max: 60_000,
+                }),
+            );
+        }
+        (settings, params)
     }
 
     fn game_id(&self) -> GameId {
