@@ -97,6 +97,9 @@ pub struct WsShenyangMahjongMeld {
     pub kind: ShenyangMahjongMeldKind,
     pub tiles: Vec<i32>,
     pub from_position: Option<i32>,
+    /// Tile claimed from another player's discard, retained for client layout.
+    #[serde(default)]
+    pub target_tile: Option<i32>,
 }
 
 #[typeshare]

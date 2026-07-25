@@ -1258,6 +1258,7 @@ mod tests {
             kind,
             tiles,
             from_position,
+            target_tile: None,
         }
     }
 

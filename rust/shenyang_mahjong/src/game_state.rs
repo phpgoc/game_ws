@@ -111,7 +111,19 @@ pub fn build_meld(
         kind,
         tiles,
         from_position: from_position.map(|position| position as i32),
+        target_tile: None,
     }
+}
+
+pub fn build_claimed_meld(
+    kind: ShenyangMahjongMeldKind,
+    tiles: Vec<i32>,
+    from_position: usize,
+    target_tile: i32,
+) -> WsShenyangMahjongMeld {
+    let mut meld = build_meld(kind, tiles, Some(from_position));
+    meld.target_tile = Some(target_tile);
+    meld
 }
 
 pub fn claim_action_to_play_action(response: &ClaimResponse) -> ShenyangMahjongAction {

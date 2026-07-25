@@ -21,18 +21,20 @@ fn has_room_event(dispatch: &Dispatch, code: WsCode) -> bool {
 }
 
 fn open_peng_meld(tile: i32, from_position: usize) -> WsShenyangMahjongMeld {
-    build_meld(
+    build_claimed_meld(
         ShenyangMahjongMeldKind::PENG,
         vec![tile, tile, tile],
-        Some(from_position),
+        from_position,
+        tile,
     )
 }
 
 fn open_chi_meld(start_tile: i32) -> WsShenyangMahjongMeld {
-    build_meld(
+    build_claimed_meld(
         ShenyangMahjongMeldKind::CHI,
         vec![start_tile, start_tile + 1, start_tile + 2],
-        Some(0),
+        0,
+        start_tile,
     )
 }
 
