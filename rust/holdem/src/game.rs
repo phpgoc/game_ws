@@ -359,6 +359,18 @@ impl HoldemGameHandler {
         tables.retain(|room_key, _| room_service.room_exists(room_key));
     }
 
+    fn finish_settlement(
+        &self,
+        room_service: &mut RoomService,
+        room_key: &str,
+        state: &HoldemStateHandle,
+    ) {
+        let common = Self::common_state(state);
+        self.remove_registered_state_if_same(room_key, state);
+        self.auto_strategies.lock().unwrap().remove(room_key);
+        room_service.clear_room_game_state_if_same(room_key, &common);
+    }
+
     fn advance_after_action(
         &self,
         room_key: &str,
@@ -392,10 +404,18 @@ impl HoldemGameHandler {
             self.record_finished_hand(room_key, state);
             let starting_chips = state.lock().unwrap().starting_chips.clone();
             crate::official::settle_round(room_service, room_key, &settlement, &starting_chips);
+            let settlement_time = room_service
+                .room_configs(room_key)
+                .unwrap_or_default()
+                .get("settlement_time")
+                .copied()
+                .unwrap_or(5)
+                .max(0) as u32;
+            state.lock().unwrap().settlement_countdown = settlement_time;
             room_service.broadcast(room_key, WsCode::GAME_OVER as i32, settlement, dispatch);
-            let common = Self::common_state(state);
-            self.remove_registered_state_if_same(room_key, state);
-            room_service.clear_room_game_state_if_same(room_key, &common);
+            if settlement_time == 0 {
+                self.finish_settlement(room_service, room_key, state);
+            }
             return;
         }
 
@@ -467,6 +487,20 @@ impl HoldemGameHandler {
             return;
         }
         if room_service.is_room_paused(room_key) {
+            return;
+        }
+
+        {
+            let mut s = state.lock().unwrap();
+            if s.phase == TexasHoldEmPhase::Settlement {
+                if s.settlement_countdown > 1 {
+                    s.settlement_countdown -= 1;
+                    return;
+                }
+            }
+        }
+        if state.lock().unwrap().phase == TexasHoldEmPhase::Settlement {
+            self.finish_settlement(room_service, room_key, state);
             return;
         }
 
@@ -1410,6 +1444,37 @@ mod tests {
     }
 
     #[test]
+    fn settlement_countdown_keeps_room_locked_until_expired() {
+        let mut handler = HoldemGameHandler::default();
+        let mut room = RoomService::default();
+        for session_id in 1..=2 {
+            join_with_hook(
+                &mut handler,
+                &mut room,
+                session_id,
+                &format!("u{session_id}"),
+            );
+        }
+        handler.handle_start(&mut room, 1);
+        let state = handler.state("room").expect("active holdem state");
+        {
+            let mut state = state.lock().unwrap();
+            state.phase = TexasHoldEmPhase::Settlement;
+            state.settlement_countdown = 2;
+        }
+
+        let mut dispatch = Dispatch::default();
+        handler.auto_tick(&mut room, "room", &state, &mut dispatch);
+        assert_eq!(state.lock().unwrap().settlement_countdown, 1);
+        assert!(handler.state("room").is_some());
+
+        handler.auto_tick(&mut room, "room", &state, &mut dispatch);
+        assert!(handler.state("room").is_none());
+        let restarted = handler.handle_start(&mut room, 1);
+        assert_response_code(&restarted, 1, Routes::START, WsResponseCode::OK);
+    }
+
+    #[test]
     fn auto_strategy_response_is_private_to_requester() {
         let mut handler = HoldemGameHandler::default();
         let mut room = RoomService::default();
@@ -1550,6 +1615,16 @@ mod tests {
                     OutboundPayload::Event(event) if event.code == WsCode::GAME_OVER as i32
                 )
         }));
+        let settlement_state = handler.state("room").expect("settlement state");
+        assert_eq!(settlement_state.lock().unwrap().settlement_countdown, 5);
+        for _ in 0..5 {
+            handler.auto_tick(
+                &mut room,
+                "room",
+                &settlement_state,
+                &mut Dispatch::default(),
+            );
+        }
         assert!(handler.state("room").is_none());
 
         let next_hand = handler.handle_start(&mut room, 1);

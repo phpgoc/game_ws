@@ -17,6 +17,8 @@ pub struct HoldemGameState {
     pub base: Arc<Mutex<CommonGameState>>,
     pub variant: PokerVariant,
     pub phase: TexasHoldEmPhase,
+    /// Seconds to keep the settlement view visible before the next hand.
+    pub settlement_countdown: u32,
     pub deck: Vec<i32>,
     pub public_cards: Vec<i32>,
     /// Players dealt into the current hand.  The room roster may grow while
@@ -225,6 +227,7 @@ impl HoldemGameState {
             base,
             variant,
             phase: TexasHoldEmPhase::Start,
+            settlement_countdown: 0,
             deck: Vec::new(),
             public_cards: Vec::new(),
             hand_players: HashMap::new(),
