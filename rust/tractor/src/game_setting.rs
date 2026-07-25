@@ -22,10 +22,9 @@ pub fn build_tractor_settings() -> (GameSettings, HashMap<String, GameParam>) {
     let params: HashMap<String, GameParam> = [
         (
             KEY_DECK_COUNT.into(),
-            GameParam::Range(GameParamRange {
-                default: 2,
-                min: 2,
-                max: 4,
+            GameParam::Enum(GameParamEnum {
+                default: 0,
+                options: vec!["2".into(), "3".into(), "4".into(), "5".into(), "6".into()],
             }),
         ),
         (
@@ -121,6 +120,11 @@ mod tests {
         assert!(!settings.values.contains_key(KEY_PLAY_TIME));
         assert!(!settings.values.contains_key(KEY_SETTLEMENT_TIME));
         assert_eq!(settings.values[KEY_REMOVED_RANK_COUNT], 0);
+        let GameParam::Enum(deck_count) = &params[KEY_DECK_COUNT] else {
+            panic!("deck count must be an enum");
+        };
+        assert_eq!(deck_count.default, 0);
+        assert_eq!(deck_count.options, ["2", "3", "4", "5", "6"]);
         let GameParam::Range(removed) = &params[KEY_REMOVED_RANK_COUNT] else {
             panic!("removed rank count must be a range");
         };

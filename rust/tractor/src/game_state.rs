@@ -116,7 +116,7 @@ pub fn build_tractor_deck_with_removed_ranks(
     deck_count: usize,
     removed_rank_count: usize,
 ) -> Vec<i32> {
-    let deck_count = deck_count.clamp(2, 4);
+    let deck_count = deck_count.clamp(2, 6);
     let mut cards = Vec::with_capacity(deck_count * 54);
     for deck_index in 0..deck_count {
         let offset = deck_index as i32 * 100;
@@ -529,7 +529,7 @@ impl TractorGameState {
     }
 
     pub fn deal_new_round(&mut self, mut rules: TractorRules) -> Result<(), &'static str> {
-        rules.deck_count = rules.deck_count.clamp(2, 4);
+        rules.deck_count = rules.deck_count.clamp(2, 6);
         rules.blood_score_per_unit = rules.blood_score_per_unit.max(1);
         let positions = self.active_positions();
         if positions.len() != 4 {
@@ -1051,7 +1051,7 @@ mod tests {
 
     #[test]
     fn adjusted_bottom_keeps_all_hands_equal() {
-        for deck_count in 2..=4 {
+        for deck_count in 2..=6 {
             let total = build_tractor_deck(deck_count).len();
             let bottom =
                 adjusted_bottom_card_count(total, 4, 8, min_bottom_card_count(deck_count)).unwrap();
