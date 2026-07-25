@@ -25,6 +25,12 @@ pub struct HoldemGameState {
     pub hand_players: HashMap<usize, String>,
     pub hands: HashMap<usize, Vec<i32>>,
     pub chips: HashMap<usize, i32>,
+    /// Bankroll at the start of this hand, used for per-hand score reporting.
+    pub starting_chips: HashMap<usize, i32>,
+    /// Total amount each player committed during the hand. Unlike
+    /// `round_bets`, this is not cleared when the flop/turn/river is dealt;
+    /// settlement uses it to build main and side pots.
+    pub contributions: HashMap<usize, i32>,
     pub round_bets: HashMap<usize, i32>,
     pub folded: HashSet<usize>,
     pub all_in: HashSet<usize>,
@@ -100,6 +106,7 @@ impl HoldemGameState {
         }
         *self.chips.entry(position).or_default() -= paid;
         *self.round_bets.entry(position).or_default() += paid;
+        *self.contributions.entry(position).or_default() += paid;
         self.pot += paid;
         if self.chip_count(position) == 0 {
             self.all_in.insert(position);
@@ -112,6 +119,8 @@ impl HoldemGameState {
         initial_chips: i32,
         small_blind: i32,
         big_blind: i32,
+        dealer_position: usize,
+        starting_chips: &HashMap<usize, i32>,
     ) -> Result<(), &'static str> {
         let (positions, names) = {
             let base = self.base.lock().unwrap();
@@ -139,6 +148,8 @@ impl HoldemGameState {
         self.public_cards.clear();
         self.hands.clear();
         self.chips.clear();
+        self.starting_chips.clear();
+        self.contributions.clear();
         self.round_bets.clear();
         self.folded.clear();
         self.all_in.clear();
@@ -149,7 +160,10 @@ impl HoldemGameState {
         self.initial_chips = initial_chips;
         self.small_blind = small_blind;
         self.big_blind = big_blind;
-        self.dealer_position = positions[0];
+        self.dealer_position = positions
+            .contains(&dealer_position)
+            .then_some(dealer_position)
+            .unwrap_or(positions[0]);
         self.small_blind_position = self
             .next_position(self.dealer_position)
             .unwrap_or(positions[0]);
@@ -158,7 +172,14 @@ impl HoldemGameState {
             .unwrap_or(self.small_blind_position);
 
         for position in &positions {
-            self.chips.insert(*position, initial_chips);
+            let chips = starting_chips
+                .get(position)
+                .copied()
+                .unwrap_or(initial_chips)
+                .max(0);
+            self.chips.insert(*position, chips);
+            self.starting_chips.insert(*position, chips);
+            self.contributions.insert(*position, 0);
             self.round_bets.insert(*position, 0);
             let mut cards = Vec::with_capacity(self.variant.hole_cards);
             for _ in 0..self.variant.hole_cards {
@@ -183,6 +204,11 @@ impl HoldemGameState {
                 cards.extend(self.public_cards.iter().copied());
                 evaluate_best(&cards)
             }
+            PokerHandRule::ShortDeckBestFiveAny => {
+                let mut cards = hole_cards.clone();
+                cards.extend(self.public_cards.iter().copied());
+                crate::hand_evaluator::evaluate_short_deck_best(&cards)
+            }
             PokerHandRule::OmahaTwoHoleThreeBoard => evaluate_omaha(hole_cards, &self.public_cards),
         }
     }
@@ -204,6 +230,8 @@ impl HoldemGameState {
             hand_players: HashMap::new(),
             hands: HashMap::new(),
             chips: HashMap::new(),
+            starting_chips: HashMap::new(),
+            contributions: HashMap::new(),
             round_bets: HashMap::new(),
             folded: HashSet::new(),
             all_in: HashSet::new(),
@@ -267,6 +295,9 @@ impl HoldemGameState {
         self.min_raise = self.big_blind;
         self.phase = match self.phase {
             TexasHoldEmPhase::PreFlop => {
+                // Standard Hold'em burns one card before exposing each
+                // community-card street.
+                let _ = self.deck.pop();
                 for _ in 0..3 {
                     if let Some(card) = self.deck.pop() {
                         self.public_cards.push(card);
@@ -275,12 +306,14 @@ impl HoldemGameState {
                 TexasHoldEmPhase::Flop
             }
             TexasHoldEmPhase::Flop => {
+                let _ = self.deck.pop();
                 if let Some(card) = self.deck.pop() {
                     self.public_cards.push(card);
                 }
                 TexasHoldEmPhase::Turn
             }
             TexasHoldEmPhase::Turn => {
+                let _ = self.deck.pop();
                 if let Some(card) = self.deck.pop() {
                     self.public_cards.push(card);
                 }

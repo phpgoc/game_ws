@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use share_type_public::GameId;
 use ws_common::RoomService;
 
@@ -91,7 +93,7 @@ pub fn settle_round(
     room_service: &RoomService,
     room_key: &str,
     settlement: &WsTexasHoldEmSettlementEvent,
-    initial_chips: i32,
+    starting_chips: &HashMap<usize, i32>,
 ) {
     let Some(game_match_id) = room_service.room_official_match_id(room_key) else {
         return;
@@ -102,9 +104,10 @@ pub fn settle_round(
         .filter_map(|player| {
             let position = usize::try_from(player.position).ok()?;
             let user_id = room_service.room_official_user_id(room_key, position)?;
+            let starting = starting_chips.get(&position).copied().unwrap_or_default();
             Some(data::GameRoundHoldemPlayerScoreInput {
                 user_id,
-                score: i64::from(player.chips.saturating_sub(initial_chips)),
+                score: i64::from(player.chips.saturating_sub(starting)),
             })
         })
         .collect::<Vec<_>>();
@@ -132,7 +135,7 @@ pub fn settle_round(
     _room_service: &RoomService,
     _room_key: &str,
     _settlement: &WsTexasHoldEmSettlementEvent,
-    _initial_chips: i32,
+    _starting_chips: &HashMap<usize, i32>,
 ) {
 }
 
@@ -248,7 +251,7 @@ mod tests {
                 public_cards: Vec::new(),
                 players: vec![settled_player(0, 1250), settled_player(1, 750)],
             },
-            1000,
+            &[(0, 1000), (1, 1000)].into_iter().collect(),
         );
 
         let mut first_stats = None;

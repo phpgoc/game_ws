@@ -31,9 +31,16 @@ pub struct HoldemGameHandler {
     states: StateRegistry,
     auto_strategies:
         Arc<std::sync::Mutex<HashMap<String, HashMap<usize, TexasHoldEmAutoStrategy>>>>,
+    table_states: Arc<std::sync::Mutex<HashMap<String, HoldemTableState>>>,
 }
 
 type StateRegistry = Arc<std::sync::Mutex<HashMap<String, HoldemStateHandle>>>;
+
+#[derive(Debug, Default)]
+struct HoldemTableState {
+    bankrolls: HashMap<usize, i32>,
+    dealer_position: Option<usize>,
+}
 
 /// Room-facing state used while a hand is active.  Human JOIN remains open,
 /// while settings, AI management, and seat swaps stay locked.
@@ -115,6 +122,7 @@ fn apply_action(
             if s.current_bet == 0 || payload.amount < s.min_raise {
                 return None;
             }
+            let previous_min_raise = s.min_raise;
             let paid = s.commit(position, call_amount + payload.amount);
             if paid <= call_amount {
                 return None;
@@ -123,9 +131,15 @@ fn apply_action(
             if new_bet <= s.current_bet {
                 return None;
             }
-            s.min_raise = (new_bet - s.current_bet).max(s.big_blind);
+            let raise_size = new_bet - s.current_bet;
             s.current_bet = new_bet;
-            s.acted.clear();
+            // An all-in that does not reach the previous minimum raise is an
+            // under-raise. It increases the amount to call but does not
+            // reopen betting for players who have already acted.
+            if raise_size >= previous_min_raise {
+                s.min_raise = raise_size.max(s.big_blind);
+                s.acted.clear();
+            }
             s.acted.insert(position);
         }
         TexasHoldEmAction::ALL_IN => {
@@ -135,9 +149,13 @@ fn apply_action(
             }
             let new_bet = s.bet_of(position);
             if new_bet > s.current_bet {
-                s.min_raise = (new_bet - s.current_bet).max(s.big_blind);
+                let raise_size = new_bet - s.current_bet;
+                let full_raise = raise_size >= s.min_raise;
                 s.current_bet = new_bet;
-                s.acted.clear();
+                if full_raise {
+                    s.min_raise = raise_size.max(s.big_blind);
+                    s.acted.clear();
+                }
             }
             s.acted.insert(position);
         }
@@ -176,33 +194,77 @@ async fn deliver_dispatch(dispatch: Dispatch, senders: &SessionSenders) {
 fn settle_hand(state: &HoldemStateHandle) -> WsTexasHoldEmSettlementEvent {
     let mut s = state.lock().unwrap();
     s.phase = TexasHoldEmPhase::Settlement;
-    let contenders = s.active_not_folded_positions();
-    let winners = if contenders.len() == 1 {
-        contenders
-    } else {
+    let mut levels: Vec<i32> = s
+        .contributions
+        .values()
+        .copied()
+        .filter(|amount| *amount > 0)
+        .collect();
+    levels.sort_unstable();
+    levels.dedup();
+
+    let mut previous_level = 0;
+    let mut winners = Vec::new();
+    for level in levels {
+        let contributors: Vec<usize> = s
+            .active_positions()
+            .into_iter()
+            .filter(|position| s.contributions.get(position).copied().unwrap_or_default() >= level)
+            .collect();
+        let pot_amount = (level - previous_level) * contributors.len() as i32;
+        previous_level = level;
+        if pot_amount <= 0 {
+            continue;
+        }
+
+        let eligible: Vec<usize> = contributors
+            .iter()
+            .copied()
+            .filter(|position| !s.folded.contains(position))
+            .collect();
+        if eligible.is_empty() {
+            // A folded player's unmatched excess is returned instead of
+            // silently disappearing from the table.
+            let share = pot_amount / contributors.len() as i32;
+            let remainder = pot_amount % contributors.len() as i32;
+            for (index, position) in contributors.iter().enumerate() {
+                let extra = if index == 0 { remainder } else { 0 };
+                *s.chips.entry(*position).or_default() += share + extra;
+            }
+            continue;
+        }
+
         let mut best = None;
-        let mut winners = Vec::new();
-        for position in contenders {
-            let Some(hand) = s.evaluated_hand(position) else {
-                continue;
-            };
-            if best.as_ref().is_none_or(|current| hand > *current) {
-                best = Some(hand);
-                winners.clear();
-                winners.push(position);
-            } else if best.as_ref().is_some_and(|current| hand == *current) {
-                winners.push(position);
+        let mut pot_winners = Vec::new();
+        if eligible.len() == 1 {
+            // A fold-out can end before the flop, when no five-card hand can
+            // be evaluated yet. The last live player still wins the pot.
+            pot_winners = eligible;
+        } else {
+            for position in eligible {
+                let Some(hand) = s.evaluated_hand(position) else {
+                    continue;
+                };
+                if best.as_ref().is_none_or(|current| hand > *current) {
+                    best = Some(hand);
+                    pot_winners.clear();
+                    pot_winners.push(position);
+                } else if best.as_ref().is_some_and(|current| hand == *current) {
+                    pot_winners.push(position);
+                }
             }
         }
-        winners
-    };
-
-    if !winners.is_empty() {
-        let share = s.pot / winners.len() as i32;
-        let remainder = s.pot % winners.len() as i32;
-        for (idx, winner) in winners.iter().enumerate() {
-            let extra = if idx == 0 { remainder } else { 0 };
+        if pot_winners.is_empty() {
+            continue;
+        }
+        let share = pot_amount / pot_winners.len() as i32;
+        let remainder = pot_amount % pot_winners.len() as i32;
+        for (index, winner) in pot_winners.iter().enumerate() {
+            let extra = if index == 0 { remainder } else { 0 };
             *s.chips.entry(*winner).or_default() += share + extra;
+            if !winners.contains(winner) {
+                winners.push(*winner);
+            }
         }
     }
 
@@ -239,6 +301,64 @@ fn settle_hand(state: &HoldemStateHandle) -> WsTexasHoldEmSettlementEvent {
 }
 
 impl HoldemGameHandler {
+    fn prepare_table_for_start(
+        &self,
+        room_service: &RoomService,
+        room_key: &str,
+        initial_chips: i32,
+    ) -> (usize, HashMap<usize, i32>) {
+        let mut positions: Vec<usize> = room_service
+            .room_members(room_key)
+            .into_iter()
+            .map(|(_, _, position, _)| position)
+            .collect();
+        positions.sort_unstable();
+        positions.dedup();
+
+        let mut tables = self.table_states.lock().unwrap();
+        let table = tables.entry(room_key.to_owned()).or_default();
+        for position in &positions {
+            table
+                .bankrolls
+                .entry(*position)
+                .or_insert(initial_chips.max(0));
+        }
+        table
+            .bankrolls
+            .retain(|position, _| positions.binary_search(position).is_ok());
+
+        let dealer = if let Some(previous) = table.dealer_position {
+            positions
+                .iter()
+                .position(|position| *position == previous)
+                .map(|index| positions[(index + 1) % positions.len()])
+                .or_else(|| {
+                    positions
+                        .iter()
+                        .copied()
+                        .find(|position| *position > previous)
+                })
+                .unwrap_or(positions[0])
+        } else {
+            positions[0]
+        };
+        table.dealer_position = Some(dealer);
+        (dealer, table.bankrolls.clone())
+    }
+
+    fn record_finished_hand(&self, room_key: &str, state: &HoldemStateHandle) {
+        let s = state.lock().unwrap();
+        let mut tables = self.table_states.lock().unwrap();
+        let table = tables.entry(room_key.to_owned()).or_default();
+        table.bankrolls = s.chips.clone();
+        table.dealer_position = Some(s.dealer_position);
+    }
+
+    fn prune_table_states(&self, room_service: &RoomService) {
+        let mut tables = self.table_states.lock().unwrap();
+        tables.retain(|room_key, _| room_service.room_exists(room_key));
+    }
+
     fn advance_after_action(
         &self,
         room_key: &str,
@@ -269,8 +389,9 @@ impl HoldemGameHandler {
 
         if should_settle {
             let settlement = settle_hand(state);
-            let initial_chips = state.lock().unwrap().initial_chips;
-            crate::official::settle_round(room_service, room_key, &settlement, initial_chips);
+            self.record_finished_hand(room_key, state);
+            let starting_chips = state.lock().unwrap().starting_chips.clone();
+            crate::official::settle_round(room_service, room_key, &settlement, &starting_chips);
             room_service.broadcast(room_key, WsCode::GAME_OVER as i32, settlement, dispatch);
             let common = Self::common_state(state);
             self.remove_registered_state_if_same(room_key, state);
@@ -616,9 +737,17 @@ impl HoldemGameHandler {
             .unwrap_or(10)
             .max(small_blind + 1);
         let play_time = configs.get("play_time").copied().unwrap_or(20).max(1) as u32;
+        let (dealer_position, starting_chips) =
+            self.prepare_table_for_start(room_service, &room_key, initial_chips);
         let mut state = HoldemGameState::from_common_with_variant(Arc::clone(&common), variant);
         if state
-            .deal_new_hand(initial_chips, small_blind, big_blind)
+            .deal_new_hand(
+                initial_chips,
+                small_blind,
+                big_blind,
+                dealer_position,
+                &starting_chips,
+            )
             .is_err()
         {
             return room_service.error_response(
@@ -895,6 +1024,7 @@ impl Default for HoldemGameHandler {
         Self {
             states: Arc::new(std::sync::Mutex::new(HashMap::new())),
             auto_strategies: Arc::new(std::sync::Mutex::new(HashMap::new())),
+            table_states: Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
     }
 }
@@ -920,6 +1050,7 @@ impl GameHandler for HoldemGameHandler {
     ) {
         if matches!(request.route, r if r == Routes::QUIT as i32 || r == Routes::DISBAND as i32) {
             self.prune_stopped_states(room_service);
+            self.prune_table_states(room_service);
         }
         if request.route != Routes::JOIN as i32 || !join_succeeded(dispatch, session_id) {
             return;
@@ -979,10 +1110,12 @@ impl GameHandler for HoldemGameHandler {
     fn set_context(&mut self, senders: SessionSenders, room_service: Arc<Mutex<RoomService>>) {
         let states = Arc::clone(&self.states);
         let auto_strategies = Arc::clone(&self.auto_strategies);
+        let table_states = Arc::clone(&self.table_states);
         tokio::spawn(async move {
             let handler = HoldemGameHandler {
                 states,
                 auto_strategies,
+                table_states,
             };
             let mut ticker = tokio::time::interval(Duration::from_secs(1));
             loop {
@@ -1041,7 +1174,7 @@ mod tests {
     #[cfg(feature = "official")]
     fn ai_positions_raise_premium_hand_instead_of_stale_strategy() {
         let handler = HoldemGameHandler::default();
-        let mut room = RoomService::default();
+        let mut room = RoomService::with_ai_players_enabled(true);
         for session_id in 1..=2 {
             room.handle_common_request(
                 session_id,
@@ -1166,6 +1299,114 @@ mod tests {
             HoldemGameHandler::auto_payload_for(TexasHoldEmAutoStrategy::CHECK_CALL, 10).action,
             TexasHoldEmAction::CALL
         );
+    }
+
+    #[test]
+    fn side_pots_are_awarded_only_to_eligible_players() {
+        let common = Arc::new(std::sync::Mutex::new(CommonGameState::default()));
+        let mut state = HoldemGameState::from_common_with_variant(common, STANDARD_TEXAS);
+        state.phase = TexasHoldEmPhase::River;
+        state.public_cards = vec![1, 2, 3, 4, 5];
+        state.hand_players = [(0, "p0"), (1, "p1"), (2, "p2")]
+            .into_iter()
+            .map(|(position, name)| (position, name.to_owned()))
+            .collect();
+        for position in 0..=2 {
+            state.hands.insert(position, vec![10, 20]);
+            state
+                .contributions
+                .insert(position, if position == 1 { 50 } else { 100 });
+            state
+                .chips
+                .insert(position, if position == 1 { 950 } else { 900 });
+        }
+        state.folded.insert(1);
+        state.pot = 250;
+
+        let state = Arc::new(std::sync::Mutex::new(state));
+        let settlement = settle_hand(&state);
+        let state = state.lock().unwrap();
+
+        assert_eq!(settlement.winners, vec![0, 2]);
+        assert_eq!(state.chip_count(0), 1025);
+        assert_eq!(state.chip_count(1), 950);
+        assert_eq!(state.chip_count(2), 1025);
+    }
+
+    #[test]
+    fn fold_out_before_flop_awards_pot_without_hand_evaluation() {
+        let common = Arc::new(std::sync::Mutex::new(CommonGameState::default()));
+        let mut state = HoldemGameState::from_common_with_variant(common, STANDARD_TEXAS);
+        state.hand_players = [(0, "p0"), (1, "p1")]
+            .into_iter()
+            .map(|(position, name)| (position, name.to_owned()))
+            .collect();
+        state.contributions.insert(0, 10);
+        state.contributions.insert(1, 10);
+        state.chips.insert(0, 990);
+        state.chips.insert(1, 990);
+        state.folded.insert(1);
+        state.pot = 20;
+
+        let state = Arc::new(std::sync::Mutex::new(state));
+        let settlement = settle_hand(&state);
+        assert_eq!(settlement.winners, vec![0]);
+        assert_eq!(state.lock().unwrap().chip_count(0), 1010);
+    }
+
+    #[test]
+    fn table_state_rotates_dealer_and_preserves_bankrolls() {
+        let mut handler = HoldemGameHandler::default();
+        let mut room = RoomService::default();
+        for session_id in 1..=2 {
+            join_with_hook(
+                &mut handler,
+                &mut room,
+                session_id,
+                &format!("u{session_id}"),
+            );
+        }
+        let (first_dealer, first_bankrolls) = handler.prepare_table_for_start(&room, "room", 1000);
+        assert_eq!(first_dealer, 0);
+        assert_eq!(first_bankrolls.get(&0), Some(&1000));
+        assert_eq!(first_bankrolls.get(&1), Some(&1000));
+
+        let finished = Arc::new(std::sync::Mutex::new(
+            HoldemGameState::from_common_with_variant(
+                room.room_common_state("room").unwrap(),
+                STANDARD_TEXAS,
+            ),
+        ));
+        {
+            let mut state = finished.lock().unwrap();
+            state.dealer_position = first_dealer;
+            state.chips.insert(0, 1200);
+            state.chips.insert(1, 1000);
+        }
+        handler.record_finished_hand("room", &finished);
+        let (second_dealer, second_bankrolls) =
+            handler.prepare_table_for_start(&room, "room", 1000);
+        assert_eq!(second_dealer, 1);
+        assert_eq!(second_bankrolls.get(&0), Some(&1200));
+        assert_eq!(second_bankrolls.get(&1), Some(&1000));
+    }
+
+    #[test]
+    fn community_streets_burn_cards_before_dealing() {
+        let common = Arc::new(std::sync::Mutex::new(CommonGameState::default()));
+        let mut state = HoldemGameState::from_common_with_variant(common, STANDARD_TEXAS);
+        state.phase = TexasHoldEmPhase::PreFlop;
+        state.deck = (1..=20).collect();
+
+        assert_eq!(state.reveal_next_phase(), TexasHoldEmPhase::Flop);
+        assert_eq!(state.public_cards.len(), 3);
+        assert_eq!(state.deck.len(), 16);
+        assert_eq!(state.reveal_next_phase(), TexasHoldEmPhase::Turn);
+        assert_eq!(state.public_cards.len(), 4);
+        assert_eq!(state.deck.len(), 14);
+        assert_eq!(state.reveal_next_phase(), TexasHoldEmPhase::River);
+        assert_eq!(state.public_cards.len(), 5);
+        assert_eq!(state.deck.len(), 12);
     }
 
     #[test]

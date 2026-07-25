@@ -28,7 +28,7 @@ pub const SHORT_DECK_HOLD_EM: PokerVariant = PokerVariant {
     hole_cards: 2,
     open_hole_cards: 0,
     min_card: 6,
-    hand_rule: PokerHandRule::BestFiveAny,
+    hand_rule: PokerHandRule::ShortDeckBestFiveAny,
 };
 
 pub const STANDARD_TEXAS: PokerVariant = PokerVariant {
@@ -42,6 +42,7 @@ pub const STANDARD_TEXAS: PokerVariant = PokerVariant {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PokerHandRule {
     BestFiveAny,
+    ShortDeckBestFiveAny,
     OmahaTwoHoleThreeBoard,
 }
 

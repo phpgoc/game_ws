@@ -17,6 +17,14 @@ pub fn card_suit(card: i32) -> i32 {
 }
 
 pub fn evaluate_best(cards: &[i32]) -> Option<EvaluatedHand> {
+    evaluate_best_with_rules(cards, false)
+}
+
+pub fn evaluate_short_deck_best(cards: &[i32]) -> Option<EvaluatedHand> {
+    evaluate_best_with_rules(cards, true)
+}
+
+fn evaluate_best_with_rules(cards: &[i32], short_deck: bool) -> Option<EvaluatedHand> {
     if cards.len() < 5 {
         return None;
     }
@@ -26,8 +34,10 @@ pub fn evaluate_best(cards: &[i32]) -> Option<EvaluatedHand> {
             for c in b + 1..cards.len() - 2 {
                 for d in c + 1..cards.len() - 1 {
                     for e in d + 1..cards.len() {
-                        let hand =
-                            evaluate_five(&[cards[a], cards[b], cards[c], cards[d], cards[e]]);
+                        let hand = evaluate_five_with_rules(
+                            &[cards[a], cards[b], cards[c], cards[d], cards[e]],
+                            short_deck,
+                        );
                         if best.as_ref().is_none_or(|current| hand > *current) {
                             best = Some(hand);
                         }
@@ -40,12 +50,16 @@ pub fn evaluate_best(cards: &[i32]) -> Option<EvaluatedHand> {
 }
 
 pub fn evaluate_five(cards: &[i32; 5]) -> EvaluatedHand {
+    evaluate_five_with_rules(cards, false)
+}
+
+fn evaluate_five_with_rules(cards: &[i32; 5], short_deck: bool) -> EvaluatedHand {
     let mut ranks: Vec<i32> = cards.iter().map(|card| card_rank(*card)).collect();
     ranks.sort_unstable_by(|a, b| b.cmp(a));
     let flush = cards
         .iter()
         .all(|card| card_suit(*card) == card_suit(cards[0]));
-    let straight = straight_high(ranks.clone());
+    let straight = straight_high(ranks.clone(), short_deck);
 
     if flush && let Some(straight_high) = straight {
         return EvaluatedHand {
@@ -77,7 +91,7 @@ pub fn evaluate_five(cards: &[i32; 5]) -> EvaluatedHand {
 
     if groups[0].0 == 3 && groups.get(1).is_some_and(|group| group.0 == 2) {
         return EvaluatedHand {
-            category: 6,
+            category: if short_deck { 5 } else { 6 },
             ranks: vec![groups[0].1, groups[1].1],
             name: "full_house",
         };
@@ -85,7 +99,7 @@ pub fn evaluate_five(cards: &[i32; 5]) -> EvaluatedHand {
 
     if flush {
         return EvaluatedHand {
-            category: 5,
+            category: if short_deck { 6 } else { 5 },
             ranks,
             name: "flush",
         };
@@ -183,9 +197,12 @@ pub fn evaluate_omaha(hole_cards: &[i32], public_cards: &[i32]) -> Option<Evalua
     best
 }
 
-fn straight_high(mut ranks: Vec<i32>) -> Option<i32> {
+fn straight_high(mut ranks: Vec<i32>, short_deck: bool) -> Option<i32> {
     ranks.sort_unstable();
     ranks.dedup();
+    if short_deck && ranks == [6, 7, 8, 9, 14] {
+        return Some(9);
+    }
     if ranks.contains(&14) {
         ranks.insert(0, 1);
     }
@@ -248,6 +265,22 @@ mod tests {
         let hand = evaluate_five(&[1, 2, 3, 4, 26]);
         assert_eq!(hand.category, 4);
         assert_eq!(hand.ranks, vec![5]);
+    }
+
+    #[test]
+    fn short_deck_accepts_ace_six_straight() {
+        let hand = evaluate_short_deck_best(&[5, 19, 33, 47, 13]).unwrap();
+        assert_eq!(hand.category, 4);
+        assert_eq!(hand.ranks, vec![9]);
+    }
+
+    #[test]
+    fn short_deck_flush_beats_full_house() {
+        let flush = evaluate_short_deck_best(&[5, 7, 9, 11, 13]).unwrap();
+        let full_house = evaluate_short_deck_best(&[1, 14, 27, 2, 15]).unwrap();
+        assert!(flush > full_house);
+        assert_eq!(flush.category, 6);
+        assert_eq!(full_house.category, 5);
     }
 
     #[test]
