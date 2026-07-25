@@ -904,6 +904,13 @@ impl GameHandler for HoldemGameHandler {
         accepts_poker_game_id(game_id)
     }
 
+    // Keep the lightweight table AI available for local/manual testing.  The
+    // shared room service uses this capability flag to accept ADD_AI and
+    // REMOVE_AI requests and to advertise the capability in JOIN responses.
+    fn supports_ai_players(&self) -> bool {
+        true
+    }
+
     fn after_common_request(
         &mut self,
         room_service: &mut RoomService,
