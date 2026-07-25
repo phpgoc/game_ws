@@ -1892,12 +1892,16 @@ pub(crate) fn resolve_claim_window(
             ClaimResponse::Peng => {
                 if state.remove_tiles_from_hand(winner, &[claim_window.tile, claim_window.tile]) {
                     state.remove_last_discard(claim_window.from_position);
-                    state.melds.entry(winner).or_default().push(build_claimed_meld(
-                        ShenyangMahjongMeldKind::PENG,
-                        vec![claim_window.tile, claim_window.tile, claim_window.tile],
-                        claim_window.from_position,
-                        claim_window.tile,
-                    ));
+                    state
+                        .melds
+                        .entry(winner)
+                        .or_default()
+                        .push(build_claimed_meld(
+                            ShenyangMahjongMeldKind::PENG,
+                            vec![claim_window.tile, claim_window.tile, claim_window.tile],
+                            claim_window.from_position,
+                            claim_window.tile,
+                        ));
                     state.current_position = winner;
                     state.last_drawn_tile = None;
                     state.claim_window = None;
@@ -1938,17 +1942,21 @@ pub(crate) fn resolve_claim_window(
                 ) =>
             {
                 state.remove_last_discard(claim_window.from_position);
-                state.melds.entry(winner).or_default().push(build_claimed_meld(
-                    ShenyangMahjongMeldKind::GANG,
-                    vec![
+                state
+                    .melds
+                    .entry(winner)
+                    .or_default()
+                    .push(build_claimed_meld(
+                        ShenyangMahjongMeldKind::GANG,
+                        vec![
+                            claim_window.tile,
+                            claim_window.tile,
+                            claim_window.tile,
+                            claim_window.tile,
+                        ],
+                        claim_window.from_position,
                         claim_window.tile,
-                        claim_window.tile,
-                        claim_window.tile,
-                        claim_window.tile,
-                    ],
-                    claim_window.from_position,
-                    claim_window.tile,
-                ));
+                    ));
                 state.current_position = winner;
                 state.last_drawn_tile = None;
                 state.claim_window = None;
@@ -2007,12 +2015,16 @@ pub(crate) fn resolve_claim_window(
             state.remove_last_discard(claim_window.from_position);
             let mut meld_tiles = consume_tiles.clone();
             meld_tiles.push(claim_window.tile);
-            state.melds.entry(winner).or_default().push(build_claimed_meld(
-                ShenyangMahjongMeldKind::CHI,
-                meld_tiles.clone(),
-                claim_window.from_position,
-                claim_window.tile,
-            ));
+            state
+                .melds
+                .entry(winner)
+                .or_default()
+                .push(build_claimed_meld(
+                    ShenyangMahjongMeldKind::CHI,
+                    meld_tiles.clone(),
+                    claim_window.from_position,
+                    claim_window.tile,
+                ));
             state.current_position = winner;
             state.last_drawn_tile = None;
             state.claim_window = None;
