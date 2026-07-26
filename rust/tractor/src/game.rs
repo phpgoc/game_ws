@@ -260,6 +260,7 @@ impl TractorGameHandler {
                     WsResponseCode::NO_PERMISSION,
                 );
             };
+            let failed_throw = s.last_failed_throw_event(position);
             let play_time = room_service
                 .room_configs(&room_key)
                 .unwrap_or_default()
@@ -275,6 +276,7 @@ impl TractorGameHandler {
                 trick_index: s.trick_index,
                 next_position: s.current_position as i32,
                 remaining_hand_count: s.remaining_hand_count(position),
+                failed_throw,
             };
             let snapshot = s.snapshot();
             let finished = s.is_finished();

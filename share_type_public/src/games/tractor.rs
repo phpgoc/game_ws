@@ -116,6 +116,13 @@ pub struct WsTractorHandEvent {
 
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsTractorFailedThrowEvent {
+    pub attempted_cards: Vec<i32>,
+    pub played_cards: Vec<i32>,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsTractorPlayEvent {
     pub position: i32,
     pub name: String,
@@ -123,6 +130,8 @@ pub struct WsTractorPlayEvent {
     pub trick_index: i32,
     pub next_position: i32,
     pub remaining_hand_count: i32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failed_throw: Option<WsTractorFailedThrowEvent>,
 }
 
 #[typeshare]

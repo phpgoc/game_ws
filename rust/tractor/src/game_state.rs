@@ -5,8 +5,8 @@ use std::{
 
 use rand::seq::SliceRandom;
 use share_type_public::{
-    TractorPhase, TractorRank, TractorSuit, WsTractorPlayedCards, WsTractorPlayerHandCount,
-    WsTractorTableSnapshotEvent, WsTractorTrumpDeclaration,
+    TractorPhase, TractorRank, TractorSuit, WsTractorFailedThrowEvent, WsTractorPlayedCards,
+    WsTractorPlayerHandCount, WsTractorTableSnapshotEvent, WsTractorTrumpDeclaration,
 };
 use ws_common::{CommonGameState, GameState};
 
@@ -67,6 +67,20 @@ pub struct TractorGameState {
     /// without inspecting anyone's hidden hand.
     pub completed_tricks: Vec<Vec<WsTractorPlayedCards>>,
     pub current_trick: Vec<WsTractorPlayedCards>,
+    /// A failed throw is public table information even though only its weakest
+    /// component is actually played. Keep the attempted cards and the play
+    /// sequence so the official AI can remember the exposed holding without
+    /// treating cards that were later played as still hidden in that hand.
+    pub failed_throws: Vec<TractorFailedThrow>,
+    play_count: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct TractorFailedThrow {
+    pub position: usize,
+    pub attempted_cards: Vec<i32>,
+    pub played_cards: Vec<i32>,
+    pub play_sequence: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -508,6 +522,8 @@ impl TractorGameState {
         self.last_trick_winner = None;
         self.completed_tricks.clear();
         self.current_trick.clear();
+        self.failed_throws.clear();
+        self.play_count = 0;
         self.trick_index = 0;
         self.current_position = self.dealer_position;
 
@@ -735,6 +751,8 @@ impl TractorGameState {
             trick_index: 0,
             completed_tricks: Vec::new(),
             current_trick: Vec::new(),
+            failed_throws: Vec::new(),
+            play_count: 0,
         }
     }
 
@@ -828,6 +846,8 @@ impl TractorGameState {
             return Err("not current turn");
         }
         let hand = self.hands.get(&position).cloned().unwrap_or_default();
+        let attempted_cards = cards.clone();
+        let mut failed_throw = false;
         match self.lead_combo() {
             None => {
                 // Leading: singles, pairs, tractors and same-group throws are
@@ -843,6 +863,7 @@ impl TractorGameState {
                     && let Some(fallback) = self.failed_throw_component(position, &cards)
                 {
                     cards = fallback;
+                    failed_throw = true;
                 }
             }
             Some(lead) => {
@@ -857,6 +878,15 @@ impl TractorGameState {
             name,
             cards,
         };
+        if failed_throw {
+            self.failed_throws.push(TractorFailedThrow {
+                position,
+                attempted_cards,
+                played_cards: played.cards.clone(),
+                play_sequence: self.play_count,
+            });
+        }
+        self.play_count += 1;
         self.current_trick.push(played.clone());
         if self.current_trick.len() >= self.active_positions().len() {
             let trick_score = combo::trick_points(&self.current_trick);
@@ -888,6 +918,18 @@ impl TractorGameState {
         }
         self.base.lock().unwrap().action_received = true;
         Ok(played)
+    }
+
+    pub fn last_failed_throw_event(&self, position: usize) -> Option<WsTractorFailedThrowEvent> {
+        let play_sequence = self.play_count.checked_sub(1)?;
+        self.failed_throws
+            .iter()
+            .rev()
+            .find(|record| record.position == position && record.play_sequence == play_sequence)
+            .map(|record| WsTractorFailedThrowEvent {
+                attempted_cards: record.attempted_cards.clone(),
+                played_cards: record.played_cards.clone(),
+            })
     }
 
     pub fn player_name(&self, position: usize) -> String {

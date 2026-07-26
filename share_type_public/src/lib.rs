@@ -74,6 +74,7 @@ pub use games::tractor::WsTractorBottomCardsEvent;
 pub use games::tractor::WsTractorBuryBottomRequest;
 pub use games::tractor::WsTractorDealEvent;
 pub use games::tractor::WsTractorDeclareTrumpRequest;
+pub use games::tractor::WsTractorFailedThrowEvent;
 pub use games::tractor::WsTractorHandEvent;
 pub use games::tractor::WsTractorPlayEvent;
 pub use games::tractor::WsTractorPlayRequest;

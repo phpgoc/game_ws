@@ -183,6 +183,7 @@ fn build_auto_dispatch(
         let Ok(played) = s.play_cards(position, name.clone(), cards) else {
             return dispatch;
         };
+        let failed_throw = s.last_failed_throw_event(position);
         let countdown = current_play_time(configs, &s);
         s.set_turn_countdown(countdown);
         let play_event = WsTractorPlayEvent {
@@ -192,6 +193,7 @@ fn build_auto_dispatch(
             trick_index: s.trick_index,
             next_position: s.current_position as i32,
             remaining_hand_count: s.remaining_hand_count(position),
+            failed_throw,
         };
         let snapshot = s.snapshot();
         let settlement = s.is_finished().then(|| settlement_event(&s));
