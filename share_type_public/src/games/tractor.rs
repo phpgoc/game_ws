@@ -117,6 +117,7 @@ pub struct WsTractorHandEvent {
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsTractorFailedThrowEvent {
+    pub position: i32,
     pub attempted_cards: Vec<i32>,
     pub played_cards: Vec<i32>,
 }
@@ -200,6 +201,8 @@ pub struct WsTractorTableSnapshotEvent {
     pub turn_countdown: i32,
     #[serde(default)]
     pub player_scores: HashMap<i32, i32>,
+    #[serde(default)]
+    pub failed_throws: Vec<WsTractorFailedThrowEvent>,
 }
 
 #[typeshare]

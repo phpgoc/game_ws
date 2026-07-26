@@ -927,6 +927,7 @@ impl TractorGameState {
             .rev()
             .find(|record| record.position == position && record.play_sequence == play_sequence)
             .map(|record| WsTractorFailedThrowEvent {
+                position: record.position as i32,
                 attempted_cards: record.attempted_cards.clone(),
                 played_cards: record.played_cards.clone(),
             })
@@ -1024,6 +1025,15 @@ impl TractorGameState {
         player_hand_counts.sort_by_key(|player| player.position);
         let turn_countdown = self.base.lock().unwrap().turn_countdown as i32;
         let player_scores = self.player_scores_snapshot();
+        let failed_throws = self
+            .failed_throws
+            .iter()
+            .map(|record| WsTractorFailedThrowEvent {
+                position: record.position as i32,
+                attempted_cards: record.attempted_cards.clone(),
+                played_cards: record.played_cards.clone(),
+            })
+            .collect();
         WsTractorTableSnapshotEvent {
             phase: self.phase,
             deck_count: self.rules.deck_count as i32,
@@ -1047,6 +1057,7 @@ impl TractorGameState {
             current_trick: self.current_trick.clone(),
             turn_countdown,
             player_scores,
+            failed_throws,
         }
     }
 
@@ -1525,6 +1536,29 @@ mod tests {
 
         // Position 1's higher suit-0 tractor takes the trick.
         assert_eq!(state.last_trick_winner, Some(1));
+    }
+
+    #[test]
+    fn snapshot_exposes_failed_throw_history() {
+        let mut state = test_state();
+        state.rules.target_rank = TractorRank::TWO;
+        state.hands.insert(0, vec![13, 113, 11, 111]);
+        state.hands.insert(1, vec![12, 112, 20, 21]);
+        state.hands.insert(2, vec![30, 31, 32, 33]);
+        state.hands.insert(3, vec![42, 43, 44, 45]);
+
+        state
+            .play_cards(0, "u0".to_owned(), vec![13, 113, 11, 111])
+            .expect("failed throw is accepted and reduced");
+
+        let snapshot = state.snapshot();
+        assert_eq!(snapshot.failed_throws.len(), 1);
+        assert_eq!(snapshot.failed_throws[0].position, 0);
+        assert_eq!(
+            snapshot.failed_throws[0].attempted_cards,
+            vec![13, 113, 11, 111]
+        );
+        assert_eq!(snapshot.failed_throws[0].played_cards, vec![11, 111]);
     }
 
     #[test]
