@@ -417,10 +417,88 @@ impl TractorGameState {
         })
     }
 
-    /// A safe, rules-correct auto play used for timed-out humans and as the AI
-    /// fallback. Leads the lowest single; when following, beats an opponent with
-    /// the smallest winning play, feeds points to a winning partner, and
-    /// otherwise sheds the lowest legal cards.
+    /// A deliberately simple, rules-correct play used by ordinary AWAY seats.
+    ///
+    /// It never initiates a tractor or throw: on lead it plays the highest
+    /// non-scoring side-suit single (A, then Q, and so on, skipping K/10/5).
+    /// While following, it feeds points when the partner is currently winning,
+    /// uses the cheapest legal winner against an opponent, and otherwise keeps
+    /// as many point cards as the follow rules allow.
+    pub fn choose_away_play(&self, position: usize) -> Option<Vec<i32>> {
+        let hand = self.hands.get(&position)?;
+        if hand.is_empty() {
+            return None;
+        }
+        let Some(lead) = self.lead_combo() else {
+            if let Some(card) = hand
+                .iter()
+                .filter(|card| !is_trump_card(**card, &self.rules) && card_score(**card) == 0)
+                .max_by_key(|card| (card_rank(**card), -**card))
+            {
+                return Some(vec![*card]);
+            }
+
+            // If every side-suit card carries points, avoid leading those
+            // points while any non-scoring trump remains. Only lead a point
+            // card when the whole hand forces it.
+            return hand
+                .iter()
+                .filter(|card| card_score(**card) == 0)
+                .min_by_key(|card| (tractor_card_value(**card, &self.rules, None), **card))
+                .or_else(|| {
+                    hand.iter().min_by_key(|card| {
+                        (
+                            card_score(**card),
+                            tractor_card_value(**card, &self.rules, None),
+                            **card,
+                        )
+                    })
+                })
+                .map(|card| vec![*card]);
+        };
+
+        let lead_suit = lead.suit;
+        let strength = |cards: &[i32]| {
+            cards
+                .iter()
+                .map(|card| tractor_card_value(*card, &self.rules, lead_suit))
+                .max()
+                .unwrap_or_default()
+        };
+        let mut candidates = self.legal_follows(position, &lead);
+        if candidates.is_empty() {
+            return combo::forced_follow(hand, &lead, &self.rules);
+        }
+
+        let current_winner = combo::trick_winner(&self.current_trick, &self.rules);
+        let partner_winning = current_winner
+            .map(|winner| team_positions(position).contains(&winner) && winner != position)
+            .unwrap_or(false);
+
+        if partner_winning {
+            candidates.sort_by_key(|cards| (-played_score(cards), strength(cards)));
+            return candidates.into_iter().next();
+        }
+
+        let mut winning: Vec<Vec<i32>> = candidates
+            .iter()
+            .filter(|cards| self.candidate_would_win(position, cards))
+            .cloned()
+            .collect();
+        if !winning.is_empty() {
+            winning.sort_by_key(|cards| strength(cards));
+            return winning.into_iter().next();
+        }
+
+        // The opponent is still winning and no legal reply can overtake it.
+        candidates.sort_by_key(|cards| (played_score(cards), strength(cards)));
+        candidates.into_iter().next()
+    }
+
+    /// A safe, rules-correct fallback for native and member-takeover AI.
+    /// Leads the lowest single; when following, beats an opponent with the
+    /// smallest winning play, feeds points to a winning partner only when safe,
+    /// and otherwise sheds the lowest legal cards.
     pub fn choose_auto_play(&self, position: usize) -> Option<Vec<i32>> {
         let hand = self.hands.get(&position)?;
         if hand.is_empty() {
@@ -461,8 +539,6 @@ impl TractorGameState {
             if !winning.is_empty() {
                 winning.sort_by_key(|cards| strength(cards));
                 let cheapest = &winning[0];
-                // Don't burn trump to ruff a pointless plain-suit trick when the
-                // partner still has a turn to try to take it themselves.
                 let ruffing = lead.suit.is_some()
                     && cheapest
                         .iter()
@@ -474,7 +550,6 @@ impl TractorGameState {
             }
         }
 
-        // Can't (or needn't) win: dump points to a winning partner, else shed low.
         candidates.sort_by_key(|cards| {
             if partner_winning && is_last_to_play {
                 (-played_score(cards), strength(cards))
@@ -1114,8 +1189,9 @@ mod tests {
     }
 
     #[test]
-    fn ai_following_opponent_prefers_smallest_winning_card() {
+    fn away_following_opponent_prefers_smallest_winning_card() {
         let mut state = test_state();
+        state.rules.target_rank = TractorRank::TWO;
         state.current_position = 1;
         state.current_trick.push(WsTractorPlayedCards {
             position: 0,
@@ -1124,7 +1200,74 @@ mod tests {
         });
         state.hands.insert(1, vec![5, 6, 13]);
 
-        assert_eq!(state.choose_auto_play(1), Some(vec![5]));
+        assert_eq!(state.choose_away_play(1), Some(vec![5]));
+    }
+
+    #[test]
+    fn away_lead_uses_highest_non_scoring_side_card_as_a_single() {
+        let mut state = test_state();
+        state.rules.target_rank = TractorRank::TWO;
+        state.rules.trump_suit = Some(TractorSuit::SPADE);
+        state.current_position = 0;
+        state.hands.insert(0, vec![13, 17, 22, 24, 25, 26]);
+
+        assert_eq!(state.choose_away_play(0), Some(vec![26]));
+
+        state.hands.insert(0, vec![13, 17, 22, 23, 24, 25]);
+        assert_eq!(state.choose_away_play(0), Some(vec![24]));
+    }
+
+    #[test]
+    fn away_feeds_points_whenever_partner_is_winning() {
+        let mut state = test_state();
+        state.rules.target_rank = TractorRank::TWO;
+        state.current_position = 2;
+        state.current_trick = vec![
+            WsTractorPlayedCards {
+                position: 0,
+                name: "u0".to_owned(),
+                cards: vec![13],
+            },
+            WsTractorPlayedCards {
+                position: 1,
+                name: "u1".to_owned(),
+                cards: vec![3],
+            },
+        ];
+        state.hands.insert(2, vec![3, 4, 9, 12]);
+
+        assert_eq!(state.choose_away_play(2), Some(vec![9]));
+    }
+
+    #[test]
+    fn away_ruffs_when_that_is_the_only_way_to_beat_an_opponent() {
+        let mut state = test_state();
+        state.rules.target_rank = TractorRank::TWO;
+        state.rules.trump_suit = Some(TractorSuit::HEART);
+        state.current_position = 1;
+        state.current_trick = vec![WsTractorPlayedCards {
+            position: 0,
+            name: "u0".to_owned(),
+            cards: vec![8],
+        }];
+        state.hands.insert(1, vec![15, 41]);
+
+        assert_eq!(state.choose_away_play(1), Some(vec![15]));
+    }
+
+    #[test]
+    fn away_avoids_points_when_an_opponent_cannot_be_beaten() {
+        let mut state = test_state();
+        state.rules.target_rank = TractorRank::TWO;
+        state.current_position = 1;
+        state.current_trick = vec![WsTractorPlayedCards {
+            position: 0,
+            name: "u0".to_owned(),
+            cards: vec![13],
+        }];
+        state.hands.insert(1, vec![4, 9, 11, 12]);
+
+        assert_eq!(state.choose_away_play(1), Some(vec![11]));
     }
 
     #[test]

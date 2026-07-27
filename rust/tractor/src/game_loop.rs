@@ -168,7 +168,7 @@ fn build_auto_dispatch(
         let cards = if controlled {
             crate::ai::decide(&s, position)
         } else {
-            s.choose_auto_play(position)
+            s.choose_away_play(position)
         };
         let Some(cards) = cards else {
             dlog!(
@@ -775,6 +775,35 @@ mod tests {
             Duration::from_secs(1)
         );
         assert_eq!(current_play_time(&configs, &state.lock().unwrap()), 4);
+    }
+
+    #[test]
+    fn nonmember_timeout_marks_plain_away_and_uses_simple_lead() {
+        let state = test_state_with_ai_leader();
+        {
+            let mut guard = state.lock().unwrap();
+            guard.rules.target_rank = TractorRank::TWO;
+            guard.rules.trump_suit = Some(share_type_public::TractorSuit::SPADE);
+            guard.hands.insert(0, vec![13, 17, 22, 24, 25, 26]);
+            let mut base = guard.base.lock().unwrap();
+            base.ai_positions.remove(&0);
+            base.turn_countdown = 0;
+        }
+
+        let _ = build_auto_dispatch(
+            "room",
+            &RoomService::default(),
+            &state,
+            &HashMap::new(),
+            None,
+        );
+
+        let guard = state.lock().unwrap();
+        let base = guard.base.lock().unwrap();
+        assert!(base.is_away(0));
+        assert!(!base.is_ai_takeover_position(0));
+        drop(base);
+        assert_eq!(guard.current_trick[0].cards, vec![26]);
     }
 
     #[test]

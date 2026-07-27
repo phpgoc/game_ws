@@ -5,15 +5,13 @@ use std::time::Instant;
 
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
-use share_type_public::{
-    GameId, GameParam, GameParamRange, Routes, TractorWsCode, WsCode, WsResponseCode,
-};
+use share_type_public::{GameId, Routes, TractorWsCode, WsCode, WsResponseCode};
+use share_type_public::{GameParam, GameParamRange};
 #[cfg(not(feature = "ai"))]
 use share_type_public::{TractorPhase, TractorRoutes};
 use tokio::net::TcpListener as TokioTcpListener;
 use tokio_tungstenite::{WebSocketStream, connect_async, tungstenite::Message};
 use tractor::game::TractorGameHandler;
-#[cfg(feature = "ai")]
 use ws_common::{
     ClientRequest, Dispatch, GameHandler, GameState, JoinAuthorization, JoinAuthorizationFuture,
     RoomService, SessionId, SessionSenders, SettingsBuilderResult,
@@ -22,12 +20,10 @@ use ws_common::{RuntimeConfig, run_room_runtime};
 
 type Client = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
-#[cfg(feature = "ai")]
 #[derive(Default)]
-struct TestAiTractorHandler(TractorGameHandler);
+struct TestTractorHandler(TractorGameHandler);
 
-#[cfg(feature = "ai")]
-impl GameHandler for TestAiTractorHandler {
+impl GameHandler for TestTractorHandler {
     fn after_common_request(
         &mut self,
         room_service: &mut RoomService,
@@ -199,7 +195,7 @@ async fn tractor_ai_dealer_declares_buries_and_leads_over_websocket() {
             idle_timeout: Duration::from_secs(30),
             heartbeat_interval: Duration::from_secs(30),
         },
-        TestAiTractorHandler::default(),
+        TestTractorHandler::default(),
     ));
 
     for _ in 0..50 {
@@ -303,7 +299,7 @@ async fn tractor_incremental_deal_compact_deck_and_bury_flow() {
             idle_timeout: Duration::from_secs(30),
             heartbeat_interval: Duration::from_secs(30),
         },
-        TractorGameHandler::default(),
+        TestTractorHandler::default(),
     ));
 
     for _ in 0..50 {
@@ -329,7 +325,7 @@ async fn tractor_incremental_deal_compact_deck_and_bury_flow() {
         Routes::SETTING as i32,
         json!({
             "current_configs": {
-                "deck_count": 2,
+                "deck_count": 0,
                 "blood_enabled": 1,
                 "blood_start_score": 80,
                 "blood_score_per_unit": 40,
