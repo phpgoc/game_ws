@@ -1,6 +1,8 @@
 use std::{
     collections::HashMap,
+    future::Future,
     net::SocketAddr,
+    pin::Pin,
     sync::{
         Arc,
         atomic::{AtomicU64, AtomicUsize, Ordering},
@@ -12,9 +14,10 @@ use std::{
 use futures_util::{SinkExt, StreamExt};
 use serde_json::Value;
 use share_type_public::{
-    CommonEvent, P2pRoutes, P2pSignalKind, P2pWsCode, WsP2pJoinRequest, WsP2pJoinResponse,
-    WsP2pPeer, WsP2pPeerLeftEvent, WsP2pPeerStateEvent, WsP2pSignalEvent, WsP2pSignalRequest,
-    WsRequest, WsResponse, WsResponseCode, WsWithoutDataResponse,
+    CommonEvent, P2pRoutes, P2pSignalKind, P2pStartState, P2pWsCode, WsP2pJoinRequest,
+    WsP2pJoinResponse, WsP2pNetworkResultRequest, WsP2pPeer, WsP2pPeerLeftEvent,
+    WsP2pPeerStateEvent, WsP2pSignalEvent, WsP2pSignalRequest, WsP2pStartStateEvent, WsRequest,
+    WsResponse, WsResponseCode, WsWithoutDataResponse,
 };
 use tokio::{
     net::{TcpListener, TcpStream},
@@ -29,6 +32,7 @@ const MAX_CANDIDATE_BYTES: usize = 16 * 1024;
 const MAX_GAME_BYTES: usize = 64;
 const MAX_NAME_BYTES: usize = 48;
 const MAX_ROOM_BYTES: usize = 128;
+const MAX_SESSION_ID_BYTES: usize = 256;
 
 const MAX_SDP_BYTES: usize = 256 * 1024;
 
@@ -58,10 +62,13 @@ struct Peer {
     session_id: SessionId,
     name: String,
     sender: Sender,
+    has_membership: bool,
+    direct_result: Option<bool>,
 }
 
 struct Room {
     peers: [Option<Peer>; 2],
+    turn_offered: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -72,6 +79,28 @@ struct RoomKey {
 type Sender = mpsc::UnboundedSender<Message>;
 
 type SessionId = u64;
+
+pub type P2pMembershipFuture = Pin<Box<dyn Future<Output = bool> + Send>>;
+pub type P2pMembershipChecker = Arc<dyn Fn(Option<String>) -> P2pMembershipFuture + Send + Sync>;
+
+#[derive(Clone, Default)]
+pub struct P2pRuntimeOptions {
+    /// When present, TURN is withheld until both seats report a failed direct
+    /// connection and both JOIN session IDs have active P2P membership.
+    pub membership_checker: Option<P2pMembershipChecker>,
+}
+
+impl P2pRuntimeOptions {
+    pub fn membership_gated(checker: P2pMembershipChecker) -> Self {
+        Self {
+            membership_checker: Some(checker),
+        }
+    }
+
+    fn membership_gated_mode(&self) -> bool {
+        self.membership_checker.is_some()
+    }
+}
 
 #[derive(Default)]
 struct SignalingState {
@@ -92,6 +121,14 @@ fn event_delivery<T: serde::Serialize>(sender: Sender, code: P2pWsCode, data: &T
             code: code as i32,
             data,
         },
+    )
+}
+
+fn start_state_delivery(sender: Sender, state: P2pStartState) -> Delivery {
+    event_delivery(
+        sender,
+        P2pWsCode::START_STATE,
+        &WsP2pStartStateEvent { state },
     )
 }
 
@@ -154,6 +191,114 @@ async fn forward_signal(
     ]
 }
 
+async fn report_network_result(
+    state: &Arc<Mutex<SignalingState>>,
+    ice_config: &IceServiceConfig,
+    options: &P2pRuntimeOptions,
+    session_id: SessionId,
+    sender: Sender,
+    result: WsP2pNetworkResultRequest,
+) -> Vec<Delivery> {
+    let (start_state, targets, turn_targets) = {
+        let mut state = state.lock().await;
+        let Some(membership) = state.memberships.get(&session_id).cloned() else {
+            return vec![response_delivery(
+                sender,
+                P2pRoutes::NETWORK_RESULT as i32,
+                WsResponseCode::NOT_LOGIN,
+            )];
+        };
+        let Some(room) = state.rooms.get_mut(&membership.key) else {
+            return vec![response_delivery(
+                sender,
+                P2pRoutes::NETWORK_RESULT as i32,
+                WsResponseCode::NOT_LOGIN,
+            )];
+        };
+        let Some(peer) = room.peers[membership.position].as_mut() else {
+            return vec![response_delivery(
+                sender,
+                P2pRoutes::NETWORK_RESULT as i32,
+                WsResponseCode::NOT_LOGIN,
+            )];
+        };
+        if peer.session_id != session_id {
+            return vec![response_delivery(
+                sender,
+                P2pRoutes::NETWORK_RESULT as i32,
+                WsResponseCode::NOT_LOGIN,
+            )];
+        }
+        peer.direct_result = Some(result.direct);
+
+        let targets: Vec<Sender> = room
+            .peers
+            .iter()
+            .filter_map(|peer| peer.as_ref().map(|peer| peer.sender.clone()))
+            .collect();
+        if result.direct {
+            (Some(P2pStartState::DIRECT), targets, Vec::new())
+        } else if !options.membership_gated_mode() {
+            (None, targets, Vec::new())
+        } else {
+            let both_failed = room.peers.iter().all(|peer| {
+                peer.as_ref()
+                    .is_some_and(|peer| peer.direct_result == Some(false))
+            });
+            if !both_failed {
+                (Some(P2pStartState::WAITING_NETWORK), targets, Vec::new())
+            } else {
+                let both_members = room
+                    .peers
+                    .iter()
+                    .all(|peer| peer.as_ref().is_some_and(|peer| peer.has_membership));
+                if both_members {
+                    let turn_targets = if room.turn_offered {
+                        Vec::new()
+                    } else {
+                        room.turn_offered = true;
+                        room.peers
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(position, peer)| {
+                                let peer = peer.as_ref()?;
+                                Some((peer.sender.clone(), peer.session_id, position))
+                            })
+                            .collect()
+                    };
+                    (Some(P2pStartState::WAITING_TURN), targets, turn_targets)
+                } else {
+                    (Some(P2pStartState::BLOCKED), targets, Vec::new())
+                }
+            }
+        }
+    };
+
+    let mut deliveries = vec![response_delivery(
+        sender,
+        P2pRoutes::NETWORK_RESULT as i32,
+        WsResponseCode::OK,
+    )];
+    if let Some(start_state) = start_state {
+        deliveries.extend(
+            targets
+                .into_iter()
+                .map(|target| start_state_delivery(target, start_state)),
+        );
+    }
+    for (target, target_session_id, position) in turn_targets {
+        match ice_config.issue_event(target_session_id, position) {
+            Ok(event) => deliveries.push(event_delivery(target, P2pWsCode::ICE_CONFIG, &event)),
+            Err(_) => deliveries.push(response_delivery(
+                target,
+                P2pRoutes::NETWORK_RESULT as i32,
+                WsResponseCode::NO_PERMISSION,
+            )),
+        }
+    }
+    deliveries
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn handle_connection(
     stream: TcpStream,
@@ -161,6 +306,7 @@ async fn handle_connection(
     session_id: SessionId,
     state: Arc<Mutex<SignalingState>>,
     ice_config: Arc<IceServiceConfig>,
+    options: Arc<P2pRuntimeOptions>,
     idle_timeout: Duration,
     heartbeat_interval: Duration,
 ) -> anyhow::Result<()> {
@@ -214,8 +360,15 @@ async fn handle_connection(
                 continue;
             }
         };
-        let deliveries =
-            handle_request(&state, &ice_config, session_id, sender.clone(), request).await;
+        let deliveries = handle_request(
+            &state,
+            &ice_config,
+            &options,
+            session_id,
+            sender.clone(),
+            request,
+        )
+        .await;
         deliver(deliveries);
     }
 
@@ -228,6 +381,7 @@ async fn handle_connection(
 async fn handle_request(
     state: &Arc<Mutex<SignalingState>>,
     ice_config: &IceServiceConfig,
+    options: &Arc<P2pRuntimeOptions>,
     session_id: SessionId,
     sender: Sender,
     request: WsRequest<Value>,
@@ -241,7 +395,7 @@ async fn handle_request(
                     WsResponseCode::ERROR_FORMAT,
                 )];
             };
-            join_room(state, ice_config, session_id, sender, join).await
+            join_room(state, ice_config, options, session_id, sender, join).await
         }
         route if route == P2pRoutes::SIGNAL as i32 => {
             let Ok(signal) = serde_json::from_value::<WsP2pSignalRequest>(request.data) else {
@@ -258,6 +412,17 @@ async fn handle_request(
             deliveries.push(response_delivery(sender, route, WsResponseCode::OK));
             deliveries
         }
+        route if route == P2pRoutes::NETWORK_RESULT as i32 => {
+            let Ok(result) = serde_json::from_value::<WsP2pNetworkResultRequest>(request.data)
+            else {
+                return vec![response_delivery(
+                    sender,
+                    route,
+                    WsResponseCode::ERROR_FORMAT,
+                )];
+            };
+            report_network_result(state, ice_config, options, session_id, sender, result).await
+        }
         route => vec![response_delivery(
             sender,
             route,
@@ -269,6 +434,7 @@ async fn handle_request(
 async fn join_room(
     state: &Arc<Mutex<SignalingState>>,
     ice_config: &IceServiceConfig,
+    options: &Arc<P2pRuntimeOptions>,
     session_id: SessionId,
     sender: Sender,
     join: WsP2pJoinRequest,
@@ -276,6 +442,11 @@ async fn join_room(
     if !valid_identifier(&join.game, MAX_GAME_BYTES)
         || !valid_room(&join.room)
         || !valid_name(&join.name)
+        || join.session_id.as_deref().is_some_and(|session_id| {
+            session_id.is_empty()
+                || session_id.len() > MAX_SESSION_ID_BYTES
+                || session_id.chars().any(char::is_control)
+        })
     {
         return vec![response_delivery(
             sender,
@@ -284,11 +455,17 @@ async fn join_room(
         )];
     }
 
+    let has_membership = if let Some(checker) = &options.membership_checker {
+        checker(join.session_id.clone()).await
+    } else {
+        true
+    };
+
     let key = RoomKey {
         game: join.game,
         room: join.room,
     };
-    let (position, peer, ice_targets, peer_state_targets) = {
+    let (position, peer, ice_targets, peer_state_targets, start_state_targets, room_is_full) = {
         let mut state = state.lock().await;
         if state.memberships.contains_key(&session_id) {
             return vec![response_delivery(
@@ -309,6 +486,8 @@ async fn join_room(
             session_id,
             name: join.name,
             sender: sender.clone(),
+            has_membership,
+            direct_result: None,
         });
         let peer = room.peers[1 - position].as_ref().map(|peer| WsP2pPeer {
             position: (1 - position) as i32,
@@ -348,10 +527,22 @@ async fn join_room(
         } else {
             Vec::new()
         };
+        let start_state_targets = room
+            .peers
+            .iter()
+            .filter_map(|peer| peer.as_ref().map(|peer| peer.sender.clone()))
+            .collect::<Vec<_>>();
         state
             .memberships
             .insert(session_id, Membership { key, position });
-        (position, peer, ice_targets, peer_state_targets)
+        (
+            position,
+            peer,
+            ice_targets,
+            peer_state_targets,
+            start_state_targets,
+            room_is_full,
+        )
     };
 
     let mut deliveries = vec![serialized_delivery(
@@ -366,7 +557,11 @@ async fn join_room(
         },
     )];
     for (target, target_session_id, target_position) in ice_targets {
-        match ice_config.issue_event(target_session_id, target_position) {
+        match ice_config.issue_event_with_turn(
+            target_session_id,
+            target_position,
+            !options.membership_gated_mode(),
+        ) {
             Ok(event) => {
                 deliveries.push(event_delivery(target, P2pWsCode::ICE_CONFIG, &event));
             }
@@ -379,6 +574,14 @@ async fn join_room(
     }
     for (target, event) in peer_state_targets {
         deliveries.push(event_delivery(target, P2pWsCode::PEER_STATE, &event));
+    }
+    let initial_state = if room_is_full {
+        P2pStartState::WAITING_NETWORK
+    } else {
+        P2pStartState::WAITING_PEER
+    };
+    for target in start_state_targets {
+        deliveries.push(start_state_delivery(target, initial_state));
     }
     deliveries
 }
@@ -419,14 +622,33 @@ pub async fn run_p2p_listener(
     idle_timeout: Duration,
     heartbeat_interval: Duration,
 ) -> anyhow::Result<()> {
+    run_p2p_listener_with_options(
+        listener,
+        ice_config,
+        idle_timeout,
+        heartbeat_interval,
+        P2pRuntimeOptions::default(),
+    )
+    .await
+    .map(|_| ())
+}
+
+pub async fn run_p2p_listener_with_options(
+    listener: TcpListener,
+    ice_config: IceServiceConfig,
+    idle_timeout: Duration,
+    heartbeat_interval: Duration,
+    options: P2pRuntimeOptions,
+) -> anyhow::Result<()> {
     let (_stop_tx, stop_rx) = watch::channel(false);
-    run_p2p_listener_until_stopped(
+    run_p2p_listener_until_stopped_with_options(
         listener,
         ice_config,
         idle_timeout,
         heartbeat_interval,
         stop_rx,
         None,
+        options,
     )
     .await
     .map(|_| ())
@@ -437,8 +659,29 @@ pub async fn run_p2p_listener_until_stopped(
     ice_config: IceServiceConfig,
     idle_timeout: Duration,
     heartbeat_interval: Duration,
+    stop_signal: watch::Receiver<bool>,
+    ready: Option<SyncSender<P2pRuntimeStats>>,
+) -> anyhow::Result<P2pRuntimeStats> {
+    run_p2p_listener_until_stopped_with_options(
+        listener,
+        ice_config,
+        idle_timeout,
+        heartbeat_interval,
+        stop_signal,
+        ready,
+        P2pRuntimeOptions::default(),
+    )
+    .await
+}
+
+pub async fn run_p2p_listener_until_stopped_with_options(
+    listener: TcpListener,
+    ice_config: IceServiceConfig,
+    idle_timeout: Duration,
+    heartbeat_interval: Duration,
     mut stop_signal: watch::Receiver<bool>,
     ready: Option<SyncSender<P2pRuntimeStats>>,
+    options: P2pRuntimeOptions,
 ) -> anyhow::Result<P2pRuntimeStats> {
     let state = Arc::new(Mutex::new(SignalingState::default()));
     let client_count = Arc::new(AtomicUsize::new(0));
@@ -447,6 +690,7 @@ pub async fn run_p2p_listener_until_stopped(
         client_count: Arc::clone(&client_count),
     };
     let ice_config = Arc::new(ice_config);
+    let options = Arc::new(options);
     let session_sequence = Arc::new(AtomicU64::new(1));
     let mut connections = JoinSet::new();
     if let Some(ready) = ready {
@@ -461,6 +705,7 @@ pub async fn run_p2p_listener_until_stopped(
                 let session_id = session_sequence.fetch_add(1, Ordering::Relaxed);
                 let state = Arc::clone(&state);
                 let ice_config = Arc::clone(&ice_config);
+                let options = Arc::clone(&options);
                 let count_guard = ClientCountGuard::new(Arc::clone(&client_count));
                 connections.spawn(async move {
                     let _count_guard = count_guard;
@@ -470,6 +715,7 @@ pub async fn run_p2p_listener_until_stopped(
                         session_id,
                         state,
                         ice_config,
+                        options,
                         idle_timeout,
                         heartbeat_interval,
                     )
@@ -581,6 +827,7 @@ impl Room {
     fn new() -> Self {
         Self {
             peers: [None, None],
+            turn_offered: false,
         }
     }
 }
@@ -606,6 +853,7 @@ mod tests {
     #[tokio::test]
     async fn room_is_limited_to_two_and_disconnect_notifies_peer() {
         let state = Arc::new(Mutex::new(SignalingState::default()));
+        let options = Arc::new(P2pRuntimeOptions::default());
         let (red_sender, mut red_rx) = channel();
         let (black_sender, _black_rx) = channel();
         let (third_sender, mut third_rx) = channel();
@@ -618,12 +866,14 @@ mod tests {
                 join_room(
                     &state,
                     &ice_config(),
+                    &options,
                     session,
                     sender,
                     WsP2pJoinRequest {
                         game: "game_a".into(),
                         room: "room".into(),
                         name: name.into(),
+                        session_id: None,
                     },
                 )
                 .await,
@@ -651,20 +901,33 @@ mod tests {
     #[tokio::test]
     async fn two_peers_receive_roles_and_signals() {
         let state = Arc::new(Mutex::new(SignalingState::default()));
+        let options = Arc::new(P2pRuntimeOptions::default());
         let (red_sender, mut red_rx) = channel();
         let (black_sender, mut black_rx) = channel();
         let red = WsP2pJoinRequest {
             game: "game_a".into(),
             room: "room".into(),
             name: "red".into(),
+            session_id: None,
         };
-        deliver(join_room(&state, &ice_config(), 1, red_sender.clone(), red).await);
+        deliver(join_room(&state, &ice_config(), &options, 1, red_sender.clone(), red).await);
         let black = WsP2pJoinRequest {
             game: "game_a".into(),
             room: "room".into(),
             name: "black".into(),
+            session_id: None,
         };
-        deliver(join_room(&state, &ice_config(), 2, black_sender.clone(), black).await);
+        deliver(
+            join_room(
+                &state,
+                &ice_config(),
+                &options,
+                2,
+                black_sender.clone(),
+                black,
+            )
+            .await,
+        );
 
         let mut red_messages = Vec::new();
         while let Ok(message) = red_rx.try_recv() {

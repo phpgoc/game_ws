@@ -10,6 +10,7 @@ pub enum P2pRoutes {
     JOIN = 5001,
     SIGNAL = 5002,
     LEAVE = 5003,
+    NETWORK_RESULT = 5004,
 }
 
 #[typeshare]
@@ -31,6 +32,20 @@ pub enum P2pWsCode {
     PEER_STATE = 5002,
     SIGNAL = 5003,
     PEER_LEFT = 5004,
+    START_STATE = 5005,
+}
+
+#[typeshare]
+#[repr(i8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
+#[allow(non_camel_case_types)]
+pub enum P2pStartState {
+    WAITING_PEER = 0,
+    WAITING_NETWORK = 1,
+    DIRECT = 2,
+    WAITING_TURN = 3,
+    TURN = 4,
+    BLOCKED = 5,
 }
 
 #[typeshare]
@@ -39,6 +54,7 @@ pub struct WsP2pIceConfigEvent {
     pub self_position: i32,
     pub ice_servers: Vec<WsP2pIceServer>,
     pub credential_expires_at: String,
+    pub turn_enabled: bool,
 }
 
 #[typeshare]
@@ -57,6 +73,20 @@ pub struct WsP2pJoinRequest {
     pub game: String,
     pub room: String,
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WsP2pNetworkResultRequest {
+    pub direct: bool,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WsP2pStartStateEvent {
+    pub state: P2pStartState,
 }
 
 #[typeshare]

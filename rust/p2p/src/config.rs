@@ -143,19 +143,38 @@ impl IceServiceConfig {
         self.issue_event_at(session_id, self_position, now)
     }
 
+    pub fn issue_event_with_turn(
+        &self,
+        session_id: u64,
+        self_position: usize,
+        turn_enabled: bool,
+    ) -> anyhow::Result<WsP2pIceConfigEvent> {
+        let now = unix_time()?;
+        self.issue_event_at_with_turn(session_id, self_position, now, turn_enabled)
+    }
+
     pub(crate) fn issue_event_at(
         &self,
         session_id: u64,
         self_position: usize,
         now: u64,
     ) -> anyhow::Result<WsP2pIceConfigEvent> {
+        self.issue_event_at_with_turn(session_id, self_position, now, true)
+    }
+
+    pub(crate) fn issue_event_at_with_turn(
+        &self,
+        session_id: u64,
+        self_position: usize,
+        now: u64,
+        turn_enabled: bool,
+    ) -> anyhow::Result<WsP2pIceConfigEvent> {
         let expires_at = now.saturating_add(self.credential_ttl_seconds);
         let username = format!("{expires_at}:{session_id}");
         let credential = turn_password(&self.turn_secret, &username)?;
 
-        Ok(WsP2pIceConfigEvent {
-            self_position: self_position as i32,
-            ice_servers: vec![
+        let ice_servers = if turn_enabled {
+            vec![
                 WsP2pIceServer {
                     urls: self.stun_urls.clone(),
                     username: None,
@@ -166,8 +185,24 @@ impl IceServiceConfig {
                     username: Some(username),
                     credential: Some(credential),
                 },
-            ],
-            credential_expires_at: expires_at.to_string(),
+            ]
+        } else {
+            vec![WsP2pIceServer {
+                urls: self.stun_urls.clone(),
+                username: None,
+                credential: None,
+            }]
+        };
+
+        Ok(WsP2pIceConfigEvent {
+            self_position: self_position as i32,
+            ice_servers,
+            credential_expires_at: if turn_enabled {
+                expires_at.to_string()
+            } else {
+                "0".to_owned()
+            },
+            turn_enabled,
         })
     }
 
@@ -315,6 +350,7 @@ mod tests {
         assert_eq!(event.self_position, 1);
         assert_eq!(event.credential_expires_at, "1600");
         assert_eq!(event.ice_servers.len(), 2);
+        assert!(event.turn_enabled);
         assert_eq!(event.ice_servers[1].username.as_deref(), Some("1600:42"));
         assert!(
             event.ice_servers[1]
@@ -322,6 +358,16 @@ mod tests {
                 .as_deref()
                 .is_some_and(|value| !value.is_empty())
         );
+    }
+
+    #[test]
+    fn can_issue_stun_only_configuration_without_turn_credentials() {
+        let event = config()
+            .issue_event_at_with_turn(42, 1, 1_000, false)
+            .expect("ICE event");
+        assert_eq!(event.ice_servers.len(), 1);
+        assert!(!event.turn_enabled);
+        assert_eq!(event.credential_expires_at, "0");
     }
 
     #[test]

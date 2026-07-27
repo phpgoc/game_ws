@@ -8,7 +8,7 @@ use ws_common::StopSignal;
 
 use crate::{
     config::P2pServiceConfig,
-    runtime::{P2pRuntimeStats, run_p2p_listener, run_p2p_listener_until_stopped},
+    runtime::{P2pRuntimeOptions, P2pRuntimeStats, run_p2p_listener_until_stopped_with_options},
     turn_server::start_embedded_turn,
 };
 
@@ -18,7 +18,7 @@ pub const P2P_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(20);
 pub const P2P_IDLE_TIMEOUT: Duration = Duration::from_secs(180);
 pub const P2P_SERVICE_NAME: &str = "p2p";
 
-fn parse_listen_addr() -> anyhow::Result<String> {
+pub fn parse_listen_addr() -> anyhow::Result<String> {
     let mut host = "0.0.0.0".to_owned();
     let mut port = P2P_DEFAULT_PORT;
     let mut args = env::args().skip(1);
@@ -46,6 +46,14 @@ fn parse_listen_addr() -> anyhow::Result<String> {
 /// drive this function from the same Rust runtime without starting another
 /// native process.
 pub async fn run_p2p_server(listen_addr: &str, config: P2pServiceConfig) -> anyhow::Result<()> {
+    run_p2p_server_with_options(listen_addr, config, P2pRuntimeOptions::default()).await
+}
+
+pub async fn run_p2p_server_with_options(
+    listen_addr: &str,
+    config: P2pServiceConfig,
+    options: P2pRuntimeOptions,
+) -> anyhow::Result<()> {
     let listener = TcpListener::bind(&listen_addr).await?;
     let turn_server = start_embedded_turn(&config.turn).await?;
     let ice = config.ice_for_bound_turn(turn_server.listen_addr())?;
@@ -58,7 +66,14 @@ pub async fn run_p2p_server(listen_addr: &str, config: P2pServiceConfig) -> anyh
         turn_server.listen_addr(),
         config.turn.public_ip
     );
-    let result = run_p2p_listener(listener, ice, P2P_IDLE_TIMEOUT, P2P_HEARTBEAT_INTERVAL).await;
+    let result = crate::runtime::run_p2p_listener_with_options(
+        listener,
+        ice,
+        P2P_IDLE_TIMEOUT,
+        P2P_HEARTBEAT_INTERVAL,
+        options,
+    )
+    .await;
     turn_server.close().await?;
     result
 }
@@ -68,6 +83,23 @@ pub async fn run_p2p_server_on_listener_until_stopped(
     config: P2pServiceConfig,
     stop_signal: watch::Receiver<bool>,
     ready: SyncSender<P2pRuntimeStats>,
+) -> anyhow::Result<P2pRuntimeStats> {
+    run_p2p_server_on_listener_until_stopped_with_options(
+        listener,
+        config,
+        stop_signal,
+        ready,
+        P2pRuntimeOptions::default(),
+    )
+    .await
+}
+
+pub async fn run_p2p_server_on_listener_until_stopped_with_options(
+    listener: TcpListener,
+    config: P2pServiceConfig,
+    stop_signal: watch::Receiver<bool>,
+    ready: SyncSender<P2pRuntimeStats>,
+    options: P2pRuntimeOptions,
 ) -> anyhow::Result<P2pRuntimeStats> {
     let listen_addr = listener.local_addr()?;
     let turn_server = start_embedded_turn(&config.turn).await?;
@@ -79,13 +111,14 @@ pub async fn run_p2p_server_on_listener_until_stopped(
         config.turn.public_ip
     );
 
-    let result = run_p2p_listener_until_stopped(
+    let result = run_p2p_listener_until_stopped_with_options(
         listener,
         ice,
         P2P_IDLE_TIMEOUT,
         P2P_HEARTBEAT_INTERVAL,
         stop_signal,
         Some(ready),
+        options,
     )
     .await;
     let close_result = turn_server.close().await;
