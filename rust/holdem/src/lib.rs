@@ -1,4 +1,3 @@
-pub mod ai;
 #[cfg(all(target_os = "android", feature = "android-jni"))]
 mod android_jni;
 pub mod game;

@@ -572,8 +572,11 @@ impl HoldemGameHandler {
                 amount: 0,
             }
         } else if is_ai_position {
-            let s = state.lock().unwrap();
-            crate::ai::decide(&s, position)
+            // Table bots are deliberately predictable: they check whenever
+            // possible and otherwise call (including a short-stack all-in).
+            // That keeps owner-added seats useful for filling a table without
+            // introducing surprise folds, bluffs, or raises.
+            Self::auto_payload_for(TexasHoldEmAutoStrategy::CHECK_CALL, call_amount)
         } else {
             let strategy = self
                 .auto_strategies
@@ -1205,8 +1208,7 @@ mod tests {
     use share_type_public::{WsJoinRequest, WsJoinResponse};
 
     #[test]
-    #[cfg(feature = "official")]
-    fn ai_positions_raise_premium_hand_instead_of_stale_strategy() {
+    fn ai_positions_check_call_instead_of_using_strategy_ai() {
         let handler = HoldemGameHandler::default();
         let mut room = RoomService::with_ai_players_enabled(true);
         for session_id in 1..=2 {
@@ -1265,9 +1267,9 @@ mod tests {
                 })
                 .flatten()
         });
-        let action = action.expect("AI position should produce a PLAY event via smart AI module");
-        assert_eq!(action.action, TexasHoldEmAction::RAISE);
-        assert!(action.committed >= 30);
+        let action = action.expect("AI position should produce a check/call PLAY event");
+        assert_eq!(action.action, TexasHoldEmAction::CALL);
+        assert_eq!(action.committed, 20);
     }
 
     #[test]
