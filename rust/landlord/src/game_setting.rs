@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use share_type_public::{GameParam, GameParamRange};
+use share_type_public::GameParam;
 use ws_common::GameSettings;
 
 /// 构建斗地主的 `GameSettings` + 参数描述。
