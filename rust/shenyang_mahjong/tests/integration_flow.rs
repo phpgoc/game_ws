@@ -6,14 +6,14 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 #[cfg(feature = "ai")]
 use share_type_public::WsCode;
-use share_type_public::{GameId, Routes, WsResponseCode};
+use share_type_public::{GameId, GameParam, GameParamRange, Routes, WsResponseCode};
 use shenyang_mahjong::game::ShenyangMahjongGameHandler;
 use tokio::net::TcpListener as TokioTcpListener;
 use tokio_tungstenite::{WebSocketStream, connect_async, tungstenite::Message};
 #[cfg(feature = "ai")]
 use ws_common::{
-    ClientRequest, Dispatch, GameHandler, GameState, MembershipAuthorization, RoomService,
-    SessionId, SessionSenders, SettingsBuilderResult,
+    ClientRequest, Dispatch, GameHandler, GameState, JoinAuthorization, JoinAuthorizationFuture,
+    RoomService, SessionId, SessionSenders, SettingsBuilderResult,
 };
 use ws_common::{RuntimeConfig, run_room_runtime};
 
@@ -36,11 +36,8 @@ impl GameHandler for TestAiShenyangMahjongHandler {
             .after_common_request(room_service, session_id, request, dispatch);
     }
 
-    fn authorize_room_creation(
-        &self,
-        _join: &share_type_public::WsJoinRequest,
-    ) -> MembershipAuthorization {
-        Box::pin(async { true })
+    fn authorize_join(&self, _join: &share_type_public::WsJoinRequest) -> JoinAuthorizationFuture {
+        Box::pin(async { JoinAuthorization::ALLOW_NONMEMBER })
     }
 
     fn supports_ai_players(&self) -> bool {
@@ -52,7 +49,19 @@ impl GameHandler for TestAiShenyangMahjongHandler {
     }
 
     fn build_room_settings(&self) -> SettingsBuilderResult {
-        self.0.build_room_settings()
+        let (mut settings, mut descriptions) = self.0.build_room_settings();
+        for (key, default, min, max) in [
+            ("play_time", 20, 5, 50),
+            ("claim_time", 5, 3, 15),
+            ("settlement_time", 5, 2, 20),
+        ] {
+            settings.values.insert(key.to_owned(), default);
+            descriptions.insert(
+                key.to_owned(),
+                GameParam::Range(GameParamRange { default, min, max }),
+            );
+        }
+        (settings, descriptions)
     }
 
     fn game_id(&self) -> GameId {

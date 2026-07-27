@@ -5,32 +5,32 @@ use share_type_public::games::shenyang_mahjong::WsShenyangMahjongScoreChange;
 use ws_common::RoomService;
 
 #[cfg(feature = "official")]
-pub async fn has_active_membership(session_id: String) -> bool {
+pub async fn authorize_join(session_id: String) -> ws_common::JoinAuthorization {
     use share_type_public::GameId;
 
     if session_id.is_empty() {
-        return false;
+        return ws_common::JoinAuthorization {
+            can_create_room: false,
+            has_active_membership: false,
+        };
     }
-    let Ok(user) = data::cache_get_session(&session_id).await else {
-        return false;
-    };
-    match data::game_pay_has_active_membership(user.id, GameId::SHENYANG_MAHJONG).await {
-        Ok(active) => active,
+    match data::game_room_authorization(&session_id, GameId::SHENYANG_MAHJONG).await {
+        Ok(authorization) => ws_common::JoinAuthorization {
+            can_create_room: authorization.can_create_room,
+            has_active_membership: authorization.has_active_membership,
+        },
         Err(err) => {
             ws_common::dlog!(
                 ws_common::tracing::Level::WARN,
-                "[shenyang_mahjong][official] membership lookup failed for user {}: {}",
-                user.id,
+                "[shenyang_mahjong][official] join authorization failed: {}",
                 err
             );
-            false
+            ws_common::JoinAuthorization {
+                can_create_room: false,
+                has_active_membership: false,
+            }
         }
     }
-}
-
-#[cfg(not(feature = "official"))]
-pub async fn has_active_membership(_session_id: String) -> bool {
-    false
 }
 
 #[cfg(feature = "official")]

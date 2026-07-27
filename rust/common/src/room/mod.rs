@@ -286,24 +286,11 @@ impl RoomService {
     }
 
     pub fn disconnect(&mut self, session_id: SessionId) -> Dispatch {
-        self.disconnect_with_ai_takeover(session_id, false)
-    }
-
-    pub fn disconnect_with_ai_takeover(
-        &mut self,
-        session_id: SessionId,
-        ai_takeover_authorized: bool,
-    ) -> Dispatch {
         let mut dispatch = Dispatch::default();
         let Some(mut session) = self.sessions.remove(&session_id) else {
             return dispatch;
         };
-        self.mark_disconnected(
-            session_id,
-            &mut session,
-            ai_takeover_authorized,
-            &mut dispatch,
-        );
+        self.mark_disconnected(session_id, &mut session, &mut dispatch);
         dispatch
     }
 
@@ -461,13 +448,17 @@ impl RoomService {
                 );
             }
             entry.state.mark_away(position);
+            if entry.state.is_member_position(position) && !entry.state.is_ai_position(position) {
+                entry.state.mark_ai_takeover_position(position);
+            }
         }
+        let is_ai_takeover = self.room_position_is_ai_takeover(&room_key, position);
         self.broadcast(
             &room_key,
             WsCode::AWAY as i32,
             WsPositionEvent {
                 position: position as i32,
-                is_ai_takeover: false,
+                is_ai_takeover,
             },
             &mut dispatch,
         );
@@ -1344,7 +1335,6 @@ impl RoomService {
         &mut self,
         session_id: SessionId,
         session: &mut SessionState,
-        ai_takeover_authorized: bool,
         dispatch: &mut Dispatch,
     ) {
         let Some(room_key) = session.room_key.take() else {
@@ -1374,7 +1364,7 @@ impl RoomService {
 
             if let Some(pos) = position {
                 entry.state.mark_disconnected(pos);
-                if ai_takeover_authorized && !entry.state.is_ai_position(pos) {
+                if entry.state.is_member_position(pos) && !entry.state.is_ai_position(pos) {
                     entry.state.mark_ai_takeover_position(pos);
                 } else {
                     entry.state.clear_ai_takeover_position(pos);
@@ -1615,6 +1605,7 @@ impl RoomService {
         next.away_positions = current.away_positions.clone();
         next.disconnected_positions = current.disconnected_positions.clone();
         next.ai_positions = current.ai_positions.clone();
+        next.member_positions = current.member_positions.clone();
         next.ai_takeover_positions = current.ai_takeover_positions.clone();
         let next = Arc::new(std::sync::Mutex::new(next));
         entry.state = Box::new(crate::game_state::SharedGameState::from_common(Arc::clone(
@@ -1666,25 +1657,7 @@ impl RoomService {
             .cloned()
     }
 
-    pub fn session_official_session_id(&self, session_id: SessionId) -> Option<String> {
-        self.sessions
-            .get(&session_id)
-            .and_then(|session| session.official_session_id.clone())
-    }
-
-    pub fn session_is_away(&self, session_id: SessionId) -> bool {
-        let Some(session) = self.sessions.get(&session_id) else {
-            return false;
-        };
-        let (Some(room_key), Some(position)) = (session.room_key.as_ref(), session.position) else {
-            return false;
-        };
-        self.rooms
-            .get(room_key)
-            .is_some_and(|entry| entry.state.is_away(position))
-    }
-
-    pub fn set_session_ai_takeover(&mut self, session_id: SessionId, enabled: bool) -> bool {
+    pub fn set_session_active_membership(&mut self, session_id: SessionId, enabled: bool) -> bool {
         let Some(session) = self.sessions.get(&session_id) else {
             return false;
         };
@@ -1694,15 +1667,17 @@ impl RoomService {
         let Some(entry) = self.rooms.get_mut(&room_key) else {
             return false;
         };
-        if !entry.state.is_away(position) || entry.state.is_ai_position(position) {
+        if entry.state.is_ai_position(position) {
             return false;
         }
-        if enabled {
-            entry.state.mark_ai_takeover_position(position);
-        } else {
-            entry.state.clear_ai_takeover_position(position);
-        }
+        entry.state.set_member_position(position, enabled);
         true
+    }
+
+    pub fn room_position_has_active_membership(&self, room_key: &str, position: usize) -> bool {
+        self.rooms
+            .get(room_key)
+            .is_some_and(|entry| entry.state.is_member_position(position))
     }
 
     pub fn room_position_is_ai_takeover(&self, room_key: &str, position: usize) -> bool {
@@ -1784,23 +1759,6 @@ impl RoomService {
             .collect::<Vec<_>>();
         players.sort_by_key(|player| player.position);
         players
-    }
-
-    pub fn room_position_official_session_id(
-        &self,
-        room_key: &str,
-        position: usize,
-    ) -> Option<String> {
-        let entry = self.rooms.get(room_key)?;
-        if entry.state.is_ai_position(position) {
-            return None;
-        }
-        let session_id = entry.state.players().get(&position)?.0;
-        self.sessions
-            .get(&session_id)
-            .and_then(|session| session.official_session_id.as_ref())
-            .filter(|session_id| !session_id.is_empty())
-            .cloned()
     }
 
     pub fn room_official_user_id(&self, room_key: &str, position: usize) -> Option<i64> {

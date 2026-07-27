@@ -816,15 +816,16 @@ fn disconnect_removes_room_only_after_last_connected_human_leaves() {
 }
 
 #[test]
-fn authorized_disconnect_marks_the_retained_seat_for_ai_takeover() {
+fn cached_member_disconnect_marks_the_retained_seat_for_ai_takeover() {
     let mut service = room_service_with_ai();
     let _ = join_room(&mut service, 1, "u1", "takeover-room", GameId::LANDLORD);
     let _ = join_room(&mut service, 2, "u2", "takeover-room", GameId::LANDLORD);
     let common = service
         .room_common_state("takeover-room")
         .expect("room common state");
+    assert!(service.set_session_active_membership(1, true));
 
-    let disconnect = service.disconnect_with_ai_takeover(1, true);
+    let disconnect = service.disconnect(1);
 
     let common = common.lock().unwrap();
     assert!(common.is_disconnected(0));
@@ -859,7 +860,8 @@ fn new_game_reset_preserves_takeover_until_the_human_rejoins() {
         GameId::LANDLORD,
     );
 
-    let disconnect = service.disconnect_with_ai_takeover(1, true);
+    assert!(service.set_session_active_membership(1, true));
+    let disconnect = service.disconnect(1);
     assert!(disconnect.messages.iter().any(|message| {
         matches!(
             &message.payload,
@@ -880,6 +882,7 @@ fn new_game_reset_preserves_takeover_until_the_human_rejoins() {
         assert!(common.is_away(0));
         assert!(common.is_disconnected(0));
         assert!(common.is_ai_takeover_position(0));
+        assert!(common.is_member_position(0));
         assert!(!common.is_ai_position(0));
     }
 
@@ -899,32 +902,6 @@ fn new_game_reset_preserves_takeover_until_the_human_rejoins() {
     assert!(!common.is_away(0));
     assert!(!common.is_disconnected(0));
     assert!(!common.is_ai_takeover_position(0));
-}
-
-#[test]
-fn official_session_can_be_resolved_by_room_position() {
-    let mut service = room_service_with_ai();
-    let _ = common_request(
-        &mut service,
-        1,
-        GameId::LANDLORD,
-        Routes::JOIN,
-        serde_json::json!({
-            "name": "member",
-            "password": "official-session-room",
-            "game_id": GameId::LANDLORD as i32,
-            "session_id": "official-session-token"
-        }),
-    );
-
-    assert_eq!(
-        service.room_position_official_session_id("official-session-room", 0),
-        Some("official-session-token".to_owned())
-    );
-    assert_eq!(
-        service.room_position_official_session_id("official-session-room", 1),
-        None
-    );
 }
 
 #[test]

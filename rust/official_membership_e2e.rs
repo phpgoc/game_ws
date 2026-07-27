@@ -32,7 +32,7 @@ fn temporary_database_directory() -> PathBuf {
     ))
 }
 
-async fn create_official_session(name: &str, active_member: bool) -> String {
+async fn create_official_session(name: &str, active_member: bool) -> (String, i64) {
     let user = data::user_create(data::UserCreateInput {
         name: name.to_owned(),
         account: format!("{OFFICIAL_SERVICE_NAME}-{name}-account"),
@@ -52,9 +52,10 @@ async fn create_official_session(name: &str, active_member: bool) -> String {
         .await
         .expect("activate official test membership");
     }
-    data::cache_set_session(user.id)
+    let session_id = data::cache_set_session(user.id)
         .await
-        .expect("create official test session")
+        .expect("create official test session");
+    (session_id, user.id)
 }
 
 async fn connect_client(url: &str) -> Client {
@@ -140,8 +141,8 @@ async fn official_membership_gate_and_ai_takeover_work_over_websocket() {
     .await
     .expect("initialize official test data");
 
-    let member_session = create_official_session("member", true).await;
-    let nonmember_session = create_official_session("nonmember", false).await;
+    let (member_session, member_user_id) = create_official_session("member", true).await;
+    let (nonmember_session, _) = create_official_session("nonmember", false).await;
     let port = free_port();
     let listen_addr = format!("127.0.0.1:{port}");
     let url = format!("ws://{listen_addr}");
@@ -187,6 +188,12 @@ async fn official_membership_gate_and_ai_takeover_work_over_websocket() {
         .find(|member| member["position"] == json!(0))
         .expect("member at position 0");
     assert_member_state(existing_member, 0, true, false, false, false);
+
+    // JOIN is the only membership lookup point. Revoking membership after JOIN
+    // must not affect AWAY or disconnect takeover for this cached room seat.
+    data::game_pay_delete_all_by_user(member_user_id)
+        .await
+        .expect("revoke membership after JOIN");
 
     send_request(&mut member, Routes::AWAY as i32, json!({})).await;
     let member_away = receive_until(&mut member, "member AWAY event", |value| {
@@ -302,6 +309,52 @@ async fn official_membership_gate_and_ai_takeover_work_over_websocket() {
         false,
     );
     assert!(!stats.room_position_is_ai_takeover(&room, 0).await);
+
+    // Rejoining is a new JOIN lookup. The revoked membership must replace the
+    // old cached capability, so subsequent AWAY is a normal nonmember AWAY.
+    send_request(&mut member_rejoined, Routes::AWAY as i32, json!({})).await;
+    let rejoined_member_away = receive_until(
+        &mut member_rejoined,
+        "rejoined member AWAY after membership revocation",
+        |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::AWAY as i64)
+                && value["data"]["position"] == json!(0)
+        },
+    )
+    .await;
+    assert_eq!(
+        rejoined_member_away["data"]["is_ai_takeover"],
+        json!(false)
+    );
+    let rejoined_member_away_seen_by_other = receive_until(
+        &mut nonmember,
+        "revoked member AWAY observed by other",
+        |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::AWAY as i64)
+                && value["data"]["position"] == json!(0)
+        },
+    )
+    .await;
+    assert_eq!(
+        rejoined_member_away_seen_by_other["data"]["is_ai_takeover"],
+        json!(false)
+    );
+    assert!(!stats.room_position_is_ai_takeover(&room, 0).await);
+    send_request(&mut member_rejoined, Routes::BACK as i32, json!({})).await;
+    receive_until(&mut member_rejoined, "revoked member BACK event", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::BACK as i64)
+            && value["data"]["position"] == json!(0)
+    })
+    .await;
+    receive_until(
+        &mut nonmember,
+        "revoked member BACK observed by other",
+        |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::BACK as i64)
+                && value["data"]["position"] == json!(0)
+        },
+    )
+    .await;
 
     nonmember
         .close(None)

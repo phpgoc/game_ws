@@ -115,14 +115,10 @@ async fn position_has_active_membership(
     room_key: &str,
     position: usize,
 ) -> bool {
-    let official_session_id = room_service
+    room_service
         .lock()
         .await
-        .room_position_official_session_id(room_key, position);
-    match official_session_id {
-        Some(session_id) => crate::official::has_active_membership(session_id).await,
-        None => false,
-    }
+        .room_position_has_active_membership(room_key, position)
 }
 
 fn apply_timeout_control(

@@ -22,6 +22,11 @@ pub struct CommonGameState {
     pub disconnected_positions: HashSet<usize>,
     /// 由服务器托管的虚拟玩家位置。AI 是房间成员，但不是 WebSocket session。
     pub ai_positions: HashSet<usize>,
+    /// Human positions with active official membership at their latest JOIN.
+    ///
+    /// This capability is cached for the room lifetime so AWAY, disconnect,
+    /// and turn-timeout handling never need to query the data service again.
+    pub member_positions: HashSet<usize>,
     /// Human seats temporarily controlled by game AI on the official server.
     ///
     /// This is deliberately separate from `ai_positions`: a takeover seat keeps
@@ -105,6 +110,13 @@ pub trait GameState: Send {
             .is_ai_takeover_position(pos)
     }
 
+    fn is_member_position(&self, pos: usize) -> bool {
+        self.shared_common_state()
+            .lock()
+            .unwrap()
+            .is_member_position(pos)
+    }
+
     fn is_away(&self, pos: usize) -> bool {
         self.shared_common_state().lock().unwrap().is_away(pos)
     }
@@ -132,6 +144,13 @@ pub trait GameState: Send {
             .lock()
             .unwrap()
             .mark_ai_takeover_position(pos);
+    }
+
+    fn set_member_position(&mut self, pos: usize, enabled: bool) {
+        self.shared_common_state()
+            .lock()
+            .unwrap()
+            .set_member_position(pos, enabled);
     }
 
     fn clear_ai_takeover_position(&mut self, pos: usize) {
@@ -257,6 +276,7 @@ impl CommonGameState {
         self.away_positions.remove(&position);
         self.disconnected_positions.remove(&position);
         self.ai_positions.remove(&position);
+        self.member_positions.remove(&position);
         self.ai_takeover_positions.remove(&position);
     }
     pub fn clear_away(&mut self) {
@@ -275,6 +295,9 @@ impl CommonGameState {
     pub fn is_ai_takeover_position(&self, pos: usize) -> bool {
         self.ai_takeover_positions.contains(&pos)
     }
+    pub fn is_member_position(&self, pos: usize) -> bool {
+        self.member_positions.contains(&pos)
+    }
     pub fn is_away(&self, pos: usize) -> bool {
         self.away_positions.contains(&pos)
     }
@@ -286,6 +309,13 @@ impl CommonGameState {
     }
     pub fn mark_ai_takeover_position(&mut self, pos: usize) -> bool {
         self.ai_takeover_positions.insert(pos)
+    }
+    pub fn set_member_position(&mut self, pos: usize, enabled: bool) -> bool {
+        if enabled {
+            self.member_positions.insert(pos)
+        } else {
+            self.member_positions.remove(&pos)
+        }
     }
     pub fn clear_ai_takeover_position(&mut self, pos: usize) -> bool {
         self.ai_takeover_positions.remove(&pos)
@@ -322,6 +352,7 @@ impl CommonGameState {
         self.away_positions.remove(&position);
         self.disconnected_positions.remove(&position);
         self.ai_positions.remove(&position);
+        self.member_positions.remove(&position);
         self.ai_takeover_positions.remove(&position);
     }
 
@@ -350,6 +381,7 @@ impl CommonGameState {
         swap_set_membership(&mut self.away_positions, pos_a, pos_b);
         swap_set_membership(&mut self.disconnected_positions, pos_a, pos_b);
         swap_set_membership(&mut self.ai_positions, pos_a, pos_b);
+        swap_set_membership(&mut self.member_positions, pos_a, pos_b);
         swap_set_membership(&mut self.ai_takeover_positions, pos_a, pos_b);
     }
 }
@@ -382,6 +414,7 @@ mod tests {
         state.mark_away(1);
         state.mark_disconnected(1);
         state.mark_ai_position(1);
+        state.set_member_position(1, true);
         state.mark_ai_takeover_position(1);
 
         state.remove_player(1);
@@ -391,6 +424,7 @@ mod tests {
         assert!(!state.is_away(1));
         assert!(!state.is_disconnected(1));
         assert!(!state.is_ai_position(1));
+        assert!(!state.is_member_position(1));
         assert!(!state.is_ai_takeover_position(1));
     }
 
@@ -404,6 +438,7 @@ mod tests {
         state.mark_away(0);
         state.mark_disconnected(1);
         state.mark_ai_position(0);
+        state.set_member_position(0, true);
         state.mark_ai_takeover_position(0);
 
         state.swap_player(0, 1);
@@ -418,6 +453,8 @@ mod tests {
         assert!(!state.is_disconnected(1));
         assert!(state.is_ai_position(1));
         assert!(!state.is_ai_position(0));
+        assert!(state.is_member_position(1));
+        assert!(!state.is_member_position(0));
         assert!(state.is_ai_takeover_position(1));
         assert!(!state.is_ai_takeover_position(0));
     }

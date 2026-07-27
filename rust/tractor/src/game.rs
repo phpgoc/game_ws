@@ -556,21 +556,11 @@ impl GameHandler for TractorGameHandler {
     }
 
     #[cfg(feature = "official")]
-    fn authorize_room_creation(
+    fn authorize_join(
         &self,
         join: &share_type_public::WsJoinRequest,
-    ) -> ws_common::MembershipAuthorization {
-        Box::pin(crate::official::has_active_membership(
-            join.session_id.clone(),
-        ))
-    }
-
-    #[cfg(feature = "official")]
-    fn authorize_ai_takeover(
-        &self,
-        official_session_id: String,
-    ) -> ws_common::MembershipAuthorization {
-        Box::pin(crate::official::has_active_membership(official_session_id))
+    ) -> ws_common::JoinAuthorizationFuture {
+        Box::pin(crate::official::authorize_join(join.session_id.clone()))
     }
 
     fn after_common_request(

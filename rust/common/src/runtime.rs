@@ -27,7 +27,7 @@ use tokio_tungstenite::{
 use tracing::{error, info, warn};
 
 use crate::{
-    ClientRequest, Dispatch, OutboundPayload, RoomService, SessionId, SettingsBuilderResult,
+    ClientRequest, Dispatch, RoomService, SessionId, SettingsBuilderResult,
     cli::parse_bind_cli,
     from_message,
     net::{resolve_host, resolve_port},
@@ -38,29 +38,6 @@ const MAX_CONNECTIONS: usize = 4_096;
 const OUTBOUND_QUEUE_CAPACITY: usize = 256;
 const INBOUND_MESSAGES_PER_SECOND: f64 = 30.0;
 const INBOUND_MESSAGE_BURST: f64 = 60.0;
-
-fn set_away_takeover_flag(dispatch: &mut Dispatch, position: usize, is_ai_takeover: bool) {
-    for delivery in &mut dispatch.messages {
-        let OutboundPayload::Event(event) = &mut delivery.payload else {
-            continue;
-        };
-        if event.code != share_type_public::WsCode::AWAY as i32
-            || event
-                .data
-                .get("position")
-                .and_then(serde_json::Value::as_i64)
-                != Some(position as i64)
-        {
-            continue;
-        }
-        if let serde_json::Value::Object(data) = &mut event.data {
-            data.insert(
-                "is_ai_takeover".to_owned(),
-                serde_json::Value::Bool(is_ai_takeover),
-            );
-        }
-    }
-}
 
 struct ConnectionContext<H> {
     idle_timeout: Duration,
@@ -99,7 +76,21 @@ impl MessageRateLimiter {
     }
 }
 
-pub type MembershipAuthorization = Pin<Box<dyn Future<Output = bool> + Send + 'static>>;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct JoinAuthorization {
+    pub can_create_room: bool,
+    pub has_active_membership: bool,
+}
+
+impl JoinAuthorization {
+    pub const ALLOW_NONMEMBER: Self = Self {
+        can_create_room: true,
+        has_active_membership: false,
+    };
+}
+
+pub type JoinAuthorizationFuture =
+    Pin<Box<dyn Future<Output = JoinAuthorization> + Send + 'static>>;
 
 pub trait GameHandler: Send + 'static {
     fn accepts_game_id(&self, game_id: share_type_public::GameId) -> bool {
@@ -116,15 +107,8 @@ pub trait GameHandler: Send + 'static {
         // Optional: override in games that need to enrich common responses/events.
     }
 
-    fn authorize_room_creation(
-        &self,
-        _join: &share_type_public::WsJoinRequest,
-    ) -> MembershipAuthorization {
-        Box::pin(async { true })
-    }
-
-    fn authorize_ai_takeover(&self, _official_session_id: String) -> MembershipAuthorization {
-        Box::pin(async { false })
+    fn authorize_join(&self, _join: &share_type_public::WsJoinRequest) -> JoinAuthorizationFuture {
+        Box::pin(async { JoinAuthorization::ALLOW_NONMEMBER })
     }
 
     fn supports_ai_players(&self) -> bool {
@@ -335,7 +319,7 @@ where
                     .ok()
             })
             .flatten();
-        let join_requires_membership = if let Some(join) = parsed_join.as_ref() {
+        let valid_join = if let Some(join) = parsed_join.as_ref() {
             let handler = game_handler.lock().await;
             !join.name.is_empty()
                 && !join.password.is_empty()
@@ -343,39 +327,11 @@ where
         } else {
             false
         };
-        let room_creation_authorized = if join_requires_membership {
+        let join_authorization = if valid_join {
             let join = parsed_join.as_ref().expect("membership join parsed");
-            let room_exists = room_service.lock().await.room_exists(&join.password);
-            if room_exists {
-                None
-            } else {
-                Some(
-                    game_handler
-                        .lock()
-                        .await
-                        .authorize_room_creation(join)
-                        .await,
-                )
-            }
+            Some(game_handler.lock().await.authorize_join(join).await)
         } else {
-            Some(true)
-        };
-        let ai_takeover_authorized = if request.route == share_type_public::Routes::AWAY as i32 {
-            let official_session_id = room_service
-                .lock()
-                .await
-                .session_official_session_id(session_id);
-            if let Some(official_session_id) = official_session_id {
-                game_handler
-                    .lock()
-                    .await
-                    .authorize_ai_takeover(official_session_id)
-                    .await
-            } else {
-                false
-            }
-        } else {
-            false
+            None
         };
 
         let dispatch = {
@@ -384,8 +340,8 @@ where
             let creates_room_on_join = parsed_join
                 .as_ref()
                 .is_some_and(|join| !room.room_exists(&join.password));
-            let was_away = room.session_is_away(session_id);
-            let common_dispatch = if creates_room_on_join && room_creation_authorized != Some(true)
+            let common_dispatch = if creates_room_on_join
+                && join_authorization.is_some_and(|authorization| !authorization.can_create_room)
             {
                 Some(room.error_response(
                     session_id,
@@ -414,21 +370,15 @@ where
                     }
                     room.set_room_game_state(&room_key, gs);
                 }
-                if request.route == share_type_public::Routes::AWAY as i32
-                    && !was_away
-                    && room.session_is_away(session_id)
+                if request.route == share_type_public::Routes::JOIN as i32
+                    && let (Some(join), Some(authorization)) =
+                        (parsed_join.as_ref(), join_authorization)
+                    && room.room_key_of(session_id).as_deref() == Some(join.password.as_str())
                 {
-                    room.set_session_ai_takeover(session_id, ai_takeover_authorized);
-                    if let (Some(position), Some(room_key)) = (
-                        room.session_position(session_id),
-                        room.room_key_of(session_id),
-                    ) {
-                        set_away_takeover_flag(
-                            &mut dispatch,
-                            position,
-                            room.room_position_is_ai_takeover(&room_key, position),
-                        );
-                    }
+                    room.set_session_active_membership(
+                        session_id,
+                        authorization.has_active_membership,
+                    );
                 }
                 handler.after_common_request(&mut room, session_id, &request, &mut dispatch);
                 dispatch
@@ -440,25 +390,7 @@ where
         deliver(dispatch, &senders).await?;
     }
 
-    let disconnect_ai_takeover_authorized = {
-        let official_session_id = room_service
-            .lock()
-            .await
-            .session_official_session_id(session_id);
-        if let Some(official_session_id) = official_session_id {
-            game_handler
-                .lock()
-                .await
-                .authorize_ai_takeover(official_session_id)
-                .await
-        } else {
-            false
-        }
-    };
-    let disconnect_dispatch = room_service
-        .lock()
-        .await
-        .disconnect_with_ai_takeover(session_id, disconnect_ai_takeover_authorized);
+    let disconnect_dispatch = room_service.lock().await.disconnect(session_id);
     senders.lock().await.remove(&session_id);
     deliver(disconnect_dispatch, &senders).await?;
     heartbeat.abort();

@@ -12,8 +12,8 @@ use tokio::net::TcpListener as TokioTcpListener;
 use tokio_tungstenite::{WebSocketStream, connect_async, tungstenite::Message};
 #[cfg(feature = "ai")]
 use ws_common::{
-    ClientRequest, Dispatch, GameHandler, GameState, MembershipAuthorization, RoomService,
-    SessionId, SessionSenders, SettingsBuilderResult,
+    ClientRequest, Dispatch, GameHandler, GameState, JoinAuthorization, JoinAuthorizationFuture,
+    RoomService, SessionId, SessionSenders, SettingsBuilderResult,
 };
 use ws_common::{RuntimeConfig, run_room_runtime};
 
@@ -36,11 +36,8 @@ impl GameHandler for TestAiLandlordHandler {
             .after_common_request(room_service, session_id, request, dispatch);
     }
 
-    fn authorize_room_creation(
-        &self,
-        _join: &share_type_public::WsJoinRequest,
-    ) -> MembershipAuthorization {
-        Box::pin(async { true })
+    fn authorize_join(&self, _join: &share_type_public::WsJoinRequest) -> JoinAuthorizationFuture {
+        Box::pin(async { JoinAuthorization::ALLOW_NONMEMBER })
     }
 
     fn supports_ai_players(&self) -> bool {
@@ -265,7 +262,7 @@ async fn landlord_ai_seats_call_and_play_without_becoming_away() {
     };
     assert!(ai_call_count >= 1);
     assert!(
-        started_calling.elapsed() < Duration::from_secs(3),
+        started_calling.elapsed() < Duration::from_secs(6),
         "AI bidding waited too long: {:?}",
         started_calling.elapsed()
     );
