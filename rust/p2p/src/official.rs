@@ -4,7 +4,11 @@ use share_type_public::GameId;
 
 use crate::runtime::{P2pRuntimeOptions, P2pTurnPermissionChecker};
 
-pub(crate) fn runtime_options() -> P2pRuntimeOptions {
+/// Build the official runtime options backed by the private membership store.
+///
+/// This is public so the private workspace can exercise the real official
+/// permission boundary without duplicating it in integration tests.
+pub fn runtime_options() -> P2pRuntimeOptions {
     let checker: P2pTurnPermissionChecker = Arc::new(|session_id| {
         Box::pin(async move {
             let Some(session_id) = session_id.filter(|session_id| !session_id.is_empty()) else {
