@@ -66,9 +66,17 @@ async fn websocket_clients_join_signal_and_leave() {
     assert_eq!(joined["code"], 201);
     let ice_event = read_until(&mut first, |value| value["code"] == 5001).await;
     assert_eq!(ice_event["data"]["self_position"], 0);
+    assert_eq!(ice_event["data"]["turn_enabled"], false);
     assert_eq!(
-        ice_event["data"]["ice_servers"][1]["urls"][0],
-        "turn:turn.example.test:3478?transport=udp"
+        ice_event["data"]["ice_servers"]
+            .as_array()
+            .expect("ICE servers")
+            .len(),
+        1
+    );
+    assert_eq!(
+        ice_event["data"]["ice_servers"][0]["urls"][0],
+        "stun:stun.example.test:3478"
     );
 
     send_json(
@@ -84,6 +92,27 @@ async fn websocket_clients_join_signal_and_leave() {
     let first_peer = read_until(&mut first, |value| value["code"] == 5002).await;
     assert_eq!(first_peer["data"]["peer_name"], "second");
     assert_eq!(first_peer["data"]["initiator"], true);
+
+    for client in [&mut first, &mut second] {
+        send_json(
+            client,
+            json!({
+                "route": 5004,
+                "data": { "direct": false }
+            }),
+        )
+        .await;
+    }
+    for client in [&mut first, &mut second] {
+        let turn_event = read_until(client, |value| {
+            value["code"] == 5001 && value["data"]["turn_enabled"] == true
+        })
+        .await;
+        assert_eq!(
+            turn_event["data"]["ice_servers"][1]["urls"][0],
+            "turn:turn.example.test:3478?transport=udp"
+        );
+    }
 
     send_json(
         &mut first,

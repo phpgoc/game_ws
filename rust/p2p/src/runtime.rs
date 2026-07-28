@@ -62,7 +62,7 @@ struct Peer {
     session_id: SessionId,
     name: String,
     sender: Sender,
-    has_membership: bool,
+    turn_allowed: bool,
     direct_result: Option<bool>,
 }
 
@@ -80,25 +80,29 @@ type Sender = mpsc::UnboundedSender<Message>;
 
 type SessionId = u64;
 
-pub type P2pMembershipFuture = Pin<Box<dyn Future<Output = bool> + Send>>;
-pub type P2pMembershipChecker = Arc<dyn Fn(Option<String>) -> P2pMembershipFuture + Send + Sync>;
+pub type P2pTurnPermissionFuture = Pin<Box<dyn Future<Output = bool> + Send>>;
+pub type P2pTurnPermissionChecker =
+    Arc<dyn Fn(Option<String>) -> P2pTurnPermissionFuture + Send + Sync>;
 
 #[derive(Clone, Default)]
 pub struct P2pRuntimeOptions {
-    /// When present, TURN is withheld until both seats report a failed direct
-    /// connection and both JOIN session IDs have active P2P membership.
-    pub membership_checker: Option<P2pMembershipChecker>,
+    /// When present, both JOIN session IDs must pass this check before TURN is
+    /// offered after a failed direct connection.
+    ///
+    /// Without a checker, the self-hosted server still tries STUN first and
+    /// automatically falls back to its own TURN relay.
+    pub turn_permission_checker: Option<P2pTurnPermissionChecker>,
 }
 
 impl P2pRuntimeOptions {
-    pub fn membership_gated(checker: P2pMembershipChecker) -> Self {
+    pub fn turn_permission_gated(checker: P2pTurnPermissionChecker) -> Self {
         Self {
-            membership_checker: Some(checker),
+            turn_permission_checker: Some(checker),
         }
     }
 
-    fn membership_gated_mode(&self) -> bool {
-        self.membership_checker.is_some()
+    fn requires_turn_permission(&self) -> bool {
+        self.turn_permission_checker.is_some()
     }
 }
 
@@ -238,8 +242,6 @@ async fn report_network_result(
             .collect();
         if result.direct {
             (Some(P2pStartState::DIRECT), targets, Vec::new())
-        } else if !options.membership_gated_mode() {
-            (None, targets, Vec::new())
         } else {
             let both_failed = room.peers.iter().all(|peer| {
                 peer.as_ref()
@@ -248,11 +250,11 @@ async fn report_network_result(
             if !both_failed {
                 (Some(P2pStartState::WAITING_NETWORK), targets, Vec::new())
             } else {
-                let both_members = room
+                let both_allowed = room
                     .peers
                     .iter()
-                    .all(|peer| peer.as_ref().is_some_and(|peer| peer.has_membership));
-                if both_members {
+                    .all(|peer| peer.as_ref().is_some_and(|peer| peer.turn_allowed));
+                if !options.requires_turn_permission() || both_allowed {
                     let turn_targets = if room.turn_offered {
                         Vec::new()
                     } else {
@@ -455,7 +457,7 @@ async fn join_room(
         )];
     }
 
-    let has_membership = if let Some(checker) = &options.membership_checker {
+    let turn_allowed = if let Some(checker) = &options.turn_permission_checker {
         checker(join.session_id.clone()).await
     } else {
         true
@@ -486,7 +488,7 @@ async fn join_room(
             session_id,
             name: join.name,
             sender: sender.clone(),
-            has_membership,
+            turn_allowed,
             direct_result: None,
         });
         let peer = room.peers[1 - position].as_ref().map(|peer| WsP2pPeer {
@@ -557,11 +559,7 @@ async fn join_room(
         },
     )];
     for (target, target_session_id, target_position) in ice_targets {
-        match ice_config.issue_event_with_turn(
-            target_session_id,
-            target_position,
-            !options.membership_gated_mode(),
-        ) {
+        match ice_config.issue_event_with_turn(target_session_id, target_position, false) {
             Ok(event) => {
                 deliveries.push(event_delivery(target, P2pWsCode::ICE_CONFIG, &event));
             }
@@ -595,7 +593,11 @@ async fn leave_room(state: &Arc<Mutex<SignalingState>>, session_id: SessionId) -
     let mut remove_room = false;
     if let Some(room) = state.rooms.get_mut(&membership.key) {
         room.peers[membership.position] = None;
-        if let Some(peer) = room.peers[1 - membership.position].as_ref() {
+        room.turn_offered = false;
+        if let Some(peer) = room.peers[1 - membership.position].as_mut() {
+            // A replacement peer needs a new direct-connect attempt and, if
+            // necessary, a fresh pair of TURN credentials.
+            peer.direct_result = None;
             peer_delivery = Some(event_delivery(
                 peer.sender.clone(),
                 P2pWsCode::PEER_LEFT,
@@ -939,7 +941,13 @@ mod tests {
                 .filter(|message| message.contains("\"code\":5001"))
                 .count(),
             2,
-            "the waiting peer receives fresh TURN credentials when paired"
+            "the waiting peer receives a fresh STUN configuration when paired"
+        );
+        assert!(
+            red_messages
+                .iter()
+                .filter(|message| message.contains("\"code\":5001"))
+                .all(|message| message.contains("\"turn_enabled\":false"))
         );
         assert!(
             red_messages

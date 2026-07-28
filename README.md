@@ -83,6 +83,8 @@ cargo run --manifest-path rust/p2p/Cargo.toml -- --host 0.0.0.0 --port 9005
 `p2p` 会在同一 Rust 进程内监听 UDP 3478 提供 STUN/TURN，并使用 UDP
 49160-49200 作为 relay 端口；不依赖外部 coturn。局域网运行可以省略
 `P2P_TURN_PUBLIC_IP` 自动选择本机地址，公网 NAT 部署必须配置公网 IP 和端口映射。
+客户端会先使用 STUN 尝试直连；双方都报告直连失败后，服务才自动签发短期 TURN
+凭证并切换到 relay，避免可直连时无谓占用中继流量。
 
 参数：
 
