@@ -1,7 +1,7 @@
-#[cfg(feature = "ai")]
+#[cfg(feature = "official")]
 #[path = "../../../../ai/tractor/src/embedded/mod.rs"]
 pub mod ai;
-#[cfg(not(feature = "ai"))]
+#[cfg(not(feature = "official"))]
 #[path = "ai_fallback.rs"]
 mod ai;
 #[cfg(all(target_os = "android", feature = "android-jni"))]

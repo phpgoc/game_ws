@@ -250,7 +250,7 @@ pub fn removed_tractor_ranks(removed_rank_count: usize) -> Vec<TractorRank> {
 }
 
 /// Two seats are partners when they sit across from each other (0&2, 1&3).
-#[cfg(any(feature = "ai", feature = "official"))]
+#[cfg(feature = "official")]
 pub(crate) fn same_team(a: usize, b: usize) -> bool {
     a % 2 == b % 2
 }

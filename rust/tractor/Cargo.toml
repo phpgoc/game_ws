@@ -10,8 +10,7 @@ crate-type = ["rlib", "cdylib"]
 [features]
 default = []
 android-jni = []
-ai = []
-official = ["ai", "dep:data"]
+official = ["dep:data"]
 
 [dependencies]
 anyhow = "1"
