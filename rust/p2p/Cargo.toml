@@ -7,6 +7,7 @@ license = "MIT"
 [features]
 default = []
 android-jni = []
+official = ["dep:data"]
 
 [lib]
 crate-type = ["rlib", "cdylib"]
@@ -14,6 +15,7 @@ crate-type = ["rlib", "cdylib"]
 [dependencies]
 anyhow = "1"
 base64 = "0.22"
+data = { path = "../../../data", optional = true }
 futures-util = "0.3"
 hmac = "0.12"
 serde = "1"

@@ -137,7 +137,11 @@ pub async fn run_p2p_server_on_listener_until_stopped_with_options(
 pub async fn run_p2p_server_with_cli() -> anyhow::Result<()> {
     let config = P2pServiceConfig::from_env()?;
     let listen_addr = parse_listen_addr()?;
-    run_p2p_server(&listen_addr, config).await
+    #[cfg(feature = "official")]
+    let options = crate::official::runtime_options();
+    #[cfg(not(feature = "official"))]
+    let options = P2pRuntimeOptions::default();
+    run_p2p_server_with_options(&listen_addr, config, options).await
 }
 #[cfg(target_os = "android")]
 pub async fn run_p2p_android_runtime_until_stopped_with_ready(

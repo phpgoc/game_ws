@@ -9,8 +9,8 @@ P2P 协议。单个 Rust 进程同时提供：
 - 按 `game + room` 隔离房间，游戏数据不经过信令服务。
 
 客户端加入后只会先收到 STUN 配置。双方都报告直连失败时，公版服务会自动签发短期
-TURN 凭证并切换到自己的 relay；私有官方包装可以注入会员检查器，在签发 TURN 凭证前
-判断房间内双方是否都有中继权限。STUN 直连和信令能力本身不要求官方权限。
+TURN 凭证并切换到自己的 relay；启用 `official` feature 后，会在签发 TURN 凭证前通过
+私有 `data` 判断房间内双方是否都有中继权限。STUN 直连和信令能力本身不要求官方权限。
 
 STUN/TURN 使用纯 Rust `turn` crate，不需要安装或启动 coturn。这种结构也便于 Android
 通过 Kotlin 前台服务和 NDK 启动同一个 Rust runtime。
