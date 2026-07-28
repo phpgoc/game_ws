@@ -13,6 +13,7 @@ use tokio::sync::Mutex;
 use ws_common::{Delivery, OutboundPayload, RoomService, SessionSenders};
 
 use crate::ai::{choose_bid, choose_play, hand_has_bomb};
+use crate::core::play::{classify, hand_has_bomb_response};
 use crate::game_state::{LandlordLoopState, LandlordPlayRecord};
 
 const AI_ACTION_DELAY: Duration = Duration::from_millis(300);
@@ -597,10 +598,12 @@ fn should_signal_ai_bomb(state: &LandlordLoopState, position: usize, planned_pla
         && !state.last_play.is_empty()
         && state.last_play_position != position
         && planned_play.is_empty()
-        && state
-            .hands
-            .get(&position)
-            .is_some_and(|hand| hand_has_bomb(hand))
+        && classify(&state.last_play).is_some_and(|benchmark| {
+            state
+                .hands
+                .get(&position)
+                .is_some_and(|hand| hand_has_bomb_response(hand, &benchmark))
+        })
 }
 
 fn plan_ai_action(state: &LandlordLoopState, position: usize) -> PlannedAiAction {
@@ -625,16 +628,24 @@ fn activate_ai_bomb_signal(state: &mut LandlordLoopState, position: usize) {
     }
     state.ai_bomb_signal_used = true;
     state.ai_bomb_signal_position = Some(position);
+    state.ai_bomb_signal_benchmark = Some(state.last_play.clone());
 }
 
 fn clear_stale_ai_bomb_signal(state: &mut LandlordLoopState, position: usize) {
     if state.ai_bomb_signal_position == Some(position)
-        && state
-            .hands
-            .get(&position)
-            .is_none_or(|hand| !hand_has_bomb(hand))
+        && state.hands.get(&position).is_none_or(|hand| {
+            !state
+                .ai_bomb_signal_benchmark
+                .as_deref()
+                .and_then(classify)
+                .map_or_else(
+                    || hand_has_bomb(hand),
+                    |benchmark| hand_has_bomb_response(hand, &benchmark),
+                )
+        })
     {
         state.ai_bomb_signal_position = None;
+        state.ai_bomb_signal_benchmark = None;
     }
 }
 
@@ -1222,6 +1233,7 @@ mod tests {
             handle_automatic_action_with_play(&mut state, AutoActionReason::Ai, plan.play);
         assert!(state.ai_bomb_signal_used);
         assert_eq!(state.ai_bomb_signal_position, Some(2));
+        assert_eq!(state.ai_bomb_signal_benchmark, Some(vec![8, 21]));
         assert!(matches!(
             event,
             Some(AutoBroadcastEvent::Play(WsPlayEvent { cards, .. })) if cards.is_empty()
@@ -1326,6 +1338,17 @@ mod tests {
     }
 
     #[test]
+    fn ai_does_not_signal_with_a_bomb_that_cannot_beat_the_current_play() {
+        let mut state = bomb_signal_state(false);
+        state.last_play = vec![13, 26, 39, 52]; // 炸弹 2
+        state.hands.insert(2, vec![1, 14, 27, 40, 3, 16, 5, 18]); // 只有炸弹 3
+
+        assert!(choose_play(&state, 2).is_empty());
+        assert!(!should_signal_ai_bomb(&state, 2, &[]));
+        assert_eq!(plan_ai_action(&state, 2).delay, AI_ACTION_DELAY);
+    }
+
+    #[test]
     fn bomb_signal_expires_without_becoming_reusable() {
         let mut state = bomb_signal_state(false);
         activate_ai_bomb_signal(&mut state, 2);
@@ -1335,7 +1358,23 @@ mod tests {
 
         assert!(state.ai_bomb_signal_used);
         assert_eq!(state.ai_bomb_signal_position, None);
+        assert_eq!(state.ai_bomb_signal_benchmark, None);
         assert_eq!(plan_ai_action(&state, 2).delay, AI_ACTION_DELAY);
+    }
+
+    #[test]
+    fn bomb_signal_expires_after_its_actionable_bomb_is_spent() {
+        let mut state = bomb_signal_state(false);
+        state.last_play = vec![13, 26, 39, 52]; // 炸弹 2
+        state.hands.insert(2, vec![53, 54, 1, 14, 27, 40]);
+        activate_ai_bomb_signal(&mut state, 2);
+        state.hands.insert(2, vec![1, 14, 27, 40]); // 仅剩压不住 2 的炸弹 3
+
+        clear_stale_ai_bomb_signal(&mut state, 2);
+
+        assert!(state.ai_bomb_signal_used);
+        assert_eq!(state.ai_bomb_signal_position, None);
+        assert_eq!(state.ai_bomb_signal_benchmark, None);
     }
 
     #[test]
@@ -1347,6 +1386,7 @@ mod tests {
 
         assert!(!state.ai_bomb_signal_used);
         assert_eq!(state.ai_bomb_signal_position, None);
+        assert_eq!(state.ai_bomb_signal_benchmark, None);
     }
 
     #[test]

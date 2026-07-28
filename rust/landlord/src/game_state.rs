@@ -61,6 +61,9 @@ pub struct LandlordLoopState {
     pub ai_bomb_signal_used: bool,
     /// 当前仍持有炸弹的信号方；仅供两名 AI 农民内部协调角色。
     pub ai_bomb_signal_position: Option<usize>,
+    /// 信号发出时本可压住的公开牌型。保留它可避免把一个已失效的
+    /// 高炸/王炸信号误读为当前任意炸弹仍可接管。
+    pub ai_bomb_signal_benchmark: Option<Vec<i32>>,
 }
 
 impl LandlordGameState {
@@ -216,6 +219,7 @@ impl LandlordLoopState {
             play_history: Vec::new(),
             ai_bomb_signal_used: false,
             ai_bomb_signal_position: None,
+            ai_bomb_signal_benchmark: None,
         }
     }
 
@@ -263,6 +267,7 @@ impl LandlordLoopState {
         self.play_history.clear();
         self.ai_bomb_signal_used = false;
         self.ai_bomb_signal_position = None;
+        self.ai_bomb_signal_benchmark = None;
         self.set_action_received(false);
         self.set_turn_countdown(0);
         self.clear_away();

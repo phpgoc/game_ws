@@ -63,6 +63,37 @@ pub fn card_rank(card: i32) -> u8 {
     }
 }
 
+/// Whether `hand` has a bomb or rocket that can legally beat `benchmark`.
+///
+/// The landlord AI's delayed bomb signal is only meaningful when the player
+/// chose not to spend a response that was actually available.
+pub fn hand_has_bomb_response(hand: &[i32], benchmark: &Combo) -> bool {
+    let mut counts = [0_u8; 18];
+    for &card in hand {
+        counts[card_rank(card) as usize] += 1;
+    }
+    (3..=15).any(|rank| {
+        counts[rank] == 4
+            && can_beat(
+                &Combo {
+                    kind: ComboKind::Bomb,
+                    main_rank: rank as u8,
+                    sequence_len: 1,
+                },
+                benchmark,
+            )
+    }) || (counts[16] == 1
+        && counts[17] == 1
+        && can_beat(
+            &Combo {
+                kind: ComboKind::Rocket,
+                main_rank: 17,
+                sequence_len: 1,
+            },
+            benchmark,
+        ))
+}
+
 pub fn cards_in_hand(played: &[i32], hand: &[i32]) -> bool {
     let mut hand_count: HashMap<i32, usize> = HashMap::new();
     for &card in hand {
