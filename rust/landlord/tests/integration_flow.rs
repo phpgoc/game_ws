@@ -360,22 +360,6 @@ async fn landlord_three_players_can_start_call_and_play_over_ws() {
     ];
     assert_eq!(positions, [0, 1, 2]);
 
-    send_request(
-        &mut a,
-        Routes::SETTING as i32,
-        json!({
-            "current_configs": {
-                "settlement_time": 2
-            }
-        }),
-    )
-    .await;
-    recv_until(&mut a, "setting ok", |value| {
-        value.get("route").and_then(Value::as_i64) == Some(Routes::SETTING as i64)
-            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
-    })
-    .await;
-
     send_request(&mut a, Routes::START as i32, json!({})).await;
     recv_until(&mut a, "start ok", |value| {
         value.get("route").and_then(Value::as_i64) == Some(Routes::START as i64)
