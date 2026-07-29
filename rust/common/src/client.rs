@@ -38,6 +38,7 @@ fn close_message(code: Option<u16>, reason: &str) -> Message {
     }))
 }
 
+/// 连接指定 WebSocket 地址，并返回发送控制句柄与异步事件接收器。
 pub async fn connect_ws_client(
     url: &str,
 ) -> anyhow::Result<(WsClientHandle, mpsc::UnboundedReceiver<WsClientEvent>)> {
@@ -125,12 +126,14 @@ pub async fn connect_ws_client(
 }
 
 impl WsClientHandle {
+    /// 请求客户端发送关闭帧，并在发送队列已关闭时返回错误。
     pub fn close(&self, code: Option<u16>, reason: String) -> Result<(), WsClientSendError> {
         self.commands
             .send(WsClientCommand::Close { code, reason })
             .map_err(|_| WsClientSendError::Closed)
     }
 
+    /// 将一条文本消息放入客户端的发送队列。
     pub fn send_text(&self, message: String) -> Result<(), WsClientSendError> {
         self.commands
             .send(WsClientCommand::SendText(message))

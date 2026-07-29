@@ -270,6 +270,7 @@ fn swap_set_membership(values: &mut HashSet<usize>, pos_a: usize, pos_b: usize) 
 }
 
 impl CommonGameState {
+    /// 在指定座位登记玩家，并清除该座位遗留的离线、托管和会员状态。
     pub fn add_player(&mut self, position: usize, session_id: SessionId, name: &str) {
         self.players
             .insert(position, (session_id, name.to_string()));
@@ -279,37 +280,48 @@ impl CommonGameState {
         self.member_positions.remove(&position);
         self.ai_takeover_positions.remove(&position);
     }
+    /// 清除本局全部超时托管及 AI 接管标记。
     pub fn clear_away(&mut self) {
         self.away_positions.clear();
         self.ai_takeover_positions.clear();
     }
+    /// 清除指定座位的断线标记，通常在玩家成功重连后调用。
     pub fn clear_disconnected_position(&mut self, pos: usize) {
         self.disconnected_positions.remove(&pos);
     }
+    /// 判断房间中是否仍有保留座位的断线玩家。
     pub fn has_disconnected_players(&self) -> bool {
         !self.disconnected_positions.is_empty()
     }
+    /// 判断指定座位是否为服务器创建的 AI 玩家。
     pub fn is_ai_position(&self, pos: usize) -> bool {
         self.ai_positions.contains(&pos)
     }
+    /// 判断指定人类座位当前是否正由游戏 AI 接管。
     pub fn is_ai_takeover_position(&self, pos: usize) -> bool {
         self.ai_takeover_positions.contains(&pos)
     }
+    /// 判断指定座位在最近一次加入时是否拥有有效官方会员资格。
     pub fn is_member_position(&self, pos: usize) -> bool {
         self.member_positions.contains(&pos)
     }
+    /// 判断指定座位是否已因超时被标记为托管。
     pub fn is_away(&self, pos: usize) -> bool {
         self.away_positions.contains(&pos)
     }
+    /// 判断指定座位是否已断开连接但仍保留在房间中。
     pub fn is_disconnected(&self, pos: usize) -> bool {
         self.disconnected_positions.contains(&pos)
     }
+    /// 将空座位标记为服务器托管的 AI 玩家，返回此前是否未标记。
     pub fn mark_ai_position(&mut self, pos: usize) -> bool {
         self.ai_positions.insert(pos)
     }
+    /// 标记人类座位由 AI 临时接管，返回此前是否未标记。
     pub fn mark_ai_takeover_position(&mut self, pos: usize) -> bool {
         self.ai_takeover_positions.insert(pos)
     }
+    /// 设置或清除指定座位的有效官方会员标记，并返回集合操作结果。
     pub fn set_member_position(&mut self, pos: usize, enabled: bool) -> bool {
         if enabled {
             self.member_positions.insert(pos)
@@ -317,28 +329,35 @@ impl CommonGameState {
             self.member_positions.remove(&pos)
         }
     }
+    /// 结束指定座位的 AI 临时接管，并返回该标记是否存在。
     pub fn clear_ai_takeover_position(&mut self, pos: usize) -> bool {
         self.ai_takeover_positions.remove(&pos)
     }
+    /// 将指定座位标记为超时托管，并返回此前是否未标记。
     pub fn mark_away(&mut self, pos: usize) -> bool {
         self.away_positions.insert(pos)
     }
+    /// 将指定座位标记为已断线但仍保留位置，并返回此前是否未标记。
     pub fn mark_disconnected(&mut self, pos: usize) -> bool {
         self.disconnected_positions.insert(pos)
     }
 
+    /// 创建空的公共游戏状态。
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// 暂停公共状态的计时推进。
     pub fn pause(&mut self) {
         self.paused = true;
     }
 
+    /// 获取指定座位的头像地址；不存在时返回空字符串。
     pub fn player_avatar(&self, position: usize) -> String {
         self.avatars.get(&position).cloned().unwrap_or_default()
     }
 
+    /// 获取指定座位的玩家名称；不存在时返回空字符串。
     pub fn player_name(&self, position: usize) -> String {
         self.players
             .get(&position)
@@ -346,6 +365,7 @@ impl CommonGameState {
             .unwrap_or_default()
     }
 
+    /// 移除指定座位的玩家及其全部公共元数据。
     pub fn remove_player(&mut self, position: usize) {
         self.players.remove(&position);
         self.avatars.remove(&position);
@@ -356,14 +376,17 @@ impl CommonGameState {
         self.ai_takeover_positions.remove(&position);
     }
 
+    /// 请求结束房间生命周期，并恢复为非暂停状态以便游戏循环退出。
     pub fn request_stop(&mut self) {
         self.stop_requested = true;
         self.paused = false;
     }
+    /// 恢复公共状态的计时推进。
     pub fn resume(&mut self) {
         self.paused = false;
     }
 
+    /// 为指定座位保存非空头像地址。
     pub fn set_avatar(&mut self, position: usize, avatar: &str) {
         if avatar.is_empty() {
             return;
@@ -371,10 +394,12 @@ impl CommonGameState {
         self.avatars.insert(position, avatar.to_string());
     }
 
+    /// 判断房间是否已请求游戏循环停止。
     pub fn stop_requested(&self) -> bool {
         self.stop_requested
     }
 
+    /// 交换两个座位的玩家、头像及全部公共状态标记。
     pub fn swap_player(&mut self, pos_a: usize, pos_b: usize) {
         swap_map_entries(&mut self.players, pos_a, pos_b);
         swap_map_entries(&mut self.avatars, pos_a, pos_b);
@@ -387,10 +412,12 @@ impl CommonGameState {
 }
 
 impl SharedGameState {
+    /// 用已有的公共状态句柄构造可被房间服务和游戏循环共享的状态包装器。
     pub fn from_common(common: Arc<Mutex<CommonGameState>>) -> Self {
         Self { common }
     }
 
+    /// 创建包含空公共状态的共享状态包装器。
     pub fn new() -> Self {
         Self::default()
     }

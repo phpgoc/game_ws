@@ -50,6 +50,7 @@ pub use transport::{TransportError, from_message, to_text_message};
 
 #[cfg(debug_assertions)]
 #[doc(hidden)]
+/// 在调试构建中输出带时间、级别和源码位置的日志，供 `dlog!` 宏调用。
 pub fn __dlog(message: &str, level: tracing::Level, file: &str, line: u32) {
     let level_text = if std::io::stdout().is_terminal() {
         format!("{}{}\x1b[0m", level_color(level), level)

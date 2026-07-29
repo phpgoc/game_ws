@@ -12,6 +12,7 @@ pub struct GameSettings {
 }
 
 impl GameSettings {
+    /// 创建带最小、最大玩家数限制且尚未设置自定义参数的游戏配置。
     pub fn new(min_players: usize, max_players: usize) -> Self {
         Self {
             min_players,

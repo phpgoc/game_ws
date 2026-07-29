@@ -164,10 +164,12 @@ pub struct SessionSender {
 }
 
 impl SessionSender {
+    /// 用有界发送通道和断开通知通道创建单个会话的发送器。
     pub fn new(tx: mpsc::Sender<Message>, disconnect: watch::Sender<bool>) -> Self {
         Self { tx, disconnect }
     }
 
+    /// 尝试将帧写入会话发送队列；队列满时通知连接主动断开。
     pub fn send(&self, frame: Message) -> Result<(), SessionSendError> {
         match self.tx.try_send(frame) {
             Ok(()) => Ok(()),
@@ -180,9 +182,9 @@ impl SessionSender {
     }
 }
 
-/// Create a bounded session sender and its matching receivers.
+/// 创建有界会话发送器及其消息、断开通知接收器。
 ///
-/// Game crates use this to exercise dispatch paths without opening a socket.
+/// 游戏 crate 可用它在不打开真实 socket 的情况下测试消息分发路径。
 pub fn session_sender_channel(
     capacity: usize,
 ) -> (
@@ -431,6 +433,7 @@ where
     .await
 }
 
+/// 解析通用命令行地址参数，并启动指定游戏的 WebSocket 服务。
 pub async fn run_game_server_with_cli<H>(
     service_name: &'static str,
     idle_timeout: Duration,
@@ -443,6 +446,7 @@ where
     run_game_server(service_name, cli.host, cli.port, idle_timeout, handler).await
 }
 
+/// 以给定配置启动房间运行时，并一直运行到进程终止。
 pub async fn run_room_runtime<H>(config: RuntimeConfig, handler: H) -> anyhow::Result<()>
 where
     H: GameHandler,
@@ -453,6 +457,7 @@ where
         .map(|_| ())
 }
 
+/// 以给定停止信号运行房间服务，并在停止后返回运行时统计信息。
 pub async fn run_room_runtime_until_stopped<H>(
     config: RuntimeConfig,
     handler: H,
@@ -540,6 +545,7 @@ where
     Ok(stats)
 }
 
+/// 运行房间服务，在监听就绪后经同步通道报告统计句柄，供集成测试使用。
 pub async fn run_room_runtime_until_stopped_with_ready<H>(
     config: RuntimeConfig,
     handler: H,
@@ -552,24 +558,29 @@ where
     run_room_runtime_until_stopped_inner(config, handler, stop_signal, Some(ready)).await
 }
 
+/// 创建一对运行时停止控制器和等待信号。
 pub fn runtime_stop_channel() -> (RuntimeStopHandle, StopSignal) {
     let (tx, rx) = watch::channel(false);
     (RuntimeStopHandle { tx }, StopSignal::new(rx))
 }
 
 impl RuntimeStats {
+    /// 返回服务实际绑定的监听地址。
     pub fn listen_addr(&self) -> SocketAddr {
         self.listen_addr
     }
 
+    /// 异步统计当前仍连接的 WebSocket 客户端数量。
     pub async fn client_count(&self) -> usize {
         self.senders.lock().await.len()
     }
 
+    /// 异步统计当前房间数量。
     pub async fn room_count(&self) -> usize {
         self.room_service.lock().await.room_count()
     }
 
+    /// 判断某房间指定座位是否正由 AI 临时接管。
     pub async fn room_position_is_ai_takeover(&self, room_key: &str, position: usize) -> bool {
         self.room_service
             .lock()
@@ -579,12 +590,14 @@ impl RuntimeStats {
 }
 
 impl RuntimeStopHandle {
+    /// 发出停止信号，使运行时停止接受新连接并退出主循环。
     pub fn stop(&self) {
         let _ = self.tx.send(true);
     }
 }
 
 impl StopSignal {
+    /// 取出底层停止信号接收器，供需要直接监听 `watch` 的调用方使用。
     pub fn into_receiver(self) -> watch::Receiver<bool> {
         self.rx
     }
@@ -597,6 +610,7 @@ impl StopSignal {
         Self { rx }
     }
 
+    /// 等待停止信号；若已停止则立即返回。
     pub async fn stopped(&mut self) {
         if self.is_stopped() {
             return;

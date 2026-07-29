@@ -82,6 +82,7 @@ impl std::fmt::Debug for RoomEntry {
 }
 
 impl RoomService {
+    /// 创建房间服务，并指定是否允许房主在房间中添加 AI 玩家。
     pub fn with_ai_players_enabled(ai_players_enabled: bool) -> Self {
         Self {
             ai_players_enabled,
@@ -107,6 +108,7 @@ impl RoomService {
         }
     }
 
+    /// 向房间状态中的全部玩家广播一条事件。
     pub fn broadcast<T: serde::Serialize>(
         &self,
         room_key: &str,
@@ -129,12 +131,10 @@ impl RoomService {
         }
     }
 
-    /// Broadcast to currently connected sessions in a room without reading game state.
+    /// 向房间中当前连接的会话广播事件，而不读取游戏状态。
     ///
-    /// This is useful inside game request handlers: the runtime already holds the
-    /// `RoomService` lock, while some game loops may hold game-state locks and then
-    /// wait for `RoomService`. Reading `entry.state.players()` here can invert that
-    /// lock order and deadlock.
+    /// 适用于请求处理器：运行时已持有 `RoomService` 锁，而游戏循环可能先持有
+    /// 游戏状态锁再等待 `RoomService`；此处读取 `entry.state.players()` 会反转锁顺序并死锁。
     pub fn broadcast_connected<T: serde::Serialize>(
         &self,
         room_key: &str,
@@ -154,6 +154,7 @@ impl RoomService {
         }
     }
 
+    /// 向房间中除指定会话外的全部玩家广播一条事件。
     pub fn broadcast_except<T: serde::Serialize>(
         &self,
         room_key: &str,
@@ -207,10 +208,12 @@ impl RoomService {
         }
     }
 
+    /// 为新建立的 WebSocket 连接创建会话记录。
     pub fn connect(&mut self, session_id: SessionId) {
         self.sessions.entry(session_id).or_default();
     }
 
+    /// 返回房间内当前已连接且已占座的全部会话 ID。
     pub fn connected_session_ids(&self, room_key: &str) -> Vec<SessionId> {
         self.sessions
             .iter()
@@ -221,6 +224,7 @@ impl RoomService {
             .collect()
     }
 
+    /// 返回房间内指定座位当前对应的全部连接会话 ID。
     pub fn connected_session_ids_for_position(
         &self,
         room_key: &str,
@@ -285,6 +289,7 @@ impl RoomService {
         }
     }
 
+    /// 移除断开的会话、更新房间成员状态，并返回需要发送的事件。
     pub fn disconnect(&mut self, session_id: SessionId) -> Dispatch {
         let mut dispatch = Dispatch::default();
         let Some(mut session) = self.sessions.remove(&session_id) else {
@@ -294,6 +299,7 @@ impl RoomService {
         dispatch
     }
 
+    /// 构造只发给指定会话的一条通用错误响应。
     pub fn error_response(
         &self,
         session_id: SessionId,
@@ -587,6 +593,7 @@ impl RoomService {
         dispatch
     }
 
+    /// 处理指定游戏 ID 的通用房间路由；不属于通用层的路由返回 `None`。
     pub fn handle_common_request<F>(
         &mut self,
         session_id: SessionId,
@@ -605,6 +612,7 @@ impl RoomService {
         )
     }
 
+    /// 处理通用房间路由，并用调用方提供的规则校验客户端请求的游戏 ID。
     pub fn handle_common_request_with_game_acceptance<F, A>(
         &mut self,
         session_id: SessionId,
@@ -1459,6 +1467,7 @@ impl RoomService {
         }
     }
 
+    /// 将 JSON 请求数据反序列化为指定类型。
     pub fn parse_payload<T: DeserializeOwned>(value: Value) -> Result<T, serde_json::Error> {
         serde_json::from_value(value)
     }
@@ -1478,6 +1487,7 @@ impl RoomService {
             })
     }
 
+    /// 向指定会话压入一个不带数据的成功响应。
     pub fn push_ok_response(&self, dispatch: &mut Dispatch, session_id: SessionId, route: i32) {
         dispatch
             .messages
@@ -1571,6 +1581,7 @@ impl RoomService {
         }
     }
 
+    /// 校验会话是否已加入房间；未加入时写入 `NOT_LOGIN` 响应。
     pub fn require_room_membership(
         &self,
         session_id: SessionId,
@@ -1592,6 +1603,7 @@ impl RoomService {
         logged_in
     }
 
+    /// 为下一局创建新的公共状态，同时保留当前成员及其座位相关标记。
     pub fn reset_room_common_state_for_new_game(
         &mut self,
         room_key: &str,
@@ -1629,14 +1641,17 @@ impl RoomService {
         self.rooms.get(room_key).map(|e| e.configs.clone())
     }
 
+    /// 返回当前维护的房间数量。
     pub fn room_count(&self) -> usize {
         self.rooms.len()
     }
 
+    /// 判断给定房间标识是否存在。
     pub fn room_exists(&self, room_key: &str) -> bool {
         self.rooms.contains_key(room_key)
     }
 
+    /// 返回房间使用的游戏 ID；房间不存在时返回 `None`。
     pub fn room_game_id(&self, room_key: &str) -> Option<GameId> {
         self.rooms.get(room_key).map(|entry| entry.game_id)
     }
@@ -1650,6 +1665,7 @@ impl RoomService {
         count >= entry.min_players
     }
 
+    /// 返回指定会话所属的房间标识。
     pub fn room_key_of(&self, session_id: SessionId) -> Option<String> {
         self.sessions
             .get(&session_id)
@@ -1657,6 +1673,7 @@ impl RoomService {
             .cloned()
     }
 
+    /// 更新已入房人类座位的官方会员标记；AI 座位和无效会话不会被更新。
     pub fn set_session_active_membership(&mut self, session_id: SessionId, enabled: bool) -> bool {
         let Some(session) = self.sessions.get(&session_id) else {
             return false;
@@ -1674,12 +1691,14 @@ impl RoomService {
         true
     }
 
+    /// 判断房间中指定座位是否拥有有效官方会员标记。
     pub fn room_position_has_active_membership(&self, room_key: &str, position: usize) -> bool {
         self.rooms
             .get(room_key)
             .is_some_and(|entry| entry.state.is_member_position(position))
     }
 
+    /// 判断房间中指定座位是否处于 AI 临时接管状态。
     pub fn room_position_is_ai_takeover(&self, room_key: &str, position: usize) -> bool {
         self.rooms
             .get(room_key)
@@ -1699,14 +1718,15 @@ impl RoomService {
             .collect()
     }
 
+    /// 返回房间关联的官方随机匹配记录 ID。
     pub fn room_official_match_id(&self, room_key: &str) -> Option<i64> {
         self.rooms
             .get(room_key)
             .and_then(|entry| entry.official_match_id)
     }
 
-    /// Only official landlord, Shenyang Mahjong, and tractor rooms support
-    /// seat swapping. Custom WS rooms and P2P games cannot expose it.
+    /// 判断房间是否支持官方模式的座位交换。
+    /// 仅官方斗地主、沈阳麻将和拖拉机支持；自建 WS 房间与 P2P 游戏不支持。
     pub fn room_supports_official_swap(&self, room_key: &str) -> bool {
         let Some(entry) = self.rooms.get(room_key) else {
             return false;
@@ -1733,6 +1753,7 @@ impl RoomService {
             })
     }
 
+    /// 返回房间内可用于官方结算的真人座位与访问会话信息。
     pub fn room_official_player_sessions(&self, room_key: &str) -> Vec<OfficialPlayerSession> {
         let Some(entry) = self.rooms.get(room_key) else {
             return Vec::new();
@@ -1761,6 +1782,7 @@ impl RoomService {
         players
     }
 
+    /// 返回房间中指定座位绑定的官方用户 ID。
     pub fn room_official_user_id(&self, room_key: &str, position: usize) -> Option<i64> {
         self.rooms
             .get(room_key)
@@ -1809,6 +1831,7 @@ impl RoomService {
             == Some(room_key)
     }
 
+    /// 返回会话登记的玩家名称；不存在时返回空字符串。
     pub fn session_name(&self, session_id: SessionId) -> String {
         self.sessions
             .get(&session_id)
@@ -1817,6 +1840,7 @@ impl RoomService {
             .unwrap_or_default()
     }
 
+    /// 返回会话当前占用的座位。
     pub fn session_position(&self, session_id: SessionId) -> Option<usize> {
         self.sessions
             .get(&session_id)
@@ -1834,6 +1858,7 @@ impl RoomService {
         }
     }
 
+    /// 记录官方随机匹配的对局 ID 及各座位对应的用户 ID。
     pub fn set_room_official_match(
         &mut self,
         room_key: &str,

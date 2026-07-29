@@ -9,6 +9,7 @@ pub enum TransportError {
     Json(#[from] serde_json::Error),
 }
 
+/// 将 WebSocket 文本帧反序列化为业务数据；控制帧返回 `None`，二进制帧视为错误。
 pub fn from_message<T: DeserializeOwned>(message: Message) -> Result<Option<T>, TransportError> {
     match message {
         Message::Text(text) => Ok(Some(serde_json::from_str(text.as_ref())?)),
@@ -17,6 +18,7 @@ pub fn from_message<T: DeserializeOwned>(message: Message) -> Result<Option<T>, 
     }
 }
 
+/// 将可序列化的业务数据编码为 WebSocket 文本帧。
 pub fn to_text_message<T: Serialize>(value: &T) -> Result<Message, TransportError> {
     Ok(Message::Text(serde_json::to_string(value)?.into()))
 }
