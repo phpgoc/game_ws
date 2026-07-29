@@ -177,6 +177,7 @@ pub struct WsTexasHoldEmTurnEvent {
 }
 
 impl Display for TexasHoldEmPhase {
+    /// 将德州扑克牌局阶段转换为稳定的协议文本。
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Start => write!(f, "Start"),

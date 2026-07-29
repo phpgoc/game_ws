@@ -172,6 +172,7 @@ pub struct WsShowHiddenCardsEvent {
 }
 
 impl LandlordPhase {
+    /// 按斗地主固定流程推进到下一对局阶段。
     pub fn next(self) -> Self {
         match self {
             Self::Start => Self::CallLandlord,
@@ -182,6 +183,7 @@ impl LandlordPhase {
     }
 }
 impl Display for LandlordPhase {
+    /// 将斗地主阶段转换为稳定的协议文本。
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Start => write!(f, "Start"),

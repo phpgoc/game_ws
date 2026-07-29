@@ -26,6 +26,7 @@ mod tests {
     use crate::r#const::WsCode;
 
     #[test]
+    /// 验证通用事件可直接承载 WebSocket 协议状态码和数据。
     fn common_event_uses_ws_code() {
         let item = super::CommonEvent::<i32> {
             code: WsCode::JOIN as i32,

@@ -18,6 +18,7 @@ pub enum GameId {
 }
 
 impl From<GameId> for i32 {
+    /// 将游戏枚举转换为协议与存储使用的整数编号。
     fn from(value: GameId) -> Self {
         value as i32
     }
@@ -26,6 +27,7 @@ impl From<GameId> for i32 {
 impl TryFrom<i32> for GameId {
     type Error = ();
 
+    /// 从整数编号解析已定义的游戏枚举。
     fn try_from(value: i32) -> Result<Self, Self::Error> {
         match value {
             0 => Ok(Self::ALL),
