@@ -39,8 +39,8 @@ struct RoomEntry {
     min_players: usize,
     max_players: usize,
     state: Box<dyn crate::game_state::GameState>,
-    official_match_id: Option<i64>,
-    official_user_ids_by_position: HashMap<usize, i64>,
+    official_match_id: Option<i32>,
+    official_user_ids_by_position: HashMap<usize, i32>,
 }
 
 #[derive(Debug, Default)]
@@ -1699,7 +1699,7 @@ impl RoomService {
     }
 
     /// 返回房间关联的官方随机匹配记录 ID。
-    pub fn room_official_match_id(&self, room_key: &str) -> Option<i64> {
+    pub fn room_official_match_id(&self, room_key: &str) -> Option<i32> {
         self.rooms
             .get(room_key)
             .and_then(|entry| entry.official_match_id)
@@ -1763,7 +1763,7 @@ impl RoomService {
     }
 
     /// 返回房间中指定座位绑定的官方用户 ID。
-    pub fn room_official_user_id(&self, room_key: &str, position: usize) -> Option<i64> {
+    pub fn room_official_user_id(&self, room_key: &str, position: usize) -> Option<i32> {
         self.rooms
             .get(room_key)
             .and_then(|entry| entry.official_user_ids_by_position.get(&position).copied())
@@ -1842,8 +1842,8 @@ impl RoomService {
     pub fn set_room_official_match(
         &mut self,
         room_key: &str,
-        match_id: i64,
-        user_ids_by_position: HashMap<usize, i64>,
+        match_id: i32,
+        user_ids_by_position: HashMap<usize, i32>,
     ) {
         if let Some(entry) = self.rooms.get_mut(room_key) {
             entry.official_match_id = Some(match_id);

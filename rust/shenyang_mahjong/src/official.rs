@@ -250,7 +250,7 @@ fn winner_scores_for_settlement<F>(
     mut user_id_for_position: F,
 ) -> Vec<data::GameRoundShenyangMahjongWinnerScoreInput>
 where
-    F: FnMut(usize) -> Option<i64>,
+    F: FnMut(usize) -> Option<i32>,
 {
     let mut winner_scores = Vec::new();
     for position in settlement.unique_winner_positions() {
@@ -317,7 +317,7 @@ mod tests {
             settlement,
             &score_changes,
             ShenyangMahjongWinContext::from_configs(&configs),
-            |position| Some(position as i64 + 10),
+            |position| Some(position as i32 + 10),
         );
 
         assert_eq!(winner_scores.len(), 1);
@@ -423,7 +423,7 @@ mod tests {
             &settlement,
             &score_changes,
             ShenyangMahjongWinContext::new(),
-            |position| Some(position as i64 + 10),
+            |position| Some(position as i32 + 10),
         );
 
         assert_eq!(winner_scores.len(), 1);
@@ -464,7 +464,7 @@ mod tests {
             &settlement,
             &score_changes,
             ShenyangMahjongWinContext::new(),
-            |position| Some(position as i64 + 10),
+            |position| Some(position as i32 + 10),
         );
 
         assert_eq!(winner_scores.len(), 1);
@@ -513,7 +513,7 @@ mod tests {
             settlement,
             &score_changes,
             ShenyangMahjongWinContext::new(),
-            |position| Some(position as i64 + 10),
+            |position| Some(position as i32 + 10),
         );
 
         assert_eq!(winner_scores.len(), 2);
