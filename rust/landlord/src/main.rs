@@ -4,8 +4,7 @@ use landlord::server::run_landlord_server_with_cli;
 
 #[tokio::main]
 async fn main() {
-    if let Err(err) = run().await {
-        eprintln!("{err}");
+    if run().await.is_err() {
         process::exit(2);
     }
 }

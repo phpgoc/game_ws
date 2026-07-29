@@ -253,12 +253,6 @@ impl RoomService {
         let Some(room_key) = self.room_key_of(session_id) else {
             return;
         };
-        dlog!(
-            tracing::Level::WARN,
-            "Session {} disbands room '{}'",
-            session_id,
-            room_key
-        );
         if let Some(entry) = self.rooms.get_mut(&room_key) {
             entry.state.request_stop();
         }
@@ -1385,16 +1379,7 @@ impl RoomService {
                 should_remove_room = true;
             }
 
-            if should_remove_room {
-                // There is nobody connected to receive an inactive-member
-                // event. Remove the entry immediately so the room name can be
-                // reused while the old loop observes `stop_requested`.
-                dlog!(
-                    tracing::Level::WARN,
-                    "All human sessions disconnected from room '{}'; removing room",
-                    room_key
-                );
-            } else {
+            if !should_remove_room {
                 let Some(pos) = position else {
                     return;
                 };
@@ -1559,11 +1544,6 @@ impl RoomService {
             entry.state.set_turn_countdown(0);
             entry.state.request_stop();
             if !has_other_connected_human {
-                dlog!(
-                    tracing::Level::WARN,
-                    "Last connected human quit room '{}'; removing room",
-                    room_key
-                );
                 self.rooms.remove(&room_key);
             }
         }

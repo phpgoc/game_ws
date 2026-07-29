@@ -10,7 +10,7 @@ use share_type_public::{
     },
 };
 use tokio::sync::Mutex;
-use ws_common::{Delivery, OutboundPayload, RoomService, SessionSenders, dlog};
+use ws_common::{Delivery, OutboundPayload, RoomService, SessionSenders};
 
 use crate::ai::{choose_bid, choose_play, hand_has_bomb};
 use crate::game_state::{LandlordLoopState, LandlordPlayRecord};
@@ -894,14 +894,6 @@ pub(crate) fn start_game_loop(
 
             let current_phase = { state.lock().unwrap().phase };
             let player_num = state.lock().unwrap().base.lock().unwrap().players.len();
-            dlog!(
-                ws_common::tracing::Level::INFO,
-                "[landlord][game-loop] room={} phase={:?} play number ={} action_received={}",
-                room_key,
-                current_phase,
-                player_num,
-                state.lock().unwrap().action_received()
-            );
             if player_num != 3 {
                 break;
             }
