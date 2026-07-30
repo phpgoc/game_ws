@@ -704,6 +704,10 @@ impl ComboKind {
 }
 
 #[cfg(test)]
+#[path = "combo/coverage_tests.rs"]
+mod coverage_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use share_type_public::TractorRank;
