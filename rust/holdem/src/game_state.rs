@@ -355,3 +355,7 @@ impl GameState for HoldemGameState {
         Arc::clone(&self.base)
     }
 }
+
+#[cfg(test)]
+#[path = "game_state/coverage_tests.rs"]
+mod coverage_tests;
