@@ -8,13 +8,14 @@ use share_type_public::{
     CommonEvent, GameId, Routes, TractorPhase, TractorRank, WsCode, WsJoinRequest,
     games::tractor::WsTractorBottomCardsEvent,
 };
-use ws_common::{ClientRequest, CommonGameState, OutboundPayload, RoomService};
+use tokio::sync::Mutex as AsyncMutex;
+use ws_common::{ClientRequest, CommonGameState, OutboundPayload, RoomService, SessionSenders};
 
 use super::{
     StateRegistry, TractorGameState, TractorStateHandle, build_auto_bury_dispatch,
     build_deal_dispatch, current_play_time, position_has_active_membership,
     remove_registered_state_if_same, room_uses_common_state, settlement_event, settlement_time,
-    sleep_or_stop, stop_requested, timed_out_human_position,
+    sleep_or_stop, start_game_loop, stop_requested, timed_out_human_position,
 };
 use crate::game_setting::{
     KEY_AWAY_TIME, KEY_PLAY_TIME, KEY_SETTLEMENT_TIME, build_tractor_settings,
@@ -87,6 +88,16 @@ fn event_payloads(dispatch: &ws_common::Dispatch, code: i32) -> Vec<&serde_json:
             _ => None,
         })
         .collect()
+}
+
+async fn wait_until(description: &str, mut ready: impl FnMut() -> bool) {
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while !ready() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("timed out waiting for {description}"));
 }
 
 #[test]
@@ -262,4 +273,101 @@ fn state_registry_and_room_identity_helpers_only_act_on_the_current_state() {
     let settlement = settlement_event(&current.lock().unwrap());
     assert_eq!(settlement.target_rank, TractorRank::TWO);
     assert_eq!(settlement.winner_positions, vec![0, 2]);
+}
+
+#[tokio::test]
+async fn game_loop_auto_buries_then_cleans_up_the_registered_state() {
+    let (room, common) = room_with_players();
+    let room = Arc::new(AsyncMutex::new(room));
+    let state = state_handle(common, TractorPhase::Bury);
+    state.lock().unwrap().hands.insert(0, vec![1, 2, 3]);
+    let states: StateRegistry = Arc::new(Mutex::new(HashMap::from([(
+        ROOM_KEY.to_owned(),
+        Arc::clone(&state),
+    )])));
+    let senders: SessionSenders = Arc::new(AsyncMutex::new(HashMap::new()));
+
+    start_game_loop(
+        ROOM_KEY.to_owned(),
+        Arc::clone(&state),
+        Arc::clone(&room),
+        senders,
+        Arc::clone(&states),
+    );
+
+    wait_until("automatic tractor bury", || {
+        state.lock().unwrap().phase == TractorPhase::Play
+    })
+    .await;
+    {
+        let state = state.lock().unwrap();
+        assert_eq!(state.bottom_cards.len(), 2);
+        assert_eq!(state.hands[&0].len(), 1);
+    }
+
+    state.lock().unwrap().base.lock().unwrap().request_stop();
+    wait_until("tractor loop registry cleanup", || {
+        !states.lock().unwrap().contains_key(ROOM_KEY)
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn game_loop_removes_a_stale_state_before_entering_the_loop() {
+    let (mut room, common) = room_with_players();
+    let state = state_handle(Arc::clone(&common), TractorPhase::Deal);
+    let states: StateRegistry = Arc::new(Mutex::new(HashMap::from([(
+        ROOM_KEY.to_owned(),
+        Arc::clone(&state),
+    )])));
+    room.reset_room_common_state_for_new_game(ROOM_KEY)
+        .expect("replace room common state");
+    let room = Arc::new(AsyncMutex::new(room));
+    let senders: SessionSenders = Arc::new(AsyncMutex::new(HashMap::new()));
+
+    start_game_loop(
+        ROOM_KEY.to_owned(),
+        state,
+        room,
+        senders,
+        Arc::clone(&states),
+    );
+
+    wait_until("stale tractor state cleanup", || {
+        !states.lock().unwrap().contains_key(ROOM_KEY)
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn paused_and_settling_game_loops_honor_stop_requests() {
+    for phase in [TractorPhase::Start, TractorPhase::Settlement] {
+        let (room, common) = room_with_players();
+        let room = Arc::new(AsyncMutex::new(room));
+        let state = state_handle(common, phase);
+        if phase == TractorPhase::Start {
+            state.lock().unwrap().base.lock().unwrap().pause();
+        }
+        let states: StateRegistry = Arc::new(Mutex::new(HashMap::from([(
+            ROOM_KEY.to_owned(),
+            Arc::clone(&state),
+        )])));
+        let senders: SessionSenders = Arc::new(AsyncMutex::new(HashMap::new()));
+
+        start_game_loop(
+            ROOM_KEY.to_owned(),
+            Arc::clone(&state),
+            room,
+            senders,
+            Arc::clone(&states),
+        );
+
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert!(states.lock().unwrap().contains_key(ROOM_KEY));
+        state.lock().unwrap().base.lock().unwrap().request_stop();
+        wait_until("paused or settling tractor loop cleanup", || {
+            !states.lock().unwrap().contains_key(ROOM_KEY)
+        })
+        .await;
+    }
 }
