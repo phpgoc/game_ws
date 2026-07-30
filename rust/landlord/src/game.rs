@@ -545,6 +545,10 @@ impl GameHandler for LandlordGameHandler {
 }
 
 #[cfg(test)]
+#[path = "game/coverage_tests.rs"]
+mod coverage_tests;
+
+#[cfg(test)]
 mod tests {
     use std::sync::{Arc, Mutex};
 
