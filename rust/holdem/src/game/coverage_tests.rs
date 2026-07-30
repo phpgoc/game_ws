@@ -4,10 +4,13 @@ use std::{
 };
 
 use share_type_public::{
-    GameId, Routes, TexasHoldEmAction, TexasHoldEmAutoStrategy, TexasHoldEmPhase, WsJoinRequest,
+    GameId, Routes, TexasHoldEmAction, TexasHoldEmAutoStrategy, TexasHoldEmPhase, WsCode,
+    WsJoinRequest,
     games::texas_hold_em::{WsTexasHoldEmAutoStrategyRequest, WsTexasHoldEmPlayRequest},
 };
-use ws_common::{ClientRequest, CommonGameState, GameHandler, RoomService};
+use ws_common::{
+    ClientRequest, CommonGameState, Dispatch, GameHandler, OutboundPayload, RoomService,
+};
 
 use super::{HoldemGameHandler, HoldemGameState, STANDARD_TEXAS, apply_action, settle_hand};
 
@@ -207,6 +210,55 @@ fn room_request_handlers_validate_payloads_permissions_and_active_hands() {
         handler.build_room_settings()
     });
     assert_eq!(handler.handle_start(&mut room, 2).messages.len(), 1);
+}
+
+#[test]
+fn auto_tick_counts_down_a_human_turn_then_marks_the_seat_away() {
+    let handler = HoldemGameHandler::default();
+    let mut room = RoomService::default();
+    for (session_id, name) in [(1, "owner"), (2, "guest")] {
+        let _ = room.handle_common_request(
+            session_id,
+            &join_request(name),
+            GameId::TEXAS_HOLD_EM,
+            || handler.build_room_settings(),
+        );
+    }
+    let _ = handler.handle_start(&mut room, 1);
+    let state = handler.state("room").expect("started holdem state");
+    let position = {
+        let mut locked = state.lock().expect("holdem state lock");
+        locked.set_turn_countdown(1);
+        locked.current_position
+    };
+
+    let mut countdown_dispatch = Dispatch::default();
+    handler.auto_tick(&mut room, "room", &state, &mut countdown_dispatch);
+    assert!(countdown_dispatch.messages.iter().any(|message| {
+        matches!(
+            &message.payload,
+            OutboundPayload::Event(event) if event.code == WsCode::CHANGE_DEAL as i32
+        )
+    }));
+    assert_eq!(state.lock().expect("holdem state lock").turn_countdown(), 0);
+
+    let mut timeout_dispatch = Dispatch::default();
+    handler.auto_tick(&mut room, "room", &state, &mut timeout_dispatch);
+    assert!(
+        state
+            .lock()
+            .expect("holdem state lock")
+            .base
+            .lock()
+            .expect("common state lock")
+            .is_away(position)
+    );
+    assert!(timeout_dispatch.messages.iter().any(|message| {
+        matches!(
+            &message.payload,
+            OutboundPayload::Event(event) if event.code == WsCode::AWAY as i32
+        )
+    }));
 }
 
 #[test]
