@@ -5,7 +5,7 @@ use std::{
 };
 
 use share_type_public::{
-    CommonEvent, GameId, Routes, TractorPhase, TractorRank, WsCode, WsJoinRequest,
+    CommonEvent, GameId, Routes, TractorPhase, TractorRank, TractorWsCode, WsCode, WsJoinRequest,
     games::tractor::WsTractorBottomCardsEvent,
 };
 use tokio::sync::Mutex as AsyncMutex;
@@ -13,7 +13,7 @@ use ws_common::{ClientRequest, CommonGameState, OutboundPayload, RoomService, Se
 
 use super::{
     StateRegistry, TractorGameState, TractorStateHandle, build_auto_bury_dispatch,
-    build_deal_dispatch, current_play_time, position_has_active_membership,
+    build_auto_dispatch, build_deal_dispatch, current_play_time, position_has_active_membership,
     remove_registered_state_if_same, room_uses_common_state, settlement_event, settlement_time,
     sleep_or_stop, start_game_loop, stop_requested, timed_out_human_position,
 };
@@ -160,6 +160,24 @@ fn auto_bury_member_timeout_enables_ai_takeover_and_keeps_the_event_flag() {
 }
 
 #[test]
+fn auto_dispatch_broadcasts_settlement_when_its_play_finishes_every_hand() {
+    let (room, common) = room_with_players();
+    let state = state_handle(common, TractorPhase::Play);
+    {
+        let mut state = state.lock().unwrap();
+        state.current_position = 0;
+        state.hands = HashMap::from([(0, vec![1]), (1, vec![]), (2, vec![]), (3, vec![])]);
+        state.base.lock().unwrap().mark_ai_position(0);
+    }
+
+    let dispatch = build_auto_dispatch(ROOM_KEY, &room, &state, &HashMap::new(), None);
+
+    assert_eq!(state.lock().unwrap().phase, TractorPhase::Settlement);
+    assert_eq!(event_payloads(&dispatch, WsCode::PLAY as i32).len(), 4);
+    assert_eq!(event_payloads(&dispatch, WsCode::GAME_OVER as i32).len(), 4);
+}
+
+#[test]
 fn deal_dispatch_sends_private_deal_and_bottom_cards_then_exposes_the_snapshot() {
     let (room, common) = room_with_players();
     let state = state_handle(common, TractorPhase::Deal);
@@ -193,6 +211,29 @@ fn deal_dispatch_sends_private_deal_and_bottom_cards_then_exposes_the_snapshot()
         event_payloads(&dispatch, WsCode::TABLE_SNAPSHOT as i32).len(),
         4
     );
+}
+
+#[test]
+fn later_round_final_deal_broadcasts_the_automatic_dealer_declaration() {
+    let (room, common) = room_with_players();
+    let state = state_handle(common, TractorPhase::Deal);
+    {
+        let mut state = state.lock().unwrap();
+        state.deal_queue = VecDeque::from([(0, 1)]);
+        state.total_deal_count = 1;
+        state.bottom_cards = vec![53, 54];
+        state.hands.insert(0, Vec::new());
+        state.round_index = 1;
+        state.declaration = None;
+    }
+
+    let dispatch = build_deal_dispatch(ROOM_KEY, &room, &state, &HashMap::new());
+
+    assert_eq!(
+        event_payloads(&dispatch, TractorWsCode::TRUMP_DECLARED as i32).len(),
+        4
+    );
+    assert_eq!(state.lock().unwrap().phase, TractorPhase::Bury);
 }
 
 #[tokio::test]
