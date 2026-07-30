@@ -422,3 +422,124 @@ async fn start_phase_guards_stopped_nonstart_and_replaced_rooms() {
         .await
     );
 }
+
+#[tokio::test]
+async fn game_loop_applies_an_ai_play_before_advancing_the_turn() {
+    let (room_service, state, loop_states) = loop_room();
+    let senders: SessionSenders = Arc::new(AsyncMutex::new(HashMap::new()));
+    {
+        let mut state = state.lock().unwrap();
+        state.phase = LandlordPhase::Play;
+        state.current_position = 0;
+        state.last_play_position = 0;
+        state.landlord_position = Some(0);
+        state.hands = HashMap::from([(0, vec![2, 3]), (1, vec![4]), (2, vec![5])]);
+        state.base.lock().unwrap().mark_ai_position(0);
+    }
+
+    start_game_loop(
+        "room".to_owned(),
+        Arc::clone(&state),
+        Arc::clone(&room_service),
+        senders,
+        Arc::clone(&loop_states),
+    );
+
+    wait_until("automatic AI play", || {
+        let state = state.lock().unwrap();
+        state.current_position == 1
+            && state.hands[&0] == vec![3]
+            && state
+                .play_history
+                .iter()
+                .any(|record| record.position == 0 && record.cards == [2])
+    })
+    .await;
+
+    state.lock().unwrap().request_stop();
+    wait_until("AI loop cleanup", || {
+        !loop_states.lock().unwrap().contains_key("room")
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn game_loop_announces_disconnected_players_as_away() {
+    let (room_service, state, loop_states) = loop_room();
+    let senders: SessionSenders = Arc::new(AsyncMutex::new(HashMap::new()));
+    state.lock().unwrap().phase = LandlordPhase::CallLandlord;
+    room_service.lock().await.disconnect(1);
+
+    start_game_loop(
+        "room".to_owned(),
+        Arc::clone(&state),
+        Arc::clone(&room_service),
+        senders,
+        Arc::clone(&loop_states),
+    );
+
+    wait_until("disconnected player marked away", || {
+        state.lock().unwrap().is_away(0)
+    })
+    .await;
+    assert!(state.lock().unwrap().is_disconnected(0));
+
+    state.lock().unwrap().request_stop();
+    wait_until("disconnected loop cleanup", || {
+        !loop_states.lock().unwrap().contains_key("room")
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn game_loop_decrements_a_waiting_human_turn() {
+    let (room_service, state, loop_states) = loop_room();
+    let senders: SessionSenders = Arc::new(AsyncMutex::new(HashMap::new()));
+
+    start_game_loop(
+        "room".to_owned(),
+        Arc::clone(&state),
+        Arc::clone(&room_service),
+        senders,
+        Arc::clone(&loop_states),
+    );
+
+    wait_until("human landlord call phase", || {
+        let state = state.lock().unwrap();
+        state.phase == LandlordPhase::CallLandlord && state.turn_countdown() == 30
+    })
+    .await;
+    wait_until("human turn countdown", || {
+        state.lock().unwrap().turn_countdown() == 29
+    })
+    .await;
+
+    state.lock().unwrap().request_stop();
+    wait_until("human turn loop cleanup", || {
+        !loop_states.lock().unwrap().contains_key("room")
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn paused_game_loop_only_stops_after_its_pause_wait_is_interrupted() {
+    let (room_service, state, loop_states) = loop_room();
+    let senders: SessionSenders = Arc::new(AsyncMutex::new(HashMap::new()));
+    state.lock().unwrap().base.lock().unwrap().pause();
+
+    start_game_loop(
+        "room".to_owned(),
+        Arc::clone(&state),
+        Arc::clone(&room_service),
+        senders,
+        Arc::clone(&loop_states),
+    );
+
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    assert!(loop_states.lock().unwrap().contains_key("room"));
+    state.lock().unwrap().request_stop();
+    wait_until("paused loop cleanup", || {
+        !loop_states.lock().unwrap().contains_key("room")
+    })
+    .await;
+}

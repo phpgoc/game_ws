@@ -293,3 +293,130 @@ fn join_succeeded_only_accepts_joined_response_for_the_requested_session() {
     let dispatch = Dispatch::default();
     assert!(!join_succeeded(&dispatch, 1));
 }
+
+#[test]
+fn start_discards_a_loop_state_owned_by_a_previous_room_instance() {
+    let mut room = room_with_players("recreated", 3);
+    let current_common = room
+        .room_common_state("recreated")
+        .expect("current common state");
+    let stale_common = Arc::new(Mutex::new(CommonGameState::default()));
+    let stale_state = Arc::new(Mutex::new(LandlordLoopState::new(stale_common)));
+    let mut handler = LandlordGameHandler::default();
+    handler
+        .loop_states
+        .lock()
+        .unwrap()
+        .insert("recreated".to_owned(), stale_state);
+
+    let dispatch = handler.handle_start(&mut room, 1);
+    assert!(has_code(
+        &dispatch,
+        Routes::START as i32,
+        WsResponseCode::OK,
+    ));
+    let current_loop = handler
+        .current_loop_state(&room, "recreated")
+        .expect("new loop state");
+    assert!(loop_state_matches_common(&current_loop, &current_common));
+}
+
+#[test]
+fn game_requests_reject_stale_loops_and_unknown_routes() {
+    let mut room = room_with_players("stale", 3);
+    let mut handler = LandlordGameHandler::default();
+
+    assert!(has_code(
+        &handler.handle_call_landlord(&mut room, 1, json!({ "score": 1 })),
+        LandlordRoutes::CALL_LANDLORD as i32,
+        WsResponseCode::NO_PERMISSION,
+    ));
+    assert!(has_code(
+        &handler.handle_play(&mut room, 1, json!({ "cards": [2] })),
+        Routes::PLAY as i32,
+        WsResponseCode::NO_PERMISSION,
+    ));
+    assert!(has_code(
+        &handler.handle_game_request(
+            &mut room,
+            1,
+            ClientRequest {
+                route: i32::MAX,
+                data: serde_json::Value::Null,
+            },
+        ),
+        i32::MAX,
+        WsResponseCode::NOT_IN_RANGE,
+    ));
+
+    let state = state_for(&room, "stale", LandlordPhase::Play);
+    handler
+        .loop_states
+        .lock()
+        .unwrap()
+        .insert("stale".to_owned(), state);
+    handler.remove_loop_state("stale");
+    assert!(handler.loop_states.lock().unwrap().is_empty());
+}
+
+#[test]
+fn non_join_common_requests_prune_stopped_loop_states() {
+    let mut handler = LandlordGameHandler::default();
+    let state = Arc::new(Mutex::new(LandlordLoopState::new(Arc::new(Mutex::new(
+        CommonGameState::default(),
+    )))));
+    state.lock().unwrap().request_stop();
+    handler
+        .loop_states
+        .lock()
+        .unwrap()
+        .insert("stopped".to_owned(), state);
+
+    handler.after_common_request(
+        &mut RoomService::default(),
+        1,
+        &ClientRequest {
+            route: Routes::QUIT as i32,
+            data: serde_json::Value::Null,
+        },
+        &mut Dispatch::default(),
+    );
+    assert!(handler.loop_states.lock().unwrap().is_empty());
+}
+
+#[test]
+fn rejoin_call_phase_keeps_hidden_cards_private_and_omits_empty_last_play() {
+    let mut room = room_with_players("rejoin-call", 3);
+    let state = state_for(&room, "rejoin-call", LandlordPhase::CallLandlord);
+    {
+        let mut state = state.lock().unwrap();
+        state.last_play.clear();
+        state.hidden_cards = vec![52, 53, 54];
+    }
+    let mut handler = LandlordGameHandler::default();
+    handler
+        .loop_states
+        .lock()
+        .unwrap()
+        .insert("rejoin-call".to_owned(), state);
+
+    let request = join_request("P0", "rejoin-call");
+    let mut dispatch = room
+        .handle_common_request(1, &request, GameId::LANDLORD, build_landlord_settings)
+        .expect("repeat JOIN should be handled");
+    handler.after_common_request(&mut room, 1, &request, &mut dispatch);
+    let rejoin_data = dispatch.messages.iter().find_map(|message| {
+        let OutboundPayload::Response(RequestResponse::WithData(response)) = &message.payload
+        else {
+            return None;
+        };
+        (message.recipient == 1
+            && response.route == Routes::JOIN as i32
+            && response.code as i32 == WsResponseCode::JOINED as i32)
+            .then(|| response.data.get("rejoin_data").cloned())
+            .flatten()
+    });
+    let rejoin_data = rejoin_data.expect("call phase JOIN should include rejoin data");
+    assert_eq!(rejoin_data["hidden_cards"], json!([]));
+    assert!(rejoin_data["last_play_position"].is_null());
+}
