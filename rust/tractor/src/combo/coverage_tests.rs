@@ -1,8 +1,9 @@
 use share_type_public::{TractorRank, WsTractorPlayedCards};
 
 use super::{
-    capped_choose, classify, combinations, forced_follow, hand_contains, pair_position, play_suit,
-    throw_components, trick_winner,
+    Combo, ComboKind, capped_choose, classify, combinations, enumerate_follows, enumerate_leads,
+    follow_is_legal, forced_follow, hand_contains, pair_position, play_suit, throw_components,
+    trick_winner,
 };
 use crate::game_state::TractorRules;
 
@@ -61,4 +62,32 @@ fn combo_utilities_handle_trump_groups_throws_and_invalid_positions() {
         trick_winner(&[played(0, vec![2]), played(-1, vec![3])], &rules),
         Some(0)
     );
+}
+
+#[test]
+fn lead_and_follow_enumeration_keep_throw_candidates_bounded_and_legal() {
+    let rules = rules();
+    let short_hand = vec![3, 103, 5];
+    assert!(enumerate_leads(&short_hand, &rules).contains(&vec![3, 103, 5]));
+
+    let long_hand = vec![3, 103, 5, 105, 7, 107, 9, 109, 11];
+    assert!(enumerate_leads(&long_hand, &rules).contains(&vec![3, 103, 5, 105, 7, 107, 9, 109]));
+
+    let large_follow_hand: Vec<i32> = (3..=12).flat_map(|card| [card, card + 100]).collect();
+    let large_lead = Combo {
+        kind: ComboKind::Throw {
+            cards: 10,
+            pairs: 0,
+        },
+        suit: Some(0),
+    };
+    assert!(!enumerate_follows(&large_follow_hand, &large_lead, &rules).is_empty());
+
+    let pair_lead = classify(&[3, 103], &rules).expect("plain pair lead");
+    assert!(!follow_is_legal(
+        &[4, 104, 5, 105],
+        &[4, 5],
+        &pair_lead,
+        &rules
+    ));
 }
