@@ -354,6 +354,80 @@ async fn game_loop_auto_buries_then_cleans_up_the_registered_state() {
 }
 
 #[tokio::test]
+async fn game_loop_deals_a_card_before_waiting_for_the_next_deal_step() {
+    let (room, common) = room_with_players();
+    let room = Arc::new(AsyncMutex::new(room));
+    let state = state_handle(common, TractorPhase::Deal);
+    {
+        let mut state = state.lock().unwrap();
+        state.deal_queue = VecDeque::from([(0, 1)]);
+        state.total_deal_count = 1;
+        state.bottom_cards = vec![53, 54];
+        state.hands.insert(0, Vec::new());
+    }
+    let states: StateRegistry = Arc::new(Mutex::new(HashMap::from([(
+        ROOM_KEY.to_owned(),
+        Arc::clone(&state),
+    )])));
+    let senders: SessionSenders = Arc::new(AsyncMutex::new(HashMap::new()));
+
+    start_game_loop(
+        ROOM_KEY.to_owned(),
+        Arc::clone(&state),
+        room,
+        senders,
+        Arc::clone(&states),
+    );
+
+    wait_until("single tractor deal", || {
+        let state = state.lock().unwrap();
+        state.phase == TractorPhase::Bury && state.dealt_count == 1
+    })
+    .await;
+    state.lock().unwrap().base.lock().unwrap().request_stop();
+    wait_until("deal loop cleanup", || {
+        !states.lock().unwrap().contains_key(ROOM_KEY)
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn game_loop_applies_ai_play_and_enters_settlement() {
+    let (room, common) = room_with_players();
+    let room = Arc::new(AsyncMutex::new(room));
+    let state = state_handle(common, TractorPhase::Play);
+    {
+        let mut state = state.lock().unwrap();
+        state.current_position = 0;
+        state.hands = HashMap::from([(0, vec![1]), (1, vec![]), (2, vec![]), (3, vec![])]);
+        state.base.lock().unwrap().mark_ai_position(0);
+    }
+    let states: StateRegistry = Arc::new(Mutex::new(HashMap::from([(
+        ROOM_KEY.to_owned(),
+        Arc::clone(&state),
+    )])));
+    let senders: SessionSenders = Arc::new(AsyncMutex::new(HashMap::new()));
+
+    start_game_loop(
+        ROOM_KEY.to_owned(),
+        Arc::clone(&state),
+        room,
+        senders,
+        Arc::clone(&states),
+    );
+
+    wait_until("AI tractor play settlement", || {
+        state.lock().unwrap().phase == TractorPhase::Settlement
+    })
+    .await;
+    state.lock().unwrap().base.lock().unwrap().request_stop();
+    wait_until("AI play loop cleanup", || {
+        !states.lock().unwrap().contains_key(ROOM_KEY)
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn game_loop_removes_a_stale_state_before_entering_the_loop() {
     let (mut room, common) = room_with_players();
     let state = state_handle(Arc::clone(&common), TractorPhase::Deal);
