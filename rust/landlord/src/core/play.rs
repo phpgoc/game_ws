@@ -331,3 +331,7 @@ pub fn validate_play(context: PlayValidationContext<'_>, position: usize, cards:
     };
     can_beat(&curr, &prev)
 }
+
+#[cfg(test)]
+#[path = "play/tests.rs"]
+mod tests;
