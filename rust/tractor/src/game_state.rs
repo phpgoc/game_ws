@@ -1174,6 +1174,10 @@ impl TractorRules {
 }
 
 #[cfg(test)]
+#[path = "game_state/coverage_tests.rs"]
+mod coverage_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
