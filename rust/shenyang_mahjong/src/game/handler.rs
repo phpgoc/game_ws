@@ -562,3 +562,7 @@ impl GameHandler for ShenyangMahjongGameHandler {
         self.room_service = Some(room_service);
     }
 }
+
+#[cfg(test)]
+#[path = "handler/coverage_tests.rs"]
+mod coverage_tests;
