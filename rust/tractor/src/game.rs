@@ -1083,3 +1083,7 @@ mod tests {
         assert_eq!(state.deal_queue.len(), state.total_deal_count);
     }
 }
+
+#[cfg(test)]
+#[path = "game/coverage_tests.rs"]
+mod coverage_tests;
