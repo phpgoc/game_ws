@@ -267,6 +267,11 @@ fn room_queries_broadcasts_and_official_metadata_stay_in_sync() {
     let mut service = RoomService::default();
     join_official_owner(&mut service);
 
+    let entry = service.rooms.get("query-room").expect("room entry exists");
+    let debug = format!("{entry:?}");
+    assert!(debug.contains("RoomEntry"));
+    assert!(debug.contains("LANDLORD"));
+
     assert_eq!(service.room_count(), 1);
     assert!(service.room_exists("query-room"));
     assert!(!service.room_exists("missing-room"));
@@ -350,6 +355,67 @@ fn room_queries_broadcasts_and_official_metadata_stay_in_sync() {
     assert!(!std::sync::Arc::ptr_eq(&before_reset, &after_reset));
     assert_eq!(after_reset.lock().unwrap().player_name(0), "owner");
     assert_eq!(service.room_official_match_id("query-room"), Some(77));
+}
+
+#[test]
+fn room_lifecycle_keeps_disconnected_rosters_and_sanitizes_official_state() {
+    let mut service = RoomService::with_ai_players_enabled(true);
+    service.connect(99);
+    assert!(service.disconnect(99).messages.is_empty());
+
+    join_member(&mut service, 1, "owner", "lifecycle-room", "owner-session");
+    join_member(&mut service, 2, "guest", "lifecycle-room", "");
+    assert!(!service.room_supports_official_swap("lifecycle-room"));
+    assert_eq!(
+        service.room_official_player_sessions("lifecycle-room"),
+        vec![crate::OfficialPlayerSession {
+            position: 0,
+            session_id: "owner-session".to_owned(),
+        }]
+    );
+
+    let add_ai = common_request(&mut service, 1, Routes::ADD_AI, json!({"count": 1}));
+    assert!(has_response(&add_ai, Routes::ADD_AI, WsResponseCode::OK));
+    let ai_session = service
+        .room_members("lifecycle-room")
+        .into_iter()
+        .find(|(_, name, _, _)| name.starts_with("AI "))
+        .expect("AI member is added");
+    assert!(!service.set_session_active_membership(ai_session.0, true));
+
+    service.set_room_official_match("lifecycle-room", 88, HashMap::from([(0, 101), (1, 202)]));
+    let retained_common = service
+        .room_common_state("lifecycle-room")
+        .expect("room common state");
+    let unrelated_common =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::CommonGameState::new()));
+    service.clear_room_game_state_if_same("lifecycle-room", &unrelated_common);
+    assert!(std::sync::Arc::ptr_eq(
+        &retained_common,
+        &service
+            .room_common_state("lifecycle-room")
+            .expect("unchanged room common state"),
+    ));
+    assert_eq!(service.room_official_match_id("lifecycle-room"), Some(88));
+
+    service.clear_room_game_state("lifecycle-room");
+    assert_eq!(service.room_members("lifecycle-room").len(), 3);
+    assert_eq!(service.room_official_match_id("lifecycle-room"), None);
+    assert_eq!(service.room_official_user_id("lifecycle-room", 0), None);
+
+    assert!(service.set_session_active_membership(1, true));
+    let disconnect = service.disconnect(1);
+    assert!(has_event(&disconnect, WsCode::JOIN));
+    assert!(service.room_position_is_ai_takeover("lifecycle-room", 0));
+    assert!(
+        service
+            .room_official_player_sessions("lifecycle-room")
+            .is_empty()
+    );
+    assert!(service.room_exists("lifecycle-room"));
+
+    service.disconnect(2);
+    assert!(!service.room_exists("lifecycle-room"));
 }
 
 #[test]
