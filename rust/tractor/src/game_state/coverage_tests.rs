@@ -131,3 +131,40 @@ fn game_state_accepts_seats_only_before_play_begins() {
         &GameState::shared_common_state(&state)
     ));
 }
+
+#[test]
+fn state_helpers_cover_missing_seats_empty_hands_and_partner_turn_order() {
+    let mut state = state();
+    state.current_position = 0;
+    state.hands.insert(0, Vec::new());
+    assert_eq!(state.choose_away_play(0), None);
+    assert_eq!(state.choose_auto_play(0), None);
+    assert_eq!(state.preferred_dealer_trump_suit(), TractorSuit::SPADE);
+
+    state.current_trick = vec![WsTractorPlayedCards {
+        position: 0,
+        name: "p0".to_owned(),
+        cards: vec![1],
+    }];
+    let lead = state.lead_combo().expect("single lead combo");
+    assert!(state.legal_follows(99, &lead).is_empty());
+    assert!(state.partner_still_to_play(0));
+
+    state.current_trick.extend([
+        WsTractorPlayedCards {
+            position: 1,
+            name: "p1".to_owned(),
+            cards: vec![2],
+        },
+        WsTractorPlayedCards {
+            position: 2,
+            name: "p2".to_owned(),
+            cards: vec![3],
+        },
+    ]);
+    assert!(!state.partner_still_to_play(0));
+
+    let mut incomplete =
+        TractorGameState::from_common(Arc::new(Mutex::new(CommonGameState::new())));
+    assert!(incomplete.deal_new_round(state.rules.clone()).is_err());
+}
