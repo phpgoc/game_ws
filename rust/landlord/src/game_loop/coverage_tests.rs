@@ -10,7 +10,10 @@ use ws_common::{ClientRequest, RoomService, SessionSenders};
 
 use crate::game_state::{LandlordGameState, LandlordLoopState};
 
-use super::{sleep_or_stop, start_game_loop};
+use super::{
+    fixed_wait_seconds, handle_call_landlord_phase, handle_play_phase, handle_settlement_phase,
+    handle_start_phase, sleep_or_stop, start_game_loop,
+};
 
 fn join_request(name: &str) -> ClientRequest {
     ClientRequest {
@@ -184,4 +187,238 @@ async fn sleep_helper_reports_stops_before_waiting() {
     assert!(!sleep_or_stop(&state, Duration::ZERO).await);
     state.lock().unwrap().request_stop();
     assert!(sleep_or_stop(&state, Duration::from_millis(1)).await);
+}
+
+#[tokio::test]
+async fn call_landlord_phase_redeals_advances_and_assigns_the_highest_bidder() {
+    let (room_service, state, _loop_states) = loop_room();
+    let senders: SessionSenders = Arc::new(AsyncMutex::new(HashMap::new()));
+    let common = Arc::clone(&state.lock().unwrap().base);
+    let positions = [0, 1, 2];
+
+    {
+        let mut state = state.lock().unwrap();
+        state.phase = LandlordPhase::CallLandlord;
+        state.call_position = 0;
+        state.current_position = 2;
+        state.score = 0;
+        state.call_history = vec![(0, 0), (1, 0), (2, 0)];
+    }
+    handle_call_landlord_phase(
+        "room",
+        &state,
+        &positions,
+        &HashMap::new(),
+        &room_service,
+        &senders,
+        &common,
+    )
+    .await;
+    {
+        let state = state.lock().unwrap();
+        assert_eq!(state.phase, LandlordPhase::Start);
+        assert_eq!(state.call_position, 1);
+        assert_eq!(state.current_position, 1);
+    }
+
+    {
+        let mut state = state.lock().unwrap();
+        state.phase = LandlordPhase::CallLandlord;
+        state.call_position = 0;
+        state.current_position = 0;
+        state.score = 1;
+        state.call_history = vec![(0, 1)];
+    }
+    handle_call_landlord_phase(
+        "room",
+        &state,
+        &positions,
+        &HashMap::new(),
+        &room_service,
+        &senders,
+        &common,
+    )
+    .await;
+    {
+        let state = state.lock().unwrap();
+        assert_eq!(state.phase, LandlordPhase::CallLandlord);
+        assert_eq!(state.current_position, 1);
+        assert!(!state.action_received());
+    }
+
+    {
+        let mut state = state.lock().unwrap();
+        state.phase = LandlordPhase::CallLandlord;
+        state.call_position = 0;
+        state.current_position = 2;
+        state.score = 2;
+        state.call_history = vec![(0, 1), (1, 2), (2, 0)];
+        state.hidden_cards = vec![52, 53, 54];
+        state.hands = HashMap::from([(0, vec![1]), (1, vec![2]), (2, vec![3])]);
+    }
+    handle_call_landlord_phase(
+        "room",
+        &state,
+        &positions,
+        &HashMap::new(),
+        &room_service,
+        &senders,
+        &common,
+    )
+    .await;
+    let state = state.lock().unwrap();
+    assert_eq!(state.phase, LandlordPhase::Play);
+    assert_eq!(state.landlord_position, Some(1));
+    assert_eq!(state.current_position, 1);
+    assert_eq!(state.hands[&1], vec![2, 52, 53, 54]);
+}
+
+#[tokio::test]
+async fn play_phase_records_passes_cards_and_a_new_round_leader() {
+    let (room_service, state, _loop_states) = loop_room();
+    let senders: SessionSenders = Arc::new(AsyncMutex::new(HashMap::new()));
+    let common = Arc::clone(&state.lock().unwrap().base);
+    let positions = [0, 1, 2];
+
+    {
+        let mut state = state.lock().unwrap();
+        state.phase = LandlordPhase::Play;
+        state.current_position = 0;
+        state.last_play_position = 2;
+        state.last_play = vec![2];
+        state.current_play.clear();
+        state.hands = HashMap::from([(0, vec![3, 4]), (1, vec![5]), (2, vec![2])]);
+    }
+    assert!(
+        !handle_play_phase(
+            &state,
+            &positions,
+            &HashMap::new(),
+            "room",
+            &room_service,
+            &senders,
+            &common,
+        )
+        .await
+    );
+    {
+        let state = state.lock().unwrap();
+        assert_eq!(state.current_position, 1);
+        assert_eq!(state.play_history.len(), 1);
+        assert_eq!(state.play_history[0].benchmark, vec![2]);
+    }
+
+    {
+        let mut state = state.lock().unwrap();
+        state.current_position = 1;
+        state.current_play = vec![5];
+        state.last_play.clear();
+        state.last_play_position = 1;
+        state.hands.insert(1, vec![5, 6]);
+    }
+    assert!(
+        !handle_play_phase(
+            &state,
+            &positions,
+            &HashMap::new(),
+            "room",
+            &room_service,
+            &senders,
+            &common,
+        )
+        .await
+    );
+    {
+        let state = state.lock().unwrap();
+        assert_eq!(state.current_position, 2);
+        assert_eq!(state.hands[&1], vec![6]);
+        assert_eq!(state.last_play, vec![5]);
+    }
+
+    {
+        let mut state = state.lock().unwrap();
+        state.current_position = 1;
+        state.current_play.clear();
+        state.last_play_position = 2;
+        state.last_play = vec![5];
+    }
+    assert!(
+        !handle_play_phase(
+            &state,
+            &positions,
+            &HashMap::new(),
+            "room",
+            &room_service,
+            &senders,
+            &common,
+        )
+        .await
+    );
+    let state = state.lock().unwrap();
+    assert_eq!(state.current_position, 2);
+    assert!(state.last_play.is_empty());
+}
+
+#[tokio::test]
+async fn settlement_phase_redeals_without_waiting_when_configured_to_zero() {
+    let (room_service, state, _loop_states) = loop_room();
+    let senders: SessionSenders = Arc::new(AsyncMutex::new(HashMap::new()));
+    let common = Arc::clone(&state.lock().unwrap().base);
+    let configs = HashMap::from([("settlement_time".to_owned(), 0)]);
+    state.lock().unwrap().phase = LandlordPhase::Settlement;
+
+    assert!(
+        !handle_settlement_phase("room", &state, &configs, &room_service, &senders, &common,).await
+    );
+    let state = state.lock().unwrap();
+    assert_eq!(state.phase, LandlordPhase::Start);
+    assert_eq!(state.call_position, 1);
+    assert_eq!(state.current_position, 1);
+}
+
+#[tokio::test]
+async fn start_phase_guards_stopped_nonstart_and_replaced_rooms() {
+    let (room_service, state, _loop_states) = loop_room();
+    let senders: SessionSenders = Arc::new(AsyncMutex::new(HashMap::new()));
+    let common = Arc::clone(&state.lock().unwrap().base);
+    let positions = [0, 1, 2];
+
+    assert_eq!(fixed_wait_seconds(&HashMap::new(), "missing", 5), 5);
+    assert_eq!(
+        fixed_wait_seconds(&HashMap::from([("wait".to_owned(), -1)]), "wait", 5,),
+        0
+    );
+
+    state.lock().unwrap().phase = LandlordPhase::CallLandlord;
+    assert!(
+        !handle_start_phase(
+            "room",
+            &state,
+            &positions,
+            &room_service,
+            &senders,
+            &HashMap::new(),
+            &common,
+        )
+        .await
+    );
+
+    state.lock().unwrap().phase = LandlordPhase::Start;
+    room_service
+        .lock()
+        .await
+        .reset_room_common_state_for_new_game("room")
+        .expect("replace room common state");
+    assert!(
+        handle_start_phase(
+            "room",
+            &state,
+            &positions,
+            &room_service,
+            &senders,
+            &HashMap::new(),
+            &common,
+        )
+        .await
+    );
 }
