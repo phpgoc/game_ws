@@ -878,3 +878,7 @@ mod tests {
         Arc::new(StdMutex::new(state))
     }
 }
+
+#[cfg(test)]
+#[path = "game_loop/coverage_tests.rs"]
+mod coverage_tests;
