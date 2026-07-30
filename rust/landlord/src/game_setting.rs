@@ -17,3 +17,7 @@ pub fn build_landlord_settings() -> (GameSettings, HashMap<String, GameParam>) {
 
     (settings, params)
 }
+
+#[cfg(test)]
+#[path = "game_setting/tests.rs"]
+mod tests;

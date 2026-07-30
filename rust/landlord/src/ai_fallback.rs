@@ -39,3 +39,7 @@ pub fn hand_has_bomb(hand: &[i32]) -> bool {
     }
     counts[3..=15].contains(&4) || (counts[16] == 1 && counts[17] == 1)
 }
+
+#[cfg(test)]
+#[path = "ai_fallback/tests.rs"]
+mod tests;
