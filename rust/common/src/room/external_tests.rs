@@ -50,16 +50,23 @@ fn common_request(
         .expect("common room route")
 }
 
-fn has_response(dispatch: &Dispatch, route: Routes, code: share_type_public::WsResponseCode) -> bool {
-    dispatch.messages.iter().any(|delivery| match &delivery.payload {
-        OutboundPayload::Response(RequestResponse::WithoutData(response)) => {
-            response.route == route as i32 && response.code as i32 == code as i32
-        }
-        OutboundPayload::Response(RequestResponse::WithData(response)) => {
-            response.route == route as i32 && response.code as i32 == code as i32
-        }
-        OutboundPayload::Event(_) => false,
-    })
+fn has_response(
+    dispatch: &Dispatch,
+    route: Routes,
+    code: share_type_public::WsResponseCode,
+) -> bool {
+    dispatch
+        .messages
+        .iter()
+        .any(|delivery| match &delivery.payload {
+            OutboundPayload::Response(RequestResponse::WithoutData(response)) => {
+                response.route == route as i32 && response.code as i32 == code as i32
+            }
+            OutboundPayload::Response(RequestResponse::WithData(response)) => {
+                response.route == route as i32 && response.code as i32 == code as i32
+            }
+            OutboundPayload::Event(_) => false,
+        })
 }
 
 fn has_event(dispatch: &Dispatch, code: share_type_public::WsCode) -> bool {
@@ -87,7 +94,11 @@ fn room_queries_broadcasts_and_official_metadata_stay_in_sync() {
         service.connected_session_ids_for_position("query-room", 0),
         vec![1]
     );
-    assert!(service.connected_session_ids_for_position("query-room", 1).is_empty());
+    assert!(
+        service
+            .connected_session_ids_for_position("query-room", 1)
+            .is_empty()
+    );
     assert_eq!(service.room_configs("query-room"), Some(HashMap::new()));
     assert_eq!(service.room_members("missing-room"), Vec::new());
     assert_eq!(
@@ -116,7 +127,12 @@ fn room_queries_broadcasts_and_official_metadata_stay_in_sync() {
         &mut dispatch,
     );
     assert_eq!(dispatch.messages.len(), 2);
-    assert!(dispatch.messages.iter().all(|delivery| delivery.recipient == 1));
+    assert!(
+        dispatch
+            .messages
+            .iter()
+            .all(|delivery| delivery.recipient == 1)
+    );
 
     assert!(!service.set_session_active_membership(99, true));
     assert!(service.set_session_active_membership(1, true));
@@ -166,7 +182,11 @@ fn common_room_operations_reject_invalid_state_without_mutating_the_room() {
         Routes::SWAP,
     ] {
         let dispatch = common_request(&mut unjoined, 99, route, serde_json::Value::Null);
-        assert!(has_response(&dispatch, route, share_type_public::WsResponseCode::NOT_LOGIN));
+        assert!(has_response(
+            &dispatch,
+            route,
+            share_type_public::WsResponseCode::NOT_LOGIN
+        ));
     }
 
     let mut service = RoomService::with_ai_players_enabled(true);

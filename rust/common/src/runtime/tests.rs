@@ -6,8 +6,8 @@ use tokio::sync::{Mutex, mpsc, watch};
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::{
-    ClientRequest, Delivery, Dispatch, GameSettings, OutboundPayload, RequestResponse,
-    RoomService, SessionId, SettingsBuilderResult, SharedGameState,
+    ClientRequest, Delivery, Dispatch, GameSettings, OutboundPayload, RequestResponse, RoomService,
+    SessionId, SettingsBuilderResult, SharedGameState,
 };
 
 use super::{
@@ -113,17 +113,19 @@ async fn default_game_handler_hooks_keep_nonmember_rooms_enabled() {
     assert!(dispatch.messages.is_empty());
     assert_eq!(handler.build_room_settings().0.max_players, 4);
     assert_eq!(handler.build_game_state().players().len(), 0);
-    assert!(handler
-        .handle_game_request(
-            &mut service,
-            1,
-            ClientRequest {
-                route: 0,
-                data: Value::Null,
-            },
-        )
-        .messages
-        .is_empty());
+    assert!(
+        handler
+            .handle_game_request(
+                &mut service,
+                1,
+                ClientRequest {
+                    route: 0,
+                    data: Value::Null,
+                },
+            )
+            .messages
+            .is_empty()
+    );
 }
 
 #[tokio::test]
@@ -171,9 +173,7 @@ async fn runtime_stats_expose_empty_room_and_takeover_state() {
     assert_eq!(stats.listen_addr().port(), 12345);
     assert_eq!(stats.client_count().await, 0);
     assert_eq!(stats.room_count().await, 0);
-    assert!(!stats
-        .room_position_is_ai_takeover("missing-room", 0)
-        .await);
+    assert!(!stats.room_position_is_ai_takeover("missing-room", 0).await);
 }
 
 #[tokio::test]
