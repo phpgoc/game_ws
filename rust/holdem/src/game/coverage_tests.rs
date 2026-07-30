@@ -4,9 +4,10 @@ use std::{
 };
 
 use share_type_public::{
-    TexasHoldEmAction, TexasHoldEmPhase, games::texas_hold_em::WsTexasHoldEmPlayRequest,
+    GameId, Routes, TexasHoldEmAction, TexasHoldEmAutoStrategy, TexasHoldEmPhase, WsJoinRequest,
+    games::texas_hold_em::{WsTexasHoldEmAutoStrategyRequest, WsTexasHoldEmPlayRequest},
 };
-use ws_common::{CommonGameState, RoomService};
+use ws_common::{ClientRequest, CommonGameState, GameHandler, RoomService};
 
 use super::{HoldemGameHandler, HoldemGameState, STANDARD_TEXAS, apply_action, settle_hand};
 
@@ -28,6 +29,20 @@ fn new_state() -> HoldemGameState {
 
 fn request(action: TexasHoldEmAction, amount: i32) -> WsTexasHoldEmPlayRequest {
     WsTexasHoldEmPlayRequest { action, amount }
+}
+
+fn join_request(name: &str) -> ClientRequest {
+    ClientRequest {
+        route: Routes::JOIN as i32,
+        data: serde_json::to_value(WsJoinRequest {
+            name: name.to_owned(),
+            password: "room".to_owned(),
+            game_id: GameId::TEXAS_HOLD_EM,
+            session_id: String::new(),
+            avatar_url: String::new(),
+        })
+        .expect("serialize join request"),
+    }
 }
 
 #[test]
@@ -160,6 +175,38 @@ fn game_request_guards_return_errors_for_unknown_sessions() {
     assert_eq!(play.messages.len(), 1);
     assert_eq!(start.messages.len(), 1);
     assert!(!room.room_exists("room"));
+}
+
+#[test]
+fn room_request_handlers_validate_payloads_permissions_and_active_hands() {
+    let handler = HoldemGameHandler::default();
+    let mut room = RoomService::default();
+    let _ = room.handle_common_request(1, &join_request("owner"), GameId::TEXAS_HOLD_EM, || {
+        handler.build_room_settings()
+    });
+
+    let invalid_auto = handler.handle_auto_strategy(&mut room, 1, serde_json::json!(null));
+    assert_eq!(invalid_auto.messages.len(), 1);
+
+    let strategy = serde_json::to_value(WsTexasHoldEmAutoStrategyRequest {
+        strategy: TexasHoldEmAutoStrategy::CHECK_CALL,
+    })
+    .expect("serialize strategy request");
+    let saved_auto = handler.handle_auto_strategy(&mut room, 1, strategy);
+    assert_eq!(saved_auto.messages.len(), 1);
+    assert_eq!(
+        handler.auto_strategies.lock().expect("strategy lock")["room"][&0],
+        TexasHoldEmAutoStrategy::CHECK_CALL
+    );
+
+    let play =
+        serde_json::to_value(request(TexasHoldEmAction::CHECK, 0)).expect("serialize play request");
+    assert_eq!(handler.handle_play(&mut room, 1, play).messages.len(), 1);
+
+    let _ = room.handle_common_request(2, &join_request("guest"), GameId::TEXAS_HOLD_EM, || {
+        handler.build_room_settings()
+    });
+    assert_eq!(handler.handle_start(&mut room, 2).messages.len(), 1);
 }
 
 #[test]
