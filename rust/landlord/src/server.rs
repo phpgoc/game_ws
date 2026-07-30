@@ -56,3 +56,7 @@ pub async fn run_landlord_server_with_cli() -> anyhow::Result<()> {
     )
     .await
 }
+
+#[cfg(test)]
+#[path = "server/tests.rs"]
+mod tests;
