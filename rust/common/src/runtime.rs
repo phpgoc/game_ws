@@ -486,11 +486,17 @@ where
     let listen_addr = listener
         .local_addr()
         .context("read websocket listen address")?;
-    info!(service = config.service_name, listen = %format!(" ws://{listen_addr}"), "ws server started");
+    let ai_players_enabled = handler.supports_ai_players();
+    info!(
+        service = config.service_name,
+        listen = %format!(" ws://{listen_addr}"),
+        ai_players_enabled,
+        "ws server started"
+    );
 
     let senders: SessionSenders = Arc::new(Mutex::new(HashMap::new()));
     let room_service = Arc::new(Mutex::new(RoomService::with_ai_players_enabled(
-        handler.supports_ai_players(),
+        ai_players_enabled,
     )));
     let stats = RuntimeStats {
         room_service: Arc::clone(&room_service),

@@ -816,6 +816,52 @@ fn disconnect_removes_room_only_after_last_connected_human_leaves() {
 }
 
 #[test]
+fn disconnect_removes_rejoined_ai_room_after_last_human_leaves() {
+    let mut service = room_service_with_ai();
+    let _ = join_room(
+        &mut service,
+        1,
+        "owner",
+        "rejoined-ai-room",
+        GameId::TRACTOR,
+    );
+    let _ = join_room(
+        &mut service,
+        2,
+        "observer",
+        "rejoined-ai-room",
+        GameId::TRACTOR,
+    );
+    let _ = common_request(
+        &mut service,
+        1,
+        GameId::TRACTOR,
+        Routes::ADD_AI,
+        serde_json::json!({ "count": 2 }),
+    );
+
+    let _ = service.disconnect(1);
+    let rejoin = join_room(
+        &mut service,
+        3,
+        "owner",
+        "rejoined-ai-room",
+        GameId::TRACTOR,
+    );
+    assert!(has_response(&rejoin, Routes::JOIN, WsResponseCode::JOINED));
+    let mut connected = service.connected_session_ids("rejoined-ai-room");
+    connected.sort_unstable();
+    assert_eq!(connected, vec![2, 3]);
+
+    let _ = service.disconnect(3);
+    assert!(service.room_exists("rejoined-ai-room"));
+    let _ = service.disconnect(2);
+
+    assert!(!service.room_exists("rejoined-ai-room"));
+    assert_eq!(service.room_count(), 0);
+}
+
+#[test]
 fn cached_member_disconnect_marks_the_retained_seat_for_ai_takeover() {
     let mut service = room_service_with_ai();
     let _ = join_room(&mut service, 1, "u1", "takeover-room", GameId::LANDLORD);
