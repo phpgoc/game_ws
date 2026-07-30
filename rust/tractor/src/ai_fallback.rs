@@ -34,3 +34,7 @@ pub(crate) fn best_trump_suit(_state: &TractorGameState, _position: usize) -> Tr
 pub fn decide(state: &TractorGameState, position: usize) -> Option<Vec<i32>> {
     state.choose_auto_play(position)
 }
+
+#[cfg(test)]
+#[path = "ai_fallback/coverage_tests.rs"]
+mod coverage_tests;
