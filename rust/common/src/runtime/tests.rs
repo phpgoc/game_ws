@@ -2,7 +2,10 @@ use std::{collections::HashMap, sync::Arc};
 
 use serde_json::Value;
 use share_type_public::{GameId, WsJoinRequest, WsResponseCode, WsWithoutDataResponse};
-use tokio::sync::{Mutex, mpsc, watch};
+use tokio::{
+    net::{TcpListener, TcpStream},
+    sync::{Mutex, mpsc, watch},
+};
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::{
@@ -12,8 +15,8 @@ use crate::{
 
 use super::{
     GameHandler, JoinAuthorization, RuntimeConfig, RuntimeStats, SessionSendError, SessionSender,
-    deliver, run_game_server, run_room_runtime_until_stopped, runtime_stop_channel,
-    session_sender_channel,
+    deliver, run_game_server, run_room_runtime, run_room_runtime_until_stopped,
+    runtime_stop_channel, session_sender_channel, tests::TestHandler,
 };
 
 struct DefaultHookHandler;
@@ -215,4 +218,98 @@ async fn runtime_startup_helpers_validate_addresses_and_stop_cleanly() {
     .await
     .expect("an already-stopped runtime should return cleanly");
     assert_eq!(stats.client_count().await, 0);
+}
+
+#[tokio::test]
+async fn runtime_startup_helpers_report_listener_conflicts() {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("reserve a local test port");
+    let port = listener.local_addr().expect("read local address").port();
+
+    let helper_error = run_game_server(
+        "test",
+        Some("127.0.0.1".to_owned()),
+        Some(port),
+        std::time::Duration::from_secs(1),
+        DefaultHookHandler,
+    )
+    .await
+    .expect_err("an occupied port cannot start through the helper");
+    assert!(helper_error.to_string().contains("port is not bindable"));
+
+    let runtime_error = run_room_runtime(
+        RuntimeConfig {
+            service_name: "test",
+            listen_addr: format!("127.0.0.1:{port}"),
+            idle_timeout: std::time::Duration::from_secs(1),
+            heartbeat_interval: std::time::Duration::from_secs(1),
+        },
+        DefaultHookHandler,
+    )
+    .await
+    .expect_err("an occupied port cannot start the runtime");
+    assert!(!runtime_error.to_string().is_empty());
+
+    drop(listener);
+}
+
+#[tokio::test]
+async fn game_server_helper_starts_on_a_bindable_port() {
+    let reserved = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("reserve a local test port");
+    let port = reserved
+        .local_addr()
+        .expect("read reserved local address")
+        .port();
+    drop(reserved);
+
+    let server = tokio::spawn(run_game_server(
+        "test",
+        Some("127.0.0.1".to_owned()),
+        Some(port),
+        std::time::Duration::from_secs(1),
+        DefaultHookHandler,
+    ));
+    let client = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+        loop {
+            match TcpStream::connect(("127.0.0.1", port)).await {
+                Ok(stream) => break stream,
+                Err(_) => tokio::time::sleep(std::time::Duration::from_millis(10)).await,
+            }
+        }
+    })
+    .await
+    .expect("game server starts listening");
+    drop(client);
+
+    server.abort();
+    assert!(
+        server
+            .await
+            .expect_err("server task is cancelled")
+            .is_cancelled()
+    );
+}
+
+#[test]
+fn test_handler_exposes_the_expected_game_contract() {
+    let mut handler = TestHandler;
+    assert_eq!(handler.game_id(), GameId::ALL);
+    assert_eq!(handler.build_room_settings().0.max_players, 4);
+    assert!(handler.build_game_state().players().is_empty());
+    assert!(
+        handler
+            .handle_game_request(
+                &mut RoomService::default(),
+                1,
+                ClientRequest {
+                    route: 0,
+                    data: Value::Null,
+                },
+            )
+            .messages
+            .is_empty()
+    );
 }

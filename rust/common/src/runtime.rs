@@ -635,7 +635,7 @@ mod tests {
         run_room_runtime_until_stopped_with_ready, runtime_stop_channel, session_sender_channel,
     };
 
-    struct TestHandler;
+    pub(super) struct TestHandler;
 
     #[test]
     fn inbound_rate_limiter_rejects_messages_past_burst() {
