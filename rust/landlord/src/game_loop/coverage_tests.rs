@@ -11,8 +11,9 @@ use ws_common::{ClientRequest, RoomService, SessionSenders};
 use crate::game_state::{LandlordGameState, LandlordLoopState};
 
 use super::{
-    fixed_wait_seconds, handle_call_landlord_phase, handle_play_phase, handle_settlement_phase,
-    handle_start_phase, sleep_or_stop, start_game_loop,
+    AutoActionReason, activate_ai_bomb_signal, choose_timeout_play, clear_stale_ai_bomb_signal,
+    fixed_wait_seconds, handle_automatic_action, handle_call_landlord_phase, handle_play_phase,
+    handle_settlement_phase, handle_start_phase, sleep_or_stop, start_game_loop,
 };
 
 fn join_request(name: &str) -> ClientRequest {
@@ -542,4 +543,32 @@ async fn paused_game_loop_only_stops_after_its_pause_wait_is_interrupted() {
         !loop_states.lock().unwrap().contains_key("room")
     })
     .await;
+}
+
+#[test]
+fn automatic_action_helpers_cover_empty_hands_bomb_signal_reuse_and_timeout_passes() {
+    let (_room_service, state, _loop_states) = loop_room();
+    let mut state = state.lock().unwrap();
+    state.phase = LandlordPhase::Play;
+    state.current_position = 0;
+    state.last_play.clear();
+    state.hands = HashMap::from([(0, vec![7]), (1, vec![8])]);
+    assert_eq!(choose_timeout_play(&state, 0), vec![7]);
+
+    state.last_play_position = 1;
+    state.last_play = vec![8];
+    assert!(choose_timeout_play(&state, 0).is_empty());
+    assert!(choose_timeout_play(&state, 2).is_empty());
+
+    activate_ai_bomb_signal(&mut state, 0);
+    activate_ai_bomb_signal(&mut state, 0);
+    assert!(state.ai_bomb_signal_used);
+    state.ai_bomb_signal_benchmark = None;
+    clear_stale_ai_bomb_signal(&mut state, 0);
+    assert_eq!(state.ai_bomb_signal_position, None);
+
+    state.phase = LandlordPhase::Start;
+    let (away_position, event) = handle_automatic_action(&mut state, AutoActionReason::Timeout);
+    assert_eq!(away_position, Some(0));
+    assert!(event.is_none());
 }

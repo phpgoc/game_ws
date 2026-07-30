@@ -79,11 +79,21 @@ fn combo_comparison_and_bomb_availability_follow_landlord_precedence() {
     assert!(!can_beat(&bomb_four, &rocket));
     assert!(can_beat(&rocket, &bomb_four));
     assert!(!can_beat(&rocket, &rocket));
+    assert!(!can_beat(&single_four, &bomb_three));
 
     assert!(hand_has_bomb_response(&[1, 14, 27, 40], &single_three));
     assert!(!hand_has_bomb_response(&[1, 14, 27, 40], &bomb_four));
     assert!(hand_has_bomb_response(&[53, 54], &bomb_four));
     assert!(!hand_has_bomb_response(&[53, 54], &rocket));
+}
+
+#[test]
+fn malformed_combo_shapes_do_not_match_partial_patterns() {
+    assert_eq!(classify(&[1, 14, 27, 2, 3]), None);
+    assert_eq!(classify(&[1, 14, 27, 2, 15, 3, 4]), None);
+    assert_eq!(classify(&[1, 14, 27, 2, 15, 3, 16, 4, 5]), None);
+    assert_eq!(classify(&[1, 3, 5, 7, 9]), None);
+    assert_eq!(classify(&[1, 14, 27, 40, 2, 15, 3, 4]), None);
 }
 
 #[test]
