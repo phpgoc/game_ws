@@ -1,15 +1,17 @@
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use share_type_public::{
-    GameId, Routes, TexasHoldEmAction, TexasHoldEmAutoStrategy, TexasHoldEmPhase, WsCode,
-    WsJoinRequest,
+    CommonEvent, GameId, Routes, TexasHoldEmAction, TexasHoldEmAutoStrategy, TexasHoldEmPhase,
+    WsCode, WsJoinRequest,
     games::texas_hold_em::{WsTexasHoldEmAutoStrategyRequest, WsTexasHoldEmPlayRequest},
 };
 use ws_common::{
-    ClientRequest, CommonGameState, Dispatch, GameHandler, OutboundPayload, RoomService,
+    ClientRequest, CommonGameState, Delivery, Dispatch, GameHandler, OutboundPayload, RoomService,
+    session_sender_channel,
 };
 
 use super::{HoldemGameHandler, HoldemGameState, STANDARD_TEXAS, apply_action, settle_hand};
@@ -276,4 +278,179 @@ fn active_room_state_rejects_new_seats_during_a_hand() {
         &common,
         &ws_common::GameState::shared_common_state(&room)
     ));
+}
+
+#[tokio::test]
+async fn dispatch_delivery_serializes_and_sends_events_to_open_sessions() {
+    let (sender, mut receiver, _disconnected) = session_sender_channel(1);
+    let senders = Arc::new(tokio::sync::Mutex::new(HashMap::from([(1, sender)])));
+    let mut dispatch = Dispatch::default();
+    dispatch.messages.push(Delivery {
+        recipient: 1,
+        payload: OutboundPayload::Event(CommonEvent {
+            code: WsCode::START as i32,
+            data: serde_json::json!({"room": "room"}),
+        }),
+    });
+
+    super::deliver_dispatch(dispatch, &senders).await;
+    assert!(receiver.recv().await.expect("delivered frame").is_text());
+}
+
+#[test]
+fn round_completion_settles_the_table_and_publishes_the_result() {
+    let handler = HoldemGameHandler::default();
+    let mut room = RoomService::default();
+    for (session_id, name) in [(1, "owner"), (2, "guest")] {
+        let _ = room.handle_common_request(
+            session_id,
+            &join_request(name),
+            GameId::TEXAS_HOLD_EM,
+            || handler.build_room_settings(),
+        );
+    }
+    let _ = handler.handle_start(&mut room, 1);
+    let state = handler.state("room").expect("started holdem state");
+    {
+        let mut locked = state.lock().expect("holdem state lock");
+        locked.phase = TexasHoldEmPhase::River;
+        locked.current_bet = 0;
+        locked.round_bets.clear();
+        locked.acted = locked.active_positions().into_iter().collect();
+    }
+
+    let mut dispatch = Dispatch::default();
+    handler.advance_after_action("room", &mut room, &state, &mut dispatch);
+    assert_eq!(
+        state.lock().expect("holdem state lock").phase,
+        TexasHoldEmPhase::Settlement
+    );
+    assert!(dispatch.messages.iter().any(|message| {
+        matches!(
+            &message.payload,
+            OutboundPayload::Event(event) if event.code == WsCode::GAME_OVER as i32
+        )
+    }));
+}
+
+#[test]
+fn table_start_falls_back_to_the_first_seat_when_the_previous_dealer_is_gone() {
+    let handler = HoldemGameHandler::default();
+    let mut room = RoomService::default();
+    for (session_id, name) in [(1, "owner"), (2, "guest")] {
+        let _ = room.handle_common_request(
+            session_id,
+            &join_request(name),
+            GameId::TEXAS_HOLD_EM,
+            || handler.build_room_settings(),
+        );
+    }
+    handler
+        .table_states
+        .lock()
+        .expect("table state lock")
+        .entry("room".to_owned())
+        .or_default()
+        .dealer_position = Some(9);
+
+    let (dealer, _) = handler.prepare_table_for_start(&room, "room", 1000);
+    assert_eq!(dealer, 0);
+}
+
+#[test]
+fn room_handlers_reject_malformed_plays_and_a_table_below_minimum_size() {
+    let handler = HoldemGameHandler::default();
+    let mut room = RoomService::default();
+    let _ = room.handle_common_request(1, &join_request("owner"), GameId::TEXAS_HOLD_EM, || {
+        handler.build_room_settings()
+    });
+
+    assert_eq!(
+        handler
+            .handle_play(&mut room, 1, serde_json::json!(null))
+            .messages
+            .len(),
+        1
+    );
+    assert_eq!(handler.handle_start(&mut room, 1).messages.len(), 1);
+}
+
+#[test]
+fn replaced_current_hand_player_is_folded_by_automatic_control() {
+    let handler = HoldemGameHandler::default();
+    let mut room = RoomService::default();
+    for (session_id, name) in [(1, "owner"), (2, "guest")] {
+        let _ = room.handle_common_request(
+            session_id,
+            &join_request(name),
+            GameId::TEXAS_HOLD_EM,
+            || handler.build_room_settings(),
+        );
+    }
+    let _ = handler.handle_start(&mut room, 1);
+    let state = handler.state("room").expect("started holdem state");
+    let (position, session_id) = {
+        let locked = state.lock().expect("holdem state lock");
+        let position = locked.current_position;
+        let session_id = locked.base.lock().expect("common state lock").players[&position].0;
+        (position, session_id)
+    };
+    let _ = room.disconnect(session_id);
+    let _ = room.handle_common_request(
+        3,
+        &join_request("replacement"),
+        GameId::TEXAS_HOLD_EM,
+        || handler.build_room_settings(),
+    );
+
+    let mut dispatch = Dispatch::default();
+    handler.auto_tick(&mut room, "room", &state, &mut dispatch);
+    assert!(
+        state
+            .lock()
+            .expect("holdem state lock")
+            .folded
+            .contains(&position)
+    );
+}
+
+#[test]
+fn handler_exposes_supported_games_and_rejects_unknown_game_routes() {
+    let mut handler = HoldemGameHandler::default();
+    assert!(handler.accepts_game_id(GameId::OMAHA_HOLD_EM));
+    assert!(!handler.accepts_game_id(GameId::TRACTOR));
+    assert!(handler.supports_ai_players());
+    assert_eq!(handler.game_id(), GameId::TEXAS_HOLD_EM);
+    assert!(handler.build_game_state().can_accept_players());
+
+    let dispatch = handler.handle_game_request(
+        &mut RoomService::default(),
+        1,
+        ClientRequest {
+            route: -999,
+            data: serde_json::Value::Null,
+        },
+    );
+    assert_eq!(dispatch.messages.len(), 1);
+}
+
+#[tokio::test]
+async fn background_context_initializes_and_skips_an_empty_room_registry() {
+    let mut handler = HoldemGameHandler::default();
+    let senders = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+    let room_service = Arc::new(tokio::sync::Mutex::new(RoomService::default()));
+
+    handler.set_context(senders, room_service);
+    tokio::task::yield_now().await;
+    tokio::time::sleep(Duration::from_millis(20)).await;
+}
+
+#[test]
+fn table_snapshots_ignore_sessions_that_are_not_in_the_room() {
+    let handler = HoldemGameHandler::default();
+    let state = Arc::new(Mutex::new(new_state()));
+    let mut dispatch = Dispatch::default();
+
+    handler.push_table_snapshot(&RoomService::default(), 99, &state, &mut dispatch);
+    assert!(dispatch.messages.is_empty());
 }
