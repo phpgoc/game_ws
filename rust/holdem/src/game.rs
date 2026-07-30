@@ -1203,6 +1203,10 @@ impl GameHandler for HoldemGameHandler {
 }
 
 #[cfg(test)]
+#[path = "game/coverage_tests.rs"]
+mod coverage_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use share_type_public::{WsJoinRequest, WsJoinResponse};
