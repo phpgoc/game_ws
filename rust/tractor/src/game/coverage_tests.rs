@@ -256,3 +256,86 @@ fn handler_state_adapter_and_join_response_helpers_follow_the_common_contract() 
     assert_ne!(TractorRoutes::BURY_BOTTOM as i32, Routes::PLAY as i32);
     assert_eq!(TractorSuit::SPADE as i32, 0);
 }
+
+#[test]
+fn request_handlers_broadcast_successful_bury_declaration_selection_and_play() {
+    let (handler, mut room) = ready_room();
+    assert_eq!(
+        response_code(&handler.handle_start(&mut room, 1)),
+        WsResponseCode::OK
+    );
+    let state = handler.state(ROOM_KEY).expect("running tractor state");
+    {
+        let mut state = state.lock().unwrap();
+        state.phase = TractorPhase::Bury;
+        state.dealer_position = 0;
+        state.rules.bottom_card_count = 2;
+        state.hands.insert(0, vec![1, 2, 3]);
+    }
+    assert_eq!(
+        response_code(&handler.handle_bury_bottom(&mut room, 1, json!({ "cards": [1, 2] }))),
+        WsResponseCode::OK
+    );
+    assert_eq!(state.lock().unwrap().phase, TractorPhase::Play);
+
+    let (handler, mut room) = ready_room();
+    assert_eq!(
+        response_code(&handler.handle_start(&mut room, 1)),
+        WsResponseCode::OK
+    );
+    let state = handler.state(ROOM_KEY).expect("running tractor state");
+    {
+        let mut state = state.lock().unwrap();
+        state.phase = TractorPhase::Deal;
+        state.round_index = 0;
+        state.rules.target_rank = TractorRank::TWO;
+        state.hands.insert(0, vec![1]);
+    }
+    assert_eq!(
+        response_code(&handler.handle_declare_trump(&mut room, 1, json!({ "cards": [1] }))),
+        WsResponseCode::OK
+    );
+    assert_eq!(
+        state.lock().unwrap().rules.trump_suit,
+        Some(TractorSuit::SPADE)
+    );
+
+    let (handler, mut room) = ready_room();
+    assert_eq!(
+        response_code(&handler.handle_start(&mut room, 1)),
+        WsResponseCode::OK
+    );
+    let state = handler.state(ROOM_KEY).expect("running tractor state");
+    {
+        let mut state = state.lock().unwrap();
+        state.phase = TractorPhase::Deal;
+        state.round_index = 1;
+        state.dealer_position = 0;
+    }
+    assert_eq!(
+        response_code(&handler.handle_select_trump(&mut room, 1, select_spade_request())),
+        WsResponseCode::OK
+    );
+    assert_eq!(
+        state.lock().unwrap().rules.trump_suit,
+        Some(TractorSuit::SPADE)
+    );
+
+    let (handler, mut room) = ready_room();
+    assert_eq!(
+        response_code(&handler.handle_start(&mut room, 1)),
+        WsResponseCode::OK
+    );
+    let state = handler.state(ROOM_KEY).expect("running tractor state");
+    {
+        let mut state = state.lock().unwrap();
+        state.phase = TractorPhase::Play;
+        state.current_position = 0;
+        state.hands.insert(0, vec![1]);
+    }
+    assert_eq!(
+        response_code(&handler.handle_play(&mut room, 1, json!({ "cards": [1] }))),
+        WsResponseCode::OK
+    );
+    assert_eq!(state.lock().unwrap().current_trick.len(), 1);
+}
