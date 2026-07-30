@@ -69,6 +69,31 @@ impl GameHandler for DeniedRuntimeHandler {
     }
 }
 
+struct GameRouteRuntimeHandler;
+
+impl GameHandler for GameRouteRuntimeHandler {
+    fn build_game_state(&self) -> Box<dyn ws_common::GameState> {
+        Box::new(SharedGameState::new())
+    }
+
+    fn build_room_settings(&self) -> ws_common::SettingsBuilderResult {
+        (GameSettings::new(1, 4), HashMap::new())
+    }
+
+    fn game_id(&self) -> GameId {
+        GameId::LANDLORD
+    }
+
+    fn handle_game_request(
+        &mut self,
+        room_service: &mut RoomService,
+        session_id: SessionId,
+        request: ClientRequest,
+    ) -> Dispatch {
+        room_service.error_response(session_id, request.route, WsResponseCode::OK)
+    }
+}
+
 async fn wait_for_client_count(stats: &ws_common::RuntimeStats, expected: usize) {
     for _ in 0..50 {
         if stats.client_count().await == expected {
@@ -211,6 +236,69 @@ async fn runtime_applies_join_authorization_before_creating_a_room() {
     assert_eq!(response["route"], Routes::JOIN as i32);
     assert_eq!(response["code"], WsResponseCode::NO_PERMISSION as i32);
     assert_eq!(stats.room_count().await, 0);
+
+    client.close(None).await.expect("close client");
+    wait_for_client_count(&stats, 0).await;
+    stop.stop();
+    server
+        .await
+        .expect("runtime task joins")
+        .expect("runtime stops");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn runtime_dispatches_non_common_routes_to_the_game_handler() {
+    let (stop, signal) = runtime_stop_channel();
+    let (ready_tx, ready_rx) = sync_channel(1);
+    let server = tokio::spawn(run_room_runtime_until_stopped_with_ready(
+        RuntimeConfig {
+            service_name: "runtime-game-route-test",
+            listen_addr: "127.0.0.1:0".to_owned(),
+            idle_timeout: Duration::from_secs(2),
+            heartbeat_interval: Duration::from_secs(60),
+        },
+        GameRouteRuntimeHandler,
+        signal,
+        ready_tx,
+    ));
+    let stats = tokio::task::spawn_blocking(move || {
+        ready_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("runtime reports listen address")
+    })
+    .await
+    .expect("read runtime stats");
+
+    let (mut client, _) = connect_async(format!("ws://{}", stats.listen_addr()))
+        .await
+        .expect("connect websocket client");
+    client
+        .send(Message::Text(
+            serde_json::json!({"route": 123_456, "data": {"move": "test"}})
+                .to_string()
+                .into(),
+        ))
+        .await
+        .expect("send game route");
+    let response = timeout(Duration::from_secs(1), async {
+        loop {
+            match client
+                .next()
+                .await
+                .expect("websocket frame")
+                .expect("valid frame")
+            {
+                Message::Text(text) => break text,
+                Message::Ping(_) | Message::Pong(_) => continue,
+                frame => panic!("unexpected game response frame: {frame:?}"),
+            }
+        }
+    })
+    .await
+    .expect("game response arrives");
+    let response: serde_json::Value = serde_json::from_str(&response).expect("response json");
+    assert_eq!(response["route"], 123_456);
+    assert_eq!(response["code"], WsResponseCode::OK as i32);
 
     client.close(None).await.expect("close client");
     wait_for_client_count(&stats, 0).await;

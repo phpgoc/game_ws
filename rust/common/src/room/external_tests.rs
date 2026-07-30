@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 
 use serde_json::json;
-use share_type_public::{GameId, Routes, WsRequest};
+use share_type_public::settings::GameParamEnum;
+use share_type_public::{
+    GameId, GameParam, GameParamRange, Routes, WsCode, WsRequest, WsResponseCode,
+};
 
 use crate::{
     Dispatch, GameSettings, OutboundPayload, RequestResponse, RoomService, SettingsBuilderResult,
@@ -9,6 +12,45 @@ use crate::{
 
 fn settings() -> SettingsBuilderResult {
     (GameSettings::new(1, 4), HashMap::new())
+}
+
+fn settings_with_options() -> SettingsBuilderResult {
+    (
+        GameSettings {
+            min_players: 1,
+            max_players: 4,
+            values: HashMap::from([
+                ("rounds".to_owned(), 2),
+                ("mode".to_owned(), 0),
+                ("settlement_time".to_owned(), 9),
+            ]),
+        },
+        HashMap::from([
+            (
+                "rounds".to_owned(),
+                GameParam::Range(GameParamRange {
+                    default: 2,
+                    min: 1,
+                    max: 4,
+                }),
+            ),
+            (
+                "mode".to_owned(),
+                GameParam::Enum(GameParamEnum {
+                    default: 0,
+                    options: vec!["normal".to_owned(), "fast".to_owned()],
+                }),
+            ),
+            (
+                "settlement_time".to_owned(),
+                GameParam::Range(GameParamRange {
+                    default: 9,
+                    min: 1,
+                    max: 30,
+                }),
+            ),
+        ]),
+    )
 }
 
 fn join_official_owner(service: &mut RoomService) {
@@ -29,6 +71,37 @@ fn join_official_owner(service: &mut RoomService) {
             settings,
         )
         .expect("JOIN is a common request");
+}
+
+fn join_member(
+    service: &mut RoomService,
+    session_id: u64,
+    name: &str,
+    room_key: &str,
+    official_session_id: &str,
+) {
+    let dispatch = service
+        .handle_common_request(
+            session_id,
+            &WsRequest {
+                route: Routes::JOIN as i32,
+                data: json!({
+                    "name": name,
+                    "password": room_key,
+                    "game_id": GameId::LANDLORD as i32,
+                    "session_id": official_session_id,
+                    "avatar_url": format!("https://example.com/{name}.png"),
+                }),
+            },
+            GameId::LANDLORD,
+            settings_with_options,
+        )
+        .expect("JOIN is a common request");
+    assert!(has_response(
+        &dispatch,
+        Routes::JOIN,
+        WsResponseCode::JOINED
+    ));
 }
 
 fn common_request(
@@ -73,6 +146,120 @@ fn has_event(dispatch: &Dispatch, code: share_type_public::WsCode) -> bool {
     dispatch.messages.iter().any(|delivery| {
         matches!(&delivery.payload, OutboundPayload::Event(event) if event.code == code as i32)
     })
+}
+
+#[test]
+fn room_settings_chat_ai_and_owner_swap_keep_the_common_contract() {
+    let mut service = RoomService::with_ai_players_enabled(true);
+    join_member(&mut service, 1, "owner", "contract-room", "owner-session");
+    join_member(&mut service, 2, "guest", "contract-room", "guest-session");
+    assert!(service.room_supports_official_swap("contract-room"));
+
+    let message = common_request(
+        &mut service,
+        1,
+        Routes::MESSAGE,
+        json!({"message": "hello room"}),
+    );
+    assert!(has_response(&message, Routes::MESSAGE, WsResponseCode::OK));
+    assert!(has_event(&message, WsCode::MESSAGE));
+    assert!(
+        message
+            .messages
+            .iter()
+            .any(|delivery| delivery.recipient == 2)
+    );
+
+    let settings = common_request(
+        &mut service,
+        1,
+        Routes::SETTING,
+        json!({"current_configs": {"rounds": 4, "mode": 1, "settlement_time": 7}}),
+    );
+    assert!(has_response(&settings, Routes::SETTING, WsResponseCode::OK));
+    assert!(has_event(&settings, WsCode::SETTING));
+    assert_eq!(
+        service.room_configs("contract-room"),
+        Some(HashMap::from([
+            ("rounds".to_owned(), 4),
+            ("mode".to_owned(), 1),
+            ("settlement_time".to_owned(), 7),
+        ]))
+    );
+    assert!(has_response(
+        &common_request(
+            &mut service,
+            1,
+            Routes::SETTING,
+            json!({"current_configs": {"rounds": 5}}),
+        ),
+        Routes::SETTING,
+        WsResponseCode::ERROR_FORMAT,
+    ));
+    assert!(has_response(
+        &common_request(
+            &mut service,
+            1,
+            Routes::SETTING,
+            json!({"current_configs": {"unknown": 1}}),
+        ),
+        Routes::SETTING,
+        WsResponseCode::ERROR_FORMAT,
+    ));
+
+    let add_ai = common_request(&mut service, 1, Routes::ADD_AI, json!({"count": 8}));
+    assert!(has_response(&add_ai, Routes::ADD_AI, WsResponseCode::OK));
+    assert_eq!(service.room_members("contract-room").len(), 4);
+    let remove_ai = common_request(&mut service, 1, Routes::REMOVE_AI, json!({"position": 2}));
+    assert!(has_response(
+        &remove_ai,
+        Routes::REMOVE_AI,
+        WsResponseCode::OK
+    ));
+    assert!(has_event(&remove_ai, WsCode::QUIT));
+
+    let swap = common_request(&mut service, 1, Routes::SWAP, json!({"a": 0, "b": 1}));
+    assert!(has_response(&swap, Routes::SWAP, WsResponseCode::OK));
+    assert!(has_event(&swap, WsCode::SWAP));
+    assert_eq!(service.session_position(1), Some(1));
+    assert_eq!(service.session_position(2), Some(0));
+
+    let disband = common_request(&mut service, 2, Routes::DISBAND, serde_json::Value::Null);
+    assert!(has_response(&disband, Routes::DISBAND, WsResponseCode::OK));
+    assert!(!service.room_exists("contract-room"));
+    assert_eq!(service.room_key_of(1), None);
+}
+
+#[test]
+fn common_router_handles_unknown_routes_and_missing_room_state() {
+    let mut service = RoomService::default();
+    assert!(
+        service
+            .handle_common_request(
+                99,
+                &WsRequest {
+                    route: -1,
+                    data: serde_json::Value::Null,
+                },
+                GameId::LANDLORD,
+                settings,
+            )
+            .is_none()
+    );
+    assert_eq!(service.session_name(99), "");
+    assert_eq!(service.session_position(99), None);
+    assert_eq!(service.room_key_of(99), None);
+    assert!(!service.is_room_paused("missing"));
+    assert!(
+        service
+            .reset_room_common_state_for_new_game("missing")
+            .is_none()
+    );
+    service.clear_room_game_state("missing");
+    service.clear_room_game_state_if_same(
+        "missing",
+        &std::sync::Arc::new(std::sync::Mutex::new(crate::CommonGameState::new())),
+    );
 }
 
 #[test]

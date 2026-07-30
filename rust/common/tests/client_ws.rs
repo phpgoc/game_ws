@@ -91,6 +91,8 @@ async fn client_reports_remote_close_details_and_handle_drop() {
             .expect("remote close event timeout"),
         Some(WsClientEvent::Closed { code: Some(1001), reason }) if reason == "server restart"
     ));
+    assert!(client.send_text("after close".to_owned()).is_err());
+    assert!(client.close(None, "after close".to_owned()).is_err());
     drop(client);
     server.await.expect("server task joins");
 
@@ -114,4 +116,45 @@ async fn client_reports_remote_close_details_and_handle_drop() {
         Some(WsClientEvent::Closed { code: None, reason }) if reason == "client dropped"
     ));
     server.await.expect("drop server task joins");
+}
+
+#[tokio::test]
+async fn client_ignores_control_frames_and_reports_an_abrupt_peer_disconnect() {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind test server");
+    let address = listener.local_addr().expect("read test address");
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept client");
+        let mut websocket = accept_async(stream).await.expect("accept websocket");
+        websocket
+            .send(Message::Ping(vec![1].into()))
+            .await
+            .expect("send ping");
+        websocket
+            .send(Message::Pong(vec![2].into()))
+            .await
+            .expect("send pong");
+        let mut stream = websocket.into_inner();
+        tokio::io::AsyncWriteExt::shutdown(&mut stream)
+            .await
+            .expect("close tcp stream without a websocket close frame");
+    });
+
+    let (_client, mut events) = connect_ws_client(&format!("ws://{address}"))
+        .await
+        .expect("connect common client");
+    assert!(matches!(
+        timeout(Duration::from_secs(1), events.recv())
+            .await
+            .expect("disconnect error timeout"),
+        Some(WsClientEvent::Error(_))
+    ));
+    assert!(matches!(
+        timeout(Duration::from_secs(1), events.recv())
+            .await
+            .expect("disconnect close timeout"),
+        Some(WsClientEvent::Closed { code: None, reason }) if reason == "connection error"
+    ));
+    server.await.expect("server task joins");
 }
