@@ -1137,6 +1137,10 @@ fn turn_timeout(
 }
 
 #[cfg(test)]
+#[path = "game_loop/coverage_tests.rs"]
+mod coverage_tests;
+
+#[cfg(test)]
 mod tests {
     use std::sync::{Arc, Mutex};
 
