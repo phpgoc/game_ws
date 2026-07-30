@@ -1,4 +1,12 @@
-use std::{collections::HashMap, sync::mpsc::sync_channel, time::Duration};
+use std::{
+    collections::HashMap,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc::sync_channel,
+    },
+    time::Duration,
+};
 
 use futures_util::{SinkExt, StreamExt};
 use share_type_public::{GameId, Routes, WsResponseCode};
@@ -91,6 +99,72 @@ impl GameHandler for GameRouteRuntimeHandler {
         request: ClientRequest,
     ) -> Dispatch {
         room_service.error_response(session_id, request.route, WsResponseCode::OK)
+    }
+}
+
+struct MembershipRuntimeHandler {
+    context_was_set: Arc<AtomicBool>,
+    membership_seen_by_hook: Arc<AtomicBool>,
+}
+
+impl GameHandler for MembershipRuntimeHandler {
+    fn authorize_join(&self, _join: &share_type_public::WsJoinRequest) -> JoinAuthorizationFuture {
+        Box::pin(async {
+            JoinAuthorization {
+                can_create_room: true,
+                has_active_membership: true,
+            }
+        })
+    }
+
+    fn after_common_request(
+        &mut self,
+        room_service: &mut RoomService,
+        session_id: SessionId,
+        request: &ClientRequest,
+        _dispatch: &mut Dispatch,
+    ) {
+        if request.route != Routes::JOIN as i32 {
+            return;
+        }
+        let has_membership = room_service
+            .room_key_of(session_id)
+            .is_some_and(|room_key| room_service.room_position_has_active_membership(&room_key, 0));
+        self.membership_seen_by_hook
+            .store(has_membership, Ordering::SeqCst);
+    }
+
+    fn supports_ai_players(&self) -> bool {
+        true
+    }
+
+    fn build_game_state(&self) -> Box<dyn ws_common::GameState> {
+        Box::new(SharedGameState::new())
+    }
+
+    fn build_room_settings(&self) -> ws_common::SettingsBuilderResult {
+        (GameSettings::new(1, 4), HashMap::new())
+    }
+
+    fn game_id(&self) -> GameId {
+        GameId::LANDLORD
+    }
+
+    fn handle_game_request(
+        &mut self,
+        _room_service: &mut RoomService,
+        _session_id: SessionId,
+        _request: ClientRequest,
+    ) -> Dispatch {
+        Dispatch::default()
+    }
+
+    fn set_context(
+        &mut self,
+        _senders: ws_common::SessionSenders,
+        _room_service: Arc<tokio::sync::Mutex<RoomService>>,
+    ) {
+        self.context_was_set.store(true, Ordering::SeqCst);
     }
 }
 
@@ -299,6 +373,82 @@ async fn runtime_dispatches_non_common_routes_to_the_game_handler() {
     let response: serde_json::Value = serde_json::from_str(&response).expect("response json");
     assert_eq!(response["route"], 123_456);
     assert_eq!(response["code"], WsResponseCode::OK as i32);
+
+    client.close(None).await.expect("close client");
+    wait_for_client_count(&stats, 0).await;
+    stop.stop();
+    server
+        .await
+        .expect("runtime task joins")
+        .expect("runtime stops");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn runtime_propagates_join_membership_before_running_common_hooks() {
+    let context_was_set = Arc::new(AtomicBool::new(false));
+    let membership_seen_by_hook = Arc::new(AtomicBool::new(false));
+    let (stop, signal) = runtime_stop_channel();
+    let (ready_tx, ready_rx) = sync_channel(1);
+    let server = tokio::spawn(run_room_runtime_until_stopped_with_ready(
+        RuntimeConfig {
+            service_name: "runtime-membership-test",
+            listen_addr: "127.0.0.1:0".to_owned(),
+            idle_timeout: Duration::from_secs(2),
+            heartbeat_interval: Duration::from_secs(60),
+        },
+        MembershipRuntimeHandler {
+            context_was_set: Arc::clone(&context_was_set),
+            membership_seen_by_hook: Arc::clone(&membership_seen_by_hook),
+        },
+        signal,
+        ready_tx,
+    ));
+    let stats = tokio::task::spawn_blocking(move || {
+        ready_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("runtime reports listen address")
+    })
+    .await
+    .expect("read runtime stats");
+    assert!(context_was_set.load(Ordering::SeqCst));
+
+    let (mut client, _) = connect_async(format!("ws://{}", stats.listen_addr()))
+        .await
+        .expect("connect websocket client");
+    client
+        .send(Message::Text(
+            serde_json::json!({
+                "route": Routes::JOIN as i32,
+                "data": {
+                    "name": "member",
+                    "password": "membership-room",
+                    "game_id": GameId::LANDLORD as i32,
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send member join");
+    let response = timeout(Duration::from_secs(1), async {
+        loop {
+            match client
+                .next()
+                .await
+                .expect("websocket frame")
+                .expect("valid frame")
+            {
+                Message::Text(text) => break text,
+                Message::Ping(_) | Message::Pong(_) => continue,
+                frame => panic!("unexpected membership response frame: {frame:?}"),
+            }
+        }
+    })
+    .await
+    .expect("join response arrives");
+    let response: serde_json::Value = serde_json::from_str(&response).expect("response json");
+    assert_eq!(response["code"], WsResponseCode::JOINED as i32);
+    assert!(membership_seen_by_hook.load(Ordering::SeqCst));
 
     client.close(None).await.expect("close client");
     wait_for_client_count(&stats, 0).await;

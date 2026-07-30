@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use serde_json::json;
 use share_type_public::settings::GameParamEnum;
@@ -7,8 +8,31 @@ use share_type_public::{
 };
 
 use crate::{
-    Dispatch, GameSettings, OutboundPayload, RequestResponse, RoomService, SettingsBuilderResult,
+    CommonGameState, Dispatch, GameSettings, OutboundPayload, RequestResponse, RoomService,
+    SettingsBuilderResult,
 };
+
+struct LockedGameState {
+    common: Arc<Mutex<CommonGameState>>,
+}
+
+impl crate::GameState for LockedGameState {
+    fn can_accept_players(&self) -> bool {
+        false
+    }
+
+    fn can_join_players(&self) -> bool {
+        false
+    }
+
+    fn position_reserved_for_join(&self, _position: usize) -> bool {
+        true
+    }
+
+    fn shared_common_state(&self) -> Arc<Mutex<CommonGameState>> {
+        Arc::clone(&self.common)
+    }
+}
 
 fn settings() -> SettingsBuilderResult {
     (GameSettings::new(1, 4), HashMap::new())
@@ -416,6 +440,69 @@ fn room_lifecycle_keeps_disconnected_rosters_and_sanitizes_official_state() {
 
     service.disconnect(2);
     assert!(!service.room_exists("lifecycle-room"));
+}
+
+#[test]
+fn running_game_locks_room_controls_but_keeps_existing_roster_intact() {
+    let mut service = RoomService::with_ai_players_enabled(true);
+    join_member(&mut service, 1, "owner", "locked-room", "owner-session");
+    let common = service
+        .room_common_state("locked-room")
+        .expect("room common state before game starts");
+    service.set_room_game_state(
+        "locked-room",
+        Box::new(LockedGameState {
+            common: Arc::clone(&common),
+        }),
+    );
+
+    assert!(has_response(
+        &common_request(
+            &mut service,
+            1,
+            Routes::SETTING,
+            json!({"current_configs": {"rounds": 3}}),
+        ),
+        Routes::SETTING,
+        WsResponseCode::ERROR_FORMAT,
+    ));
+    assert!(has_response(
+        &common_request(&mut service, 1, Routes::ADD_AI, json!({"count": 1})),
+        Routes::ADD_AI,
+        WsResponseCode::NO_PERMISSION,
+    ));
+    assert!(has_response(
+        &common_request(&mut service, 1, Routes::REMOVE_AI, json!({"position": 1})),
+        Routes::REMOVE_AI,
+        WsResponseCode::NO_PERMISSION,
+    ));
+    assert!(has_response(
+        &common_request(&mut service, 1, Routes::SWAP, json!({"a": 0, "b": 1})),
+        Routes::SWAP,
+        WsResponseCode::NO_PERMISSION,
+    ));
+
+    let join = service
+        .handle_common_request(
+            2,
+            &WsRequest {
+                route: Routes::JOIN as i32,
+                data: json!({
+                    "name": "late guest",
+                    "password": "locked-room",
+                    "game_id": GameId::LANDLORD as i32,
+                }),
+            },
+            GameId::LANDLORD,
+            settings_with_options,
+        )
+        .expect("JOIN stays a common request");
+    assert!(has_response(
+        &join,
+        Routes::JOIN,
+        WsResponseCode::NO_PERMISSION,
+    ));
+    assert_eq!(service.room_members("locked-room").len(), 1);
 }
 
 #[test]
