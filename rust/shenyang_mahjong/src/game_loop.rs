@@ -418,6 +418,10 @@ pub(crate) fn start_game_loop(
 }
 
 #[cfg(test)]
+#[path = "game_loop/coverage_tests.rs"]
+mod coverage_tests;
+
+#[cfg(test)]
 mod tests {
     use std::sync::{Arc, Mutex};
 
