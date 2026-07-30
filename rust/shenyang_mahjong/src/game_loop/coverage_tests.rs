@@ -12,13 +12,16 @@ use ws_common::{
     SessionSenders,
 };
 
+use crate::game::LoopStateRegistry;
 use crate::game_state::{
-    ClaimResponse, ClaimWindowKind, ClaimWindowState, ShenyangMahjongLoopState,
+    ClaimResponse, ClaimWindowKind, ClaimWindowState, ShenyangMahjongGameState,
+    ShenyangMahjongLoopState,
 };
 
 use super::{
     apply_timeout_control, auto_discard_tile, deliver, loop_stop_requested, room_uses_common_state,
-    settlement_should_stop, should_resolve_timed_out_claims, sleep_or_stop, timed_out_positions,
+    settlement_should_stop, should_resolve_timed_out_claims, sleep_or_stop, start_game_loop,
+    timed_out_positions,
 };
 
 fn join_request(name: &str) -> ClientRequest {
@@ -44,6 +47,46 @@ fn state_with_players(player_count: usize) -> ShenyangMahjongLoopState {
             .add_player(position, (position + 1) as u64, &format!("p{position}"));
     }
     ShenyangMahjongLoopState::new(common)
+}
+
+fn loop_room() -> (
+    Arc<AsyncMutex<RoomService>>,
+    Arc<Mutex<ShenyangMahjongLoopState>>,
+    LoopStateRegistry,
+) {
+    let mut room = RoomService::default();
+    for session_id in 1..=4 {
+        room.handle_common_request(
+            session_id,
+            &join_request(&format!("p{session_id}")),
+            GameId::SHENYANG_MAHJONG,
+            crate::game_setting::build_shenyang_mahjong_settings,
+        )
+        .expect("join room for loop coverage");
+    }
+    let common = room.room_common_state("room").expect("room common state");
+    let state = Arc::new(Mutex::new(ShenyangMahjongLoopState::new(common)));
+    room.set_room_game_state(
+        "room",
+        Box::new(ShenyangMahjongGameState::from_loop_state(Arc::clone(
+            &state,
+        ))),
+    );
+    let loop_states: LoopStateRegistry = Arc::new(Mutex::new(HashMap::from([(
+        "room".to_owned(),
+        Arc::clone(&state),
+    )])));
+    (Arc::new(AsyncMutex::new(room)), state, loop_states)
+}
+
+async fn wait_until(description: &str, mut ready: impl FnMut() -> bool) {
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while !ready() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("timed out waiting for {description}"));
 }
 
 #[test]
@@ -149,4 +192,76 @@ async fn delivery_and_stop_helpers_handle_recipients_and_zero_waits() {
 fn automatic_discard_returns_none_for_empty_hands() {
     let state = state_with_players(1);
     assert_eq!(auto_discard_tile(&state, 0), None);
+}
+
+#[tokio::test]
+async fn game_loop_deals_the_first_round_and_cleans_up_its_registered_state() {
+    let (room_service, state, loop_states) = loop_room();
+    let senders: SessionSenders = Arc::new(AsyncMutex::new(HashMap::new()));
+
+    start_game_loop(
+        "room".to_owned(),
+        Arc::clone(&state),
+        Arc::clone(&room_service),
+        senders,
+        Arc::clone(&loop_states),
+    );
+
+    wait_until("initial mahjong deal", || {
+        let state = state.lock().unwrap();
+        state.phase == share_type_public::games::shenyang_mahjong::ShenyangMahjongPhase::Play
+            && state.hands.len() == 4
+            && state.hands.values().all(|hand| hand.len() >= 13)
+    })
+    .await;
+    state.lock().unwrap().request_stop();
+    wait_until("loop state cleanup", || {
+        !loop_states.lock().unwrap().contains_key("room")
+    })
+    .await;
+
+    assert!(
+        room_service
+            .lock()
+            .await
+            .room_common_state("room")
+            .is_some()
+    );
+}
+
+#[tokio::test]
+async fn game_loop_marks_a_timed_out_nonmember_away_before_stopping() {
+    let (room_service, state, loop_states) = loop_room();
+    let senders: SessionSenders = Arc::new(AsyncMutex::new(HashMap::new()));
+
+    start_game_loop(
+        "room".to_owned(),
+        Arc::clone(&state),
+        Arc::clone(&room_service),
+        senders,
+        Arc::clone(&loop_states),
+    );
+
+    wait_until("initial mahjong deal", || {
+        state.lock().unwrap().phase
+            == share_type_public::games::shenyang_mahjong::ShenyangMahjongPhase::Play
+    })
+    .await;
+    let position = {
+        let guard = state.lock().unwrap();
+        let position = guard.current_position;
+        guard.set_turn_countdown(0);
+        position
+    };
+    wait_until("nonmember timeout", || {
+        state.lock().unwrap().is_away(position)
+    })
+    .await;
+    assert!(!state.lock().unwrap().is_ai_controlled_position(position));
+
+    state.lock().unwrap().request_stop();
+    wait_until("loop state cleanup", || {
+        !loop_states.lock().unwrap().contains_key("room")
+    })
+    .await;
 }
