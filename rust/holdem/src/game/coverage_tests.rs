@@ -6,9 +6,9 @@ use std::{
 use share_type_public::{
     TexasHoldEmAction, TexasHoldEmPhase, games::texas_hold_em::WsTexasHoldEmPlayRequest,
 };
-use ws_common::CommonGameState;
+use ws_common::{CommonGameState, RoomService};
 
-use super::{HoldemGameState, STANDARD_TEXAS, apply_action, settle_hand};
+use super::{HoldemGameHandler, HoldemGameState, STANDARD_TEXAS, apply_action, settle_hand};
 
 fn new_state() -> HoldemGameState {
     let common = Arc::new(Mutex::new(CommonGameState::new()));
@@ -104,6 +104,18 @@ fn apply_action_covers_full_and_under_raise_paths() {
 }
 
 #[test]
+fn actions_reject_unfunded_bets_and_raises_that_do_not_cover_the_call() {
+    let mut unfunded_bet = new_state();
+    unfunded_bet.chips.insert(0, 0);
+    assert!(apply_action(&mut unfunded_bet, 0, request(TexasHoldEmAction::BET, 10)).is_none());
+
+    let mut short_raise = new_state();
+    short_raise.current_bet = 10;
+    short_raise.chips.insert(0, 5);
+    assert!(apply_action(&mut short_raise, 0, request(TexasHoldEmAction::RAISE, 10)).is_none());
+}
+
+#[test]
 fn settlement_returns_excess_when_every_contributor_folded() {
     let mut state = new_state();
     state.phase = TexasHoldEmPhase::River;
@@ -120,6 +132,34 @@ fn settlement_returns_excess_when_every_contributor_folded() {
     assert_eq!(state.phase, TexasHoldEmPhase::Settlement);
     assert_eq!(state.chip_count(0), 6);
     assert_eq!(state.chip_count(1), 5);
+}
+
+#[test]
+fn settlement_keeps_an_unresolved_pot_without_a_five_card_winner() {
+    let mut state = new_state();
+    state.contributions = HashMap::from([(0, 10), (1, 10)]);
+    state.chips = HashMap::from([(0, 0), (1, 0)]);
+    state.pot = 20;
+    let handle = Arc::new(Mutex::new(state));
+
+    let settlement = settle_hand(&handle);
+    assert!(settlement.winners.is_empty());
+    assert_eq!(settlement.pot, 20);
+}
+
+#[test]
+fn game_request_guards_return_errors_for_unknown_sessions() {
+    let handler = HoldemGameHandler::default();
+    let mut room = RoomService::default();
+
+    let auto = handler.handle_auto_strategy(&mut room, 99, serde_json::json!(null));
+    let play = handler.handle_play(&mut room, 99, serde_json::json!(null));
+    let start = handler.handle_start(&mut room, 99);
+
+    assert_eq!(auto.messages.len(), 1);
+    assert_eq!(play.messages.len(), 1);
+    assert_eq!(start.messages.len(), 1);
+    assert!(!room.room_exists("room"));
 }
 
 #[test]
