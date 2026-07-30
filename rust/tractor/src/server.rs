@@ -42,3 +42,7 @@ pub async fn run_tractor_runtime_until_stopped_with_ready(
     )
     .await
 }
+
+#[cfg(test)]
+#[path = "server/tests.rs"]
+mod tests;
