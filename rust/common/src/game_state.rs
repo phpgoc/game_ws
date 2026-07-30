@@ -512,3 +512,7 @@ mod tests {
         assert!(state.is_away(2));
     }
 }
+
+#[cfg(test)]
+#[path = "game_state/tests.rs"]
+mod external_tests;

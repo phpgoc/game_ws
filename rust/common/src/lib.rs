@@ -77,3 +77,6 @@ fn level_color(level: tracing::Level) -> &'static str {
         tracing::Level::TRACE => "\x1b[90m",
     }
 }
+
+#[cfg(test)]
+mod tests;

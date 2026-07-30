@@ -1911,3 +1911,7 @@ impl RoomService {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+#[path = "external_tests.rs"]
+mod external_tests;

@@ -708,3 +708,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "runtime/tests.rs"]
+mod external_tests;
