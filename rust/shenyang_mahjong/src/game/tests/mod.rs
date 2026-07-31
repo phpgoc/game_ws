@@ -6,6 +6,7 @@ mod self_draw_and_gang;
 mod settlement_fan;
 mod settlement_score;
 mod snapshot;
+mod timing;
 mod xi_gang;
 
 use std::sync::{Arc, Mutex as StdMutex};

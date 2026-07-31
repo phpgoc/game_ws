@@ -587,16 +587,30 @@ fn claim_window_participants_are_valid(
             .all(|position| eligible_positions.contains(position))
 }
 
+#[cfg(not(feature = "e2e-fixture"))]
 fn config_value(configs: &HashMap<String, i32>, key: &str, fallback: i32) -> i32 {
     configs.get(key).copied().unwrap_or(fallback)
 }
 
+/// 受控 E2E 夹具不经由房间设置暴露或修改计时规则；它只在专用编译特性下
+/// 压缩服务端循环的等待时间，以便在隔离环境中验收完整自动对局。
+fn loop_wait_seconds(configs: &HashMap<String, i32>, key: &str, fallback: i32) -> i32 {
+    #[cfg(feature = "e2e-fixture")]
+    {
+        let _ = (configs, key, fallback);
+        return 1;
+    }
+
+    #[cfg(not(feature = "e2e-fixture"))]
+    config_value(configs, key, fallback)
+}
+
 pub(crate) fn current_claim_time(configs: &HashMap<String, i32>) -> u32 {
-    config_value(configs, "claim_time", 5).max(1) as u32
+    loop_wait_seconds(configs, "claim_time", 5).max(1) as u32
 }
 
 pub(crate) fn current_play_time(configs: &HashMap<String, i32>) -> u32 {
-    config_value(configs, "play_time", 20).max(1) as u32
+    loop_wait_seconds(configs, "play_time", 20).max(1) as u32
 }
 
 fn discard_claim_matches_source(
@@ -2244,7 +2258,7 @@ pub(crate) fn settlement_score_changes_for_state(
 }
 
 pub(crate) fn settlement_time(configs: &HashMap<String, i32>) -> u64 {
-    config_value(configs, "settlement_time", 5).max(1) as u64
+    loop_wait_seconds(configs, "settlement_time", 5).max(1) as u64
 }
 
 fn settlement_winner_has_valid_win_tile(
