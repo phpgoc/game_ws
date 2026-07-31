@@ -6,7 +6,9 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 #[cfg(feature = "official")]
 use share_type_public::WsCode;
-use share_type_public::{GameId, GameParam, GameParamRange, Routes, WsResponseCode};
+use share_type_public::{GameId, Routes, WsResponseCode};
+#[cfg(feature = "official")]
+use share_type_public::{GameParam, GameParamRange};
 use shenyang_mahjong::game::ShenyangMahjongGameHandler;
 use tokio::net::TcpListener as TokioTcpListener;
 use tokio_tungstenite::{WebSocketStream, connect_async, tungstenite::Message};
