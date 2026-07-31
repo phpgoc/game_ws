@@ -9,16 +9,22 @@ use std::{
 };
 
 use futures_util::{SinkExt, StreamExt};
-use share_type_public::{GameId, Routes, WsResponseCode};
-use tokio::time::{sleep, timeout};
+use share_type_public::{CommonEvent, GameId, Routes, WsCode, WsResponseCode};
+use tokio::{
+    io::AsyncWriteExt,
+    net::TcpStream,
+    time::{sleep, timeout},
+};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use ws_common::{
-    ClientRequest, Dispatch, GameHandler, GameSettings, JoinAuthorization, JoinAuthorizationFuture,
-    RoomService, RuntimeConfig, SessionId, SharedGameState,
-    run_room_runtime_until_stopped_with_ready, runtime_stop_channel,
+    ClientRequest, Delivery, Dispatch, GameHandler, GameSettings, JoinAuthorization,
+    JoinAuthorizationFuture, OutboundPayload, RoomService, RuntimeConfig, SessionId,
+    SharedGameState, run_room_runtime_until_stopped_with_ready, runtime_stop_channel,
 };
 
 struct RuntimeHandler;
+
+struct FloodRuntimeHandler;
 
 impl GameHandler for RuntimeHandler {
     fn build_game_state(&self) -> Box<dyn ws_common::GameState> {
@@ -40,6 +46,40 @@ impl GameHandler for RuntimeHandler {
         _request: ClientRequest,
     ) -> Dispatch {
         Dispatch::default()
+    }
+}
+
+impl GameHandler for FloodRuntimeHandler {
+    fn build_game_state(&self) -> Box<dyn ws_common::GameState> {
+        Box::new(SharedGameState::new())
+    }
+
+    fn build_room_settings(&self) -> ws_common::SettingsBuilderResult {
+        (GameSettings::new(1, 4), HashMap::new())
+    }
+
+    fn game_id(&self) -> GameId {
+        GameId::LANDLORD
+    }
+
+    fn handle_game_request(
+        &mut self,
+        _room_service: &mut RoomService,
+        session_id: SessionId,
+        _request: ClientRequest,
+    ) -> Dispatch {
+        let data = serde_json::json!({"payload": "x".repeat(64 * 1024)});
+        Dispatch {
+            messages: (0..300)
+                .map(|_| Delivery {
+                    recipient: session_id,
+                    payload: OutboundPayload::Event(CommonEvent {
+                        code: WsCode::MESSAGE as i32,
+                        data: data.clone(),
+                    }),
+                })
+                .collect(),
+        }
     }
 }
 
@@ -520,6 +560,142 @@ async fn runtime_times_out_idle_connections_and_rate_limits_control_frames() {
         Some(Ok(Message::Close(_))) | Some(Err(_)) | None
     ));
     wait_for_client_count(&stats, 0).await;
+
+    stop.stop();
+    server
+        .await
+        .expect("runtime task joins")
+        .expect("runtime stops");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn runtime_rejects_invalid_handshakes_without_stopping_the_listener() {
+    let (stop, signal) = runtime_stop_channel();
+    let (ready_tx, ready_rx) = sync_channel(1);
+    let server = tokio::spawn(run_room_runtime_until_stopped_with_ready(
+        RuntimeConfig {
+            service_name: "runtime-invalid-handshake-test",
+            listen_addr: "127.0.0.1:0".to_owned(),
+            idle_timeout: Duration::from_secs(2),
+            heartbeat_interval: Duration::from_secs(60),
+        },
+        RuntimeHandler,
+        signal,
+        ready_tx,
+    ));
+    let stats = tokio::task::spawn_blocking(move || {
+        ready_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("runtime reports listen address")
+    })
+    .await
+    .expect("read runtime stats");
+
+    let mut invalid_client = TcpStream::connect(stats.listen_addr())
+        .await
+        .expect("connect raw tcp client");
+    invalid_client
+        .write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
+        .await
+        .expect("send invalid websocket handshake");
+    invalid_client
+        .shutdown()
+        .await
+        .expect("close invalid tcp client");
+
+    let (mut valid_client, _) = connect_async(format!("ws://{}", stats.listen_addr()))
+        .await
+        .expect("listener remains available after invalid handshake");
+    wait_for_client_count(&stats, 1).await;
+    valid_client.close(None).await.expect("close valid client");
+    wait_for_client_count(&stats, 0).await;
+
+    stop.stop();
+    server
+        .await
+        .expect("runtime task joins")
+        .expect("runtime stops");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn runtime_cleans_up_after_an_abrupt_websocket_disconnect() {
+    let (stop, signal) = runtime_stop_channel();
+    let (ready_tx, ready_rx) = sync_channel(1);
+    let server = tokio::spawn(run_room_runtime_until_stopped_with_ready(
+        RuntimeConfig {
+            service_name: "runtime-abrupt-disconnect-test",
+            listen_addr: "127.0.0.1:0".to_owned(),
+            idle_timeout: Duration::from_secs(2),
+            heartbeat_interval: Duration::from_secs(60),
+        },
+        RuntimeHandler,
+        signal,
+        ready_tx,
+    ));
+    let stats = tokio::task::spawn_blocking(move || {
+        ready_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("runtime reports listen address")
+    })
+    .await
+    .expect("read runtime stats");
+
+    let (client, _) = connect_async(format!("ws://{}", stats.listen_addr()))
+        .await
+        .expect("connect websocket client");
+    wait_for_client_count(&stats, 1).await;
+    let mut stream = client.into_inner();
+    stream
+        .shutdown()
+        .await
+        .expect("close tcp stream without websocket close frame");
+    wait_for_client_count(&stats, 0).await;
+
+    stop.stop();
+    server
+        .await
+        .expect("runtime task joins")
+        .expect("runtime stops");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn runtime_disconnects_a_slow_client_when_the_outbound_queue_is_full() {
+    let (stop, signal) = runtime_stop_channel();
+    let (ready_tx, ready_rx) = sync_channel(1);
+    let server = tokio::spawn(run_room_runtime_until_stopped_with_ready(
+        RuntimeConfig {
+            service_name: "runtime-slow-client-test",
+            listen_addr: "127.0.0.1:0".to_owned(),
+            idle_timeout: Duration::from_secs(2),
+            heartbeat_interval: Duration::from_millis(1),
+        },
+        FloodRuntimeHandler,
+        signal,
+        ready_tx,
+    ));
+    let stats = tokio::task::spawn_blocking(move || {
+        ready_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("runtime reports listen address")
+    })
+    .await
+    .expect("read runtime stats");
+
+    let (mut client, _) = connect_async(format!("ws://{}", stats.listen_addr()))
+        .await
+        .expect("connect websocket client");
+    wait_for_client_count(&stats, 1).await;
+    client
+        .send(Message::Text(
+            serde_json::json!({"route": 777_777, "data": {}})
+                .to_string()
+                .into(),
+        ))
+        .await
+        .expect("ask handler to flood the outbound queue");
+
+    wait_for_client_count(&stats, 0).await;
+    drop(client);
 
     stop.stop();
     server
