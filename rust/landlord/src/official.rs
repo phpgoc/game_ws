@@ -10,7 +10,7 @@ pub async fn authorize_join(session_id: String) -> ws_common::JoinAuthorization 
             has_active_membership: false,
         };
     }
-    match data::game_room_authorization(&session_id, GameId::LANDLORD).await {
+    match data::service::game_room::authorize(&session_id, GameId::LANDLORD).await {
         Ok(authorization) => ws_common::JoinAuthorization {
             can_create_room: authorization.can_create_room,
             has_active_membership: authorization.has_active_membership,
@@ -57,7 +57,7 @@ pub fn create_match(room_service: &mut RoomService, room_key: &str) {
         let mut user_ids = Vec::with_capacity(sessions.len());
         let mut user_ids_by_position = HashMap::new();
         for player in sessions {
-            match data::cache_get_session(&player.session_id).await {
+            match data::service::cache::get_session(&player.session_id).await {
                 Ok(user) => {
                     user_ids.push(user.id);
                     user_ids_by_position.insert(player.position, user.id);
@@ -79,7 +79,7 @@ pub fn create_match(room_service: &mut RoomService, room_key: &str) {
             .copied()
             .or(user_ids.first().copied())?;
 
-        match data::game_match_create(data::GameMatchCreateInput {
+        match data::service::game_match::create(data::input::GameMatchCreateInput {
             own_user_id,
             game_id: GameId::LANDLORD,
             password,
@@ -137,13 +137,14 @@ pub async fn settle_round(
         (game_match_id, landlord_user_id)
     };
 
-    if let Err(err) = data::game_round_landlord_settlement(data::GameRoundLandlordSettleInput {
-        game_match_id,
-        landlord_user_id,
-        landlord_win,
-        score: i64::from(score.max(1)),
-    })
-    .await
+    if let Err(err) =
+        data::service::game_round::landlord_settlement(data::input::GameRoundLandlordSettleInput {
+            game_match_id,
+            landlord_user_id,
+            landlord_win,
+            score: i64::from(score.max(1)),
+        })
+        .await
     {
         ws_common::dlog!(
             ws_common::tracing::Level::WARN,

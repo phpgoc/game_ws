@@ -11,7 +11,7 @@ pub async fn authorize_join(session_id: String) -> ws_common::JoinAuthorization 
             has_active_membership: false,
         };
     }
-    match data::game_room_authorization(&session_id, GameId::TRACTOR).await {
+    match data::service::game_room::authorize(&session_id, GameId::TRACTOR).await {
         Ok(authorization) => ws_common::JoinAuthorization {
             can_create_room: authorization.can_create_room,
             has_active_membership: authorization.has_active_membership,
@@ -58,7 +58,7 @@ pub fn create_match(room_service: &mut RoomService, room_key: &str) {
         let mut user_ids = Vec::with_capacity(sessions.len());
         let mut user_ids_by_position = HashMap::new();
         for player in sessions {
-            match data::cache_get_session(&player.session_id).await {
+            match data::service::cache::get_session(&player.session_id).await {
                 Ok(user) => {
                     user_ids.push(user.id);
                     user_ids_by_position.insert(player.position, user.id);
@@ -83,7 +83,7 @@ pub fn create_match(room_service: &mut RoomService, room_key: &str) {
             return None;
         };
 
-        match data::game_match_create(data::GameMatchCreateInput {
+        match data::service::game_match::create(data::input::GameMatchCreateInput {
             own_user_id,
             game_id: GameId::TRACTOR,
             password,
@@ -140,14 +140,16 @@ pub fn settle_round(
     let score = score.max(1);
 
     tokio::spawn(async move {
-        if let Err(err) = data::game_round_tractor_settlement(data::GameRoundTractorSettleInput {
-            game_match_id,
-            winner_user_id_1,
-            winner_user_id_2,
-            score: i64::from(score),
-            target_rank: target_rank as i32,
-            trump_suit: trump_suit.map(|suit| suit as i32),
-        })
+        if let Err(err) = data::service::game_round::tractor_settlement(
+            data::input::GameRoundTractorSettleInput {
+                game_match_id,
+                winner_user_id_1,
+                winner_user_id_2,
+                score: i64::from(score),
+                target_rank: target_rank as i32,
+                trump_suit: trump_suit.map(|suit| suit as i32),
+            },
+        )
         .await
         {
             ws_common::dlog!(

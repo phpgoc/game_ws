@@ -14,7 +14,7 @@ pub async fn authorize_join(session_id: String) -> ws_common::JoinAuthorization 
             has_active_membership: false,
         };
     }
-    match data::game_room_authorization(&session_id, GameId::SHENYANG_MAHJONG).await {
+    match data::service::game_room::authorize(&session_id, GameId::SHENYANG_MAHJONG).await {
         Ok(authorization) => ws_common::JoinAuthorization {
             can_create_room: authorization.can_create_room,
             has_active_membership: authorization.has_active_membership,
@@ -72,7 +72,7 @@ pub fn create_match(room_service: &mut RoomService, room_key: &str) {
         let mut user_ids = Vec::with_capacity(sessions.len());
         let mut user_ids_by_position = HashMap::new();
         for player in sessions {
-            match data::cache_get_session(&player.session_id).await {
+            match data::service::cache::get_session(&player.session_id).await {
                 Ok(user) => {
                     user_ids.push(user.id);
                     user_ids_by_position.insert(player.position, user.id);
@@ -97,7 +97,7 @@ pub fn create_match(room_service: &mut RoomService, room_key: &str) {
             return None;
         };
 
-        match data::game_match_create(data::GameMatchCreateInput {
+        match data::service::game_match::create(data::input::GameMatchCreateInput {
             own_user_id,
             game_id: GameId::SHENYANG_MAHJONG,
             password,
@@ -169,8 +169,8 @@ pub fn settle_round(
         from_position.and_then(|position| room_service.room_official_user_id(room_key, position));
 
     tokio::spawn(async move {
-        if let Err(err) = data::game_round_shenyang_mahjong_settlement(
-            data::GameRoundShenyangMahjongSettleInput {
+        if let Err(err) = data::service::game_round::shenyang_mahjong_settlement(
+            data::input::GameRoundShenyangMahjongSettleInput {
                 game_match_id,
                 is_draw: winner_scores.is_empty(),
                 discarder_user_id,
@@ -204,7 +204,7 @@ fn winner_pattern_for_position(
     settlement: &SettlementState,
     position: usize,
     context: ShenyangMahjongWinContext,
-) -> data::ShenyangMahjongRoundWinPattern {
+) -> data::payload::ShenyangMahjongRoundWinPattern {
     let mut hand_tiles = state.hands.get(&position).cloned().unwrap_or_default();
     if !settlement.is_self_draw
         && let Some(tile) = settlement.win_tile
@@ -215,16 +215,16 @@ fn winner_pattern_for_position(
     let melds = state.melds.get(&position).map(Vec::as_slice).unwrap_or(&[]);
     match winner_pattern_with_context(&hand_tiles, melds, context) {
         share_type_public::games::shenyang_mahjong::ShenyangMahjongWinPattern::Standard => {
-            data::ShenyangMahjongRoundWinPattern::Standard
+            data::payload::ShenyangMahjongRoundWinPattern::Standard
         }
         share_type_public::games::shenyang_mahjong::ShenyangMahjongWinPattern::PiaoHu => {
-            data::ShenyangMahjongRoundWinPattern::PiaoHu
+            data::payload::ShenyangMahjongRoundWinPattern::PiaoHu
         }
         share_type_public::games::shenyang_mahjong::ShenyangMahjongWinPattern::SevenPairs => {
-            data::ShenyangMahjongRoundWinPattern::SevenPairs
+            data::payload::ShenyangMahjongRoundWinPattern::SevenPairs
         }
         share_type_public::games::shenyang_mahjong::ShenyangMahjongWinPattern::PureOneSuit => {
-            data::ShenyangMahjongRoundWinPattern::PureOneSuit
+            data::payload::ShenyangMahjongRoundWinPattern::PureOneSuit
         }
     }
 }
@@ -248,7 +248,7 @@ fn winner_scores_for_settlement<F>(
     score_changes: &[WsShenyangMahjongScoreChange],
     context: ShenyangMahjongWinContext,
     mut user_id_for_position: F,
-) -> Vec<data::GameRoundShenyangMahjongWinnerScoreInput>
+) -> Vec<data::input::GameRoundShenyangMahjongWinnerScoreInput>
 where
     F: FnMut(usize) -> Option<i32>,
 {
@@ -259,7 +259,7 @@ where
             continue;
         }
         if let Some(winner_user_id) = user_id_for_position(position) {
-            winner_scores.push(data::GameRoundShenyangMahjongWinnerScoreInput {
+            winner_scores.push(data::input::GameRoundShenyangMahjongWinnerScoreInput {
                 winner_user_id,
                 score,
                 pattern: winner_pattern_for_position(state, settlement, position, context),
@@ -325,7 +325,7 @@ mod tests {
         assert!(winner_scores[0].score > 0);
         assert_eq!(
             winner_scores[0].pattern,
-            data::ShenyangMahjongRoundWinPattern::Standard
+            data::payload::ShenyangMahjongRoundWinPattern::Standard
         );
     }
 
@@ -521,11 +521,9 @@ mod tests {
         assert_eq!(winner_scores[0].score, 16);
         assert_eq!(winner_scores[1].winner_user_id, 12);
         assert_eq!(winner_scores[1].score, 16);
-        assert!(
-            winner_scores
-                .iter()
-                .all(|winner| { winner.pattern == data::ShenyangMahjongRoundWinPattern::Standard })
-        );
+        assert!(winner_scores.iter().all(|winner| {
+            winner.pattern == data::payload::ShenyangMahjongRoundWinPattern::Standard
+        }));
     }
 
     #[cfg(feature = "official")]
@@ -565,7 +563,7 @@ mod tests {
                 1,
                 ShenyangMahjongWinContext::new()
             ),
-            data::ShenyangMahjongRoundWinPattern::SevenPairs
+            data::payload::ShenyangMahjongRoundWinPattern::SevenPairs
         );
 
         let mut piao_state = state_with_players();
@@ -597,7 +595,7 @@ mod tests {
                 2,
                 ShenyangMahjongWinContext::new()
             ),
-            data::ShenyangMahjongRoundWinPattern::PiaoHu
+            data::payload::ShenyangMahjongRoundWinPattern::PiaoHu
         );
     }
 
@@ -621,11 +619,11 @@ mod tests {
 
         assert_eq!(
             winner_pattern_for_position(&state, settlement, 1, ShenyangMahjongWinContext::new()),
-            data::ShenyangMahjongRoundWinPattern::PureOneSuit
+            data::payload::ShenyangMahjongRoundWinPattern::PureOneSuit
         );
         assert_eq!(
             winner_pattern_for_position(&state, settlement, 1, ShenyangMahjongWinContext::new()),
-            data::ShenyangMahjongRoundWinPattern::PureOneSuit
+            data::payload::ShenyangMahjongRoundWinPattern::PureOneSuit
         );
     }
 

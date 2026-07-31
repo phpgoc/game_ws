@@ -38,7 +38,7 @@ pub fn create_match(room_service: &mut RoomService, room_key: &str, game_id: Gam
         let mut user_ids = Vec::with_capacity(sessions.len());
         let mut user_ids_by_position = HashMap::new();
         for player in sessions {
-            match data::cache_get_session(&player.session_id).await {
+            match data::service::cache::get_session(&player.session_id).await {
                 Ok(user) => {
                     user_ids.push(user.id);
                     user_ids_by_position.insert(player.position, user.id);
@@ -59,7 +59,7 @@ pub fn create_match(room_service: &mut RoomService, room_key: &str, game_id: Gam
             return None;
         };
 
-        match data::game_match_create(data::GameMatchCreateInput {
+        match data::service::game_match::create(data::input::GameMatchCreateInput {
             own_user_id,
             game_id,
             password,
@@ -105,7 +105,7 @@ pub fn settle_round(
             let position = usize::try_from(player.position).ok()?;
             let user_id = room_service.room_official_user_id(room_key, position)?;
             let starting = starting_chips.get(&position).copied().unwrap_or_default();
-            Some(data::GameRoundHoldemPlayerScoreInput {
+            Some(data::input::GameRoundHoldemPlayerScoreInput {
                 user_id,
                 score: i64::from(player.chips.saturating_sub(starting)),
             })
@@ -115,12 +115,12 @@ pub fn settle_round(
         return;
     }
 
-    let input = data::GameRoundHoldemSettleInput {
+    let input = data::input::GameRoundHoldemSettleInput {
         game_match_id,
         player_scores,
     };
     tokio::spawn(async move {
-        if let Err(err) = data::game_round_holdem_settlement(input).await {
+        if let Err(err) = data::service::game_round::holdem_settlement(input).await {
             ws_common::dlog!(
                 ws_common::tracing::Level::WARN,
                 "[holdem][official] round stats failed: {}",
@@ -185,13 +185,13 @@ mod tests {
         ));
         std::fs::create_dir_all(&temp_dir).expect("create temp data directory");
         let db_path = temp_dir.join("official-holdem.data");
-        data::init_with_config(data::DataConfig::sqlite_file(
+        data::init_with_config(data::config::DataConfig::sqlite_file(
             db_path.to_string_lossy().as_ref(),
         ))
         .await
         .expect("initialize data store");
 
-        let first = data::user_create(data::UserCreateInput {
+        let first = data::service::user::create(data::input::UserCreateInput {
             name: "holdem-winner".to_owned(),
             account: "holdem-winner-account".to_owned(),
             email: None,
@@ -201,7 +201,7 @@ mod tests {
         })
         .await
         .expect("create first user");
-        let second = data::user_create(data::UserCreateInput {
+        let second = data::service::user::create(data::input::UserCreateInput {
             name: "holdem-loser".to_owned(),
             account: "holdem-loser-account".to_owned(),
             email: None,
@@ -211,10 +211,10 @@ mod tests {
         })
         .await
         .expect("create second user");
-        let first_session = data::cache_set_session(first.id)
+        let first_session = data::service::cache::set_session(first.id)
             .await
             .expect("create first session");
-        let second_session = data::cache_set_session(second.id)
+        let second_session = data::service::cache::set_session(second.id)
             .await
             .expect("create second session");
 
@@ -256,9 +256,12 @@ mod tests {
 
         let mut first_stats = None;
         for _ in 0..100 {
-            let stats = data::game_user_stats_get_by_user_game(first.id, GameId::TEXAS_HOLD_EM)
-                .await
-                .expect("read first user stats");
+            let stats = data::repository::game_user_stats::get_by_user_game(
+                first.id,
+                GameId::TEXAS_HOLD_EM,
+            )
+            .await
+            .expect("read first user stats");
             if stats.round_count == 1 {
                 first_stats = Some(stats);
                 break;
@@ -266,9 +269,10 @@ mod tests {
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
         let first_stats = first_stats.expect("settlement task persisted the round");
-        let second_stats = data::game_user_stats_get_by_user_game(second.id, GameId::TEXAS_HOLD_EM)
-            .await
-            .expect("read second user stats");
+        let second_stats =
+            data::repository::game_user_stats::get_by_user_game(second.id, GameId::TEXAS_HOLD_EM)
+                .await
+                .expect("read second user stats");
 
         assert_eq!(first_stats.match_count, 1);
         assert_eq!(first_stats.round_count, 1);
