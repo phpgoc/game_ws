@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use share_type_public::games::shenyang_mahjong::{
     SHENYANG_MAHJONG_TILE_KINDS, ShenyangMahjongMeldKind, ShenyangMahjongWinPattern,
@@ -7,6 +7,9 @@ use share_type_public::games::shenyang_mahjong::{
 
 pub const XI_GANG_DRAGONS: [i32; 3] = [35, 36, 37];
 pub const XI_GANG_WINDS: [i32; 4] = [31, 32, 33, 34];
+
+// 判型递归只处理一手牌，缓存必须局限在本次检查内，不能让跨牌局的全局缓存无限增长。
+const MAX_SET_FORMATION_CACHE_ENTRIES: usize = 512;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ShenyangMahjongWinContext {
@@ -90,6 +93,14 @@ fn can_form_sequences_with_dragon_pair(tiles: &[i32]) -> bool {
 }
 
 fn can_form_sets(counts: &mut [u8; 38]) -> bool {
+    let mut failed_states = HashSet::new();
+    can_form_sets_cached(counts, &mut failed_states)
+}
+
+fn can_form_sets_cached(counts: &mut [u8; 38], failed_states: &mut HashSet<[u8; 38]>) -> bool {
+    if failed_states.contains(counts) {
+        return false;
+    }
     let Some(tile) = SHENYANG_MAHJONG_TILE_KINDS
         .into_iter()
         .find(|tile| counts[*tile as usize] > 0)
@@ -100,7 +111,7 @@ fn can_form_sets(counts: &mut [u8; 38]) -> bool {
 
     if counts[index] >= 3 {
         counts[index] -= 3;
-        if can_form_sets(counts) {
+        if can_form_sets_cached(counts, failed_states) {
             counts[index] += 3;
             return true;
         }
@@ -118,7 +129,7 @@ fn can_form_sets(counts: &mut [u8; 38]) -> bool {
             counts[index] -= 1;
             counts[tile2 as usize] -= 1;
             counts[tile3 as usize] -= 1;
-            if can_form_sets(counts) {
+            if can_form_sets_cached(counts, failed_states) {
                 counts[index] += 1;
                 counts[tile2 as usize] += 1;
                 counts[tile3 as usize] += 1;
@@ -130,10 +141,14 @@ fn can_form_sets(counts: &mut [u8; 38]) -> bool {
         }
     }
 
+    if failed_states.len() < MAX_SET_FORMATION_CACHE_ENTRIES {
+        failed_states.insert(*counts);
+    }
     false
 }
 
 fn can_form_sets_with_one_pair(counts: &[u8; 38]) -> bool {
+    let mut failed_states = HashSet::new();
     for tile in SHENYANG_MAHJONG_TILE_KINDS {
         let index = tile as usize;
         if counts[index] < 2 {
@@ -141,14 +156,21 @@ fn can_form_sets_with_one_pair(counts: &[u8; 38]) -> bool {
         }
         let mut working = *counts;
         working[index] -= 2;
-        if can_form_sets(&mut working) {
+        if can_form_sets_cached(&mut working, &mut failed_states) {
             return true;
         }
     }
     false
 }
 
-fn can_form_sets_with_triplet(counts: &mut [u8; 38], has_triplet: bool) -> bool {
+fn can_form_sets_with_triplet_cached(
+    counts: &mut [u8; 38],
+    has_triplet: bool,
+    failed_states: &mut HashSet<([u8; 38], bool)>,
+) -> bool {
+    if failed_states.contains(&(*counts, has_triplet)) {
+        return false;
+    }
     let Some(tile) = SHENYANG_MAHJONG_TILE_KINDS
         .into_iter()
         .find(|tile| counts[*tile as usize] > 0)
@@ -159,7 +181,7 @@ fn can_form_sets_with_triplet(counts: &mut [u8; 38], has_triplet: bool) -> bool 
 
     if counts[index] >= 3 {
         counts[index] -= 3;
-        if can_form_sets_with_triplet(counts, true) {
+        if can_form_sets_with_triplet_cached(counts, true, failed_states) {
             counts[index] += 3;
             return true;
         }
@@ -177,7 +199,7 @@ fn can_form_sets_with_triplet(counts: &mut [u8; 38], has_triplet: bool) -> bool 
             counts[index] -= 1;
             counts[tile2 as usize] -= 1;
             counts[tile3 as usize] -= 1;
-            if can_form_sets_with_triplet(counts, has_triplet) {
+            if can_form_sets_with_triplet_cached(counts, has_triplet, failed_states) {
                 counts[index] += 1;
                 counts[tile2 as usize] += 1;
                 counts[tile3 as usize] += 1;
@@ -189,6 +211,9 @@ fn can_form_sets_with_triplet(counts: &mut [u8; 38], has_triplet: bool) -> bool 
         }
     }
 
+    if failed_states.len() < MAX_SET_FORMATION_CACHE_ENTRIES {
+        failed_states.insert((*counts, has_triplet));
+    }
     false
 }
 
@@ -281,6 +306,7 @@ pub(crate) fn has_dragon_pair_as_standard_pair(tiles: &[i32]) -> bool {
     if !has_valid_tile_multiplicity(tiles) {
         return false;
     }
+    let mut failed_states = HashSet::new();
     for pair_tile in dragon_pair_tiles() {
         let mut counts = tile_counts(tiles);
         let index = pair_tile as usize;
@@ -288,7 +314,7 @@ pub(crate) fn has_dragon_pair_as_standard_pair(tiles: &[i32]) -> bool {
             continue;
         }
         counts[index] -= 2;
-        if can_form_sets(&mut counts) {
+        if can_form_sets_cached(&mut counts, &mut failed_states) {
             return true;
         }
     }
@@ -350,13 +376,14 @@ pub(crate) fn has_triplet_in_standard_decomposition(tiles: &[i32]) -> bool {
         counts[tile as usize] += 1;
     }
 
+    let mut failed_states = HashSet::new();
     for tile in SHENYANG_MAHJONG_TILE_KINDS {
         let index = tile as usize;
         if counts[index] < 2 {
             continue;
         }
         counts[index] -= 2;
-        if can_form_sets_with_triplet(&mut counts, false) {
+        if can_form_sets_with_triplet_cached(&mut counts, false, &mut failed_states) {
             return true;
         }
         counts[index] += 2;
@@ -607,13 +634,14 @@ pub fn is_standard_win(tiles: &[i32]) -> bool {
         counts[tile as usize] += 1;
     }
 
+    let mut failed_states = HashSet::new();
     for tile in SHENYANG_MAHJONG_TILE_KINDS {
         let index = tile as usize;
         if counts[index] < 2 {
             continue;
         }
         counts[index] -= 2;
-        if can_form_sets(&mut counts) {
+        if can_form_sets_cached(&mut counts, &mut failed_states) {
             return true;
         }
         counts[index] += 2;
