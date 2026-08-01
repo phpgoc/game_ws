@@ -57,14 +57,16 @@ pub async fn run_p2p_server_with_options(
     let listener = TcpListener::bind(&listen_addr).await?;
     let turn_server = start_embedded_turn(&config.turn).await?;
     let ice = config.ice_for_bound_turn(turn_server.listen_addr())?;
-    println!(
-        "{P2P_SERVICE_NAME} signaling server listening on ws://{}",
-        listener.local_addr()?
+    tracing::info!(
+        service = P2P_SERVICE_NAME,
+        listen = %listener.local_addr()?,
+        "p2p signaling server listening"
     );
-    println!(
-        "{P2P_SERVICE_NAME} embedded STUN/TURN listening on udp://{} (advertised IP {})",
-        turn_server.listen_addr(),
-        config.turn.public_ip
+    tracing::info!(
+        service = P2P_SERVICE_NAME,
+        listen = %turn_server.listen_addr(),
+        public_ip = %config.turn.public_ip,
+        "p2p embedded STUN/TURN server listening"
     );
     let result = crate::runtime::run_p2p_listener_with_options(
         listener,
@@ -105,10 +107,12 @@ pub async fn run_p2p_server_on_listener_until_stopped_with_options(
     let turn_server = start_embedded_turn(&config.turn).await?;
     let turn_addr = turn_server.listen_addr();
     let ice = config.ice_for_bound_turn(turn_addr)?;
-    println!("{P2P_SERVICE_NAME} signaling server listening on ws://{listen_addr}");
-    println!(
-        "{P2P_SERVICE_NAME} embedded STUN/TURN listening on udp://{turn_addr} (advertised IP {})",
-        config.turn.public_ip
+    tracing::info!(service = P2P_SERVICE_NAME, listen = %listen_addr, "p2p signaling server listening");
+    tracing::info!(
+        service = P2P_SERVICE_NAME,
+        listen = %turn_addr,
+        public_ip = %config.turn.public_ip,
+        "p2p embedded STUN/TURN server listening"
     );
 
     let result = run_p2p_listener_until_stopped_with_options(

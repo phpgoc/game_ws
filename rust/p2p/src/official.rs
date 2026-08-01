@@ -17,7 +17,7 @@ pub fn runtime_options() -> P2pRuntimeOptions {
             match data::service::game_room::authorize(&session_id, GameId::P2P).await {
                 Ok(authorization) => authorization.has_active_membership,
                 Err(error) => {
-                    eprintln!("[p2p][official] TURN permission lookup failed: {error}");
+                    tracing::error!(error = %error, "P2P TURN permission lookup failed");
                     false
                 }
             }

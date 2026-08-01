@@ -723,13 +723,13 @@ pub async fn run_p2p_listener_until_stopped_with_options(
                     )
                     .await
                     {
-                        eprintln!("p2p connection {session_id} ({peer}) failed: {error:#}");
+                        tracing::error!(session_id, peer = %peer, error = %error, "p2p connection failed");
                     }
                 });
             }
             Some(result) = connections.join_next(), if !connections.is_empty() => {
                 if let Err(error) = result {
-                    eprintln!("p2p connection task failed: {error}");
+                    tracing::error!(error = %error, "p2p connection task failed");
                 }
             }
         }

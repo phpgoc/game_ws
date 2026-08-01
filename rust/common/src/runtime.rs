@@ -277,7 +277,12 @@ where
             _ = stop_signal.stopped() => break,
             changed = disconnect_rx.changed() => {
                 if changed.is_ok() && *disconnect_rx.borrow() {
-                    warn!(session_id, peer = %peer, "slow client exceeded outbound queue");
+                    warn!(
+                        target: "lan_game_security",
+                        session_id,
+                        peer = %peer,
+                        "slow client exceeded outbound queue"
+                    );
                 }
                 break;
             },
@@ -298,7 +303,12 @@ where
         };
 
         if !rate_limiter.allow() {
-            warn!(session_id, peer = %peer, "inbound message rate limit exceeded");
+            warn!(
+                target: "lan_game_security",
+                session_id,
+                peer = %peer,
+                "inbound message rate limit exceeded"
+            );
             let _ = session_sender.send(Message::Close(Some(CloseFrame {
                 code: CloseCode::Policy,
                 reason: "message rate limit exceeded".into(),
@@ -310,7 +320,13 @@ where
             Ok(Some(request)) => request,
             Ok(None) => continue,
             Err(err) => {
-                warn!(session_id, peer = %peer, ?err, "invalid ws frame, ignored");
+                warn!(
+                    target: "lan_game_security",
+                    session_id,
+                    peer = %peer,
+                    ?err,
+                    "invalid ws frame, ignored"
+                );
                 continue;
             }
         };
@@ -400,14 +416,6 @@ where
     Ok(())
 }
 
-fn init_tracing() {
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
-        )
-        .try_init();
-}
-
 async fn run_game_server<H>(
     service_name: &'static str,
     host: Option<String>,
@@ -478,8 +486,6 @@ async fn run_room_runtime_until_stopped_inner<H>(
 where
     H: GameHandler,
 {
-    init_tracing();
-
     let listener = TcpListener::bind(&config.listen_addr)
         .await
         .with_context(|| format!("bind {} failed", config.listen_addr))?;
@@ -524,7 +530,12 @@ where
             result = listener.accept() => result?,
         };
         let Ok(connection_permit) = Arc::clone(&connection_slots).try_acquire_owned() else {
-            warn!(peer = %peer, max_connections = MAX_CONNECTIONS, "connection limit reached");
+            warn!(
+                target: "lan_game_security",
+                peer = %peer,
+                max_connections = MAX_CONNECTIONS,
+                "connection limit reached"
+            );
             drop(stream);
             continue;
         };
