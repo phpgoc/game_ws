@@ -1,0 +1,217 @@
+name: Public WS CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/fixtures/**"
+      - ".github/workflows/ci.yml"
+      - "android/**"
+      - "build_script/**"
+      - "ci/**"
+      - "rust/**"
+      - "share_type_public/**"
+  pull_request:
+    paths:
+      - ".github/fixtures/**"
+      - ".github/workflows/ci.yml"
+      - "android/**"
+      - "build_script/**"
+      - "ci/**"
+      - "rust/**"
+      - "share_type_public/**"
+  workflow_dispatch:
+  schedule:
+    # 每周一验证最新 stable Rust、Android 工具链和上游依赖没有漂移。
+    - cron: "0 3 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-ws-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  quality:
+    name: Rust 与构建脚本格式
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: 检出开源仓库
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: 准备公开依赖边界
+        run: ci/prepare-public-build.sh
+
+      - name: 安装 Rust 格式组件
+        run: rustup component add rustfmt
+
+      - name: 检查全部 Rust crate 格式
+        shell: bash
+        run: |
+          manifests=(
+            share_type_public/Cargo.toml
+            rust/common/Cargo.toml
+            rust/landlord/Cargo.toml
+            rust/shenyang_mahjong/Cargo.toml
+            rust/holdem/Cargo.toml
+            rust/tractor/Cargo.toml
+            rust/p2p/Cargo.toml
+          )
+          for manifest in "${manifests[@]}"; do
+            cargo fmt --manifest-path "$manifest" -- --check
+          done
+
+      - name: 检查 shell 语法和 Gradle wrapper
+        shell: bash
+        run: |
+          bash -n ci/*.sh build_script/*.sh
+          android/gradlew --no-daemon --version
+
+  rust-tests:
+    name: Rust ${{ matrix.name }}
+    needs: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: public-types
+            manifest: share_type_public/Cargo.toml
+            features: ""
+          - name: common
+            manifest: rust/common/Cargo.toml
+            features: ""
+          - name: landlord
+            manifest: rust/landlord/Cargo.toml
+            features: ""
+          - name: shenyang-mahjong
+            manifest: rust/shenyang_mahjong/Cargo.toml
+            features: e2e-fixture
+          - name: holdem
+            manifest: rust/holdem/Cargo.toml
+            features: ""
+          - name: tractor
+            manifest: rust/tractor/Cargo.toml
+            features: ""
+          - name: p2p
+            manifest: rust/p2p/Cargo.toml
+            features: ""
+    steps:
+      - name: 检出开源仓库
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: 准备公开依赖边界
+        run: ci/prepare-public-build.sh
+
+      - name: 安装 Clippy
+        run: rustup component add clippy
+
+      - name: 运行全部目标测试
+        shell: bash
+        env:
+          MANIFEST: ${{ matrix.manifest }}
+          FEATURES: ${{ matrix.features }}
+        run: |
+          feature_args=()
+          if [[ -n "$FEATURES" ]]; then
+            feature_args=(--features "$FEATURES")
+          fi
+          cargo test --manifest-path "$MANIFEST" --all-targets \
+            --no-default-features "${feature_args[@]}"
+
+      - name: 将 Clippy 警告视为错误
+        shell: bash
+        env:
+          MANIFEST: ${{ matrix.manifest }}
+          FEATURES: ${{ matrix.features }}
+        run: |
+          feature_args=()
+          if [[ -n "$FEATURES" ]]; then
+            feature_args=(--features "$FEATURES")
+          fi
+          cargo clippy --manifest-path "$MANIFEST" --all-targets --no-default-features \
+            "${feature_args[@]}" -- -D warnings
+
+  linux-musl:
+    name: Linux musl ${{ matrix.game }}
+    needs: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        game: [landlord, shenyang_mahjong, holdem, tractor, p2p]
+    steps:
+      - name: 检出开源仓库
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: 准备公开依赖边界
+        run: ci/prepare-public-build.sh
+
+      - name: 安装 musl 目标
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends musl-tools
+          rustup target add x86_64-unknown-linux-musl
+
+      - name: 构建静态 release 并检查文件
+        shell: bash
+        env:
+          GAME: ${{ matrix.game }}
+        run: |
+          cargo build --release --target x86_64-unknown-linux-musl \
+            --manifest-path "rust/$GAME/Cargo.toml" --bin "$GAME" --no-default-features
+          binary="rust/$GAME/target/x86_64-unknown-linux-musl/release/$GAME"
+          test -s "$binary"
+          file "$binary"
+
+  android:
+    name: Android 双 ABI ${{ matrix.game }}
+    needs: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        game: [landlord, shenyang_mahjong, holdem, tractor, p2p]
+    steps:
+      - name: 检出开源仓库
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: 准备公开依赖边界
+        run: ci/prepare-public-build.sh
+
+      - name: 安装 Java 17
+        uses: actions/setup-java@d7793b545071e98d581d3bf084a51c3213318a07 # v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: 安装 Android SDK/NDK
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+
+      - name: 安装 Rust Android 工具链
+        shell: bash
+        run: |
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.0.12077973"
+          printf 'ANDROID_NDK_HOME=%s\n' "$ANDROID_HOME/ndk/27.0.12077973" >>"$GITHUB_ENV"
+          rustup target add aarch64-linux-android x86_64-linux-android
+          cargo install cargo-ndk --version 4.1.2 --locked
+
+      - name: 构建单游戏双 ABI APK
+        shell: bash
+        working-directory: android
+        env:
+          GAME: ${{ matrix.game }}
+        run: |
+          ./gradlew --no-daemon --console=plain :app:assembleDebug \
+            -Pgame="$GAME" -PrustAbis=arm64-v8a,x86_64
+          test -s app/build/outputs/apk/debug/app-debug.apk

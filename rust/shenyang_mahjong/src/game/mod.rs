@@ -594,14 +594,14 @@ fn config_value(configs: &HashMap<String, i32>, key: &str, fallback: i32) -> i32
 
 /// 受控 E2E 夹具不经由房间设置暴露或修改计时规则；它只在专用编译特性下
 /// 压缩服务端循环的等待时间，以便在隔离环境中验收完整自动对局。
+#[cfg(feature = "e2e-fixture")]
 fn loop_wait_seconds(configs: &HashMap<String, i32>, key: &str, fallback: i32) -> i32 {
-    #[cfg(feature = "e2e-fixture")]
-    {
-        let _ = (configs, key, fallback);
-        return 1;
-    }
+    let _ = (configs, key, fallback);
+    1
+}
 
-    #[cfg(not(feature = "e2e-fixture"))]
+#[cfg(not(feature = "e2e-fixture"))]
+fn loop_wait_seconds(configs: &HashMap<String, i32>, key: &str, fallback: i32) -> i32 {
     config_value(configs, key, fallback)
 }
 

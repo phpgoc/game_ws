@@ -212,10 +212,10 @@ async fn deliver(dispatch: Dispatch, senders: &SessionSenders) -> anyhow::Result
 
     let senders = senders.lock().await;
     for (recipient, frame) in encoded {
-        if let Some(tx) = senders.get(&recipient) {
-            if let Err(err) = tx.send(frame) {
-                warn!(recipient, ?err, "outbound queue rejected frame");
-            }
+        if let Some(tx) = senders.get(&recipient)
+            && let Err(err) = tx.send(frame)
+        {
+            warn!(recipient, ?err, "outbound queue rejected frame");
         }
     }
     Ok(())

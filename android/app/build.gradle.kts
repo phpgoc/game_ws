@@ -91,6 +91,7 @@ val buildRustGame by tasks.registering(Exec::class) {
                 rustJniLibsDir.asFile.absolutePath,
                 "build",
                 "--release",
+                "--no-default-features",
                 "--features",
                 "android-jni",
             ),

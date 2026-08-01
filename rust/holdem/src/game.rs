@@ -492,11 +492,9 @@ impl HoldemGameHandler {
 
         {
             let mut s = state.lock().unwrap();
-            if s.phase == TexasHoldEmPhase::Settlement {
-                if s.settlement_countdown > 1 {
-                    s.settlement_countdown -= 1;
-                    return;
-                }
+            if s.phase == TexasHoldEmPhase::Settlement && s.settlement_countdown > 1 {
+                s.settlement_countdown -= 1;
+                return;
             }
         }
         if state.lock().unwrap().phase == TexasHoldEmPhase::Settlement {

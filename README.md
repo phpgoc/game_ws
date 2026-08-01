@@ -2,6 +2,8 @@
 
 `ws` 是可开源的 WebSocket 游戏服务端目录。
 
+[![Public WS CI](https://github.com/phpgoc/game_ws/actions/workflows/ci.yml/badge.svg)](https://github.com/phpgoc/game_ws/actions/workflows/ci.yml)
+
 ## License
 
 本目录以 MIT License 发布；详见 [LICENSE](LICENSE)。
@@ -104,6 +106,18 @@ cargo check --manifest-path rust/p2p/Cargo.toml
 cargo test --manifest-path rust/tractor/Cargo.toml
 cargo test --manifest-path rust/p2p/Cargo.toml
 ```
+
+公开仓库的 `Public WS CI` 在 push、pull request、手动触发和每周定时任务中免费运行：
+
+- 对 7 个公开 Rust crate 执行 `rustfmt`、全部 target 测试和 `clippy -D warnings`；
+- 对 5 个服务分别构建 Linux x86_64 musl 静态 release；
+- 对 5 个服务分别构建同时包含 arm64-v8a 与 x86_64 的 Android APK，覆盖 JNI、NDK、Gradle 和 Kotlin 包装；
+- 不启用依赖私有 `data` 的 `official` feature，不读取 secrets，不上传 artifact，也不使用 cache。
+
+独立检出开源仓库时，Cargo 和 rustfmt 仍需解析可选的私有 `data` 路径及仅供官方版使用的外部 AI 模块。
+CI 仅把 `.github/fixtures` 中的空边界链接到预期位置，使未启用的依赖和条件模块能够完成解析；fixture
+不包含私有实现，也不能用于构建 `official` feature。根仓库作为子模块使用时会继续解析真实的 `data`
+crate 和 AI 模块。
 
 拖拉机房间开始后会锁定设置。当前主要设置包括：`deck_count`（几副牌）、`removed_rank_count`（按 `3/4/6/7/8/9/J/Q/A` 的顺序删掉前 N 个点数，`0` 表示不删）、`first_deal_time`（首局发牌总时间，毫秒）、`deal_time`（后续局发牌总时间，毫秒）、`ai_action_time`（AI/托管行动间隔，毫秒）、`target_rank`（最终目标 rank）、`blood_enabled` / `blood_start_score` / `blood_score_per_unit`（喝血相关）。首局发牌中由所有玩家抢主/反主并决定首庄；第二局起只由既定庄家选择主花色。发完后庄家收底并扣回相同张数，随后进入出牌。
 

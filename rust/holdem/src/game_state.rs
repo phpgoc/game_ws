@@ -162,10 +162,11 @@ impl HoldemGameState {
         self.initial_chips = initial_chips;
         self.small_blind = small_blind;
         self.big_blind = big_blind;
-        self.dealer_position = positions
-            .contains(&dealer_position)
-            .then_some(dealer_position)
-            .unwrap_or(positions[0]);
+        self.dealer_position = if positions.contains(&dealer_position) {
+            dealer_position
+        } else {
+            positions[0]
+        };
         self.small_blind_position = self
             .next_position(self.dealer_position)
             .unwrap_or(positions[0]);

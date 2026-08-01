@@ -16,6 +16,10 @@ use super::{
     handle_settlement_phase, handle_start_phase, sleep_or_stop, start_game_loop,
 };
 
+type SharedLoopState = Arc<Mutex<LandlordLoopState>>;
+type LoopStates = Arc<Mutex<HashMap<String, SharedLoopState>>>;
+type LoopRoom = (Arc<AsyncMutex<RoomService>>, SharedLoopState, LoopStates);
+
 fn join_request(name: &str) -> ClientRequest {
     ClientRequest {
         route: Routes::JOIN as i32,
@@ -30,11 +34,7 @@ fn join_request(name: &str) -> ClientRequest {
     }
 }
 
-fn loop_room() -> (
-    Arc<AsyncMutex<RoomService>>,
-    Arc<Mutex<LandlordLoopState>>,
-    Arc<Mutex<HashMap<String, Arc<Mutex<LandlordLoopState>>>>>,
-) {
+fn loop_room() -> LoopRoom {
     let mut room = RoomService::default();
     for session_id in 1..=3 {
         room.connect(session_id);
@@ -138,10 +138,7 @@ async fn game_loop_timeout_marks_a_member_away_and_enables_ai_takeover() {
         let state = state.lock().unwrap();
         state.is_away(timed_out_position)
             && state.is_ai_takeover_position(timed_out_position)
-            && state
-                .call_history
-                .iter()
-                .any(|entry| *entry == (timed_out_position, 0))
+            && state.call_history.contains(&(timed_out_position, 0))
     })
     .await;
 
