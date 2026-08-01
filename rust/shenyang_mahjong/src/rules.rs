@@ -11,6 +11,24 @@ pub const XI_GANG_WINDS: [i32; 4] = [31, 32, 33, 34];
 // 判型递归只处理一手牌，缓存必须局限在本次检查内，不能让跨牌局的全局缓存无限增长。
 const MAX_SET_FORMATION_CACHE_ENTRIES: usize = 512;
 
+/// 将合法的牌点计数状态编码为紧凑缓存键。
+///
+/// 所有调用方都已检查每种牌最多四张，因此每个牌点只需三位。使用单个
+/// 整数可以避免每个递归判型状态都哈希并复制 38 字节的计数数组。
+fn encode_set_formation_state(counts: &[u8; 38]) -> Option<u128> {
+    if counts.iter().any(|count| *count > 4) {
+        return None;
+    }
+    Some(
+        counts
+            .iter()
+            .enumerate()
+            .fold(0_u128, |key, (index, count)| {
+                key | (u128::from(*count) << (index * 3))
+            }),
+    )
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ShenyangMahjongWinContext {
     allow_first_chi: bool,
@@ -97,8 +115,9 @@ fn can_form_sets(counts: &mut [u8; 38]) -> bool {
     can_form_sets_cached(counts, &mut failed_states)
 }
 
-fn can_form_sets_cached(counts: &mut [u8; 38], failed_states: &mut HashSet<[u8; 38]>) -> bool {
-    if failed_states.contains(counts) {
+fn can_form_sets_cached(counts: &mut [u8; 38], failed_states: &mut HashSet<u128>) -> bool {
+    let state_key = encode_set_formation_state(counts);
+    if state_key.is_some_and(|key| failed_states.contains(&key)) {
         return false;
     }
     let Some(tile) = SHENYANG_MAHJONG_TILE_KINDS
@@ -141,8 +160,10 @@ fn can_form_sets_cached(counts: &mut [u8; 38], failed_states: &mut HashSet<[u8; 
         }
     }
 
-    if failed_states.len() < MAX_SET_FORMATION_CACHE_ENTRIES {
-        failed_states.insert(*counts);
+    if let Some(state_key) = state_key
+        && failed_states.len() < MAX_SET_FORMATION_CACHE_ENTRIES
+    {
+        failed_states.insert(state_key);
     }
     false
 }
@@ -166,9 +187,13 @@ fn can_form_sets_with_one_pair(counts: &[u8; 38]) -> bool {
 fn can_form_sets_with_triplet_cached(
     counts: &mut [u8; 38],
     has_triplet: bool,
-    failed_states: &mut HashSet<([u8; 38], bool)>,
+    failed_states: &mut HashSet<(u128, bool)>,
 ) -> bool {
-    if failed_states.contains(&(*counts, has_triplet)) {
+    let state_key = (encode_set_formation_state(counts), has_triplet);
+    if state_key
+        .0
+        .is_some_and(|key| failed_states.contains(&(key, has_triplet)))
+    {
         return false;
     }
     let Some(tile) = SHENYANG_MAHJONG_TILE_KINDS
@@ -211,8 +236,10 @@ fn can_form_sets_with_triplet_cached(
         }
     }
 
-    if failed_states.len() < MAX_SET_FORMATION_CACHE_ENTRIES {
-        failed_states.insert((*counts, has_triplet));
+    if let Some(state_key) = state_key.0
+        && failed_states.len() < MAX_SET_FORMATION_CACHE_ENTRIES
+    {
+        failed_states.insert((state_key, has_triplet));
     }
     false
 }
