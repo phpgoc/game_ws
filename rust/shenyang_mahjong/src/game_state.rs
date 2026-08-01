@@ -234,7 +234,7 @@ impl ShenyangMahjongLoopState {
         self.last_wall_seed = Some(seed);
         self.wall_round_index = self.wall_round_index.wrapping_add(1);
         ws_common::dlog!(
-            ws_common::tracing::Level::INFO,
+            ws_common::tracing::Level::DEBUG,
             "shenyang mahjong deal wall_seed={seed} wall_round_index={}",
             self.wall_round_index.saturating_sub(1)
         );

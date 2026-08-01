@@ -172,7 +172,7 @@ fn build_auto_dispatch(
         };
         let Some(cards) = cards else {
             dlog!(
-                ws_common::tracing::Level::WARN,
+                ws_common::tracing::Level::ERROR,
                 "[tractor][ai] no legal auto play room={} position={}",
                 room_key,
                 position

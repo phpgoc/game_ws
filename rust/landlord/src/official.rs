@@ -90,7 +90,7 @@ pub fn create_match(room_service: &mut RoomService, room_key: &str) {
             Ok(created) => Some((created.game_match.id, user_ids_by_position)),
             Err(err) => {
                 ws_common::dlog!(
-                    ws_common::tracing::Level::WARN,
+                    ws_common::tracing::Level::ERROR,
                     "[landlord][official] create match stats failed: {}",
                     err
                 );
@@ -147,7 +147,7 @@ pub async fn settle_round(
         .await
     {
         ws_common::dlog!(
-            ws_common::tracing::Level::WARN,
+            ws_common::tracing::Level::ERROR,
             "[landlord][official] round stats failed: {}",
             err
         );

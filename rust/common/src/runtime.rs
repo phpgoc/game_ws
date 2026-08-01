@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     future::Future,
     net::SocketAddr,
+    panic::AssertUnwindSafe,
     pin::Pin,
     sync::{
         Arc,
@@ -12,7 +13,7 @@ use std::{
 };
 
 use anyhow::Context;
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{FutureExt, SinkExt, StreamExt};
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::{Mutex, OwnedSemaphorePermit, Semaphore, mpsc, watch},
@@ -24,7 +25,7 @@ use tokio_tungstenite::{
         protocol::{CloseFrame, WebSocketConfig, frame::coding::CloseCode},
     },
 };
-use tracing::{error, info, warn};
+use tracing::{debug, error, warn};
 
 use crate::{
     ClientRequest, Dispatch, RoomService, SessionId, SettingsBuilderResult,
@@ -290,12 +291,12 @@ where
                 match result {
                     Ok(Some(Ok(frame))) => frame,
                     Ok(Some(Err(err))) => {
-                        info!(session_id, peer = %peer, ?err, "connection reset, treating as disconnect");
+                        debug!(session_id, peer = %peer, ?err, "connection reset, treating as disconnect");
                         break;
                     }
                     Ok(None) => break,
                     Err(_) => {
-                        warn!(session_id, peer = %peer, "idle timeout, closing connection");
+                        debug!(session_id, peer = %peer, "idle timeout, closing connection");
                         break;
                     }
                 }
@@ -493,7 +494,7 @@ where
         .local_addr()
         .context("read websocket listen address")?;
     let ai_players_enabled = handler.supports_ai_players();
-    info!(
+    debug!(
         service = config.service_name,
         listen = %format!(" ws://{listen_addr}"),
         ai_players_enabled,
@@ -551,10 +552,17 @@ where
         };
 
         tokio::spawn(async move {
-            if let Err(err) = handle_connection(stream, peer, session_id, context).await {
-                error!(session_id, peer = %peer, ?err, "connection ended with error");
-            } else {
-                info!(session_id, peer = %peer, "connection closed");
+            match AssertUnwindSafe(handle_connection(stream, peer, session_id, context))
+                .catch_unwind()
+                .await
+            {
+                Ok(Err(err)) => {
+                    debug!(session_id, peer = %peer, ?err, "connection ended with transport error");
+                }
+                Ok(Ok(())) => debug!(session_id, peer = %peer, "connection closed"),
+                Err(_) => {
+                    error!(session_id, peer = %peer, "connection task panicked");
+                }
             }
         });
     }

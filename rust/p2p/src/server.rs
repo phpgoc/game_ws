@@ -58,7 +58,7 @@ pub async fn run_p2p_server_with_options(
     let turn_server = start_embedded_turn(&config.turn).await?;
     let ice = config.ice_for_bound_turn(turn_server.listen_addr())?;
     #[cfg(feature = "official")]
-    tracing::info!(
+    tracing::debug!(
         service = P2P_SERVICE_NAME,
         listen = %listener.local_addr()?,
         "p2p signaling server listening"
@@ -69,7 +69,7 @@ pub async fn run_p2p_server_with_options(
         listener.local_addr()?
     );
     #[cfg(feature = "official")]
-    tracing::info!(
+    tracing::debug!(
         service = P2P_SERVICE_NAME,
         listen = %turn_server.listen_addr(),
         public_ip = %config.turn.public_ip,
@@ -121,11 +121,11 @@ pub async fn run_p2p_server_on_listener_until_stopped_with_options(
     let turn_addr = turn_server.listen_addr();
     let ice = config.ice_for_bound_turn(turn_addr)?;
     #[cfg(feature = "official")]
-    tracing::info!(service = P2P_SERVICE_NAME, listen = %listen_addr, "p2p signaling server listening");
+    tracing::debug!(service = P2P_SERVICE_NAME, listen = %listen_addr, "p2p signaling server listening");
     #[cfg(not(feature = "official"))]
     println!("p2p signaling server listening on {listen_addr}");
     #[cfg(feature = "official")]
-    tracing::info!(
+    tracing::debug!(
         service = P2P_SERVICE_NAME,
         listen = %turn_addr,
         public_ip = %config.turn.public_ip,
@@ -154,6 +154,14 @@ pub async fn run_p2p_server_on_listener_until_stopped_with_options(
             Ok(stats)
         }
         Err(error) => {
+            #[cfg(feature = "official")]
+            if let Err(close_error) = close_result {
+                tracing::warn!(
+                    error = %close_error,
+                    "failed to close embedded TURN server after P2P runtime failure"
+                );
+            }
+            #[cfg(not(feature = "official"))]
             let _ = close_result;
             Err(error)
         }

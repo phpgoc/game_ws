@@ -20,7 +20,7 @@ impl Write for SharedBuffer {
 }
 
 #[test]
-fn logging_supports_every_level_and_macro_form() {
+fn logging_supports_the_three_service_levels_and_both_macro_forms() {
     let output = Arc::new(Mutex::new(Vec::new()));
     let make_writer = {
         let output = Arc::clone(&output);
@@ -29,27 +29,20 @@ fn logging_supports_every_level_and_macro_form() {
     let subscriber = tracing_subscriber::fmt()
         .without_time()
         .with_ansi(false)
-        .with_max_level(Level::TRACE)
+        .with_max_level(Level::DEBUG)
         .with_writer(make_writer)
         .finish();
 
     tracing::subscriber::with_default(subscriber, || {
         crate::dlog!(Level::ERROR, "error log");
         crate::dlog!(Level::WARN, "warning log");
-        crate::dlog!(Level::INFO, "info log");
         crate::dlog!(Level::DEBUG, "formatted {}", "log");
-        crate::dlog!("message log", Level::TRACE);
+        crate::dlog!("message log", Level::DEBUG);
     });
 
     let bytes = output.lock().expect("lock log output").clone();
     let logs = String::from_utf8(bytes).expect("log output is UTF-8");
-    for message in [
-        "error log",
-        "warning log",
-        "info log",
-        "formatted log",
-        "message log",
-    ] {
+    for message in ["error log", "warning log", "formatted log", "message log"] {
         assert!(logs.contains(message));
     }
     assert!(logs.contains("source_file"));
@@ -72,9 +65,38 @@ fn disabled_logging_does_not_evaluate_arguments() {
             message_evaluated.set(true);
             "message log"
         },
-        crate::tracing::Level::TRACE
+        crate::tracing::Level::DEBUG
     );
 
     assert!(!formatted_argument_evaluated.get());
     assert!(!message_evaluated.get());
+}
+
+#[test]
+fn production_filter_keeps_ws_warn_and_error_but_omits_normal_debug_events() {
+    let output = Arc::new(Mutex::new(Vec::new()));
+    let make_writer = {
+        let output = Arc::clone(&output);
+        move || SharedBuffer(Arc::clone(&output))
+    };
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_max_level(Level::WARN)
+        .with_writer(make_writer)
+        .finish();
+
+    tracing::subscriber::with_default(subscriber, || {
+        crate::dlog!(Level::DEBUG, "websocket disconnected normally");
+        crate::dlog!(Level::DEBUG, "websocket idle timeout");
+        crate::dlog!(Level::WARN, "websocket rate limit exceeded");
+        crate::dlog!(Level::ERROR, "websocket persistence failed");
+    });
+
+    let bytes = output.lock().expect("lock log output").clone();
+    let logs = String::from_utf8(bytes).expect("log output is UTF-8");
+    assert!(!logs.contains("websocket disconnected normally"));
+    assert!(!logs.contains("websocket idle timeout"));
+    assert!(logs.contains("websocket rate limit exceeded"));
+    assert!(logs.contains("websocket persistence failed"));
 }

@@ -313,6 +313,8 @@ async fn handle_connection(
     heartbeat_interval: Duration,
 ) -> anyhow::Result<()> {
     let socket = accept_async(stream).await?;
+    #[cfg(feature = "official")]
+    tracing::debug!(session_id, peer = %_peer, "p2p websocket connected");
     let (mut sink, mut source) = socket.split();
     let (sender, mut receiver) = mpsc::unbounded_channel();
     let heartbeat_sender = sender.clone();
@@ -341,17 +343,40 @@ async fn handle_connection(
         let frame = match tokio::time::timeout(idle_timeout, source.next()).await {
             Ok(Some(Ok(frame))) => frame,
             Ok(Some(Err(error))) => return Err(error.into()),
-            Ok(None) | Err(_) => break,
+            Ok(None) => break,
+            Err(_) => {
+                #[cfg(feature = "official")]
+                tracing::debug!(session_id, peer = %_peer, "p2p websocket idle timeout");
+                break;
+            }
         };
         if frame.is_close() {
             break;
         }
-        let Message::Text(text) = frame else {
-            continue;
+        let text = match frame {
+            Message::Text(text) => text,
+            Message::Binary(_) => {
+                #[cfg(feature = "official")]
+                tracing::warn!(
+                    target: "lan_game_security",
+                    session_id,
+                    peer = %_peer,
+                    "binary P2P websocket frame rejected"
+                );
+                continue;
+            }
+            _ => continue,
         };
         let request = match serde_json::from_str::<WsRequest<Value>>(&text) {
             Ok(request) => request,
             Err(_) => {
+                #[cfg(feature = "official")]
+                tracing::warn!(
+                    target: "lan_game_security",
+                    session_id,
+                    peer = %_peer,
+                    "invalid P2P websocket payload rejected"
+                );
                 send_serialized(
                     &sender,
                     &WsWithoutDataResponse {
@@ -377,6 +402,8 @@ async fn handle_connection(
     deliver(leave_room(&state, session_id).await);
     heartbeat.abort();
     writer.abort();
+    #[cfg(feature = "official")]
+    tracing::debug!(session_id, peer = %_peer, "p2p websocket disconnected");
     Ok(())
 }
 
@@ -724,7 +751,7 @@ pub async fn run_p2p_listener_until_stopped_with_options(
                     .await
                     {
                         #[cfg(feature = "official")]
-                        tracing::error!(session_id, peer = %peer, error = %error, "p2p connection failed");
+                        tracing::debug!(session_id, peer = %peer, error = %error, "p2p connection ended with transport error");
                         #[cfg(not(feature = "official"))]
                         eprintln!("p2p session {session_id} connection from {peer} failed: {error}");
                     }
@@ -747,16 +774,24 @@ pub async fn run_p2p_listener_until_stopped_with_options(
 }
 
 fn send_serialized<T: serde::Serialize>(sender: &Sender, payload: &T) {
-    let text = serde_json::to_string(payload).unwrap_or_else(|_| "{}".into());
+    let text = serialize_payload(payload);
     let _ = sender.send(Message::Text(text.into()));
 }
 
 fn serialized_delivery<T: serde::Serialize>(sender: Sender, payload: &T) -> Delivery {
-    let text = serde_json::to_string(payload).unwrap_or_else(|_| "{}".into());
+    let text = serialize_payload(payload);
     Delivery {
         sender,
         message: Message::Text(text.into()),
     }
+}
+
+fn serialize_payload<T: serde::Serialize>(payload: &T) -> String {
+    serde_json::to_string(payload).unwrap_or_else(|_error| {
+        #[cfg(feature = "official")]
+        tracing::error!(error = %_error, "failed to serialize P2P websocket response");
+        "{}".into()
+    })
 }
 
 fn signal_is_valid(signal: &WsP2pSignalRequest) -> bool {
