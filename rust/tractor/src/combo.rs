@@ -130,35 +130,56 @@ pub fn classify(cards: &[i32], rules: &TractorRules) -> Option<Combo> {
     })
 }
 
+#[cfg(test)]
 fn combinations(cards: &[i32], count: usize) -> Vec<Vec<i32>> {
+    let mut out = Vec::new();
+    for_each_combination(cards, count, |current| {
+        out.push(current.to_vec());
+        true
+    });
+    out
+}
+
+fn for_each_combination(
+    cards: &[i32],
+    count: usize,
+    mut callback: impl FnMut(&[i32]) -> bool,
+) -> bool {
     fn visit(
         cards: &[i32],
         count: usize,
         start: usize,
         current: &mut Vec<i32>,
-        out: &mut Vec<Vec<i32>>,
-    ) {
+        callback: &mut impl FnMut(&[i32]) -> bool,
+    ) -> bool {
         if current.len() == count {
-            out.push(current.clone());
-            return;
+            return callback(current);
         }
         let needed = count - current.len();
         if cards.len().saturating_sub(start) < needed {
-            return;
+            return true;
         }
         for index in start..=cards.len() - needed {
             current.push(cards[index]);
-            visit(cards, count, index + 1, current, out);
+            if !visit(cards, count, index + 1, current, callback) {
+                current.pop();
+                return false;
+            }
             current.pop();
         }
+        true
     }
 
     if count > cards.len() {
-        return Vec::new();
+        return true;
     }
-    let mut out = Vec::new();
-    visit(cards, count, 0, &mut Vec::with_capacity(count), &mut out);
-    out
+    visit(
+        cards,
+        count,
+        0,
+        &mut Vec::with_capacity(count),
+        &mut callback,
+    )
 }
 
 /// Ranking value of a played combo *if* it can beat the current lead, else
@@ -232,18 +253,18 @@ pub fn enumerate_follows(hand: &[i32], lead: &Combo, rules: &TractorRules) -> Ve
     let subset_count = capped_choose(group.len(), group_count, SUBSET_LIMIT)
         .saturating_mul(capped_choose(outside.len(), outside_count, SUBSET_LIMIT));
     if subset_count <= SUBSET_LIMIT {
-        let group_subsets = combinations(&group, group_count);
-        let outside_subsets = combinations(&outside, outside_count);
-        for group_cards in &group_subsets {
-            for outside_cards in &outside_subsets {
+        for_each_combination(&group, group_count, |group_cards| {
+            for_each_combination(&outside, outside_count, |outside_cards| {
                 let mut cards = Vec::with_capacity(lead_len);
                 cards.extend_from_slice(group_cards);
                 cards.extend_from_slice(outside_cards);
                 if follow_is_legal(hand, &cards, lead, rules) && !out.contains(&cards) {
                     out.push(cards);
                 }
-            }
-        }
+                true
+            });
+            true
+        });
     }
     out
 }
