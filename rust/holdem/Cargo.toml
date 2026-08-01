@@ -7,7 +7,6 @@ license = "MIT"
 [features]
 default = []
 android-jni = []
-server-runtime = []
 official = ["dep:data", "data/cache-redis"]
 
 [lib]
@@ -20,5 +19,4 @@ rand = "0.10.2"
 serde_json = "1"
 share_type_public = { path = "../../share_type_public" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
-tracing = "0.1"
 ws_common = { path = "../common" }

@@ -723,13 +723,19 @@ pub async fn run_p2p_listener_until_stopped_with_options(
                     )
                     .await
                     {
+                        #[cfg(feature = "official")]
                         tracing::error!(session_id, peer = %peer, error = %error, "p2p connection failed");
+                        #[cfg(not(feature = "official"))]
+                        eprintln!("p2p session {session_id} connection from {peer} failed: {error}");
                     }
                 });
             }
             Some(result) = connections.join_next(), if !connections.is_empty() => {
                 if let Err(error) = result {
+                    #[cfg(feature = "official")]
                     tracing::error!(error = %error, "p2p connection task failed");
+                    #[cfg(not(feature = "official"))]
+                    eprintln!("p2p connection task failed: {error}");
                 }
             }
         }

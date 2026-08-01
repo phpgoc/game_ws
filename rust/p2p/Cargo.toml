@@ -7,8 +7,7 @@ license = "MIT"
 [features]
 default = []
 android-jni = []
-server-runtime = []
-official = ["dep:data"]
+official = ["dep:data", "dep:runtime_common", "dep:tracing"]
 
 [lib]
 crate-type = ["rlib", "cdylib"]
@@ -25,7 +24,8 @@ sha1 = "0.10"
 share_type_public = { path = "../../share_type_public" }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
 tokio-tungstenite = "0.29"
-tracing = "0.1"
+runtime_common = { path = "../../../runtime_common", optional = true }
+tracing = { version = "0.1", optional = true }
 turn = "0.17.1"
 util = { package = "webrtc-util", version = "0.17.1", default-features = false, features = ["conn", "vnet"] }
 
