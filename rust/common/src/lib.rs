@@ -5,12 +5,22 @@ macro_rules! dlog {
         {
             $crate::__dlog(&format!($($arg)+), $level, file!(), line!());
         }
+        #[cfg(not(debug_assertions))]
+        let _ = || {
+            let _ = $level;
+            let _ = format_args!($($arg)+);
+        };
     }};
     ($message:expr, $level:expr $(,)?) => {{
         #[cfg(debug_assertions)]
         {
             $crate::__dlog($message, $level, file!(), line!());
         }
+        #[cfg(not(debug_assertions))]
+        let _ = || {
+            let _ = $message;
+            let _ = $level;
+        };
     }};
 }
 
