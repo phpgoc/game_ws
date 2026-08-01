@@ -1,26 +1,22 @@
 #[macro_export]
 macro_rules! dlog {
     ($level:path, $($arg:tt)+) => {{
-        #[cfg(debug_assertions)]
-        {
-            $crate::__dlog(&format!($($arg)+), $level, file!(), line!());
-        }
-        #[cfg(not(debug_assertions))]
-        let _ = || {
-            let _ = $level;
-            let _ = format_args!($($arg)+);
-        };
+        $crate::tracing::event!(
+            target: module_path!(),
+            $level,
+            source_file = file!(),
+            source_line = line!(),
+            message = %format_args!($($arg)+),
+        );
     }};
     ($message:expr, $level:expr $(,)?) => {{
-        #[cfg(debug_assertions)]
-        {
-            $crate::__dlog($message, $level, file!(), line!());
-        }
-        #[cfg(not(debug_assertions))]
-        let _ = || {
-            let _ = $message;
-            let _ = $level;
-        };
+        $crate::tracing::event!(
+            target: module_path!(),
+            $level,
+            source_file = file!(),
+            source_line = line!(),
+            message = %$message,
+        );
     }};
 }
 
@@ -36,8 +32,6 @@ mod room;
 mod runtime;
 mod transport;
 
-#[cfg(debug_assertions)]
-use chrono::Local;
 pub use client::{WsClientEvent, WsClientHandle, WsClientSendError, connect_ws_client};
 pub use game_setting::GameSettings;
 pub use game_state::{CommonGameState, GameState, SharedGameState};
@@ -52,41 +46,9 @@ pub use runtime::{
     run_room_runtime, run_room_runtime_until_stopped, run_room_runtime_until_stopped_with_ready,
     runtime_stop_channel, session_sender_channel,
 };
-#[cfg(debug_assertions)]
-use std::io::IsTerminal;
 pub use tracing;
 
 pub use transport::{TransportError, from_message, to_text_message};
-
-#[cfg(debug_assertions)]
-#[doc(hidden)]
-/// 在调试构建中输出带时间、级别和源码位置的日志，供 `dlog!` 宏调用。
-pub fn __dlog(message: &str, level: tracing::Level, file: &str, line: u32) {
-    let level_text = if std::io::stdout().is_terminal() {
-        format!("{}{}\x1b[0m", level_color(level), level)
-    } else {
-        level.to_string()
-    };
-    println!(
-        "{} {} {}:{} {}",
-        Local::now().format("%Y-%m-%d %H:%M:%S"),
-        level_text,
-        file,
-        line,
-        message
-    );
-}
-
-#[cfg(debug_assertions)]
-fn level_color(level: tracing::Level) -> &'static str {
-    match level {
-        tracing::Level::ERROR => "\x1b[31m",
-        tracing::Level::WARN => "\x1b[33m",
-        tracing::Level::INFO => "\x1b[32m",
-        tracing::Level::DEBUG => "\x1b[36m",
-        tracing::Level::TRACE => "\x1b[90m",
-    }
-}
 
 #[cfg(test)]
 mod tests;

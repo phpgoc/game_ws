@@ -1,25 +1,63 @@
-#[cfg(debug_assertions)]
-use super::{__dlog, level_color};
-#[cfg(debug_assertions)]
+use std::{
+    io::Write,
+    sync::{Arc, Mutex},
+};
+
 use tracing::Level;
 
-#[cfg(debug_assertions)]
-#[test]
-fn debug_logging_supports_every_level_and_macro_form() {
-    assert_eq!(level_color(Level::ERROR), "\x1b[31m");
-    assert_eq!(level_color(Level::WARN), "\x1b[33m");
-    assert_eq!(level_color(Level::INFO), "\x1b[32m");
-    assert_eq!(level_color(Level::DEBUG), "\x1b[36m");
-    assert_eq!(level_color(Level::TRACE), "\x1b[90m");
+#[derive(Clone)]
+struct SharedBuffer(Arc<Mutex<Vec<u8>>>);
 
-    __dlog("direct log", Level::INFO, "tests.rs", 1);
-    crate::dlog!(Level::DEBUG, "formatted {}", "log");
-    crate::dlog!("message log", Level::TRACE);
+impl Write for SharedBuffer {
+    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().expect("lock log buffer").extend(buffer);
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
-#[cfg(not(debug_assertions))]
 #[test]
-fn release_logging_does_not_evaluate_arguments() {
+fn logging_supports_every_level_and_macro_form() {
+    let output = Arc::new(Mutex::new(Vec::new()));
+    let make_writer = {
+        let output = Arc::clone(&output);
+        move || SharedBuffer(Arc::clone(&output))
+    };
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_max_level(Level::TRACE)
+        .with_writer(make_writer)
+        .finish();
+
+    tracing::subscriber::with_default(subscriber, || {
+        crate::dlog!(Level::ERROR, "error log");
+        crate::dlog!(Level::WARN, "warning log");
+        crate::dlog!(Level::INFO, "info log");
+        crate::dlog!(Level::DEBUG, "formatted {}", "log");
+        crate::dlog!("message log", Level::TRACE);
+    });
+
+    let bytes = output.lock().expect("lock log output").clone();
+    let logs = String::from_utf8(bytes).expect("log output is UTF-8");
+    for message in [
+        "error log",
+        "warning log",
+        "info log",
+        "formatted log",
+        "message log",
+    ] {
+        assert!(logs.contains(message));
+    }
+    assert!(logs.contains("source_file"));
+    assert!(logs.contains("source_line"));
+}
+
+#[test]
+fn disabled_logging_does_not_evaluate_arguments() {
     use std::cell::Cell;
 
     let formatted_argument_evaluated = Cell::new(false);

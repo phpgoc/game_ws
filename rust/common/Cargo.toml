@@ -6,7 +6,6 @@ license = "MIT"
 
 [dependencies]
 anyhow = "1.0.102"
-chrono = "0.4"
 clap = { version = "4", features = ["derive"] }
 futures-util = "0.3"
 if-addrs = "0.13"
@@ -17,3 +16,6 @@ thiserror = "2.0.18"
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
 tokio-tungstenite = "0.29"
 tracing = "0.1.44"
+
+[dev-dependencies]
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt"] }
