@@ -290,7 +290,7 @@ fn declared_ting_claim_options_allow_only_hu() {
 }
 
 #[test]
-fn declared_ting_blocks_self_gang_and_xi_gang() {
+fn declared_ting_allows_only_the_drawn_self_gang_and_blocks_xi_gang() {
     let mut state = playable_state();
     state.current_position = 1;
     state
@@ -305,8 +305,216 @@ fn declared_ting_blocks_self_gang_and_xi_gang() {
 
     state.declare_ting(1);
 
-    assert!(!can_self_gang(&state, 1, 3));
+    assert!(can_self_gang(&state, 1, 3));
     assert!(!can_declare_xi_gang(&state, 1, &[31, 32, 33, 34]));
+
+    state.last_drawn_tile = Some(34);
+    assert!(!can_self_gang(&state, 1, 3));
+}
+
+#[test]
+fn declared_ting_draw_action_prioritizes_hu_over_gang() {
+    let mut state = playable_state();
+    state.current_position = 1;
+    state
+        .hands
+        .insert(1, vec![4, 5, 5, 5, 5, 6, 11, 12, 13, 35, 35]);
+    state.melds.insert(1, vec![open_peng_meld(21, 0)]);
+    state.wall = vec![31];
+    state.last_drawn_tile = Some(5);
+    state.declare_ting(1);
+
+    assert!(can_self_draw_hu_with_configs(&state, 1, &default_configs()));
+    assert_eq!(
+        automatic_ting_draw_action(&state, 1, &default_configs()),
+        Some(AutomaticTingDrawAction::Hu)
+    );
+    assert!(!can_self_gang(&state, 1, 5));
+}
+
+#[test]
+fn declared_ting_draw_action_gangs_or_discards_without_manual_input() {
+    let mut gang_state = playable_state();
+    gang_state.current_position = 1;
+    gang_state
+        .hands
+        .insert(1, vec![3, 3, 3, 3, 4, 6, 11, 12, 14, 35, 35]);
+    gang_state.melds.insert(1, vec![open_peng_meld(21, 0)]);
+    gang_state.wall = vec![31];
+    gang_state.last_drawn_tile = Some(3);
+    gang_state.declare_ting(1);
+
+    assert_eq!(
+        automatic_ting_draw_action(&gang_state, 1, &default_configs()),
+        Some(AutomaticTingDrawAction::Gang(3))
+    );
+
+    let mut discard_state = playable_state();
+    let mut hand = seven_pairs_ting_hand();
+    hand.retain(|tile| *tile != 32);
+    hand.push(5);
+    hand.sort_unstable();
+    discard_state.hands.insert(0, hand);
+    discard_state.wall = vec![6];
+    discard_state.last_drawn_tile = Some(5);
+    discard_state.declare_ting(0);
+
+    assert_eq!(
+        automatic_ting_draw_action(&discard_state, 0, &default_configs()),
+        Some(AutomaticTingDrawAction::Discard(5))
+    );
+}
+
+#[test]
+fn declared_ting_hu_claim_is_recorded_automatically() {
+    let mut state = playable_state();
+    state.current_position = 0;
+    state.discards.insert(0, vec![5]);
+    state
+        .hands
+        .insert(1, vec![4, 5, 5, 5, 6, 11, 12, 13, 35, 35]);
+    state.melds.insert(1, vec![open_peng_meld(21, 0)]);
+    state.wall = vec![31];
+    state.declare_ting(1);
+    let event = build_claim_window_event(&state, 5, 0, 5, &default_configs());
+    let eligible_positions = event
+        .eligible_positions
+        .iter()
+        .map(|position| *position as usize)
+        .collect::<Vec<_>>();
+    state.claim_window = Some(ClaimWindowState {
+        tile: 5,
+        from_position: 0,
+        kind: ClaimWindowKind::Discard,
+        eligible_positions,
+        responses: HashMap::new(),
+    });
+
+    assert!(record_automatic_ting_hu_responses(&mut state, &event));
+    assert!(matches!(
+        state
+            .claim_window
+            .as_ref()
+            .and_then(|window| window.responses.get(&1)),
+        Some(ClaimResponse::Hu)
+    ));
+}
+
+#[test]
+fn advancing_turn_automatically_hus_before_ganging_for_ting_player() {
+    let mut state = playable_state();
+    state.current_position = 0;
+    state
+        .hands
+        .insert(1, vec![4, 5, 5, 5, 6, 11, 12, 13, 35, 35]);
+    state.melds.insert(1, vec![open_peng_meld(21, 0)]);
+    state.wall = vec![5];
+    state.declare_ting(1);
+    let mut dispatch = Dispatch::default();
+
+    advance_to_next_turn(
+        &RoomService::default(),
+        "room",
+        &mut state,
+        &default_configs(),
+        &mut dispatch,
+    );
+
+    assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+    assert_eq!(
+        state
+            .settlement
+            .as_ref()
+            .map(|settlement| settlement.winner_positions.as_slice()),
+        Some([1].as_slice())
+    );
+    assert!(state.melds.get(&1).is_some_and(|melds| {
+        melds
+            .iter()
+            .all(|meld| meld.kind != ShenyangMahjongMeldKind::GANG)
+    }));
+}
+
+#[test]
+fn advancing_turn_automatically_gangs_or_discards_for_ting_player() {
+    let mut gang_state = playable_state();
+    gang_state.current_position = 0;
+    gang_state
+        .hands
+        .insert(1, vec![3, 3, 3, 4, 6, 11, 12, 14, 35, 35]);
+    gang_state.melds.insert(1, vec![open_peng_meld(21, 0)]);
+    gang_state.wall = vec![9, 3];
+    gang_state.declare_ting(1);
+    let mut gang_dispatch = Dispatch::default();
+
+    advance_to_next_turn(
+        &RoomService::default(),
+        "room",
+        &mut gang_state,
+        &default_configs(),
+        &mut gang_dispatch,
+    );
+
+    assert!(gang_state.melds.get(&1).is_some_and(|melds| {
+        melds.iter().any(|meld| {
+            meld.kind == ShenyangMahjongMeldKind::GANG && meld.tiles == vec![3, 3, 3, 3]
+        })
+    }));
+
+    let mut discard_state = playable_state();
+    discard_state.current_position = 0;
+    let mut hand = seven_pairs_ting_hand();
+    hand.retain(|tile| *tile != 32);
+    discard_state.hands.insert(1, hand);
+    discard_state.wall = vec![5];
+    discard_state.declare_ting(1);
+    let mut discard_dispatch = Dispatch::default();
+
+    advance_to_next_turn(
+        &RoomService::default(),
+        "room",
+        &mut discard_state,
+        &default_configs(),
+        &mut discard_dispatch,
+    );
+
+    assert_eq!(discard_state.discards.get(&1), Some(&vec![5]));
+}
+
+#[test]
+fn discard_immediately_resolves_an_automatic_ting_hu() {
+    let mut state = playable_state();
+    state.current_position = 0;
+    state
+        .hands
+        .insert(0, vec![1, 1, 1, 2, 3, 4, 5, 11, 12, 13, 21, 22, 23, 31]);
+    state
+        .hands
+        .insert(1, vec![4, 5, 5, 5, 6, 11, 12, 13, 35, 35]);
+    state.melds.insert(1, vec![open_peng_meld(21, 0)]);
+    state.wall = vec![31];
+    state.last_drawn_tile = Some(31);
+    state.declare_ting(1);
+    let mut dispatch = Dispatch::default();
+
+    assert!(perform_discard(
+        &RoomService::default(),
+        "room",
+        &mut state,
+        &default_configs(),
+        &mut dispatch,
+        0,
+        5,
+    ));
+
+    assert_eq!(state.phase, ShenyangMahjongPhase::Settlement);
+    assert_eq!(
+        state
+            .settlement
+            .as_ref()
+            .map(|settlement| settlement.winner_positions.as_slice()),
+        Some([1].as_slice())
+    );
 }
 
 #[test]

@@ -218,6 +218,13 @@ impl ShenyangMahjongGameHandler {
                         WsResponseCode::NO_PERMISSION,
                     );
                 }
+                if state.is_ting(position) {
+                    return room_service.error_response(
+                        session_id,
+                        Routes::PLAY as i32,
+                        WsResponseCode::NO_PERMISSION,
+                    );
+                }
 
                 match payload.action {
                     ShenyangMahjongAction::DISCARD => {
@@ -280,7 +287,7 @@ impl ShenyangMahjongGameHandler {
                             .target_tile
                             .or_else(|| payload.tiles.first().copied())
                             .unwrap_or_default();
-                        if !can_self_gang(&state, position, tile)
+                        if !can_self_gang_with_configs(&state, position, tile, &configs)
                             || !perform_self_gang(
                                 room_service,
                                 &room_key,
