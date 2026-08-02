@@ -6,12 +6,10 @@ license = "MIT"
 
 [features]
 default = []
-android-jni = []
 e2e-fixture = []
 official = ["dep:data", "data/cache-redis"]
 
 [lib]
-crate-type = ["rlib", "cdylib"]
 doctest = false
 
 [dependencies]

@@ -2,10 +2,11 @@ FROM ubuntu:24.04
 
 ARG ANDROID_COMMAND_LINE_TOOLS=11076708
 ARG ANDROID_NDK_VERSION=27.0.12077973
+ARG CARGO_NDK_VERSION=4.1.2
 
 ENV DEBIAN_FRONTEND=noninteractive \
     ANDROID_HOME=/opt/android-sdk \
-    ANDROID_NDK_HOME=/opt/android-sdk/ndk/27.0.12077973 \
+    ANDROID_NDK_HOME=/opt/android-sdk/ndk/${ANDROID_NDK_VERSION} \
     CARGO_HOME=/root/.cargo \
     CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc \
     CC_x86_64_unknown_linux_musl=musl-gcc
@@ -28,7 +29,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
         x86_64-unknown-linux-musl \
         aarch64-linux-android \
         x86_64-linux-android \
-    && cargo install cargo-ndk --locked
+    && cargo install cargo-ndk --version "${CARGO_NDK_VERSION}" --locked
 
 RUN curl -fsSL \
         "https://dl.google.com/android/repository/commandlinetools-linux-${ANDROID_COMMAND_LINE_TOOLS}_latest.zip" \
@@ -49,17 +50,7 @@ RUN sdkmanager --sdk_root="${ANDROID_HOME}" \
 WORKDIR /workspace
 COPY . .
 
-# The open-source builds never enable the private `official` feature, but
-# Cargo still resolves its optional path dependency. Supply a metadata-only
-# stub at the path expected when ws is the Docker build context.
-RUN mkdir -p /data/src \
-    && printf '%s\n' \
-        '[package]' \
-        'name = "data"' \
-        'version = "0.0.0"' \
-        'edition = "2024"' \
-        > /data/Cargo.toml \
-    && printf '%s\n' '#![allow(dead_code)]' > /data/src/lib.rs \
+RUN /workspace/ci/prepare-public-build.sh \
     && chmod +x /workspace/build_script/build_all.sh
 
 ENTRYPOINT ["/workspace/build_script/build_all.sh"]

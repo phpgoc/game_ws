@@ -13,6 +13,13 @@ GRADLE="${GRADLE:-${WS_DIR}/android/gradlew}"
 GAMES=(landlord shenyang_mahjong holdem tractor p2p)
 ANDROID_ABIS=(arm64-v8a x86_64)
 
+"${WS_DIR}/ci/prepare-public-build.sh"
+
+CARGO_LOCK_ARGS=()
+if [[ "${WS_CARGO_LOCKED:-0}" == "1" || -L "${WS_DIR}/../data" || -L "${WS_DIR}/../runtime_common" || -L "${WS_DIR}/../ai" ]]; then
+    CARGO_LOCK_ARGS+=(--locked)
+fi
+
 if [[ "$(uname -s)" == "Darwin" ]]; then
     if ! command -v java >/dev/null 2>&1 && command -v brew >/dev/null 2>&1; then
         export JAVA_HOME="$(brew --prefix openjdk@17)/libexec/openjdk.jdk/Contents/Home"
@@ -58,8 +65,11 @@ for game in "${GAMES[@]}"; do
     CARGO_TARGET_DIR="${BUILD_DIR}/linux" cargo build \
         --release \
         --target "${LINUX_TARGET}" \
-        --manifest-path "${WS_DIR}/rust/${game}/Cargo.toml" \
-        --bin "${game}"
+        --manifest-path "${WS_DIR}/Cargo.toml" \
+        -p "${game}" \
+        --bin "${game}" \
+        --no-default-features \
+        "${CARGO_LOCK_ARGS[@]}"
     install -m 0755 \
         "${BUILD_DIR}/linux/${LINUX_TARGET}/release/${game}" \
         "${OUTPUT_DIR}/${game}"
@@ -70,16 +80,20 @@ echo "=== [2/3] Building 5 Android native libraries ==="
 for game in "${GAMES[@]}"; do
     echo "--- ${game}"
     (
-        cd "${WS_DIR}/rust/${game}"
+        cd "${WS_DIR}"
         CARGO_TARGET_DIR="${BUILD_DIR}/android" cargo ndk \
             -t "${ANDROID_ABIS[0]}" \
             -t "${ANDROID_ABIS[1]}" \
             --platform "${ANDROID_PLATFORM}" \
             -o "${JNI_DIR}/${game}" \
             build \
+            --manifest-path "${WS_DIR}/Cargo.toml" \
+            -p ws_android_server \
             --release \
             --lib \
-            --features android-jni
+            --no-default-features \
+            --features "${game}" \
+            "${CARGO_LOCK_ARGS[@]}"
     )
 done
 

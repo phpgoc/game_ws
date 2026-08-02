@@ -22,21 +22,25 @@ val game = providers.gradleProperty("game").orElse("landlord").get()
 val gameConfig = games[game]
     ?: throw GradleException("Unknown -Pgame=$game. Expected one of: ${games.keys.joinToString()}")
 val skipRustBuild = providers.gradleProperty("skipRustBuild").orNull?.toBoolean() ?: false
+val rustLocked = providers.gradleProperty("rustLocked").orNull?.toBoolean() ?: false
 val rustAbis = providers.gradleProperty("rustAbis")
     .orNull
     ?.split(",")
     ?.map { it.trim() }
     ?.filter { it.isNotEmpty() }
     ?: listOf("arm64-v8a", "x86_64")
+val rustWorkspaceDir = layout.projectDirectory.dir("../..")
 val rustProjectDir = layout.projectDirectory.dir("../../rust/$game")
 val rustCommonDir = layout.projectDirectory.dir("../../rust/common")
+val rustBridgeDir = layout.projectDirectory.dir("../../rust/android_server")
 val rustShareTypesDir = layout.projectDirectory.dir("../../share_type_public")
 val rustJniLibsDir = layout.projectDirectory.dir("src/main/jniLibs")
-val rustLibraries = rustAbis.map { rustJniLibsDir.file("$it/lib$game.so") }
+val rustLibraries = rustAbis.map { rustJniLibsDir.file("$it/libws_server.so") }
 val cargoBinDir = file("${System.getProperty("user.home")}/.cargo/bin")
 val cargoExecutable = providers.gradleProperty("cargo")
     .orElse(cargoBinDir.resolve("cargo").absolutePath)
     .get()
+val cargoLockArgs = if (rustLocked) listOf("--locked") else emptyList()
 
 android {
     namespace = "com.example.langameserver"
@@ -50,7 +54,7 @@ android {
         versionName = "0.1.0"
 
         buildConfigField("String", "GAME_ID", "\"$game\"")
-        buildConfigField("String", "RUST_LIBRARY", "\"$game\"")
+        buildConfigField("String", "RUST_LIBRARY", "\"ws_server\"")
         buildConfigField("int", "SERVER_PORT", gameConfig.port.toString())
 
         ndk {
@@ -76,7 +80,7 @@ kotlin {
 val buildRustGame by tasks.registering(Exec::class) {
     group = "rust"
     description = "Builds the $game Rust websocket server as Android native libraries."
-    workingDir = rustProjectDir.asFile
+    workingDir = rustWorkspaceDir.asFile
     val rustPath = listOf(cargoBinDir.absolutePath, System.getenv("PATH").orEmpty())
         .filter { it.isNotEmpty() }
         .joinToString(File.pathSeparator)
@@ -90,19 +94,32 @@ val buildRustGame by tasks.registering(Exec::class) {
                 "-o",
                 rustJniLibsDir.asFile.absolutePath,
                 "build",
+                "--manifest-path",
+                rustWorkspaceDir.file("Cargo.toml").asFile.absolutePath,
+                "-p",
+                "ws_android_server",
                 "--release",
+                "--lib",
                 "--no-default-features",
                 "--features",
-                "android-jni",
-            ),
+                game,
+            ) + cargoLockArgs,
     )
 
     inputs.files(
+        fileTree(rustWorkspaceDir) {
+            include("Cargo.toml")
+            include("Cargo.lock")
+        },
         fileTree(rustProjectDir) {
             include("Cargo.toml")
             include("src/**/*.rs")
         },
         fileTree(rustCommonDir) {
+            include("Cargo.toml")
+            include("src/**/*.rs")
+        },
+        fileTree(rustBridgeDir) {
             include("Cargo.toml")
             include("src/**/*.rs")
         },

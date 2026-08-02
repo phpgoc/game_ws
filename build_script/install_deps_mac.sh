@@ -28,7 +28,7 @@ rustup target add \
     x86_64-unknown-linux-musl \
     aarch64-linux-android \
     x86_64-linux-android
-cargo install cargo-ndk --locked
+cargo install cargo-ndk --version 4.1.2 --locked
 
 echo "=== [4/5] Installing Android command-line tools ==="
 ANDROID_HOME="${ANDROID_HOME:-${HOME}/Library/Android/sdk}"

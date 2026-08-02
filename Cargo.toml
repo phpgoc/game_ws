@@ -1,0 +1,21 @@
+[workspace]
+members = [
+    "share_type_public",
+    "rust/common",
+    "rust/landlord",
+    "rust/shenyang_mahjong",
+    "rust/holdem",
+    "rust/tractor",
+    "rust/p2p",
+    "rust/android_server",
+]
+default-members = [
+    "share_type_public",
+    "rust/common",
+    "rust/landlord",
+    "rust/shenyang_mahjong",
+    "rust/holdem",
+    "rust/tractor",
+    "rust/p2p",
+]
+resolver = "3"

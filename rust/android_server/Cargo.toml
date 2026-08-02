@@ -1,0 +1,26 @@
+[package]
+name = "ws_android_server"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[lib]
+name = "ws_server"
+crate-type = ["cdylib"]
+
+[features]
+default = []
+landlord = ["dep:landlord"]
+shenyang_mahjong = ["dep:shenyang_mahjong"]
+holdem = ["dep:holdem"]
+tractor = ["dep:tractor"]
+p2p = ["dep:p2p"]
+
+[dependencies]
+holdem = { path = "../holdem", optional = true, default-features = false }
+landlord = { path = "../landlord", optional = true, default-features = false }
+p2p = { path = "../p2p", optional = true, default-features = false }
+shenyang_mahjong = { path = "../shenyang_mahjong", optional = true, default-features = false }
+tokio = { version = "1", features = ["rt-multi-thread"] }
+tractor = { path = "../tractor", optional = true, default-features = false }
+ws_common = { path = "../common" }

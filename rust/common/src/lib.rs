@@ -20,7 +20,6 @@ macro_rules! dlog {
     }};
 }
 
-#[cfg(target_os = "android")]
 mod android;
 mod cli;
 mod client;

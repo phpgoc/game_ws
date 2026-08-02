@@ -6,6 +6,8 @@ on:
     paths:
       - ".github/fixtures/**"
       - ".github/workflows/ci.yml"
+      - "Cargo.lock"
+      - "Cargo.toml"
       - "android/**"
       - "build_script/**"
       - "ci/**"
@@ -15,6 +17,8 @@ on:
     paths:
       - ".github/fixtures/**"
       - ".github/workflows/ci.yml"
+      - "Cargo.lock"
+      - "Cargo.toml"
       - "android/**"
       - "build_script/**"
       - "ci/**"
@@ -35,6 +39,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
 
 jobs:
   quality:
@@ -48,24 +53,35 @@ jobs:
       - name: 准备公开依赖边界
         run: ci/prepare-public-build.sh
 
+      - name: 定时刷新公开锁文件
+        if: github.event_name == 'schedule'
+        shell: bash
+        run: cargo update --workspace
+
       - name: 安装 Rust 格式组件
         run: rustup component add rustfmt
 
+      - name: 缓存 Cargo 依赖与构建产物
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/src
+            ~/.cargo/git/db
+            target
+          key: public-ws-cargo-${{ runner.os }}-quality-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            public-ws-cargo-${{ runner.os }}-quality-
+            public-ws-cargo-${{ runner.os }}-
+
       - name: 检查全部 Rust crate 格式
         shell: bash
-        run: |
-          manifests=(
-            share_type_public/Cargo.toml
-            rust/common/Cargo.toml
-            rust/landlord/Cargo.toml
-            rust/shenyang_mahjong/Cargo.toml
-            rust/holdem/Cargo.toml
-            rust/tractor/Cargo.toml
-            rust/p2p/Cargo.toml
-          )
-          for manifest in "${manifests[@]}"; do
-            cargo fmt --manifest-path "$manifest" -- --check
-          done
+        run: cargo fmt --all -- --check
+
+      - name: 校验 workspace 元数据
+        shell: bash
+        run: cargo metadata --locked --format-version 1 >/dev/null
 
       - name: 检查 shell 语法和 Gradle wrapper
         shell: bash
@@ -103,12 +119,43 @@ jobs:
           - name: p2p
             manifest: rust/p2p/Cargo.toml
             features: ""
+          - name: android-bridge-landlord
+            manifest: rust/android_server/Cargo.toml
+            features: landlord
+          - name: android-bridge-shenyang-mahjong
+            manifest: rust/android_server/Cargo.toml
+            features: shenyang_mahjong
+          - name: android-bridge-holdem
+            manifest: rust/android_server/Cargo.toml
+            features: holdem
+          - name: android-bridge-tractor
+            manifest: rust/android_server/Cargo.toml
+            features: tractor
     steps:
       - name: 检出开源仓库
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: 准备公开依赖边界
         run: ci/prepare-public-build.sh
+
+      - name: 定时刷新公开锁文件
+        if: github.event_name == 'schedule'
+        shell: bash
+        run: cargo update --workspace
+
+      - name: 缓存 Cargo 依赖与构建产物
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/src
+            ~/.cargo/git/db
+            target
+          key: public-ws-cargo-${{ runner.os }}-${{ matrix.name }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            public-ws-cargo-${{ runner.os }}-${{ matrix.name }}-
+            public-ws-cargo-${{ runner.os }}-
 
       - name: 安装 Clippy
         run: rustup component add clippy
@@ -123,7 +170,7 @@ jobs:
           if [[ -n "$FEATURES" ]]; then
             feature_args=(--features "$FEATURES")
           fi
-          cargo test --manifest-path "$MANIFEST" --all-targets \
+          cargo test --locked --manifest-path "$MANIFEST" --all-targets \
             --no-default-features "${feature_args[@]}"
 
       - name: 将 Clippy 警告视为错误
@@ -136,7 +183,7 @@ jobs:
           if [[ -n "$FEATURES" ]]; then
             feature_args=(--features "$FEATURES")
           fi
-          cargo clippy --manifest-path "$MANIFEST" --all-targets --no-default-features \
+          cargo clippy --locked --manifest-path "$MANIFEST" --all-targets --no-default-features \
             "${feature_args[@]}" -- -D warnings
 
   linux-musl:
@@ -155,6 +202,25 @@ jobs:
       - name: 准备公开依赖边界
         run: ci/prepare-public-build.sh
 
+      - name: 定时刷新公开锁文件
+        if: github.event_name == 'schedule'
+        shell: bash
+        run: cargo update --workspace
+
+      - name: 缓存 Cargo 依赖与构建产物
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/src
+            ~/.cargo/git/db
+            target
+          key: public-ws-cargo-${{ runner.os }}-musl-${{ matrix.game }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            public-ws-cargo-${{ runner.os }}-musl-${{ matrix.game }}-
+            public-ws-cargo-${{ runner.os }}-
+
       - name: 安装 musl 目标
         shell: bash
         run: |
@@ -167,11 +233,13 @@ jobs:
         env:
           GAME: ${{ matrix.game }}
         run: |
-          cargo build --release --target x86_64-unknown-linux-musl \
+          cargo build --locked --release --target x86_64-unknown-linux-musl \
             --manifest-path "rust/$GAME/Cargo.toml" --bin "$GAME" --no-default-features
-          binary="rust/$GAME/target/x86_64-unknown-linux-musl/release/$GAME"
+          binary="target/x86_64-unknown-linux-musl/release/$GAME"
           test -s "$binary"
-          file "$binary"
+          file_output="$(file "$binary")"
+          printf '%s\n' "$file_output"
+          grep -Eq 'statically linked|static-pie linked' <<<"$file_output"
 
   android:
     name: Android 双 ABI ${{ matrix.game }}
@@ -189,11 +257,31 @@ jobs:
       - name: 准备公开依赖边界
         run: ci/prepare-public-build.sh
 
+      - name: 定时刷新公开锁文件
+        if: github.event_name == 'schedule'
+        shell: bash
+        run: cargo update --workspace
+
+      - name: 缓存 Cargo 依赖与构建产物
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/src
+            ~/.cargo/git/db
+            target
+          key: public-ws-cargo-${{ runner.os }}-android-${{ matrix.game }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            public-ws-cargo-${{ runner.os }}-android-${{ matrix.game }}-
+            public-ws-cargo-${{ runner.os }}-
+
       - name: 安装 Java 17
         uses: actions/setup-java@d7793b545071e98d581d3bf084a51c3213318a07 # v4
         with:
           distribution: temurin
           java-version: "17"
+          cache: gradle
 
       - name: 安装 Android SDK/NDK
         uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
@@ -204,7 +292,9 @@ jobs:
           sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.0.12077973"
           printf 'ANDROID_NDK_HOME=%s\n' "$ANDROID_HOME/ndk/27.0.12077973" >>"$GITHUB_ENV"
           rustup target add aarch64-linux-android x86_64-linux-android
-          cargo install cargo-ndk --version 4.1.2 --locked
+          if ! cargo ndk --version >/dev/null 2>&1; then
+            cargo install cargo-ndk --version 4.1.2 --locked
+          fi
 
       - name: 构建单游戏双 ABI APK
         shell: bash
@@ -213,5 +303,10 @@ jobs:
           GAME: ${{ matrix.game }}
         run: |
           ./gradlew --no-daemon --console=plain :app:assembleDebug \
-            -Pgame="$GAME" -PrustAbis=arm64-v8a,x86_64
-          test -s app/build/outputs/apk/debug/app-debug.apk
+            -Pgame="$GAME" -PrustAbis=arm64-v8a,x86_64 -PrustLocked=true
+          apk=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$apk"
+          native_lib_count="$(unzip -Z1 "$apk" | grep -Ec '^lib/(arm64-v8a|x86_64)/libws_server\.so$')"
+          test "$native_lib_count" -eq 2
+          unzip -Z1 "$apk" | grep -qx 'lib/arm64-v8a/libws_server.so'
+          unzip -Z1 "$apk" | grep -qx 'lib/x86_64/libws_server.so'

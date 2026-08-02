@@ -4,12 +4,8 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT"
 
-[lib]
-crate-type = ["rlib", "cdylib"]
-
 [features]
 default = []
-android-jni = []
 official = ["dep:data", "data/cache-redis"]
 
 [dependencies]

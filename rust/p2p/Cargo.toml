@@ -6,11 +6,7 @@ license = "MIT"
 
 [features]
 default = []
-android-jni = []
 official = ["dep:data", "data/cache-redis", "dep:runtime_common", "dep:tracing"]
-
-[lib]
-crate-type = ["rlib", "cdylib"]
 
 [dependencies]
 anyhow = "1"

@@ -16,7 +16,8 @@
 - `rust/shenyang_mahjong/`: 沈阳麻将 Rust 服务端。
 - `rust/holdem/`: Hold'em 系列 Rust 服务端，承载德州、明牌德州、短牌德州和奥马哈。
 - `rust/p2p/`: 独立的两人 WebRTC 信令服务与 STUN/TURN 临时凭证签发器，不依赖其他游戏 crate。
-- `android/`: 5 个 Rust 服务共用的 Android 前台服务壳，每个 APK 只打包对应的 `.so`。
+- `rust/android_server/`: Android JNI bridge，按单游戏 feature 产出 `libws_server.so`。
+- `android/`: 5 个 Rust 服务共用的 Android 前台服务壳，每个 APK 只打包一个 `libws_server.so`。
 
 ## 依赖
 
@@ -109,15 +110,17 @@ cargo test --manifest-path rust/p2p/Cargo.toml
 
 公开仓库的 `Public WS CI` 在 push、pull request、手动触发和每周定时任务中免费运行：
 
-- 对 7 个公开 Rust crate 执行 `rustfmt`、全部 target 测试和 `clippy -D warnings`；
+- 对公开 Rust crate 和 Android bridge crate 执行 `rustfmt`、全部 target 测试和 `clippy -D warnings`；
 - 对 5 个服务分别构建 Linux x86_64 musl 静态 release；
 - 对 5 个服务分别构建同时包含 arm64-v8a 与 x86_64 的 Android APK，覆盖 JNI、NDK、Gradle 和 Kotlin 包装；
-- 不启用依赖私有 `data` 的 `official` feature，不读取 secrets，不上传 artifact，也不使用 cache。
+- 不启用依赖私有 `data` 的 `official` feature，不读取 secrets，不上传 artifact；Cargo 和 Gradle 依赖使用带锁文件哈希的 GitHub Actions cache。
 
-独立检出开源仓库时，Cargo 和 rustfmt 仍需解析可选的私有 `data` 路径及仅供官方版使用的外部 AI 模块。
+独立检出开源仓库时，Cargo 和 rustfmt 仍需解析可选的私有 `data`、`runtime_common` 路径及仅供官方版使用的外部 AI 模块。
 CI 仅把 `.github/fixtures` 中的空边界链接到预期位置，使未启用的依赖和条件模块能够完成解析；fixture
 不包含私有实现，也不能用于构建 `official` feature。根仓库作为子模块使用时会继续解析真实的 `data`
-crate 和 AI 模块。
+crate、`runtime_common` 和 AI 模块。
+
+提交的 `Cargo.lock` 按公开 fixture 的依赖图锁定，保证独立公开检出可以使用 `--locked`；嵌入主仓库时，官方 workspace 使用根仓库自己的锁文件。直接在真实私有 sibling 环境中执行 `ws` 的普通 Cargo 命令即可让 Cargo 解析对应的可选依赖图。
 
 拖拉机房间开始后会锁定设置。当前主要设置包括：`deck_count`（几副牌）、`removed_rank_count`（按 `3/4/6/7/8/9/J/Q/A` 的顺序删掉前 N 个点数，`0` 表示不删）、`first_deal_time`（首局发牌总时间，毫秒）、`deal_time`（后续局发牌总时间，毫秒）、`ai_action_time`（AI/托管行动间隔，毫秒）、`target_rank`（最终目标 rank）、`blood_enabled` / `blood_start_score` / `blood_score_per_unit`（喝血相关）。首局发牌中由所有玩家抢主/反主并决定首庄；第二局起只由既定庄家选择主花色。发完后庄家收底并扣回相同张数，随后进入出牌。
 
@@ -153,8 +156,6 @@ target/x86_64-unknown-linux-musl/release/holdem
 target/x86_64-unknown-linux-musl/release/tractor
 target/x86_64-unknown-linux-musl/release/p2p
 ```
-
-构建时如果看到 `dropping unsupported crate type cdylib`，可以忽略。服务端二进制仍会正常生成。
 
 ### macOS 交叉编译 Linux musl
 

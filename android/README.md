@@ -10,7 +10,7 @@
 
 Kotlin 负责 Activity、前台 Service、通知、WakeLock/WifiLock 和状态展示；
 WebSocket、房间及游戏逻辑由对应的 Rust `cdylib` 提供。每个 APK 只包含一个游戏的
-`.so`，通过相同的 JNI 接口调用，因此不需要复制 Android 工程。
+`libws_server.so`，通过相同的 JNI 接口调用，因此不需要复制 Android 工程。
 
 ## 依赖
 
