@@ -13,9 +13,10 @@ use ws_common::{ClientRequest, CommonGameState, OutboundPayload, RoomService, Se
 
 use super::{
     StateRegistry, TractorGameState, TractorStateHandle, build_auto_bury_dispatch,
-    build_auto_dispatch, build_deal_dispatch, current_play_time, position_has_active_membership,
-    remove_registered_state_if_same, room_uses_common_state, settlement_event, settlement_time,
-    sleep_or_stop, start_game_loop, stop_requested, timed_out_human_position,
+    build_auto_dispatch, build_deal_dispatch, current_bury_time, current_play_time,
+    position_has_active_membership, remove_registered_state_if_same, room_uses_common_state,
+    settlement_event, settlement_time, sleep_or_stop, start_game_loop, stop_requested,
+    timed_out_human_position,
 };
 use crate::game_setting::{
     KEY_AWAY_TIME, KEY_PLAY_TIME, KEY_SETTLEMENT_TIME, build_tractor_settings,
@@ -194,7 +195,7 @@ fn deal_dispatch_sends_private_deal_and_bottom_cards_then_exposes_the_snapshot()
     let guard = state.lock().unwrap();
     assert_eq!(guard.phase, TractorPhase::Bury);
     assert_eq!(guard.dealt_count, 1);
-    assert_eq!(guard.base.lock().unwrap().turn_countdown, 7);
+    assert_eq!(guard.base.lock().unwrap().turn_countdown, 21);
     drop(guard);
 
     assert_eq!(event_payloads(&dispatch, WsCode::DEAL as i32).len(), 1);
@@ -214,7 +215,7 @@ fn deal_dispatch_sends_private_deal_and_bottom_cards_then_exposes_the_snapshot()
 }
 
 #[test]
-fn later_round_final_deal_broadcasts_the_automatic_dealer_declaration() {
+fn later_round_final_deal_waits_for_selection_in_the_bottom_window() {
     let (room, common) = room_with_players();
     let state = state_handle(common, TractorPhase::Deal);
     {
@@ -229,11 +230,21 @@ fn later_round_final_deal_broadcasts_the_automatic_dealer_declaration() {
 
     let dispatch = build_deal_dispatch(ROOM_KEY, &room, &state, &HashMap::new());
 
+    assert!(event_payloads(&dispatch, TractorWsCode::TRUMP_DECLARED as i32).is_empty());
+    let guard = state.lock().unwrap();
+    assert_eq!(guard.phase, TractorPhase::Bury);
+    assert!(guard.rules.trump_suit.is_none());
+    drop(guard);
+    state.lock().unwrap().base.lock().unwrap().turn_countdown = 0;
+
+    let dispatch = build_auto_bury_dispatch(ROOM_KEY, &room, &state, &HashMap::new(), None);
     assert_eq!(
         event_payloads(&dispatch, TractorWsCode::TRUMP_DECLARED as i32).len(),
         4
     );
-    assert_eq!(state.lock().unwrap().phase, TractorPhase::Bury);
+    let guard = state.lock().unwrap();
+    assert_eq!(guard.phase, TractorPhase::Play);
+    assert!(guard.rules.trump_suit.is_some());
 }
 
 #[tokio::test]
@@ -277,6 +288,7 @@ async fn loop_helpers_handle_membership_timeout_cleanup_and_stop_requests() {
         (KEY_SETTLEMENT_TIME.to_owned(), 9),
     ]);
     assert_eq!(current_play_time(&configs, &state.lock().unwrap()), 4);
+    assert_eq!(current_bury_time(&configs, &state.lock().unwrap()), 4);
     assert_eq!(settlement_time(&configs), 9);
     assert_eq!(settlement_time(&HashMap::new()), 5);
 

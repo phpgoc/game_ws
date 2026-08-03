@@ -49,8 +49,8 @@ impl GameHandler for TestTractorHandler {
 
     fn build_room_settings(&self) -> SettingsBuilderResult {
         let (mut settings, mut params) = self.0.build_room_settings();
-        // Timing controls are intentionally not public room settings anymore,
-        // but this integration test still needs a fast deterministic round.
+        // Internal timing controls are injected only to keep this test fast.
+        // The public play-time range is widened below for the same reason.
         for (key, default) in [
             ("first_deal_time", 1_000),
             ("deal_time", 500),
@@ -328,7 +328,7 @@ async fn tractor_incremental_deal_compact_deck_and_bury_flow() {
                 "blood_enabled": 1,
                 "blood_start_score": 80,
                 "blood_score_per_unit": 40,
-                "target_rank": 12,
+                "target_rank": 11,
                 "removed_rank_count": 3,
                 "first_deal_time": 1000,
                 "deal_time": 500,
@@ -359,7 +359,7 @@ async fn tractor_incremental_deal_compact_deck_and_bury_flow() {
             _ => {}
         }
     };
-    assert!(started_at.elapsed() >= Duration::from_millis(650));
+    assert!(started_at.elapsed() >= Duration::from_millis(1_100));
     assert_eq!(dealt_cards.len(), 19);
     assert!(
         dealt_cards
@@ -392,7 +392,7 @@ async fn tractor_incremental_deal_compact_deck_and_bury_flow() {
     })
     .await;
     assert_eq!(snapshot["data"]["deck_count"], json!(2));
-    assert_eq!(snapshot["data"]["target_rank"], json!(2));
+    assert_eq!(snapshot["data"]["target_rank"], json!(5));
     assert_eq!(snapshot["data"]["final_target_rank"], json!(14));
     assert_eq!(snapshot["data"]["removed_rank_count"], json!(3));
     assert_eq!(snapshot["data"]["blood_enabled"], json!(true));

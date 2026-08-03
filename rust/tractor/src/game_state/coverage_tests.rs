@@ -71,7 +71,7 @@ fn phase_guards_reject_bury_deal_and_non_dealer_trump_actions() {
     assert_eq!(state.choose_timeout_bury(), None);
     assert!(state.deal_next_card().is_none());
 
-    state.phase = TractorPhase::Deal;
+    state.phase = TractorPhase::Bury;
     state.round_index = 1;
     state.dealer_position = 0;
     assert!(state.select_dealer_trump(1, TractorSuit::SPADE).is_err());
@@ -83,11 +83,12 @@ fn settlement_advances_to_the_first_winning_farmer_and_starts_a_round() {
     assert!(state.advance_after_settlement().is_err());
     state.phase = TractorPhase::Settlement;
     state.dealer_position = 0;
+    state.rules.target_rank = TractorRank::THREE;
     state.collected_scores = HashMap::from([(1, 80)]);
     state.rules.blood_start_score = 80;
     assert!(state.advance_after_settlement().expect("next round"));
     assert_eq!(state.dealer_position, 1);
-    assert_eq!(state.rules.target_rank, TractorRank::THREE);
+    assert_eq!(state.rules.target_rank, TractorRank::FOUR);
     assert_eq!(state.phase, TractorPhase::Deal);
 }
 

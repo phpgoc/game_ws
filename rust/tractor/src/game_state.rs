@@ -27,8 +27,7 @@ pub const REMOVABLE_RANKS: [TractorRank; 9] = [
     TractorRank::A,
 ];
 
-pub const TRACTOR_RANKS: [TractorRank; 13] = [
-    TractorRank::TWO,
+pub const TRACTOR_RANKS: [TractorRank; 12] = [
     TractorRank::THREE,
     TractorRank::FOUR,
     TractorRank::FIVE,
@@ -305,7 +304,7 @@ pub fn tractor_rank_path(
         }
     }
     if out.is_empty() {
-        out.push(TractorRank::TWO);
+        out.push(TractorRank::THREE);
     }
     out
 }
@@ -696,12 +695,6 @@ impl TractorGameState {
                 if let Some(declaration) = &self.declaration {
                     self.dealer_position = declaration.position as usize;
                 }
-            } else if self.declaration.is_none() {
-                // From round two onward the established dealer owns the choice.
-                // If a human has not selected during the deal window, choose the
-                // dealer's longest/most paired natural suit at the buzzer.
-                let suit = self.preferred_dealer_trump_suit();
-                auto_declaration = self.select_dealer_trump(self.dealer_position, suit).ok();
             }
             self.current_position = self.dealer_position;
             self.hands
@@ -1028,8 +1021,8 @@ impl TractorGameState {
         position: usize,
         suit: TractorSuit,
     ) -> Result<WsTractorTrumpDeclaration, &'static str> {
-        if self.round_index == 0 || self.phase != TractorPhase::Deal {
-            return Err("dealer selects trump only in later deal phases");
+        if self.round_index == 0 || self.phase != TractorPhase::Bury {
+            return Err("dealer selects trump only in a later-round bottom operation");
         }
         if position != self.dealer_position {
             return Err("only dealer selects trump");
@@ -1463,7 +1456,7 @@ mod tests {
     #[cfg(feature = "official")]
     fn later_round_trump_is_selected_only_by_the_established_dealer() {
         let mut state = test_state();
-        state.phase = TractorPhase::Deal;
+        state.phase = TractorPhase::Bury;
         state.round_index = 1;
         state.dealer_position = 2;
         state.rules.target_rank = TractorRank::FIVE;
@@ -1520,13 +1513,12 @@ mod tests {
     #[test]
     fn rank_path_skips_removed_ranks_and_keeps_final_target() {
         assert_eq!(
+            tractor_rank_path(0, TractorRank::A).first(),
+            Some(&TractorRank::THREE)
+        );
+        assert_eq!(
             tractor_rank_path(4, TractorRank::NINE),
-            vec![
-                TractorRank::TWO,
-                TractorRank::FIVE,
-                TractorRank::EIGHT,
-                TractorRank::NINE
-            ]
+            vec![TractorRank::FIVE, TractorRank::EIGHT, TractorRank::NINE]
         );
     }
 

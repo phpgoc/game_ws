@@ -53,9 +53,8 @@ pub fn build_tractor_settings() -> (GameSettings, HashMap<String, GameParam>) {
         (
             KEY_TARGET_RANK.into(),
             GameParam::Enum(GameParamEnum {
-                default: 12,
+                default: 11,
                 options: vec![
-                    "2".into(),
                     "3".into(),
                     "4".into(),
                     "5".into(),
@@ -87,6 +86,14 @@ pub fn build_tractor_settings() -> (GameSettings, HashMap<String, GameParam>) {
                 max: 32,
             }),
         ),
+        (
+            KEY_PLAY_TIME.into(),
+            GameParam::Range(GameParamRange {
+                default: 30,
+                min: 20,
+                max: 40,
+            }),
+        ),
     ]
     .into_iter()
     .collect();
@@ -111,23 +118,36 @@ mod tests {
     use super::*;
 
     #[test]
-    fn first_deal_is_slower_and_compact_deck_is_a_count() {
+    fn match_settings_start_at_three_and_keep_timing_internal() {
         let (settings, params) = build_tractor_settings();
         assert!(!settings.values.contains_key(KEY_FIRST_DEAL_TIME));
         assert!(!settings.values.contains_key(KEY_DEAL_TIME));
         assert!(!settings.values.contains_key(KEY_AI_ACTION_TIME));
         assert!(!settings.values.contains_key(KEY_AWAY_TIME));
-        assert!(!settings.values.contains_key(KEY_PLAY_TIME));
         assert!(!settings.values.contains_key(KEY_SETTLEMENT_TIME));
+        assert_eq!(settings.values[KEY_PLAY_TIME], 30);
         assert_eq!(settings.values[KEY_REMOVED_RANK_COUNT], 0);
         let GameParam::Enum(deck_count) = &params[KEY_DECK_COUNT] else {
             panic!("deck count must be an enum");
         };
         assert_eq!(deck_count.default, 0);
         assert_eq!(deck_count.options, ["2", "3", "4", "5", "6"]);
+        let GameParam::Enum(target_rank) = &params[KEY_TARGET_RANK] else {
+            panic!("target rank must be an enum");
+        };
+        assert_eq!(target_rank.default, 11);
+        assert_eq!(target_rank.options.first().map(String::as_str), Some("3"));
+        assert!(!target_rank.options.iter().any(|rank| rank == "2"));
         let GameParam::Range(removed) = &params[KEY_REMOVED_RANK_COUNT] else {
             panic!("removed rank count must be a range");
         };
         assert_eq!((removed.min, removed.max), (0, 9));
+        let GameParam::Range(play_time) = &params[KEY_PLAY_TIME] else {
+            panic!("play time must be a range");
+        };
+        assert_eq!(
+            (play_time.default, play_time.min, play_time.max),
+            (30, 20, 40)
+        );
     }
 }

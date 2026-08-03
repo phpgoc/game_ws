@@ -77,6 +77,12 @@ fn build_auto_bury_dispatch(
                 .mark_ai_takeover_position(position);
             controlled = true;
         }
+        let trump_declaration = if state.round_index > 0 && state.rules.trump_suit.is_none() {
+            let suit = state.preferred_dealer_trump_suit();
+            state.select_dealer_trump(position, suit).ok()
+        } else {
+            None
+        };
         let cards = if controlled {
             state.choose_auto_bury()
         } else {
@@ -96,6 +102,7 @@ fn build_auto_bury_dispatch(
             state.rules.bottom_card_count,
             state.hands.get(&position).cloned().unwrap_or_default(),
             state.snapshot(),
+            trump_declaration,
         ))
     };
 
@@ -107,9 +114,18 @@ fn build_auto_bury_dispatch(
             &mut dispatch,
         );
     }
-    let Some((position, name, bottom_card_count, hand, snapshot)) = result else {
+    let Some((position, name, bottom_card_count, hand, snapshot, trump_declaration)) = result
+    else {
         return dispatch;
     };
+    if let Some(declaration) = trump_declaration {
+        room_service.broadcast(
+            room_key,
+            TractorWsCode::TRUMP_DECLARED as i32,
+            declaration,
+            &mut dispatch,
+        );
+    }
     room_service.broadcast(
         room_key,
         TractorWsCode::BOTTOM_BURIED as i32,
@@ -257,7 +273,7 @@ fn build_deal_dispatch(
             return dispatch;
         };
         if finished {
-            let countdown = current_play_time(configs, &state);
+            let countdown = current_bury_time(configs, &state);
             state.set_turn_countdown(countdown);
         }
         let deal_event = WsTractorDealEvent {
@@ -328,18 +344,34 @@ fn current_play_time(configs: &HashMap<String, i32>, state: &TractorGameState) -
     configs.get(key).copied().unwrap_or(30).max(1) as u32
 }
 
+fn current_bury_time(configs: &HashMap<String, i32>, state: &TractorGameState) -> u32 {
+    let inactive = {
+        let base = state.base.lock().unwrap();
+        base.is_away(state.dealer_position) || base.is_disconnected(state.dealer_position)
+    };
+    if state.is_ai_controlled_position(state.dealer_position) || inactive {
+        return current_play_time(configs, state);
+    }
+    configs
+        .get(KEY_PLAY_TIME)
+        .copied()
+        .unwrap_or(30)
+        .max(1)
+        .saturating_mul(3) as u32
+}
+
 fn deal_step_delay(configs: &HashMap<String, i32>, state: &TractorGameState) -> Duration {
-    let key = if state.round_index == 0 {
-        KEY_FIRST_DEAL_TIME
+    let regular_total_millis = configs.get(KEY_DEAL_TIME).copied().unwrap_or(3_000).max(1) as u64;
+    let total_millis = if state.round_index == 0 {
+        let configured_first = configs
+            .get(KEY_FIRST_DEAL_TIME)
+            .copied()
+            .unwrap_or(15_000)
+            .max(1) as u64;
+        configured_first.max(regular_total_millis.saturating_mul(3))
     } else {
-        KEY_DEAL_TIME
+        regular_total_millis
     };
-    let default = if state.round_index == 0 {
-        15_000
-    } else {
-        3_000
-    };
-    let total_millis = configs.get(key).copied().unwrap_or(default).max(1) as u64;
     Duration::from_millis((total_millis / state.total_deal_count.max(1) as u64).max(1))
 }
 
@@ -807,20 +839,29 @@ mod tests {
     }
 
     #[test]
-    fn first_round_deal_uses_the_slower_configured_duration() {
+    fn first_round_deal_defaults_to_fifteen_seconds_and_never_below_three_times() {
         let state = test_state_with_ai_leader();
-        let configs = HashMap::from([
-            (KEY_FIRST_DEAL_TIME.to_owned(), 12_000),
-            (KEY_DEAL_TIME.to_owned(), 2_000),
-        ]);
+        let defaults = HashMap::new();
         {
             let mut state = state.lock().unwrap();
             state.total_deal_count = 100;
             state.round_index = 0;
             assert_eq!(
-                deal_step_delay(&configs, &state),
-                Duration::from_millis(120)
+                deal_step_delay(&defaults, &state),
+                Duration::from_millis(150)
             );
+            state.round_index = 1;
+            assert_eq!(
+                deal_step_delay(&defaults, &state),
+                Duration::from_millis(30)
+            );
+
+            let configs = HashMap::from([
+                (KEY_FIRST_DEAL_TIME.to_owned(), 2_000),
+                (KEY_DEAL_TIME.to_owned(), 2_000),
+            ]);
+            state.round_index = 0;
+            assert_eq!(deal_step_delay(&configs, &state), Duration::from_millis(60));
             state.round_index = 1;
             assert_eq!(deal_step_delay(&configs, &state), Duration::from_millis(20));
         }

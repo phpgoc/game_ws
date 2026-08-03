@@ -188,7 +188,7 @@ fn rules_conversion_clamps_settings_and_state_cleanup_keeps_current_room_identit
     assert_eq!(rules.bottom_card_count, 0);
     assert_eq!(rules.deck_count, 6);
     assert_eq!(rules.removed_rank_count, 9);
-    assert_eq!(rules.target_rank, TractorRank::TWO);
+    assert_eq!(rules.target_rank, TractorRank::THREE);
     assert_eq!(rules.trump_suit, None);
 
     let (handler, mut room) = ready_room();
@@ -308,9 +308,10 @@ fn request_handlers_broadcast_successful_bury_declaration_selection_and_play() {
     let state = handler.state(ROOM_KEY).expect("running tractor state");
     {
         let mut state = state.lock().unwrap();
-        state.phase = TractorPhase::Deal;
+        state.phase = TractorPhase::Bury;
         state.round_index = 1;
         state.dealer_position = 0;
+        state.set_turn_countdown(73);
     }
     assert_eq!(
         response_code(&handler.handle_select_trump(&mut room, 1, select_spade_request())),
@@ -319,6 +320,10 @@ fn request_handlers_broadcast_successful_bury_declaration_selection_and_play() {
     assert_eq!(
         state.lock().unwrap().rules.trump_suit,
         Some(TractorSuit::SPADE)
+    );
+    assert_eq!(
+        state.lock().unwrap().base.lock().unwrap().turn_countdown,
+        73
     );
 
     let (handler, mut room) = ready_room();

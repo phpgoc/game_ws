@@ -6,16 +6,23 @@ license = "MIT"
 
 [features]
 default = []
-official = ["dep:data", "data/cache-redis"]
+official = [
+    "dep:data",
+    "data/cache-redis",
+    "dep:runtime_common",
+    "dep:tracing",
+]
 
 [dependencies]
 anyhow = "1"
 data = { path = "../../../data", optional = true }
 rand = "0.9"
+runtime_common = { path = "../../../runtime_common", optional = true }
 serde = "1"
 serde_json = "1"
 share_type_public = { path = "../../share_type_public" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+tracing = { version = "0.1", optional = true }
 ws_common = { path = "../common" }
 
 [dev-dependencies]

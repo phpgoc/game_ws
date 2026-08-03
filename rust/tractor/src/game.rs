@@ -72,14 +72,14 @@ impl TractorGameHandler {
                 .clamp(0, 4) as usize
                 + 2,
             final_target_rank: tractor_rank_from_setting_index(
-                configs.get(KEY_TARGET_RANK).copied().unwrap_or(12),
+                configs.get(KEY_TARGET_RANK).copied().unwrap_or(11),
             ),
             removed_rank_count: configs
                 .get(KEY_REMOVED_RANK_COUNT)
                 .copied()
                 .unwrap_or(0)
                 .clamp(0, 9) as usize,
-            target_rank: TractorRank::TWO,
+            target_rank: TractorRank::THREE,
             trump_suit: None,
         }
     }
