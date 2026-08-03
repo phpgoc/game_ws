@@ -200,6 +200,22 @@ async fn deliver_dispatch(dispatch: Dispatch, senders: &SessionSenders) {
     }
 }
 
+fn winners_left_of_dealer(s: &HoldemGameState, winners: &[usize]) -> Vec<usize> {
+    let positions = s.active_positions();
+    if positions.is_empty() {
+        return Vec::new();
+    }
+    let start = positions
+        .iter()
+        .position(|position| *position == s.dealer_position)
+        .map(|index| (index + 1) % positions.len())
+        .unwrap_or_default();
+    (0..positions.len())
+        .map(|offset| positions[(start + offset) % positions.len()])
+        .filter(|position| winners.contains(position))
+        .collect()
+}
+
 fn settle_hand(state: &HoldemStateHandle) -> WsTexasHoldEmSettlementEvent {
     let mut s = state.lock().unwrap();
     s.phase = TexasHoldEmPhase::Settlement;
@@ -266,13 +282,16 @@ fn settle_hand(state: &HoldemStateHandle) -> WsTexasHoldEmSettlementEvent {
         if pot_winners.is_empty() {
             continue;
         }
-        let share = pot_amount / pot_winners.len() as i32;
-        let remainder = pot_amount % pot_winners.len() as i32;
-        for (index, winner) in pot_winners.iter().enumerate() {
-            let extra = if index == 0 { remainder } else { 0 };
+        let payout_winners = winners_left_of_dealer(&s, &pot_winners);
+        let share = pot_amount / payout_winners.len() as i32;
+        let remainder = pot_amount % payout_winners.len() as i32;
+        for (index, winner) in payout_winners.iter().enumerate() {
+            let extra = i32::from(index < remainder as usize);
             *s.chips.entry(*winner).or_default() += share + extra;
-            if !winners.contains(winner) {
-                winners.push(*winner);
+        }
+        for winner in pot_winners {
+            if !winners.contains(&winner) {
+                winners.push(winner);
             }
         }
     }
@@ -1418,6 +1437,37 @@ mod tests {
         assert_eq!(state.chip_count(0), 1025);
         assert_eq!(state.chip_count(1), 950);
         assert_eq!(state.chip_count(2), 1025);
+    }
+
+    #[test]
+    fn tied_side_pots_distribute_odd_chips_clockwise_left_of_the_dealer() {
+        let common = Arc::new(std::sync::Mutex::new(CommonGameState::default()));
+        let mut state = HoldemGameState::from_common_with_variant(common, STANDARD_TEXAS);
+        state.phase = TexasHoldEmPhase::River;
+        state.dealer_position = 1;
+        state.public_cards = vec![9, 10, 11, 12, 13];
+        state.hand_players = (0..4)
+            .map(|position| (position, format!("p{position}")))
+            .collect();
+        for position in 0..4 {
+            state
+                .hands
+                .insert(position, vec![position as i32 + 1, position as i32 + 14]);
+            state.chips.insert(position, 0);
+        }
+        state.contributions = [(0, 5), (1, 10), (2, 15), (3, 15)].into_iter().collect();
+        state.folded.insert(3);
+        state.pot = 45;
+
+        let state = Arc::new(std::sync::Mutex::new(state));
+        let settlement = settle_hand(&state);
+        let state = state.lock().unwrap();
+
+        assert_eq!(settlement.winners, vec![0, 1, 2]);
+        assert_eq!(state.chip_count(0), 7);
+        assert_eq!(state.chip_count(1), 13);
+        assert_eq!(state.chip_count(2), 25);
+        assert_eq!(state.chip_count(3), 0);
     }
 
     #[test]
