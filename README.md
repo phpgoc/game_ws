@@ -15,59 +15,41 @@
 - `rust/landlord/`: 斗地主 Rust 服务端。
 - `rust/shenyang_mahjong/`: 沈阳麻将 Rust 服务端。
 - `rust/holdem/`: Hold'em 系列 Rust 服务端，承载德州、明牌德州、短牌德州和奥马哈。
+- `rust/tractor/`: 拖拉机 Rust 服务端。
 - `rust/p2p/`: 独立的两人 WebRTC 信令服务与 STUN/TURN 临时凭证签发器，不依赖其他游戏 crate。
 - `rust/android_server/`: Android JNI bridge，按单游戏 feature 产出 `libws_server.so`。
 - `android/`: 5 个 Rust 服务共用的 Android 前台服务壳，每个 APK 只打包一个 `libws_server.so`。
 
-## 依赖
+## 支持平台与发布规则
 
-Ubuntu / Debian 构建公版 Rust WS 服务端：
+当前 5 个 server 都支持从源码编译：
 
-```sh
-sudo apt update
-sudo apt install -y build-essential pkg-config
-```
+- `landlord`
+- `shenyang_mahjong`
+- `holdem`
+- `tractor`
+- `p2p`
 
-基础 Rust：
+平台规则如下：
 
-```sh
-rustup toolchain install stable
-rustup default stable
-rustup component add rustfmt
-```
+| 目标平台 | 编译方式 | 官方 release |
+| --- | --- | --- |
+| Linux x86_64 musl | `build_script/build_all.sh` | 是，发布 5 个静态可执行文件 |
+| Windows x86_64 | 按本文 PowerShell 命令自行编译 | 否 |
+| Android APK | 使用 Gradle 或 `Dockerfile.android` 自行编译 | 否 |
+| ARM64 Linux | 使用交叉工具链或 `Dockerfile.arm64` 自行编译 | 否 |
 
-Android 额外需要：
+`build_script/build_all.sh` 和 `build_script/build_in_docker.sh` 只负责正式发布的
+5 个 Linux x86_64 musl server，不再构建 APK、Windows 或 ARM Linux 产物。
 
-```sh
-cargo install cargo-ndk
-rustup target add aarch64-linux-android x86_64-linux-android
-```
-
-并在 Android Studio SDK Manager 中安装 Android NDK。
-
-## 统一构建 10 个产物
-
-`build_script/build_all.sh` 会一次生成 5 个 Linux x86_64 musl 可执行文件和
-5 个 Android APK：
+独立检出开源仓库后，手动运行 Cargo 或 Gradle 命令前先准备不包含私有实现的依赖边界：
 
 ```sh
-./build_script/build_all.sh
+./ci/prepare-public-build.sh
 ```
 
-macOS 首次构建可先安装全部依赖：
-
-```sh
-./build_script/install_deps_mac.sh
-```
-
-不想在主机安装工具链时使用 Docker：
-
-```sh
-./build_script/build_in_docker.sh
-```
-
-10 个文件统一输出到 `build_script/output/`，名称分别为
-`landlord` / `shenyang_mahjong` / `holdem` / `tractor` / `p2p` 及其同名 `.apk`。
+Windows 用户可在 Git Bash 中执行 `bash ci/prepare-public-build.sh`。
+在完整 `lan_game` 仓库中构建时，脚本会直接使用已有的真实 sibling crate。
 
 ## 运行 Rust WS 服务
 
@@ -124,7 +106,7 @@ crate、`runtime_common` 和 AI 模块。
 
 拖拉机房间开始后会锁定设置。当前主要设置包括：`deck_count`（几副牌）、`removed_rank_count`（按 `3/4/6/7/8/9/J/Q/A` 的顺序删掉前 N 个点数，`0` 表示不删）、`first_deal_time`（首局发牌总时间，毫秒）、`deal_time`（后续局发牌总时间，毫秒）、`ai_action_time`（AI/托管行动间隔，毫秒）、`target_rank`（最终目标 rank）、`blood_enabled` / `blood_start_score` / `blood_score_per_unit`（喝血相关）。首局发牌中由所有玩家抢主/反主并决定首庄；第二局起只由既定庄家选择主花色。发完后庄家收底并扣回相同张数，随后进入出牌。
 
-## 发布 Rust WS 服务端
+## 编译与发布 Rust WS 服务端
 
 公版自建 WS 服务端不包含 official 统计、SQLite 或游戏 AI，也不接受添加/删除 AI
 座位。斗地主、沈阳麻将和拖拉机需要真人凑齐人数；超时只执行保证牌局可继续的合法兜底动作。
@@ -132,16 +114,18 @@ AI 源码保存在私有仓库。私有 `ai` feature 只接入服务端 AI；`of
 
 推荐下载 Linux x86_64 musl release 产物。该产物是静态单文件，适合大多数 x86_64 Linux 服务器直接运行。
 
-### Linux x86_64 musl
+### Linux x86_64 musl（官方 release）
 
-从源码构建 Linux x86_64 musl release：
+Ubuntu / Debian 安装依赖：
 
 ```sh
-sudo apt install -y musl-tools
+sudo apt update
+sudo apt install -y build-essential musl-tools pkg-config
+rustup toolchain install stable
 rustup target add x86_64-unknown-linux-musl
 ```
 
-构建发布包：
+在 `ws` 根目录构建全部 5 个发布文件：
 
 ```sh
 ./build_script/build_all.sh
@@ -149,15 +133,21 @@ rustup target add x86_64-unknown-linux-musl
 
 产物位置：
 
-```sh
-target/x86_64-unknown-linux-musl/release/landlord
-target/x86_64-unknown-linux-musl/release/shenyang_mahjong
-target/x86_64-unknown-linux-musl/release/holdem
-target/x86_64-unknown-linux-musl/release/tractor
-target/x86_64-unknown-linux-musl/release/p2p
+```text
+build_script/output/landlord
+build_script/output/shenyang_mahjong
+build_script/output/holdem
+build_script/output/tractor
+build_script/output/p2p
 ```
 
-### macOS 交叉编译 Linux musl
+不想在主机安装 Rust 和 musl 工具链时，可用 Docker 构建相同的 5 个文件：
+
+```sh
+./build_script/build_in_docker.sh
+```
+
+#### macOS 交叉编译 Linux musl
 
 macOS 上交叉编译到 Linux musl 需要额外安装 linker。可以用 Homebrew 安装 [`FiloSottile/musl-cross`](https://github.com/FiloSottile/homebrew-musl-cross)：
 
@@ -187,22 +177,109 @@ CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=x86_64-linux-musl-gcc \
 linker = "x86_64-linux-musl-gcc"
 ```
 
-### Windows 静态 release（不推荐运行环境）
+也可用 `./build_script/install_deps_mac.sh` 安装这套 x86_64 Linux 发布工具链。
+
+### Android APK（用户自行编译）
+
+每个 APK 只包含一个 server。`-Pgame` 可填写 `landlord`、
+`shenyang_mahjong`、`holdem`、`tractor` 或 `p2p`。
+
+本机安装 JDK 17、Android SDK 35、NDK 27 后，再安装 Rust Android 工具链：
+
+```sh
+cargo install cargo-ndk --version 4.1.2 --locked
+rustup target add aarch64-linux-android x86_64-linux-android
+```
+
+构建可直接安装的 debug APK；默认同时包含 ARM64 真机与 x86_64 模拟器：
+
+```sh
+cd android
+./gradlew --no-daemon :app:assembleDebug -Pgame=tractor
+```
+
+产物位于 `android/app/build/outputs/apk/debug/app-debug.apk`。Windows 主机把
+`./gradlew` 换成 `.\gradlew.bat`。完整的环境变量、单 ABI、release APK 与签名说明见
+[`android/README.md`](android/README.md)。
+
+也可以完全用 Docker 编译。下面以拖拉机 APK 为例，替换 `GAME` 即可编译其余 4 个：
+
+```sh
+mkdir -p build_script/output/android
+docker build \
+  --file build_script/Dockerfile.android \
+  --build-arg GAME=tractor \
+  --output type=local,dest=build_script/output/android \
+  .
+```
+
+产物为 `build_script/output/android/tractor.apk`。该 Dockerfile 默认打包
+`arm64-v8a,x86_64`；只要真机版本时增加 `--build-arg RUST_ABIS=arm64-v8a`。
+
+### ARM64 Linux（用户自行编译）
+
+推荐直接使用独立 Dockerfile 交叉编译 5 个 ARM64 GNU/Linux server：
+
+```sh
+mkdir -p build_script/output/arm64
+docker build \
+  --file build_script/Dockerfile.arm64 \
+  --output type=local,dest=build_script/output/arm64 \
+  .
+```
+
+输出目录包含 `landlord`、`shenyang_mahjong`、`holdem`、`tractor`、`p2p`。
+这些是 `aarch64-unknown-linux-gnu` 文件，适用于 64 位 ARM Linux；它们会动态依赖
+glibc。Dockerfile 使用 Ubuntu 20.04，以兼容 glibc 2.31 及以上系统。需要兼容更旧系统时，
+应在对应旧版 Linux 镜像或目标 ARM 设备上重新编译。
+
+不用 Docker 时，可以在 Ubuntu / Debian x86_64 主机安装 ARM64 交叉编译器：
+
+```sh
+sudo apt update
+sudo apt install -y build-essential gcc-aarch64-linux-gnu pkg-config
+rustup target add aarch64-unknown-linux-gnu
+export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+
+cargo build --release \
+  --target aarch64-unknown-linux-gnu \
+  --manifest-path Cargo.toml \
+  -p landlord \
+  -p shenyang_mahjong \
+  -p holdem \
+  -p tractor \
+  -p p2p \
+  --no-default-features
+```
+
+本机构建产物位于 `target/aarch64-unknown-linux-gnu/release/`。如果设备显示
+`armv7l` 而不是 `aarch64`，则需改用 `armv7-unknown-linux-gnueabihf` target 和
+`gcc-arm-linux-gnueabihf` linker；ARMv7 不使用 `Dockerfile.arm64`。
+
+### Windows x86_64（兼容构建，不进入 release）
 
 Windows 不是推荐运行环境。WS 服务端即使能运行，也要额外考虑 Windows 防火墙、局域网发现、杀毒软件、端口开放和执行策略等问题。Windows release 仅用于验证或自行构建；公开发布页优先提供 Linux musl 静态产物。
 
-如需验证 Windows release，可以在 Windows PowerShell 中静态链接 MSVC CRT：
+Windows 版本应在 Windows 原生环境编译，不使用 Linux Docker 交叉编译 MSVC。
+先安装 Rust stable，并在 Visual Studio Installer 中安装“使用 C++ 的桌面开发”和
+Windows SDK。然后在 `ws` 根目录的 PowerShell 中静态链接 MSVC CRT：
 
 ```powershell
 rustup target add x86_64-pc-windows-msvc
-$env:RUSTFLAGS="-C target-feature=+crt-static"
-cargo build --release --target x86_64-pc-windows-msvc `
-  -p landlord `
-  -p shenyang_mahjong `
-  -p holdem `
-  -p tractor `
-  -p p2p
-Remove-Item Env:RUSTFLAGS
+$env:RUSTFLAGS = "-C target-feature=+crt-static"
+try {
+  cargo build --release `
+    --target x86_64-pc-windows-msvc `
+    --manifest-path Cargo.toml `
+    -p landlord `
+    -p shenyang_mahjong `
+    -p holdem `
+    -p tractor `
+    -p p2p `
+    --no-default-features
+} finally {
+  Remove-Item Env:RUSTFLAGS -ErrorAction SilentlyContinue
+}
 ```
 
 产物位置：
@@ -215,40 +292,25 @@ target\x86_64-pc-windows-msvc\release\tractor.exe
 target\x86_64-pc-windows-msvc\release\p2p.exe
 ```
 
+例如运行拖拉机 server：
+
+```powershell
+.\target\x86_64-pc-windows-msvc\release\tractor.exe --host 0.0.0.0 --port 9004
+```
+
+首次运行要允许 Windows 防火墙放行对应 TCP 端口。`p2p` 还需要放行 UDP 3478 和
+UDP 49160-49200；公网部署还要配置路由器端口映射。
+
 ### 维护约束
 
 维护 release 脚本、CI 或自动生成的构建说明时，保持以下约束：
 
 ```text
 推荐 release 产物：Linux x86_64 musl 静态单文件。
-release 包范围：landlord、shenyang_mahjong、holdem、tractor。
+release 包范围：landlord、shenyang_mahjong、holdem、tractor、p2p。
+build_all.sh 和 build_in_docker.sh 只生成上述 5 个 Linux x86_64 文件。
+Android APK 与 ARM64 Linux 可以使用独立 Dockerfile，但只能由用户按文档自行构建，不进入 release。
 Windows 不作为推荐运行环境；如需 Windows 构建说明，只保留 x86_64-pc-windows-msvc + crt-static 的验证命令，并提醒防火墙、杀毒软件、端口开放和执行策略需要额外处理。
-```
-
-## 运行 Android 斗地主服务
-
-Android 目录：
-
-```sh
-cd ws/android
-```
-
-模拟器：
-
-```sh
-./gradlew --no-daemon :app:assembleDebug -PrustAbis=x86_64
-```
-
-真机：
-
-```sh
-./gradlew --no-daemon :app:assembleDebug -PrustAbis=arm64-v8a
-```
-
-默认同时构建 `arm64-v8a` 和 `x86_64`：
-
-```sh
-./gradlew --no-daemon :app:assembleDebug
 ```
 
 ## 网络配置
