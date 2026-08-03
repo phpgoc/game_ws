@@ -1,16 +1,10 @@
 FROM ubuntu:24.04
 
-ARG ANDROID_COMMAND_LINE_TOOLS=11076708
-ARG ANDROID_NDK_VERSION=27.0.12077973
-ARG CARGO_NDK_VERSION=4.1.2
-
 ENV DEBIAN_FRONTEND=noninteractive \
-    ANDROID_HOME=/opt/android-sdk \
-    ANDROID_NDK_HOME=/opt/android-sdk/ndk/${ANDROID_NDK_VERSION} \
     CARGO_HOME=/root/.cargo \
     CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc \
     CC_x86_64_unknown_linux_musl=musl-gcc
-ENV PATH="${CARGO_HOME}/bin:${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:${PATH}"
+ENV PATH="${CARGO_HOME}/bin:${PATH}"
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -18,34 +12,12 @@ RUN apt-get update \
         ca-certificates \
         curl \
         musl-tools \
-        openjdk-17-jdk-headless \
         pkg-config \
-        unzip \
     && rm -rf /var/lib/apt/lists/*
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
         | sh -s -- -y --default-toolchain stable \
-    && rustup target add \
-        x86_64-unknown-linux-musl \
-        aarch64-linux-android \
-        x86_64-linux-android \
-    && cargo install cargo-ndk --version "${CARGO_NDK_VERSION}" --locked
-
-RUN curl -fsSL \
-        "https://dl.google.com/android/repository/commandlinetools-linux-${ANDROID_COMMAND_LINE_TOOLS}_latest.zip" \
-        -o /tmp/android-tools.zip \
-    && mkdir -p "${ANDROID_HOME}/cmdline-tools" /tmp/android-tools \
-    && unzip -q /tmp/android-tools.zip -d /tmp/android-tools \
-    && mv /tmp/android-tools/cmdline-tools "${ANDROID_HOME}/cmdline-tools/latest" \
-    && rm -rf /tmp/android-tools /tmp/android-tools.zip \
-    && yes | sdkmanager --sdk_root="${ANDROID_HOME}" --licenses >/dev/null || true
-
-RUN sdkmanager --sdk_root="${ANDROID_HOME}" \
-        "platform-tools" \
-        "platforms;android-35" \
-        "build-tools;34.0.0" \
-        "build-tools;35.0.0" \
-        "ndk;${ANDROID_NDK_VERSION}"
+    && rustup target add x86_64-unknown-linux-musl
 
 WORKDIR /workspace
 COPY . .

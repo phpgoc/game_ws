@@ -21,7 +21,7 @@ docker build \
     "${WS_DIR}"
 
 echo
-echo "=== [2/2] Building 10 artifacts in Docker ==="
+echo "=== [2/2] Building 5 Linux x86_64 musl release artifacts in Docker ==="
 docker run \
     --rm \
     --platform linux/amd64 \
