@@ -163,8 +163,12 @@ pub fn settle_round(
         winner_scores_for_settlement(state, settlement, &score_changes, context, |position| {
             room_service.room_official_user_id(room_key, position)
         });
+    let player_scores = player_scores_for_official_users(&score_changes, |position| {
+        room_service.room_official_user_id(room_key, position)
+    });
+    let has_winner = !settlement.unique_winner_positions().is_empty();
     let (from_position, is_reverse_win) =
-        official_discard_context_for_settlement(state, settlement, !winner_scores.is_empty());
+        official_discard_context_for_settlement(state, settlement, has_winner);
     let discarder_user_id =
         from_position.and_then(|position| room_service.room_official_user_id(room_key, position));
 
@@ -172,10 +176,11 @@ pub fn settle_round(
         if let Err(err) = data::service::game_round::shenyang_mahjong_settlement(
             data::input::GameRoundShenyangMahjongSettleInput {
                 game_match_id,
-                is_draw: winner_scores.is_empty(),
+                is_draw: !has_winner,
                 discarder_user_id,
                 is_reverse_win,
                 winner_scores,
+                player_scores,
             },
         )
         .await
@@ -187,6 +192,26 @@ pub fn settle_round(
             );
         }
     });
+}
+
+#[cfg(feature = "official")]
+fn player_scores_for_official_users<F>(
+    score_changes: &[WsShenyangMahjongScoreChange],
+    mut user_id_for_position: F,
+) -> Vec<data::input::GameRoundShenyangMahjongPlayerScoreInput>
+where
+    F: FnMut(usize) -> Option<i32>,
+{
+    score_changes
+        .iter()
+        .filter_map(|change| {
+            let position = usize::try_from(change.position).ok()?;
+            Some(data::input::GameRoundShenyangMahjongPlayerScoreInput {
+                user_id: user_id_for_position(position)?,
+                score: i64::from(change.score),
+            })
+        })
+        .collect()
 }
 
 #[cfg(not(feature = "official"))]
@@ -268,6 +293,9 @@ where
     }
     winner_scores
 }
+
+#[cfg(all(test, feature = "official"))]
+mod score_tests;
 
 #[cfg(test)]
 mod tests {
