@@ -304,7 +304,15 @@ pub fn tractor_rank_path(
         }
     }
     if out.is_empty() {
-        out.push(TractorRank::THREE);
+        // The configured finishing rank may itself have been removed. The
+        // match still has to start on a rank that exists in the compact deck,
+        // even when that first retained rank is above the requested finish.
+        if let Some(first_retained) = TRACTOR_RANKS
+            .into_iter()
+            .find(|rank| !rank_is_removed(removed_rank_count, *rank))
+        {
+            out.push(first_retained);
+        }
     }
     out
 }
@@ -1519,6 +1527,10 @@ mod tests {
         assert_eq!(
             tractor_rank_path(4, TractorRank::NINE),
             vec![TractorRank::FIVE, TractorRank::EIGHT, TractorRank::NINE]
+        );
+        assert_eq!(
+            tractor_rank_path(9, TractorRank::THREE),
+            vec![TractorRank::FIVE]
         );
     }
 
