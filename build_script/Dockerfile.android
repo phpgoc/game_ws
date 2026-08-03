@@ -1,0 +1,59 @@
+FROM ubuntu:24.04 AS builder
+
+ARG ANDROID_COMMAND_LINE_TOOLS=11076708
+ARG ANDROID_NDK_VERSION=27.0.12077973
+ARG CARGO_NDK_VERSION=4.1.2
+ARG GAME=landlord
+ARG RUST_ABIS=arm64-v8a,x86_64
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    ANDROID_HOME=/opt/android-sdk \
+    ANDROID_NDK_HOME=/opt/android-sdk/ndk/${ANDROID_NDK_VERSION} \
+    CARGO_HOME=/root/.cargo
+ENV PATH="${CARGO_HOME}/bin:${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:${PATH}"
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        curl \
+        openjdk-17-jdk-headless \
+        pkg-config \
+        unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+        | sh -s -- -y --default-toolchain stable \
+    && rustup target add aarch64-linux-android x86_64-linux-android \
+    && cargo install cargo-ndk --version "${CARGO_NDK_VERSION}" --locked
+
+RUN curl -fsSL \
+        "https://dl.google.com/android/repository/commandlinetools-linux-${ANDROID_COMMAND_LINE_TOOLS}_latest.zip" \
+        -o /tmp/android-tools.zip \
+    && mkdir -p "${ANDROID_HOME}/cmdline-tools" /tmp/android-tools \
+    && unzip -q /tmp/android-tools.zip -d /tmp/android-tools \
+    && mv /tmp/android-tools/cmdline-tools "${ANDROID_HOME}/cmdline-tools/latest" \
+    && rm -rf /tmp/android-tools /tmp/android-tools.zip \
+    && yes | sdkmanager --sdk_root="${ANDROID_HOME}" --licenses >/dev/null || true
+
+RUN sdkmanager --sdk_root="${ANDROID_HOME}" \
+        "platform-tools" \
+        "platforms;android-35" \
+        "build-tools;34.0.0" \
+        "build-tools;35.0.0" \
+        "ndk;${ANDROID_NDK_VERSION}"
+
+WORKDIR /workspace
+COPY . .
+
+RUN ./ci/prepare-public-build.sh \
+    && cd android \
+    && ./gradlew --no-daemon --console=plain :app:assembleDebug \
+        -Pgame="${GAME}" \
+        -PrustAbis="${RUST_ABIS}" \
+        -PrustLocked=true \
+    && mkdir -p /artifact \
+    && install -m 0644 app/build/outputs/apk/debug/app-debug.apk "/artifact/${GAME}.apk"
+
+FROM scratch AS artifact
+COPY --from=builder /artifact/ /
