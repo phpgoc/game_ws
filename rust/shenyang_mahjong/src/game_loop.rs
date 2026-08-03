@@ -125,7 +125,9 @@ fn apply_timeout_control(
     state: &mut ShenyangMahjongLoopState,
     authorizations: &[(usize, bool)],
 ) -> Vec<(usize, bool)> {
-    if state.turn_countdown() != 0 {
+    // 抢牌窗口超时只表示玩家放弃本次吃、碰、杠、胡机会，不能据此判定玩家暂离。
+    // 否则一次未响应的抢牌会开启 AI 托管，导致玩家之后连自己的摸牌回合都看不到。
+    if state.turn_countdown() != 0 || state.claim_window.is_some() {
         return Vec::new();
     }
     let still_waiting = timed_out_positions(state);

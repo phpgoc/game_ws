@@ -127,6 +127,24 @@ fn timeout_control_skips_nonwaiting_and_already_ai_controlled_positions() {
 }
 
 #[test]
+fn claim_timeout_passes_without_marking_the_player_away() {
+    let mut state = state_with_players(2);
+    state.current_position = 0;
+    state.claim_window = Some(ClaimWindowState {
+        tile: 3,
+        from_position: 0,
+        kind: ClaimWindowKind::Discard,
+        eligible_positions: vec![1],
+        responses: HashMap::new(),
+    });
+    state.set_turn_countdown(0);
+
+    assert!(apply_timeout_control(&mut state, &[(1, true)]).is_empty());
+    assert!(!state.is_away(1));
+    assert!(!state.is_ai_controlled_position(1));
+}
+
+#[test]
 fn room_state_checks_require_the_current_room_instance() {
     let mut room = RoomService::default();
     room.handle_common_request(
