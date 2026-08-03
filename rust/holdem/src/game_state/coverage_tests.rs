@@ -84,6 +84,27 @@ fn action_rotation_and_round_completion_skip_unavailable_positions() {
 }
 
 #[test]
+fn heads_up_button_posts_small_blind_and_acts_first_preflop() {
+    let common = common_with_players(2);
+    let mut state = HoldemGameState::from_common_with_variant(common, STANDARD_TEXAS);
+    let starting_chips = HashMap::from([(0, 1000), (1, 1000)]);
+
+    state
+        .deal_new_hand(1000, 5, 10, 0, &starting_chips)
+        .expect("deal heads-up hand");
+
+    assert_eq!(state.dealer_position, 0);
+    assert_eq!(state.small_blind_position, 0);
+    assert_eq!(state.big_blind_position, 1);
+    assert_eq!(state.current_position, 0);
+    assert_eq!(state.call_amount(0), 5);
+
+    state.phase = TexasHoldEmPhase::PreFlop;
+    state.reveal_next_phase();
+    assert_eq!(state.current_position, 1);
+}
+
+#[test]
 fn reveal_next_phase_handles_terminal_and_non_hand_phases() {
     let mut state = hand_state();
     state.phase = TexasHoldEmPhase::River;

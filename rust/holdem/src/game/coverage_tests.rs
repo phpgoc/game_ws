@@ -7,7 +7,9 @@ use std::{
 use share_type_public::{
     CommonEvent, GameId, Routes, TexasHoldEmAction, TexasHoldEmAutoStrategy, TexasHoldEmPhase,
     WsCode, WsJoinRequest,
-    games::texas_hold_em::{WsTexasHoldEmAutoStrategyRequest, WsTexasHoldEmPlayRequest},
+    games::texas_hold_em::{
+        WsTexasHoldEmAutoStrategyRequest, WsTexasHoldEmPlayRequest, WsTexasHoldEmSettlementEvent,
+    },
 };
 use ws_common::{
     ClientRequest, CommonGameState, Delivery, Dispatch, GameHandler, OutboundPayload, RoomService,
@@ -95,17 +97,34 @@ fn apply_action_covers_full_and_under_raise_paths() {
     assert_eq!(state.current_bet, 30);
     assert_eq!(state.min_raise, 20);
     assert_eq!(state.acted, [0].into_iter().collect());
+    assert!(state.can_raise(1));
 
     let mut under_raise = new_state();
     under_raise.current_bet = 10;
     under_raise.min_raise = 10;
     under_raise.chips.insert(0, 15);
+    under_raise.round_bets.insert(1, 10);
     under_raise.acted.insert(1);
     let all_in = apply_action(&mut under_raise, 0, request(TexasHoldEmAction::ALL_IN, 0))
         .expect("short all-in is still a legal action");
     assert!(all_in.all_in);
     assert_eq!(under_raise.current_bet, 15);
     assert!(under_raise.acted.contains(&1));
+    assert!(!under_raise.can_raise(1));
+
+    under_raise.chips.insert(1, 100);
+    assert!(apply_action(&mut under_raise, 1, request(TexasHoldEmAction::RAISE, 10),).is_none());
+    assert!(apply_action(&mut under_raise, 1, request(TexasHoldEmAction::ALL_IN, 0),).is_none());
+    let call = apply_action(&mut under_raise, 1, request(TexasHoldEmAction::CALL, 0))
+        .expect("a player may still call an insufficient all-in raise");
+    assert_eq!(call.amount, 5);
+
+    let mut cumulative = new_state();
+    cumulative.current_bet = 20;
+    cumulative.min_raise = 10;
+    cumulative.round_bets.insert(1, 10);
+    cumulative.acted.insert(1);
+    assert!(cumulative.can_raise(1));
 
     let mut full_all_in = new_state();
     full_all_in.current_bet = 10;
@@ -121,6 +140,30 @@ fn apply_action_covers_full_and_under_raise_paths() {
     let mut empty = new_state();
     empty.chips.insert(0, 0);
     assert!(apply_action(&mut empty, 0, request(TexasHoldEmAction::ALL_IN, 0)).is_none());
+
+    let mut checked_before_short_open = new_state();
+    apply_action(
+        &mut checked_before_short_open,
+        1,
+        request(TexasHoldEmAction::CHECK, 0),
+    )
+    .expect("checking before an opening bet is legal");
+    checked_before_short_open.chips.insert(0, 5);
+    apply_action(
+        &mut checked_before_short_open,
+        0,
+        request(TexasHoldEmAction::ALL_IN, 0),
+    )
+    .expect("a short opening all-in is legal");
+    assert_eq!(checked_before_short_open.current_bet, 5);
+    assert!(checked_before_short_open.can_raise(1));
+    apply_action(
+        &mut checked_before_short_open,
+        1,
+        request(TexasHoldEmAction::RAISE, 10),
+    )
+    .expect("a prior check does not close raising against a new opening bet");
+    assert_eq!(checked_before_short_open.current_bet, 15);
 }
 
 #[test]
@@ -133,6 +176,8 @@ fn actions_reject_unfunded_bets_and_raises_that_do_not_cover_the_call() {
     short_raise.current_bet = 10;
     short_raise.chips.insert(0, 5);
     assert!(apply_action(&mut short_raise, 0, request(TexasHoldEmAction::RAISE, 10)).is_none());
+    assert_eq!(short_raise.chip_count(0), 5);
+    assert_eq!(short_raise.pot, 0);
 }
 
 #[test]
@@ -331,6 +376,17 @@ fn round_completion_settles_the_table_and_publishes_the_result() {
             OutboundPayload::Event(event) if event.code == WsCode::GAME_OVER as i32
         )
     }));
+    let settlement = dispatch
+        .messages
+        .iter()
+        .find_map(|message| match &message.payload {
+            OutboundPayload::Event(event) if event.code == WsCode::GAME_OVER as i32 => {
+                serde_json::from_value::<WsTexasHoldEmSettlementEvent>(event.data.clone()).ok()
+            }
+            _ => None,
+        })
+        .expect("settlement event");
+    assert_eq!(settlement.next_hand_countdown, 5);
 }
 
 #[test]
@@ -355,6 +411,33 @@ fn table_start_falls_back_to_the_first_seat_when_the_previous_dealer_is_gone() {
 
     let (dealer, _) = handler.prepare_table_for_start(&room, "room", 1000);
     assert_eq!(dealer, 0);
+}
+
+#[test]
+fn next_hand_rebuys_busted_stacks_and_resets_a_replaced_seat() {
+    let handler = HoldemGameHandler::default();
+    let mut room = RoomService::default();
+    for (session_id, name) in [(1, "owner"), (2, "guest")] {
+        let _ = room.handle_common_request(
+            session_id,
+            &join_request(name),
+            GameId::TEXAS_HOLD_EM,
+            || handler.build_room_settings(),
+        );
+    }
+
+    let _ = handler.prepare_table_for_start(&room, "room", 1000);
+    {
+        let mut tables = handler.table_states.lock().expect("table states lock");
+        let table = tables.get_mut("room").expect("room table state");
+        table.bankrolls.insert(0, 0);
+        table.bankrolls.insert(1, 250);
+        table.bankroll_owners.insert(1, "former-guest".to_owned());
+    }
+
+    let (_, bankrolls) = handler.prepare_table_for_start(&room, "room", 1000);
+    assert_eq!(bankrolls.get(&0), Some(&1000));
+    assert_eq!(bankrolls.get(&1), Some(&1000));
 }
 
 #[test]

@@ -76,6 +76,8 @@ pub struct WsTexasHoldEmDealEvent {
     pub open_cards: Vec<i32>,
     pub participant_positions: Vec<i32>,
     pub public_hole_cards: Vec<WsTexasHoldEmPublicHoleCards>,
+    /// Complete public stack and blind-commitment state at the start of the hand.
+    pub players: Vec<WsTexasHoldEmPlayerSnapshot>,
     pub dealer_position: i32,
     pub small_blind_position: i32,
     pub big_blind_position: i32,
@@ -137,6 +139,8 @@ pub struct WsTexasHoldEmTableSnapshotEvent {
     pub current_position: i32,
     pub call_amount: i32,
     pub min_raise: i32,
+    /// Whether the current player may reopen betting with a raise.
+    pub can_raise: bool,
     pub current_bet: i32,
     pub pot: i32,
     pub turn_countdown: i32,
@@ -149,6 +153,8 @@ pub struct WsTexasHoldEmSettlementEvent {
     pub pot: i32,
     pub public_cards: Vec<i32>,
     pub players: Vec<WsTexasHoldEmSettlementPlayer>,
+    /// Seconds before the room accepts settings, roster changes, or a new hand.
+    pub next_hand_countdown: i32,
 }
 
 #[typeshare]
@@ -160,6 +166,8 @@ pub struct WsTexasHoldEmSettlementPlayer {
     pub open_cards: Vec<i32>,
     pub folded: bool,
     pub chips: i32,
+    pub starting_chips: i32,
+    pub chip_delta: i32,
     pub hand_rank: i32,
     pub hand_name: String,
 }
@@ -171,6 +179,8 @@ pub struct WsTexasHoldEmTurnEvent {
     pub phase: TexasHoldEmPhase,
     pub call_amount: i32,
     pub min_raise: i32,
+    /// Whether the current player may reopen betting with a raise.
+    pub can_raise: bool,
     pub current_bet: i32,
     pub pot: i32,
     pub turn_countdown: i32,

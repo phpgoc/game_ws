@@ -39,6 +39,7 @@ type StateRegistry = Arc<std::sync::Mutex<HashMap<String, HoldemStateHandle>>>;
 #[derive(Debug, Default)]
 struct HoldemTableState {
     bankrolls: HashMap<usize, i32>,
+    bankroll_owners: HashMap<usize, String>,
     dealer_position: Option<usize>,
 }
 
@@ -119,7 +120,11 @@ fn apply_action(
             s.acted.insert(position);
         }
         TexasHoldEmAction::RAISE => {
-            if s.current_bet == 0 || payload.amount < s.min_raise {
+            if s.current_bet == 0
+                || !s.can_raise(position)
+                || payload.amount < s.min_raise
+                || s.chip_count(position) <= call_amount
+            {
                 return None;
             }
             let previous_min_raise = s.min_raise;
@@ -143,6 +148,10 @@ fn apply_action(
             s.acted.insert(position);
         }
         TexasHoldEmAction::ALL_IN => {
+            let would_raise = s.bet_of(position) + s.chip_count(position) > s.current_bet;
+            if would_raise && !s.can_raise(position) {
+                return None;
+            }
             let paid = s.commit(position, s.chip_count(position));
             if paid <= 0 {
                 return None;
@@ -282,6 +291,9 @@ fn settle_hand(state: &HoldemStateHandle) -> WsTexasHoldEmSettlementEvent {
                 .unwrap_or_default(),
             folded: s.folded.contains(&position),
             chips: s.chip_count(position),
+            starting_chips: s.starting_chips.get(&position).copied().unwrap_or_default(),
+            chip_delta: s.chip_count(position)
+                - s.starting_chips.get(&position).copied().unwrap_or_default(),
             hand_rank: evaluated.as_ref().map(|hand| hand.category).unwrap_or(-1),
             hand_name: evaluated
                 .map(|hand| hand.name.to_string())
@@ -297,6 +309,7 @@ fn settle_hand(state: &HoldemStateHandle) -> WsTexasHoldEmSettlementEvent {
         pot: s.pot,
         public_cards: s.public_cards.clone(),
         players,
+        next_hand_countdown: 0,
     }
 }
 
@@ -307,24 +320,38 @@ impl HoldemGameHandler {
         room_key: &str,
         initial_chips: i32,
     ) -> (usize, HashMap<usize, i32>) {
-        let mut positions: Vec<usize> = room_service
+        let mut members: Vec<(usize, String)> = room_service
             .room_members(room_key)
             .into_iter()
-            .map(|(_, _, position, _)| position)
+            .map(|(_, name, position, _)| (position, name))
             .collect();
-        positions.sort_unstable();
-        positions.dedup();
+        members.sort_unstable_by_key(|(position, _)| *position);
+        members.dedup_by_key(|(position, _)| *position);
+        let positions: Vec<usize> = members.iter().map(|(position, _)| *position).collect();
 
         let mut tables = self.table_states.lock().unwrap();
         let table = tables.entry(room_key.to_owned()).or_default();
-        for position in &positions {
-            table
+        for (position, name) in &members {
+            let changed_player = table.bankroll_owners.get(position) != Some(name);
+            let busted = table
                 .bankrolls
-                .entry(*position)
-                .or_insert(initial_chips.max(0));
+                .get(position)
+                .is_some_and(|chips| *chips <= 0);
+            if changed_player || busted {
+                table.bankrolls.insert(*position, initial_chips.max(0));
+            } else {
+                table
+                    .bankrolls
+                    .entry(*position)
+                    .or_insert(initial_chips.max(0));
+            }
+            table.bankroll_owners.insert(*position, name.clone());
         }
         table
             .bankrolls
+            .retain(|position, _| positions.binary_search(position).is_ok());
+        table
+            .bankroll_owners
             .retain(|position, _| positions.binary_search(position).is_ok());
 
         let dealer = if let Some(previous) = table.dealer_position {
@@ -351,6 +378,7 @@ impl HoldemGameHandler {
         let mut tables = self.table_states.lock().unwrap();
         let table = tables.entry(room_key.to_owned()).or_default();
         table.bankrolls = s.chips.clone();
+        table.bankroll_owners = s.hand_players.clone();
         table.dealer_position = Some(s.dealer_position);
     }
 
@@ -400,7 +428,7 @@ impl HoldemGameHandler {
         }
 
         if should_settle {
-            let settlement = settle_hand(state);
+            let mut settlement = settle_hand(state);
             self.record_finished_hand(room_key, state);
             let starting_chips = state.lock().unwrap().starting_chips.clone();
             crate::official::settle_round(room_service, room_key, &settlement, &starting_chips);
@@ -412,6 +440,7 @@ impl HoldemGameHandler {
                 .unwrap_or(5)
                 .max(0) as u32;
             state.lock().unwrap().settlement_countdown = settlement_time;
+            settlement.next_hand_countdown = settlement_time as i32;
             room_service.broadcast(room_key, WsCode::GAME_OVER as i32, settlement, dispatch);
             if settlement_time == 0 {
                 self.finish_settlement(room_service, room_key, state);
@@ -844,6 +873,23 @@ impl HoldemGameHandler {
             .into_iter()
             .map(|position| position as i32)
             .collect::<Vec<_>>();
+        let players = s
+            .active_positions()
+            .into_iter()
+            .map(|position| WsTexasHoldEmPlayerSnapshot {
+                position: position as i32,
+                name: s.player_name(position),
+                chips: s.chip_count(position),
+                committed: s.bet_of(position),
+                folded: s.folded.contains(&position),
+                all_in: s.all_in.contains(&position),
+                open_cards: s
+                    .hands
+                    .get(&position)
+                    .map(|cards| s.variant.public_hole_cards(cards))
+                    .unwrap_or_default(),
+            })
+            .collect::<Vec<_>>();
         for (session_id, _, position, _) in room_service.room_members(room_key) {
             let payload = WsTexasHoldEmDealEvent {
                 my_cards: s.hands.get(&position).cloned().unwrap_or_default(),
@@ -854,6 +900,7 @@ impl HoldemGameHandler {
                     .unwrap_or_default(),
                 participant_positions: participant_positions.clone(),
                 public_hole_cards: public_hole_cards.clone(),
+                players: players.clone(),
                 dealer_position: s.dealer_position as i32,
                 small_blind_position: s.small_blind_position as i32,
                 big_blind_position: s.big_blind_position as i32,
@@ -906,6 +953,7 @@ impl HoldemGameHandler {
                 phase: s.phase,
                 call_amount: s.call_amount(s.current_position),
                 min_raise: s.min_raise,
+                can_raise: s.can_raise(s.current_position),
                 current_bet: s.current_bet,
                 pot: s.pot,
                 turn_countdown: s.turn_countdown() as i32,
@@ -964,6 +1012,7 @@ impl HoldemGameHandler {
             current_position: s.current_position as i32,
             call_amount: s.call_amount(s.current_position),
             min_raise: s.min_raise,
+            can_raise: s.can_raise(s.current_position),
             current_bet: s.current_bet,
             pot: s.pot,
             turn_countdown: s.turn_countdown() as i32,
@@ -1418,6 +1467,8 @@ mod tests {
         {
             let mut state = finished.lock().unwrap();
             state.dealer_position = first_dealer;
+            state.hand_players.insert(0, "u1".to_owned());
+            state.hand_players.insert(1, "u2".to_owned());
             state.chips.insert(0, 1200);
             state.chips.insert(1, 1000);
         }

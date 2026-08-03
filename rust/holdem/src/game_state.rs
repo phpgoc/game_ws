@@ -96,6 +96,16 @@ impl HoldemGameState {
         (self.current_bet - self.bet_of(position)).max(0)
     }
 
+    /// An insufficient all-in raise does not reopen betting for a player who
+    /// already called or bet after the last full raise. A player who checked
+    /// may still raise a later opening all-in, and multiple short all-ins may
+    /// cumulatively reach a full raise and reopen action.
+    pub fn can_raise(&self, position: usize) -> bool {
+        !self.acted.contains(&position)
+            || (self.bet_of(position) == 0 && self.current_bet > 0)
+            || self.current_bet - self.bet_of(position) >= self.min_raise
+    }
+
     pub fn chip_count(&self, position: usize) -> i32 {
         self.chips.get(&position).copied().unwrap_or_default()
     }
@@ -167,12 +177,21 @@ impl HoldemGameState {
         } else {
             positions[0]
         };
-        self.small_blind_position = self
-            .next_position(self.dealer_position)
-            .unwrap_or(positions[0]);
-        self.big_blind_position = self
-            .next_position(self.small_blind_position)
-            .unwrap_or(self.small_blind_position);
+        if positions.len() == 2 {
+            // Heads-up uses the button as the small blind. The button acts
+            // first before the flop and last on every later street.
+            self.small_blind_position = self.dealer_position;
+            self.big_blind_position = self
+                .next_position(self.dealer_position)
+                .unwrap_or(self.dealer_position);
+        } else {
+            self.small_blind_position = self
+                .next_position(self.dealer_position)
+                .unwrap_or(positions[0]);
+            self.big_blind_position = self
+                .next_position(self.small_blind_position)
+                .unwrap_or(self.small_blind_position);
+        }
 
         for position in &positions {
             let chips = starting_chips

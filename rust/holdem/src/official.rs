@@ -168,6 +168,8 @@ mod tests {
             open_cards: Vec::new(),
             folded: false,
             chips,
+            starting_chips: 1000,
+            chip_delta: chips - 1000,
             hand_rank: 0,
             hand_name: String::new(),
         }
@@ -250,6 +252,7 @@ mod tests {
                 pot: 500,
                 public_cards: Vec::new(),
                 players: vec![settled_player(0, 1250), settled_player(1, 750)],
+                next_hand_countdown: 0,
             },
             &[(0, 1000), (1, 1000)].into_iter().collect(),
         );
