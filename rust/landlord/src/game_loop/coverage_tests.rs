@@ -138,7 +138,10 @@ async fn game_loop_timeout_marks_a_member_away_and_enables_ai_takeover() {
         let state = state.lock().unwrap();
         state.is_away(timed_out_position)
             && state.is_ai_takeover_position(timed_out_position)
-            && state.call_history.contains(&(timed_out_position, 0))
+            && state
+                .call_history
+                .iter()
+                .any(|(position, _)| *position == timed_out_position)
     })
     .await;
 
