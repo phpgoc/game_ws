@@ -4,6 +4,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod combo;
 pub mod game;
 pub mod game_setting;
 mod rules;
