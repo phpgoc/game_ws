@@ -6,6 +6,7 @@
 //!   - Single: one card.
 //!   - Pair:   two identical cards (same base card, regardless of deck copy).
 //!   - Tractor: two or more consecutive pairs in the same group (连对).
+//!   - Titanic: two or more consecutive triples in a three-deck game (连三张).
 //!   - Throw: multiple same-group components released together (甩牌).
 //!
 //! Pairs are matched by card *identity* (base card), never by rank alone, so
@@ -32,6 +33,8 @@ pub enum ComboKind {
     Pair,
     /// A run of `n` consecutive pairs (n >= 2), so `2 * n` cards.
     Tractor(usize),
+    /// A run of `n` consecutive triples (n >= 2), so `3 * n` cards.
+    Titanic(usize),
     /// A same-group composite lead. `pairs` records the minimum pair structure
     /// followers must preserve when they have it.
     Throw {
@@ -116,6 +119,24 @@ pub fn classify(cards: &[i32], rules: &TractorRules) -> Option<Combo> {
         if positions.windows(2).all(|w| w[1] == w[0] + 1) {
             return Some(Combo {
                 kind: ComboKind::Tractor(positions.len()),
+                suit,
+            });
+        }
+    }
+
+    if rules.deck_count >= 3 && counts.values().all(|count| *count == 3) {
+        let mut positions: Vec<i32> = counts
+            .keys()
+            .map(|base| pair_position(*base, rules))
+            .collect();
+        positions.sort_unstable();
+        if positions.len() >= 2
+            && positions
+                .windows(2)
+                .all(|window| window[1] == window[0] + 1)
+        {
+            return Some(Combo {
+                kind: ComboKind::Titanic(positions.len()),
                 suit,
             });
         }
@@ -212,6 +233,18 @@ pub fn count_group_pairs(cards: &[i32], lead_suit: Option<i32>, rules: &TractorR
     identity_counts(&group)
         .values()
         .map(|count| count / 2)
+        .sum()
+}
+
+pub fn count_group_triples(cards: &[i32], lead_suit: Option<i32>, rules: &TractorRules) -> usize {
+    let group: Vec<i32> = cards
+        .iter()
+        .copied()
+        .filter(|card| card_in_group(*card, lead_suit, rules))
+        .collect();
+    identity_counts(&group)
+        .values()
+        .map(|count| count / 3)
         .sum()
 }
 
@@ -348,6 +381,42 @@ pub fn enumerate_leads(hand: &[i32], rules: &TractorRules) -> Vec<Vec<i32>> {
             }
             start = end + 1;
         }
+        if rules.deck_count >= 3 {
+            let mut triples: Vec<(i32, Vec<i32>)> = by_base
+                .iter()
+                .filter(|(_, cards)| cards.len() >= 3)
+                .map(|(base, cards)| (*base, cards[..3].to_vec()))
+                .collect();
+            triples.sort_by_key(|(base, triple)| (pair_position(*base, rules), *base, triple[0]));
+            for (_, triple) in &triples {
+                if !out.contains(triple) {
+                    out.push(triple.clone());
+                }
+            }
+            let positions: Vec<i32> = triples
+                .iter()
+                .map(|(base, _)| pair_position(*base, rules))
+                .collect();
+            let mut start = 0;
+            while start < triples.len() {
+                let mut end = start;
+                while end + 1 < triples.len() && positions[end + 1] == positions[end] + 1 {
+                    end += 1;
+                }
+                if end > start {
+                    for from in start..end {
+                        for to in (from + 1)..=end {
+                            let mut cards = Vec::new();
+                            for (_, triple) in &triples[from..=to] {
+                                cards.extend_from_slice(triple);
+                            }
+                            out.push(cards);
+                        }
+                    }
+                }
+                start = end + 1;
+            }
+        }
         let _ = group;
 
         // Useful throw candidates are kept deliberately bounded. Pair/single
@@ -452,6 +521,7 @@ pub fn follow_is_legal(hand: &[i32], cards: &[i32], lead: &Combo, rules: &Tracto
         ComboKind::Single => 0,
         ComboKind::Pair => 1,
         ComboKind::Tractor(n) => n,
+        ComboKind::Titanic(_) => 0,
         ComboKind::Throw { pairs, .. } => pairs,
     };
     if required_pairs > 0 {
@@ -472,6 +542,23 @@ pub fn follow_is_legal(hand: &[i32], cards: &[i32], lead: &Combo, rules: &Tracto
             }
         }
     }
+
+    let required_triples = match lead.kind {
+        ComboKind::Titanic(n) => n,
+        _ => 0,
+    };
+    if required_triples > 0 {
+        let triples_in_hand = count_group_triples(hand, lead_suit, rules);
+        let must_use_triples = required_triples.min(triples_in_hand);
+        let group_cards: Vec<i32> = cards
+            .iter()
+            .copied()
+            .filter(|card| card_in_group(*card, lead_suit, rules))
+            .collect();
+        if count_group_triples(&group_cards, lead_suit, rules) < must_use_triples {
+            return false;
+        }
+    }
     true
 }
 
@@ -490,11 +577,45 @@ pub fn forced_follow(hand: &[i32], lead: &Combo, rules: &TractorRules) -> Option
     let mut remaining: Vec<i32> = hand.to_vec();
     remaining.sort_by_key(&value);
 
+    let required_triples = match lead.kind {
+        ComboKind::Titanic(n) => n,
+        _ => 0,
+    };
+    let mut group_triples: Vec<Vec<i32>> = {
+        let mut by_base: HashMap<i32, Vec<i32>> = HashMap::new();
+        for card in remaining
+            .iter()
+            .copied()
+            .filter(|card| card_in_group(*card, lead_suit, rules))
+        {
+            by_base.entry(base_card(card)).or_default().push(card);
+        }
+        by_base
+            .into_values()
+            .flat_map(|cards| {
+                cards
+                    .chunks_exact(3)
+                    .map(|triple| triple.to_vec())
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    };
+    group_triples.sort_by_key(|triple| triple.iter().map(&value).max().unwrap_or(0));
+    for triple in group_triples.into_iter().take(required_triples) {
+        for card in triple {
+            if chosen.len() < lead_len {
+                take_card(&mut remaining, card);
+                chosen.push(card);
+            }
+        }
+    }
+
     // 1. Satisfy required pairs from the lead group, lowest first.
     let required_pairs = match lead.kind {
         ComboKind::Single => 0,
         ComboKind::Pair => 1,
         ComboKind::Tractor(n) => n,
+        ComboKind::Titanic(_) => 0,
         ComboKind::Throw { pairs, .. } => pairs,
     };
     let mut group_pairs: Vec<Vec<i32>> = {
@@ -615,9 +736,19 @@ pub fn throw_components(cards: &[i32], rules: &TractorRules) -> Option<Vec<Vec<i
         by_base.entry(base_card(*card)).or_default().push(*card);
     }
     let mut pairs_by_position: HashMap<i32, Vec<Vec<i32>>> = HashMap::new();
+    let mut triples_by_position: HashMap<i32, Vec<Vec<i32>>> = HashMap::new();
     let mut singles = Vec::new();
     for (base, mut copies) in by_base {
         copies.sort_unstable();
+        if rules.deck_count >= 3 {
+            while copies.len() >= 3 {
+                let triple = vec![copies.remove(0), copies.remove(0), copies.remove(0)];
+                triples_by_position
+                    .entry(pair_position(base, rules))
+                    .or_default()
+                    .push(triple);
+            }
+        }
         while copies.len() >= 2 {
             let pair = vec![copies.remove(0), copies.remove(0)];
             pairs_by_position
@@ -629,6 +760,45 @@ pub fn throw_components(cards: &[i32], rules: &TractorRules) -> Option<Vec<Vec<i
     }
 
     let mut components = Vec::new();
+    loop {
+        let mut positions: Vec<_> = triples_by_position
+            .iter()
+            .filter(|(_, triples)| !triples.is_empty())
+            .map(|(position, _)| *position)
+            .collect();
+        positions.sort_unstable();
+        let mut best_run: Vec<i32> = Vec::new();
+        let mut current: Vec<i32> = Vec::new();
+        for position in positions {
+            if current
+                .last()
+                .is_some_and(|previous| position == *previous + 1)
+            {
+                current.push(position);
+            } else {
+                if current.len() > best_run.len() {
+                    best_run = current;
+                }
+                current = vec![position];
+            }
+        }
+        if current.len() > best_run.len() {
+            best_run = current;
+        }
+        if best_run.len() < 2 {
+            break;
+        }
+        let mut titanic = Vec::new();
+        for position in best_run {
+            if let Some(triple) = triples_by_position.get_mut(&position).and_then(Vec::pop) {
+                titanic.extend(triple);
+            }
+        }
+        components.push(titanic);
+    }
+    for triples in triples_by_position.into_values() {
+        components.extend(triples);
+    }
     loop {
         let mut positions: Vec<_> = pairs_by_position
             .iter()
@@ -719,6 +889,7 @@ impl ComboKind {
             ComboKind::Single => 1,
             ComboKind::Pair => 2,
             ComboKind::Tractor(n) => 2 * n,
+            ComboKind::Titanic(n) => 3 * n,
             ComboKind::Throw { cards, .. } => cards,
         }
     }
@@ -932,6 +1103,72 @@ mod tests {
             classify(&[2, 102, 4, 104], &rules).map(|combo| combo.kind),
             Some(ComboKind::Throw { cards: 4, pairs: 2 })
         );
+    }
+
+    #[test]
+    fn three_deck_consecutive_triples_form_titanic_only_in_tractor() {
+        let mut three_deck = rules(TractorRank::TWO);
+        three_deck.deck_count = 3;
+        let cards = [2, 102, 202, 3, 103, 203];
+        assert_eq!(
+            classify(&cards, &three_deck).map(|combo| combo.kind),
+            Some(ComboKind::Titanic(2))
+        );
+
+        let two_deck = rules(TractorRank::TWO);
+        assert_eq!(
+            classify(&cards, &two_deck).map(|combo| combo.kind),
+            Some(ComboKind::Throw { cards: 6, pairs: 2 })
+        );
+    }
+
+    #[test]
+    fn higher_titanic_wins_and_followers_must_preserve_triples() {
+        let mut rules = rules(TractorRank::TWO);
+        rules.deck_count = 3;
+        let lead_cards = vec![2, 102, 202, 3, 103, 203];
+        let trick = [
+            played(0, lead_cards.clone()),
+            played(1, vec![3, 103, 203, 4, 104, 204]),
+        ];
+        assert_eq!(trick_winner(&trick, &rules), Some(1));
+
+        let lead = classify(&lead_cards, &rules).unwrap();
+        let hand = vec![4, 104, 204, 5, 6, 7, 8, 9, 10];
+        assert!(!follow_is_legal(&hand, &[5, 6, 7, 8, 9, 10], &lead, &rules));
+        assert!(follow_is_legal(
+            &hand,
+            &[4, 104, 204, 5, 6, 7],
+            &lead,
+            &rules
+        ));
+        let forced = forced_follow(&hand, &lead, &rules).unwrap();
+        assert!(follow_is_legal(&hand, &forced, &lead, &rules));
+        assert_eq!(count_group_triples(&forced, lead.suit, &rules), 1);
+    }
+
+    #[test]
+    fn enumerate_leads_includes_titanic_in_three_deck_game() {
+        let mut rules = rules(TractorRank::TWO);
+        rules.deck_count = 3;
+        let hand = vec![2, 102, 202, 3, 103, 203, 20];
+        let leads = enumerate_leads(&hand, &rules);
+        assert!(leads.iter().any(|cards| {
+            classify(cards, &rules).map(|combo| combo.kind) == Some(ComboKind::Titanic(2))
+        }));
+    }
+
+    #[test]
+    fn failed_three_deck_throw_exposes_titanic_component() {
+        let mut rules = rules(TractorRank::TWO);
+        rules.deck_count = 3;
+        let cards = vec![2, 102, 202, 3, 103, 203, 4];
+        let components = throw_components(&cards, &rules).unwrap();
+        assert!(components.iter().any(|component| {
+            component.len() == 6
+                && classify(component, &rules).map(|combo| combo.kind)
+                    == Some(ComboKind::Titanic(2))
+        }));
     }
 
     #[test]
