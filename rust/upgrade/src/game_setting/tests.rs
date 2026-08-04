@@ -3,13 +3,16 @@ use share_type_public::GameParam;
 use super::*;
 
 #[test]
-fn upgrade_settings_expose_only_three_to_six_decks_and_play_time() {
+fn upgrade_settings_expose_decks_timing_and_score_progression() {
     let (settings, params) = build_upgrade_settings();
 
     assert_eq!((settings.min_players, settings.max_players), (4, 4));
-    assert_eq!(settings.values.len(), 2);
+    assert_eq!(settings.values.len(), 5);
     assert_eq!(settings.values[KEY_DECK_COUNT], 0);
     assert_eq!(settings.values[KEY_PLAY_TIME], 30);
+    assert_eq!(settings.values[KEY_ATTACKING_WIN_SCORE], 80);
+    assert_eq!(settings.values[KEY_SCORE_PER_LEVEL], 40);
+    assert_eq!(settings.values[KEY_SHUTOUT_BONUS_LEVELS], 1);
     assert!(!params.keys().any(|key| key.contains("blood")));
     assert!(!params.keys().any(|key| key.contains("tribute")));
 
@@ -24,6 +27,29 @@ fn upgrade_settings_expose_only_three_to_six_decks_and_play_time() {
     assert_eq!(
         (play_time.default, play_time.min, play_time.max),
         (30, 20, 40)
+    );
+
+    let GameParam::Range(attacking_win_score) = &params[KEY_ATTACKING_WIN_SCORE] else {
+        panic!("attacking win score must be a range");
+    };
+    assert_eq!(
+        (
+            attacking_win_score.default,
+            attacking_win_score.min,
+            attacking_win_score.max
+        ),
+        (80, 20, 400)
+    );
+    let GameParam::Range(score_per_level) = &params[KEY_SCORE_PER_LEVEL] else {
+        panic!("score per level must be a range");
+    };
+    assert_eq!(
+        (
+            score_per_level.default,
+            score_per_level.min,
+            score_per_level.max
+        ),
+        (40, 5, 200)
     );
 }
 

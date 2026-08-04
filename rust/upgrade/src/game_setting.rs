@@ -7,6 +7,9 @@ use crate::UpgradeDeckCount;
 
 pub const KEY_DECK_COUNT: &str = "deck_count";
 pub const KEY_PLAY_TIME: &str = "play_time";
+pub const KEY_ATTACKING_WIN_SCORE: &str = "attacking_win_score";
+pub const KEY_SCORE_PER_LEVEL: &str = "score_per_level";
+pub const KEY_SHUTOUT_BONUS_LEVELS: &str = "shutout_bonus_levels";
 
 pub fn build_upgrade_settings() -> ws_common::SettingsBuilderResult {
     let params: HashMap<String, GameParam> = [
@@ -23,6 +26,30 @@ pub fn build_upgrade_settings() -> ws_common::SettingsBuilderResult {
                 default: 30,
                 min: 20,
                 max: 40,
+            }),
+        ),
+        (
+            KEY_ATTACKING_WIN_SCORE.into(),
+            GameParam::Range(GameParamRange {
+                default: 80,
+                min: 20,
+                max: 400,
+            }),
+        ),
+        (
+            KEY_SCORE_PER_LEVEL.into(),
+            GameParam::Range(GameParamRange {
+                default: 40,
+                min: 5,
+                max: 200,
+            }),
+        ),
+        (
+            KEY_SHUTOUT_BONUS_LEVELS.into(),
+            GameParam::Range(GameParamRange {
+                default: 1,
+                min: 0,
+                max: 3,
             }),
         ),
     ]

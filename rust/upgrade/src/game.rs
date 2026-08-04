@@ -16,7 +16,8 @@ use ws_common::{
 
 use crate::{
     game_setting::{
-        KEY_DECK_COUNT, KEY_PLAY_TIME, build_upgrade_settings, deck_count_from_setting,
+        KEY_ATTACKING_WIN_SCORE, KEY_DECK_COUNT, KEY_PLAY_TIME, KEY_SCORE_PER_LEVEL,
+        KEY_SHUTOUT_BONUS_LEVELS, build_upgrade_settings, deck_count_from_setting,
     },
     state::{PLAYER_COUNT, UpgradeGameState, UpgradeRules, UpgradeStateHandle},
 };
@@ -54,9 +55,21 @@ impl UpgradeGameHandler {
             deck_count,
             target_rank: upgrade_common::Rank::Three,
             final_target_rank: upgrade_common::Rank::Ace,
-            attacking_win_score: 80,
-            score_per_level: 40,
-            shutout_bonus_levels: 1,
+            attacking_win_score: configs
+                .get(KEY_ATTACKING_WIN_SCORE)
+                .copied()
+                .unwrap_or(80)
+                .max(1),
+            score_per_level: configs
+                .get(KEY_SCORE_PER_LEVEL)
+                .copied()
+                .unwrap_or(40)
+                .max(1),
+            shutout_bonus_levels: configs
+                .get(KEY_SHUTOUT_BONUS_LEVELS)
+                .copied()
+                .unwrap_or(1)
+                .clamp(0, 3) as u8,
             bottom_card_count,
             trump_suit: None,
         }
