@@ -87,6 +87,16 @@ fn owner_can_start_the_next_round_after_settlement() {
     let started = handler.handle_start(&mut room, 1);
     assert_eq!(response_code(&started), Some(WsResponseCode::OK as i32));
     let state = handler.state("upgrade-room").unwrap();
+    assert_eq!(
+        state.lock().unwrap().base.lock().unwrap().turn_countdown,
+        90
+    );
+    let bottom = state.lock().unwrap().bottom_cards.clone();
+    let _ = handler.handle_bury_bottom(&mut room, 1, json!({ "cards": bottom }));
+    assert_eq!(
+        state.lock().unwrap().base.lock().unwrap().turn_countdown,
+        30
+    );
     {
         let mut state = state.lock().unwrap();
         state.phase = share_type_public::UpgradePhase::Settlement;
@@ -96,8 +106,26 @@ fn owner_can_start_the_next_round_after_settlement() {
     let next = handler.handle_start(&mut room, 1);
 
     assert_eq!(response_code(&next), Some(WsResponseCode::OK as i32));
-    let state = state.lock().unwrap();
-    assert_eq!(state.round_index, 1);
-    assert_eq!(state.phase, share_type_public::UpgradePhase::Bury);
-    assert_eq!(state.rules.target_rank, upgrade_common::Rank::Five);
+    {
+        let state = state.lock().unwrap();
+        assert_eq!(state.round_index, 1);
+        assert_eq!(state.phase, share_type_public::UpgradePhase::Bury);
+        assert_eq!(state.rules.target_rank, upgrade_common::Rank::Five);
+        assert_eq!(state.base.lock().unwrap().turn_countdown, 90);
+    }
+    let bottom = state.lock().unwrap().bottom_cards.clone();
+    let _ = handler.handle_bury_bottom(&mut room, 1, json!({ "cards": bottom }));
+    assert_eq!(
+        state.lock().unwrap().base.lock().unwrap().turn_countdown,
+        90
+    );
+    let _ = handler.handle_select_trump(
+        &mut room,
+        1,
+        json!({ "trump_suit": share_type_public::UpgradeSuit::HEART as i8 }),
+    );
+    assert_eq!(
+        state.lock().unwrap().base.lock().unwrap().turn_countdown,
+        30
+    );
 }

@@ -47,6 +47,14 @@ fn join_succeeded(dispatch: &Dispatch, session_id: SessionId) -> bool {
 }
 
 impl UpgradeGameHandler {
+    fn play_time(configs: &HashMap<String, i32>) -> u32 {
+        configs.get(KEY_PLAY_TIME).copied().unwrap_or(30).max(1) as u32
+    }
+
+    fn bury_window_time(configs: &HashMap<String, i32>) -> u32 {
+        Self::play_time(configs).saturating_mul(3)
+    }
+
     fn configs_to_rules(configs: &HashMap<String, i32>) -> UpgradeRules {
         let deck_count = deck_count_from_setting(configs.get(KEY_DECK_COUNT).copied().unwrap_or(0));
         let total_cards = usize::from(deck_count.get()) * 54;
@@ -179,7 +187,7 @@ impl UpgradeGameHandler {
             state
                 .lock()
                 .unwrap()
-                .set_turn_countdown(configs.get(KEY_PLAY_TIME).copied().unwrap_or(30).max(1) as u32);
+                .set_turn_countdown(Self::bury_window_time(&configs));
             room_service.broadcast(
                 &room_key,
                 WsCode::START as i32,
@@ -200,8 +208,7 @@ impl UpgradeGameHandler {
         if game_state.deal_new_round(rules).is_err() {
             return room_service.error_response(session_id, route, WsResponseCode::NOT_IN_RANGE);
         }
-        game_state
-            .set_turn_countdown(configs.get(KEY_PLAY_TIME).copied().unwrap_or(30).max(1) as u32);
+        game_state.set_turn_countdown(Self::bury_window_time(&configs));
         let state = Arc::new(std::sync::Mutex::new(game_state));
         room_service.set_room_game_state(
             &room_key,
@@ -318,9 +325,14 @@ impl UpgradeGameHandler {
         let Some(state) = self.current_state(room_service, &room_key) else {
             return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
         };
+        let play_time = Self::play_time(&room_service.room_configs(&room_key).unwrap_or_default());
         let result = {
             let mut state_guard = state.lock().unwrap();
-            state_guard.bury_bottom(position, request.cards)
+            let result = state_guard.bury_bottom(position, request.cards);
+            if result.is_ok() && state_guard.phase == share_type_public::UpgradePhase::Play {
+                state_guard.set_turn_countdown(play_time);
+            }
+            result
         };
         if result.is_err() {
             return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
@@ -379,9 +391,14 @@ impl UpgradeGameHandler {
         let Some(state) = self.current_state(room_service, &room_key) else {
             return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
         };
+        let play_time = Self::play_time(&room_service.room_configs(&room_key).unwrap_or_default());
         let result = {
             let mut state_guard = state.lock().unwrap();
-            state_guard.select_trump(position, request.trump_suit)
+            let result = state_guard.select_trump(position, request.trump_suit);
+            if result.is_ok() {
+                state_guard.set_turn_countdown(play_time);
+            }
+            result
         };
         if result.is_err() {
             return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
@@ -417,6 +434,7 @@ impl UpgradeGameHandler {
         let Some(state) = self.current_state(room_service, &room_key) else {
             return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
         };
+        let play_time = Self::play_time(&room_service.room_configs(&room_key).unwrap_or_default());
         let (resolution, event, snapshot, settlement) = {
             let mut state_guard = state.lock().unwrap();
             let resolution = match state_guard.play_cards(position, request.cards) {
@@ -429,6 +447,9 @@ impl UpgradeGameHandler {
                     );
                 }
             };
+            if !resolution.finished {
+                state_guard.set_turn_countdown(play_time);
+            }
             let event = WsUpgradePlayEvent {
                 position: position as i32,
                 name: state_guard.player_name(position),
