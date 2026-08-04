@@ -7,6 +7,8 @@ members = [
     "rust/poker_core",
     "rust/holdem",
     "rust/tractor",
+    "rust/upgrade_common",
+    "rust/upgrade",
     "rust/p2p",
     "rust/android_server",
 ]
@@ -18,6 +20,8 @@ default-members = [
     "rust/poker_core",
     "rust/holdem",
     "rust/tractor",
+    "rust/upgrade_common",
+    "rust/upgrade",
     "rust/p2p",
 ]
 resolver = "3"
