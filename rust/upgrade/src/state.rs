@@ -653,6 +653,65 @@ impl UpgradeGameState {
         self.deal_new_round(self.rules)?;
         Ok(true)
     }
+
+    pub fn timeout_bury(&mut self) -> Result<bool, &'static str> {
+        if self.phase != UpgradePhase::Bury || self.current_position != self.dealer_position {
+            return Ok(false);
+        }
+        let cards = self
+            .private_hand(self.dealer_position)
+            .into_iter()
+            .take(self.rules.bottom_card_count)
+            .collect::<Vec<_>>();
+        if cards.len() != self.rules.bottom_card_count {
+            return Ok(false);
+        }
+        self.bury_bottom(self.dealer_position, cards)?;
+        if self.rules.trump_suit.is_none() {
+            self.select_trump(self.dealer_position, UpgradeSuit::SPADE)?;
+        }
+        Ok(true)
+    }
+
+    pub fn timeout_play(&mut self) -> Result<Option<PlayResolution>, &'static str> {
+        if self.phase != UpgradePhase::Play {
+            return Ok(None);
+        }
+        let position = self.current_position;
+        let hand = self.private_hand(position);
+        let Some(first) = hand.first().copied() else {
+            return Ok(None);
+        };
+        let cards = if self.current_trick.is_empty() {
+            vec![first]
+        } else {
+            let lead = Self::cards_from_ids(&self.current_trick[0].cards)?;
+            let rules = self.combo_rules();
+            let lead_combo = combo::classify(&lead, rules).ok_or("invalid lead")?;
+            let count = combo::lead_card_count(&lead_combo);
+            let lead_group = lead_combo.group;
+            let mut selected = hand
+                .iter()
+                .copied()
+                .filter(|card| {
+                    Card::try_from(*card)
+                        .ok()
+                        .is_some_and(|card| combo::card_group(card, rules) == lead_group)
+                })
+                .take(count)
+                .collect::<Vec<_>>();
+            for card in hand {
+                if selected.len() == count {
+                    break;
+                }
+                if !selected.contains(&card) {
+                    selected.push(card);
+                }
+            }
+            selected
+        };
+        self.play_cards(position, cards).map(Some)
+    }
 }
 
 fn contains_cards(hand: &[i32], cards: &[i32]) -> bool {

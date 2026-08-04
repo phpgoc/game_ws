@@ -152,3 +152,25 @@ fn settlement_can_start_the_next_round_and_raise_target_rank() {
     assert_eq!(state.rules.target_rank, Rank::Five);
     assert_eq!(state.rules.trump_suit, None);
 }
+
+#[test]
+fn timeout_actions_keep_the_game_moving_without_a_human_request() {
+    let common = Arc::new(Mutex::new(CommonGameState::new()));
+    let mut state = UpgradeGameState::from_common(common);
+    state.deal_new_round(rules(3)).unwrap();
+    state.set_turn_countdown(0);
+    assert!(state.timeout_bury().unwrap());
+    assert_eq!(state.phase, UpgradePhase::Play);
+
+    state.hands = HashMap::from([(0, vec![4]), (1, vec![5]), (2, vec![6]), (3, vec![7])]);
+    state.current_position = 0;
+    state.set_turn_countdown(0);
+    for _ in 0..4 {
+        assert!(state.timeout_play().unwrap().is_some());
+        if state.phase == UpgradePhase::Settlement {
+            break;
+        }
+        state.set_turn_countdown(0);
+    }
+    assert_eq!(state.phase, UpgradePhase::Settlement);
+}

@@ -220,6 +220,16 @@ impl UpgradeGameHandler {
             .lock()
             .unwrap()
             .insert(room_key.clone(), Arc::clone(&state));
+        if let (Some(room_service_arc), Some(senders_arc)) =
+            (self.room_service.as_ref(), self.senders.as_ref())
+        {
+            crate::game_loop::start_upgrade_game_loop(
+                room_key.clone(),
+                Arc::clone(&state),
+                Arc::clone(room_service_arc),
+                Arc::clone(senders_arc),
+            );
+        }
 
         room_service.broadcast(
             &room_key,
