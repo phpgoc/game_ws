@@ -157,9 +157,9 @@ async fn timeout_play_dispatch(
             guard.set_turn_countdown(countdown);
             None
         } else {
+            let position = guard.current_position;
             match guard.timeout_play() {
                 Ok(Some(resolution)) => {
-                    let position = guard.current_position;
                     if !resolution.finished {
                         guard.set_turn_countdown(play_time);
                     }
