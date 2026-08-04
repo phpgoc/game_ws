@@ -19,6 +19,8 @@ pub enum GameId {
     RANDOM_MATCH = 8,
     /// 官方 P2P TURN 中继的会员权益，不对应某个自建 WS 游戏。
     P2P = 9,
+    /// 多副牌“升级”游戏，与强调拖拉机牌型的 `TRACTOR` 独立。
+    UPGRADE = 10,
 }
 
 impl From<GameId> for i32 {
@@ -44,10 +46,15 @@ impl TryFrom<i32> for GameId {
             7 => Ok(Self::OMAHA_HOLD_EM),
             8 => Ok(Self::RANDOM_MATCH),
             9 => Ok(Self::P2P),
+            10 => Ok(Self::UPGRADE),
             _ => Err(()),
         }
     }
 }
+
+#[cfg(test)]
+#[path = "const/tests.rs"]
+mod tests;
 
 #[typeshare]
 #[repr(i32)]
