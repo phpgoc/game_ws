@@ -342,6 +342,10 @@ impl UpgradeGameState {
         self.bottom_cards.clone()
     }
 
+    pub fn target_rank_protocol(&self) -> UpgradeRank {
+        rank_to_protocol(self.rules.target_rank)
+    }
+
     pub fn private_hand(&self, position: usize) -> Vec<i32> {
         self.hands.get(&position).cloned().unwrap_or_default()
     }

@@ -298,7 +298,7 @@ impl UpgradeGameHandler {
                 deck_count,
                 hand_count,
                 bottom_card_count: bottom_count,
-                target_rank: share_type_public::UpgradeRank::THREE,
+                target_rank: state_guard.target_rank_protocol(),
                 dealt_count: state_guard.dealt_count as i32,
                 total_deal_count: state_guard.total_deal_count as i32,
             },
