@@ -145,8 +145,8 @@ async fn upgrade_server_accepts_only_its_own_game_id() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn four_players_can_deal_bury_and_select_trump() {
-    use share_type_public::{UpgradePhase, UpgradeRoutes, UpgradeSuit, UpgradeWsCode};
+async fn four_players_can_deal_bury_and_play_first_round() {
+    use share_type_public::{UpgradePhase, UpgradeRoutes, UpgradeWsCode};
 
     let port = free_port();
     let listen_addr = format!("127.0.0.1:{port}");
@@ -177,6 +177,8 @@ async fn four_players_can_deal_bury_and_select_trump() {
     }
 
     send_request(&mut clients[0], Routes::START as i32, Value::Null).await;
+    let declaration = wait_for_event(&mut clients[0], UpgradeWsCode::TRUMP_DECLARED as i32).await;
+    assert_eq!(declaration["data"]["target_rank"], json!(3));
     let owner_hand = wait_for_event(&mut clients[0], UpgradeWsCode::HAND_UPDATED as i32).await;
     assert_eq!(owner_hand["data"]["position"], json!(0));
     assert_eq!(owner_hand["data"]["cards"].as_array().unwrap().len(), 48);
@@ -213,23 +215,17 @@ async fn four_players_can_deal_bury_and_select_trump() {
         json!({ "cards": bottom_cards }),
     )
     .await;
+    let snapshot = wait_for_snapshot_at_least(&mut clients[0], 0).await;
+    assert_eq!(snapshot["data"]["phase"], json!(UpgradePhase::Play as i8));
     let buried = wait_for_response(&mut clients[0], UpgradeRoutes::BURY_BOTTOM as i32).await;
     assert_eq!(buried["code"], json!(WsResponseCode::OK as i32));
-
-    send_request(
-        &mut clients[0],
-        UpgradeRoutes::SELECT_TRUMP as i32,
-        json!({ "trump_suit": UpgradeSuit::HEART as i8 }),
-    )
-    .await;
-    let snapshot = wait_for_event(&mut clients[0], WsCode::TABLE_SNAPSHOT as i32).await;
-    assert_eq!(snapshot["data"]["phase"], json!(UpgradePhase::Play as i8));
-    assert_eq!(
-        snapshot["data"]["trump_suit"],
-        json!(UpgradeSuit::HEART as i8)
-    );
-    let selected = wait_for_response(&mut clients[0], UpgradeRoutes::SELECT_TRUMP as i32).await;
-    assert_eq!(selected["code"], json!(WsResponseCode::OK as i32));
+    let trump_suit = match snapshot["data"]["trump_suit"].as_i64().unwrap() {
+        0 => upgrade_common::Suit::Spade,
+        1 => upgrade_common::Suit::Heart,
+        2 => upgrade_common::Suit::Club,
+        3 => upgrade_common::Suit::Diamond,
+        _ => panic!("invalid trump suit"),
+    };
 
     for card in bottom["data"]["cards"].as_array().unwrap() {
         let card = card.as_i64().unwrap() as i32;
@@ -241,7 +237,7 @@ async fn four_players_can_deal_bury_and_select_trump() {
     }
     let lead = hands[0][0];
     let lead_card = upgrade_common::Card::try_from(lead).unwrap();
-    let lead_group = if lead_card.suit() == Some(upgrade_common::Suit::Heart)
+    let lead_group = if lead_card.suit() == Some(trump_suit)
         || lead_card.suit().is_none()
         || lead_card.rank() == upgrade_common::Rank::Three
     {
@@ -258,7 +254,7 @@ async fn four_players_can_deal_bury_and_select_trump() {
                 .copied()
                 .find(|candidate| {
                     let decoded = upgrade_common::Card::try_from(*candidate).unwrap();
-                    let group = if decoded.suit() == Some(upgrade_common::Suit::Heart)
+                    let group = if decoded.suit() == Some(trump_suit)
                         || decoded.suit().is_none()
                         || decoded.rank() == upgrade_common::Rank::Three
                     {

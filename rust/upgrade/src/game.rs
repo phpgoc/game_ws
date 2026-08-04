@@ -207,6 +207,14 @@ impl UpgradeGameHandler {
         let deck_count = i32::from(state_guard.rules.deck_count.get());
         let hand_count = state_guard.hand_count() as i32;
         let bottom_count = state_guard.rules.bottom_card_count as i32;
+        if let Some(declaration) = state_guard.declaration.clone() {
+            room_service.broadcast_connected(
+                room_key,
+                UpgradeWsCode::TRUMP_DECLARED as i32,
+                declaration,
+                dispatch,
+            );
+        }
         for position in 0..PLAYER_COUNT {
             let Some((session_id, _, _, _)) = members
                 .iter()

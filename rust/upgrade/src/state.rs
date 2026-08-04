@@ -182,8 +182,31 @@ impl UpgradeGameState {
             return Err("deck cannot be dealt evenly");
         }
         deck.shuffle(&mut rand::rng());
+        let first_revealed = deck.iter().copied().find_map(|encoded| {
+            let card = Card::try_from(encoded).ok()?;
+            (card.rank() == rules.target_rank).then_some((encoded, card.suit()))
+        });
+        let (trump_suit, declaration) = if self.round_index == 0 {
+            let (encoded, suit) = first_revealed
+                .and_then(|(encoded, suit)| suit.map(|suit| (encoded, suit)))
+                .unwrap_or((1, Suit::Spade));
+            (
+                Some(suit),
+                Some(WsUpgradeTrumpDeclaration {
+                    position: self.dealer_position as i32,
+                    name: self.player_name(self.dealer_position),
+                    cards: vec![encoded],
+                    trump_suit: suit_to_protocol(suit),
+                    strength: 1,
+                    target_rank: rank_to_protocol(rules.target_rank),
+                }),
+            )
+        } else {
+            (rules.trump_suit, None)
+        };
         self.rules = UpgradeRules {
             bottom_card_count: bottom_count,
+            trump_suit,
             ..rules
         };
         self.phase = UpgradePhase::Bury;
@@ -211,7 +234,7 @@ impl UpgradeGameState {
             .and_modify(|hand| hand.sort_unstable());
         self.dealt_count = total_cards;
         self.total_deal_count = total_cards;
-        self.declaration = None;
+        self.declaration = declaration;
         self.current_trick.clear();
         self.trick_index = 0;
         self.collected_scores.clear();
@@ -244,11 +267,18 @@ impl UpgradeGameState {
         remove_cards(hand, &cards)?;
         self.bottom_cards = cards;
         self.buried = true;
+        if self.rules.trump_suit.is_some() {
+            self.phase = UpgradePhase::Play;
+        }
         Ok(())
     }
 
     pub fn select_trump(&mut self, position: usize, suit: UpgradeSuit) -> Result<(), &'static str> {
-        if self.phase != UpgradePhase::Bury || !self.buried || position != self.dealer_position {
+        if self.phase != UpgradePhase::Bury
+            || !self.buried
+            || position != self.dealer_position
+            || self.rules.trump_suit.is_some()
+        {
             return Err("not allowed to select trump");
         }
         let suit = match suit {

@@ -39,10 +39,18 @@ fn bury_then_select_trump_enters_play() {
     state.deal_new_round(rules(3)).unwrap();
     let bottom = state.bottom_cards.clone();
     state.bury_bottom(0, bottom).unwrap();
-    assert_eq!(state.phase, UpgradePhase::Bury);
-    state.select_trump(0, UpgradeSuit::HEART).unwrap();
     assert_eq!(state.phase, UpgradePhase::Play);
-    assert_eq!(state.rules.trump_suit, Some(Suit::Heart));
+    assert!(state.select_trump(0, UpgradeSuit::HEART).is_err());
+
+    let common = Arc::new(Mutex::new(CommonGameState::new()));
+    let mut later_round = UpgradeGameState::from_common(common);
+    later_round.round_index = 1;
+    later_round.deal_new_round(rules(3)).unwrap();
+    let bottom = later_round.bottom_cards.clone();
+    later_round.bury_bottom(0, bottom).unwrap();
+    assert_eq!(later_round.phase, UpgradePhase::Bury);
+    later_round.select_trump(0, UpgradeSuit::HEART).unwrap();
+    assert_eq!(later_round.rules.trump_suit, Some(Suit::Heart));
 }
 
 fn playing_state(hands: HashMap<usize, Vec<i32>>) -> UpgradeGameState {
