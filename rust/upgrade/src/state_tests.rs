@@ -133,3 +133,22 @@ fn four_single_plays_finish_the_last_trick_and_settle() {
     assert_eq!(settlement.score, 5);
     assert_eq!(settlement.winner_positions, vec![0, 2]);
 }
+
+#[test]
+fn settlement_can_start_the_next_round_and_raise_target_rank() {
+    let mut state = playing_state(HashMap::from([
+        (0, vec![4]),
+        (1, vec![13]),
+        (2, vec![5]),
+        (3, vec![6]),
+    ]));
+    for (position, card) in [(0, 4), (1, 13), (2, 5), (3, 6)] {
+        state.play_cards(position, vec![card]).unwrap();
+    }
+
+    assert!(state.advance_after_settlement().unwrap());
+    assert_eq!(state.phase, UpgradePhase::Bury);
+    assert_eq!(state.round_index, 1);
+    assert_eq!(state.rules.target_rank, Rank::Five);
+    assert_eq!(state.rules.trump_suit, None);
+}

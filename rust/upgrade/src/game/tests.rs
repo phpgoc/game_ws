@@ -65,3 +65,39 @@ fn room_join_accepts_upgrade_and_rejects_tractor() {
         Some(WsResponseCode::WRONG_GAME as i32)
     );
 }
+
+#[test]
+fn owner_can_start_the_next_round_after_settlement() {
+    let handler = UpgradeGameHandler::default();
+    let mut room = RoomService::with_ai_players_enabled(false);
+    for session_id in 1..=4 {
+        let request = ClientRequest {
+            route: Routes::JOIN as i32,
+            data: json!({
+                "name": format!("player-{session_id}"),
+                "password": "upgrade-room",
+                "game_id": GameId::UPGRADE as i32,
+                "avatar_url": ""
+            }),
+        };
+        room.handle_common_request(session_id, &request, handler.game_id(), || {
+            handler.build_room_settings()
+        });
+    }
+    let started = handler.handle_start(&mut room, 1);
+    assert_eq!(response_code(&started), Some(WsResponseCode::OK as i32));
+    let state = handler.state("upgrade-room").unwrap();
+    {
+        let mut state = state.lock().unwrap();
+        state.phase = share_type_public::UpgradePhase::Settlement;
+        state.collected_scores.insert(1, 5);
+    }
+
+    let next = handler.handle_start(&mut room, 1);
+
+    assert_eq!(response_code(&next), Some(WsResponseCode::OK as i32));
+    let state = state.lock().unwrap();
+    assert_eq!(state.round_index, 1);
+    assert_eq!(state.phase, share_type_public::UpgradePhase::Bury);
+    assert_eq!(state.rules.target_rank, upgrade_common::Rank::Five);
+}

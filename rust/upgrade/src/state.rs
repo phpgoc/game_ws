@@ -612,6 +612,43 @@ impl UpgradeGameState {
                 .collect(),
         }
     }
+
+    pub fn advance_after_settlement(&mut self) -> Result<bool, &'static str> {
+        if self.phase != UpgradePhase::Settlement {
+            return Err("not in settlement");
+        }
+        let levels = usize::from(self.score_outcome().levels.max(1));
+        let path = [
+            Rank::Three,
+            Rank::Four,
+            Rank::Five,
+            Rank::Six,
+            Rank::Seven,
+            Rank::Eight,
+            Rank::Nine,
+            Rank::Ten,
+            Rank::Jack,
+            Rank::Queen,
+            Rank::King,
+            Rank::Ace,
+        ];
+        let current = path
+            .iter()
+            .position(|rank| *rank == self.rules.target_rank)
+            .ok_or("invalid target rank")?;
+        let Some(next_rank) = path.get(current.saturating_add(levels)).copied() else {
+            return Ok(false);
+        };
+        let winners = self.winner_positions_usize();
+        if !winners.contains(&self.dealer_position) {
+            self.dealer_position = winners[0];
+        }
+        self.round_index += 1;
+        self.rules.target_rank = next_rank;
+        self.rules.trump_suit = None;
+        self.deal_new_round(self.rules)?;
+        Ok(true)
+    }
 }
 
 fn contains_cards(hand: &[i32], cards: &[i32]) -> bool {

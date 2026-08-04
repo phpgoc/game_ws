@@ -157,6 +157,40 @@ impl UpgradeGameHandler {
         if !room_service.room_is_ready_to_start(&room_key) {
             return room_service.error_response(session_id, route, WsResponseCode::NOT_IN_RANGE);
         }
+        if let Some(state) = self.current_state(room_service, &room_key) {
+            let can_advance =
+                state.lock().unwrap().phase == share_type_public::UpgradePhase::Settlement;
+            if !can_advance {
+                return room_service.error_response(
+                    session_id,
+                    route,
+                    WsResponseCode::NO_PERMISSION,
+                );
+            }
+            let advanced = state.lock().unwrap().advance_after_settlement();
+            if !matches!(advanced, Ok(true)) {
+                return room_service.error_response(
+                    session_id,
+                    route,
+                    WsResponseCode::NO_PERMISSION,
+                );
+            }
+            let configs = room_service.room_configs(&room_key).unwrap_or_default();
+            state
+                .lock()
+                .unwrap()
+                .set_turn_countdown(configs.get(KEY_PLAY_TIME).copied().unwrap_or(30).max(1) as u32);
+            room_service.broadcast(
+                &room_key,
+                WsCode::START as i32,
+                serde_json::json!({}),
+                &mut dispatch,
+            );
+            self.broadcast_deal(room_service, &room_key, &state, &mut dispatch);
+            self.push_snapshot(&mut dispatch, room_service, &room_key, &state);
+            room_service.push_ok_response(&mut dispatch, session_id, route);
+            return dispatch;
+        }
         let Some(common) = room_service.reset_room_common_state_for_new_game(&room_key) else {
             return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
         };
