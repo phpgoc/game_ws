@@ -3234,6 +3234,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "tracing",
+ "upgrade_common",
  "ws_common",
 ]
 

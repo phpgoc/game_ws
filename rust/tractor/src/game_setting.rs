@@ -6,15 +6,15 @@ use ws_common::GameSettings;
 pub const KEY_AI_ACTION_TIME: &str = "ai_action_time";
 
 pub const KEY_AWAY_TIME: &str = "away_time";
-pub const KEY_BLOOD_ENABLED: &str = "blood_enabled";
-pub const KEY_BLOOD_SCORE_PER_UNIT: &str = "blood_score_per_unit";
-pub const KEY_BLOOD_START_SCORE: &str = "blood_start_score";
+pub const KEY_ATTACKING_WIN_SCORE: &str = "attacking_win_score";
 pub const KEY_BOTTOM_CARD_COUNT: &str = "bottom_card_count";
 pub const KEY_DEAL_TIME: &str = "deal_time";
 pub const KEY_DECK_COUNT: &str = "deck_count";
 pub const KEY_FIRST_DEAL_TIME: &str = "first_deal_time";
 pub const KEY_PLAY_TIME: &str = "play_time";
 pub const KEY_REMOVED_RANK_COUNT: &str = "removed_rank_count";
+pub const KEY_SCORE_PER_LEVEL: &str = "score_per_level";
+pub const KEY_SHUTOUT_BONUS_LEVELS: &str = "shutout_bonus_levels";
 pub const KEY_SETTLEMENT_TIME: &str = "settlement_time";
 pub const KEY_TARGET_RANK: &str = "target_rank";
 
@@ -28,26 +28,27 @@ pub fn build_tractor_settings() -> (GameSettings, HashMap<String, GameParam>) {
             }),
         ),
         (
-            KEY_BLOOD_ENABLED.into(),
-            GameParam::Enum(GameParamEnum {
-                default: 1,
-                options: vec!["off".into(), "on".into()],
-            }),
-        ),
-        (
-            KEY_BLOOD_START_SCORE.into(),
+            KEY_ATTACKING_WIN_SCORE.into(),
             GameParam::Range(GameParamRange {
                 default: 80,
-                min: 5,
+                min: 20,
                 max: 400,
             }),
         ),
         (
-            KEY_BLOOD_SCORE_PER_UNIT.into(),
+            KEY_SCORE_PER_LEVEL.into(),
             GameParam::Range(GameParamRange {
                 default: 40,
                 min: 5,
                 max: 200,
+            }),
+        ),
+        (
+            KEY_SHUTOUT_BONUS_LEVELS.into(),
+            GameParam::Range(GameParamRange {
+                default: 1,
+                min: 0,
+                max: 3,
             }),
         ),
         (
@@ -127,6 +128,9 @@ mod tests {
         assert!(!settings.values.contains_key(KEY_SETTLEMENT_TIME));
         assert_eq!(settings.values[KEY_PLAY_TIME], 30);
         assert_eq!(settings.values[KEY_REMOVED_RANK_COUNT], 0);
+        assert_eq!(settings.values[KEY_ATTACKING_WIN_SCORE], 80);
+        assert_eq!(settings.values[KEY_SCORE_PER_LEVEL], 40);
+        assert_eq!(settings.values[KEY_SHUTOUT_BONUS_LEVELS], 1);
         let GameParam::Enum(deck_count) = &params[KEY_DECK_COUNT] else {
             panic!("deck count must be an enum");
         };

@@ -463,7 +463,7 @@ fn settlement_event(state: &TractorGameState) -> WsTractorSettlementEvent {
     WsTractorSettlementEvent {
         winner_positions: state.winner_positions(),
         score,
-        blood_units: state.rules.blood_units(score),
+        level_change: state.level_change(),
         target_rank: state.rules.target_rank,
         match_finished: state.match_finished(),
         next_target_rank: state.next_target_rank(),
@@ -901,9 +901,9 @@ mod tests {
         let mut state = TractorGameState::from_common(Arc::new(StdMutex::new(common)));
         state.phase = TractorPhase::Play;
         state.rules = TractorRules {
-            blood_enabled: true,
-            blood_score_per_unit: 40,
-            blood_start_score: 80,
+            attacking_win_score: 80,
+            score_per_level: 40,
+            shutout_bonus_levels: 1,
             bottom_card_count: 8,
             deck_count: 2,
             final_target_rank: TractorRank::A,

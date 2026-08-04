@@ -907,9 +907,9 @@ mod tests {
     // deck copy adds 100, so 2 and 102 are the identical card (suit 0, rank 3).
     fn rules(target: TractorRank) -> TractorRules {
         TractorRules {
-            blood_enabled: true,
-            blood_score_per_unit: 40,
-            blood_start_score: 80,
+            attacking_win_score: 80,
+            score_per_level: 40,
+            shutout_bonus_levels: 1,
             bottom_card_count: 8,
             deck_count: 2,
             final_target_rank: TractorRank::A,

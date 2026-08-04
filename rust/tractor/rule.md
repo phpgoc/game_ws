@@ -45,9 +45,10 @@
 
 ## 四、结算与升级
 
-- 非庄方（闲家队）为进攻方，累计满 blood_start_score（默认 80）即翻庄并升级。
-- 未达标则庄方守庄。番数 / 血量按 blood_score_per_unit 折算。
-- 级牌沿仍保留的 target_rank 路径推进；到达不高于 final_target_rank 的最高保留级牌后结束。
+- 非庄方（闲家队）为进攻方，累计满 `attacking_win_score`（默认 80）即翻庄。
+- 达到翻庄线后，每超过一档 `score_per_level` 多升一级；未达到翻庄线时，庄方也按每少一档多升一级。
+- 闲家 0 分时，庄方额外增加 `shutout_bonus_levels` 级。三个数值都是房间配置，不使用喝血、进贡或上贡规则。
+- 级牌沿仍保留的 `target_rank` 路径推进；到达不高于 `final_target_rank` 的最高保留级牌后结束。
 
 ## 五、AI 概要
 

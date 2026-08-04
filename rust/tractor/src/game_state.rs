@@ -8,6 +8,7 @@ use share_type_public::{
     TractorPhase, TractorRank, TractorSuit, WsTractorFailedThrowEvent, WsTractorPlayedCards,
     WsTractorPlayerHandCount, WsTractorTableSnapshotEvent, WsTractorTrumpDeclaration,
 };
+use upgrade_common::{ScoreOutcome, ScoreProgression};
 use ws_common::{CommonGameState, GameState};
 
 use crate::combo::{self, Combo};
@@ -87,9 +88,9 @@ pub struct TractorFailedThrow {
 
 #[derive(Debug, Clone)]
 pub struct TractorRules {
-    pub blood_enabled: bool,
-    pub blood_score_per_unit: i32,
-    pub blood_start_score: i32,
+    pub attacking_win_score: i32,
+    pub score_per_level: i32,
+    pub shutout_bonus_levels: u8,
     pub bottom_card_count: usize,
     pub deck_count: usize,
     pub final_target_rank: TractorRank,
@@ -207,10 +208,15 @@ fn next_match_rank(
     current_rank: TractorRank,
     removed_rank_count: usize,
     final_target_rank: TractorRank,
+    levels: usize,
 ) -> Option<TractorRank> {
     let path = tractor_rank_path(removed_rank_count, final_target_rank);
     let index = path.iter().position(|rank| *rank == current_rank)?;
-    path.get(index + 1).copied()
+    if index + 1 >= path.len() {
+        return None;
+    }
+    path.get((index + levels.max(1)).min(path.len() - 1))
+        .copied()
 }
 
 fn played_score(cards: &[i32]) -> i32 {
@@ -633,7 +639,8 @@ impl TractorGameState {
         rules.deck_count = rules
             .deck_count
             .clamp(MIN_TRACTOR_DECK_COUNT, MAX_TRACTOR_DECK_COUNT);
-        rules.blood_score_per_unit = rules.blood_score_per_unit.max(1);
+        rules.attacking_win_score = rules.attacking_win_score.max(1);
+        rules.score_per_level = rules.score_per_level.max(1);
         let positions = self.active_positions();
         if positions.len() != 4 {
             return Err("Tractor requires exactly 4 players");
@@ -806,9 +813,9 @@ impl TractorGameState {
             base,
             phase: TractorPhase::Start,
             rules: TractorRules {
-                blood_enabled: true,
-                blood_score_per_unit: 40,
-                blood_start_score: 80,
+                attacking_win_score: 80,
+                score_per_level: 40,
+                shutout_bonus_levels: 1,
                 bottom_card_count: 8,
                 deck_count: 2,
                 final_target_rank: TractorRank::A,
@@ -884,6 +891,7 @@ impl TractorGameState {
             self.rules.target_rank,
             self.rules.removed_rank_count,
             self.rules.final_target_rank,
+            self.level_change() as usize,
         )
     }
 
@@ -1058,12 +1066,17 @@ impl TractorGameState {
     }
 
     pub fn settlement_score(&self) -> i32 {
-        let attacking_score = self.attacking_score();
-        if attacking_score >= self.rules.blood_start_score {
-            attacking_score
-        } else {
-            (self.rules.blood_start_score - attacking_score).max(1)
-        }
+        self.attacking_score()
+    }
+
+    pub fn score_outcome(&self) -> ScoreOutcome {
+        self.rules
+            .score_progression()
+            .outcome(self.attacking_score())
+    }
+
+    pub fn level_change(&self) -> i32 {
+        i32::from(self.score_outcome().levels)
     }
 
     fn record_settlement_scores(&mut self) {
@@ -1122,9 +1135,9 @@ impl TractorGameState {
             final_target_rank: self.rules.final_target_rank,
             removed_rank_count: self.rules.removed_rank_count as i32,
             round_index: self.round_index,
-            blood_enabled: self.rules.blood_enabled,
-            blood_start_score: self.rules.blood_start_score,
-            blood_score_per_unit: self.rules.blood_score_per_unit,
+            attacking_win_score: self.rules.attacking_win_score,
+            score_per_level: self.rules.score_per_level,
+            shutout_bonus_levels: i32::from(self.rules.shutout_bonus_levels),
             bottom_card_count: self.bottom_cards.len() as i32,
             hand_count: self.hand_count() as i32,
             dealer_position: self.dealer_position as i32,
@@ -1151,7 +1164,7 @@ impl TractorGameState {
 
     pub fn winner_positions_usize(&self) -> Vec<usize> {
         let attacking_score = self.attacking_score();
-        let winners = if attacking_score >= self.rules.blood_start_score {
+        let winners = if attacking_score >= self.rules.attacking_win_score {
             team_positions((self.dealer_position + 1) % 4)
         } else {
             team_positions(self.dealer_position)
@@ -1171,11 +1184,13 @@ impl GameState for TractorGameState {
 }
 
 impl TractorRules {
-    pub fn blood_units(&self, score: i32) -> i32 {
-        if !self.blood_enabled || score < self.blood_start_score {
-            return 0;
-        }
-        ((score - self.blood_start_score) / self.blood_score_per_unit.max(1)) + 1
+    pub fn score_progression(&self) -> ScoreProgression {
+        ScoreProgression::new(
+            self.attacking_win_score.max(1) as u32,
+            self.score_per_level.max(1) as u32,
+            self.shutout_bonus_levels,
+        )
+        .expect("normalized tractor score progression is valid")
     }
 }
 
@@ -1323,11 +1338,11 @@ mod tests {
     }
 
     #[test]
-    fn blood_units_start_after_threshold() {
+    fn score_progression_reports_both_sides_and_high_score_levels() {
         let rules = TractorRules {
-            blood_enabled: true,
-            blood_score_per_unit: 40,
-            blood_start_score: 80,
+            attacking_win_score: 80,
+            score_per_level: 40,
+            shutout_bonus_levels: 1,
             bottom_card_count: 8,
             deck_count: 2,
             final_target_rank: TractorRank::A,
@@ -1335,9 +1350,22 @@ mod tests {
             target_rank: TractorRank::A,
             trump_suit: None,
         };
-        assert_eq!(rules.blood_units(79), 0);
-        assert_eq!(rules.blood_units(80), 1);
-        assert_eq!(rules.blood_units(120), 2);
+        assert_eq!(
+            rules.score_progression().outcome(0),
+            ScoreOutcome::defending(3)
+        );
+        assert_eq!(
+            rules.score_progression().outcome(79),
+            ScoreOutcome::defending(1)
+        );
+        assert_eq!(
+            rules.score_progression().outcome(80),
+            ScoreOutcome::attacking(1)
+        );
+        assert_eq!(
+            rules.score_progression().outcome(120),
+            ScoreOutcome::attacking(2)
+        );
     }
 
     #[test]
@@ -1558,6 +1586,20 @@ mod tests {
     }
 
     #[test]
+    fn high_attacking_score_advances_multiple_ranks() {
+        let mut state = test_state();
+        state.rules.target_rank = TractorRank::THREE;
+        state.rules.final_target_rank = TractorRank::A;
+        state.phase = TractorPhase::Settlement;
+        state.collected_scores = HashMap::from([(1, 120)]);
+
+        assert_eq!(state.score_outcome(), ScoreOutcome::attacking(2));
+        assert_eq!(state.next_target_rank(), Some(TractorRank::FIVE));
+        assert!(state.advance_after_settlement().expect("advance two ranks"));
+        assert_eq!(state.rules.target_rank, TractorRank::FIVE);
+    }
+
+    #[test]
     #[cfg(feature = "official")]
     fn strong_ai_pair_can_counter_a_human_single_after_hand_evaluation() {
         let mut state = test_state();
@@ -1642,9 +1684,9 @@ mod tests {
         let mut state = TractorGameState::from_common(Arc::new(Mutex::new(common)));
         state.phase = TractorPhase::Play;
         state.rules = TractorRules {
-            blood_enabled: true,
-            blood_score_per_unit: 40,
-            blood_start_score: 80,
+            attacking_win_score: 80,
+            score_per_level: 40,
+            shutout_bonus_levels: 1,
             bottom_card_count: 8,
             deck_count: 2,
             final_target_rank: TractorRank::A,

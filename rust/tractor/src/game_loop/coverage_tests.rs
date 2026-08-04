@@ -56,9 +56,9 @@ fn room_with_players() -> (RoomService, Arc<Mutex<CommonGameState>>) {
 
 fn rules(bottom_card_count: usize) -> TractorRules {
     TractorRules {
-        blood_enabled: true,
-        blood_score_per_unit: 40,
-        blood_start_score: 80,
+        attacking_win_score: 80,
+        score_per_level: 40,
+        shutout_bonus_levels: 1,
         bottom_card_count,
         deck_count: 2,
         final_target_rank: TractorRank::A,

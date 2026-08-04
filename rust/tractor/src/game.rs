@@ -17,8 +17,8 @@ use ws_common::{
 
 use crate::{
     game_setting::{
-        KEY_BLOOD_ENABLED, KEY_BLOOD_SCORE_PER_UNIT, KEY_BLOOD_START_SCORE, KEY_BOTTOM_CARD_COUNT,
-        KEY_DECK_COUNT, KEY_PLAY_TIME, KEY_REMOVED_RANK_COUNT, KEY_TARGET_RANK,
+        KEY_ATTACKING_WIN_SCORE, KEY_BOTTOM_CARD_COUNT, KEY_DECK_COUNT, KEY_PLAY_TIME,
+        KEY_REMOVED_RANK_COUNT, KEY_SCORE_PER_LEVEL, KEY_SHUTOUT_BONUS_LEVELS, KEY_TARGET_RANK,
         build_tractor_settings,
     },
     game_state::{
@@ -54,13 +54,21 @@ struct TractorGameStateHandle {
 impl TractorGameHandler {
     fn configs_to_rules(configs: &HashMap<String, i32>) -> TractorRules {
         TractorRules {
-            blood_enabled: configs.get(KEY_BLOOD_ENABLED).copied().unwrap_or(1) != 0,
-            blood_score_per_unit: configs
-                .get(KEY_BLOOD_SCORE_PER_UNIT)
+            attacking_win_score: configs
+                .get(KEY_ATTACKING_WIN_SCORE)
+                .copied()
+                .unwrap_or(80)
+                .max(1),
+            score_per_level: configs
+                .get(KEY_SCORE_PER_LEVEL)
                 .copied()
                 .unwrap_or(40)
                 .max(1),
-            blood_start_score: configs.get(KEY_BLOOD_START_SCORE).copied().unwrap_or(80),
+            shutout_bonus_levels: configs
+                .get(KEY_SHUTOUT_BONUS_LEVELS)
+                .copied()
+                .unwrap_or(1)
+                .clamp(0, 3) as u8,
             bottom_card_count: configs
                 .get(KEY_BOTTOM_CARD_COUNT)
                 .copied()
@@ -301,7 +309,7 @@ impl TractorGameHandler {
                     WsTractorSettlementEvent {
                         winner_positions: s.winner_positions(),
                         score,
-                        blood_units: s.rules.blood_units(score),
+                        level_change: s.level_change(),
                         target_rank: s.rules.target_rank,
                         match_finished: s.match_finished(),
                         next_target_rank: s.next_target_rank(),
@@ -597,7 +605,7 @@ impl GameHandler for TractorGameHandler {
                     WsTractorSettlementEvent {
                         winner_positions: state.winner_positions(),
                         score,
-                        blood_units: state.rules.blood_units(score),
+                        level_change: state.level_change(),
                         target_rank: state.rules.target_rank,
                         match_finished: state.match_finished(),
                         next_target_rank: state.next_target_rank(),
@@ -872,7 +880,7 @@ mod tests {
                 let settlement = settlement.expect("settlement event");
                 assert_eq!(settlement.winner_positions, vec![1, 3]);
                 assert_eq!(settlement.score, 80);
-                assert_eq!(settlement.blood_units, 1);
+                assert_eq!(settlement.level_change, 1);
             }
         }
     }

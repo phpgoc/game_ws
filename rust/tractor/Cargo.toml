@@ -17,6 +17,7 @@ official = [
 anyhow = "1"
 data = { path = "../../../data", optional = true }
 rand = "0.9"
+upgrade_common = { path = "../upgrade_common" }
 runtime_common = { path = "../../../runtime_common", optional = true }
 serde = "1"
 serde_json = "1"

@@ -325,9 +325,9 @@ async fn tractor_incremental_deal_compact_deck_and_bury_flow() {
         json!({
             "current_configs": {
                 "deck_count": 0,
-                "blood_enabled": 1,
-                "blood_start_score": 80,
-                "blood_score_per_unit": 40,
+                "attacking_win_score": 80,
+                "score_per_level": 40,
+                "shutout_bonus_levels": 1,
                 "target_rank": 11,
                 "removed_rank_count": 3,
                 "first_deal_time": 1000,
@@ -395,10 +395,10 @@ async fn tractor_incremental_deal_compact_deck_and_bury_flow() {
     assert_eq!(snapshot["data"]["target_rank"], json!(5));
     assert_eq!(snapshot["data"]["final_target_rank"], json!(14));
     assert_eq!(snapshot["data"]["removed_rank_count"], json!(3));
-    assert_eq!(snapshot["data"]["blood_enabled"], json!(true));
     assert_eq!(snapshot["data"]["bottom_card_count"], json!(8));
-    assert_eq!(snapshot["data"]["blood_start_score"], json!(80));
-    assert_eq!(snapshot["data"]["blood_score_per_unit"], json!(40));
+    assert_eq!(snapshot["data"]["attacking_win_score"], json!(80));
+    assert_eq!(snapshot["data"]["score_per_level"], json!(40));
+    assert_eq!(snapshot["data"]["shutout_bonus_levels"], json!(1));
     assert_eq!(snapshot["data"]["dealt_count"], json!(76));
     assert_eq!(snapshot["data"]["total_deal_count"], json!(76));
     assert_eq!(

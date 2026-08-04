@@ -85,7 +85,7 @@ fn settlement_advances_to_the_first_winning_farmer_and_starts_a_round() {
     state.dealer_position = 0;
     state.rules.target_rank = TractorRank::THREE;
     state.collected_scores = HashMap::from([(1, 80)]);
-    state.rules.blood_start_score = 80;
+    state.rules.attacking_win_score = 80;
     assert!(state.advance_after_settlement().expect("next round"));
     assert_eq!(state.dealer_position, 1);
     assert_eq!(state.rules.target_rank, TractorRank::FOUR);

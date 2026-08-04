@@ -11,8 +11,8 @@ use ws_common::{
 
 use super::{TractorGameHandler, TractorGameState, TractorGameStateHandle, join_succeeded};
 use crate::game_setting::{
-    KEY_BLOOD_ENABLED, KEY_BLOOD_SCORE_PER_UNIT, KEY_BLOOD_START_SCORE, KEY_BOTTOM_CARD_COUNT,
-    KEY_DECK_COUNT, KEY_REMOVED_RANK_COUNT, KEY_TARGET_RANK, build_tractor_settings,
+    KEY_ATTACKING_WIN_SCORE, KEY_BOTTOM_CARD_COUNT, KEY_DECK_COUNT, KEY_REMOVED_RANK_COUNT,
+    KEY_SCORE_PER_LEVEL, KEY_SHUTOUT_BONUS_LEVELS, KEY_TARGET_RANK, build_tractor_settings,
 };
 
 const ROOM_KEY: &str = "handler-coverage";
@@ -174,17 +174,17 @@ fn request_handlers_require_a_running_game_and_reject_wrong_phase_actions() {
 #[test]
 fn rules_conversion_clamps_settings_and_state_cleanup_keeps_current_room_identity() {
     let rules = TractorGameHandler::configs_to_rules(&std::collections::HashMap::from([
-        (KEY_BLOOD_ENABLED.to_owned(), 0),
-        (KEY_BLOOD_SCORE_PER_UNIT.to_owned(), -1),
-        (KEY_BLOOD_START_SCORE.to_owned(), -20),
+        (KEY_ATTACKING_WIN_SCORE.to_owned(), -20),
+        (KEY_SCORE_PER_LEVEL.to_owned(), -1),
+        (KEY_SHUTOUT_BONUS_LEVELS.to_owned(), 99),
         (KEY_BOTTOM_CARD_COUNT.to_owned(), -1),
         (KEY_DECK_COUNT.to_owned(), 99),
         (KEY_REMOVED_RANK_COUNT.to_owned(), 99),
         (KEY_TARGET_RANK.to_owned(), 99),
     ]));
-    assert!(!rules.blood_enabled);
-    assert_eq!(rules.blood_score_per_unit, 1);
-    assert_eq!(rules.blood_start_score, -20);
+    assert_eq!(rules.attacking_win_score, 1);
+    assert_eq!(rules.score_per_level, 1);
+    assert_eq!(rules.shutout_bonus_levels, 3);
     assert_eq!(rules.bottom_card_count, 0);
     assert_eq!(rules.deck_count, 3);
     assert_eq!(rules.removed_rank_count, 9);
