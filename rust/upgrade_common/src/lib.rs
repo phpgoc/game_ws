@@ -6,8 +6,10 @@
 #![forbid(unsafe_code)]
 
 mod card;
+mod score;
 
 pub use card::{Card, CardDecodeError, Rank, Suit, largest_identity_group_size};
+pub use score::{ScoreLevelError, ScoreOutcome, ScoreProgression, ScoreSide};
 
 /// 当前升级系游戏能够使用的最大牌副数。
 pub const MAX_DECK_COUNT: u8 = 6;

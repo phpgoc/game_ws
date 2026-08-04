@@ -38,3 +38,21 @@ fn reports_only_the_largest_identity_group() {
     let three_pairs = cards(&[5, 105, 6, 106, 7, 107]);
     assert_eq!(largest_identity_group_size(&three_pairs), 2);
 }
+
+#[test]
+fn score_progression_is_configurable_and_handles_standard_boundaries() {
+    let progression = ScoreProgression::new(80, 40, 1).unwrap();
+
+    assert_eq!(progression.outcome(0), ScoreOutcome::defending(3));
+    assert_eq!(progression.outcome(39), ScoreOutcome::defending(2));
+    assert_eq!(progression.outcome(40), ScoreOutcome::defending(1));
+    assert_eq!(progression.outcome(79), ScoreOutcome::defending(1));
+    assert_eq!(progression.outcome(80), ScoreOutcome::attacking(1));
+    assert_eq!(progression.outcome(120), ScoreOutcome::attacking(2));
+}
+
+#[test]
+fn score_progression_rejects_non_positive_configuration() {
+    assert!(ScoreProgression::new(0, 40, 1).is_err());
+    assert!(ScoreProgression::new(80, 0, 1).is_err());
+}
