@@ -44,3 +44,84 @@ fn bury_then_select_trump_enters_play() {
     assert_eq!(state.phase, UpgradePhase::Play);
     assert_eq!(state.rules.trump_suit, Some(Suit::Heart));
 }
+
+fn playing_state(hands: HashMap<usize, Vec<i32>>) -> UpgradeGameState {
+    let common = Arc::new(Mutex::new(CommonGameState::new()));
+    for position in 0..4 {
+        common
+            .lock()
+            .unwrap()
+            .add_player(position, position as u64 + 1, &format!("p{position}"));
+    }
+    let mut state = UpgradeGameState::from_common(common);
+    state.phase = UpgradePhase::Play;
+    state.rules = UpgradeRules {
+        trump_suit: Some(Suit::Heart),
+        ..rules(3)
+    };
+    state.hands = hands;
+    state.current_position = 0;
+    state.bottom_cards.clear();
+    state
+}
+
+#[test]
+fn follower_must_use_the_led_group_when_available() {
+    let mut state = playing_state(HashMap::from([
+        (0, vec![]),
+        (1, vec![5, 18]),
+        (2, vec![6]),
+        (3, vec![7]),
+    ]));
+    state.current_trick.push(WsUpgradePlayedCards {
+        position: 0,
+        name: "p0".into(),
+        cards: vec![4],
+    });
+    state.current_position = 1;
+
+    assert!(matches!(
+        state.play_cards(1, vec![18]),
+        Err("illegal follow")
+    ));
+    assert!(state.play_cards(1, vec![5]).is_ok());
+}
+
+#[test]
+fn higher_triple_forces_only_the_triple_component_back() {
+    let attempted = vec![2, 102, 202, 12, 112, 13];
+    let mut state = playing_state(HashMap::from([
+        (0, attempted.clone()),
+        (1, vec![3, 103, 203, 20, 21, 22]),
+        (2, vec![30; 6]),
+        (3, vec![43; 6]),
+    ]));
+    state.rules.target_rank = Rank::Two;
+
+    let result = state.play_cards(0, attempted).unwrap();
+
+    assert_eq!(result.played_cards, vec![2, 102, 202]);
+    assert_eq!(result.failed_throw.unwrap().attempted_cards.len(), 6);
+    assert_eq!(state.hands[&0], vec![12, 112, 13]);
+}
+
+#[test]
+fn four_single_plays_finish_the_last_trick_and_settle() {
+    let mut state = playing_state(HashMap::from([
+        (0, vec![4]),
+        (1, vec![13]),
+        (2, vec![5]),
+        (3, vec![6]),
+    ]));
+
+    for (position, card) in [(0, 4), (1, 13), (2, 5), (3, 6)] {
+        state.play_cards(position, vec![card]).unwrap();
+    }
+
+    assert_eq!(state.phase, UpgradePhase::Settlement);
+    assert_eq!(state.last_trick_winner, Some(1));
+    assert_eq!(state.collected_scores.get(&1), Some(&5));
+    let settlement = state.settlement_event();
+    assert_eq!(settlement.score, 5);
+    assert_eq!(settlement.winner_positions, vec![0, 2]);
+}

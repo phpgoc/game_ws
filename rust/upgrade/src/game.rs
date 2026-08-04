@@ -4,8 +4,8 @@ use serde_json::Value;
 use share_type_public::{
     CommonEvent, GameId, Routes, UpgradeRoutes, UpgradeWsCode, WsCode, WsResponseCode,
     WsUpgradeBottomBuriedEvent, WsUpgradeBottomCardsEvent, WsUpgradeBuryBottomRequest,
-    WsUpgradeDealEvent, WsUpgradeDeclareTrumpRequest, WsUpgradeHandEvent,
-    WsUpgradeSelectTrumpRequest, WsUpgradeTableSnapshotEvent,
+    WsUpgradeDealEvent, WsUpgradeDeclareTrumpRequest, WsUpgradeHandEvent, WsUpgradePlayEvent,
+    WsUpgradePlayRequest, WsUpgradeSelectTrumpRequest, WsUpgradeTableSnapshotEvent,
 };
 use tokio::sync::Mutex;
 use ws_common::GameState;
@@ -355,6 +355,73 @@ impl UpgradeGameHandler {
         room_service.push_ok_response(&mut dispatch, session_id, route);
         dispatch
     }
+
+    fn handle_play(
+        &self,
+        room_service: &mut RoomService,
+        session_id: SessionId,
+        data: Value,
+    ) -> Dispatch {
+        let route = Routes::PLAY as i32;
+        let Some(position) = room_service.session_position(session_id) else {
+            return room_service.error_response(session_id, route, WsResponseCode::NOT_LOGIN);
+        };
+        let Some(room_key) = room_service.room_key_of(session_id) else {
+            return room_service.error_response(session_id, route, WsResponseCode::NOT_LOGIN);
+        };
+        let Ok(request) = RoomService::parse_payload::<WsUpgradePlayRequest>(data) else {
+            return room_service.error_response(session_id, route, WsResponseCode::ERROR_FORMAT);
+        };
+        let Some(state) = self.current_state(room_service, &room_key) else {
+            return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
+        };
+        let (resolution, event, snapshot, settlement) = {
+            let mut state_guard = state.lock().unwrap();
+            let resolution = match state_guard.play_cards(position, request.cards) {
+                Ok(resolution) => resolution,
+                Err(_) => {
+                    return room_service.error_response(
+                        session_id,
+                        route,
+                        WsResponseCode::NO_PERMISSION,
+                    );
+                }
+            };
+            let event = WsUpgradePlayEvent {
+                position: position as i32,
+                name: state_guard.player_name(position),
+                cards: resolution.played_cards.clone(),
+                trick_index: state_guard.trick_index,
+                next_position: state_guard.current_position as i32,
+                remaining_hand_count: state_guard.private_hand(position).len() as i32,
+                failed_throw: resolution.failed_throw.clone(),
+            };
+            let snapshot = state_guard.snapshot();
+            let settlement = resolution.finished.then(|| state_guard.settlement_event());
+            (resolution, event, snapshot, settlement)
+        };
+        let mut dispatch = Dispatch::default();
+        room_service.broadcast(&room_key, WsCode::PLAY as i32, event, &mut dispatch);
+        room_service.broadcast(
+            &room_key,
+            WsCode::TABLE_SNAPSHOT as i32,
+            snapshot,
+            &mut dispatch,
+        );
+        if let Some(settlement) = settlement {
+            room_service.broadcast(
+                &room_key,
+                WsCode::GAME_OVER as i32,
+                settlement,
+                &mut dispatch,
+            );
+        }
+        // Marking a move as accepted belongs to the state transition, while
+        // this response confirms only the caller's own request.
+        let _ = resolution;
+        room_service.push_ok_response(&mut dispatch, session_id, route);
+        dispatch
+    }
 }
 
 impl Default for UpgradeGameHandler {
@@ -408,6 +475,9 @@ impl GameHandler for UpgradeGameHandler {
     ) -> Dispatch {
         match request.route {
             route if route == Routes::START as i32 => self.handle_start(room_service, session_id),
+            route if route == Routes::PLAY as i32 => {
+                self.handle_play(room_service, session_id, request.data)
+            }
             route if route == UpgradeRoutes::BURY_BOTTOM as i32 => {
                 self.handle_bury_bottom(room_service, session_id, request.data)
             }

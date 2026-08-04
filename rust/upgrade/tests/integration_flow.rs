@@ -2,7 +2,7 @@ use std::{net::TcpListener, time::Duration};
 
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
-use share_type_public::{GameId, Routes, WsResponseCode};
+use share_type_public::{GameId, Routes, WsCode, WsResponseCode};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use upgrade::game::UpgradeGameHandler;
 use ws_common::{RuntimeConfig, run_room_runtime};
@@ -106,6 +106,15 @@ async fn wait_for_event(client: &mut Client, code: i32) -> Value {
     }
 }
 
+async fn wait_for_snapshot_at_least(client: &mut Client, trick_index: i32) -> Value {
+    loop {
+        let snapshot = wait_for_event(client, WsCode::TABLE_SNAPSHOT as i32).await;
+        if snapshot["data"]["trick_index"].as_i64().unwrap_or_default() >= i64::from(trick_index) {
+            return snapshot;
+        }
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn upgrade_server_accepts_only_its_own_game_id() {
     let port = free_port();
@@ -137,7 +146,7 @@ async fn upgrade_server_accepts_only_its_own_game_id() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn four_players_can_deal_bury_and_select_trump() {
-    use share_type_public::{UpgradePhase, UpgradeRoutes, UpgradeSuit, UpgradeWsCode, WsCode};
+    use share_type_public::{UpgradePhase, UpgradeRoutes, UpgradeSuit, UpgradeWsCode};
 
     let port = free_port();
     let listen_addr = format!("127.0.0.1:{port}");
@@ -177,9 +186,25 @@ async fn four_players_can_deal_bury_and_select_trump() {
     let started = wait_for_response(&mut clients[0], Routes::START as i32).await;
     assert_eq!(started["code"], json!(WsResponseCode::OK as i32));
 
+    let mut hands = vec![
+        owner_hand["data"]["cards"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|card| card.as_i64().unwrap() as i32)
+            .collect::<Vec<_>>(),
+    ];
     for client in clients.iter_mut().skip(1) {
         let hand = wait_for_event(client, UpgradeWsCode::HAND_UPDATED as i32).await;
         assert_eq!(hand["data"]["cards"].as_array().unwrap().len(), 38);
+        hands.push(
+            hand["data"]["cards"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|card| card.as_i64().unwrap() as i32)
+                .collect(),
+        );
     }
 
     send_request(
@@ -205,6 +230,63 @@ async fn four_players_can_deal_bury_and_select_trump() {
     );
     let selected = wait_for_response(&mut clients[0], UpgradeRoutes::SELECT_TRUMP as i32).await;
     assert_eq!(selected["code"], json!(WsResponseCode::OK as i32));
+
+    for card in bottom["data"]["cards"].as_array().unwrap() {
+        let card = card.as_i64().unwrap() as i32;
+        let index = hands[0]
+            .iter()
+            .position(|candidate| *candidate == card)
+            .unwrap();
+        hands[0].remove(index);
+    }
+    let lead = hands[0][0];
+    let lead_card = upgrade_common::Card::try_from(lead).unwrap();
+    let lead_group = if lead_card.suit() == Some(upgrade_common::Suit::Heart)
+        || lead_card.suit().is_none()
+        || lead_card.rank() == upgrade_common::Rank::Three
+    {
+        None
+    } else {
+        lead_card.suit()
+    };
+    for position in 0..4 {
+        let card = if position == 0 {
+            lead
+        } else {
+            hands[position]
+                .iter()
+                .copied()
+                .find(|candidate| {
+                    let decoded = upgrade_common::Card::try_from(*candidate).unwrap();
+                    let group = if decoded.suit() == Some(upgrade_common::Suit::Heart)
+                        || decoded.suit().is_none()
+                        || decoded.rank() == upgrade_common::Rank::Three
+                    {
+                        None
+                    } else {
+                        decoded.suit()
+                    };
+                    group == lead_group
+                })
+                .unwrap_or(hands[position][0])
+        };
+        let client = &mut clients[position];
+        send_request(client, Routes::PLAY as i32, json!({ "cards": [card] })).await;
+        let played = wait_for_event(client, WsCode::PLAY as i32).await;
+        assert_eq!(played["data"]["cards"].as_array().unwrap().len(), 1);
+        let play_snapshot =
+            wait_for_snapshot_at_least(client, if position == 3 { 1 } else { 0 }).await;
+        if position == 3 {
+            assert_eq!(play_snapshot["data"]["trick_index"], json!(1));
+        }
+        let response = wait_for_response(client, Routes::PLAY as i32).await;
+        assert_eq!(response["code"], json!(WsResponseCode::OK as i32));
+        let index = hands[position]
+            .iter()
+            .position(|candidate| *candidate == card)
+            .unwrap();
+        hands[position].remove(index);
+    }
 
     server.abort();
 }

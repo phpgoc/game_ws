@@ -5,13 +5,17 @@ use std::{
 
 use rand::seq::SliceRandom;
 use share_type_public::{
-    UpgradePhase, UpgradeRank, UpgradeSuit, WsUpgradePlayerHandCount, WsUpgradeTableSnapshotEvent,
+    UpgradePhase, UpgradeRank, UpgradeSuit, WsUpgradeFailedThrowEvent, WsUpgradePlayedCards,
+    WsUpgradePlayerHandCount, WsUpgradeSettlementEvent, WsUpgradeTableSnapshotEvent,
     WsUpgradeTrumpDeclaration,
 };
-use upgrade_common::{Card, Rank, Suit};
+use upgrade_common::{Card, Rank, ScoreOutcome, ScoreProgression, ScoreSide, Suit};
 use ws_common::{CommonGameState, GameState};
 
-use crate::UpgradeDeckCount;
+use crate::{
+    UpgradeDeckCount,
+    combo::{self, ComboKind, UpgradeComboRules},
+};
 
 pub const PLAYER_COUNT: usize = 4;
 
@@ -40,14 +44,34 @@ pub struct UpgradeGameState {
     pub dealt_count: usize,
     pub total_deal_count: usize,
     pub declaration: Option<WsUpgradeTrumpDeclaration>,
-    pub current_trick: Vec<share_type_public::WsUpgradePlayedCards>,
+    pub current_trick: Vec<WsUpgradePlayedCards>,
     pub trick_index: i32,
     pub player_scores: HashMap<usize, i32>,
     pub collected_scores: HashMap<usize, i32>,
     pub buried: bool,
+    pub last_trick_winner: Option<usize>,
+    pub bottom_multiplier: usize,
+    pub failed_throws: Vec<FailedThrow>,
 }
 
 pub type UpgradeStateHandle = Arc<Mutex<UpgradeGameState>>;
+
+#[derive(Debug, Clone)]
+pub struct FailedThrow {
+    pub position: usize,
+    pub attempted_cards: Vec<i32>,
+    pub played_cards: Vec<i32>,
+    pub play_sequence: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct PlayResolution {
+    pub attempted_cards: Vec<i32>,
+    pub played_cards: Vec<i32>,
+    pub failed_throw: Option<WsUpgradeFailedThrowEvent>,
+    pub winner: Option<usize>,
+    pub finished: bool,
+}
 
 pub fn build_upgrade_deck(deck_count: UpgradeDeckCount) -> Vec<i32> {
     (0..usize::from(deck_count.get()))
@@ -141,6 +165,9 @@ impl UpgradeGameState {
             player_scores: HashMap::new(),
             collected_scores: HashMap::new(),
             buried: false,
+            last_trick_winner: None,
+            bottom_multiplier: 1,
+            failed_throws: Vec::new(),
         }
     }
 
@@ -188,6 +215,9 @@ impl UpgradeGameState {
         self.current_trick.clear();
         self.trick_index = 0;
         self.collected_scores.clear();
+        self.last_trick_winner = None;
+        self.bottom_multiplier = 1;
+        self.failed_throws.clear();
         self.buried = false;
         self.current_position = self.dealer_position;
         Ok(())
@@ -266,7 +296,15 @@ impl UpgradeGameState {
                 .iter()
                 .map(|(position, score)| (*position as i32, *score))
                 .collect(),
-            failed_throws: Vec::new(),
+            failed_throws: self
+                .failed_throws
+                .iter()
+                .map(|failed| WsUpgradeFailedThrowEvent {
+                    position: failed.position as i32,
+                    attempted_cards: failed.attempted_cards.clone(),
+                    played_cards: failed.played_cards.clone(),
+                })
+                .collect(),
         }
     }
 
@@ -277,6 +315,284 @@ impl UpgradeGameState {
     pub fn private_hand(&self, position: usize) -> Vec<i32> {
         self.hands.get(&position).cloned().unwrap_or_default()
     }
+
+    fn combo_rules(&self) -> UpgradeComboRules {
+        UpgradeComboRules {
+            target_rank: self.rules.target_rank,
+            trump_suit: self.rules.trump_suit,
+        }
+    }
+
+    fn cards_from_ids(cards: &[i32]) -> Result<Vec<Card>, &'static str> {
+        cards
+            .iter()
+            .copied()
+            .map(|card| Card::try_from(card).map_err(|_| "invalid card"))
+            .collect()
+    }
+
+    fn opponent_hands(&self, position: usize) -> impl Iterator<Item = &[i32]> {
+        self.hands
+            .iter()
+            .filter_map(move |(other, hand)| (*other != position).then_some(hand.as_slice()))
+    }
+
+    fn winner_for_trick(&self) -> Option<usize> {
+        let lead = self.current_trick.first()?;
+        let rules = self.combo_rules();
+        let lead_cards = Self::cards_from_ids(&lead.cards).ok()?;
+        let lead_combo = combo::classify(&lead_cards, rules)?;
+        let mut winner = usize::try_from(lead.position).ok()?;
+        let mut best = lead_cards
+            .iter()
+            .filter(|card| combo::card_group(**card, rules) == lead_combo.group)
+            .map(|card| card.rank())
+            .max()?;
+        for played in self.current_trick.iter().skip(1) {
+            let cards = Self::cards_from_ids(&played.cards).ok()?;
+            let candidate = combo::classify(&cards, rules)?;
+            if combo::lead_card_count(&candidate) != combo::lead_card_count(&lead_combo)
+                || candidate.kind != lead_combo.kind
+            {
+                continue;
+            }
+            let competes = match (lead_combo.group, candidate.group) {
+                (Some(lead_group), Some(candidate_group)) => lead_group == candidate_group,
+                (None, None) | (Some(_), None) => true,
+                (None, Some(_)) => false,
+            };
+            if !competes {
+                continue;
+            }
+            let Some(value) = cards
+                .iter()
+                .filter(|card| combo::card_group(**card, rules) == candidate.group)
+                .map(|card| card.rank())
+                .max()
+            else {
+                continue;
+            };
+            if value > best {
+                best = value;
+                winner = usize::try_from(played.position).ok()?;
+            }
+        }
+        Some(winner)
+    }
+
+    fn trick_points(trick: &[WsUpgradePlayedCards]) -> i32 {
+        trick
+            .iter()
+            .flat_map(|played| played.cards.iter())
+            .filter_map(|card| Card::try_from(*card).ok())
+            .map(|card| i32::from(card.points()))
+            .sum()
+    }
+
+    pub fn play_cards(
+        &mut self,
+        position: usize,
+        cards: Vec<i32>,
+    ) -> Result<PlayResolution, &'static str> {
+        if self.phase != UpgradePhase::Play || self.current_position != position || cards.is_empty()
+        {
+            return Err("not current turn");
+        }
+        let hand = self.private_hand(position);
+        let attempted_cards = cards.clone();
+        let rules = self.combo_rules();
+        let mut played_cards = cards;
+        let mut failed_throw = None;
+        let decoded = Self::cards_from_ids(&played_cards)?;
+        if self.current_trick.is_empty() {
+            let Some(lead_combo) = combo::classify(&decoded, rules) else {
+                return Err("invalid play shape");
+            };
+            if !contains_cards(&hand, &played_cards) {
+                return Err("card is not in hand");
+            }
+            if matches!(lead_combo.kind, ComboKind::Throw { .. })
+                && let Some(fallback) = self.opponent_hands(position).find_map(|opponent| {
+                    let opponent_cards = Self::cards_from_ids(opponent).ok()?;
+                    combo::failed_throw_component(&decoded, &opponent_cards, rules)
+                })
+            {
+                let fallback_ids: Vec<i32> = fallback.iter().map(|card| card.encoded()).collect();
+                failed_throw = Some(WsUpgradeFailedThrowEvent {
+                    position: position as i32,
+                    attempted_cards: attempted_cards.clone(),
+                    played_cards: fallback_ids.clone(),
+                });
+                played_cards = fallback_ids;
+            }
+        } else {
+            let lead_cards = Self::cards_from_ids(&self.current_trick[0].cards)?;
+            let Some(lead_combo) = combo::classify(&lead_cards, rules) else {
+                return Err("invalid lead");
+            };
+            if !combo::follow_is_legal(
+                &Self::cards_from_ids(&hand)?,
+                &Self::cards_from_ids(&played_cards)?,
+                &lead_combo,
+                rules,
+            ) {
+                return Err("illegal follow");
+            }
+        }
+        remove_cards(
+            self.hands.get_mut(&position).ok_or("hand missing")?,
+            &played_cards,
+        )?;
+        let played = WsUpgradePlayedCards {
+            position: position as i32,
+            name: self.player_name(position),
+            cards: played_cards.clone(),
+        };
+        if let Some(failed) = &failed_throw {
+            self.failed_throws.push(FailedThrow {
+                position,
+                attempted_cards: attempted_cards.clone(),
+                played_cards: played_cards.clone(),
+                play_sequence: self.trick_index as usize,
+            });
+            let _ = failed;
+        }
+        self.current_trick.push(played);
+        let mut winner = None;
+        if self.current_trick.len() == PLAYER_COUNT {
+            winner = self.winner_for_trick();
+            let winning_cards = winner.and_then(|winner| {
+                self.current_trick
+                    .iter()
+                    .find(|played| played.position == winner as i32)
+                    .map(|played| played.cards.clone())
+            });
+            if let Some(winner) = winner {
+                *self.collected_scores.entry(winner).or_default() +=
+                    Self::trick_points(&self.current_trick);
+            }
+            self.bottom_multiplier = winning_cards
+                .as_ref()
+                .and_then(|cards| Self::cards_from_ids(cards).ok())
+                .and_then(|cards| {
+                    combo::classify(&cards, rules).map(|classified| (classified, cards))
+                })
+                .filter(|(classified, _)| matches!(classified.kind, ComboKind::Throw { .. }))
+                .map(|(_, cards)| combo::bottom_multiplier(&cards))
+                .unwrap_or(1);
+            self.last_trick_winner = winner;
+            self.current_trick.clear();
+            self.trick_index += 1;
+            if let Some(winner) = winner {
+                self.current_position = winner;
+            }
+            if self.hands.values().all(Vec::is_empty) {
+                if let Some(winner) = self.last_trick_winner {
+                    let bottom_score = Self::trick_points(&[WsUpgradePlayedCards {
+                        position: winner as i32,
+                        name: String::new(),
+                        cards: self.bottom_cards.clone(),
+                    }]) * self.bottom_multiplier as i32;
+                    *self.collected_scores.entry(winner).or_default() += bottom_score;
+                }
+                self.phase = UpgradePhase::Settlement;
+                self.record_settlement_scores();
+            }
+        } else {
+            self.current_position = (position + 1) % PLAYER_COUNT;
+        }
+        self.base.lock().unwrap().action_received = true;
+        Ok(PlayResolution {
+            attempted_cards,
+            played_cards,
+            failed_throw,
+            winner,
+            finished: self.phase == UpgradePhase::Settlement,
+        })
+    }
+
+    fn attacking_score(&self) -> i32 {
+        [
+            (self.dealer_position + 1) % PLAYER_COUNT,
+            (self.dealer_position + 3) % PLAYER_COUNT,
+        ]
+        .iter()
+        .map(|position| {
+            self.collected_scores
+                .get(position)
+                .copied()
+                .unwrap_or_default()
+        })
+        .sum()
+    }
+
+    fn score_outcome(&self) -> ScoreOutcome {
+        ScoreProgression::new(
+            self.rules.attacking_win_score.max(1) as u32,
+            self.rules.score_per_level.max(1) as u32,
+            self.rules.shutout_bonus_levels,
+        )
+        .expect("normalized score progression")
+        .outcome(self.attacking_score())
+    }
+
+    fn winner_positions_usize(&self) -> Vec<usize> {
+        match self.score_outcome().side {
+            ScoreSide::Attacking => vec![
+                (self.dealer_position + 1) % PLAYER_COUNT,
+                (self.dealer_position + 3) % PLAYER_COUNT,
+            ],
+            ScoreSide::Defending => vec![
+                self.dealer_position,
+                (self.dealer_position + 2) % PLAYER_COUNT,
+            ],
+        }
+    }
+
+    fn record_settlement_scores(&mut self) {
+        let score = self.attacking_score();
+        let winners = self.winner_positions_usize();
+        for position in 0..PLAYER_COUNT {
+            let delta = if winners.contains(&position) {
+                score
+            } else {
+                -score
+            };
+            *self.player_scores.entry(position).or_default() += delta;
+        }
+    }
+
+    pub fn settlement_event(&self) -> WsUpgradeSettlementEvent {
+        let outcome = self.score_outcome();
+        WsUpgradeSettlementEvent {
+            winner_positions: self
+                .winner_positions_usize()
+                .into_iter()
+                .map(|position| position as i32)
+                .collect(),
+            score: self.attacking_score(),
+            level_change: i32::from(outcome.levels),
+            target_rank: rank_to_protocol(self.rules.target_rank),
+            match_finished: false,
+            next_target_rank: Some(rank_to_protocol(self.rules.target_rank)),
+            player_scores: self
+                .player_scores
+                .iter()
+                .map(|(position, score)| (*position as i32, *score))
+                .collect(),
+        }
+    }
+}
+
+fn contains_cards(hand: &[i32], cards: &[i32]) -> bool {
+    let mut available = hand.to_vec();
+    for card in cards {
+        let Some(index) = available.iter().position(|candidate| candidate == card) else {
+            return false;
+        };
+        available.remove(index);
+    }
+    true
 }
 
 impl GameState for UpgradeGameState {

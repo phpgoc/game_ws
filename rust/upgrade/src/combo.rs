@@ -27,13 +27,22 @@ pub struct Combo {
     pub group: Option<Suit>,
 }
 
-fn card_group(card: Card, rules: UpgradeComboRules) -> Option<Suit> {
+pub fn card_group(card: Card, rules: UpgradeComboRules) -> Option<Suit> {
     if card.suit().is_none() || card.rank() == rules.target_rank || rules.trump_suit == card.suit()
     {
         None
     } else {
         card.suit()
     }
+}
+
+pub fn same_group(cards: &[Card], rules: UpgradeComboRules) -> Option<Option<Suit>> {
+    let first = *cards.first()?;
+    let group = card_group(first, rules);
+    cards
+        .iter()
+        .all(|card| card_group(*card, rules) == group)
+        .then_some(group)
 }
 
 fn identity_groups(cards: &[Card]) -> HashMap<u8, Vec<Card>> {
@@ -45,15 +54,6 @@ fn identity_groups(cards: &[Card]) -> HashMap<u8, Vec<Card>> {
             .push(*card);
     }
     groups
-}
-
-fn same_group(cards: &[Card], rules: UpgradeComboRules) -> Option<Option<Suit>> {
-    let first = *cards.first()?;
-    let group = card_group(first, rules);
-    cards
-        .iter()
-        .all(|card| card_group(*card, rules) == group)
-        .then_some(group)
 }
 
 /// 按升级规则识别一手牌。连续对子故意归入 `Throw`。
@@ -154,6 +154,42 @@ pub fn failed_throw_component(
             .iter()
             .any(|candidate| component_beats(component, candidate, rules))
     })
+}
+
+pub fn follow_is_legal(
+    hand: &[Card],
+    cards: &[Card],
+    lead: &Combo,
+    rules: UpgradeComboRules,
+) -> bool {
+    if cards.len() != lead_card_count(lead) {
+        return false;
+    }
+    let mut available = hand.to_vec();
+    for card in cards {
+        let Some(index) = available.iter().position(|candidate| candidate == card) else {
+            return false;
+        };
+        available.remove(index);
+    }
+    let group_in_hand = hand
+        .iter()
+        .filter(|card| card_group(**card, rules) == lead.group)
+        .count();
+    let group_in_play = cards
+        .iter()
+        .filter(|card| card_group(**card, rules) == lead.group)
+        .count();
+    group_in_play >= group_in_hand.min(cards.len())
+}
+
+pub const fn lead_card_count(combo: &Combo) -> usize {
+    match combo.kind {
+        ComboKind::Single => 1,
+        ComboKind::Pair => 2,
+        ComboKind::Triple => 3,
+        ComboKind::Throw { cards, .. } => cards,
+    }
 }
 
 #[cfg(test)]
