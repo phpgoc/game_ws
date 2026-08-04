@@ -24,7 +24,7 @@ pub fn build_tractor_settings() -> (GameSettings, HashMap<String, GameParam>) {
             KEY_DECK_COUNT.into(),
             GameParam::Enum(GameParamEnum {
                 default: 0,
-                options: vec!["2".into(), "3".into(), "4".into(), "5".into(), "6".into()],
+                options: vec!["2".into(), "3".into()],
             }),
         ),
         (
@@ -131,7 +131,7 @@ mod tests {
             panic!("deck count must be an enum");
         };
         assert_eq!(deck_count.default, 0);
-        assert_eq!(deck_count.options, ["2", "3", "4", "5", "6"]);
+        assert_eq!(deck_count.options, ["2", "3"]);
         let GameParam::Enum(target_rank) = &params[KEY_TARGET_RANK] else {
             panic!("target rank must be an enum");
         };

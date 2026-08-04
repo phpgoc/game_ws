@@ -42,6 +42,9 @@ pub const TRACTOR_RANKS: [TractorRank; 12] = [
     TractorRank::A,
 ];
 
+pub const MIN_TRACTOR_DECK_COUNT: usize = 2;
+pub const MAX_TRACTOR_DECK_COUNT: usize = 3;
+
 #[derive(Debug)]
 pub struct TractorGameState {
     pub base: Arc<Mutex<CommonGameState>>,
@@ -129,7 +132,7 @@ pub fn build_tractor_deck_with_removed_ranks(
     deck_count: usize,
     removed_rank_count: usize,
 ) -> Vec<i32> {
-    let deck_count = deck_count.clamp(2, 6);
+    let deck_count = deck_count.clamp(MIN_TRACTOR_DECK_COUNT, MAX_TRACTOR_DECK_COUNT);
     let mut cards = Vec::with_capacity(deck_count * 54);
     for deck_index in 0..deck_count {
         let offset = deck_index as i32 * 100;
@@ -195,7 +198,7 @@ pub(crate) fn is_trump_card(card: i32, rules: &TractorRules) -> bool {
 pub fn min_bottom_card_count(deck_count: usize) -> usize {
     match deck_count {
         3 => 10,
-        2 | 4 => 8,
+        2 => 8,
         _ => 8,
     }
 }
@@ -627,7 +630,9 @@ impl TractorGameState {
     }
 
     pub fn deal_new_round(&mut self, mut rules: TractorRules) -> Result<(), &'static str> {
-        rules.deck_count = rules.deck_count.clamp(2, 6);
+        rules.deck_count = rules
+            .deck_count
+            .clamp(MIN_TRACTOR_DECK_COUNT, MAX_TRACTOR_DECK_COUNT);
         rules.blood_score_per_unit = rules.blood_score_per_unit.max(1);
         let positions = self.active_positions();
         if positions.len() != 4 {
@@ -1184,7 +1189,7 @@ mod tests {
 
     #[test]
     fn adjusted_bottom_keeps_all_hands_equal() {
-        for deck_count in 2..=6 {
+        for deck_count in MIN_TRACTOR_DECK_COUNT..=MAX_TRACTOR_DECK_COUNT {
             let total = build_tractor_deck(deck_count).len();
             let bottom =
                 adjusted_bottom_card_count(total, 4, 8, min_bottom_card_count(deck_count)).unwrap();

@@ -22,7 +22,8 @@ use crate::{
         build_tractor_settings,
     },
     game_state::{
-        TractorGameState, TractorRules, TractorStateHandle, tractor_rank_from_setting_index,
+        MAX_TRACTOR_DECK_COUNT, MIN_TRACTOR_DECK_COUNT, TractorGameState, TractorRules,
+        TractorStateHandle, tractor_rank_from_setting_index,
     },
 };
 
@@ -69,8 +70,9 @@ impl TractorGameHandler {
                 .get(KEY_DECK_COUNT)
                 .copied()
                 .unwrap_or(0)
-                .clamp(0, 4) as usize
-                + 2,
+                .clamp(0, (MAX_TRACTOR_DECK_COUNT - MIN_TRACTOR_DECK_COUNT) as i32)
+                as usize
+                + MIN_TRACTOR_DECK_COUNT,
             final_target_rank: tractor_rank_from_setting_index(
                 configs.get(KEY_TARGET_RANK).copied().unwrap_or(11),
             ),

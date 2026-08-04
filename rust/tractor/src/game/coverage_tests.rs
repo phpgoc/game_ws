@@ -186,7 +186,7 @@ fn rules_conversion_clamps_settings_and_state_cleanup_keeps_current_room_identit
     assert_eq!(rules.blood_score_per_unit, 1);
     assert_eq!(rules.blood_start_score, -20);
     assert_eq!(rules.bottom_card_count, 0);
-    assert_eq!(rules.deck_count, 6);
+    assert_eq!(rules.deck_count, 3);
     assert_eq!(rules.removed_rank_count, 9);
     assert_eq!(rules.target_rank, TractorRank::THREE);
     assert_eq!(rules.trump_suit, None);
