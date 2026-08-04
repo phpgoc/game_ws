@@ -6,6 +6,9 @@ license = "MIT"
 
 [dependencies]
 anyhow = "1"
+rand = "0.9"
+serde = "1"
+serde_json = "1"
 share_type_public = { path = "../../share_type_public" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 upgrade_common = { path = "../upgrade_common" }

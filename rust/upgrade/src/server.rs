@@ -17,7 +17,7 @@ pub async fn run_upgrade_server_with_cli() -> anyhow::Result<()> {
     run_game_server_with_cli(
         UPGRADE_SERVICE_NAME,
         UPGRADE_IDLE_TIMEOUT,
-        UpgradeGameHandler,
+        UpgradeGameHandler::default(),
     )
     .await
 }
@@ -38,7 +38,7 @@ pub async fn run_upgrade_runtime_until_stopped_with_ready(
 ) -> anyhow::Result<RuntimeStats> {
     run_room_runtime_until_stopped_with_ready(
         upgrade_runtime_config(UPGRADE_SERVICE_NAME, listen_addr),
-        UpgradeGameHandler,
+        UpgradeGameHandler::default(),
         stop_signal,
         ready,
     )

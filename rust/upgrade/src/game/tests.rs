@@ -33,7 +33,7 @@ fn response_code(dispatch: &ws_common::Dispatch) -> Option<i32> {
 
 #[test]
 fn handler_owns_only_the_upgrade_game_id() {
-    let handler = UpgradeGameHandler;
+    let handler = UpgradeGameHandler::default();
     assert_eq!(handler.game_id(), GameId::UPGRADE);
     assert!(handler.accepts_game_id(GameId::UPGRADE));
     assert!(!handler.accepts_game_id(GameId::TRACTOR));
@@ -41,7 +41,7 @@ fn handler_owns_only_the_upgrade_game_id() {
 
 #[test]
 fn room_join_accepts_upgrade_and_rejects_tractor() {
-    let handler = UpgradeGameHandler;
+    let handler = UpgradeGameHandler::default();
 
     let mut upgrade_room = RoomService::with_ai_players_enabled(false);
     let accepted = upgrade_room
