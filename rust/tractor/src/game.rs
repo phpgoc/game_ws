@@ -18,8 +18,7 @@ use ws_common::{
 use crate::{
     game_setting::{
         KEY_ATTACKING_WIN_SCORE, KEY_BOTTOM_CARD_COUNT, KEY_DECK_COUNT, KEY_PLAY_TIME,
-        KEY_REMOVED_RANK_COUNT, KEY_SCORE_PER_LEVEL, KEY_SHUTOUT_BONUS_LEVELS, KEY_TARGET_RANK,
-        build_tractor_settings,
+        KEY_SCORE_PER_LEVEL, KEY_SHUTOUT_BONUS_LEVELS, KEY_TARGET_RANK, build_tractor_settings,
     },
     game_state::{
         MAX_TRACTOR_DECK_COUNT, MIN_TRACTOR_DECK_COUNT, TractorGameState, TractorRules,
@@ -84,11 +83,6 @@ impl TractorGameHandler {
             final_target_rank: tractor_rank_from_setting_index(
                 configs.get(KEY_TARGET_RANK).copied().unwrap_or(11),
             ),
-            removed_rank_count: configs
-                .get(KEY_REMOVED_RANK_COUNT)
-                .copied()
-                .unwrap_or(0)
-                .clamp(0, 9) as usize,
             target_rank: TractorRank::THREE,
             trump_suit: None,
         }

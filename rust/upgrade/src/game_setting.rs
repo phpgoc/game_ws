@@ -9,6 +9,7 @@ pub const KEY_DECK_COUNT: &str = "deck_count";
 pub const KEY_DEAL_TIME: &str = "deal_time";
 pub const KEY_FIRST_DEAL_TIME: &str = "first_deal_time";
 pub const KEY_PLAY_TIME: &str = "play_time";
+pub const KEY_REMOVED_RANK_COUNT: &str = "removed_rank_count";
 pub const KEY_ATTACKING_WIN_SCORE: &str = "attacking_win_score";
 pub const KEY_SCORE_PER_LEVEL: &str = "score_per_level";
 pub const KEY_SHUTOUT_BONUS_LEVELS: &str = "shutout_bonus_levels";
@@ -28,6 +29,14 @@ pub fn build_upgrade_settings() -> ws_common::SettingsBuilderResult {
                 default: 30,
                 min: 20,
                 max: 40,
+            }),
+        ),
+        (
+            KEY_REMOVED_RANK_COUNT.into(),
+            GameParam::Range(GameParamRange {
+                default: 0,
+                min: 0,
+                max: 9,
             }),
         ),
         (

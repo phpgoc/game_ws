@@ -16,10 +16,11 @@ use ws_common::{
 
 use crate::{
     game_setting::{
-        KEY_ATTACKING_WIN_SCORE, KEY_DECK_COUNT, KEY_PLAY_TIME, KEY_SCORE_PER_LEVEL,
-        KEY_SHUTOUT_BONUS_LEVELS, build_upgrade_settings, deck_count_from_setting,
+        KEY_ATTACKING_WIN_SCORE, KEY_DECK_COUNT, KEY_PLAY_TIME, KEY_REMOVED_RANK_COUNT,
+        KEY_SCORE_PER_LEVEL, KEY_SHUTOUT_BONUS_LEVELS, build_upgrade_settings,
+        deck_count_from_setting,
     },
-    state::{UpgradeGameState, UpgradeRules, UpgradeStateHandle},
+    state::{UpgradeGameState, UpgradeRules, UpgradeStateHandle, first_upgrade_rank},
 };
 
 type StateRegistry = Arc<std::sync::Mutex<HashMap<String, UpgradeStateHandle>>>;
@@ -53,12 +54,18 @@ impl UpgradeGameHandler {
 
     fn configs_to_rules(configs: &HashMap<String, i32>) -> UpgradeRules {
         let deck_count = deck_count_from_setting(configs.get(KEY_DECK_COUNT).copied().unwrap_or(0));
+        let removed_rank_count = configs
+            .get(KEY_REMOVED_RANK_COUNT)
+            .copied()
+            .unwrap_or(0)
+            .clamp(0, 9) as usize;
         let total_cards = usize::from(deck_count.get()) * 54;
         let bottom_card_count = if total_cards.is_multiple_of(4) { 8 } else { 10 };
         UpgradeRules {
             deck_count,
-            target_rank: upgrade_common::Rank::Three,
+            target_rank: first_upgrade_rank(removed_rank_count, upgrade_common::Rank::Ace),
             final_target_rank: upgrade_common::Rank::Ace,
+            removed_rank_count,
             attacking_win_score: configs
                 .get(KEY_ATTACKING_WIN_SCORE)
                 .copied()

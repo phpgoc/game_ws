@@ -7,9 +7,10 @@ fn upgrade_settings_expose_decks_timing_and_score_progression() {
     let (settings, params) = build_upgrade_settings();
 
     assert_eq!((settings.min_players, settings.max_players), (4, 4));
-    assert_eq!(settings.values.len(), 5);
+    assert_eq!(settings.values.len(), 6);
     assert_eq!(settings.values[KEY_DECK_COUNT], 0);
     assert_eq!(settings.values[KEY_PLAY_TIME], 30);
+    assert_eq!(settings.values[KEY_REMOVED_RANK_COUNT], 0);
     assert_eq!(settings.values[KEY_ATTACKING_WIN_SCORE], 80);
     assert_eq!(settings.values[KEY_SCORE_PER_LEVEL], 40);
     assert_eq!(settings.values[KEY_SHUTOUT_BONUS_LEVELS], 1);
@@ -29,6 +30,14 @@ fn upgrade_settings_expose_decks_timing_and_score_progression() {
     assert_eq!(
         (play_time.default, play_time.min, play_time.max),
         (30, 20, 40)
+    );
+
+    let GameParam::Range(removed_ranks) = &params[KEY_REMOVED_RANK_COUNT] else {
+        panic!("removed rank count must be a range");
+    };
+    assert_eq!(
+        (removed_ranks.default, removed_ranks.min, removed_ranks.max),
+        (0, 0, 9)
     );
 
     let GameParam::Range(attacking_win_score) = &params[KEY_ATTACKING_WIN_SCORE] else {

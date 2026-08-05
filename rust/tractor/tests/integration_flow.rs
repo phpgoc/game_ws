@@ -93,18 +93,6 @@ impl GameHandler for TestTractorHandler {
     }
 }
 
-#[cfg(not(feature = "official"))]
-fn card_rank(card: i32) -> i32 {
-    let base = ((card - 1) % 100) + 1;
-    if base <= 52 {
-        ((base - 1) % 13) + 2
-    } else if base == 53 {
-        16
-    } else {
-        17
-    }
-}
-
 async fn connect_client(url: &str) -> Client {
     let (ws, _) = connect_async(url).await.expect("connect websocket");
     ws
@@ -287,7 +275,7 @@ async fn tractor_official_ai_buries_and_leads_over_websocket() {
 
 #[cfg(not(feature = "official"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn tractor_incremental_deal_compact_deck_and_bury_flow() {
+async fn tractor_incremental_deal_full_deck_and_bury_flow() {
     let port = free_port();
     let listen_addr = format!("127.0.0.1:{port}");
     let url = format!("ws://{listen_addr}");
@@ -329,7 +317,6 @@ async fn tractor_incremental_deal_compact_deck_and_bury_flow() {
                 "score_per_level": 40,
                 "shutout_bonus_levels": 1,
                 "target_rank": 11,
-                "removed_rank_count": 3,
                 "first_deal_time": 1000,
                 "deal_time": 500,
                 "play_time": 10
@@ -360,12 +347,7 @@ async fn tractor_incremental_deal_compact_deck_and_bury_flow() {
         }
     };
     assert!(started_at.elapsed() >= Duration::from_millis(1_100));
-    assert_eq!(dealt_cards.len(), 19);
-    assert!(
-        dealt_cards
-            .iter()
-            .all(|card| ![3, 4, 6].contains(&card_rank(*card)))
-    );
+    assert_eq!(dealt_cards.len(), 25);
     let bottom_cards = bottom["data"]["cards"]
         .as_array()
         .expect("bottom cards")
@@ -392,18 +374,18 @@ async fn tractor_incremental_deal_compact_deck_and_bury_flow() {
     })
     .await;
     assert_eq!(snapshot["data"]["deck_count"], json!(2));
-    assert_eq!(snapshot["data"]["target_rank"], json!(5));
+    assert_eq!(snapshot["data"]["target_rank"], json!(3));
     assert_eq!(snapshot["data"]["final_target_rank"], json!(14));
-    assert_eq!(snapshot["data"]["removed_rank_count"], json!(3));
+    assert_eq!(snapshot["data"]["removed_rank_count"], json!(0));
     assert_eq!(snapshot["data"]["bottom_card_count"], json!(8));
     assert_eq!(snapshot["data"]["attacking_win_score"], json!(80));
     assert_eq!(snapshot["data"]["score_per_level"], json!(40));
     assert_eq!(snapshot["data"]["shutout_bonus_levels"], json!(1));
-    assert_eq!(snapshot["data"]["dealt_count"], json!(76));
-    assert_eq!(snapshot["data"]["total_deal_count"], json!(76));
+    assert_eq!(snapshot["data"]["dealt_count"], json!(100));
+    assert_eq!(snapshot["data"]["total_deal_count"], json!(100));
     assert_eq!(
         snapshot["data"]["player_hand_counts"][0]["hand_count"],
-        json!(19)
+        json!(25)
     );
 
     server.abort();

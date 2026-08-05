@@ -12,7 +12,6 @@ pub const KEY_DEAL_TIME: &str = "deal_time";
 pub const KEY_DECK_COUNT: &str = "deck_count";
 pub const KEY_FIRST_DEAL_TIME: &str = "first_deal_time";
 pub const KEY_PLAY_TIME: &str = "play_time";
-pub const KEY_REMOVED_RANK_COUNT: &str = "removed_rank_count";
 pub const KEY_SCORE_PER_LEVEL: &str = "score_per_level";
 pub const KEY_SHUTOUT_BONUS_LEVELS: &str = "shutout_bonus_levels";
 pub const KEY_SETTLEMENT_TIME: &str = "settlement_time";
@@ -72,14 +71,6 @@ pub fn build_tractor_settings() -> (GameSettings, HashMap<String, GameParam>) {
             }),
         ),
         (
-            KEY_REMOVED_RANK_COUNT.into(),
-            GameParam::Range(GameParamRange {
-                default: 0,
-                min: 0,
-                max: 9,
-            }),
-        ),
-        (
             KEY_BOTTOM_CARD_COUNT.into(),
             GameParam::Range(GameParamRange {
                 default: 8,
@@ -127,7 +118,7 @@ mod tests {
         assert!(!settings.values.contains_key(KEY_AWAY_TIME));
         assert!(!settings.values.contains_key(KEY_SETTLEMENT_TIME));
         assert_eq!(settings.values[KEY_PLAY_TIME], 30);
-        assert_eq!(settings.values[KEY_REMOVED_RANK_COUNT], 0);
+        assert!(!settings.values.contains_key("removed_rank_count"));
         assert_eq!(settings.values[KEY_ATTACKING_WIN_SCORE], 80);
         assert_eq!(settings.values[KEY_SCORE_PER_LEVEL], 40);
         assert_eq!(settings.values[KEY_SHUTOUT_BONUS_LEVELS], 1);
@@ -142,10 +133,6 @@ mod tests {
         assert_eq!(target_rank.default, 11);
         assert_eq!(target_rank.options.first().map(String::as_str), Some("3"));
         assert!(!target_rank.options.iter().any(|rank| rank == "2"));
-        let GameParam::Range(removed) = &params[KEY_REMOVED_RANK_COUNT] else {
-            panic!("removed rank count must be a range");
-        };
-        assert_eq!((removed.min, removed.max), (0, 9));
         let GameParam::Range(play_time) = &params[KEY_PLAY_TIME] else {
             panic!("play time must be a range");
         };

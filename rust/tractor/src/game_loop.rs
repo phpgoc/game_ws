@@ -907,7 +907,6 @@ mod tests {
             bottom_card_count: 8,
             deck_count: 2,
             final_target_rank: TractorRank::A,
-            removed_rank_count: 0,
             target_rank: TractorRank::A,
             trump_suit: None,
         };

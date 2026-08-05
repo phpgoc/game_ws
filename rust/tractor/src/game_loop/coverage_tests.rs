@@ -62,7 +62,6 @@ fn rules(bottom_card_count: usize) -> TractorRules {
         bottom_card_count,
         deck_count: 2,
         final_target_rank: TractorRank::A,
-        removed_rank_count: 0,
         target_rank: TractorRank::TWO,
         trump_suit: None,
     }

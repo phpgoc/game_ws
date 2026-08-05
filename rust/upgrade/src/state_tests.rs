@@ -10,6 +10,7 @@ fn rules(deck_count: u8) -> UpgradeRules {
         deck_count: UpgradeDeckCount::new(deck_count).unwrap(),
         target_rank: Rank::Three,
         final_target_rank: Rank::Ace,
+        removed_rank_count: 0,
         attacking_win_score: 80,
         score_per_level: 40,
         shutout_bonus_levels: 1,
@@ -45,6 +46,31 @@ fn deal_has_four_even_hands_and_private_bottom() {
         Some(UpgradeRank::THREE)
     );
     assert!(state.rules.trump_suit.is_some());
+}
+
+#[test]
+fn removed_ranks_shrink_the_deck_and_are_skipped_as_levels() {
+    let deck_count = UpgradeDeckCount::new(3).unwrap();
+    let deck = build_upgrade_deck_with_removed_ranks(deck_count, 4);
+    assert_eq!(deck.len(), 3 * (54 - 4 * 4));
+    assert!(deck.iter().all(|card| {
+        let rank = Card::try_from(*card).unwrap().rank();
+        ![Rank::Three, Rank::Four, Rank::Six, Rank::Seven].contains(&rank)
+    }));
+    assert_eq!(first_upgrade_rank(4, Rank::Ace), Rank::Five);
+
+    let common = Arc::new(Mutex::new(CommonGameState::new()));
+    let mut state = UpgradeGameState::from_common(common);
+    let mut compact_rules = rules(3);
+    compact_rules.removed_rank_count = 4;
+    state.deal_new_round(compact_rules).unwrap();
+    assert_eq!(state.rules.target_rank, Rank::Five);
+    assert_eq!(state.snapshot().removed_rank_count, 4);
+    assert_eq!(state.total_deal_count, 104);
+
+    state.phase = UpgradePhase::Settlement;
+    state.team_target_ranks = [Rank::Five; 2];
+    assert_eq!(state.next_target_rank(), Some(Rank::Ten));
 }
 
 #[test]

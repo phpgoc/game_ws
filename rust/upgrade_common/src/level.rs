@@ -18,7 +18,7 @@ pub const STANDARD_LEVEL_RANKS: [Rank; 12] = [
 
 /// 构造不超过终局级牌、且排除指定牌面的实际升级路径。
 ///
-/// 拖拉机可以通过 `excluded` 表达删牌配置；标准升级传空切片即可。
+/// 支持删牌的游戏可以通过 `excluded` 表达被移除的等级。
 /// 如果配置的终局级牌本身及之前的牌都被排除，仍保留第一张可用级牌，
 /// 避免产生无法开始的空对局。
 pub fn level_rank_path(final_rank: Rank, excluded: &[Rank]) -> Vec<Rank> {

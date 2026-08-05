@@ -10,7 +10,7 @@ use share_type_public::{
     WsUpgradeTrumpDeclaration,
 };
 use upgrade_common::{
-    Card, Rank, ScoreOutcome, ScoreProgression, ScoreSide, Suit, next_level_rank,
+    Card, Rank, ScoreOutcome, ScoreProgression, ScoreSide, Suit, level_rank_path, next_level_rank,
 };
 use ws_common::{CommonGameState, GameState};
 
@@ -21,11 +21,25 @@ use crate::{
 
 pub const PLAYER_COUNT: usize = 4;
 
+/// 按设置顺序移除非计分牌；5、10、K、2 和王始终保留。
+pub const REMOVABLE_RANKS: [Rank; 9] = [
+    Rank::Three,
+    Rank::Four,
+    Rank::Six,
+    Rank::Seven,
+    Rank::Eight,
+    Rank::Nine,
+    Rank::Jack,
+    Rank::Queen,
+    Rank::Ace,
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UpgradeRules {
     pub deck_count: UpgradeDeckCount,
     pub target_rank: Rank,
     pub final_target_rank: Rank,
+    pub removed_rank_count: usize,
     pub attacking_win_score: i32,
     pub score_per_level: i32,
     pub shutout_bonus_levels: u8,
@@ -78,10 +92,33 @@ pub struct PlayResolution {
 }
 
 pub fn build_upgrade_deck(deck_count: UpgradeDeckCount) -> Vec<i32> {
+    build_upgrade_deck_with_removed_ranks(deck_count, 0)
+}
+
+pub fn removed_upgrade_ranks(removed_rank_count: usize) -> &'static [Rank] {
+    &REMOVABLE_RANKS[..removed_rank_count.min(REMOVABLE_RANKS.len())]
+}
+
+pub fn first_upgrade_rank(removed_rank_count: usize, final_rank: Rank) -> Rank {
+    level_rank_path(final_rank, removed_upgrade_ranks(removed_rank_count))
+        .first()
+        .copied()
+        .unwrap_or(final_rank)
+}
+
+pub fn build_upgrade_deck_with_removed_ranks(
+    deck_count: UpgradeDeckCount,
+    removed_rank_count: usize,
+) -> Vec<i32> {
+    let removed = removed_upgrade_ranks(removed_rank_count);
     (0..usize::from(deck_count.get()))
         .flat_map(|deck| {
             let offset = (deck as i32) * 100;
-            (1..=54).map(move |identity| offset + identity)
+            (1..=54).filter_map(move |identity| {
+                let encoded = offset + identity;
+                let rank = Card::try_from(encoded).ok()?.rank();
+                (!removed.contains(&rank)).then_some(encoded)
+            })
         })
         .collect()
 }
@@ -150,6 +187,7 @@ impl UpgradeGameState {
                 deck_count: UpgradeDeckCount::new(3).expect("valid default deck count"),
                 target_rank: Rank::Three,
                 final_target_rank: Rank::Ace,
+                removed_rank_count: 0,
                 attacking_win_score: 80,
                 score_per_level: 40,
                 shutout_bonus_levels: 1,
@@ -177,8 +215,14 @@ impl UpgradeGameState {
         }
     }
 
-    pub fn deal_new_round(&mut self, rules: UpgradeRules) -> Result<(), &'static str> {
-        let mut deck = build_upgrade_deck(rules.deck_count);
+    pub fn deal_new_round(&mut self, mut rules: UpgradeRules) -> Result<(), &'static str> {
+        rules.removed_rank_count = rules.removed_rank_count.min(REMOVABLE_RANKS.len());
+        if self.round_index == 0 {
+            rules.target_rank =
+                first_upgrade_rank(rules.removed_rank_count, rules.final_target_rank);
+        }
+        let mut deck =
+            build_upgrade_deck_with_removed_ranks(rules.deck_count, rules.removed_rank_count);
         let total_cards = deck.len();
         let bottom_count = rules
             .bottom_card_count
@@ -378,7 +422,7 @@ impl UpgradeGameState {
                 .map(rank_to_protocol)
                 .collect(),
             final_target_rank: rank_to_protocol(self.rules.final_target_rank),
-            removed_rank_count: 0,
+            removed_rank_count: self.rules.removed_rank_count as i32,
             round_index: self.round_index,
             attacking_win_score: self.rules.attacking_win_score,
             score_per_level: self.rules.score_per_level,
@@ -745,7 +789,7 @@ impl UpgradeGameState {
         next_level_rank(
             self.team_target_ranks[winning_team],
             self.rules.final_target_rank,
-            &[],
+            removed_upgrade_ranks(self.rules.removed_rank_count),
             usize::from(self.score_outcome().levels),
         )
     }
