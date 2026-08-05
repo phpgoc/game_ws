@@ -316,16 +316,37 @@ fn settlement_caps_multi_level_progress_and_finishes_on_ace() {
     let mut state = playing_state(HashMap::new());
     state.phase = UpgradePhase::Settlement;
     state.rules.target_rank = Rank::Queen;
+    state.team_target_ranks = [Rank::Queen; 2];
 
     let settlement = state.settlement_event();
     assert_eq!(settlement.next_target_rank, Some(UpgradeRank::A));
     assert!(!settlement.match_finished);
 
     state.rules.target_rank = Rank::Ace;
+    state.team_target_ranks = [Rank::Ace; 2];
     let settlement = state.settlement_event();
     assert_eq!(settlement.next_target_rank, None);
     assert!(settlement.match_finished);
     assert!(!state.advance_after_settlement().unwrap());
+}
+
+#[test]
+fn attacking_team_advances_from_its_own_level_when_it_takes_over() {
+    let mut state = playing_state(HashMap::new());
+    state.phase = UpgradePhase::Settlement;
+    state.dealer_position = 0;
+    state.rules.target_rank = Rank::Five;
+    state.team_target_ranks = [Rank::Five, Rank::Three];
+    state.collected_scores.insert(1, 80);
+
+    let settlement = state.settlement_event();
+    assert_eq!(settlement.winner_positions, vec![1, 3]);
+    assert_eq!(settlement.next_target_rank, Some(UpgradeRank::FOUR));
+
+    assert!(state.advance_after_settlement().unwrap());
+    assert_eq!(state.dealer_position, 1);
+    assert_eq!(state.rules.target_rank, Rank::Four);
+    assert_eq!(state.team_target_ranks, [Rank::Five, Rank::Four]);
 }
 
 #[test]

@@ -38,6 +38,7 @@ pub struct UpgradeGameState {
     pub base: Arc<Mutex<CommonGameState>>,
     pub phase: UpgradePhase,
     pub rules: UpgradeRules,
+    pub team_target_ranks: [Rank; 2],
     pub hands: HashMap<usize, Vec<i32>>,
     pub bottom_cards: Vec<i32>,
     pub deal_queue: VecDeque<(usize, i32)>,
@@ -155,6 +156,7 @@ impl UpgradeGameState {
                 bottom_card_count: 10,
                 trump_suit: None,
             },
+            team_target_ranks: [Rank::Three; 2],
             hands: HashMap::new(),
             bottom_cards: Vec::new(),
             deal_queue: VecDeque::new(),
@@ -186,6 +188,9 @@ impl UpgradeGameState {
             return Err("deck cannot be dealt evenly");
         }
         deck.shuffle(&mut rand::rng());
+        if self.round_index == 0 {
+            self.team_target_ranks = [rules.target_rank; 2];
+        }
         self.rules = UpgradeRules {
             bottom_card_count: bottom_count,
             trump_suit: None,
@@ -709,6 +714,8 @@ impl UpgradeGameState {
             return Ok(false);
         };
         let winners = self.winner_positions_usize();
+        let winning_team = winners[0] % 2;
+        self.team_target_ranks[winning_team] = next_rank;
         if !winners.contains(&self.dealer_position) {
             self.dealer_position = winners[0];
         }
@@ -720,8 +727,9 @@ impl UpgradeGameState {
     }
 
     fn next_target_rank(&self) -> Option<Rank> {
+        let winning_team = self.winner_positions_usize()[0] % 2;
         next_level_rank(
-            self.rules.target_rank,
+            self.team_target_ranks[winning_team],
             self.rules.final_target_rank,
             &[],
             usize::from(self.score_outcome().levels),
