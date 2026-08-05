@@ -227,6 +227,57 @@ async fn recv_tractor_bottom(client: &mut Client, dealer_position: usize) -> Val
     bottom
 }
 
+fn find_failed_throw_candidate(
+    hands: &[Vec<i32>; 4],
+    position: usize,
+    rules: &TractorRules,
+) -> Option<(Vec<i32>, Vec<i32>)> {
+    let hand = &hands[position];
+    for first in 0..hand.len() {
+        for second in (first + 1)..hand.len() {
+            let candidate = vec![hand[first], hand[second]];
+            let Some(lead) = combo::classify(&candidate, rules) else {
+                continue;
+            };
+            if lead.suit.is_none() || !matches!(lead.kind, combo::ComboKind::Throw { .. }) {
+                continue;
+            }
+            let components = combo::throw_components(&candidate, rules)?;
+            let fallback = components
+                .into_iter()
+                .filter(|component| {
+                    let Some(component_lead) = combo::classify(component, rules) else {
+                        return false;
+                    };
+                    let Some(component_value) =
+                        combo::combo_win_value(component, &component_lead, rules)
+                    else {
+                        return false;
+                    };
+                    hands.iter().enumerate().any(|(opponent, opponent_hand)| {
+                        opponent != position
+                            && combo::enumerate_follows(opponent_hand, &component_lead, rules)
+                                .into_iter()
+                                .filter_map(|reply| {
+                                    combo::combo_win_value(&reply, &component_lead, rules)
+                                })
+                                .any(|reply_value| reply_value > component_value)
+                    })
+                })
+                .min_by_key(|component| {
+                    let component_lead = combo::classify(component, rules)
+                        .expect("failed throw component remains valid");
+                    combo::combo_win_value(component, &component_lead, rules)
+                        .expect("failed throw component has a value")
+                });
+            if let Some(fallback) = fallback {
+                return Some((candidate, fallback));
+            }
+        }
+    }
+    None
+}
+
 async fn recv_first_declaration(client: &mut Client) -> (Value, Option<Value>) {
     let mut bottom = None;
     loop {
@@ -1096,5 +1147,182 @@ async fn tractor_three_deck_ws_deals_and_buries_the_correct_counts() {
     .await;
     assert_eq!(buried["code"], json!(WsResponseCode::OK as i32));
 
+    server.abort();
+}
+
+#[cfg(not(feature = "official"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn tractor_ws_failed_throw_reports_attempted_and_played_components() {
+    let port = free_port();
+    let listen_addr = format!("127.0.0.1:{port}");
+    let url = format!("ws://{listen_addr}");
+    let server = tokio::spawn(run_room_runtime(
+        RuntimeConfig {
+            service_name: "tractor-failed-throw-test",
+            listen_addr,
+            idle_timeout: Duration::from_secs(30),
+            heartbeat_interval: Duration::from_secs(30),
+        },
+        TestTractorHandler::default(),
+    ));
+
+    let mut a = connect_client(&url).await;
+    let mut b = connect_client(&url).await;
+    let mut c = connect_client(&url).await;
+    let mut d = connect_client(&url).await;
+    let room = "tractor-failed-throw-room";
+    join(&mut a, "a", room).await;
+    join(&mut b, "b", room).await;
+    join(&mut c, "c", room).await;
+    join(&mut d, "d", room).await;
+
+    send_request(
+        &mut a,
+        Routes::SETTING as i32,
+        json!({
+            "current_configs": {
+                "deck_count": 1,
+                "first_deal_time": 1000,
+                "deal_time": 500,
+                "play_time": 30
+            }
+        }),
+    )
+    .await;
+    recv_until(&mut a, "failed throw setting response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::SETTING as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+    send_request(&mut a, Routes::START as i32, json!({})).await;
+    recv_until(&mut a, "failed throw start response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::START as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+
+    let mut clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
+    let mut hands = collect_tractor_hands(&mut clients, 38).await;
+    let (declaration, bottom_seen_by_first_client) = recv_first_declaration(&mut *clients[0]).await;
+    let dealer_position = declaration["data"]["position"]
+        .as_i64()
+        .expect("failed throw dealer") as usize;
+    let bottom = if dealer_position == 0 {
+        match bottom_seen_by_first_client {
+            Some(bottom) => bottom,
+            None => recv_tractor_bottom(&mut *clients[dealer_position], dealer_position).await,
+        }
+    } else {
+        recv_tractor_bottom(&mut *clients[dealer_position], dealer_position).await
+    };
+    let bottom_cards = bottom["data"]["cards"]
+        .as_array()
+        .expect("failed throw bottom cards")
+        .iter()
+        .map(|card| card.as_i64().expect("failed throw bottom card") as i32)
+        .collect::<Vec<_>>();
+    assert_eq!(bottom_cards.len(), 10);
+
+    send_request(
+        &mut *clients[dealer_position],
+        TractorRoutes::BURY_BOTTOM as i32,
+        json!({ "cards": bottom_cards }),
+    )
+    .await;
+    let snapshot = recv_until(
+        &mut *clients[dealer_position],
+        "failed throw play snapshot",
+        |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+                && value["data"]["phase"] == json!(TractorPhase::Play as i8)
+        },
+    )
+    .await;
+    recv_until(
+        &mut *clients[dealer_position],
+        "failed throw bury response",
+        |value| {
+            value.get("route").and_then(Value::as_i64) == Some(TractorRoutes::BURY_BOTTOM as i64)
+                && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+        },
+    )
+    .await;
+
+    let trump_suit = snapshot["data"]["trump_suit"]
+        .as_i64()
+        .map(|suit| match suit {
+            0 => TractorSuit::SPADE,
+            1 => TractorSuit::HEART,
+            2 => TractorSuit::CLUB,
+            3 => TractorSuit::DIAMOND,
+            _ => panic!("invalid failed throw trump suit"),
+        });
+    let rules = TractorRules {
+        attacking_win_score: 80,
+        score_per_level: 40,
+        shutout_bonus_levels: 1,
+        bottom_card_count: 10,
+        deck_count: 3,
+        final_target_rank: TractorRank::A,
+        target_rank: TractorRank::THREE,
+        trump_suit,
+    };
+    let (attempted, expected_played) = find_failed_throw_candidate(&hands, dealer_position, &rules)
+        .expect("three-deck deal should expose a beatable plain-suit throw");
+    send_request(
+        &mut *clients[dealer_position],
+        Routes::PLAY as i32,
+        json!({ "cards": attempted.clone() }),
+    )
+    .await;
+    let played = recv_until(
+        &mut *clients[dealer_position],
+        "failed throw play event",
+        |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::PLAY as i64)
+                && value["data"]["position"] == json!(dealer_position)
+        },
+    )
+    .await;
+    assert_eq!(played["data"]["cards"], json!(expected_played.clone()));
+    assert_eq!(
+        played["data"]["failed_throw"]["attempted_cards"],
+        json!(attempted.clone())
+    );
+    assert_eq!(
+        played["data"]["failed_throw"]["played_cards"],
+        json!(expected_played.clone())
+    );
+    let failed_throws = recv_until(
+        &mut *clients[dealer_position],
+        "failed throw snapshot",
+        |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+                && value["data"]["failed_throws"]
+                    .as_array()
+                    .is_some_and(|items| !items.is_empty())
+        },
+    )
+    .await;
+    assert_eq!(
+        failed_throws["data"]["failed_throws"][0]["attempted_cards"],
+        json!(attempted)
+    );
+    assert_eq!(
+        failed_throws["data"]["failed_throws"][0]["played_cards"],
+        json!(expected_played)
+    );
+    recv_until(
+        &mut *clients[dealer_position],
+        "failed throw play response",
+        |value| {
+            value.get("route").and_then(Value::as_i64) == Some(Routes::PLAY as i64)
+                && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+        },
+    )
+    .await;
+
+    hands[dealer_position].retain(|card| !expected_played.contains(card));
+    assert_eq!(hands[dealer_position].len(), 37);
     server.abort();
 }
