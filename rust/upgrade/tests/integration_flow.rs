@@ -214,6 +214,19 @@ async fn four_players_can_deal_bury_and_play_first_round() {
 
     send_request(
         &mut clients[dealer],
+        UpgradeRoutes::SELECT_TRUMP as i32,
+        json!({ "trump_suit": 0 }),
+    )
+    .await;
+    let first_round_select =
+        wait_for_response(&mut clients[dealer], UpgradeRoutes::SELECT_TRUMP as i32).await;
+    assert_eq!(
+        first_round_select["code"],
+        json!(WsResponseCode::NO_PERMISSION as i32)
+    );
+
+    send_request(
+        &mut clients[dealer],
         UpgradeRoutes::BURY_BOTTOM as i32,
         json!({ "cards": bottom_cards }),
     )
@@ -222,6 +235,18 @@ async fn four_players_can_deal_bury_and_play_first_round() {
     assert_eq!(snapshot["data"]["phase"], json!(UpgradePhase::Play as i8));
     let buried = wait_for_response(&mut clients[dealer], UpgradeRoutes::BURY_BOTTOM as i32).await;
     assert_eq!(buried["code"], json!(WsResponseCode::OK as i32));
+
+    send_request(
+        &mut clients[dealer],
+        Routes::PLAY as i32,
+        json!({ "cards": [999] }),
+    )
+    .await;
+    let invalid_play = wait_for_response(&mut clients[dealer], Routes::PLAY as i32).await;
+    assert_eq!(
+        invalid_play["code"],
+        json!(WsResponseCode::NO_PERMISSION as i32)
+    );
     let trump_suit = match snapshot["data"]["trump_suit"].as_i64().unwrap() {
         0 => upgrade_common::Suit::Spade,
         1 => upgrade_common::Suit::Heart,

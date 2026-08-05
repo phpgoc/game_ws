@@ -408,5 +408,17 @@ async fn tractor_incremental_deal_full_deck_and_bury_flow() {
         json!(25)
     );
 
+    send_request(dealer, Routes::PLAY as i32, json!({ "cards": [999] })).await;
+    let invalid_play = recv_until(dealer, "invalid tractor play response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::PLAY as i64)
+            && value.get("code").and_then(Value::as_i64)
+                == Some(WsResponseCode::NO_PERMISSION as i64)
+    })
+    .await;
+    assert_eq!(
+        invalid_play["code"],
+        json!(WsResponseCode::NO_PERMISSION as i32)
+    );
+
     server.abort();
 }

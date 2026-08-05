@@ -887,6 +887,9 @@ impl TractorGameState {
         {
             return Err("not current turn");
         }
+        if cards.iter().any(|card| Card::try_from(*card).is_err()) {
+            return Err("invalid card");
+        }
         let hand = self.hands.get(&position).cloned().unwrap_or_default();
         let attempted_cards = cards.clone();
         let mut failed_throw = false;
