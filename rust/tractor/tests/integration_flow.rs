@@ -831,6 +831,47 @@ async fn tractor_server_completes_round_and_enters_later_round() {
         .map(|card| card.as_i64().expect("bottom card") as i32)
         .collect::<Vec<_>>();
     assert_eq!(later_bottom.len(), 8);
+    let non_dealer = (later_dealer + 1) % 4;
+    send_request(
+        &mut *clients[non_dealer],
+        TractorRoutes::SELECT_TRUMP as i32,
+        json!({ "trump_suit": 0 }),
+    )
+    .await;
+    let non_dealer_select = recv_until(
+        &mut *clients[non_dealer],
+        "non-dealer later tractor select response",
+        |value| {
+            value.get("route").and_then(Value::as_i64) == Some(TractorRoutes::SELECT_TRUMP as i64)
+                && value.get("code").and_then(Value::as_i64)
+                    == Some(WsResponseCode::NO_PERMISSION as i64)
+        },
+    )
+    .await;
+    assert_eq!(
+        non_dealer_select["code"],
+        json!(WsResponseCode::NO_PERMISSION as i32)
+    );
+    send_request(
+        &mut *clients[later_dealer],
+        TractorRoutes::BURY_BOTTOM as i32,
+        json!({ "cards": later_bottom }),
+    )
+    .await;
+    let bury_before_select = recv_until(
+        &mut *clients[later_dealer],
+        "tractor bury before select response",
+        |value| {
+            value.get("route").and_then(Value::as_i64) == Some(TractorRoutes::BURY_BOTTOM as i64)
+                && value.get("code").and_then(Value::as_i64)
+                    == Some(WsResponseCode::NO_PERMISSION as i64)
+        },
+    )
+    .await;
+    assert_eq!(
+        bury_before_select["code"],
+        json!(WsResponseCode::NO_PERMISSION as i32)
+    );
     send_request(
         &mut *clients[later_dealer],
         TractorRoutes::SELECT_TRUMP as i32,
