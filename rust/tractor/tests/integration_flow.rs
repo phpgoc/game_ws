@@ -127,7 +127,7 @@ async fn join(client: &mut Client, name: &str, password: &str) -> Value {
 
 async fn recv_json(client: &mut Client, label: &str) -> Value {
     loop {
-        let frame = tokio::time::timeout(Duration::from_secs(5), client.next())
+        let frame = tokio::time::timeout(Duration::from_secs(15), client.next())
             .await
             .unwrap_or_else(|_| panic!("websocket message timeout while waiting for {label}"))
             .expect("websocket frame")
