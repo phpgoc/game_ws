@@ -1227,6 +1227,19 @@ async fn upgrade_ws_auto_buries_after_three_play_windows() {
     assert_eq!(play_snapshot["data"]["round_index"], json!(0));
     assert_eq!(play_snapshot["data"]["turn_countdown"], json!(1));
 
+    // The first play window must also be server-driven: after the same
+    // timeout contract expires, the dealer's legal opening single is played
+    // and the table advances instead of remaining stuck in Play.
+    let auto_play = wait_for_event(&mut *clients[dealer_position], WsCode::PLAY as i32).await;
+    assert_eq!(auto_play["data"]["position"], json!(dealer_position));
+    assert_eq!(auto_play["data"]["cards"].as_array().map(Vec::len), Some(1));
+    assert_eq!(auto_play["data"]["remaining_hand_count"], json!(37));
+    let after_auto_play = wait_for_phase(&mut *clients[dealer_position], UpgradePhase::Play).await;
+    assert_eq!(
+        after_auto_play["data"]["current_position"],
+        json!((dealer_position + 1) % 4)
+    );
+
     server.abort();
 }
 
