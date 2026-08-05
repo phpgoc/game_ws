@@ -1136,3 +1136,96 @@ async fn upgrade_four_deck_removed_ranks_ws_flow_skips_removed_levels() {
 
     server.abort();
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn upgrade_ws_auto_buries_after_three_play_windows() {
+    let port = free_port();
+    let listen_addr = format!("127.0.0.1:{port}");
+    let url = format!("ws://{listen_addr}");
+    let server = tokio::spawn(run_room_runtime(
+        RuntimeConfig {
+            service_name: "upgrade-auto-bury-window-test",
+            listen_addr,
+            idle_timeout: Duration::from_secs(30),
+            heartbeat_interval: Duration::from_secs(30),
+        },
+        TestUpgradeHandler::default(),
+    ));
+
+    let mut a = connect_client(&url).await;
+    let mut b = connect_client(&url).await;
+    let mut c = connect_client(&url).await;
+    let mut d = connect_client(&url).await;
+    let room = "upgrade-auto-bury-window-room";
+    for (position, client) in [&mut a, &mut b, &mut c, &mut d].into_iter().enumerate() {
+        let joined = join_as(
+            client,
+            GameId::UPGRADE,
+            room,
+            &format!("auto-bury-player-{position}"),
+        )
+        .await;
+        assert_eq!(joined["code"], json!(WsResponseCode::JOINED as i32));
+        assert_eq!(joined["data"]["self_position"], json!(position));
+    }
+
+    send_request(
+        &mut a,
+        Routes::SETTING as i32,
+        json!({
+            "current_configs": {
+                "deck_count": 0,
+                "first_deal_time": 1,
+                "deal_time": 1,
+                "play_time": 1
+            }
+        }),
+    )
+    .await;
+    assert_eq!(
+        wait_for_response(&mut a, Routes::SETTING as i32).await["code"],
+        json!(WsResponseCode::OK as i32)
+    );
+    send_request(&mut a, Routes::START as i32, Value::Null).await;
+    assert_eq!(
+        wait_for_response(&mut a, Routes::START as i32).await["code"],
+        json!(WsResponseCode::OK as i32)
+    );
+
+    let clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
+    let declaration = wait_for_event(&mut *clients[0], UpgradeWsCode::TRUMP_DECLARED as i32).await;
+    let dealer_position = declaration["data"]["position"]
+        .as_i64()
+        .expect("upgrade auto-bury dealer") as usize;
+    assert!(dealer_position < 4);
+    let bottom = wait_for_event(
+        &mut *clients[dealer_position],
+        UpgradeWsCode::BOTTOM_CARDS as i32,
+    )
+    .await;
+    assert_eq!(bottom["data"]["required_count"], json!(10));
+
+    let bury_snapshot = loop {
+        let value = recv_json_full(&mut *clients[dealer_position], "upgrade bury countdown").await;
+        if value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+            && value["data"]["phase"] == json!(UpgradePhase::Bury as i8)
+            && value["data"]["turn_countdown"] == json!(3)
+        {
+            break value;
+        }
+    };
+    assert_eq!(bury_snapshot["data"]["turn_countdown"], json!(3));
+
+    let buried = wait_for_event(
+        &mut *clients[dealer_position],
+        UpgradeWsCode::BOTTOM_BURIED as i32,
+    )
+    .await;
+    assert_eq!(buried["data"]["position"], json!(dealer_position));
+    assert_eq!(buried["data"]["bottom_card_count"], json!(10));
+    let play_snapshot = wait_for_phase(&mut *clients[dealer_position], UpgradePhase::Play).await;
+    assert_eq!(play_snapshot["data"]["round_index"], json!(0));
+    assert_eq!(play_snapshot["data"]["turn_countdown"], json!(1));
+
+    server.abort();
+}
