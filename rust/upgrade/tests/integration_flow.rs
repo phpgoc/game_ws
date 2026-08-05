@@ -1229,3 +1229,162 @@ async fn upgrade_ws_auto_buries_after_three_play_windows() {
 
     server.abort();
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn upgrade_ws_rejects_an_off_group_follow_and_accepts_the_next_legal_card() {
+    let port = free_port();
+    let listen_addr = format!("127.0.0.1:{port}");
+    let url = format!("ws://{listen_addr}");
+    let server = tokio::spawn(run_room_runtime(
+        RuntimeConfig {
+            service_name: "upgrade-illegal-follow-test",
+            listen_addr,
+            idle_timeout: Duration::from_secs(30),
+            heartbeat_interval: Duration::from_secs(30),
+        },
+        TestUpgradeHandler::default(),
+    ));
+
+    let mut a = connect_client(&url).await;
+    let mut b = connect_client(&url).await;
+    let mut c = connect_client(&url).await;
+    let mut d = connect_client(&url).await;
+    let room = "upgrade-illegal-follow-room";
+    for (position, client) in [&mut a, &mut b, &mut c, &mut d].into_iter().enumerate() {
+        let joined = join_as(
+            client,
+            GameId::UPGRADE,
+            room,
+            &format!("illegal-follow-player-{position}"),
+        )
+        .await;
+        assert_eq!(joined["code"], json!(WsResponseCode::JOINED as i32));
+        assert_eq!(joined["data"]["self_position"], json!(position));
+    }
+
+    send_request(
+        &mut a,
+        Routes::SETTING as i32,
+        json!({
+            "current_configs": {
+                "deck_count": 0,
+                "first_deal_time": 1,
+                "deal_time": 1,
+                "play_time": 30
+            }
+        }),
+    )
+    .await;
+    assert_eq!(
+        wait_for_response(&mut a, Routes::SETTING as i32).await["code"],
+        json!(WsResponseCode::OK as i32)
+    );
+    send_request(&mut a, Routes::START as i32, Value::Null).await;
+    assert_eq!(
+        wait_for_response(&mut a, Routes::START as i32).await["code"],
+        json!(WsResponseCode::OK as i32)
+    );
+
+    let mut clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
+    let declaration = wait_for_event(&mut *clients[0], UpgradeWsCode::TRUMP_DECLARED as i32).await;
+    let dealer_position = declaration["data"]["position"]
+        .as_i64()
+        .expect("upgrade illegal-follow dealer") as usize;
+    let mut hands = collect_upgrade_hands(&mut clients).await;
+    let bottom = recv_upgrade_bottom(&mut *clients[dealer_position], dealer_position).await;
+    let bottom_cards = bottom["data"]["cards"]
+        .as_array()
+        .expect("upgrade illegal-follow bottom")
+        .iter()
+        .map(|card| card.as_i64().expect("upgrade bottom card") as i32)
+        .collect::<Vec<_>>();
+    assert_eq!(bottom_cards.len(), 10);
+    for card in &bottom_cards {
+        let index = hands[dealer_position]
+            .iter()
+            .position(|candidate| candidate == card)
+            .expect("upgrade bottom card in dealer hand");
+        hands[dealer_position].remove(index);
+    }
+
+    send_request(
+        &mut *clients[dealer_position],
+        UpgradeRoutes::BURY_BOTTOM as i32,
+        json!({ "cards": bottom_cards }),
+    )
+    .await;
+    let snapshot = wait_for_phase(&mut *clients[dealer_position], UpgradePhase::Play).await;
+    assert_eq!(
+        wait_for_response(
+            &mut *clients[dealer_position],
+            UpgradeRoutes::BURY_BOTTOM as i32
+        )
+        .await["code"],
+        json!(WsResponseCode::OK as i32)
+    );
+    let rules = combo::UpgradeComboRules {
+        target_rank: upgrade_rank(snapshot["data"]["target_rank"].as_i64().unwrap()),
+        trump_suit: Some(upgrade_suit(
+            snapshot["data"]["trump_suit"].as_i64().unwrap(),
+        )),
+    };
+    let follower_position = (dealer_position + 1) % 4;
+    let mut case = None;
+    for lead_card in hands[dealer_position].iter().copied() {
+        let lead = Card::try_from(lead_card).expect("upgrade lead card");
+        let lead_group = combo::card_group(lead, rules);
+        let legal = hands[follower_position].iter().copied().find(|card| {
+            combo::card_group(Card::try_from(*card).expect("upgrade legal card"), rules)
+                == lead_group
+        });
+        let illegal = hands[follower_position].iter().copied().find(|card| {
+            combo::card_group(Card::try_from(*card).expect("upgrade illegal card"), rules)
+                != lead_group
+        });
+        if let (Some(legal), Some(illegal)) = (legal, illegal) {
+            case = Some((lead_card, legal, illegal));
+            break;
+        }
+    }
+    let (lead_card, legal_card, illegal_card) =
+        case.expect("upgrade deal should expose an off-group follow case");
+
+    send_request(
+        &mut *clients[dealer_position],
+        Routes::PLAY as i32,
+        json!({ "cards": [lead_card] }),
+    )
+    .await;
+    let lead_event = wait_upgrade_play(&mut *clients[dealer_position], dealer_position).await;
+    assert_eq!(lead_event["data"]["cards"], json!([lead_card]));
+    assert_eq!(
+        wait_for_response(&mut *clients[dealer_position], Routes::PLAY as i32).await["code"],
+        json!(WsResponseCode::OK as i32)
+    );
+
+    send_request(
+        &mut *clients[follower_position],
+        Routes::PLAY as i32,
+        json!({ "cards": [illegal_card] }),
+    )
+    .await;
+    assert_eq!(
+        wait_for_response(&mut *clients[follower_position], Routes::PLAY as i32).await["code"],
+        json!(WsResponseCode::NO_PERMISSION as i32)
+    );
+
+    send_request(
+        &mut *clients[follower_position],
+        Routes::PLAY as i32,
+        json!({ "cards": [legal_card] }),
+    )
+    .await;
+    let legal_event = wait_upgrade_play(&mut *clients[follower_position], follower_position).await;
+    assert_eq!(legal_event["data"]["cards"], json!([legal_card]));
+    assert_eq!(
+        wait_for_response(&mut *clients[follower_position], Routes::PLAY as i32).await["code"],
+        json!(WsResponseCode::OK as i32)
+    );
+
+    server.abort();
+}
