@@ -873,8 +873,8 @@ mod tests {
                         });
                 let settlement = settlement.expect("settlement event");
                 assert_eq!(settlement.winner_positions, vec![1, 3]);
-                assert_eq!(settlement.score, 80);
-                assert_eq!(settlement.level_change, 1);
+                assert_eq!(settlement.score, 155);
+                assert_eq!(settlement.level_change, 2);
             }
         }
     }

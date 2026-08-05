@@ -933,16 +933,15 @@ impl TractorGameState {
         if self.current_trick.len() >= self.active_positions().len() {
             let trick_score = combo::trick_points(&self.current_trick);
             let winner = combo::trick_winner(&self.current_trick, &self.rules).unwrap_or(position);
-            let winning_len = self
+            let winning_cards = self
                 .current_trick
                 .iter()
                 .find(|played| played.position == winner as i32)
-                .map(|played| played.cards.len())
-                .unwrap_or(1);
+                .map(|played| played.cards.clone())
+                .unwrap_or_default();
             *self.collected_scores.entry(winner).or_default() += trick_score;
             self.last_trick_winner = Some(winner);
-            // Bottom (扣底) reward is multiplied by the size of the last winning play.
-            self.bottom_multiplier = (winning_len as i32).max(1);
+            self.bottom_multiplier = combo::bottom_multiplier(&winning_cards, &self.rules);
             self.completed_tricks.push(self.current_trick.clone());
             self.current_trick.clear();
             self.trick_index += 1;
@@ -1325,7 +1324,7 @@ mod tests {
         let mut state = test_state();
         state.rules.target_rank = TractorRank::TWO;
         state.bottom_cards = vec![9]; // one 10-point card in the bottom
-        // Single final trick: multiplier 1.
+        // Single final trick: standard multiplier 2.
         state.hands.insert(0, vec![5]);
         state.hands.insert(1, vec![6]);
         state.hands.insert(2, vec![7]);
@@ -1335,12 +1334,12 @@ mod tests {
                 .play_cards(pos, format!("u{pos}"), vec![card])
                 .unwrap();
         }
-        assert_eq!(state.bottom_multiplier, 1);
-        // The winner (highest suit-0 single = position 3) banks bottom × 1.
+        assert_eq!(state.bottom_multiplier, 2);
+        // The winner (highest suit-0 single = position 3) banks bottom × 2.
         assert_eq!(state.last_trick_winner, Some(3));
-        assert_eq!(state.collected_scores.get(&3).copied(), Some(10));
+        assert_eq!(state.collected_scores.get(&3).copied(), Some(20));
 
-        // Now a pair-winning final trick: multiplier 2.
+        // Now a pair-winning final trick: standard multiplier 4.
         let mut state = test_state();
         state.rules.target_rank = TractorRank::TWO;
         state.bottom_cards = vec![9];
@@ -1356,10 +1355,10 @@ mod tests {
         ] {
             state.play_cards(pos, format!("u{pos}"), cards).unwrap();
         }
-        assert_eq!(state.bottom_multiplier, 2);
-        // Winner banks bottom (10) × 2 = 20.
+        assert_eq!(state.bottom_multiplier, 4);
+        // Winner banks bottom (10) × 4 = 40.
         assert_eq!(state.last_trick_winner, Some(3));
-        assert_eq!(state.collected_scores.get(&3).copied(), Some(20));
+        assert_eq!(state.collected_scores.get(&3).copied(), Some(40));
     }
 
     #[test]
@@ -1709,13 +1708,13 @@ mod tests {
 
         assert_eq!(state.phase, TractorPhase::Settlement);
         assert_eq!(state.last_trick_winner, Some(1));
-        assert_eq!(state.attacking_score(), 80);
+        assert_eq!(state.attacking_score(), 155);
         assert_eq!(state.winner_positions(), vec![1, 3]);
-        assert_eq!(state.settlement_score(), 80);
-        assert_eq!(state.player_scores.get(&0), Some(&-80));
-        assert_eq!(state.player_scores.get(&1), Some(&80));
-        assert_eq!(state.player_scores.get(&2), Some(&-80));
-        assert_eq!(state.player_scores.get(&3), Some(&80));
+        assert_eq!(state.settlement_score(), 155);
+        assert_eq!(state.player_scores.get(&0), Some(&-155));
+        assert_eq!(state.player_scores.get(&1), Some(&155));
+        assert_eq!(state.player_scores.get(&2), Some(&-155));
+        assert_eq!(state.player_scores.get(&3), Some(&155));
         assert_eq!(
             state.snapshot().player_scores,
             state.player_scores_snapshot()
@@ -1723,7 +1722,7 @@ mod tests {
     }
 
     #[test]
-    fn weak_ai_single_passes_at_end_of_first_deal() {
+    fn first_deal_falls_back_to_an_available_level_card() {
         let mut state = test_state();
         state.phase = TractorPhase::Deal;
         state.round_index = 0;
@@ -1736,10 +1735,19 @@ mod tests {
             state.deal_next_card().expect("deal the final card");
 
         assert!(finished);
-        assert!(auto_declaration.is_none());
-        assert!(state.declaration.is_none());
-        assert_eq!(state.dealer_position, 0);
-        assert_eq!(state.rules.trump_suit, None);
+        let declaration = auto_declaration.expect("fallback declaration");
+        assert_eq!(declaration.position, 1);
+        assert_eq!(declaration.cards, vec![1]);
+        assert_eq!(
+            state.declaration.as_ref().map(|item| item.position),
+            Some(1)
+        );
+        assert_eq!(
+            state.declaration.as_ref().map(|item| item.cards.as_slice()),
+            Some([1].as_slice())
+        );
+        assert_eq!(state.dealer_position, 1);
+        assert_eq!(state.rules.trump_suit, Some(TractorSuit::SPADE));
         assert_eq!(state.phase, TractorPhase::Bury);
     }
 }

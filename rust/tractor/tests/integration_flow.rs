@@ -333,19 +333,38 @@ async fn tractor_incremental_deal_full_deck_and_bury_flow() {
     let started_at = Instant::now();
     send_request(&mut a, Routes::START as i32, json!({})).await;
 
+    let mut clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
     let mut dealt_cards = Vec::new();
-    let bottom = loop {
-        let value = recv_json(&mut a, "incremental deal and bottom").await;
-        match value.get("code").and_then(Value::as_i64) {
-            Some(code) if code == WsCode::DEAL as i64 => {
-                let cards = value["data"]["cards"].as_array().expect("deal cards");
-                assert_eq!(cards.len(), 1, "deal must be incremental");
-                dealt_cards.push(cards[0].as_i64().expect("card") as i32);
+    let mut saw_declaration = false;
+    let mut dealer_position = None;
+    let mut bottom = None;
+    while bottom.is_none() || !saw_declaration {
+        for (client_position, client) in clients.iter_mut().enumerate() {
+            let value = recv_json(&mut **client, "incremental deal, declaration and bottom").await;
+            match value.get("code").and_then(Value::as_i64) {
+                Some(code) if code == WsCode::DEAL as i64 => {
+                    let cards = value["data"]["cards"].as_array().expect("deal cards");
+                    assert_eq!(cards.len(), 1, "deal must be incremental");
+                    if client_position == 0 {
+                        dealt_cards.push(cards[0].as_i64().expect("card") as i32);
+                    }
+                }
+                Some(code) if code == TractorWsCode::TRUMP_DECLARED as i64 => {
+                    saw_declaration = true;
+                    assert!(!value["data"]["cards"].as_array().unwrap().is_empty());
+                }
+                Some(code) if code == TractorWsCode::BOTTOM_CARDS as i64 && bottom.is_none() => {
+                    dealer_position = value["data"]["position"].as_u64();
+                    bottom = Some(value);
+                }
+                _ => {}
             }
-            Some(code) if code == TractorWsCode::BOTTOM_CARDS as i64 => break value,
-            _ => {}
         }
-    };
+    }
+    assert!(saw_declaration, "first deal must declare trump");
+    let dealer_position = dealer_position.expect("bottom event dealer position") as usize;
+    assert!(dealer_position < clients.len());
+    let bottom = bottom.expect("bottom event");
     assert!(started_at.elapsed() >= Duration::from_millis(1_100));
     assert_eq!(dealt_cards.len(), 25);
     let bottom_cards = bottom["data"]["cards"]
@@ -357,18 +376,19 @@ async fn tractor_incremental_deal_full_deck_and_bury_flow() {
     assert_eq!(bottom_cards.len(), 8);
     assert_eq!(bottom["data"]["required_count"], json!(8));
 
+    let dealer = &mut *clients[dealer_position];
     send_request(
-        &mut a,
+        dealer,
         TractorRoutes::BURY_BOTTOM as i32,
         json!({ "cards": bottom_cards }),
     )
     .await;
-    let snapshot = recv_until(&mut a, "play snapshot", |value| {
+    let snapshot = recv_until(dealer, "play snapshot", |value| {
         value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
             && value["data"]["phase"] == json!(TractorPhase::Play as i8)
     })
     .await;
-    recv_until(&mut a, "bury response", |value| {
+    recv_until(dealer, "bury response", |value| {
         value.get("route").and_then(Value::as_i64) == Some(TractorRoutes::BURY_BOTTOM as i64)
             && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
     })
