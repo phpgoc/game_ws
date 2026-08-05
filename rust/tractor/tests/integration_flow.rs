@@ -1,27 +1,33 @@
-use std::{net::TcpListener, time::Duration};
+#[cfg(not(feature = "official"))]
+use std::net::TcpListener;
+use std::time::Duration;
 
+#[cfg(feature = "official")]
+use std::sync::mpsc::sync_channel;
 #[cfg(not(feature = "official"))]
 use std::time::Instant;
 
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
-use share_type_public::{
-    GameId, Routes, TractorRank, TractorSuit, TractorWsCode, WsCode, WsResponseCode,
-};
+use share_type_public::{GameId, Routes, TractorWsCode, WsCode, WsResponseCode};
 use share_type_public::{GameParam, GameParamRange};
 #[cfg(not(feature = "official"))]
-use share_type_public::{TractorPhase, TractorRoutes};
-#[cfg(feature = "official")]
-use tokio::net::TcpListener as TokioTcpListener;
+use share_type_public::{TractorPhase, TractorRank, TractorRoutes, TractorSuit};
 use tokio_tungstenite::{WebSocketStream, connect_async, tungstenite::Message};
+#[cfg(not(feature = "official"))]
 use tractor::combo;
 use tractor::game::TractorGameHandler;
+#[cfg(not(feature = "official"))]
 use tractor::game_state::TractorRules;
+use ws_common::RuntimeConfig;
+#[cfg(not(feature = "official"))]
+use ws_common::run_room_runtime;
 use ws_common::{
     ClientRequest, Dispatch, GameHandler, GameState, JoinAuthorization, JoinAuthorizationFuture,
     RoomService, SessionId, SessionSenders, SettingsBuilderResult,
 };
-use ws_common::{RuntimeConfig, run_room_runtime};
+#[cfg(feature = "official")]
+use ws_common::{run_room_runtime_until_stopped_with_ready, runtime_stop_channel};
 
 type Client = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
@@ -111,6 +117,7 @@ async fn connect_client(url: &str) -> Client {
     panic!("tractor websocket server did not become ready");
 }
 
+#[cfg(not(feature = "official"))]
 fn free_port() -> u16 {
     TcpListener::bind("127.0.0.1:0")
         .expect("bind free port")
@@ -183,6 +190,7 @@ async fn send_request(client: &mut Client, route: i32, data: Value) {
         .expect("send request");
 }
 
+#[cfg(not(feature = "official"))]
 async fn collect_tractor_hand(
     client: &mut Client,
     position: usize,
@@ -202,6 +210,7 @@ async fn collect_tractor_hand(
     hand
 }
 
+#[cfg(not(feature = "official"))]
 async fn collect_tractor_hands(
     clients: &mut [&mut Client; 4],
     expected_hand_size: usize,
@@ -218,6 +227,7 @@ async fn collect_tractor_hands(
     [a, b, c, d]
 }
 
+#[cfg(not(feature = "official"))]
 async fn recv_tractor_bottom(client: &mut Client, dealer_position: usize) -> Value {
     let bottom = recv_until(client, "tractor bottom cards", |value| {
         value.get("code").and_then(Value::as_i64) == Some(TractorWsCode::BOTTOM_CARDS as i64)
@@ -227,6 +237,7 @@ async fn recv_tractor_bottom(client: &mut Client, dealer_position: usize) -> Val
     bottom
 }
 
+#[cfg(not(feature = "official"))]
 fn find_failed_throw_candidate(
     hands: &[Vec<i32>; 4],
     position: usize,
@@ -278,6 +289,7 @@ fn find_failed_throw_candidate(
     None
 }
 
+#[cfg(not(feature = "official"))]
 async fn recv_first_declaration(client: &mut Client) -> (Value, Option<Value>) {
     let mut bottom = None;
     loop {
@@ -295,25 +307,27 @@ async fn recv_first_declaration(client: &mut Client) -> (Value, Option<Value>) {
 #[cfg(feature = "official")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn tractor_official_ai_buries_and_leads_over_websocket() {
-    let port = free_port();
-    let listen_addr = format!("127.0.0.1:{port}");
-    let url = format!("ws://{listen_addr}");
-    let server = tokio::spawn(run_room_runtime(
+    let (stop_handle, stop_signal) = runtime_stop_channel();
+    let (ready_tx, ready_rx) = sync_channel(1);
+    let server = tokio::spawn(run_room_runtime_until_stopped_with_ready(
         RuntimeConfig {
             service_name: "tractor-ai-test",
-            listen_addr,
+            listen_addr: "127.0.0.1:0".to_owned(),
             idle_timeout: Duration::from_secs(30),
             heartbeat_interval: Duration::from_secs(30),
         },
         TestTractorHandler::default(),
+        stop_signal,
+        ready_tx,
     ));
-
-    for _ in 0..50 {
-        if TokioTcpListener::bind(("127.0.0.1", port)).await.is_err() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
+    let stats = tokio::task::spawn_blocking(move || {
+        ready_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("tractor runtime readiness")
+    })
+    .await
+    .expect("read tractor runtime readiness");
+    let url = format!("ws://{}", stats.listen_addr());
 
     let mut owner = connect_client(&url).await;
     let room = "tractor-ai-room";
@@ -392,6 +406,7 @@ async fn tractor_official_ai_buries_and_leads_over_websocket() {
         json!(25 - played_count)
     );
 
+    stop_handle.stop();
     server.abort();
 }
 
