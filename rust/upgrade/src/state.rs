@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     sync::{Arc, Mutex},
 };
 
@@ -40,6 +40,7 @@ pub struct UpgradeGameState {
     pub rules: UpgradeRules,
     pub hands: HashMap<usize, Vec<i32>>,
     pub bottom_cards: Vec<i32>,
+    pub deal_queue: VecDeque<(usize, i32)>,
     pub dealer_position: usize,
     pub current_position: usize,
     pub round_index: i32,
@@ -156,6 +157,7 @@ impl UpgradeGameState {
             },
             hands: HashMap::new(),
             bottom_cards: Vec::new(),
+            deal_queue: VecDeque::new(),
             dealer_position: 0,
             current_position: 0,
             round_index: 0,
@@ -184,59 +186,25 @@ impl UpgradeGameState {
             return Err("deck cannot be dealt evenly");
         }
         deck.shuffle(&mut rand::rng());
-        let first_revealed = deck.iter().copied().find_map(|encoded| {
-            let card = Card::try_from(encoded).ok()?;
-            (card.rank() == rules.target_rank).then_some((encoded, card.suit()))
-        });
-        let (trump_suit, declaration) = if self.round_index == 0 {
-            let (encoded, suit) = first_revealed
-                .and_then(|(encoded, suit)| suit.map(|suit| (encoded, suit)))
-                .unwrap_or((1, Suit::Spade));
-            (
-                Some(suit),
-                Some(WsUpgradeTrumpDeclaration {
-                    position: self.dealer_position as i32,
-                    name: self.player_name(self.dealer_position),
-                    cards: vec![encoded],
-                    trump_suit: suit_to_protocol(suit),
-                    strength: 1,
-                    target_rank: rank_to_protocol(rules.target_rank),
-                }),
-            )
-        } else {
-            (rules.trump_suit, None)
-        };
         self.rules = UpgradeRules {
             bottom_card_count: bottom_count,
-            trump_suit,
+            trump_suit: None,
             ..rules
         };
-        self.phase = UpgradePhase::Bury;
+        self.phase = UpgradePhase::Deal;
         self.hands.clear();
         self.bottom_cards = deck.split_off(total_cards - bottom_count);
-        let hand_count = deck.len() / PLAYER_COUNT;
         for position in 0..PLAYER_COUNT {
-            let start = position * hand_count;
-            let end = start + hand_count;
-            let mut hand = deck[start..end].to_vec();
-            hand.sort_unstable_by_key(|card| {
-                card_from_id(*card)
-                    .map(|card| (card.suit().is_none(), card.rank(), card.encoded()))
-                    .unwrap_or((true, Rank::Two, *card))
-            });
-            self.hands.insert(position, hand);
+            self.hands.insert(position, Vec::new());
         }
-        // The dealer sees the bottom and may choose cards from the combined hand.
-        self.hands
-            .entry(self.dealer_position)
-            .or_default()
-            .extend(self.bottom_cards.iter().copied());
-        self.hands
-            .entry(self.dealer_position)
-            .and_modify(|hand| hand.sort_unstable());
-        self.dealt_count = total_cards;
-        self.total_deal_count = total_cards;
-        self.declaration = declaration;
+        self.deal_queue = deck
+            .into_iter()
+            .enumerate()
+            .map(|(index, card)| (index % PLAYER_COUNT, card))
+            .collect();
+        self.dealt_count = 0;
+        self.total_deal_count = self.deal_queue.len();
+        self.declaration = None;
         self.current_trick.clear();
         self.trick_index = 0;
         self.collected_scores.clear();
@@ -249,8 +217,107 @@ impl UpgradeGameState {
     }
 
     pub fn hand_count(&self) -> usize {
-        let total = self.total_deal_count;
-        total.saturating_sub(self.rules.bottom_card_count) / PLAYER_COUNT
+        self.total_deal_count / PLAYER_COUNT
+    }
+
+    /// Deals one private card. The first round accepts declarations while the
+    /// queue is moving; when nobody declares, the first available level card
+    /// is revealed at the end so the opening round never enters a second
+    /// post-bottom suit-selection phase.
+    pub fn deal_next_card(
+        &mut self,
+    ) -> Option<(usize, i32, bool, Option<WsUpgradeTrumpDeclaration>)> {
+        if self.phase != UpgradePhase::Deal {
+            return None;
+        }
+        let (position, card) = self.deal_queue.pop_front()?;
+        let hand = self.hands.entry(position).or_default();
+        hand.push(card);
+        hand.sort_unstable_by_key(|card| {
+            card_from_id(*card)
+                .map(|card| (card.suit().is_none(), card.rank(), card.encoded()))
+                .unwrap_or((true, Rank::Two, *card))
+        });
+        self.dealt_count += 1;
+        let finished = self.deal_queue.is_empty();
+        let mut fallback_declaration = None;
+        if finished {
+            if self.round_index == 0 && self.declaration.is_none() {
+                fallback_declaration = (0..PLAYER_COUNT).find_map(|candidate_position| {
+                    let card =
+                        self.hands
+                            .get(&candidate_position)?
+                            .iter()
+                            .copied()
+                            .find(|card| {
+                                Card::try_from(*card).ok().is_some_and(|card| {
+                                    card.rank() == self.rules.target_rank && card.suit().is_some()
+                                })
+                            })?;
+                    self.declare_trump(candidate_position, vec![card]).ok()
+                });
+            }
+            if let Some(declaration) = &self.declaration {
+                self.dealer_position = declaration.position as usize;
+            }
+            self.current_position = self.dealer_position;
+            self.hands
+                .entry(self.dealer_position)
+                .or_default()
+                .extend(self.bottom_cards.iter().copied());
+            self.hands
+                .entry(self.dealer_position)
+                .and_modify(|hand| hand.sort_unstable());
+            self.phase = UpgradePhase::Bury;
+            self.base.lock().unwrap().action_received = false;
+        }
+        Some((position, card, finished, fallback_declaration))
+    }
+
+    pub fn declare_trump(
+        &mut self,
+        position: usize,
+        cards: Vec<i32>,
+    ) -> Result<WsUpgradeTrumpDeclaration, &'static str> {
+        if self.round_index != 0 || self.phase != UpgradePhase::Deal || cards.is_empty() {
+            return Err("not in first-round deal");
+        }
+        let hand = self.hands.get(&position).cloned().unwrap_or_default();
+        if !contains_cards(&hand, &cards) {
+            return Err("declaration card not dealt");
+        }
+        let first = Card::try_from(cards[0]).map_err(|_| "invalid declaration card")?;
+        let suit = first.suit().ok_or("joker cannot declare trump")?;
+        if first.rank() != self.rules.target_rank
+            || cards.iter().any(|card| {
+                Card::try_from(*card).ok().is_none_or(|card| {
+                    card.identity() != first.identity() || card.rank() != self.rules.target_rank
+                })
+            })
+        {
+            return Err("declaration must use identical level cards");
+        }
+        let strength = cards.len() as i32;
+        if self
+            .declaration
+            .as_ref()
+            .is_some_and(|current| current.strength >= strength)
+        {
+            return Err("declaration is not stronger");
+        }
+        let declaration = WsUpgradeTrumpDeclaration {
+            position: position as i32,
+            name: self.player_name(position),
+            cards,
+            trump_suit: suit_to_protocol(suit),
+            strength,
+            target_rank: rank_to_protocol(self.rules.target_rank),
+        };
+        self.rules.trump_suit = Some(suit);
+        self.dealer_position = position;
+        self.current_position = position;
+        self.declaration = Some(declaration.clone());
+        Ok(declaration)
     }
 
     pub fn player_name(&self, position: usize) -> String {

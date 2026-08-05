@@ -3,9 +3,9 @@ use std::{collections::HashMap, sync::Arc};
 use serde_json::Value;
 use share_type_public::{
     CommonEvent, GameId, Routes, UpgradeRoutes, UpgradeWsCode, WsCode, WsResponseCode,
-    WsUpgradeBottomBuriedEvent, WsUpgradeBottomCardsEvent, WsUpgradeBuryBottomRequest,
-    WsUpgradeDealEvent, WsUpgradeDeclareTrumpRequest, WsUpgradeHandEvent, WsUpgradePlayEvent,
-    WsUpgradePlayRequest, WsUpgradeSelectTrumpRequest, WsUpgradeTableSnapshotEvent,
+    WsUpgradeBottomBuriedEvent, WsUpgradeBuryBottomRequest, WsUpgradeDeclareTrumpRequest,
+    WsUpgradeHandEvent, WsUpgradePlayEvent, WsUpgradePlayRequest, WsUpgradeSelectTrumpRequest,
+    WsUpgradeTableSnapshotEvent,
 };
 use tokio::sync::Mutex;
 use ws_common::GameState;
@@ -19,7 +19,7 @@ use crate::{
         KEY_ATTACKING_WIN_SCORE, KEY_DECK_COUNT, KEY_PLAY_TIME, KEY_SCORE_PER_LEVEL,
         KEY_SHUTOUT_BONUS_LEVELS, build_upgrade_settings, deck_count_from_setting,
     },
-    state::{PLAYER_COUNT, UpgradeGameState, UpgradeRules, UpgradeStateHandle},
+    state::{UpgradeGameState, UpgradeRules, UpgradeStateHandle},
 };
 
 type StateRegistry = Arc<std::sync::Mutex<HashMap<String, UpgradeStateHandle>>>;
@@ -49,10 +49,6 @@ fn join_succeeded(dispatch: &Dispatch, session_id: SessionId) -> bool {
 impl UpgradeGameHandler {
     fn play_time(configs: &HashMap<String, i32>) -> u32 {
         configs.get(KEY_PLAY_TIME).copied().unwrap_or(30).max(1) as u32
-    }
-
-    fn bury_window_time(configs: &HashMap<String, i32>) -> u32 {
-        Self::play_time(configs).saturating_mul(3)
     }
 
     fn configs_to_rules(configs: &HashMap<String, i32>) -> UpgradeRules {
@@ -183,18 +179,13 @@ impl UpgradeGameHandler {
                     WsResponseCode::NO_PERMISSION,
                 );
             }
-            let configs = room_service.room_configs(&room_key).unwrap_or_default();
-            state
-                .lock()
-                .unwrap()
-                .set_turn_countdown(Self::bury_window_time(&configs));
+            state.lock().unwrap().set_turn_countdown(0);
             room_service.broadcast(
                 &room_key,
                 WsCode::START as i32,
                 serde_json::json!({}),
                 &mut dispatch,
             );
-            self.broadcast_deal(room_service, &room_key, &state, &mut dispatch);
             self.push_snapshot(&mut dispatch, room_service, &room_key, &state);
             room_service.push_ok_response(&mut dispatch, session_id, route);
             return dispatch;
@@ -208,7 +199,7 @@ impl UpgradeGameHandler {
         if game_state.deal_new_round(rules).is_err() {
             return room_service.error_response(session_id, route, WsResponseCode::NOT_IN_RANGE);
         }
-        game_state.set_turn_countdown(Self::bury_window_time(&configs));
+        game_state.set_turn_countdown(0);
         let state = Arc::new(std::sync::Mutex::new(game_state));
         room_service.set_room_game_state(
             &room_key,
@@ -237,83 +228,9 @@ impl UpgradeGameHandler {
             serde_json::json!({}),
             &mut dispatch,
         );
-        self.broadcast_deal(room_service, &room_key, &state, &mut dispatch);
         self.push_snapshot(&mut dispatch, room_service, &room_key, &state);
         room_service.push_ok_response(&mut dispatch, session_id, route);
         dispatch
-    }
-
-    fn broadcast_deal(
-        &self,
-        room_service: &RoomService,
-        room_key: &str,
-        state: &UpgradeStateHandle,
-        dispatch: &mut Dispatch,
-    ) {
-        // Read the room roster before locking the game state. `room_members`
-        // reaches the same state through RoomService and would otherwise
-        // attempt to lock it recursively.
-        let members = room_service.room_members(room_key);
-        let state_guard = state.lock().unwrap();
-        let deck_count = i32::from(state_guard.rules.deck_count.get());
-        let hand_count = state_guard.hand_count() as i32;
-        let bottom_count = state_guard.rules.bottom_card_count as i32;
-        if let Some(declaration) = state_guard.declaration.clone() {
-            room_service.broadcast_connected(
-                room_key,
-                UpgradeWsCode::TRUMP_DECLARED as i32,
-                declaration,
-                dispatch,
-            );
-        }
-        for position in 0..PLAYER_COUNT {
-            let Some((session_id, _, _, _)) = members
-                .iter()
-                .find(|(_, _, member_position, _)| *member_position == position)
-                .cloned()
-            else {
-                continue;
-            };
-            let cards = state_guard.private_hand(position);
-            Self::push_private_event(
-                dispatch,
-                session_id,
-                UpgradeWsCode::HAND_UPDATED,
-                WsUpgradeHandEvent {
-                    position: position as i32,
-                    cards: cards.clone(),
-                },
-            );
-            Self::push_private_event(
-                dispatch,
-                session_id,
-                UpgradeWsCode::BOTTOM_CARDS,
-                WsUpgradeBottomCardsEvent {
-                    position: state_guard.dealer_position as i32,
-                    cards: if position == state_guard.dealer_position {
-                        state_guard.exposed_bottom()
-                    } else {
-                        Vec::new()
-                    },
-                    required_count: bottom_count,
-                },
-            );
-        }
-        room_service.broadcast_connected(
-            room_key,
-            WsCode::DEAL as i32,
-            WsUpgradeDealEvent {
-                position: state_guard.dealer_position as i32,
-                cards: Vec::new(),
-                deck_count,
-                hand_count,
-                bottom_card_count: bottom_count,
-                target_rank: state_guard.target_rank_protocol(),
-                dealt_count: state_guard.dealt_count as i32,
-                total_deal_count: state_guard.total_deal_count as i32,
-            },
-            dispatch,
-        );
     }
 
     fn handle_bury_bottom(
@@ -414,6 +331,46 @@ impl UpgradeGameHandler {
             &room_key,
             WsCode::TABLE_SNAPSHOT as i32,
             snapshot,
+            &mut dispatch,
+        );
+        room_service.push_ok_response(&mut dispatch, session_id, route);
+        dispatch
+    }
+
+    fn handle_declare_trump(
+        &self,
+        room_service: &mut RoomService,
+        session_id: SessionId,
+        data: Value,
+    ) -> Dispatch {
+        let route = UpgradeRoutes::DECLARE_TRUMP as i32;
+        let Some(position) = room_service.session_position(session_id) else {
+            return room_service.error_response(session_id, route, WsResponseCode::NOT_LOGIN);
+        };
+        let Some(room_key) = room_service.room_key_of(session_id) else {
+            return room_service.error_response(session_id, route, WsResponseCode::NOT_LOGIN);
+        };
+        let Ok(request) = RoomService::parse_payload::<WsUpgradeDeclareTrumpRequest>(data) else {
+            return room_service.error_response(session_id, route, WsResponseCode::ERROR_FORMAT);
+        };
+        let Some(state) = self.current_state(room_service, &room_key) else {
+            return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
+        };
+        let declaration = match state.lock().unwrap().declare_trump(position, request.cards) {
+            Ok(declaration) => declaration,
+            Err(_) => {
+                return room_service.error_response(
+                    session_id,
+                    route,
+                    WsResponseCode::NO_PERMISSION,
+                );
+            }
+        };
+        let mut dispatch = Dispatch::default();
+        room_service.broadcast(
+            &room_key,
+            UpgradeWsCode::TRUMP_DECLARED as i32,
+            declaration,
             &mut dispatch,
         );
         room_service.push_ok_response(&mut dispatch, session_id, route);
@@ -553,8 +510,7 @@ impl GameHandler for UpgradeGameHandler {
                 self.handle_select_trump(room_service, session_id, request.data)
             }
             route if route == UpgradeRoutes::DECLARE_TRUMP as i32 => {
-                let _ = RoomService::parse_payload::<WsUpgradeDeclareTrumpRequest>(request.data);
-                room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION)
+                self.handle_declare_trump(room_service, session_id, request.data)
             }
             _ => {
                 room_service.error_response(session_id, request.route, WsResponseCode::NOT_IN_RANGE)

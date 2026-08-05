@@ -13,6 +13,8 @@ fn upgrade_settings_expose_decks_timing_and_score_progression() {
     assert_eq!(settings.values[KEY_ATTACKING_WIN_SCORE], 80);
     assert_eq!(settings.values[KEY_SCORE_PER_LEVEL], 40);
     assert_eq!(settings.values[KEY_SHUTOUT_BONUS_LEVELS], 1);
+    assert!(!settings.values.contains_key(KEY_FIRST_DEAL_TIME));
+    assert!(!settings.values.contains_key(KEY_DEAL_TIME));
     assert!(!params.keys().any(|key| key.contains("blood")));
     assert!(!params.keys().any(|key| key.contains("tribute")));
 

@@ -2,14 +2,18 @@ use std::{sync::Arc, time::Duration};
 
 use share_type_public::{
     CommonEvent, UpgradePhase, UpgradeWsCode, WsCode, WsUpgradeBottomBuriedEvent,
-    WsUpgradeHandEvent, WsUpgradePlayEvent,
+    WsUpgradeBottomCardsEvent, WsUpgradeDealEvent, WsUpgradeHandEvent, WsUpgradePlayEvent,
 };
 use tokio::sync::Mutex;
 use ws_common::{
-    Delivery, Dispatch, GameState, OutboundPayload, RoomService, SessionSenders, to_text_message,
+    Delivery, Dispatch, GameState, OutboundPayload, RoomService, SessionId, SessionSenders,
+    to_text_message,
 };
 
-use crate::state::UpgradeStateHandle;
+use crate::{
+    game_setting::{KEY_DEAL_TIME, KEY_FIRST_DEAL_TIME, KEY_PLAY_TIME},
+    state::{PLAYER_COUNT, UpgradeStateHandle},
+};
 
 const SETTLEMENT_DELAY: Duration = Duration::from_secs(3);
 
@@ -35,6 +39,19 @@ pub fn start_upgrade_game_loop(
                 guard.phase
             };
             match phase {
+                UpgradePhase::Deal => {
+                    let delay = {
+                        let guard = state.lock().unwrap();
+                        deal_step_delay(&configs, guard.round_index, guard.total_deal_count)
+                    };
+                    let dispatch = {
+                        let room = room_service.lock().await;
+                        build_deal_dispatch(&room_key, &state, &room, &configs)
+                    };
+                    deliver(dispatch, &senders).await;
+                    tokio::time::sleep(delay).await;
+                    continue;
+                }
                 UpgradePhase::Bury => {
                     let dispatch =
                         timeout_bury_dispatch(&room_key, &state, &room_service, play_time).await;
@@ -76,11 +93,131 @@ pub fn start_upgrade_game_loop(
                     }
                     deliver(dispatch, &senders).await;
                 }
-                UpgradePhase::Start | UpgradePhase::Deal => break,
+                UpgradePhase::Start => break,
             }
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
     });
+}
+
+fn build_deal_dispatch(
+    room_key: &str,
+    state: &UpgradeStateHandle,
+    room: &RoomService,
+    configs: &std::collections::HashMap<String, i32>,
+) -> Dispatch {
+    let mut dispatch = Dispatch::default();
+    let Some((position, deal, declaration, finished, dealer, hands, bottom, snapshot)) = (|| {
+        let mut guard = state.lock().unwrap();
+        let (position, card, finished, declaration) = guard.deal_next_card()?;
+        if finished {
+            guard.set_turn_countdown(bury_window_time(configs));
+        }
+        let deal = WsUpgradeDealEvent {
+            position: position as i32,
+            cards: vec![card],
+            deck_count: i32::from(guard.rules.deck_count.get()),
+            hand_count: guard.private_hand(position).len() as i32,
+            bottom_card_count: guard.rules.bottom_card_count as i32,
+            target_rank: guard.target_rank_protocol(),
+            dealt_count: guard.dealt_count as i32,
+            total_deal_count: guard.total_deal_count as i32,
+        };
+        Some((
+            position,
+            deal,
+            declaration,
+            finished,
+            guard.dealer_position,
+            (0..PLAYER_COUNT)
+                .map(|position| guard.private_hand(position))
+                .collect::<Vec<_>>(),
+            guard.exposed_bottom(),
+            guard.snapshot(),
+        ))
+    })() else {
+        return dispatch;
+    };
+
+    let members = room.room_members(room_key);
+    for (session_id, _, member_position, _) in &members {
+        if *member_position == position {
+            push_private(
+                &mut dispatch,
+                *session_id,
+                WsCode::DEAL as i32,
+                deal.clone(),
+            );
+        }
+    }
+    if let Some(declaration) = declaration {
+        room.broadcast(
+            room_key,
+            UpgradeWsCode::TRUMP_DECLARED as i32,
+            declaration,
+            &mut dispatch,
+        );
+    }
+    if finished {
+        for (session_id, _, member_position, _) in members {
+            push_private(
+                &mut dispatch,
+                session_id,
+                UpgradeWsCode::HAND_UPDATED as i32,
+                WsUpgradeHandEvent {
+                    position: member_position as i32,
+                    cards: hands.get(member_position).cloned().unwrap_or_default(),
+                },
+            );
+            if member_position == dealer {
+                push_private(
+                    &mut dispatch,
+                    session_id,
+                    UpgradeWsCode::BOTTOM_CARDS as i32,
+                    WsUpgradeBottomCardsEvent {
+                        position: dealer as i32,
+                        cards: bottom.clone(),
+                        required_count: bottom.len() as i32,
+                    },
+                );
+            }
+        }
+    }
+    room.broadcast(
+        room_key,
+        WsCode::TABLE_SNAPSHOT as i32,
+        snapshot,
+        &mut dispatch,
+    );
+    dispatch
+}
+
+fn bury_window_time(configs: &std::collections::HashMap<String, i32>) -> u32 {
+    configs
+        .get(KEY_PLAY_TIME)
+        .copied()
+        .unwrap_or(30)
+        .max(1)
+        .saturating_mul(3) as u32
+}
+
+fn deal_step_delay(
+    configs: &std::collections::HashMap<String, i32>,
+    round_index: i32,
+    total_deal_count: usize,
+) -> Duration {
+    let regular_total = configs.get(KEY_DEAL_TIME).copied().unwrap_or(3_000).max(1) as u64;
+    let total = if round_index == 0 {
+        let first = configs
+            .get(KEY_FIRST_DEAL_TIME)
+            .copied()
+            .unwrap_or(15_000)
+            .max(1) as u64;
+        first.max(regular_total.saturating_mul(3))
+    } else {
+        regular_total
+    };
+    Duration::from_millis((total / total_deal_count.max(1) as u64).max(1))
 }
 
 async fn timeout_bury_dispatch(
@@ -127,7 +264,7 @@ async fn timeout_bury_dispatch(
         &room,
         room_key,
         position,
-        UpgradeWsCode::HAND_UPDATED,
+        UpgradeWsCode::HAND_UPDATED as i32,
         WsUpgradeHandEvent {
             position: position as i32,
             cards: hand,
@@ -219,7 +356,7 @@ fn send_private<T: serde::Serialize>(
     room: &RoomService,
     room_key: &str,
     position: usize,
-    code: UpgradeWsCode,
+    code: i32,
     payload: T,
     dispatch: &mut Dispatch,
 ) {
@@ -233,7 +370,22 @@ fn send_private<T: serde::Serialize>(
     dispatch.messages.push(Delivery {
         recipient: session_id,
         payload: OutboundPayload::Event(CommonEvent {
-            code: code as i32,
+            code,
+            data: serde_json::to_value(payload).unwrap_or_default(),
+        }),
+    });
+}
+
+fn push_private<T: serde::Serialize>(
+    dispatch: &mut Dispatch,
+    recipient: SessionId,
+    code: i32,
+    payload: T,
+) {
+    dispatch.messages.push(Delivery {
+        recipient,
+        payload: OutboundPayload::Event(CommonEvent {
+            code,
             data: serde_json::to_value(payload).unwrap_or_default(),
         }),
     });
@@ -250,3 +402,7 @@ async fn deliver(dispatch: Dispatch, senders: &SessionSenders) {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "game_loop/tests.rs"]
+mod tests;

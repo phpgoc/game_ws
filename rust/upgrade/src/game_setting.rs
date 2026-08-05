@@ -6,6 +6,8 @@ use ws_common::GameSettings;
 use crate::UpgradeDeckCount;
 
 pub const KEY_DECK_COUNT: &str = "deck_count";
+pub const KEY_DEAL_TIME: &str = "deal_time";
+pub const KEY_FIRST_DEAL_TIME: &str = "first_deal_time";
 pub const KEY_PLAY_TIME: &str = "play_time";
 pub const KEY_ATTACKING_WIN_SCORE: &str = "attacking_win_score";
 pub const KEY_SCORE_PER_LEVEL: &str = "score_per_level";

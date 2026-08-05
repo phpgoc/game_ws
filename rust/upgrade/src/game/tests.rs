@@ -1,6 +1,8 @@
 use serde_json::json;
 use share_type_public::{GameId, Routes, WsResponseCode};
-use ws_common::{ClientRequest, GameHandler, OutboundPayload, RequestResponse, RoomService};
+use ws_common::{
+    ClientRequest, GameHandler, GameState, OutboundPayload, RequestResponse, RoomService,
+};
 
 use super::UpgradeGameHandler;
 
@@ -87,18 +89,10 @@ fn owner_can_start_the_next_round_after_settlement() {
     let started = handler.handle_start(&mut room, 1);
     assert_eq!(response_code(&started), Some(WsResponseCode::OK as i32));
     let state = handler.state("upgrade-room").unwrap();
-    assert_eq!(
-        state.lock().unwrap().base.lock().unwrap().turn_countdown,
-        90
-    );
-    let bottom = state.lock().unwrap().bottom_cards.clone();
-    let _ = handler.handle_bury_bottom(&mut room, 1, json!({ "cards": bottom }));
-    assert_eq!(
-        state.lock().unwrap().base.lock().unwrap().turn_countdown,
-        30
-    );
     {
         let mut state = state.lock().unwrap();
+        assert_eq!(state.phase, share_type_public::UpgradePhase::Deal);
+        assert_eq!(state.base.lock().unwrap().turn_countdown, 0);
         state.phase = share_type_public::UpgradePhase::Settlement;
         state.collected_scores.insert(1, 5);
     }
@@ -109,9 +103,16 @@ fn owner_can_start_the_next_round_after_settlement() {
     {
         let state = state.lock().unwrap();
         assert_eq!(state.round_index, 1);
-        assert_eq!(state.phase, share_type_public::UpgradePhase::Bury);
+        assert_eq!(state.phase, share_type_public::UpgradePhase::Deal);
         assert_eq!(state.rules.target_rank, upgrade_common::Rank::Five);
-        assert_eq!(state.base.lock().unwrap().turn_countdown, 90);
+        assert_eq!(state.base.lock().unwrap().turn_countdown, 0);
+    }
+    {
+        let mut state = state.lock().unwrap();
+        while state.phase == share_type_public::UpgradePhase::Deal {
+            state.deal_next_card().expect("next later-round deal card");
+        }
+        state.set_turn_countdown(90);
     }
     let bottom = state.lock().unwrap().bottom_cards.clone();
     let _ = handler.handle_select_trump(

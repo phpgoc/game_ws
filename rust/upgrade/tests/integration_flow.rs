@@ -92,7 +92,7 @@ async fn wait_for_response(client: &mut Client, route: i32) -> Value {
 
 async fn wait_for_event(client: &mut Client, code: i32) -> Value {
     loop {
-        let frame = tokio::time::timeout(Duration::from_secs(5), client.next())
+        let frame = tokio::time::timeout(Duration::from_secs(25), client.next())
             .await
             .expect("event timeout")
             .expect("event frame")
@@ -110,6 +110,15 @@ async fn wait_for_snapshot_at_least(client: &mut Client, trick_index: i32) -> Va
     loop {
         let snapshot = wait_for_event(client, WsCode::TABLE_SNAPSHOT as i32).await;
         if snapshot["data"]["trick_index"].as_i64().unwrap_or_default() >= i64::from(trick_index) {
+            return snapshot;
+        }
+    }
+}
+
+async fn wait_for_phase(client: &mut Client, phase: share_type_public::UpgradePhase) -> Value {
+    loop {
+        let snapshot = wait_for_event(client, WsCode::TABLE_SNAPSHOT as i32).await;
+        if snapshot["data"]["phase"] == json!(phase as i8) {
             return snapshot;
         }
     }
@@ -177,47 +186,41 @@ async fn four_players_can_deal_bury_and_play_first_round() {
     }
 
     send_request(&mut clients[0], Routes::START as i32, Value::Null).await;
-    let declaration = wait_for_event(&mut clients[0], UpgradeWsCode::TRUMP_DECLARED as i32).await;
-    assert_eq!(declaration["data"]["target_rank"], json!(3));
-    let owner_hand = wait_for_event(&mut clients[0], UpgradeWsCode::HAND_UPDATED as i32).await;
-    assert_eq!(owner_hand["data"]["position"], json!(0));
-    assert_eq!(owner_hand["data"]["cards"].as_array().unwrap().len(), 48);
-    let bottom = wait_for_event(&mut clients[0], UpgradeWsCode::BOTTOM_CARDS as i32).await;
-    let bottom_cards = bottom["data"]["cards"].clone();
-    assert_eq!(bottom_cards.as_array().unwrap().len(), 10);
     let started = wait_for_response(&mut clients[0], Routes::START as i32).await;
     assert_eq!(started["code"], json!(WsResponseCode::OK as i32));
-
-    let mut hands = vec![
-        owner_hand["data"]["cards"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|card| card.as_i64().unwrap() as i32)
-            .collect::<Vec<_>>(),
-    ];
-    for client in clients.iter_mut().skip(1) {
+    let declaration = wait_for_event(&mut clients[0], UpgradeWsCode::TRUMP_DECLARED as i32).await;
+    assert_eq!(declaration["data"]["target_rank"], json!(3));
+    let dealer = declaration["data"]["position"].as_u64().unwrap() as usize;
+    let mut hands = Vec::new();
+    for (position, client) in clients.iter_mut().enumerate() {
         let hand = wait_for_event(client, UpgradeWsCode::HAND_UPDATED as i32).await;
-        assert_eq!(hand["data"]["cards"].as_array().unwrap().len(), 38);
+        assert_eq!(hand["data"]["position"], json!(position));
+        assert_eq!(
+            hand["data"]["cards"].as_array().unwrap().len(),
+            if position == dealer { 48 } else { 38 }
+        );
         hands.push(
             hand["data"]["cards"]
                 .as_array()
                 .unwrap()
                 .iter()
                 .map(|card| card.as_i64().unwrap() as i32)
-                .collect(),
+                .collect::<Vec<_>>(),
         );
     }
+    let bottom = wait_for_event(&mut clients[dealer], UpgradeWsCode::BOTTOM_CARDS as i32).await;
+    let bottom_cards = bottom["data"]["cards"].clone();
+    assert_eq!(bottom_cards.as_array().unwrap().len(), 10);
 
     send_request(
-        &mut clients[0],
+        &mut clients[dealer],
         UpgradeRoutes::BURY_BOTTOM as i32,
         json!({ "cards": bottom_cards }),
     )
     .await;
-    let snapshot = wait_for_snapshot_at_least(&mut clients[0], 0).await;
+    let snapshot = wait_for_phase(&mut clients[dealer], UpgradePhase::Play).await;
     assert_eq!(snapshot["data"]["phase"], json!(UpgradePhase::Play as i8));
-    let buried = wait_for_response(&mut clients[0], UpgradeRoutes::BURY_BOTTOM as i32).await;
+    let buried = wait_for_response(&mut clients[dealer], UpgradeRoutes::BURY_BOTTOM as i32).await;
     assert_eq!(buried["code"], json!(WsResponseCode::OK as i32));
     let trump_suit = match snapshot["data"]["trump_suit"].as_i64().unwrap() {
         0 => upgrade_common::Suit::Spade,
@@ -229,13 +232,13 @@ async fn four_players_can_deal_bury_and_play_first_round() {
 
     for card in bottom["data"]["cards"].as_array().unwrap() {
         let card = card.as_i64().unwrap() as i32;
-        let index = hands[0]
+        let index = hands[dealer]
             .iter()
             .position(|candidate| *candidate == card)
             .unwrap();
-        hands[0].remove(index);
+        hands[dealer].remove(index);
     }
-    let lead = hands[0][0];
+    let lead = hands[dealer][0];
     let lead_card = upgrade_common::Card::try_from(lead).unwrap();
     let lead_group = if lead_card.suit() == Some(trump_suit)
         || lead_card.suit().is_none()
@@ -245,8 +248,9 @@ async fn four_players_can_deal_bury_and_play_first_round() {
     } else {
         lead_card.suit()
     };
-    for position in 0..4 {
-        let card = if position == 0 {
+    for play_index in 0..4 {
+        let position = (dealer + play_index) % 4;
+        let card = if position == dealer {
             lead
         } else {
             hands[position]
@@ -271,8 +275,8 @@ async fn four_players_can_deal_bury_and_play_first_round() {
         let played = wait_for_event(client, WsCode::PLAY as i32).await;
         assert_eq!(played["data"]["cards"].as_array().unwrap().len(), 1);
         let play_snapshot =
-            wait_for_snapshot_at_least(client, if position == 3 { 1 } else { 0 }).await;
-        if position == 3 {
+            wait_for_snapshot_at_least(client, if play_index == 3 { 1 } else { 0 }).await;
+        if play_index == 3 {
             assert_eq!(play_snapshot["data"]["trick_index"], json!(1));
         }
         let response = wait_for_response(client, Routes::PLAY as i32).await;

@@ -18,18 +18,59 @@ fn rules(deck_count: u8) -> UpgradeRules {
     }
 }
 
+fn finish_deal(state: &mut UpgradeGameState) {
+    while state.phase == UpgradePhase::Deal {
+        state.deal_next_card().expect("next upgrade deal card");
+    }
+}
+
 #[test]
 fn deal_has_four_even_hands_and_private_bottom() {
     let common = Arc::new(Mutex::new(CommonGameState::new()));
     let mut state = UpgradeGameState::from_common(common);
     state.deal_new_round(rules(4)).unwrap();
 
+    assert_eq!(state.phase, UpgradePhase::Deal);
+    assert_eq!(state.total_deal_count, 208);
+    assert!(state.hands.values().all(Vec::is_empty));
+    finish_deal(&mut state);
     assert_eq!(state.phase, UpgradePhase::Bury);
     assert_eq!(state.bottom_cards.len(), 8);
     assert_eq!(state.hand_count(), 52);
     assert_eq!(state.hands[&0].len(), 60);
     assert!((1..4).all(|position| state.hands[&position].len() == 52));
-    assert_eq!(state.dealt_count, 216);
+    assert_eq!(state.dealt_count, 208);
+    assert_eq!(
+        state.declaration.as_ref().map(|item| item.target_rank),
+        Some(UpgradeRank::THREE)
+    );
+    assert!(state.rules.trump_suit.is_some());
+}
+
+#[test]
+fn first_round_declarations_reveal_three_and_only_stronger_copies_can_take_over() {
+    let common = Arc::new(Mutex::new(CommonGameState::new()));
+    for position in 0..4 {
+        common
+            .lock()
+            .unwrap()
+            .add_player(position, position as u64 + 1, &format!("p{position}"));
+    }
+    let mut state = UpgradeGameState::from_common(common);
+    state.phase = UpgradePhase::Deal;
+    state.rules = rules(3);
+    state.hands.insert(0, vec![2]);
+    state.hands.insert(1, vec![15, 115]);
+
+    let first = state.declare_trump(0, vec![2]).unwrap();
+    assert_eq!(first.target_rank, UpgradeRank::THREE);
+    assert_eq!(first.strength, 1);
+    assert!(state.declare_trump(1, vec![15]).is_err());
+
+    let stronger = state.declare_trump(1, vec![15, 115]).unwrap();
+    assert_eq!(stronger.target_rank, UpgradeRank::THREE);
+    assert_eq!(stronger.strength, 2);
+    assert_eq!(state.dealer_position, 1);
 }
 
 #[test]
@@ -37,6 +78,7 @@ fn later_round_selects_trump_then_buries_in_one_operation_window() {
     let common = Arc::new(Mutex::new(CommonGameState::new()));
     let mut state = UpgradeGameState::from_common(common);
     state.deal_new_round(rules(3)).unwrap();
+    finish_deal(&mut state);
     let bottom = state.bottom_cards.clone();
     state.bury_bottom(0, bottom).unwrap();
     assert_eq!(state.phase, UpgradePhase::Play);
@@ -46,6 +88,7 @@ fn later_round_selects_trump_then_buries_in_one_operation_window() {
     let mut later_round = UpgradeGameState::from_common(common);
     later_round.round_index = 1;
     later_round.deal_new_round(rules(3)).unwrap();
+    finish_deal(&mut later_round);
     let bottom = later_round.bottom_cards.clone();
     assert!(later_round.bury_bottom(0, bottom).is_err());
     assert_eq!(later_round.phase, UpgradePhase::Bury);
@@ -54,6 +97,7 @@ fn later_round_selects_trump_then_buries_in_one_operation_window() {
     let mut later_round = UpgradeGameState::from_common(common);
     later_round.round_index = 1;
     later_round.deal_new_round(rules(3)).unwrap();
+    finish_deal(&mut later_round);
     let bottom = later_round.bottom_cards.clone();
     later_round.select_trump(0, UpgradeSuit::HEART).unwrap();
     assert_eq!(later_round.rules.trump_suit, Some(Suit::Heart));
@@ -158,7 +202,7 @@ fn settlement_can_start_the_next_round_and_raise_target_rank() {
     }
 
     assert!(state.advance_after_settlement().unwrap());
-    assert_eq!(state.phase, UpgradePhase::Bury);
+    assert_eq!(state.phase, UpgradePhase::Deal);
     assert_eq!(state.round_index, 1);
     assert_eq!(state.rules.target_rank, Rank::Five);
     assert_eq!(state.rules.trump_suit, None);
@@ -186,6 +230,7 @@ fn timeout_actions_keep_the_game_moving_without_a_human_request() {
     let common = Arc::new(Mutex::new(CommonGameState::new()));
     let mut state = UpgradeGameState::from_common(common);
     state.deal_new_round(rules(3)).unwrap();
+    finish_deal(&mut state);
     state.set_turn_countdown(0);
     assert!(state.timeout_bury().unwrap());
     assert_eq!(state.phase, UpgradePhase::Play);
