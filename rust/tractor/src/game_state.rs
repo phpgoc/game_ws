@@ -8,7 +8,9 @@ use share_type_public::{
     TractorPhase, TractorRank, TractorSuit, WsTractorFailedThrowEvent, WsTractorPlayedCards,
     WsTractorPlayerHandCount, WsTractorTableSnapshotEvent, WsTractorTrumpDeclaration,
 };
-use upgrade_common::{Card, ScoreOutcome, ScoreProgression};
+use upgrade_common::{
+    Card, Rank, ScoreOutcome, ScoreProgression, level_rank_path, next_level_rank,
+};
 use ws_common::{CommonGameState, GameState};
 
 use crate::combo::{self, Combo};
@@ -202,24 +204,21 @@ fn next_match_rank(
     final_target_rank: TractorRank,
     levels: usize,
 ) -> Option<TractorRank> {
-    let path = tractor_rank_path(removed_rank_count, final_target_rank);
-    let index = path.iter().position(|rank| *rank == current_rank)?;
-    if index + 1 >= path.len() {
-        return None;
-    }
-    path.get((index + levels.max(1)).min(path.len() - 1))
-        .copied()
+    let excluded = removed_tractor_ranks(removed_rank_count)
+        .into_iter()
+        .map(common_rank)
+        .collect::<Vec<_>>();
+    next_level_rank(
+        common_rank(current_rank),
+        common_rank(final_target_rank),
+        &excluded,
+        levels,
+    )
+    .and_then(tractor_rank)
 }
 
 fn played_score(cards: &[i32]) -> i32 {
     cards.iter().map(|card| card_score(*card)).sum()
-}
-
-fn rank_is_removed(removed_rank_count: usize, rank: TractorRank) -> bool {
-    REMOVABLE_RANKS
-        .iter()
-        .take(removed_rank_count.min(REMOVABLE_RANKS.len()))
-        .any(|item| *item == rank)
 }
 
 fn remove_cards_from_hand(hand: &mut Vec<i32>, cards: &[i32]) -> Result<(), &'static str> {
@@ -295,27 +294,51 @@ pub fn tractor_rank_path(
     removed_rank_count: usize,
     final_target_rank: TractorRank,
 ) -> Vec<TractorRank> {
-    let mut out = Vec::new();
-    for rank in TRACTOR_RANKS {
-        if rank as i32 > final_target_rank as i32 {
-            break;
-        }
-        if !rank_is_removed(removed_rank_count, rank) {
-            out.push(rank);
-        }
+    let excluded = removed_tractor_ranks(removed_rank_count)
+        .into_iter()
+        .map(common_rank)
+        .collect::<Vec<_>>();
+    level_rank_path(common_rank(final_target_rank), &excluded)
+        .into_iter()
+        .filter_map(tractor_rank)
+        .collect()
+}
+
+fn common_rank(rank: TractorRank) -> Rank {
+    match rank {
+        TractorRank::TWO => Rank::Two,
+        TractorRank::THREE => Rank::Three,
+        TractorRank::FOUR => Rank::Four,
+        TractorRank::FIVE => Rank::Five,
+        TractorRank::SIX => Rank::Six,
+        TractorRank::SEVEN => Rank::Seven,
+        TractorRank::EIGHT => Rank::Eight,
+        TractorRank::NINE => Rank::Nine,
+        TractorRank::TEN => Rank::Ten,
+        TractorRank::J => Rank::Jack,
+        TractorRank::Q => Rank::Queen,
+        TractorRank::K => Rank::King,
+        TractorRank::A => Rank::Ace,
     }
-    if out.is_empty() {
-        // The configured finishing rank may itself have been removed. The
-        // match still has to start on a rank that exists in the compact deck,
-        // even when that first retained rank is above the requested finish.
-        if let Some(first_retained) = TRACTOR_RANKS
-            .into_iter()
-            .find(|rank| !rank_is_removed(removed_rank_count, *rank))
-        {
-            out.push(first_retained);
-        }
+}
+
+fn tractor_rank(rank: Rank) -> Option<TractorRank> {
+    match rank {
+        Rank::Two => Some(TractorRank::TWO),
+        Rank::Three => Some(TractorRank::THREE),
+        Rank::Four => Some(TractorRank::FOUR),
+        Rank::Five => Some(TractorRank::FIVE),
+        Rank::Six => Some(TractorRank::SIX),
+        Rank::Seven => Some(TractorRank::SEVEN),
+        Rank::Eight => Some(TractorRank::EIGHT),
+        Rank::Nine => Some(TractorRank::NINE),
+        Rank::Ten => Some(TractorRank::TEN),
+        Rank::Jack => Some(TractorRank::J),
+        Rank::Queen => Some(TractorRank::Q),
+        Rank::King => Some(TractorRank::K),
+        Rank::Ace => Some(TractorRank::A),
+        Rank::SmallJoker | Rank::BigJoker => None,
     }
-    out
 }
 
 pub(crate) fn tractor_suit_from_index(suit: i32) -> Option<TractorSuit> {
