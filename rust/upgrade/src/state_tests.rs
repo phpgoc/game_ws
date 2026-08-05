@@ -33,7 +33,7 @@ fn deal_has_four_even_hands_and_private_bottom() {
 }
 
 #[test]
-fn bury_then_select_trump_enters_play() {
+fn later_round_selects_trump_then_buries_in_one_operation_window() {
     let common = Arc::new(Mutex::new(CommonGameState::new()));
     let mut state = UpgradeGameState::from_common(common);
     state.deal_new_round(rules(3)).unwrap();
@@ -47,10 +47,19 @@ fn bury_then_select_trump_enters_play() {
     later_round.round_index = 1;
     later_round.deal_new_round(rules(3)).unwrap();
     let bottom = later_round.bottom_cards.clone();
-    later_round.bury_bottom(0, bottom).unwrap();
+    assert!(later_round.bury_bottom(0, bottom).is_err());
     assert_eq!(later_round.phase, UpgradePhase::Bury);
+
+    let common = Arc::new(Mutex::new(CommonGameState::new()));
+    let mut later_round = UpgradeGameState::from_common(common);
+    later_round.round_index = 1;
+    later_round.deal_new_round(rules(3)).unwrap();
+    let bottom = later_round.bottom_cards.clone();
     later_round.select_trump(0, UpgradeSuit::HEART).unwrap();
     assert_eq!(later_round.rules.trump_suit, Some(Suit::Heart));
+    assert_eq!(later_round.phase, UpgradePhase::Bury);
+    later_round.bury_bottom(0, bottom).unwrap();
+    assert_eq!(later_round.phase, UpgradePhase::Play);
 }
 
 fn playing_state(hands: HashMap<usize, Vec<i32>>) -> UpgradeGameState {

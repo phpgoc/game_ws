@@ -261,6 +261,7 @@ impl UpgradeGameState {
         if self.phase != UpgradePhase::Bury
             || self.buried
             || position != self.dealer_position
+            || self.rules.trump_suit.is_none()
             || cards.len() != self.rules.bottom_card_count
         {
             return Err("not allowed to bury bottom");
@@ -277,7 +278,8 @@ impl UpgradeGameState {
 
     pub fn select_trump(&mut self, position: usize, suit: UpgradeSuit) -> Result<(), &'static str> {
         if self.phase != UpgradePhase::Bury
-            || !self.buried
+            || self.round_index == 0
+            || self.buried
             || position != self.dealer_position
             || self.rules.trump_suit.is_some()
         {
@@ -290,8 +292,6 @@ impl UpgradeGameState {
             UpgradeSuit::DIAMOND => Suit::Diamond,
         };
         self.rules.trump_suit = Some(suit);
-        self.phase = UpgradePhase::Play;
-        self.current_position = self.dealer_position;
         Ok(())
     }
 
@@ -651,6 +651,9 @@ impl UpgradeGameState {
         if self.phase != UpgradePhase::Bury || self.current_position != self.dealer_position {
             return Ok(false);
         }
+        if self.round_index > 0 && self.rules.trump_suit.is_none() {
+            self.select_trump(self.dealer_position, UpgradeSuit::SPADE)?;
+        }
         let cards = self
             .private_hand(self.dealer_position)
             .into_iter()
@@ -660,9 +663,6 @@ impl UpgradeGameState {
             return Ok(false);
         }
         self.bury_bottom(self.dealer_position, cards)?;
-        if self.rules.trump_suit.is_none() {
-            self.select_trump(self.dealer_position, UpgradeSuit::SPADE)?;
-        }
         Ok(true)
     }
 

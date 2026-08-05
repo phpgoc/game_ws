@@ -401,14 +401,9 @@ impl UpgradeGameHandler {
         let Some(state) = self.current_state(room_service, &room_key) else {
             return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
         };
-        let play_time = Self::play_time(&room_service.room_configs(&room_key).unwrap_or_default());
         let result = {
             let mut state_guard = state.lock().unwrap();
-            let result = state_guard.select_trump(position, request.trump_suit);
-            if result.is_ok() {
-                state_guard.set_turn_countdown(play_time);
-            }
-            result
+            state_guard.select_trump(position, request.trump_suit)
         };
         if result.is_err() {
             return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
