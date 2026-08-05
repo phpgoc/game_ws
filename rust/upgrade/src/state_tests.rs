@@ -223,6 +223,55 @@ fn level_and_main_level_cards_beat_an_ordinary_trump_ace() {
 }
 
 #[test]
+fn pair_on_the_last_trick_doubles_the_bottom_score() {
+    let mut state = playing_state(HashMap::from([
+        (0, vec![3, 103]),
+        (1, vec![5, 105]),
+        (2, vec![6, 106]),
+        (3, vec![7, 107]),
+    ]));
+    state.bottom_cards = vec![9];
+
+    for (position, cards) in [
+        (0, vec![3, 103]),
+        (1, vec![5, 105]),
+        (2, vec![6, 106]),
+        (3, vec![7, 107]),
+    ] {
+        state.play_cards(position, cards).unwrap();
+    }
+
+    assert_eq!(state.last_trick_winner, Some(3));
+    assert_eq!(state.bottom_multiplier, 2);
+    assert_eq!(state.collected_scores.get(&3), Some(&20));
+}
+
+#[test]
+fn successful_long_throw_uses_only_its_largest_component_for_bottom_score() {
+    let lead = vec![13, 113, 213, 11, 111, 10];
+    let mut state = playing_state(HashMap::from([
+        (0, lead.clone()),
+        (1, vec![2, 3, 5, 6, 7, 8]),
+        (2, vec![102, 103, 105, 106, 107, 108]),
+        (3, vec![202, 203, 205, 206, 207, 208]),
+    ]));
+    state.bottom_cards = vec![9];
+
+    for (position, cards) in [
+        (0, lead),
+        (1, vec![2, 3, 5, 6, 7, 8]),
+        (2, vec![102, 103, 105, 106, 107, 108]),
+        (3, vec![202, 203, 205, 206, 207, 208]),
+    ] {
+        state.play_cards(position, cards).unwrap();
+    }
+
+    assert_eq!(state.last_trick_winner, Some(0));
+    assert_eq!(state.bottom_multiplier, 3);
+    assert_eq!(state.collected_scores.get(&0), Some(&30));
+}
+
+#[test]
 fn settlement_can_start_the_next_round_and_raise_target_rank() {
     let mut state = playing_state(HashMap::from([
         (0, vec![4]),

@@ -454,7 +454,9 @@ impl UpgradeGameState {
             .max()?;
         for played in self.current_trick.iter().skip(1) {
             let cards = Self::cards_from_ids(&played.cards).ok()?;
-            let candidate = combo::classify(&cards, rules)?;
+            let Some(candidate) = combo::classify(&cards, rules) else {
+                continue;
+            };
             if combo::lead_card_count(&candidate) != combo::lead_card_count(&lead_combo)
                 || candidate.kind != lead_combo.kind
             {
@@ -595,11 +597,7 @@ impl UpgradeGameState {
             self.bottom_multiplier = winning_cards
                 .as_ref()
                 .and_then(|cards| Self::cards_from_ids(cards).ok())
-                .and_then(|cards| {
-                    combo::classify(&cards, rules).map(|classified| (classified, cards))
-                })
-                .filter(|(classified, _)| matches!(classified.kind, ComboKind::Throw { .. }))
-                .map(|(_, cards)| combo::bottom_multiplier(&cards))
+                .map(|cards| combo::bottom_multiplier(&cards))
                 .unwrap_or(1);
             self.last_trick_winner = winner;
             self.current_trick.clear();
