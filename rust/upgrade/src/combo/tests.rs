@@ -115,3 +115,43 @@ fn higher_pair_forces_a_three_pair_throw_back_to_its_lowest_pair() {
         vec![Rank::Six, Rank::Six,]
     );
 }
+
+#[test]
+fn pair_follow_cannot_be_split_when_a_pair_is_available() {
+    let hand = cards(&[3, 103, 4, 5]);
+    let lead_cards = cards(&[2, 102]);
+    let lead = classify(&lead_cards, rules()).unwrap();
+
+    assert!(follow_is_legal(&hand, &cards(&[3, 103]), &lead, rules()));
+    assert!(!follow_is_legal(&hand, &cards(&[4, 5]), &lead, rules()));
+}
+
+#[test]
+fn triple_follow_preserves_the_largest_available_component() {
+    let hand = cards(&[3, 103, 4, 5]);
+    let lead_cards = cards(&[2, 102, 202]);
+    let lead = classify(&lead_cards, rules()).unwrap();
+
+    assert!(follow_is_legal(&hand, &cards(&[3, 103, 4]), &lead, rules()));
+    assert!(!follow_is_legal(&hand, &cards(&[3, 4, 5]), &lead, rules()));
+}
+
+#[test]
+fn throw_follow_keeps_each_non_consecutive_component_when_possible() {
+    let lead_cards = cards(&[2, 102, 202, 12, 112, 13]);
+    let lead = classify(&lead_cards, rules()).unwrap();
+    let hand = cards(&[3, 103, 4, 104, 5, 6, 7]);
+
+    assert!(follow_is_legal(
+        &hand,
+        &cards(&[3, 103, 4, 104, 5, 6]),
+        &lead,
+        rules()
+    ));
+    assert!(!follow_is_legal(
+        &hand,
+        &cards(&[3, 103, 4, 5, 6, 7]),
+        &lead,
+        rules()
+    ));
+}

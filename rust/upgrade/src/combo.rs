@@ -21,10 +21,13 @@ pub enum ComboKind {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Combo {
     pub kind: ComboKind,
     pub group: Option<Suit>,
+    /// Same-identity component sizes, largest first. They carry no
+    /// consecutive-run meaning in Upgrade.
+    pub multiplicities: Vec<usize>,
 }
 
 pub fn card_group(card: Card, rules: UpgradeComboRules) -> Option<Suit> {
@@ -81,6 +84,8 @@ pub fn classify(cards: &[Card], rules: UpgradeComboRules) -> Option<Combo> {
     let group = same_group(cards, rules)?;
     let counts = identity_groups(cards);
     let max_multiplicity = counts.values().map(Vec::len).max()?;
+    let mut multiplicities = counts.values().map(Vec::len).collect::<Vec<_>>();
+    multiplicities.sort_unstable_by(|left, right| right.cmp(left));
     let kind = match cards.len() {
         1 => ComboKind::Single,
         2 if max_multiplicity == 2 && counts.len() == 1 => ComboKind::Pair,
@@ -90,7 +95,11 @@ pub fn classify(cards: &[Card], rules: UpgradeComboRules) -> Option<Combo> {
             max_multiplicity,
         },
     };
-    Some(Combo { kind, group })
+    Some(Combo {
+        kind,
+        group,
+        multiplicities,
+    })
 }
 
 /// 将甩牌拆成独立的同身份组件，不产生拖拉机牌型。
@@ -202,7 +211,44 @@ pub fn follow_is_legal(
         .iter()
         .filter(|card| card_group(**card, rules) == lead.group)
         .count();
-    group_in_play >= group_in_hand.min(cards.len())
+    if group_in_play < group_in_hand.min(cards.len()) {
+        return false;
+    }
+
+    let grouped_hand = hand
+        .iter()
+        .copied()
+        .filter(|card| card_group(*card, rules) == lead.group)
+        .collect::<Vec<_>>();
+    let grouped_play = cards
+        .iter()
+        .copied()
+        .filter(|card| card_group(*card, rules) == lead.group)
+        .collect::<Vec<_>>();
+    component_follow_score(&grouped_play, &lead.multiplicities)
+        == component_follow_score(&grouped_hand, &lead.multiplicities)
+}
+
+fn component_follow_score(cards: &[Card], requirements: &[usize]) -> Vec<usize> {
+    let mut available = identity_groups(cards)
+        .into_values()
+        .map(|cards| cards.len())
+        .collect::<Vec<_>>();
+    let mut score = Vec::with_capacity(requirements.len());
+    for requirement in requirements {
+        let Some((index, matched)) = available
+            .iter()
+            .enumerate()
+            .map(|(index, count)| (index, (*count).min(*requirement)))
+            .max_by_key(|(_, matched)| *matched)
+        else {
+            score.push(0);
+            continue;
+        };
+        score.push(matched);
+        available[index] -= matched;
+    }
+    score
 }
 
 pub const fn lead_card_count(combo: &Combo) -> usize {
