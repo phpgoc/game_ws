@@ -5,13 +5,18 @@ use std::time::Instant;
 
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
-use share_type_public::{GameId, Routes, TractorWsCode, WsCode, WsResponseCode};
+use share_type_public::{
+    GameId, Routes, TractorRank, TractorSuit, TractorWsCode, WsCode, WsResponseCode,
+};
 use share_type_public::{GameParam, GameParamRange};
 #[cfg(not(feature = "official"))]
 use share_type_public::{TractorPhase, TractorRoutes};
+#[cfg(feature = "official")]
 use tokio::net::TcpListener as TokioTcpListener;
 use tokio_tungstenite::{WebSocketStream, connect_async, tungstenite::Message};
+use tractor::combo;
 use tractor::game::TractorGameHandler;
+use tractor::game_state::TractorRules;
 use ws_common::{
     ClientRequest, Dispatch, GameHandler, GameState, JoinAuthorization, JoinAuthorizationFuture,
     RoomService, SessionId, SessionSenders, SettingsBuilderResult,
@@ -56,6 +61,7 @@ impl GameHandler for TestTractorHandler {
             ("deal_time", 500),
             ("ai_action_time", 20),
             ("play_time", 1),
+            ("settlement_time", 1),
         ] {
             settings.values.insert(key.to_owned(), default);
             params.insert(
@@ -94,8 +100,15 @@ impl GameHandler for TestTractorHandler {
 }
 
 async fn connect_client(url: &str) -> Client {
-    let (ws, _) = connect_async(url).await.expect("connect websocket");
-    ws
+    for _ in 0..100 {
+        if let Ok(Ok((client, _))) =
+            tokio::time::timeout(Duration::from_millis(250), connect_async(url)).await
+        {
+            return client;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    panic!("tractor websocket server did not become ready");
 }
 
 fn free_port() -> u16 {
@@ -127,7 +140,7 @@ async fn join(client: &mut Client, name: &str, password: &str) -> Value {
 
 async fn recv_json(client: &mut Client, label: &str) -> Value {
     loop {
-        let frame = tokio::time::timeout(Duration::from_secs(15), client.next())
+        let frame = tokio::time::timeout(Duration::from_secs(60), client.next())
             .await
             .unwrap_or_else(|_| panic!("websocket message timeout while waiting for {label}"))
             .expect("websocket frame")
@@ -168,6 +181,64 @@ async fn send_request(client: &mut Client, route: i32, data: Value) {
         ))
         .await
         .expect("send request");
+}
+
+async fn collect_tractor_hand(
+    client: &mut Client,
+    position: usize,
+    expected_hand_size: usize,
+) -> Vec<i32> {
+    let mut hand = Vec::with_capacity(expected_hand_size);
+    while hand.len() < expected_hand_size {
+        let value = recv_json(client, "tractor private deal").await;
+        if value.get("code").and_then(Value::as_i64) != Some(WsCode::DEAL as i64) {
+            continue;
+        }
+        assert_eq!(value["data"]["position"], json!(position));
+        let cards = value["data"]["cards"].as_array().expect("deal cards");
+        assert_eq!(cards.len(), 1, "deal must be incremental");
+        hand.push(cards[0].as_i64().expect("card") as i32);
+    }
+    hand
+}
+
+async fn collect_tractor_hands(
+    clients: &mut [&mut Client; 4],
+    expected_hand_size: usize,
+) -> [Vec<i32>; 4] {
+    let (left, right) = clients.split_at_mut(2);
+    let (a, b) = left.split_at_mut(1);
+    let (c, d) = right.split_at_mut(1);
+    let (a, b, c, d) = tokio::join!(
+        collect_tractor_hand(&mut *a[0], 0, expected_hand_size),
+        collect_tractor_hand(&mut *b[0], 1, expected_hand_size),
+        collect_tractor_hand(&mut *c[0], 2, expected_hand_size),
+        collect_tractor_hand(&mut *d[0], 3, expected_hand_size),
+    );
+    [a, b, c, d]
+}
+
+async fn recv_tractor_bottom(client: &mut Client, dealer_position: usize) -> Value {
+    let bottom = recv_until(client, "tractor bottom cards", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(TractorWsCode::BOTTOM_CARDS as i64)
+    })
+    .await;
+    assert_eq!(bottom["data"]["position"], json!(dealer_position));
+    bottom
+}
+
+async fn recv_first_declaration(client: &mut Client) -> (Value, Option<Value>) {
+    let mut bottom = None;
+    loop {
+        let value = recv_json(client, "first tractor declaration").await;
+        match value.get("code").and_then(Value::as_i64) {
+            Some(code) if code == TractorWsCode::BOTTOM_CARDS as i64 => bottom = Some(value),
+            Some(code) if code == TractorWsCode::TRUMP_DECLARED as i64 => {
+                return (value, bottom);
+            }
+            _ => {}
+        }
+    }
 }
 
 #[cfg(feature = "official")]
@@ -289,13 +360,6 @@ async fn tractor_incremental_deal_full_deck_and_bury_flow() {
         TestTractorHandler::default(),
     ));
 
-    for _ in 0..50 {
-        if TokioTcpListener::bind(("127.0.0.1", port)).await.is_err() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
-
     let mut a = connect_client(&url).await;
     let mut b = connect_client(&url).await;
     let mut c = connect_client(&url).await;
@@ -319,7 +383,7 @@ async fn tractor_incremental_deal_full_deck_and_bury_flow() {
                 "target_rank": 11,
                 "first_deal_time": 1000,
                 "deal_time": 500,
-                "play_time": 10
+                "play_time": 30
             }
         }),
     )
@@ -334,6 +398,7 @@ async fn tractor_incremental_deal_full_deck_and_bury_flow() {
     send_request(&mut a, Routes::START as i32, json!({})).await;
 
     let mut clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
+    let mut hands: [Vec<i32>; 4] = std::array::from_fn(|_| Vec::new());
     let mut dealt_cards = Vec::new();
     let mut saw_declaration = false;
     let mut dealer_position = None;
@@ -345,8 +410,10 @@ async fn tractor_incremental_deal_full_deck_and_bury_flow() {
                 Some(code) if code == WsCode::DEAL as i64 => {
                     let cards = value["data"]["cards"].as_array().expect("deal cards");
                     assert_eq!(cards.len(), 1, "deal must be incremental");
+                    let card = cards[0].as_i64().expect("card") as i32;
+                    hands[client_position].push(card);
                     if client_position == 0 {
-                        dealt_cards.push(cards[0].as_i64().expect("card") as i32);
+                        dealt_cards.push(card);
                     }
                 }
                 Some(code) if code == TractorWsCode::TRUMP_DECLARED as i64 => {
@@ -380,7 +447,7 @@ async fn tractor_incremental_deal_full_deck_and_bury_flow() {
     send_request(
         dealer,
         TractorRoutes::BURY_BOTTOM as i32,
-        json!({ "cards": bottom_cards }),
+        json!({ "cards": bottom_cards.clone() }),
     )
     .await;
     let snapshot = recv_until(dealer, "play snapshot", |value| {
@@ -419,6 +486,431 @@ async fn tractor_incremental_deal_full_deck_and_bury_flow() {
         invalid_play["code"],
         json!(WsResponseCode::NO_PERMISSION as i32)
     );
+
+    hands[dealer_position].extend(bottom_cards.iter().copied());
+    for card in &bottom_cards {
+        let index = hands[dealer_position]
+            .iter()
+            .position(|candidate| candidate == card)
+            .expect("bottom card was dealt to dealer");
+        hands[dealer_position].remove(index);
+    }
+    let trump_suit = snapshot["data"]["trump_suit"]
+        .as_i64()
+        .map(|suit| match suit {
+            0 => TractorSuit::SPADE,
+            1 => TractorSuit::HEART,
+            2 => TractorSuit::CLUB,
+            3 => TractorSuit::DIAMOND,
+            _ => panic!("invalid trump suit"),
+        });
+    let rules = TractorRules {
+        attacking_win_score: 80,
+        score_per_level: 40,
+        shutout_bonus_levels: 1,
+        bottom_card_count: 8,
+        deck_count: 2,
+        final_target_rank: TractorRank::A,
+        target_rank: TractorRank::THREE,
+        trump_suit,
+    };
+    let lead = hands[dealer_position]
+        .first()
+        .copied()
+        .expect("dealer has a card after burying");
+    let lead_combo = combo::classify(&[lead], &rules).expect("single lead is valid");
+    for play_index in 0..4 {
+        let position = (dealer_position + play_index) % 4;
+        let card = if play_index == 0 {
+            lead
+        } else {
+            let hand = &hands[position];
+            hand.iter()
+                .copied()
+                .find(|candidate| combo::follow_is_legal(hand, &[*candidate], &lead_combo, &rules))
+                .or_else(|| hand.first().copied())
+                .expect("follower has a card")
+        };
+        let client = &mut *clients[position];
+        send_request(client, Routes::PLAY as i32, json!({ "cards": [card] })).await;
+        let played = recv_until(client, "tractor play event", |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::PLAY as i64)
+                && value["data"]["position"] == json!(position)
+        })
+        .await;
+        assert_eq!(
+            played["data"]["cards"],
+            json!([card]),
+            "position={position} dealer={dealer_position} requested={card} event={played} hands={hands:?}"
+        );
+        let play_snapshot = recv_until(client, "tractor trick snapshot", |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+                && value["data"]["phase"] == json!(TractorPhase::Play as i8)
+                && value["data"]["trick_index"] == json!(if play_index == 3 { 1 } else { 0 })
+        })
+        .await;
+        if play_index == 3 {
+            assert_eq!(play_snapshot["data"]["trick_index"], json!(1));
+        }
+        let response = recv_until(client, "tractor play response", |value| {
+            value.get("route").and_then(Value::as_i64) == Some(Routes::PLAY as i64)
+                && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+        })
+        .await;
+        assert_eq!(response["code"], json!(WsResponseCode::OK as i32));
+        let index = hands[position]
+            .iter()
+            .position(|candidate| *candidate == card)
+            .expect("played card was in the private hand");
+        hands[position].remove(index);
+    }
+
+    server.abort();
+}
+
+#[cfg(not(feature = "official"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn tractor_server_completes_round_and_enters_later_round() {
+    let port = free_port();
+    let listen_addr = format!("127.0.0.1:{port}");
+    let url = format!("ws://{listen_addr}");
+    let server = tokio::spawn(run_room_runtime(
+        RuntimeConfig {
+            service_name: "tractor-full-round-test",
+            listen_addr,
+            idle_timeout: Duration::from_secs(60),
+            heartbeat_interval: Duration::from_secs(60),
+        },
+        TestTractorHandler::default(),
+    ));
+
+    let mut a = connect_client(&url).await;
+    let mut b = connect_client(&url).await;
+    let mut c = connect_client(&url).await;
+    let mut d = connect_client(&url).await;
+    let room = "tractor-full-round-room";
+    join(&mut a, "a", room).await;
+    join(&mut b, "b", room).await;
+    join(&mut c, "c", room).await;
+    join(&mut d, "d", room).await;
+
+    send_request(
+        &mut a,
+        Routes::SETTING as i32,
+        json!({
+            "current_configs": {
+                "deck_count": 0,
+                "attacking_win_score": 80,
+                "score_per_level": 40,
+                "shutout_bonus_levels": 1,
+                "target_rank": 11,
+                "first_deal_time": 1000,
+                "deal_time": 500,
+                "play_time": 30,
+                "settlement_time": 1
+            }
+        }),
+    )
+    .await;
+    recv_until(&mut a, "full tractor setting response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::SETTING as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+    send_request(&mut a, Routes::START as i32, json!({})).await;
+    recv_until(&mut a, "full tractor start response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::START as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+
+    let mut clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
+    let mut first_hands = collect_tractor_hands(&mut clients, 25).await;
+    assert!(first_hands.iter().all(|hand| hand.len() == 25));
+    let (declaration, bottom_seen_by_first_client) = recv_first_declaration(&mut *clients[0]).await;
+    let first_dealer = declaration["data"]["position"]
+        .as_i64()
+        .expect("first dealer") as usize;
+    assert!(first_dealer < 4);
+    let bottom = if first_dealer == 0 {
+        match bottom_seen_by_first_client {
+            Some(bottom) => bottom,
+            None => recv_tractor_bottom(&mut *clients[first_dealer], first_dealer).await,
+        }
+    } else {
+        recv_tractor_bottom(&mut *clients[first_dealer], first_dealer).await
+    };
+    let first_bottom = bottom["data"]["cards"]
+        .as_array()
+        .expect("first bottom")
+        .iter()
+        .map(|card| card.as_i64().expect("bottom card") as i32)
+        .collect::<Vec<_>>();
+    assert_eq!(first_bottom.len(), 8);
+
+    send_request(
+        &mut *clients[first_dealer],
+        TractorRoutes::BURY_BOTTOM as i32,
+        json!({ "cards": first_bottom }),
+    )
+    .await;
+    let first_play_snapshot = recv_until(
+        &mut *clients[first_dealer],
+        "full tractor play phase",
+        |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+                && value["data"]["phase"] == json!(TractorPhase::Play as i8)
+        },
+    )
+    .await;
+    recv_until(
+        &mut *clients[first_dealer],
+        "full tractor bury response",
+        |value| {
+            value.get("route").and_then(Value::as_i64) == Some(TractorRoutes::BURY_BOTTOM as i64)
+                && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+        },
+    )
+    .await;
+    assert_eq!(first_play_snapshot["data"]["round_index"], json!(0));
+    assert_eq!(
+        first_play_snapshot["data"]["phase"],
+        json!(TractorPhase::Play as i8)
+    );
+
+    let trump_suit = first_play_snapshot["data"]["trump_suit"]
+        .as_i64()
+        .map(|suit| match suit {
+            0 => TractorSuit::SPADE,
+            1 => TractorSuit::HEART,
+            2 => TractorSuit::CLUB,
+            3 => TractorSuit::DIAMOND,
+            _ => panic!("invalid trump suit"),
+        });
+    let rules = TractorRules {
+        attacking_win_score: 80,
+        score_per_level: 40,
+        shutout_bonus_levels: 1,
+        bottom_card_count: 8,
+        deck_count: 2,
+        final_target_rank: TractorRank::A,
+        target_rank: TractorRank::THREE,
+        trump_suit,
+    };
+    let mut current_position = first_dealer;
+    let mut lead_combo = None;
+    let mut later_dealer = None;
+    for play_index in 0..100usize {
+        let hand = &first_hands[current_position];
+        let cards = match lead_combo {
+            None => vec![*hand.first().expect("lead hand")],
+            Some(ref lead) => combo::forced_follow(hand, lead, &rules).expect("legal follow"),
+        };
+        send_request(
+            &mut *clients[current_position],
+            Routes::PLAY as i32,
+            json!({ "cards": cards }),
+        )
+        .await;
+        let played = recv_until(
+            &mut *clients[current_position],
+            "full tractor play event",
+            |value| {
+                value.get("code").and_then(Value::as_i64) == Some(WsCode::PLAY as i64)
+                    && value["data"]["position"] == json!(current_position)
+            },
+        )
+        .await;
+        let played_cards = played["data"]["cards"]
+            .as_array()
+            .expect("played cards")
+            .iter()
+            .map(|card| card.as_i64().expect("played card") as i32)
+            .collect::<Vec<_>>();
+        assert!(!played_cards.is_empty());
+        for card in &played_cards {
+            let index = first_hands[current_position]
+                .iter()
+                .position(|candidate| candidate == card)
+                .expect("played card was in hand");
+            first_hands[current_position].remove(index);
+        }
+        let expected_trick_index = ((play_index + 1) / 4) as i64;
+        let expected_phase = if play_index + 1 == 100 {
+            TractorPhase::Settlement
+        } else {
+            TractorPhase::Play
+        };
+        let snapshot = recv_until(
+            &mut *clients[current_position],
+            "full tractor play snapshot",
+            |value| {
+                value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+                    && value["data"]["phase"] == json!(expected_phase as i8)
+                    && value["data"]["trick_index"] == json!(expected_trick_index)
+            },
+        )
+        .await;
+        assert_eq!(
+            snapshot["data"]["player_hand_counts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|entry| entry["hand_count"].as_i64().unwrap())
+                .sum::<i64>(),
+            (100 - play_index - 1) as i64
+        );
+        if play_index + 1 == 100 {
+            let game_over = recv_until(
+                &mut *clients[current_position],
+                "tractor game over",
+                |value| value.get("code").and_then(Value::as_i64) == Some(WsCode::GAME_OVER as i64),
+            )
+            .await;
+            assert!(
+                game_over["data"]["winner_positions"]
+                    .as_array()
+                    .is_some_and(|winners| !winners.is_empty())
+            );
+            assert!(
+                game_over["data"]["player_scores"]
+                    .as_object()
+                    .is_some_and(|scores| scores.len() == 4)
+            );
+            later_dealer = game_over["data"]["winner_positions"]
+                .as_array()
+                .and_then(|winners| winners.first())
+                .and_then(Value::as_i64)
+                .map(|position| position as usize);
+            recv_until(
+                &mut *clients[current_position],
+                "full tractor final play response",
+                |value| {
+                    value.get("route").and_then(Value::as_i64) == Some(Routes::PLAY as i64)
+                        && value.get("code").and_then(Value::as_i64)
+                            == Some(WsResponseCode::OK as i64)
+                },
+            )
+            .await;
+            break;
+        }
+        recv_until(
+            &mut *clients[current_position],
+            "full tractor play response",
+            |value| {
+                value.get("route").and_then(Value::as_i64) == Some(Routes::PLAY as i64)
+                    && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+            },
+        )
+        .await;
+        current_position = snapshot["data"]["current_position"]
+            .as_i64()
+            .expect("next tractor position") as usize;
+        if snapshot["data"]["current_trick"]
+            .as_array()
+            .is_some_and(|trick| trick.is_empty())
+        {
+            lead_combo = None;
+        } else {
+            let lead_card = snapshot["data"]["current_trick"][0]["cards"][0]
+                .as_i64()
+                .expect("lead card") as i32;
+            lead_combo = Some(combo::classify(&[lead_card], &rules).expect("single lead combo"));
+        }
+    }
+    assert!(first_hands.iter().all(Vec::is_empty));
+
+    let later_dealer = later_dealer.expect("later dealer from settlement");
+    assert!(later_dealer < 4);
+    let mut later_hands = collect_tractor_hands(&mut clients, 25).await;
+    let later_bottom_event = recv_tractor_bottom(&mut *clients[later_dealer], later_dealer).await;
+    let later_bottom = later_bottom_event["data"]["cards"]
+        .as_array()
+        .expect("later tractor bottom")
+        .iter()
+        .map(|card| card.as_i64().expect("bottom card") as i32)
+        .collect::<Vec<_>>();
+    assert_eq!(later_bottom.len(), 8);
+    send_request(
+        &mut *clients[later_dealer],
+        TractorRoutes::SELECT_TRUMP as i32,
+        json!({ "trump_suit": 0 }),
+    )
+    .await;
+    let selected_snapshot = recv_until(
+        &mut *clients[later_dealer],
+        "later tractor selected snapshot",
+        |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+                && value["data"]["round_index"] == json!(1)
+                && value["data"]["phase"] == json!(TractorPhase::Bury as i8)
+                && value["data"]["trump_suit"] != Value::Null
+        },
+    )
+    .await;
+    assert_eq!(selected_snapshot["data"]["trump_suit"], json!(0));
+    let selected = recv_until(
+        &mut *clients[later_dealer],
+        "later tractor select response",
+        |value| {
+            value.get("route").and_then(Value::as_i64) == Some(TractorRoutes::SELECT_TRUMP as i64)
+                && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+        },
+    )
+    .await;
+    assert_eq!(selected["code"], json!(WsResponseCode::OK as i32));
+    send_request(
+        &mut *clients[later_dealer],
+        TractorRoutes::BURY_BOTTOM as i32,
+        json!({ "cards": later_bottom }),
+    )
+    .await;
+    let later_play = recv_until(
+        &mut *clients[later_dealer],
+        "later tractor play snapshot",
+        |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+                && value["data"]["round_index"] == json!(1)
+                && value["data"]["phase"] == json!(TractorPhase::Play as i8)
+        },
+    )
+    .await;
+    recv_until(
+        &mut *clients[later_dealer],
+        "later tractor bury response",
+        |value| {
+            value.get("route").and_then(Value::as_i64) == Some(TractorRoutes::BURY_BOTTOM as i64)
+                && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+        },
+    )
+    .await;
+    let later_card = later_hands[later_dealer].pop().expect("later dealer card");
+    send_request(
+        &mut *clients[later_dealer],
+        Routes::PLAY as i32,
+        json!({ "cards": [later_card] }),
+    )
+    .await;
+    let later_play_event = recv_until(
+        &mut *clients[later_dealer],
+        "later tractor first play",
+        |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::PLAY as i64)
+                && value["data"]["position"] == json!(later_dealer)
+        },
+    )
+    .await;
+    assert_eq!(later_play_event["data"]["cards"], json!([later_card]));
+    assert_eq!(later_play["data"]["round_index"], json!(1));
+    recv_until(
+        &mut *clients[later_dealer],
+        "later tractor first play response",
+        |value| {
+            value.get("route").and_then(Value::as_i64) == Some(Routes::PLAY as i64)
+                && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+        },
+    )
+    .await;
 
     server.abort();
 }
