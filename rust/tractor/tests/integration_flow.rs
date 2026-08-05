@@ -955,3 +955,146 @@ async fn tractor_server_completes_round_and_enters_later_round() {
 
     server.abort();
 }
+
+#[cfg(not(feature = "official"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn tractor_three_deck_ws_deals_and_buries_the_correct_counts() {
+    let port = free_port();
+    let listen_addr = format!("127.0.0.1:{port}");
+    let url = format!("ws://{listen_addr}");
+    let server = tokio::spawn(run_room_runtime(
+        RuntimeConfig {
+            service_name: "tractor-three-deck-test",
+            listen_addr,
+            idle_timeout: Duration::from_secs(30),
+            heartbeat_interval: Duration::from_secs(30),
+        },
+        TestTractorHandler::default(),
+    ));
+
+    let mut a = connect_client(&url).await;
+    let mut b = connect_client(&url).await;
+    let mut c = connect_client(&url).await;
+    let mut d = connect_client(&url).await;
+    let room = "tractor-three-deck-room";
+    join(&mut a, "a", room).await;
+    join(&mut b, "b", room).await;
+    join(&mut c, "c", room).await;
+    join(&mut d, "d", room).await;
+
+    send_request(
+        &mut a,
+        Routes::SETTING as i32,
+        json!({
+            "current_configs": {
+                "deck_count": 1,
+                "attacking_win_score": 80,
+                "score_per_level": 40,
+                "shutout_bonus_levels": 1,
+                "first_deal_time": 1000,
+                "deal_time": 500,
+                "play_time": 30
+            }
+        }),
+    )
+    .await;
+    recv_until(&mut a, "three-deck setting response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::SETTING as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+    send_request(&mut a, Routes::START as i32, json!({})).await;
+    recv_until(&mut a, "three-deck start response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::START as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+
+    let mut clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
+    let hands = collect_tractor_hands(&mut clients, 38).await;
+    assert!(hands.iter().all(|hand| hand.len() == 38));
+    let (declaration, bottom_seen_by_first_client) = recv_first_declaration(&mut *clients[0]).await;
+    let dealer_position = declaration["data"]["position"]
+        .as_i64()
+        .expect("three-deck dealer") as usize;
+    assert!(dealer_position < 4);
+    let bottom_event = if dealer_position == 0 {
+        match bottom_seen_by_first_client {
+            Some(bottom) => bottom,
+            None => recv_tractor_bottom(&mut *clients[dealer_position], dealer_position).await,
+        }
+    } else {
+        recv_tractor_bottom(&mut *clients[dealer_position], dealer_position).await
+    };
+    let bottom_cards = bottom_event["data"]["cards"]
+        .as_array()
+        .expect("three-deck bottom cards")
+        .iter()
+        .map(|card| card.as_i64().expect("three-deck bottom card") as i32)
+        .collect::<Vec<_>>();
+    assert_eq!(bottom_cards.len(), 10);
+    assert_eq!(bottom_event["data"]["required_count"], json!(10));
+
+    send_request(
+        &mut *clients[dealer_position],
+        TractorRoutes::BURY_BOTTOM as i32,
+        json!({ "cards": &bottom_cards[..9] }),
+    )
+    .await;
+    let invalid_bury = recv_until(
+        &mut *clients[dealer_position],
+        "three-deck invalid bury",
+        |value| {
+            value.get("route").and_then(Value::as_i64) == Some(TractorRoutes::BURY_BOTTOM as i64)
+                && value.get("code").and_then(Value::as_i64)
+                    == Some(WsResponseCode::NO_PERMISSION as i64)
+        },
+    )
+    .await;
+    assert_eq!(
+        invalid_bury["code"],
+        json!(WsResponseCode::NO_PERMISSION as i32)
+    );
+
+    send_request(
+        &mut *clients[dealer_position],
+        TractorRoutes::BURY_BOTTOM as i32,
+        json!({ "cards": bottom_cards }),
+    )
+    .await;
+    let snapshot = recv_until(
+        &mut *clients[dealer_position],
+        "three-deck play snapshot",
+        |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+                && value["data"]["phase"] == json!(TractorPhase::Play as i8)
+        },
+    )
+    .await;
+    assert_eq!(snapshot["data"]["deck_count"], json!(3));
+    assert_eq!(snapshot["data"]["bottom_card_count"], json!(10));
+    assert_eq!(snapshot["data"]["hand_count"], json!(38));
+    assert_eq!(snapshot["data"]["dealt_count"], json!(152));
+    assert_eq!(snapshot["data"]["total_deal_count"], json!(152));
+    assert_eq!(
+        snapshot["data"]["player_hand_counts"]
+            .as_array()
+            .expect("three-deck hand counts")
+            .iter()
+            .map(|entry| entry["hand_count"].as_i64().expect("hand count"))
+            .sum::<i64>(),
+        152
+    );
+    let buried = recv_until(
+        &mut *clients[dealer_position],
+        "three-deck bury response",
+        |value| {
+            value.get("route").and_then(Value::as_i64) == Some(TractorRoutes::BURY_BOTTOM as i64)
+                && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+        },
+    )
+    .await;
+    assert_eq!(buried["code"], json!(WsResponseCode::OK as i32));
+
+    server.abort();
+}
