@@ -660,6 +660,139 @@ async fn tractor_incremental_deal_full_deck_and_bury_flow() {
 
 #[cfg(not(feature = "official"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn tractor_ws_rejoin_preserves_running_bury_state() {
+    let port = free_port();
+    let listen_addr = format!("127.0.0.1:{port}");
+    let url = format!("ws://{listen_addr}");
+    let server = tokio::spawn(run_room_runtime(
+        RuntimeConfig {
+            service_name: "tractor-rejoin-bury-test",
+            listen_addr,
+            idle_timeout: Duration::from_secs(30),
+            heartbeat_interval: Duration::from_secs(30),
+        },
+        TestTractorHandler::default(),
+    ));
+
+    let mut a = connect_client(&url).await;
+    let mut b = connect_client(&url).await;
+    let mut c = connect_client(&url).await;
+    let mut d = connect_client(&url).await;
+    let room = "tractor-rejoin-bury-room";
+    join(&mut a, "a", room).await;
+    join(&mut b, "b", room).await;
+    join(&mut c, "c", room).await;
+    join(&mut d, "d", room).await;
+
+    send_request(
+        &mut a,
+        Routes::SETTING as i32,
+        json!({
+            "current_configs": {
+                "deck_count": 0,
+                "target_rank": 11,
+                "first_deal_time": 1,
+                "deal_time": 1,
+                "play_time": 30
+            }
+        }),
+    )
+    .await;
+    recv_until(&mut a, "rejoin setting response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::SETTING as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+    send_request(&mut a, Routes::START as i32, json!({})).await;
+    recv_until(&mut a, "rejoin start response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::START as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+
+    let mut clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
+    let hands = collect_tractor_hands(&mut clients, 25).await;
+    let (declaration, bottom_seen_by_a) = recv_first_declaration(&mut *clients[0]).await;
+    let dealer_position = declaration["data"]["position"]
+        .as_i64()
+        .expect("rejoin dealer position") as usize;
+    let bottom = if dealer_position == 0 {
+        match bottom_seen_by_a {
+            Some(bottom) => bottom,
+            None => recv_tractor_bottom(&mut *clients[0], 0).await,
+        }
+    } else {
+        recv_tractor_bottom(&mut *clients[dealer_position], dealer_position).await
+    };
+    let bottom_cards = bottom["data"]["cards"]
+        .as_array()
+        .expect("rejoin bottom cards")
+        .iter()
+        .map(|card| card.as_i64().expect("rejoin bottom card") as i32)
+        .collect::<Vec<_>>();
+    assert_eq!(bottom_cards.len(), 8);
+
+    // The old socket is deliberately closed while the game is waiting for
+    // the dealer to bury. The replacement must reclaim the same seat instead
+    // of receiving a fresh position or resetting the game state.
+    clients[0].close(None).await.expect("close player a socket");
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let mut rejoined = connect_client(&url).await;
+    let joined = join(&mut rejoined, "a", room).await;
+    assert_eq!(joined["data"]["self_position"], json!(0));
+    let hand_update = recv_until(&mut rejoined, "rejoined private hand", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(TractorWsCode::HAND_UPDATED as i64)
+    })
+    .await;
+    let restored_hand = hand_update["data"]["cards"]
+        .as_array()
+        .expect("rejoined hand cards")
+        .iter()
+        .map(|card| card.as_i64().expect("rejoined card") as i32)
+        .collect::<Vec<_>>();
+    let mut expected_hand = hands[0].clone();
+    if dealer_position == 0 {
+        expected_hand.extend(bottom_cards.iter().copied());
+    }
+    let mut restored_hand_sorted = restored_hand.clone();
+    let mut expected_hand_sorted = expected_hand;
+    restored_hand_sorted.sort_unstable();
+    expected_hand_sorted.sort_unstable();
+    assert_eq!(restored_hand_sorted, expected_hand_sorted);
+    let snapshot = recv_until(&mut rejoined, "rejoined bury snapshot", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+    })
+    .await;
+    assert_eq!(snapshot["data"]["phase"], json!(TractorPhase::Bury as i8));
+    assert_eq!(snapshot["data"]["round_index"], json!(0));
+
+    if dealer_position == 0 {
+        send_request(
+            &mut rejoined,
+            TractorRoutes::BURY_BOTTOM as i32,
+            json!({ "cards": bottom_cards }),
+        )
+        .await;
+        let buried = recv_until(&mut rejoined, "rejoined bury event", |value| {
+            value.get("code").and_then(Value::as_i64) == Some(TractorWsCode::BOTTOM_BURIED as i64)
+                && value["data"]["position"] == json!(0)
+        })
+        .await;
+        assert_eq!(buried["data"]["position"], json!(0));
+        let bury_response = recv_until(&mut rejoined, "rejoined bury response", |value| {
+            value.get("route").and_then(Value::as_i64) == Some(TractorRoutes::BURY_BOTTOM as i64)
+                && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+        })
+        .await;
+        assert_eq!(bury_response["code"], json!(WsResponseCode::OK as i32));
+    }
+
+    server.abort();
+}
+
+#[cfg(not(feature = "official"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn tractor_server_completes_round_and_enters_later_round() {
     let port = free_port();
     let listen_addr = format!("127.0.0.1:{port}");
