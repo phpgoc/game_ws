@@ -36,6 +36,26 @@ pub fn card_group(card: Card, rules: UpgradeComboRules) -> Option<Suit> {
     }
 }
 
+/// Comparison value inside an upgrade trick. Level cards sit above ordinary
+/// trump cards; the level card in the selected trump suit sits above the
+/// off-suit level cards, and jokers remain highest.
+pub fn card_strength(card: Card, rules: UpgradeComboRules) -> i32 {
+    if card_group(card, rules).is_none() {
+        if card.suit().is_none() {
+            return 1_200 + card.rank() as i32;
+        }
+        if card.rank() == rules.target_rank {
+            return if card.suit() == rules.trump_suit {
+                1_100
+            } else {
+                1_000
+            };
+        }
+        return 900 + card.rank() as i32;
+    }
+    card.rank() as i32
+}
+
 pub fn same_group(cards: &[Card], rules: UpgradeComboRules) -> Option<Option<Suit>> {
     let first = *cards.first()?;
     let group = card_group(first, rules);
@@ -88,8 +108,8 @@ pub fn throw_components(cards: &[Card], rules: UpgradeComboRules) -> Option<Vec<
             component.len(),
             component
                 .first()
-                .map(|card| card.rank())
-                .unwrap_or(Rank::Two),
+                .map(|card| card_strength(*card, rules))
+                .unwrap_or_default(),
             component
                 .first()
                 .map(|card| card.encoded())
@@ -105,7 +125,7 @@ pub fn bottom_multiplier(cards: &[Card]) -> usize {
 }
 
 fn component_beats(lead: &[Card], candidate: &[Card], rules: UpgradeComboRules) -> bool {
-    if lead.len() != candidate.len() {
+    if candidate.len() < lead.len() {
         return false;
     }
     let Some(lead_group) = same_group(lead, rules) else {
@@ -120,7 +140,9 @@ fn component_beats(lead: &[Card], candidate: &[Card], rules: UpgradeComboRules) 
     candidate
         .first()
         .zip(lead.first())
-        .is_some_and(|(candidate, lead)| candidate.rank() > lead.rank())
+        .is_some_and(|(candidate, lead)| {
+            card_strength(*candidate, rules) > card_strength(*lead, rules)
+        })
 }
 
 fn hand_components(hand: &[Card], group: Option<Suit>, rules: UpgradeComboRules) -> Vec<Vec<Card>> {

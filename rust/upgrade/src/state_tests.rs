@@ -167,6 +167,22 @@ fn higher_triple_forces_only_the_triple_component_back() {
 }
 
 #[test]
+fn failed_throw_uses_the_weakest_beatable_component_across_all_opponents() {
+    let attempted = vec![2, 102, 202, 5, 105, 13];
+    let mut state = playing_state(HashMap::from([
+        (0, attempted.clone()),
+        (1, vec![3, 103, 203]),
+        (2, vec![6, 106]),
+        (3, vec![20; 6]),
+    ]));
+    state.rules.target_rank = Rank::Two;
+
+    let result = state.play_cards(0, attempted).unwrap();
+
+    assert_eq!(result.played_cards, vec![5, 105]);
+}
+
+#[test]
 fn four_single_plays_finish_the_last_trick_and_settle() {
     let mut state = playing_state(HashMap::from([
         (0, vec![4]),
@@ -187,6 +203,23 @@ fn four_single_plays_finish_the_last_trick_and_settle() {
     assert_eq!(settlement.winner_positions, vec![0, 2]);
     assert_eq!(settlement.next_target_rank, Some(UpgradeRank::FIVE));
     assert!(!settlement.match_finished);
+}
+
+#[test]
+fn level_and_main_level_cards_beat_an_ordinary_trump_ace() {
+    let mut state = playing_state(HashMap::from([
+        (0, vec![26]),
+        (1, vec![2]),
+        (2, vec![15]),
+        (3, vec![14]),
+    ]));
+    state.rules.target_rank = Rank::Three;
+
+    for (position, card) in [(0, 26), (1, 2), (2, 15), (3, 14)] {
+        state.play_cards(position, vec![card]).unwrap();
+    }
+
+    assert_eq!(state.last_trick_winner, Some(2));
 }
 
 #[test]

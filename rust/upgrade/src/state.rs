@@ -446,10 +446,11 @@ impl UpgradeGameState {
         let lead_cards = Self::cards_from_ids(&lead.cards).ok()?;
         let lead_combo = combo::classify(&lead_cards, rules)?;
         let mut winner = usize::try_from(lead.position).ok()?;
+        let mut best_priority = if lead_combo.group.is_none() { 2 } else { 1 };
         let mut best = lead_cards
             .iter()
             .filter(|card| combo::card_group(**card, rules) == lead_combo.group)
-            .map(|card| card.rank())
+            .map(|card| combo::card_strength(*card, rules))
             .max()?;
         for played in self.current_trick.iter().skip(1) {
             let cards = Self::cards_from_ids(&played.cards).ok()?;
@@ -467,15 +468,17 @@ impl UpgradeGameState {
             if !competes {
                 continue;
             }
+            let priority = if candidate.group.is_none() { 2 } else { 1 };
             let Some(value) = cards
                 .iter()
                 .filter(|card| combo::card_group(**card, rules) == candidate.group)
-                .map(|card| card.rank())
+                .map(|card| combo::card_strength(*card, rules))
                 .max()
             else {
                 continue;
             };
-            if value > best {
+            if priority > best_priority || (priority == best_priority && value > best) {
+                best_priority = priority;
                 best = value;
                 winner = usize::try_from(played.position).ok()?;
             }
@@ -515,10 +518,25 @@ impl UpgradeGameState {
                 return Err("card is not in hand");
             }
             if matches!(lead_combo.kind, ComboKind::Throw { .. })
-                && let Some(fallback) = self.opponent_hands(position).find_map(|opponent| {
-                    let opponent_cards = Self::cards_from_ids(opponent).ok()?;
-                    combo::failed_throw_component(&decoded, &opponent_cards, rules)
-                })
+                && let Some(fallback) = self
+                    .opponent_hands(position)
+                    .filter_map(|opponent| {
+                        let opponent_cards = Self::cards_from_ids(opponent).ok()?;
+                        combo::failed_throw_component(&decoded, &opponent_cards, rules)
+                    })
+                    .min_by_key(|component| {
+                        (
+                            component.len(),
+                            component
+                                .first()
+                                .map(|card| combo::card_strength(*card, rules))
+                                .unwrap_or_default(),
+                            component
+                                .first()
+                                .map(|card| card.encoded())
+                                .unwrap_or_default(),
+                        )
+                    })
             {
                 let fallback_ids: Vec<i32> = fallback.iter().map(|card| card.encoded()).collect();
                 failed_throw = Some(WsUpgradeFailedThrowEvent {
