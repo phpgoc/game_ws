@@ -19,6 +19,7 @@ use crate::game_state::{LandlordLoopState, LandlordPlayRecord};
 const AI_ACTION_DELAY: Duration = Duration::from_millis(300);
 const AI_BOMB_SIGNAL_DELAY: Duration = Duration::from_millis(1_200);
 const AI_BOMB_SIGNAL_MIN_HISTORY: usize = 6;
+const DEFAULT_SETTLEMENT_TIME_SECONDS: u64 = 15;
 
 enum AutoBroadcastEvent {
     Call(WsCallLandlordEvent),
@@ -446,7 +447,11 @@ async fn handle_settlement_phase(
     }
     if sleep_or_stop(
         state,
-        Duration::from_secs(fixed_wait_seconds(configs, "settlement_time", 5)),
+        Duration::from_secs(fixed_wait_seconds(
+            configs,
+            "settlement_time",
+            DEFAULT_SETTLEMENT_TIME_SECONDS,
+        )),
     )
     .await
     {

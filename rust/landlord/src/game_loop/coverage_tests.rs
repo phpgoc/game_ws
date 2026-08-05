@@ -11,9 +11,10 @@ use ws_common::{ClientRequest, RoomService, SessionSenders};
 use crate::game_state::{LandlordGameState, LandlordLoopState};
 
 use super::{
-    AutoActionReason, activate_ai_bomb_signal, choose_timeout_play, clear_stale_ai_bomb_signal,
-    fixed_wait_seconds, handle_automatic_action, handle_call_landlord_phase, handle_play_phase,
-    handle_settlement_phase, handle_start_phase, sleep_or_stop, start_game_loop,
+    AutoActionReason, DEFAULT_SETTLEMENT_TIME_SECONDS, activate_ai_bomb_signal,
+    choose_timeout_play, clear_stale_ai_bomb_signal, fixed_wait_seconds, handle_automatic_action,
+    handle_call_landlord_phase, handle_play_phase, handle_settlement_phase, handle_start_phase,
+    sleep_or_stop, start_game_loop,
 };
 
 type SharedLoopState = Arc<Mutex<LandlordLoopState>>;
@@ -378,6 +379,19 @@ async fn settlement_phase_redeals_without_waiting_when_configured_to_zero() {
     assert_eq!(state.phase, LandlordPhase::Start);
     assert_eq!(state.call_position, 1);
     assert_eq!(state.current_position, 1);
+}
+
+#[test]
+fn settlement_phase_defaults_to_fifteen_seconds() {
+    assert_eq!(DEFAULT_SETTLEMENT_TIME_SECONDS, 15);
+    assert_eq!(
+        fixed_wait_seconds(
+            &HashMap::new(),
+            "settlement_time",
+            DEFAULT_SETTLEMENT_TIME_SECONDS,
+        ),
+        15
+    );
 }
 
 #[tokio::test]
