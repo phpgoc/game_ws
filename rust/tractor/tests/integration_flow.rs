@@ -290,6 +290,30 @@ fn find_failed_throw_candidate(
 }
 
 #[cfg(not(feature = "official"))]
+fn find_illegal_follow_case(
+    hands: &[Vec<i32>; 4],
+    dealer_position: usize,
+    rules: &TractorRules,
+) -> Option<(i32, usize, i32, i32)> {
+    let follower_position = (dealer_position + 1) % 4;
+    for lead_card in hands[dealer_position].iter().copied() {
+        let lead = combo::classify(&[lead_card], rules)?;
+        let legal = hands[follower_position]
+            .iter()
+            .copied()
+            .find(|card| combo::card_in_group(*card, lead.suit, rules));
+        let illegal = hands[follower_position]
+            .iter()
+            .copied()
+            .find(|card| !combo::card_in_group(*card, lead.suit, rules));
+        if let (Some(legal), Some(illegal)) = (legal, illegal) {
+            return Some((lead_card, follower_position, legal, illegal));
+        }
+    }
+    None
+}
+
+#[cfg(not(feature = "official"))]
 async fn recv_first_declaration(client: &mut Client) -> (Value, Option<Value>) {
     let mut bottom = None;
     loop {
@@ -1339,5 +1363,199 @@ async fn tractor_ws_failed_throw_reports_attempted_and_played_components() {
 
     hands[dealer_position].retain(|card| !expected_played.contains(card));
     assert_eq!(hands[dealer_position].len(), 37);
+    server.abort();
+}
+
+#[cfg(not(feature = "official"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn tractor_ws_rejects_an_off_suit_follow_and_accepts_the_next_legal_card() {
+    let port = free_port();
+    let listen_addr = format!("127.0.0.1:{port}");
+    let url = format!("ws://{listen_addr}");
+    let server = tokio::spawn(run_room_runtime(
+        RuntimeConfig {
+            service_name: "tractor-illegal-follow-test",
+            listen_addr,
+            idle_timeout: Duration::from_secs(30),
+            heartbeat_interval: Duration::from_secs(30),
+        },
+        TestTractorHandler::default(),
+    ));
+
+    let mut a = connect_client(&url).await;
+    let mut b = connect_client(&url).await;
+    let mut c = connect_client(&url).await;
+    let mut d = connect_client(&url).await;
+    let room = "tractor-illegal-follow-room";
+    join(&mut a, "a", room).await;
+    join(&mut b, "b", room).await;
+    join(&mut c, "c", room).await;
+    join(&mut d, "d", room).await;
+
+    send_request(
+        &mut a,
+        Routes::SETTING as i32,
+        json!({
+            "current_configs": {
+                "deck_count": 1,
+                "first_deal_time": 1000,
+                "deal_time": 500,
+                "play_time": 30
+            }
+        }),
+    )
+    .await;
+    recv_until(&mut a, "illegal follow setting response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::SETTING as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+    send_request(&mut a, Routes::START as i32, json!({})).await;
+    recv_until(&mut a, "illegal follow start response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::START as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+
+    let mut clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
+    let hands = collect_tractor_hands(&mut clients, 38).await;
+    let (declaration, bottom_seen_by_first_client) = recv_first_declaration(&mut *clients[0]).await;
+    let dealer_position = declaration["data"]["position"]
+        .as_i64()
+        .expect("illegal follow dealer") as usize;
+    let bottom = if dealer_position == 0 {
+        match bottom_seen_by_first_client {
+            Some(bottom) => bottom,
+            None => recv_tractor_bottom(&mut *clients[dealer_position], dealer_position).await,
+        }
+    } else {
+        recv_tractor_bottom(&mut *clients[dealer_position], dealer_position).await
+    };
+    let bottom_cards = bottom["data"]["cards"]
+        .as_array()
+        .expect("illegal follow bottom cards")
+        .iter()
+        .map(|card| card.as_i64().expect("illegal follow bottom card") as i32)
+        .collect::<Vec<_>>();
+    assert_eq!(bottom_cards.len(), 10);
+
+    send_request(
+        &mut *clients[dealer_position],
+        TractorRoutes::BURY_BOTTOM as i32,
+        json!({ "cards": bottom_cards }),
+    )
+    .await;
+    let snapshot = recv_until(
+        &mut *clients[dealer_position],
+        "illegal follow play snapshot",
+        |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+                && value["data"]["phase"] == json!(TractorPhase::Play as i8)
+        },
+    )
+    .await;
+    recv_until(
+        &mut *clients[dealer_position],
+        "illegal follow bury response",
+        |value| {
+            value.get("route").and_then(Value::as_i64) == Some(TractorRoutes::BURY_BOTTOM as i64)
+                && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+        },
+    )
+    .await;
+
+    let trump_suit = snapshot["data"]["trump_suit"]
+        .as_i64()
+        .map(|suit| match suit {
+            0 => TractorSuit::SPADE,
+            1 => TractorSuit::HEART,
+            2 => TractorSuit::CLUB,
+            3 => TractorSuit::DIAMOND,
+            _ => panic!("invalid illegal follow trump suit"),
+        });
+    let rules = TractorRules {
+        attacking_win_score: 80,
+        score_per_level: 40,
+        shutout_bonus_levels: 1,
+        bottom_card_count: 10,
+        deck_count: 3,
+        final_target_rank: TractorRank::A,
+        target_rank: TractorRank::THREE,
+        trump_suit,
+    };
+    let (lead_card, follower_position, legal_card, illegal_card) =
+        find_illegal_follow_case(&hands, dealer_position, &rules)
+            .expect("three-deck deal should expose an off-suit follow case");
+
+    send_request(
+        &mut *clients[dealer_position],
+        Routes::PLAY as i32,
+        json!({ "cards": [lead_card] }),
+    )
+    .await;
+    let lead_event = recv_until(
+        &mut *clients[dealer_position],
+        "illegal follow lead event",
+        |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::PLAY as i64)
+                && value["data"]["position"] == json!(dealer_position)
+        },
+    )
+    .await;
+    assert_eq!(lead_event["data"]["cards"], json!([lead_card]));
+    recv_until(
+        &mut *clients[dealer_position],
+        "illegal follow lead response",
+        |value| {
+            value.get("route").and_then(Value::as_i64) == Some(Routes::PLAY as i64)
+                && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+        },
+    )
+    .await;
+
+    send_request(
+        &mut *clients[follower_position],
+        Routes::PLAY as i32,
+        json!({ "cards": [illegal_card] }),
+    )
+    .await;
+    let invalid = recv_until(
+        &mut *clients[follower_position],
+        "illegal follow response",
+        |value| {
+            value.get("route").and_then(Value::as_i64) == Some(Routes::PLAY as i64)
+                && value.get("code").and_then(Value::as_i64)
+                    == Some(WsResponseCode::NO_PERMISSION as i64)
+        },
+    )
+    .await;
+    assert_eq!(invalid["code"], json!(WsResponseCode::NO_PERMISSION as i32));
+
+    send_request(
+        &mut *clients[follower_position],
+        Routes::PLAY as i32,
+        json!({ "cards": [legal_card] }),
+    )
+    .await;
+    let legal_event = recv_until(
+        &mut *clients[follower_position],
+        "legal follow event",
+        |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::PLAY as i64)
+                && value["data"]["position"] == json!(follower_position)
+        },
+    )
+    .await;
+    assert_eq!(legal_event["data"]["cards"], json!([legal_card]));
+    recv_until(
+        &mut *clients[follower_position],
+        "legal follow response",
+        |value| {
+            value.get("route").and_then(Value::as_i64) == Some(Routes::PLAY as i64)
+                && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+        },
+    )
+    .await;
+
     server.abort();
 }
