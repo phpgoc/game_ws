@@ -132,6 +132,8 @@ fn four_single_plays_finish_the_last_trick_and_settle() {
     let settlement = state.settlement_event();
     assert_eq!(settlement.score, 5);
     assert_eq!(settlement.winner_positions, vec![0, 2]);
+    assert_eq!(settlement.next_target_rank, Some(UpgradeRank::FIVE));
+    assert!(!settlement.match_finished);
 }
 
 #[test]
@@ -151,6 +153,23 @@ fn settlement_can_start_the_next_round_and_raise_target_rank() {
     assert_eq!(state.round_index, 1);
     assert_eq!(state.rules.target_rank, Rank::Five);
     assert_eq!(state.rules.trump_suit, None);
+}
+
+#[test]
+fn settlement_caps_multi_level_progress_and_finishes_on_ace() {
+    let mut state = playing_state(HashMap::new());
+    state.phase = UpgradePhase::Settlement;
+    state.rules.target_rank = Rank::Queen;
+
+    let settlement = state.settlement_event();
+    assert_eq!(settlement.next_target_rank, Some(UpgradeRank::A));
+    assert!(!settlement.match_finished);
+
+    state.rules.target_rank = Rank::Ace;
+    let settlement = state.settlement_event();
+    assert_eq!(settlement.next_target_rank, None);
+    assert!(settlement.match_finished);
+    assert!(!state.advance_after_settlement().unwrap());
 }
 
 #[test]

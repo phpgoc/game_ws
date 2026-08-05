@@ -9,7 +9,9 @@ use share_type_public::{
     WsUpgradePlayerHandCount, WsUpgradeSettlementEvent, WsUpgradeTableSnapshotEvent,
     WsUpgradeTrumpDeclaration,
 };
-use upgrade_common::{Card, Rank, ScoreOutcome, ScoreProgression, ScoreSide, Suit};
+use upgrade_common::{
+    Card, Rank, ScoreOutcome, ScoreProgression, ScoreSide, Suit, next_level_rank,
+};
 use ws_common::{CommonGameState, GameState};
 
 use crate::{
@@ -598,6 +600,7 @@ impl UpgradeGameState {
 
     pub fn settlement_event(&self) -> WsUpgradeSettlementEvent {
         let outcome = self.score_outcome();
+        let next_target_rank = self.next_target_rank();
         WsUpgradeSettlementEvent {
             winner_positions: self
                 .winner_positions_usize()
@@ -607,8 +610,8 @@ impl UpgradeGameState {
             score: self.attacking_score(),
             level_change: i32::from(outcome.levels),
             target_rank: rank_to_protocol(self.rules.target_rank),
-            match_finished: false,
-            next_target_rank: Some(rank_to_protocol(self.rules.target_rank)),
+            match_finished: next_target_rank.is_none(),
+            next_target_rank: next_target_rank.map(rank_to_protocol),
             player_scores: self
                 .player_scores
                 .iter()
@@ -621,26 +624,7 @@ impl UpgradeGameState {
         if self.phase != UpgradePhase::Settlement {
             return Err("not in settlement");
         }
-        let levels = usize::from(self.score_outcome().levels.max(1));
-        let path = [
-            Rank::Three,
-            Rank::Four,
-            Rank::Five,
-            Rank::Six,
-            Rank::Seven,
-            Rank::Eight,
-            Rank::Nine,
-            Rank::Ten,
-            Rank::Jack,
-            Rank::Queen,
-            Rank::King,
-            Rank::Ace,
-        ];
-        let current = path
-            .iter()
-            .position(|rank| *rank == self.rules.target_rank)
-            .ok_or("invalid target rank")?;
-        let Some(next_rank) = path.get(current.saturating_add(levels)).copied() else {
+        let Some(next_rank) = self.next_target_rank() else {
             return Ok(false);
         };
         let winners = self.winner_positions_usize();
@@ -652,6 +636,15 @@ impl UpgradeGameState {
         self.rules.trump_suit = None;
         self.deal_new_round(self.rules)?;
         Ok(true)
+    }
+
+    fn next_target_rank(&self) -> Option<Rank> {
+        next_level_rank(
+            self.rules.target_rank,
+            self.rules.final_target_rank,
+            &[],
+            usize::from(self.score_outcome().levels),
+        )
     }
 
     pub fn timeout_bury(&mut self) -> Result<bool, &'static str> {
