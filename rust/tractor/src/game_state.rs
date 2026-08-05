@@ -666,6 +666,9 @@ impl TractorGameState {
                 });
                 auto_declaration = fallback;
             }
+            if self.round_index == 0 && self.declaration.is_none() {
+                auto_declaration = self.declare_bottom_level_fallback();
+            }
             if self.round_index == 0
                 && let Some(declaration) = &self.declaration
             {
@@ -683,6 +686,27 @@ impl TractorGameState {
             self.base.lock().unwrap().action_received = false;
         }
         Some((position, card, finished, auto_declaration))
+    }
+
+    fn declare_bottom_level_fallback(&mut self) -> Option<WsTractorTrumpDeclaration> {
+        let position = self.active_positions().first().copied()?;
+        let card = self.bottom_cards.iter().copied().find(|card| {
+            card_rank(*card) == self.rules.target_rank as i32 && card_suit(*card).is_some()
+        })?;
+        let suit = card_suit(card).and_then(tractor_suit_from_index)?;
+        let declaration = WsTractorTrumpDeclaration {
+            position: position as i32,
+            name: self.player_name(position),
+            cards: vec![card],
+            trump_suit: suit,
+            strength: 1,
+            target_rank: self.rules.target_rank,
+        };
+        self.rules.trump_suit = Some(suit);
+        self.dealer_position = position;
+        self.current_position = position;
+        self.declaration = Some(declaration.clone());
+        Some(declaration)
     }
 
     pub fn dealer_bottom_cards(&self) -> Option<Vec<i32>> {
@@ -1750,6 +1774,25 @@ mod tests {
             Some([1].as_slice())
         );
         assert_eq!(state.dealer_position, 1);
+        assert_eq!(state.rules.trump_suit, Some(TractorSuit::SPADE));
+        assert_eq!(state.phase, TractorPhase::Bury);
+    }
+
+    #[test]
+    fn first_deal_can_reveal_a_level_card_from_the_bottom() {
+        let mut state = test_state();
+        state.phase = TractorPhase::Deal;
+        state.round_index = 0;
+        state.rules.target_rank = TractorRank::THREE;
+        state.bottom_cards = vec![2];
+        state.deal_queue.push_back((2, 4));
+
+        let (_, _, finished, declaration) = state.deal_next_card().expect("deal the final card");
+
+        assert!(finished);
+        let declaration = declaration.expect("bottom fallback declaration");
+        assert_eq!(declaration.position, 0);
+        assert_eq!(declaration.cards, vec![2]);
         assert_eq!(state.rules.trump_suit, Some(TractorSuit::SPADE));
         assert_eq!(state.phase, TractorPhase::Bury);
     }

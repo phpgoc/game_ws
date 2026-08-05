@@ -306,6 +306,9 @@ impl UpgradeGameState {
                     self.declare_trump(candidate_position, vec![card]).ok()
                 });
             }
+            if self.round_index == 0 && self.declaration.is_none() {
+                fallback_declaration = self.declare_bottom_level_fallback();
+            }
             if let Some(declaration) = &self.declaration {
                 self.dealer_position = declaration.position as usize;
             }
@@ -321,6 +324,29 @@ impl UpgradeGameState {
             self.base.lock().unwrap().action_received = false;
         }
         Some((position, card, finished, fallback_declaration))
+    }
+
+    fn declare_bottom_level_fallback(&mut self) -> Option<WsUpgradeTrumpDeclaration> {
+        let position = self.dealer_position;
+        let card = self.bottom_cards.iter().copied().find(|card| {
+            Card::try_from(*card)
+                .ok()
+                .is_some_and(|card| card.rank() == self.rules.target_rank && card.suit().is_some())
+        })?;
+        let first = Card::try_from(card).ok()?;
+        let suit = first.suit()?;
+        let declaration = WsUpgradeTrumpDeclaration {
+            position: position as i32,
+            name: self.player_name(position),
+            cards: vec![card],
+            trump_suit: suit_to_protocol(suit),
+            strength: 1,
+            target_rank: rank_to_protocol(self.rules.target_rank),
+        };
+        self.rules.trump_suit = Some(suit);
+        self.current_position = position;
+        self.declaration = Some(declaration.clone());
+        Some(declaration)
     }
 
     pub fn declare_trump(

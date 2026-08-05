@@ -100,6 +100,25 @@ fn first_round_declarations_reveal_three_and_only_stronger_copies_can_take_over(
 }
 
 #[test]
+fn first_round_can_reveal_a_level_card_from_the_bottom() {
+    let common = Arc::new(Mutex::new(CommonGameState::new()));
+    let mut state = UpgradeGameState::from_common(common);
+    state.phase = UpgradePhase::Deal;
+    state.rules = rules(3);
+    state.bottom_cards = vec![2];
+    state.deal_queue.push_back((1, 4));
+
+    let (_, _, finished, declaration) = state.deal_next_card().expect("deal the final card");
+
+    assert!(finished);
+    let declaration = declaration.expect("bottom fallback declaration");
+    assert_eq!(declaration.position, 0);
+    assert_eq!(declaration.cards, vec![2]);
+    assert_eq!(state.rules.trump_suit, Some(Suit::Spade));
+    assert_eq!(state.phase, UpgradePhase::Bury);
+}
+
+#[test]
 fn later_round_selects_trump_then_buries_in_one_operation_window() {
     let common = Arc::new(Mutex::new(CommonGameState::new()));
     let mut state = UpgradeGameState::from_common(common);
