@@ -6,9 +6,11 @@
 #![forbid(unsafe_code)]
 
 mod card;
+mod level;
 mod score;
 
 pub use card::{Card, CardDecodeError, Rank, Suit, largest_identity_group_size};
+pub use level::{STANDARD_LEVEL_RANKS, level_rank_path, next_level_rank};
 pub use score::{ScoreLevelError, ScoreOutcome, ScoreProgression, ScoreSide};
 
 /// 当前升级系游戏能够使用的最大牌副数。

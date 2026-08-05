@@ -56,3 +56,28 @@ fn score_progression_rejects_non_positive_configuration() {
     assert!(ScoreProgression::new(0, 40, 1).is_err());
     assert!(ScoreProgression::new(80, 0, 1).is_err());
 }
+
+#[test]
+fn level_path_supports_standard_and_compact_games() {
+    assert_eq!(
+        level_rank_path(Rank::Seven, &[]),
+        vec![Rank::Three, Rank::Four, Rank::Five, Rank::Six, Rank::Seven,]
+    );
+    assert_eq!(
+        level_rank_path(Rank::Seven, &[Rank::Three, Rank::Four, Rank::Six]),
+        vec![Rank::Five, Rank::Seven]
+    );
+}
+
+#[test]
+fn level_advance_caps_at_the_final_rank_and_finishes_there() {
+    assert_eq!(
+        next_level_rank(Rank::Queen, Rank::Ace, &[], 3),
+        Some(Rank::Ace)
+    );
+    assert_eq!(next_level_rank(Rank::Ace, Rank::Ace, &[], 1), None);
+    assert_eq!(
+        next_level_rank(Rank::Five, Rank::Nine, &[Rank::Six, Rank::Seven], 2,),
+        Some(Rank::Nine)
+    );
+}
