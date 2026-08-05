@@ -372,6 +372,11 @@ impl UpgradeGameState {
             phase: self.phase,
             deck_count: i32::from(self.rules.deck_count.get()),
             target_rank: rank_to_protocol(self.rules.target_rank),
+            team_target_ranks: self
+                .team_target_ranks
+                .into_iter()
+                .map(rank_to_protocol)
+                .collect(),
             final_target_rank: rank_to_protocol(self.rules.final_target_rank),
             removed_rank_count: 0,
             round_index: self.round_index,
@@ -687,6 +692,11 @@ impl UpgradeGameState {
     pub fn settlement_event(&self) -> WsUpgradeSettlementEvent {
         let outcome = self.score_outcome();
         let next_target_rank = self.next_target_rank();
+        let winning_team = self.winner_positions_usize()[0] % 2;
+        let mut team_target_ranks = self.team_target_ranks;
+        if let Some(next_target_rank) = next_target_rank {
+            team_target_ranks[winning_team] = next_target_rank;
+        }
         WsUpgradeSettlementEvent {
             winner_positions: self
                 .winner_positions_usize()
@@ -698,6 +708,10 @@ impl UpgradeGameState {
             target_rank: rank_to_protocol(self.rules.target_rank),
             match_finished: next_target_rank.is_none(),
             next_target_rank: next_target_rank.map(rank_to_protocol),
+            team_target_ranks: team_target_ranks
+                .into_iter()
+                .map(rank_to_protocol)
+                .collect(),
             player_scores: self
                 .player_scores
                 .iter()

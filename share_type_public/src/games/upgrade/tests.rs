@@ -16,9 +16,11 @@ fn settlement_has_level_change_without_blood_fields() {
         target_rank: UpgradeRank::FIVE,
         match_finished: false,
         next_target_rank: Some(UpgradeRank::SEVEN),
+        team_target_ranks: vec![UpgradeRank::SEVEN, UpgradeRank::THREE],
         player_scores: Default::default(),
     };
     let encoded = serde_json::to_value(event).unwrap();
     assert_eq!(encoded["level_change"], 2);
+    assert_eq!(encoded["team_target_ranks"], serde_json::json!([7, 3]));
     assert!(encoded.get("blood_units").is_none());
 }

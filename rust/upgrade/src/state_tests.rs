@@ -342,6 +342,10 @@ fn attacking_team_advances_from_its_own_level_when_it_takes_over() {
     let settlement = state.settlement_event();
     assert_eq!(settlement.winner_positions, vec![1, 3]);
     assert_eq!(settlement.next_target_rank, Some(UpgradeRank::FOUR));
+    assert_eq!(
+        settlement.team_target_ranks,
+        vec![UpgradeRank::FIVE, UpgradeRank::FOUR]
+    );
 
     assert!(state.advance_after_settlement().unwrap());
     assert_eq!(state.dealer_position, 1);

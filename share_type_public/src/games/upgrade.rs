@@ -171,6 +171,7 @@ pub struct WsUpgradeSettlementEvent {
     pub target_rank: UpgradeRank,
     pub match_finished: bool,
     pub next_target_rank: Option<UpgradeRank>,
+    pub team_target_ranks: Vec<UpgradeRank>,
     #[serde(default)]
     pub player_scores: HashMap<i32, i32>,
 }
@@ -181,6 +182,7 @@ pub struct WsUpgradeTableSnapshotEvent {
     pub phase: UpgradePhase,
     pub deck_count: i32,
     pub target_rank: UpgradeRank,
+    pub team_target_ranks: Vec<UpgradeRank>,
     pub final_target_rank: UpgradeRank,
     pub removed_rank_count: i32,
     pub round_index: i32,
