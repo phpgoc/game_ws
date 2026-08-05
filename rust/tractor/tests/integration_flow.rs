@@ -1559,3 +1559,110 @@ async fn tractor_ws_rejects_an_off_suit_follow_and_accepts_the_next_legal_card()
 
     server.abort();
 }
+
+#[cfg(not(feature = "official"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn tractor_ws_auto_buries_after_three_play_windows() {
+    let port = free_port();
+    let listen_addr = format!("127.0.0.1:{port}");
+    let url = format!("ws://{listen_addr}");
+    let server = tokio::spawn(run_room_runtime(
+        RuntimeConfig {
+            service_name: "tractor-auto-bury-window-test",
+            listen_addr,
+            idle_timeout: Duration::from_secs(30),
+            heartbeat_interval: Duration::from_secs(30),
+        },
+        TestTractorHandler::default(),
+    ));
+
+    let mut a = connect_client(&url).await;
+    let mut b = connect_client(&url).await;
+    let mut c = connect_client(&url).await;
+    let mut d = connect_client(&url).await;
+    let room = "tractor-auto-bury-window-room";
+    join(&mut a, "a", room).await;
+    join(&mut b, "b", room).await;
+    join(&mut c, "c", room).await;
+    join(&mut d, "d", room).await;
+
+    send_request(
+        &mut a,
+        Routes::SETTING as i32,
+        json!({
+            "current_configs": {
+                "deck_count": 0,
+                "first_deal_time": 1,
+                "deal_time": 1,
+                "play_time": 1
+            }
+        }),
+    )
+    .await;
+    recv_until(&mut a, "auto bury window setting response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::SETTING as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+    send_request(&mut a, Routes::START as i32, json!({})).await;
+    recv_until(&mut a, "auto bury window start response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::START as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+
+    let clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
+    let (declaration, bottom_seen_by_first_client) = recv_first_declaration(&mut *clients[0]).await;
+    let dealer_position = declaration["data"]["position"]
+        .as_i64()
+        .expect("auto bury dealer") as usize;
+    let bottom = if dealer_position == 0 {
+        match bottom_seen_by_first_client {
+            Some(bottom) => bottom,
+            None => recv_tractor_bottom(&mut *clients[dealer_position], dealer_position).await,
+        }
+    } else {
+        recv_tractor_bottom(&mut *clients[dealer_position], dealer_position).await
+    };
+    assert_eq!(
+        bottom["data"]["required_count"],
+        json!(8),
+        "two-deck tractor uses eight bottom cards"
+    );
+
+    let bury_snapshot = recv_until(
+        &mut *clients[dealer_position],
+        "auto bury countdown snapshot",
+        |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+                && value["data"]["phase"] == json!(TractorPhase::Bury as i8)
+                && value["data"]["turn_countdown"] == json!(3)
+        },
+    )
+    .await;
+    assert_eq!(bury_snapshot["data"]["turn_countdown"], json!(3));
+
+    let buried = recv_until(&mut *clients[dealer_position], "auto bury event", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(TractorWsCode::BOTTOM_BURIED as i64)
+            && value["data"]["position"] == json!(dealer_position)
+    })
+    .await;
+    assert_eq!(buried["data"]["bottom_card_count"], json!(8));
+    let play_snapshot = recv_until(
+        &mut *clients[dealer_position],
+        "auto bury play snapshot",
+        |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+                && value["data"]["phase"] == json!(TractorPhase::Play as i8)
+        },
+    )
+    .await;
+    assert_eq!(play_snapshot["data"]["round_index"], json!(0));
+    assert!(
+        play_snapshot["data"]["turn_countdown"]
+            .as_i64()
+            .is_some_and(|countdown| countdown > 0)
+    );
+
+    server.abort();
+}
