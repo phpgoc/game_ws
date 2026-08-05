@@ -211,7 +211,11 @@ async fn recv_json_full(client: &mut Client, label: &str) -> Value {
     }
 }
 
-async fn collect_upgrade_hand(client: &mut Client, position: usize) -> Vec<i32> {
+async fn collect_upgrade_hand_min(
+    client: &mut Client,
+    position: usize,
+    minimum_hand_size: usize,
+) -> Vec<i32> {
     loop {
         let value = recv_json_full(client, "upgrade hand").await;
         if value.get("code").and_then(Value::as_i64) != Some(UpgradeWsCode::HAND_UPDATED as i64) {
@@ -221,7 +225,7 @@ async fn collect_upgrade_hand(client: &mut Client, position: usize) -> Vec<i32> 
         let cards = value["data"]["cards"]
             .as_array()
             .expect("upgrade hand cards");
-        if cards.len() < 38 {
+        if cards.len() < minimum_hand_size {
             continue;
         }
         return cards
@@ -231,17 +235,24 @@ async fn collect_upgrade_hand(client: &mut Client, position: usize) -> Vec<i32> 
     }
 }
 
-async fn collect_upgrade_hands(clients: &mut [&mut Client; 4]) -> [Vec<i32>; 4] {
+async fn collect_upgrade_hands_min(
+    clients: &mut [&mut Client; 4],
+    minimum_hand_size: usize,
+) -> [Vec<i32>; 4] {
     let (left, right) = clients.split_at_mut(2);
     let (a, b) = left.split_at_mut(1);
     let (c, d) = right.split_at_mut(1);
     let (a, b, c, d) = tokio::join!(
-        collect_upgrade_hand(&mut *a[0], 0),
-        collect_upgrade_hand(&mut *b[0], 1),
-        collect_upgrade_hand(&mut *c[0], 2),
-        collect_upgrade_hand(&mut *d[0], 3),
+        collect_upgrade_hand_min(&mut *a[0], 0, minimum_hand_size),
+        collect_upgrade_hand_min(&mut *b[0], 1, minimum_hand_size),
+        collect_upgrade_hand_min(&mut *c[0], 2, minimum_hand_size),
+        collect_upgrade_hand_min(&mut *d[0], 3, minimum_hand_size),
     );
     [a, b, c, d]
+}
+
+async fn collect_upgrade_hands(clients: &mut [&mut Client; 4]) -> [Vec<i32>; 4] {
+    collect_upgrade_hands_min(clients, 38).await
 }
 
 async fn recv_upgrade_bottom(client: &mut Client, dealer_position: usize) -> Value {
@@ -999,6 +1010,121 @@ async fn upgrade_six_deck_ws_deals_and_buries_the_correct_counts() {
             .sum::<i64>(),
         316
     );
+    assert_eq!(
+        wait_for_response(
+            &mut *clients[dealer_position],
+            UpgradeRoutes::BURY_BOTTOM as i32
+        )
+        .await["code"],
+        json!(WsResponseCode::OK as i32)
+    );
+
+    server.abort();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn upgrade_four_deck_removed_ranks_ws_flow_skips_removed_levels() {
+    let port = free_port();
+    let listen_addr = format!("127.0.0.1:{port}");
+    let url = format!("ws://{listen_addr}");
+    let server = tokio::spawn(run_room_runtime(
+        RuntimeConfig {
+            service_name: "upgrade-four-deck-removed-ranks-test",
+            listen_addr,
+            idle_timeout: Duration::from_secs(45),
+            heartbeat_interval: Duration::from_secs(45),
+        },
+        TestUpgradeHandler::default(),
+    ));
+
+    let mut a = connect_client(&url).await;
+    let mut b = connect_client(&url).await;
+    let mut c = connect_client(&url).await;
+    let mut d = connect_client(&url).await;
+    let room = "upgrade-four-deck-removed-ranks-room";
+    for (position, client) in [&mut a, &mut b, &mut c, &mut d].into_iter().enumerate() {
+        let joined = join_as(
+            client,
+            GameId::UPGRADE,
+            room,
+            &format!("removed-ranks-player-{position}"),
+        )
+        .await;
+        assert_eq!(joined["code"], json!(WsResponseCode::JOINED as i32));
+        assert_eq!(joined["data"]["self_position"], json!(position));
+    }
+
+    send_request(
+        &mut a,
+        Routes::SETTING as i32,
+        json!({
+            "current_configs": {
+                "deck_count": 1,
+                "removed_rank_count": 2,
+                "first_deal_time": 1,
+                "deal_time": 1,
+                "play_time": 30
+            }
+        }),
+    )
+    .await;
+    assert_eq!(
+        wait_for_response(&mut a, Routes::SETTING as i32).await["code"],
+        json!(WsResponseCode::OK as i32)
+    );
+
+    send_request(&mut a, Routes::START as i32, Value::Null).await;
+    assert_eq!(
+        wait_for_response(&mut a, Routes::START as i32).await["code"],
+        json!(WsResponseCode::OK as i32)
+    );
+
+    let mut clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
+    let declaration = wait_for_event(&mut *clients[0], UpgradeWsCode::TRUMP_DECLARED as i32).await;
+    assert_eq!(declaration["data"]["target_rank"], json!(5));
+    let dealer_position = declaration["data"]["position"]
+        .as_i64()
+        .expect("removed-ranks dealer") as usize;
+    assert!(dealer_position < 4);
+
+    let hands = collect_upgrade_hands_min(&mut clients, 44).await;
+    assert_eq!(hands[dealer_position].len(), 52);
+    assert!(
+        hands
+            .iter()
+            .enumerate()
+            .all(|(position, hand)| position == dealer_position || hand.len() == 44)
+    );
+    assert!(hands.iter().flatten().all(|card| {
+        let rank = Card::try_from(*card).expect("removed-ranks card").rank();
+        !matches!(rank, Rank::Three | Rank::Four)
+    }));
+
+    let bottom_event = recv_upgrade_bottom(&mut *clients[dealer_position], dealer_position).await;
+    let bottom_cards = bottom_event["data"]["cards"]
+        .as_array()
+        .expect("removed-ranks bottom cards")
+        .iter()
+        .map(|card| card.as_i64().expect("removed-ranks bottom card") as i32)
+        .collect::<Vec<_>>();
+    assert_eq!(bottom_cards.len(), 8);
+    assert_eq!(bottom_event["data"]["required_count"], json!(8));
+
+    send_request(
+        &mut *clients[dealer_position],
+        UpgradeRoutes::BURY_BOTTOM as i32,
+        json!({ "cards": bottom_cards }),
+    )
+    .await;
+    let snapshot =
+        wait_upgrade_snapshot(&mut *clients[dealer_position], UpgradePhase::Play, 0).await;
+    assert_eq!(snapshot["data"]["deck_count"], json!(4));
+    assert_eq!(snapshot["data"]["removed_rank_count"], json!(2));
+    assert_eq!(snapshot["data"]["target_rank"], json!(5));
+    assert_eq!(snapshot["data"]["bottom_card_count"], json!(8));
+    assert_eq!(snapshot["data"]["hand_count"], json!(44));
+    assert_eq!(snapshot["data"]["dealt_count"], json!(176));
+    assert_eq!(snapshot["data"]["total_deal_count"], json!(176));
     assert_eq!(
         wait_for_response(
             &mut *clients[dealer_position],
