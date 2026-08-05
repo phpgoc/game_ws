@@ -8,7 +8,7 @@ use share_type_public::{
     TractorPhase, TractorRank, TractorSuit, WsTractorFailedThrowEvent, WsTractorPlayedCards,
     WsTractorPlayerHandCount, WsTractorTableSnapshotEvent, WsTractorTrumpDeclaration,
 };
-use upgrade_common::{ScoreOutcome, ScoreProgression};
+use upgrade_common::{Card, ScoreOutcome, ScoreProgression};
 use ws_common::{CommonGameState, GameState};
 
 use crate::combo::{self, Combo};
@@ -122,7 +122,11 @@ pub fn adjusted_bottom_card_count(
 }
 
 pub(crate) fn base_card(card: i32) -> i32 {
-    ((card - 1) % 100) + 1
+    i32::from(decoded_card(card).identity())
+}
+
+fn decoded_card(card: i32) -> Card {
+    Card::try_from(card).expect("tractor state only contains valid card ids")
 }
 
 pub fn build_tractor_deck(deck_count: usize) -> Vec<i32> {
@@ -158,27 +162,15 @@ fn candidate_in_hand(hand: &[i32], cards: &[i32]) -> bool {
 }
 
 pub(crate) fn card_rank(card: i32) -> i32 {
-    let base = base_card(card);
-    if base <= 52 {
-        ((base - 1) % 13) + 2
-    } else if base == 53 {
-        16
-    } else {
-        17
-    }
+    decoded_card(card).rank() as i32
 }
 
 pub(crate) fn card_score(card: i32) -> i32 {
-    match card_rank(card) {
-        5 => 5,
-        10 | 13 => 10,
-        _ => 0,
-    }
+    i32::from(decoded_card(card).points())
 }
 
 pub(crate) fn card_suit(card: i32) -> Option<i32> {
-    let base = base_card(card);
-    (base <= 52).then_some((base - 1) / 13)
+    decoded_card(card).suit().map(|suit| suit as i32)
 }
 
 fn first_match_rank(removed_rank_count: usize, final_target_rank: TractorRank) -> TractorRank {
