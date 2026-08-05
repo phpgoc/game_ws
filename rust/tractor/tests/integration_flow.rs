@@ -340,7 +340,7 @@ async fn tractor_incremental_deal_full_deck_and_bury_flow() {
     let mut bottom = None;
     while bottom.is_none() || !saw_declaration {
         for (client_position, client) in clients.iter_mut().enumerate() {
-            let value = recv_json(&mut **client, "incremental deal, declaration and bottom").await;
+            let value = recv_json(client, "incremental deal, declaration and bottom").await;
             match value.get("code").and_then(Value::as_i64) {
                 Some(code) if code == WsCode::DEAL as i64 => {
                     let cards = value["data"]["cards"].as_array().expect("deal cards");
