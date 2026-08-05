@@ -155,3 +155,18 @@ fn throw_follow_keeps_each_non_consecutive_component_when_possible() {
         rules()
     ));
 }
+
+#[test]
+fn throw_can_compete_only_when_every_lead_component_is_covered() {
+    let lead_cards = cards(&[3, 103, 5, 105, 6, 106]);
+    let lead = classify(&lead_cards, rules()).unwrap();
+    let one_pair_and_singles = cards(&[26, 126, 25, 24, 23, 22]);
+    let three_pairs = cards(&[26, 126, 25, 125, 24, 124]);
+
+    assert!(!can_compete_with_lead(
+        &one_pair_and_singles,
+        &lead,
+        rules()
+    ));
+    assert!(can_compete_with_lead(&three_pairs, &lead, rules()));
+}

@@ -272,6 +272,27 @@ fn successful_long_throw_uses_only_its_largest_component_for_bottom_score() {
 }
 
 #[test]
+fn one_trump_pair_and_four_singles_cannot_beat_a_three_pair_throw() {
+    let mut state = playing_state(HashMap::from([
+        (0, vec![3, 103, 5, 105, 6, 106]),
+        (1, vec![26, 126, 25, 24, 23, 22]),
+        (2, vec![27, 29, 30, 31, 32, 33]),
+        (3, vec![40, 42, 43, 44, 45, 46]),
+    ]));
+
+    for (position, cards) in [
+        (0, vec![3, 103, 5, 105, 6, 106]),
+        (1, vec![26, 126, 25, 24, 23, 22]),
+        (2, vec![27, 29, 30, 31, 32, 33]),
+        (3, vec![40, 42, 43, 44, 45, 46]),
+    ] {
+        state.play_cards(position, cards).unwrap();
+    }
+
+    assert_eq!(state.last_trick_winner, Some(0));
+}
+
+#[test]
 fn settlement_can_start_the_next_round_and_raise_target_rank() {
     let mut state = playing_state(HashMap::from([
         (0, vec![4]),

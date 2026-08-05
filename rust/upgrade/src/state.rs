@@ -457,9 +457,7 @@ impl UpgradeGameState {
             let Some(candidate) = combo::classify(&cards, rules) else {
                 continue;
             };
-            if combo::lead_card_count(&candidate) != combo::lead_card_count(&lead_combo)
-                || candidate.kind != lead_combo.kind
-            {
+            if !combo::can_compete_with_lead(&cards, &lead_combo, rules) {
                 continue;
             }
             let competes = match (lead_combo.group, candidate.group) {

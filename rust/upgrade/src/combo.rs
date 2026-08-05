@@ -229,6 +229,23 @@ pub fn follow_is_legal(
         == component_follow_score(&grouped_hand, &lead.multiplicities)
 }
 
+pub fn can_compete_with_lead(cards: &[Card], lead: &Combo, rules: UpgradeComboRules) -> bool {
+    let Some(candidate) = classify(cards, rules) else {
+        return false;
+    };
+    if lead_card_count(&candidate) != lead_card_count(lead) {
+        return false;
+    }
+    match lead.kind {
+        ComboKind::Single => candidate.kind == ComboKind::Single,
+        ComboKind::Pair => candidate.kind == ComboKind::Pair,
+        ComboKind::Triple => candidate.kind == ComboKind::Triple,
+        ComboKind::Throw { .. } => {
+            component_follow_score(cards, &lead.multiplicities) == lead.multiplicities
+        }
+    }
+}
+
 fn component_follow_score(cards: &[Card], requirements: &[usize]) -> Vec<usize> {
     let mut available = identity_groups(cards)
         .into_values()
