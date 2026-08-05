@@ -656,6 +656,16 @@ impl TractorGameState {
             }
         }
         if finished {
+            if self.round_index == 0 && self.declaration.is_none() {
+                let fallback = self.active_positions().into_iter().find_map(|position| {
+                    let card = self.hands.get(&position)?.iter().copied().find(|card| {
+                        card_rank(*card) == self.rules.target_rank as i32
+                            && card_suit(*card).is_some()
+                    })?;
+                    self.declare_trump(position, vec![card]).ok()
+                });
+                auto_declaration = fallback;
+            }
             if self.round_index == 0
                 && let Some(declaration) = &self.declaration
             {

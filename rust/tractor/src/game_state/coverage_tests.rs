@@ -75,6 +75,34 @@ fn phase_guards_reject_bury_deal_and_non_dealer_trump_actions() {
 }
 
 #[test]
+fn first_round_fallback_declaration_always_selects_a_suited_level_card() {
+    let mut state = state();
+    state.phase = TractorPhase::Deal;
+    state.round_index = 0;
+    state.rules.target_rank = TractorRank::THREE;
+    state.rules.trump_suit = None;
+    state.deal_queue = std::collections::VecDeque::from([(0, 1)]);
+    state.total_deal_count = 1;
+    state.hands = HashMap::from([
+        (0, Vec::new()),
+        (1, vec![2]),
+        (2, Vec::new()),
+        (3, Vec::new()),
+    ]);
+
+    let (_, _, finished, declaration) = state.deal_next_card().expect("final deal card");
+
+    assert!(finished);
+    let declaration = declaration.expect("fallback declaration");
+    assert_eq!(declaration.position, 1);
+    assert_eq!(declaration.cards, vec![2]);
+    assert_eq!(declaration.target_rank, TractorRank::THREE);
+    assert_eq!(state.rules.trump_suit, Some(TractorSuit::SPADE));
+    assert_eq!(state.dealer_position, 1);
+    assert_eq!(state.phase, TractorPhase::Bury);
+}
+
+#[test]
 fn settlement_advances_to_the_first_winning_farmer_and_starts_a_round() {
     let mut state = state();
     assert!(state.advance_after_settlement().is_err());
