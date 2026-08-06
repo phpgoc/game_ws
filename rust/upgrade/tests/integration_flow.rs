@@ -893,6 +893,125 @@ async fn upgrade_server_completes_round_and_enters_later_round() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn upgrade_ws_rejoin_preserves_running_bury_state() {
+    let port = free_port();
+    let listen_addr = format!("127.0.0.1:{port}");
+    let url = format!("ws://{listen_addr}");
+    let server = tokio::spawn(run_room_runtime(
+        RuntimeConfig {
+            service_name: "upgrade-rejoin-bury-test",
+            listen_addr,
+            idle_timeout: Duration::from_secs(30),
+            heartbeat_interval: Duration::from_secs(30),
+        },
+        TestUpgradeHandler::default(),
+    ));
+
+    let mut a = connect_client(&url).await;
+    let mut b = connect_client(&url).await;
+    let mut c = connect_client(&url).await;
+    let mut d = connect_client(&url).await;
+    let room = "upgrade-rejoin-bury-room";
+    for (position, client) in [&mut a, &mut b, &mut c, &mut d].into_iter().enumerate() {
+        let joined = join_as(
+            client,
+            GameId::UPGRADE,
+            room,
+            &format!("rejoin-player-{position}"),
+        )
+        .await;
+        assert_eq!(joined["code"], json!(WsResponseCode::JOINED as i32));
+        assert_eq!(joined["data"]["self_position"], json!(position));
+    }
+
+    send_request(
+        &mut a,
+        Routes::SETTING as i32,
+        json!({
+            "current_configs": {
+                "deck_count": 0,
+                "removed_rank_count": 0,
+                "first_deal_time": 1,
+                "deal_time": 1,
+                "play_time": 30
+            }
+        }),
+    )
+    .await;
+    assert_eq!(
+        wait_for_response(&mut a, Routes::SETTING as i32).await["code"],
+        json!(WsResponseCode::OK as i32)
+    );
+    send_request(&mut a, Routes::START as i32, Value::Null).await;
+    assert_eq!(
+        wait_for_response(&mut a, Routes::START as i32).await["code"],
+        json!(WsResponseCode::OK as i32)
+    );
+
+    let mut clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
+    let declaration = wait_for_event(&mut *clients[0], UpgradeWsCode::TRUMP_DECLARED as i32).await;
+    let dealer_position = declaration["data"]["position"]
+        .as_i64()
+        .expect("upgrade rejoin dealer") as usize;
+    let hands = collect_upgrade_hands(&mut clients).await;
+    let bottom = recv_upgrade_bottom(&mut *clients[dealer_position], dealer_position).await;
+    let bottom_cards = bottom["data"]["cards"]
+        .as_array()
+        .expect("upgrade rejoin bottom")
+        .iter()
+        .map(|card| card.as_i64().expect("upgrade rejoin bottom card") as i32)
+        .collect::<Vec<_>>();
+    assert_eq!(bottom_cards.len(), 10);
+
+    // Reconnect while the single combined select/bury window is still open.
+    // The replacement must recover the same seat and the exact authoritative
+    // hand rather than starting a new room or receiving a fresh position.
+    clients[0]
+        .close(None)
+        .await
+        .expect("close upgrade player socket");
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let mut rejoined = connect_client(&url).await;
+    let joined = join_as(&mut rejoined, GameId::UPGRADE, room, "rejoin-player-0").await;
+    assert_eq!(joined["data"]["self_position"], json!(0));
+    let hand_update = wait_for_event(&mut rejoined, UpgradeWsCode::HAND_UPDATED as i32).await;
+    let restored_hand = hand_update["data"]["cards"]
+        .as_array()
+        .expect("upgrade rejoined hand")
+        .iter()
+        .map(|card| card.as_i64().expect("upgrade rejoined card") as i32)
+        .collect::<Vec<_>>();
+    let mut restored_hand_sorted = restored_hand;
+    let mut expected_hand_sorted = hands[0].clone();
+    restored_hand_sorted.sort_unstable();
+    expected_hand_sorted.sort_unstable();
+    assert_eq!(restored_hand_sorted, expected_hand_sorted);
+    let snapshot = wait_for_phase(&mut rejoined, UpgradePhase::Bury).await;
+    assert_eq!(snapshot["data"]["round_index"], json!(0));
+    assert_eq!(snapshot["data"]["bottom_card_count"], json!(10));
+
+    if dealer_position == 0 {
+        send_request(
+            &mut rejoined,
+            UpgradeRoutes::BURY_BOTTOM as i32,
+            json!({ "cards": bottom_cards }),
+        )
+        .await;
+        assert_eq!(
+            wait_for_phase(&mut rejoined, UpgradePhase::Play).await["data"]["round_index"],
+            json!(0)
+        );
+        assert_eq!(
+            wait_for_response(&mut rejoined, UpgradeRoutes::BURY_BOTTOM as i32).await["code"],
+            json!(WsResponseCode::OK as i32)
+        );
+    }
+
+    server.abort();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn upgrade_six_deck_ws_deals_and_buries_the_correct_counts() {
     let port = free_port();
     let listen_addr = format!("127.0.0.1:{port}");
