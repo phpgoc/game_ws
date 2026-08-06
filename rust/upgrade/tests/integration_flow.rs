@@ -1,4 +1,8 @@
-use std::{collections::HashMap, net::TcpListener, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    sync::{Arc, mpsc::sync_channel},
+    time::Duration,
+};
 
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
@@ -12,7 +16,8 @@ use upgrade::game::UpgradeGameHandler;
 use upgrade_common::{Card, Rank, ScoreProgression};
 use ws_common::{
     ClientRequest, Dispatch, GameHandler, GameState, JoinAuthorization, JoinAuthorizationFuture,
-    RoomService, RuntimeConfig, SessionId, SessionSenders, SettingsBuilderResult, run_room_runtime,
+    RoomService, RuntimeConfig, RuntimeStopHandle, SessionId, SessionSenders,
+    SettingsBuilderResult, run_room_runtime_until_stopped_with_ready, runtime_stop_channel,
 };
 
 type Client =
@@ -84,12 +89,56 @@ impl GameHandler for TestUpgradeHandler {
     }
 }
 
-fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .expect("bind free port")
-        .local_addr()
-        .expect("local addr")
-        .port()
+struct TestRuntime {
+    url: String,
+    stop_handle: RuntimeStopHandle,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl Drop for TestRuntime {
+    fn drop(&mut self) {
+        self.stop_handle.stop();
+        self.task.abort();
+    }
+}
+
+async fn start_test_runtime<H>(
+    service_name: &'static str,
+    timeout: Duration,
+    handler: H,
+) -> TestRuntime
+where
+    H: GameHandler,
+{
+    let (stop_handle, stop_signal) = runtime_stop_channel();
+    let (ready_tx, ready_rx) = sync_channel(1);
+    let task = tokio::spawn(async move {
+        run_room_runtime_until_stopped_with_ready(
+            RuntimeConfig {
+                service_name,
+                listen_addr: "127.0.0.1:0".to_owned(),
+                idle_timeout: timeout,
+                heartbeat_interval: Duration::from_secs(5),
+            },
+            handler,
+            stop_signal,
+            ready_tx,
+        )
+        .await
+        .expect("upgrade test runtime");
+    });
+    let stats = tokio::task::spawn_blocking(move || {
+        ready_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("upgrade test runtime readiness")
+    })
+    .await
+    .expect("read upgrade test runtime readiness");
+    TestRuntime {
+        url: format!("ws://{}", stats.listen_addr()),
+        stop_handle,
+        task,
+    }
 }
 
 async fn connect_client(url: &str) -> Client {
@@ -125,16 +174,9 @@ async fn join_as(client: &mut Client, game_id: GameId, room: &str, name: &str) -
         .expect("send join");
 
     loop {
-        let frame = tokio::time::timeout(Duration::from_secs(5), client.next())
-            .await
-            .expect("join timeout")
-            .expect("join frame")
-            .expect("valid join frame");
-        if let Message::Text(text) = frame {
-            let value: Value = serde_json::from_str(text.as_ref()).expect("json frame");
-            if value.get("route").and_then(Value::as_i64) == Some(Routes::JOIN as i64) {
-                return value;
-            }
+        let value = recv_json(client, "join response", Duration::from_secs(5)).await;
+        if value.get("route").and_then(Value::as_i64) == Some(Routes::JOIN as i64) {
+            return value;
         }
     }
 }
@@ -150,32 +192,18 @@ async fn send_request(client: &mut Client, route: i32, data: Value) {
 
 async fn wait_for_response(client: &mut Client, route: i32) -> Value {
     loop {
-        let frame = tokio::time::timeout(Duration::from_secs(5), client.next())
-            .await
-            .expect("response timeout")
-            .expect("response frame")
-            .expect("valid response frame");
-        if let Message::Text(text) = frame {
-            let value: Value = serde_json::from_str(text.as_ref()).expect("json response");
-            if value.get("route").and_then(Value::as_i64) == Some(i64::from(route)) {
-                return value;
-            }
+        let value = recv_json(client, "route response", Duration::from_secs(5)).await;
+        if value.get("route").and_then(Value::as_i64) == Some(i64::from(route)) {
+            return value;
         }
     }
 }
 
 async fn wait_for_event(client: &mut Client, code: i32) -> Value {
     loop {
-        let frame = tokio::time::timeout(Duration::from_secs(25), client.next())
-            .await
-            .expect("event timeout")
-            .expect("event frame")
-            .expect("valid event frame");
-        if let Message::Text(text) = frame {
-            let value: Value = serde_json::from_str(text.as_ref()).expect("json event");
-            if value.get("code").and_then(Value::as_i64) == Some(i64::from(code)) {
-                return value;
-            }
+        let value = recv_json(client, "event", Duration::from_secs(25)).await;
+        if value.get("code").and_then(Value::as_i64) == Some(i64::from(code)) {
+            return value;
         }
     }
 }
@@ -198,17 +226,37 @@ async fn wait_for_phase(client: &mut Client, phase: share_type_public::UpgradePh
     }
 }
 
-async fn recv_json_full(client: &mut Client, label: &str) -> Value {
+async fn recv_json(client: &mut Client, label: &str, timeout: Duration) -> Value {
     loop {
-        let frame = tokio::time::timeout(Duration::from_secs(60), client.next())
+        let frame = tokio::time::timeout(timeout, client.next())
             .await
             .unwrap_or_else(|_| panic!("upgrade websocket timeout while waiting for {label}"))
-            .expect("upgrade websocket frame")
-            .expect("upgrade websocket frame ok");
-        if let Message::Text(text) = frame {
-            return serde_json::from_str(text.as_ref()).expect("upgrade json frame");
+            .unwrap_or_else(|| panic!("upgrade websocket closed while waiting for {label}"))
+            .unwrap_or_else(|error| {
+                panic!("upgrade websocket read failed while waiting for {label}: {error}")
+            });
+        match frame {
+            Message::Text(text) => {
+                return serde_json::from_str(text.as_ref()).expect("upgrade json frame");
+            }
+            Message::Ping(payload) => {
+                client
+                    .send(Message::Pong(payload))
+                    .await
+                    .unwrap_or_else(|error| {
+                        panic!("upgrade websocket pong failed while waiting for {label}: {error}")
+                    });
+            }
+            Message::Pong(_) => {}
+            other => {
+                panic!("unexpected upgrade websocket frame while waiting for {label}: {other:?}")
+            }
         }
     }
+}
+
+async fn recv_json_full(client: &mut Client, label: &str) -> Value {
+    recv_json(client, label, Duration::from_secs(60)).await
 }
 
 async fn collect_upgrade_hand_min(
@@ -484,18 +532,13 @@ async fn wait_upgrade_snapshot(
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn upgrade_server_accepts_only_its_own_game_id() {
-    let port = free_port();
-    let listen_addr = format!("127.0.0.1:{port}");
-    let url = format!("ws://{listen_addr}");
-    let server = tokio::spawn(run_room_runtime(
-        RuntimeConfig {
-            service_name: "upgrade-integration-test",
-            listen_addr,
-            idle_timeout: Duration::from_secs(30),
-            heartbeat_interval: Duration::from_secs(30),
-        },
+    let runtime = start_test_runtime(
+        "upgrade-integration-test",
+        Duration::from_secs(30),
         UpgradeGameHandler::default(),
-    ));
+    )
+    .await;
+    let url = runtime.url.clone();
 
     let mut wrong_client = connect_client(&url).await;
     let wrong = join(&mut wrong_client, GameId::TRACTOR, "wrong-upgrade-room").await;
@@ -507,24 +550,17 @@ async fn upgrade_server_accepts_only_its_own_game_id() {
     assert_eq!(accepted["data"]["self_position"], json!(0));
     assert_eq!(accepted["data"]["current_configs"]["deck_count"], json!(0));
     assert_eq!(accepted["data"]["current_configs"]["play_time"], json!(30));
-
-    server.abort();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn upgrade_ws_accepts_a_level_three_declaration_during_first_deal() {
-    let port = free_port();
-    let listen_addr = format!("127.0.0.1:{port}");
-    let url = format!("ws://{listen_addr}");
-    let server = tokio::spawn(run_room_runtime(
-        RuntimeConfig {
-            service_name: "upgrade-first-declaration-test",
-            listen_addr,
-            idle_timeout: Duration::from_secs(45),
-            heartbeat_interval: Duration::from_secs(45),
-        },
+    let runtime = start_test_runtime(
+        "upgrade-first-declaration-test",
+        Duration::from_secs(45),
         TestUpgradeHandler::default(),
-    ));
+    )
+    .await;
+    let url = runtime.url.clone();
 
     let mut a = connect_client(&url).await;
     let mut b = connect_client(&url).await;
@@ -591,6 +627,11 @@ async fn upgrade_ws_accepts_a_level_three_declaration_during_first_deal() {
                 json!({ "cards": [card] }),
             )
             .await;
+            assert_eq!(
+                wait_for_response(&mut *clients[position], UpgradeRoutes::DECLARE_TRUMP as i32)
+                    .await["code"],
+                json!(WsResponseCode::OK as i32)
+            );
             let observer_position = (position + 1) % 4;
             let declaration = wait_for_event(
                 &mut *clients[observer_position],
@@ -608,11 +649,6 @@ async fn upgrade_ws_accepts_a_level_three_declaration_during_first_deal() {
                         .expect("upgrade declaration suit")
                 ),
                 decoded.suit().expect("suited level card")
-            );
-            assert_eq!(
-                wait_for_response(&mut *clients[position], UpgradeRoutes::DECLARE_TRUMP as i32)
-                    .await["code"],
-                json!(WsResponseCode::OK as i32)
             );
             declared = Some((position, card));
             break;
@@ -725,6 +761,14 @@ async fn upgrade_ws_accepts_a_level_three_declaration_during_first_deal() {
         json!({ "cards": stronger_cards }),
     )
     .await;
+    assert_eq!(
+        wait_for_response(
+            &mut *clients[stronger_position],
+            UpgradeRoutes::DECLARE_TRUMP as i32
+        )
+        .await["code"],
+        json!(WsResponseCode::OK as i32)
+    );
     let observer_position = (stronger_position + 1) % 4;
     let declaration = loop {
         let candidate = wait_for_event(
@@ -754,34 +798,19 @@ async fn upgrade_ws_accepts_a_level_three_declaration_during_first_deal() {
         ),
         stronger_suit
     );
-    assert_eq!(
-        wait_for_response(
-            &mut *clients[stronger_position],
-            UpgradeRoutes::DECLARE_TRUMP as i32
-        )
-        .await["code"],
-        json!(WsResponseCode::OK as i32)
-    );
-
-    server.abort();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn four_players_can_deal_bury_and_play_first_round() {
     use share_type_public::{UpgradePhase, UpgradeRoutes, UpgradeWsCode};
 
-    let port = free_port();
-    let listen_addr = format!("127.0.0.1:{port}");
-    let url = format!("ws://{listen_addr}");
-    let server = tokio::spawn(run_room_runtime(
-        RuntimeConfig {
-            service_name: "upgrade-round-integration-test",
-            listen_addr,
-            idle_timeout: Duration::from_secs(30),
-            heartbeat_interval: Duration::from_secs(30),
-        },
+    let runtime = start_test_runtime(
+        "upgrade-round-integration-test",
+        Duration::from_secs(30),
         UpgradeGameHandler::default(),
-    ));
+    )
+    .await;
+    let url = runtime.url.clone();
 
     let mut clients = Vec::new();
     for position in 0..4 {
@@ -925,24 +954,17 @@ async fn four_players_can_deal_bury_and_play_first_round() {
             .unwrap();
         hands[position].remove(index);
     }
-
-    server.abort();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn upgrade_server_completes_round_and_enters_later_round() {
-    let port = free_port();
-    let listen_addr = format!("127.0.0.1:{port}");
-    let url = format!("ws://{listen_addr}");
-    let server = tokio::spawn(run_room_runtime(
-        RuntimeConfig {
-            service_name: "upgrade-full-round-test",
-            listen_addr,
-            idle_timeout: Duration::from_secs(90),
-            heartbeat_interval: Duration::from_secs(90),
-        },
+    let runtime = start_test_runtime(
+        "upgrade-full-round-test",
+        Duration::from_secs(90),
         TestUpgradeHandler::default(),
-    ));
+    )
+    .await;
+    let url = runtime.url.clone();
 
     let mut a = connect_client(&url).await;
     let mut b = connect_client(&url).await;
@@ -1380,24 +1402,17 @@ async fn upgrade_server_completes_round_and_enters_later_round() {
         wait_for_response(&mut *clients[later_dealer], Routes::PLAY as i32).await["code"],
         json!(WsResponseCode::OK as i32)
     );
-
-    server.abort();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn upgrade_ws_rejoin_preserves_running_bury_state() {
-    let port = free_port();
-    let listen_addr = format!("127.0.0.1:{port}");
-    let url = format!("ws://{listen_addr}");
-    let server = tokio::spawn(run_room_runtime(
-        RuntimeConfig {
-            service_name: "upgrade-rejoin-bury-test",
-            listen_addr,
-            idle_timeout: Duration::from_secs(30),
-            heartbeat_interval: Duration::from_secs(30),
-        },
+    let runtime = start_test_runtime(
+        "upgrade-rejoin-bury-test",
+        Duration::from_secs(30),
         TestUpgradeHandler::default(),
-    ));
+    )
+    .await;
+    let url = runtime.url.clone();
 
     let mut a = connect_client(&url).await;
     let mut b = connect_client(&url).await;
@@ -1602,8 +1617,6 @@ async fn upgrade_ws_rejoin_preserves_running_bury_state() {
         wait_for_response(&mut play_rejoined, Routes::PLAY as i32).await["code"],
         json!(WsResponseCode::OK as i32)
     );
-
-    server.abort();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -1622,18 +1635,13 @@ async fn assert_upgrade_deck_ws_deals_and_buries(
     expected_bottom_count: usize,
     expected_hand_count: usize,
 ) {
-    let port = free_port();
-    let listen_addr = format!("127.0.0.1:{port}");
-    let url = format!("ws://{listen_addr}");
-    let server = tokio::spawn(run_room_runtime(
-        RuntimeConfig {
-            service_name: "upgrade-multi-deck-test",
-            listen_addr,
-            idle_timeout: Duration::from_secs(45),
-            heartbeat_interval: Duration::from_secs(45),
-        },
+    let runtime = start_test_runtime(
+        "upgrade-multi-deck-test",
+        Duration::from_secs(45),
         TestUpgradeHandler::default(),
-    ));
+    )
+    .await;
+    let url = runtime.url.clone();
 
     let mut a = connect_client(&url).await;
     let mut b = connect_client(&url).await;
@@ -1758,24 +1766,17 @@ async fn assert_upgrade_deck_ws_deals_and_buries(
         .await["code"],
         json!(WsResponseCode::OK as i32)
     );
-
-    server.abort();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn upgrade_four_deck_removed_ranks_ws_flow_skips_removed_levels() {
-    let port = free_port();
-    let listen_addr = format!("127.0.0.1:{port}");
-    let url = format!("ws://{listen_addr}");
-    let server = tokio::spawn(run_room_runtime(
-        RuntimeConfig {
-            service_name: "upgrade-four-deck-removed-ranks-test",
-            listen_addr,
-            idle_timeout: Duration::from_secs(45),
-            heartbeat_interval: Duration::from_secs(45),
-        },
+    let runtime = start_test_runtime(
+        "upgrade-four-deck-removed-ranks-test",
+        Duration::from_secs(45),
         TestUpgradeHandler::default(),
-    ));
+    )
+    .await;
+    let url = runtime.url.clone();
 
     let mut a = connect_client(&url).await;
     let mut b = connect_client(&url).await;
@@ -1873,24 +1874,17 @@ async fn upgrade_four_deck_removed_ranks_ws_flow_skips_removed_levels() {
         .await["code"],
         json!(WsResponseCode::OK as i32)
     );
-
-    server.abort();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn upgrade_ws_auto_buries_after_three_play_windows() {
-    let port = free_port();
-    let listen_addr = format!("127.0.0.1:{port}");
-    let url = format!("ws://{listen_addr}");
-    let server = tokio::spawn(run_room_runtime(
-        RuntimeConfig {
-            service_name: "upgrade-auto-bury-window-test",
-            listen_addr,
-            idle_timeout: Duration::from_secs(30),
-            heartbeat_interval: Duration::from_secs(30),
-        },
+    let runtime = start_test_runtime(
+        "upgrade-auto-bury-window-test",
+        Duration::from_secs(30),
         TestUpgradeHandler::default(),
-    ));
+    )
+    .await;
+    let url = runtime.url.clone();
 
     let mut a = connect_client(&url).await;
     let mut b = connect_client(&url).await;
@@ -1979,24 +1973,17 @@ async fn upgrade_ws_auto_buries_after_three_play_windows() {
         after_auto_play["data"]["current_position"],
         json!((dealer_position + 1) % 4)
     );
-
-    server.abort();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn upgrade_ws_rejects_an_off_group_follow_and_accepts_the_next_legal_card() {
-    let port = free_port();
-    let listen_addr = format!("127.0.0.1:{port}");
-    let url = format!("ws://{listen_addr}");
-    let server = tokio::spawn(run_room_runtime(
-        RuntimeConfig {
-            service_name: "upgrade-illegal-follow-test",
-            listen_addr,
-            idle_timeout: Duration::from_secs(30),
-            heartbeat_interval: Duration::from_secs(30),
-        },
+    let runtime = start_test_runtime(
+        "upgrade-illegal-follow-test",
+        Duration::from_secs(30),
         TestUpgradeHandler::default(),
-    ));
+    )
+    .await;
+    let url = runtime.url.clone();
 
     let mut a = connect_client(&url).await;
     let mut b = connect_client(&url).await;
@@ -2138,24 +2125,17 @@ async fn upgrade_ws_rejects_an_off_group_follow_and_accepts_the_next_legal_card(
         wait_for_response(&mut *clients[follower_position], Routes::PLAY as i32).await["code"],
         json!(WsResponseCode::OK as i32)
     );
-
-    server.abort();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn upgrade_ws_failed_throw_reports_attempted_and_played_components() {
-    let port = free_port();
-    let listen_addr = format!("127.0.0.1:{port}");
-    let url = format!("ws://{listen_addr}");
-    let server = tokio::spawn(run_room_runtime(
-        RuntimeConfig {
-            service_name: "upgrade-failed-throw-test",
-            listen_addr,
-            idle_timeout: Duration::from_secs(30),
-            heartbeat_interval: Duration::from_secs(30),
-        },
+    let runtime = start_test_runtime(
+        "upgrade-failed-throw-test",
+        Duration::from_secs(30),
         TestUpgradeHandler::default(),
-    ));
+    )
+    .await;
+    let url = runtime.url.clone();
 
     let mut a = connect_client(&url).await;
     let mut b = connect_client(&url).await;
@@ -2290,5 +2270,4 @@ async fn upgrade_ws_failed_throw_reports_attempted_and_played_components() {
 
     hands[dealer_position].retain(|card| !expected_played.contains(card));
     assert_eq!(hands[dealer_position].len(), 38 - expected_played.len());
-    server.abort();
 }
