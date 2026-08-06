@@ -834,13 +834,13 @@ async fn upgrade_server_completes_round_and_enters_later_round() {
                 .levels as i32;
             assert_eq!(settlement.level_change, expected_levels);
             for position in 0..4 {
-                let expected_player_score = if expected_winners.contains(&(position as i32)) {
+                let expected_player_score = if expected_winners.contains(&position) {
                     expected_score
                 } else {
                     -expected_score
                 };
                 assert_eq!(
-                    settlement.player_scores.get(&(position as i32)).copied(),
+                    settlement.player_scores.get(&position).copied(),
                     Some(expected_player_score)
                 );
             }
