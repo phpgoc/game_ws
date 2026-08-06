@@ -652,16 +652,26 @@ async fn play_complete_upgrade_round(
     panic!("complete upgrade round ended without settlement");
 }
 
-async fn run_concurrent_upgrade_room(
-    url: &str,
-    room: &str,
+struct ConcurrentUpgradeRoomCase {
+    room: &'static str,
     deck_setting: i32,
     deck_count: i32,
     removed_rank_count: i32,
     target_rank: UpgradeRank,
     expected_hand_size: usize,
     expected_bottom_size: usize,
-) -> Value {
+}
+
+async fn run_concurrent_upgrade_room(url: &str, case: ConcurrentUpgradeRoomCase) -> Value {
+    let ConcurrentUpgradeRoomCase {
+        room,
+        deck_setting,
+        deck_count,
+        removed_rank_count,
+        target_rank,
+        expected_hand_size,
+        expected_bottom_size,
+    } = case;
     let mut a = connect_client(url).await;
     let mut b = connect_client(url).await;
     let mut c = connect_client(url).await;
@@ -884,23 +894,27 @@ async fn upgrade_ws_keeps_concurrent_rooms_isolated() {
     let (three_deck, four_deck) = tokio::join!(
         run_concurrent_upgrade_room(
             &runtime.url,
-            "upgrade-room-three",
-            0,
-            3,
-            0,
-            UpgradeRank::THREE,
-            38,
-            10,
+            ConcurrentUpgradeRoomCase {
+                room: "upgrade-room-three",
+                deck_setting: 0,
+                deck_count: 3,
+                removed_rank_count: 0,
+                target_rank: UpgradeRank::THREE,
+                expected_hand_size: 38,
+                expected_bottom_size: 10,
+            },
         ),
         run_concurrent_upgrade_room(
             &runtime.url,
-            "upgrade-room-four",
-            1,
-            4,
-            2,
-            UpgradeRank::FIVE,
-            44,
-            8,
+            ConcurrentUpgradeRoomCase {
+                room: "upgrade-room-four",
+                deck_setting: 1,
+                deck_count: 4,
+                removed_rank_count: 2,
+                target_rank: UpgradeRank::FIVE,
+                expected_hand_size: 44,
+                expected_bottom_size: 8,
+            },
         ),
     );
     assert_eq!(three_deck["data"]["deck_count"], json!(3));
@@ -1940,12 +1954,7 @@ async fn upgrade_ws_finishes_a_multi_round_match_at_ace() {
     assert!((2..=10).contains(&completed_rounds));
     assert_eq!(final_settlement.target_rank, UpgradeRank::A);
     assert_eq!(final_settlement.next_target_rank, None);
-    assert!(
-        final_settlement
-            .team_target_ranks
-            .iter()
-            .any(|rank| *rank == UpgradeRank::A)
-    );
+    assert!(final_settlement.team_target_ranks.contains(&UpgradeRank::A));
 
     let unexpected_next_deal = tokio::time::timeout(
         Duration::from_secs(4),
