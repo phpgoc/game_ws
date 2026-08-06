@@ -939,6 +939,8 @@ async fn upgrade_server_completes_round_and_enters_later_round() {
         later_hands[later_dealer].remove(index);
     }
 
+    // 让共享窗口先消耗一点时间；若选主重置窗口，下面的快照会错误地回到 90 秒。
+    tokio::time::sleep(Duration::from_secs(2)).await;
     send_request(
         &mut *clients[later_dealer],
         UpgradeRoutes::SELECT_TRUMP as i32,
@@ -957,6 +959,10 @@ async fn upgrade_server_completes_round_and_enters_later_round() {
     };
     assert_eq!(later_selected_snapshot["data"]["round_index"], json!(1));
     assert_ne!(later_selected_snapshot["data"]["trump_suit"], Value::Null);
+    // 后续局选主和埋底共用一个窗口；选主不能把三倍出牌倒计时重置。
+    assert!(later_selected_snapshot["data"]["turn_countdown"]
+        .as_i64()
+        .is_some_and(|countdown| countdown < 90));
     assert_eq!(
         wait_for_response(
             &mut *clients[later_dealer],
