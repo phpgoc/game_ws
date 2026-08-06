@@ -453,10 +453,12 @@ async fn tractor_ws_accepts_a_level_three_declaration_during_first_deal() {
     .await;
 
     let clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
+    let mut dealt_counts = [0_usize; 4];
     let mut declared = None;
     for _ in 0..38 {
         for position in 0..4 {
             let card = recv_tractor_private_deal(&mut *clients[position], position).await;
+            dealt_counts[position] += 1;
             let decoded = Card::try_from(card).expect("tractor declaration candidate");
             if decoded.rank() != Rank::Three || decoded.suit().is_none() {
                 continue;
@@ -513,9 +515,73 @@ async fn tractor_ws_accepts_a_level_three_declaration_during_first_deal() {
             break;
         }
     }
+    let (declaring_position, declared_card) = declared
+        .expect("a three-deck tractor deal must expose a suited level three outside the bottom");
+    let declared_suit = match Card::try_from(declared_card)
+        .expect("declared tractor card")
+        .suit()
+        .expect("declared tractor card suit")
+    {
+        upgrade_common::Suit::Spade => TractorSuit::SPADE,
+        upgrade_common::Suit::Heart => TractorSuit::HEART,
+        upgrade_common::Suit::Club => TractorSuit::CLUB,
+        upgrade_common::Suit::Diamond => TractorSuit::DIAMOND,
+    };
+
+    let mut rejected_equal_declaration = None;
+    'deal: while dealt_counts.iter().any(|count| *count < 38) {
+        for position in 0..4 {
+            if dealt_counts[position] >= 38 {
+                continue;
+            }
+            let card = recv_tractor_private_deal(&mut *clients[position], position).await;
+            dealt_counts[position] += 1;
+            let decoded = Card::try_from(card).expect("tractor counter declaration candidate");
+            if decoded.rank() != Rank::Three || decoded.suit().is_none() {
+                continue;
+            }
+
+            send_request(
+                &mut *clients[position],
+                TractorRoutes::DECLARE_TRUMP as i32,
+                json!({ "cards": [card] }),
+            )
+            .await;
+            recv_until(
+                &mut *clients[position],
+                "tractor equal declaration rejection",
+                |value| {
+                    value.get("route").and_then(Value::as_i64)
+                        == Some(TractorRoutes::DECLARE_TRUMP as i64)
+                        && value.get("code").and_then(Value::as_i64)
+                            == Some(WsResponseCode::NO_PERMISSION as i64)
+                },
+            )
+            .await;
+            let snapshot = recv_until(
+                &mut *clients[position],
+                "tractor retained declaration snapshot",
+                |value| {
+                    value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+                },
+            )
+            .await;
+            assert_eq!(
+                snapshot["data"]["declaration"]["position"],
+                json!(declaring_position)
+            );
+            assert_eq!(snapshot["data"]["declaration"]["strength"], json!(1));
+            assert_eq!(
+                snapshot["data"]["declaration"]["trump_suit"],
+                json!(declared_suit as i8)
+            );
+            rejected_equal_declaration = Some((position, card));
+            break 'deal;
+        }
+    }
     assert!(
-        declared.is_some(),
-        "a three-deck tractor deal must expose a suited level three outside the bottom"
+        rejected_equal_declaration.is_some(),
+        "another dealt level three must not replace an equal-strength tractor declaration"
     );
 
     server.abort();
