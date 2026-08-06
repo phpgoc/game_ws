@@ -125,9 +125,11 @@ fn later_round_selects_trump_then_buries_in_one_operation_window() {
     state.deal_new_round(rules(3)).unwrap();
     finish_deal(&mut state);
     let bottom = state.bottom_cards.clone();
-    state.bury_bottom(0, bottom).unwrap();
+    // 首局兜底亮主的庄家由实际亮到级牌的座位决定，不能假设仍是 0 号位。
+    let first_dealer = state.dealer_position;
+    state.bury_bottom(first_dealer, bottom).unwrap();
     assert_eq!(state.phase, UpgradePhase::Play);
-    assert!(state.select_trump(0, UpgradeSuit::HEART).is_err());
+    assert!(state.select_trump(first_dealer, UpgradeSuit::HEART).is_err());
 
     let common = Arc::new(Mutex::new(CommonGameState::new()));
     let mut later_round = UpgradeGameState::from_common(common);
