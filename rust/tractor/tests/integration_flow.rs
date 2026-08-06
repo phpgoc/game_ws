@@ -1,4 +1,6 @@
 #[cfg(not(feature = "official"))]
+use std::collections::HashMap;
+#[cfg(not(feature = "official"))]
 use std::net::TcpListener;
 use std::time::Duration;
 
@@ -585,6 +587,190 @@ async fn tractor_ws_accepts_a_level_three_declaration_during_first_deal() {
     );
 
     server.abort();
+}
+
+#[cfg(not(feature = "official"))]
+async fn try_tractor_pair_counter_declaration(attempt: usize) -> bool {
+    let port = free_port();
+    let listen_addr = format!("127.0.0.1:{port}");
+    let url = format!("ws://{listen_addr}");
+    let server = tokio::spawn(run_room_runtime(
+        RuntimeConfig {
+            service_name: "tractor-pair-counter-declaration-test",
+            listen_addr,
+            idle_timeout: Duration::from_secs(45),
+            heartbeat_interval: Duration::from_secs(45),
+        },
+        TestTractorHandler::default(),
+    ));
+
+    let mut a = connect_client(&url).await;
+    let mut b = connect_client(&url).await;
+    let mut c = connect_client(&url).await;
+    let mut d = connect_client(&url).await;
+    let room = format!("tractor-pair-counter-declaration-room-{attempt}");
+    for (position, client) in [&mut a, &mut b, &mut c, &mut d].into_iter().enumerate() {
+        let joined = join(
+            client,
+            &format!("pair-declaration-player-{attempt}-{position}"),
+            &room,
+        )
+        .await;
+        assert_eq!(joined["code"], json!(WsResponseCode::JOINED as i32));
+        assert_eq!(joined["data"]["self_position"], json!(position));
+    }
+
+    send_request(
+        &mut a,
+        Routes::SETTING as i32,
+        json!({
+            "current_configs": {
+                "deck_count": 1,
+                "attacking_win_score": 120,
+                "score_per_level": 60,
+                "shutout_bonus_levels": 1,
+                "target_rank": 11,
+                "first_deal_time": 15_000,
+                "deal_time": 3_000,
+                "play_time": 30
+            }
+        }),
+    )
+    .await;
+    recv_until(
+        &mut a,
+        "tractor pair declaration setting response",
+        |value| {
+            value.get("route").and_then(Value::as_i64) == Some(Routes::SETTING as i64)
+                && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+        },
+    )
+    .await;
+    send_request(&mut a, Routes::START as i32, json!({})).await;
+    recv_until(&mut a, "tractor pair declaration start response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::START as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+
+    let clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
+    let mut level_cards: [HashMap<u8, Vec<i32>>; 4] = std::array::from_fn(|_| HashMap::new());
+    let mut declaring_position = None;
+    for _ in 0..38 {
+        for position in 0..4 {
+            let card = recv_tractor_private_deal(&mut *clients[position], position).await;
+            let decoded = Card::try_from(card).expect("tractor pair declaration candidate");
+            if decoded.rank() != Rank::Three || decoded.suit().is_none() {
+                continue;
+            }
+            let copies = level_cards[position].entry(decoded.identity()).or_default();
+            copies.push(card);
+
+            if declaring_position.is_none() {
+                send_request(
+                    &mut *clients[position],
+                    TractorRoutes::DECLARE_TRUMP as i32,
+                    json!({ "cards": [card] }),
+                )
+                .await;
+                let observer_position = (position + 1) % 4;
+                let declaration = recv_until(
+                    &mut *clients[observer_position],
+                    "tractor initial declaration before pair counter",
+                    |value| {
+                        value.get("code").and_then(Value::as_i64)
+                            == Some(TractorWsCode::TRUMP_DECLARED as i64)
+                            && value["data"]["position"] == json!(position)
+                            && value["data"]["strength"] == json!(1)
+                    },
+                )
+                .await;
+                assert_eq!(declaration["data"]["cards"], json!([card]));
+                assert_eq!(
+                    declaration["data"]["target_rank"],
+                    json!(TractorRank::THREE as i8)
+                );
+                recv_until(
+                    &mut *clients[position],
+                    "tractor initial declaration response before pair counter",
+                    |value| {
+                        value.get("route").and_then(Value::as_i64)
+                            == Some(TractorRoutes::DECLARE_TRUMP as i64)
+                            && value.get("code").and_then(Value::as_i64)
+                                == Some(WsResponseCode::OK as i64)
+                    },
+                )
+                .await;
+                declaring_position = Some(position);
+                continue;
+            }
+
+            if declaring_position == Some(position) || copies.len() < 2 {
+                continue;
+            }
+            let stronger_cards = copies[..2].to_vec();
+            send_request(
+                &mut *clients[position],
+                TractorRoutes::DECLARE_TRUMP as i32,
+                json!({ "cards": stronger_cards }),
+            )
+            .await;
+            let observer_position = (position + 1) % 4;
+            let declaration = recv_until(
+                &mut *clients[observer_position],
+                "tractor pair counter declaration event",
+                |value| {
+                    value.get("code").and_then(Value::as_i64)
+                        == Some(TractorWsCode::TRUMP_DECLARED as i64)
+                        && value["data"]["position"] == json!(position)
+                        && value["data"]["strength"] == json!(2)
+                },
+            )
+            .await;
+            assert_eq!(declaration["data"]["cards"], json!(stronger_cards));
+            assert_eq!(
+                declaration["data"]["target_rank"],
+                json!(TractorRank::THREE as i8)
+            );
+            let stronger_suit = match decoded.suit().expect("paired suited level card") {
+                upgrade_common::Suit::Spade => TractorSuit::SPADE,
+                upgrade_common::Suit::Heart => TractorSuit::HEART,
+                upgrade_common::Suit::Club => TractorSuit::CLUB,
+                upgrade_common::Suit::Diamond => TractorSuit::DIAMOND,
+            };
+            assert_eq!(
+                declaration["data"]["trump_suit"],
+                json!(stronger_suit as i8)
+            );
+            recv_until(
+                &mut *clients[position],
+                "tractor pair counter declaration response",
+                |value| {
+                    value.get("route").and_then(Value::as_i64)
+                        == Some(TractorRoutes::DECLARE_TRUMP as i64)
+                        && value.get("code").and_then(Value::as_i64)
+                            == Some(WsResponseCode::OK as i64)
+                },
+            )
+            .await;
+            server.abort();
+            return true;
+        }
+    }
+
+    server.abort();
+    false
+}
+
+#[cfg(not(feature = "official"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn tractor_ws_pair_of_level_threes_overrides_a_single_declaration() {
+    for attempt in 0..5 {
+        if try_tractor_pair_counter_declaration(attempt).await {
+            return;
+        }
+    }
+    panic!("five independent three-deck deals exposed no opponent pair of suited level threes");
 }
 
 #[cfg(feature = "official")]
