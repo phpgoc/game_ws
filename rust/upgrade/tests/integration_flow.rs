@@ -1,4 +1,4 @@
-use std::{net::TcpListener, sync::Arc, time::Duration};
+use std::{collections::HashMap, net::TcpListener, sync::Arc, time::Duration};
 
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
@@ -290,6 +290,89 @@ fn upgrade_rank(value: i64) -> Rank {
         17 => Rank::BigJoker,
         _ => panic!("invalid upgrade rank"),
     }
+}
+
+fn find_failed_upgrade_throw_candidate(
+    hands: &[Vec<i32>; 4],
+    position: usize,
+    rules: combo::UpgradeComboRules,
+) -> Option<(Vec<i32>, Vec<i32>)> {
+    let decoded_hand = hands[position]
+        .iter()
+        .copied()
+        .map(Card::try_from)
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+    let mut by_group: HashMap<Option<upgrade_common::Suit>, HashMap<u8, Vec<Card>>> =
+        HashMap::new();
+    for card in decoded_hand {
+        by_group
+            .entry(combo::card_group(card, rules))
+            .or_default()
+            .entry(card.identity())
+            .or_default()
+            .push(card);
+    }
+
+    for identity_groups in by_group.into_values() {
+        let components = identity_groups
+            .into_values()
+            .filter(|cards| cards.len() >= 2)
+            .map(|mut cards| {
+                cards.sort_by_key(|card| card.encoded());
+                cards
+            })
+            .collect::<Vec<_>>();
+        for left in 0..components.len() {
+            for right in (left + 1)..components.len() {
+                for left_count in 2..=components[left].len().min(3) {
+                    for right_count in 2..=components[right].len().min(3) {
+                        let mut attempted = components[left][..left_count].to_vec();
+                        attempted.extend_from_slice(&components[right][..right_count]);
+                        let Some(classified) = combo::classify(&attempted, rules) else {
+                            continue;
+                        };
+                        if !matches!(classified.kind, combo::ComboKind::Throw { .. }) {
+                            continue;
+                        }
+                        let fallback = hands
+                            .iter()
+                            .enumerate()
+                            .filter(|(opponent, _)| *opponent != position)
+                            .filter_map(|(_, opponent_hand)| {
+                                let opponent = opponent_hand
+                                    .iter()
+                                    .copied()
+                                    .map(Card::try_from)
+                                    .collect::<Result<Vec<_>, _>>()
+                                    .ok()?;
+                                combo::failed_throw_component(&attempted, &opponent, rules)
+                            })
+                            .min_by_key(|component| {
+                                (
+                                    component.len(),
+                                    component
+                                        .first()
+                                        .map(|card| combo::card_strength(*card, rules))
+                                        .unwrap_or_default(),
+                                    component
+                                        .first()
+                                        .map(|card| card.encoded())
+                                        .unwrap_or_default(),
+                                )
+                            });
+                        if let Some(fallback) = fallback {
+                            return Some((
+                                attempted.iter().map(|card| card.encoded()).collect(),
+                                fallback.iter().map(|card| card.encoded()).collect(),
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 fn upgrade_trick_winner(
@@ -960,9 +1043,11 @@ async fn upgrade_server_completes_round_and_enters_later_round() {
     assert_eq!(later_selected_snapshot["data"]["round_index"], json!(1));
     assert_ne!(later_selected_snapshot["data"]["trump_suit"], Value::Null);
     // 后续局选主和埋底共用一个窗口；选主不能把三倍出牌倒计时重置。
-    assert!(later_selected_snapshot["data"]["turn_countdown"]
-        .as_i64()
-        .is_some_and(|countdown| countdown < 90));
+    assert!(
+        later_selected_snapshot["data"]["turn_countdown"]
+            .as_i64()
+            .is_some_and(|countdown| countdown < 90)
+    );
     assert_eq!(
         wait_for_response(
             &mut *clients[later_dealer],
@@ -1758,5 +1843,156 @@ async fn upgrade_ws_rejects_an_off_group_follow_and_accepts_the_next_legal_card(
         json!(WsResponseCode::OK as i32)
     );
 
+    server.abort();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn upgrade_ws_failed_throw_reports_attempted_and_played_components() {
+    let port = free_port();
+    let listen_addr = format!("127.0.0.1:{port}");
+    let url = format!("ws://{listen_addr}");
+    let server = tokio::spawn(run_room_runtime(
+        RuntimeConfig {
+            service_name: "upgrade-failed-throw-test",
+            listen_addr,
+            idle_timeout: Duration::from_secs(30),
+            heartbeat_interval: Duration::from_secs(30),
+        },
+        TestUpgradeHandler::default(),
+    ));
+
+    let mut a = connect_client(&url).await;
+    let mut b = connect_client(&url).await;
+    let mut c = connect_client(&url).await;
+    let mut d = connect_client(&url).await;
+    let room = "upgrade-failed-throw-room";
+    for (position, client) in [&mut a, &mut b, &mut c, &mut d].into_iter().enumerate() {
+        let joined = join_as(
+            client,
+            GameId::UPGRADE,
+            room,
+            &format!("failed-throw-player-{position}"),
+        )
+        .await;
+        assert_eq!(joined["code"], json!(WsResponseCode::JOINED as i32));
+        assert_eq!(joined["data"]["self_position"], json!(position));
+    }
+
+    send_request(
+        &mut a,
+        Routes::SETTING as i32,
+        json!({
+            "current_configs": {
+                "deck_count": 0,
+                "first_deal_time": 1,
+                "deal_time": 1,
+                "play_time": 3
+            }
+        }),
+    )
+    .await;
+    assert_eq!(
+        wait_for_response(&mut a, Routes::SETTING as i32).await["code"],
+        json!(WsResponseCode::OK as i32)
+    );
+    send_request(&mut a, Routes::START as i32, Value::Null).await;
+    assert_eq!(
+        wait_for_response(&mut a, Routes::START as i32).await["code"],
+        json!(WsResponseCode::OK as i32)
+    );
+
+    let mut clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
+    let declaration = wait_for_event(&mut *clients[0], UpgradeWsCode::TRUMP_DECLARED as i32).await;
+    let dealer_position = declaration["data"]["position"]
+        .as_i64()
+        .expect("upgrade failed-throw dealer") as usize;
+    let mut hands = collect_upgrade_hands(&mut clients).await;
+    let bottom = recv_upgrade_bottom(&mut *clients[dealer_position], dealer_position).await;
+    let bottom_cards = bottom["data"]["cards"]
+        .as_array()
+        .expect("upgrade failed-throw bottom")
+        .iter()
+        .map(|card| card.as_i64().expect("upgrade failed-throw card") as i32)
+        .collect::<Vec<_>>();
+    assert_eq!(bottom_cards.len(), 10);
+    for card in &bottom_cards {
+        let index = hands[dealer_position]
+            .iter()
+            .position(|candidate| candidate == card)
+            .expect("failed-throw bottom card in dealer hand");
+        hands[dealer_position].remove(index);
+    }
+
+    send_request(
+        &mut *clients[dealer_position],
+        UpgradeRoutes::BURY_BOTTOM as i32,
+        json!({ "cards": bottom_cards }),
+    )
+    .await;
+    let snapshot = wait_for_phase(&mut *clients[dealer_position], UpgradePhase::Play).await;
+    assert_eq!(
+        wait_for_response(
+            &mut *clients[dealer_position],
+            UpgradeRoutes::BURY_BOTTOM as i32,
+        )
+        .await["code"],
+        json!(WsResponseCode::OK as i32)
+    );
+    let rules = combo::UpgradeComboRules {
+        target_rank: upgrade_rank(snapshot["data"]["target_rank"].as_i64().unwrap()),
+        trump_suit: Some(upgrade_suit(
+            snapshot["data"]["trump_suit"].as_i64().unwrap(),
+        )),
+    };
+    let (attempted, expected_played) =
+        find_failed_upgrade_throw_candidate(&hands, dealer_position, rules)
+            .expect("three-deck upgrade deal should expose a beatable throw");
+    assert!(expected_played.len() < attempted.len());
+
+    send_request(
+        &mut *clients[dealer_position],
+        Routes::PLAY as i32,
+        json!({ "cards": attempted.clone() }),
+    )
+    .await;
+    let played = wait_upgrade_play(&mut *clients[dealer_position], dealer_position).await;
+    assert_eq!(played["data"]["cards"], json!(expected_played.clone()));
+    assert_eq!(
+        played["data"]["failed_throw"]["attempted_cards"],
+        json!(attempted.clone())
+    );
+    assert_eq!(
+        played["data"]["failed_throw"]["played_cards"],
+        json!(expected_played.clone())
+    );
+    let failed_snapshot = loop {
+        let value = recv_json_full(
+            &mut *clients[dealer_position],
+            "upgrade failed throw snapshot",
+        )
+        .await;
+        if value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+            && value["data"]["failed_throws"]
+                .as_array()
+                .is_some_and(|items| !items.is_empty())
+        {
+            break value;
+        }
+    };
+    assert_eq!(
+        failed_snapshot["data"]["failed_throws"][0]["attempted_cards"],
+        json!(attempted.clone())
+    );
+    assert_eq!(
+        failed_snapshot["data"]["failed_throws"][0]["played_cards"],
+        json!(expected_played.clone())
+    );
+    assert_eq!(
+        wait_for_response(&mut *clients[dealer_position], Routes::PLAY as i32).await["code"],
+        json!(WsResponseCode::OK as i32)
+    );
+
+    hands[dealer_position].retain(|card| !expected_played.contains(card));
+    assert_eq!(hands[dealer_position].len(), 38 - expected_played.len());
     server.abort();
 }

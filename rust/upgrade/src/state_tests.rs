@@ -129,7 +129,11 @@ fn later_round_selects_trump_then_buries_in_one_operation_window() {
     let first_dealer = state.dealer_position;
     state.bury_bottom(first_dealer, bottom).unwrap();
     assert_eq!(state.phase, UpgradePhase::Play);
-    assert!(state.select_trump(first_dealer, UpgradeSuit::HEART).is_err());
+    assert!(
+        state
+            .select_trump(first_dealer, UpgradeSuit::HEART)
+            .is_err()
+    );
 
     let common = Arc::new(Mutex::new(CommonGameState::new()));
     let mut later_round = UpgradeGameState::from_common(common);
