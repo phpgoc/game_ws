@@ -216,6 +216,20 @@ async fn collect_tractor_hand(
 }
 
 #[cfg(not(feature = "official"))]
+async fn recv_tractor_private_deal(client: &mut Client, position: usize) -> i32 {
+    let value = recv_until(client, "tractor private deal card", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::DEAL as i64)
+    })
+    .await;
+    assert_eq!(value["data"]["position"], json!(position));
+    let cards = value["data"]["cards"]
+        .as_array()
+        .expect("tractor private deal cards");
+    assert_eq!(cards.len(), 1, "tractor deal must remain incremental");
+    cards[0].as_i64().expect("tractor private deal card") as i32
+}
+
+#[cfg(not(feature = "official"))]
 async fn collect_tractor_hands(
     clients: &mut [&mut Client; 4],
     expected_hand_size: usize,
@@ -378,6 +392,131 @@ async fn tractor_server_accepts_only_its_own_game_id() {
     assert_eq!(accepted["code"], json!(WsResponseCode::JOINED as i32));
     assert_eq!(accepted["data"]["self_position"], json!(0));
     assert_eq!(accepted["data"]["current_configs"]["deck_count"], json!(0));
+
+    server.abort();
+}
+
+#[cfg(not(feature = "official"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn tractor_ws_accepts_a_level_three_declaration_during_first_deal() {
+    let port = free_port();
+    let listen_addr = format!("127.0.0.1:{port}");
+    let url = format!("ws://{listen_addr}");
+    let server = tokio::spawn(run_room_runtime(
+        RuntimeConfig {
+            service_name: "tractor-first-declaration-test",
+            listen_addr,
+            idle_timeout: Duration::from_secs(45),
+            heartbeat_interval: Duration::from_secs(45),
+        },
+        TestTractorHandler::default(),
+    ));
+
+    let mut a = connect_client(&url).await;
+    let mut b = connect_client(&url).await;
+    let mut c = connect_client(&url).await;
+    let mut d = connect_client(&url).await;
+    let room = "tractor-first-declaration-room";
+    for (position, client) in [&mut a, &mut b, &mut c, &mut d].into_iter().enumerate() {
+        let joined = join(client, &format!("declaration-player-{position}"), room).await;
+        assert_eq!(joined["code"], json!(WsResponseCode::JOINED as i32));
+        assert_eq!(joined["data"]["self_position"], json!(position));
+    }
+
+    send_request(
+        &mut a,
+        Routes::SETTING as i32,
+        json!({
+            "current_configs": {
+                "deck_count": 1,
+                "attacking_win_score": 120,
+                "score_per_level": 60,
+                "shutout_bonus_levels": 1,
+                "target_rank": 11,
+                "first_deal_time": 15_000,
+                "deal_time": 3_000,
+                "play_time": 30
+            }
+        }),
+    )
+    .await;
+    recv_until(&mut a, "tractor declaration setting response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::SETTING as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+    send_request(&mut a, Routes::START as i32, json!({})).await;
+    recv_until(&mut a, "tractor declaration start response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::START as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+
+    let clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
+    let mut declared = None;
+    for _ in 0..38 {
+        for position in 0..4 {
+            let card = recv_tractor_private_deal(&mut *clients[position], position).await;
+            let decoded = Card::try_from(card).expect("tractor declaration candidate");
+            if decoded.rank() != Rank::Three || decoded.suit().is_none() {
+                continue;
+            }
+
+            send_request(
+                &mut *clients[position],
+                TractorRoutes::DECLARE_TRUMP as i32,
+                json!({ "cards": [card] }),
+            )
+            .await;
+            let observer_position = (position + 1) % 4;
+            let declaration = recv_until(
+                &mut *clients[observer_position],
+                "tractor player declaration event",
+                |value| {
+                    value.get("code").and_then(Value::as_i64)
+                        == Some(TractorWsCode::TRUMP_DECLARED as i64)
+                },
+            )
+            .await;
+            let expected_suit = match decoded.suit().expect("suited level card") {
+                upgrade_common::Suit::Spade => TractorSuit::SPADE,
+                upgrade_common::Suit::Heart => TractorSuit::HEART,
+                upgrade_common::Suit::Club => TractorSuit::CLUB,
+                upgrade_common::Suit::Diamond => TractorSuit::DIAMOND,
+            };
+            assert_eq!(declaration["data"]["position"], json!(position));
+            assert_eq!(declaration["data"]["cards"], json!([card]));
+            assert_eq!(declaration["data"]["strength"], json!(1));
+            assert_eq!(
+                declaration["data"]["target_rank"],
+                json!(TractorRank::THREE as i8)
+            );
+            assert_eq!(
+                declaration["data"]["trump_suit"],
+                json!(expected_suit as i8)
+            );
+            recv_until(
+                &mut *clients[position],
+                "tractor player declaration response",
+                |value| {
+                    value.get("route").and_then(Value::as_i64)
+                        == Some(TractorRoutes::DECLARE_TRUMP as i64)
+                        && value.get("code").and_then(Value::as_i64)
+                            == Some(WsResponseCode::OK as i64)
+                },
+            )
+            .await;
+            declared = Some((position, card));
+            break;
+        }
+        if declared.is_some() {
+            break;
+        }
+    }
+    assert!(
+        declared.is_some(),
+        "a three-deck tractor deal must expose a suited level three outside the bottom"
+    );
 
     server.abort();
 }
@@ -1249,9 +1388,11 @@ async fn tractor_server_completes_round_and_enters_later_round() {
     .await;
     assert_eq!(selected_snapshot["data"]["trump_suit"], json!(0));
     // 后续局选主和埋底共用一个窗口；选主不能把三倍出牌倒计时重置。
-    assert!(selected_snapshot["data"]["turn_countdown"]
-        .as_i64()
-        .is_some_and(|countdown| countdown < 90));
+    assert!(
+        selected_snapshot["data"]["turn_countdown"]
+            .as_i64()
+            .is_some_and(|countdown| countdown < 90)
+    );
     let selected = recv_until(
         &mut *clients[later_dealer],
         "later tractor select response",
