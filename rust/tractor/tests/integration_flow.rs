@@ -9,7 +9,10 @@ use std::time::Instant;
 
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
-use share_type_public::{GameId, Routes, TractorWsCode, WsCode, WsResponseCode};
+use share_type_public::{
+    GameId, Routes, TractorWsCode, WsCode, WsResponseCode, WsTractorPlayedCards,
+    WsTractorSettlementEvent,
+};
 use share_type_public::{GameParam, GameParamRange};
 #[cfg(not(feature = "official"))]
 use share_type_public::{TractorPhase, TractorRank, TractorRoutes, TractorSuit};
@@ -923,6 +926,8 @@ async fn tractor_server_completes_round_and_enters_later_round() {
     };
     let mut current_position = first_dealer;
     let mut lead_combo = None;
+    let mut current_trick = Vec::<WsTractorPlayedCards>::new();
+    let mut collected_scores = [0_i32; 4];
     let mut later_dealer = None;
     for play_index in 0..100usize {
         let hand = &first_hands[current_position];
@@ -952,6 +957,8 @@ async fn tractor_server_completes_round_and_enters_later_round() {
             .map(|card| card.as_i64().expect("played card") as i32)
             .collect::<Vec<_>>();
         assert!(!played_cards.is_empty());
+        current_trick
+            .push(serde_json::from_value(played["data"].clone()).expect("played event payload"));
         for card in &played_cards {
             let index = first_hands[current_position]
                 .iter()
@@ -985,12 +992,54 @@ async fn tractor_server_completes_round_and_enters_later_round() {
             (100 - play_index - 1) as i64
         );
         if play_index + 1 == 100 {
+            assert_eq!(current_trick.len(), 4);
+            let trick_winner = combo::trick_winner(&current_trick, &rules).expect("trick winner");
+            collected_scores[trick_winner] += combo::trick_points(&current_trick);
+            let winning_cards = current_trick
+                .iter()
+                .find(|entry| entry.position == trick_winner as i32)
+                .expect("winning play")
+                .cards
+                .clone();
+            let bottom_points = combo::trick_points(&[WsTractorPlayedCards {
+                position: first_dealer as i32,
+                name: String::new(),
+                cards: first_bottom.clone(),
+            }]);
+            collected_scores[trick_winner] +=
+                bottom_points * combo::bottom_multiplier(&winning_cards, &rules);
+            let expected_score = [(first_dealer + 1) % 4, (first_dealer + 3) % 4]
+                .into_iter()
+                .map(|position| collected_scores[position])
+                .sum::<i32>();
             let game_over = recv_until(
                 &mut *clients[current_position],
                 "tractor game over",
                 |value| value.get("code").and_then(Value::as_i64) == Some(WsCode::GAME_OVER as i64),
             )
             .await;
+            let settlement: WsTractorSettlementEvent =
+                serde_json::from_value(game_over["data"].clone()).expect("tractor settlement");
+            assert_eq!(settlement.score, expected_score);
+            let expected_winners = if expected_score >= rules.attacking_win_score {
+                vec![(first_dealer + 1) as i32 % 4, (first_dealer + 3) as i32 % 4]
+            } else {
+                vec![first_dealer as i32, (first_dealer + 2) as i32 % 4]
+            };
+            assert_eq!(settlement.winner_positions, expected_winners);
+            let expected_levels = rules.score_progression().outcome(expected_score).levels as i32;
+            assert_eq!(settlement.level_change, expected_levels);
+            for position in 0..4 {
+                let expected_player_score = if expected_winners.contains(&(position as i32)) {
+                    expected_score
+                } else {
+                    -expected_score
+                };
+                assert_eq!(
+                    settlement.player_scores.get(&(position as i32)).copied(),
+                    Some(expected_player_score)
+                );
+            }
             assert!(
                 game_over["data"]["winner_positions"]
                     .as_array()
@@ -1017,6 +1066,11 @@ async fn tractor_server_completes_round_and_enters_later_round() {
             )
             .await;
             break;
+        }
+        if current_trick.len() == 4 {
+            let trick_winner = combo::trick_winner(&current_trick, &rules).expect("trick winner");
+            collected_scores[trick_winner] += combo::trick_points(&current_trick);
+            current_trick.clear();
         }
         recv_until(
             &mut *clients[current_position],
