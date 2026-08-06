@@ -554,6 +554,198 @@ async fn play_complete_tractor_round(
 }
 
 #[cfg(not(feature = "official"))]
+async fn run_concurrent_tractor_room(
+    url: &str,
+    room: &str,
+    deck_setting: i32,
+    deck_count: usize,
+    expected_hand_size: usize,
+    expected_bottom_size: usize,
+) -> Value {
+    let mut a = connect_client(url).await;
+    let mut b = connect_client(url).await;
+    let mut c = connect_client(url).await;
+    let mut d = connect_client(url).await;
+    for (position, client) in [&mut a, &mut b, &mut c, &mut d].into_iter().enumerate() {
+        let joined = join(client, &format!("{room}-player-{position}"), room).await;
+        assert_eq!(joined["data"]["self_position"], json!(position));
+        assert_eq!(joined["data"]["current_configs"]["deck_count"], json!(0));
+    }
+    send_request(
+        &mut a,
+        Routes::SETTING as i32,
+        json!({
+            "current_configs": {
+                "deck_count": deck_setting,
+                "attacking_win_score": 80,
+                "score_per_level": 40,
+                "shutout_bonus_levels": 1,
+                "target_rank": 11,
+                "first_deal_time": 1000,
+                "deal_time": 500,
+                "play_time": 30
+            }
+        }),
+    )
+    .await;
+    let setting = recv_until(&mut a, "concurrent tractor room setting", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::SETTING as i64)
+    })
+    .await;
+    assert_eq!(setting["code"], json!(WsResponseCode::OK as i32));
+    assert_eq!(
+        setting["data"]["current_configs"]["deck_count"],
+        json!(deck_setting)
+    );
+    send_request(&mut a, Routes::START as i32, json!({})).await;
+    let started = recv_until(&mut a, "concurrent tractor room start", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::START as i64)
+    })
+    .await;
+    assert_eq!(started["code"], json!(WsResponseCode::OK as i32));
+
+    let mut clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
+    let mut hands = collect_tractor_hands(&mut clients, expected_hand_size).await;
+    let (declaration, bottom_seen_by_first_client) = recv_first_declaration(&mut *clients[0]).await;
+    let dealer_position = declaration["data"]["position"]
+        .as_i64()
+        .expect("concurrent tractor room dealer") as usize;
+    let bottom_event = if dealer_position == 0 {
+        match bottom_seen_by_first_client {
+            Some(bottom) => bottom,
+            None => recv_tractor_bottom(&mut *clients[dealer_position], dealer_position).await,
+        }
+    } else {
+        recv_tractor_bottom(&mut *clients[dealer_position], dealer_position).await
+    };
+    let bottom_cards = bottom_event["data"]["cards"]
+        .as_array()
+        .expect("concurrent tractor room bottom")
+        .iter()
+        .map(|card| card.as_i64().expect("concurrent tractor room bottom card") as i32)
+        .collect::<Vec<_>>();
+    assert_eq!(bottom_cards.len(), expected_bottom_size);
+    send_request(
+        &mut *clients[dealer_position],
+        TractorRoutes::BURY_BOTTOM as i32,
+        json!({ "cards": bottom_cards }),
+    )
+    .await;
+    let play_snapshot = recv_until(
+        &mut *clients[dealer_position],
+        "concurrent tractor room play phase",
+        |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+                && value["data"]["phase"] == json!(TractorPhase::Play as i8)
+        },
+    )
+    .await;
+    let buried = recv_until(
+        &mut *clients[dealer_position],
+        "concurrent tractor room bury response",
+        |value| {
+            value.get("route").and_then(Value::as_i64) == Some(TractorRoutes::BURY_BOTTOM as i64)
+        },
+    )
+    .await;
+    assert_eq!(buried["code"], json!(WsResponseCode::OK as i32));
+    assert_eq!(play_snapshot["data"]["deck_count"], json!(deck_count));
+    assert_eq!(
+        play_snapshot["data"]["total_deal_count"],
+        json!(expected_hand_size * 4)
+    );
+    let trump_suit = play_snapshot["data"]["trump_suit"]
+        .as_i64()
+        .map(|suit| match suit {
+            0 => TractorSuit::SPADE,
+            1 => TractorSuit::HEART,
+            2 => TractorSuit::CLUB,
+            3 => TractorSuit::DIAMOND,
+            _ => panic!("invalid concurrent tractor trump suit"),
+        });
+    let rules = TractorRules {
+        attacking_win_score: 80,
+        score_per_level: 40,
+        shutout_bonus_levels: 1,
+        bottom_card_count: expected_bottom_size,
+        deck_count,
+        final_target_rank: TractorRank::A,
+        target_rank: TractorRank::THREE,
+        trump_suit,
+    };
+    let mut current_position = dealer_position;
+    let mut lead_combo = None;
+    let mut final_snapshot = None;
+    for play_index in 0..4 {
+        let hand = &hands[current_position];
+        let cards = match lead_combo.as_ref() {
+            None => vec![*hand.first().expect("concurrent tractor lead card")],
+            Some(lead) => {
+                combo::forced_follow(hand, lead, &rules).expect("concurrent tractor legal follow")
+            }
+        };
+        send_request(
+            &mut *clients[current_position],
+            Routes::PLAY as i32,
+            json!({ "cards": cards }),
+        )
+        .await;
+        let played = recv_until(
+            &mut *clients[current_position],
+            "concurrent tractor room play",
+            |value| {
+                value.get("code").and_then(Value::as_i64) == Some(WsCode::PLAY as i64)
+                    && value["data"]["position"] == json!(current_position)
+            },
+        )
+        .await;
+        assert_eq!(
+            played["data"]["name"],
+            json!(format!("{room}-player-{current_position}")),
+            "play events must not cross room boundaries"
+        );
+        let played_card = played["data"]["cards"][0]
+            .as_i64()
+            .expect("concurrent tractor played card") as i32;
+        let index = hands[current_position]
+            .iter()
+            .position(|candidate| *candidate == played_card)
+            .expect("concurrent tractor played card in hand");
+        hands[current_position].remove(index);
+        let snapshot = recv_until(
+            &mut *clients[current_position],
+            "concurrent tractor room play snapshot",
+            |value| {
+                value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+                    && value["data"]["trick_index"] == json!(if play_index == 3 { 1 } else { 0 })
+            },
+        )
+        .await;
+        let response = recv_until(
+            &mut *clients[current_position],
+            "concurrent tractor room play response",
+            |value| value.get("route").and_then(Value::as_i64) == Some(Routes::PLAY as i64),
+        )
+        .await;
+        assert_eq!(response["code"], json!(WsResponseCode::OK as i32));
+        if play_index == 3 {
+            final_snapshot = Some(snapshot);
+            break;
+        }
+        current_position = snapshot["data"]["current_position"]
+            .as_i64()
+            .expect("concurrent tractor next position") as usize;
+        let lead_card = snapshot["data"]["current_trick"][0]["cards"][0]
+            .as_i64()
+            .expect("concurrent tractor trick lead") as i32;
+        lead_combo = Some(
+            combo::classify(&[lead_card], &rules).expect("concurrent tractor single lead combo"),
+        );
+    }
+    final_snapshot.expect("concurrent tractor room must finish its first trick")
+}
+
+#[cfg(not(feature = "official"))]
 async fn recv_first_declaration(client: &mut Client) -> (Value, Option<Value>) {
     let mut bottom = None;
     loop {
@@ -603,6 +795,21 @@ async fn tractor_server_accepts_only_its_own_game_id() {
     assert_eq!(accepted["code"], json!(WsResponseCode::JOINED as i32));
     assert_eq!(accepted["data"]["self_position"], json!(0));
     assert_eq!(accepted["data"]["current_configs"]["deck_count"], json!(0));
+}
+
+#[cfg(not(feature = "official"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn tractor_ws_keeps_concurrent_rooms_isolated() {
+    let runtime =
+        start_test_runtime("tractor-concurrent-rooms-test", Duration::from_secs(60)).await;
+    let (two_deck, three_deck) = tokio::join!(
+        run_concurrent_tractor_room(&runtime.url, "tractor-room-two", 0, 2, 25, 8),
+        run_concurrent_tractor_room(&runtime.url, "tractor-room-three", 1, 3, 38, 10),
+    );
+    assert_eq!(two_deck["data"]["deck_count"], json!(2));
+    assert_eq!(two_deck["data"]["trick_index"], json!(1));
+    assert_eq!(three_deck["data"]["deck_count"], json!(3));
+    assert_eq!(three_deck["data"]["trick_index"], json!(1));
 }
 
 #[cfg(not(feature = "official"))]
