@@ -451,6 +451,21 @@ async fn wait_upgrade_play(client: &mut Client, position: usize) -> Value {
     }
 }
 
+async fn wait_upgrade_private_deal(client: &mut Client, position: usize) -> i32 {
+    loop {
+        let value = recv_json_full(client, "upgrade private deal").await;
+        if value.get("code").and_then(Value::as_i64) != Some(WsCode::DEAL as i64) {
+            continue;
+        }
+        assert_eq!(value["data"]["position"], json!(position));
+        let cards = value["data"]["cards"]
+            .as_array()
+            .expect("upgrade private deal cards");
+        assert_eq!(cards.len(), 1, "upgrade deal must remain incremental");
+        return cards[0].as_i64().expect("upgrade private deal card") as i32;
+    }
+}
+
 async fn wait_upgrade_snapshot(
     client: &mut Client,
     phase: UpgradePhase,
@@ -492,6 +507,116 @@ async fn upgrade_server_accepts_only_its_own_game_id() {
     assert_eq!(accepted["data"]["self_position"], json!(0));
     assert_eq!(accepted["data"]["current_configs"]["deck_count"], json!(0));
     assert_eq!(accepted["data"]["current_configs"]["play_time"], json!(30));
+
+    server.abort();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn upgrade_ws_accepts_a_level_three_declaration_during_first_deal() {
+    let port = free_port();
+    let listen_addr = format!("127.0.0.1:{port}");
+    let url = format!("ws://{listen_addr}");
+    let server = tokio::spawn(run_room_runtime(
+        RuntimeConfig {
+            service_name: "upgrade-first-declaration-test",
+            listen_addr,
+            idle_timeout: Duration::from_secs(45),
+            heartbeat_interval: Duration::from_secs(45),
+        },
+        TestUpgradeHandler::default(),
+    ));
+
+    let mut a = connect_client(&url).await;
+    let mut b = connect_client(&url).await;
+    let mut c = connect_client(&url).await;
+    let mut d = connect_client(&url).await;
+    let room = "upgrade-first-declaration-room";
+    for (position, client) in [&mut a, &mut b, &mut c, &mut d].into_iter().enumerate() {
+        let joined = join_as(
+            client,
+            GameId::UPGRADE,
+            room,
+            &format!("declaration-player-{position}"),
+        )
+        .await;
+        assert_eq!(joined["code"], json!(WsResponseCode::JOINED as i32));
+        assert_eq!(joined["data"]["self_position"], json!(position));
+    }
+
+    send_request(
+        &mut a,
+        Routes::SETTING as i32,
+        json!({
+            "current_configs": {
+                "deck_count": 0,
+                "removed_rank_count": 0,
+                "first_deal_time": 15_000,
+                "deal_time": 3_000,
+                "play_time": 30
+            }
+        }),
+    )
+    .await;
+    assert_eq!(
+        wait_for_response(&mut a, Routes::SETTING as i32).await["code"],
+        json!(WsResponseCode::OK as i32)
+    );
+    send_request(&mut a, Routes::START as i32, Value::Null).await;
+    assert_eq!(
+        wait_for_response(&mut a, Routes::START as i32).await["code"],
+        json!(WsResponseCode::OK as i32)
+    );
+
+    let clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
+    let mut declared = None;
+    for _ in 0..40 {
+        for position in 0..4 {
+            let card = wait_upgrade_private_deal(&mut *clients[position], position).await;
+            let decoded = Card::try_from(card).expect("upgrade declaration candidate");
+            if decoded.rank() != Rank::Three || decoded.suit().is_none() {
+                continue;
+            }
+
+            send_request(
+                &mut *clients[position],
+                UpgradeRoutes::DECLARE_TRUMP as i32,
+                json!({ "cards": [card] }),
+            )
+            .await;
+            let observer_position = (position + 1) % 4;
+            let declaration = wait_for_event(
+                &mut *clients[observer_position],
+                UpgradeWsCode::TRUMP_DECLARED as i32,
+            )
+            .await;
+            assert_eq!(declaration["data"]["position"], json!(position));
+            assert_eq!(declaration["data"]["cards"], json!([card]));
+            assert_eq!(declaration["data"]["strength"], json!(1));
+            assert_eq!(declaration["data"]["target_rank"], json!(3));
+            assert_eq!(
+                upgrade_suit(
+                    declaration["data"]["trump_suit"]
+                        .as_i64()
+                        .expect("upgrade declaration suit")
+                ),
+                decoded.suit().expect("suited level card")
+            );
+            assert_eq!(
+                wait_for_response(&mut *clients[position], UpgradeRoutes::DECLARE_TRUMP as i32)
+                    .await["code"],
+                json!(WsResponseCode::OK as i32)
+            );
+            declared = Some((position, card));
+            break;
+        }
+        if declared.is_some() {
+            break;
+        }
+    }
+    assert!(
+        declared.is_some(),
+        "a three-deck deal must expose at least one suited level three outside the bottom"
+    );
 
     server.abort();
 }
