@@ -99,3 +99,33 @@ fn upgrade_does_not_classify_consecutive_pairs_as_a_tractor() {
         }
     ));
 }
+
+#[test]
+fn upgrade_follow_preserves_the_longest_components_without_tractor_continuity() {
+    let lead = vec![13, 113, 12, 112, 11, 111];
+    let mut state = state_with_hands(
+        vec![],
+        HashMap::from([
+            (0, lead.clone()),
+            (1, vec![10, 110, 9, 109, 8, 7]),
+            (2, vec![6, 106, 5, 105, 4, 3]),
+            (3, vec![18, 118, 19, 119, 20, 21]),
+        ]),
+    );
+
+    state
+        .play_cards(0, lead.clone())
+        .expect("upgrade throw lead should be accepted");
+
+    let hand_before_illegal_follow = state.hands.get(&1).cloned().unwrap();
+    let error = state
+        .play_cards(1, vec![10, 110, 9, 8, 7, 6])
+        .expect_err("upgrade follow must preserve every available lead component");
+    assert_eq!(error, "illegal follow");
+    assert_eq!(state.hands.get(&1), Some(&hand_before_illegal_follow));
+
+    let legal = state
+        .play_cards(1, vec![10, 110, 9, 109, 8, 7])
+        .expect("non-consecutive pairs with a single component should follow");
+    assert_eq!(legal.played_cards, vec![10, 110, 9, 109, 8, 7]);
+}
