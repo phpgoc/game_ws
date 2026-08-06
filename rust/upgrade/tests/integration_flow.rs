@@ -568,10 +568,12 @@ async fn upgrade_ws_accepts_a_level_three_declaration_during_first_deal() {
     );
 
     let clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
+    let mut dealt_counts = [0_usize; 4];
     let mut declared = None;
-    for _ in 0..40 {
+    for _ in 0..38 {
         for position in 0..4 {
             let card = wait_upgrade_private_deal(&mut *clients[position], position).await;
+            dealt_counts[position] += 1;
             let decoded = Card::try_from(card).expect("upgrade declaration candidate");
             if decoded.rank() != Rank::Three || decoded.suit().is_none() {
                 continue;
@@ -613,9 +615,59 @@ async fn upgrade_ws_accepts_a_level_three_declaration_during_first_deal() {
             break;
         }
     }
+    let (declaring_position, declared_card) =
+        declared.expect("a three-deck deal must expose a suited level three outside the bottom");
+    let declared_suit = Card::try_from(declared_card)
+        .expect("declared upgrade card")
+        .suit()
+        .expect("declared upgrade card suit");
+
+    let mut rejected_equal_declaration = None;
+    'deal: while dealt_counts.iter().any(|count| *count < 38) {
+        for position in 0..4 {
+            if dealt_counts[position] >= 38 {
+                continue;
+            }
+            let card = wait_upgrade_private_deal(&mut *clients[position], position).await;
+            dealt_counts[position] += 1;
+            let decoded = Card::try_from(card).expect("upgrade counter declaration candidate");
+            if decoded.rank() != Rank::Three || decoded.suit().is_none() {
+                continue;
+            }
+
+            send_request(
+                &mut *clients[position],
+                UpgradeRoutes::DECLARE_TRUMP as i32,
+                json!({ "cards": [card] }),
+            )
+            .await;
+            assert_eq!(
+                wait_for_response(&mut *clients[position], UpgradeRoutes::DECLARE_TRUMP as i32)
+                    .await["code"],
+                json!(WsResponseCode::NO_PERMISSION as i32)
+            );
+            let snapshot =
+                wait_for_event(&mut *clients[position], WsCode::TABLE_SNAPSHOT as i32).await;
+            assert_eq!(
+                snapshot["data"]["declaration"]["position"],
+                json!(declaring_position)
+            );
+            assert_eq!(snapshot["data"]["declaration"]["strength"], json!(1));
+            assert_eq!(
+                upgrade_suit(
+                    snapshot["data"]["declaration"]["trump_suit"]
+                        .as_i64()
+                        .expect("retained upgrade declaration suit")
+                ),
+                declared_suit
+            );
+            rejected_equal_declaration = Some((position, card));
+            break 'deal;
+        }
+    }
     assert!(
-        declared.is_some(),
-        "a three-deck deal must expose at least one suited level three outside the bottom"
+        rejected_equal_declaration.is_some(),
+        "another dealt level three must not replace an equal-strength declaration"
     );
 
     server.abort();
