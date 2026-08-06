@@ -652,6 +652,205 @@ async fn play_complete_upgrade_round(
     panic!("complete upgrade round ended without settlement");
 }
 
+async fn run_concurrent_upgrade_room(
+    url: &str,
+    room: &str,
+    deck_setting: i32,
+    deck_count: i32,
+    removed_rank_count: i32,
+    target_rank: UpgradeRank,
+    expected_hand_size: usize,
+    expected_bottom_size: usize,
+) -> Value {
+    let mut a = connect_client(url).await;
+    let mut b = connect_client(url).await;
+    let mut c = connect_client(url).await;
+    let mut d = connect_client(url).await;
+    for (position, client) in [&mut a, &mut b, &mut c, &mut d].into_iter().enumerate() {
+        let joined = join_as(
+            client,
+            GameId::UPGRADE,
+            room,
+            &format!("{room}-player-{position}"),
+        )
+        .await;
+        assert_eq!(joined["data"]["self_position"], json!(position));
+        assert_eq!(joined["data"]["current_configs"]["deck_count"], json!(0));
+    }
+    send_request(
+        &mut a,
+        Routes::SETTING as i32,
+        json!({
+            "current_configs": {
+                "deck_count": deck_setting,
+                "removed_rank_count": removed_rank_count,
+                "attacking_win_score": 80,
+                "score_per_level": 40,
+                "shutout_bonus_levels": 1,
+                "first_deal_time": 1000,
+                "deal_time": 500,
+                "play_time": 30
+            }
+        }),
+    )
+    .await;
+    let setting = wait_for_response(&mut a, Routes::SETTING as i32).await;
+    assert_eq!(setting["code"], json!(WsResponseCode::OK as i32));
+    assert_eq!(
+        setting["data"]["current_configs"]["deck_count"],
+        json!(deck_setting)
+    );
+    assert_eq!(
+        setting["data"]["current_configs"]["removed_rank_count"],
+        json!(removed_rank_count)
+    );
+    send_request(&mut a, Routes::START as i32, Value::Null).await;
+    let started = wait_for_response(&mut a, Routes::START as i32).await;
+    assert_eq!(started["code"], json!(WsResponseCode::OK as i32));
+
+    let mut clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
+    let declaration = wait_for_event(&mut *clients[0], UpgradeWsCode::TRUMP_DECLARED as i32).await;
+    assert_eq!(
+        declaration["data"]["target_rank"],
+        json!(target_rank as i32)
+    );
+    let dealer_position = declaration["data"]["position"]
+        .as_i64()
+        .expect("concurrent upgrade room dealer") as usize;
+    let mut hands = collect_upgrade_hands_min(&mut clients, expected_hand_size).await;
+    assert_eq!(
+        hands[dealer_position].len(),
+        expected_hand_size + expected_bottom_size
+    );
+    assert!(
+        hands
+            .iter()
+            .enumerate()
+            .all(|(position, hand)| position == dealer_position || hand.len() == expected_hand_size)
+    );
+    let bottom_event = recv_upgrade_bottom(&mut *clients[dealer_position], dealer_position).await;
+    let bottom_cards = bottom_event["data"]["cards"]
+        .as_array()
+        .expect("concurrent upgrade room bottom")
+        .iter()
+        .map(|card| card.as_i64().expect("concurrent upgrade room bottom card") as i32)
+        .collect::<Vec<_>>();
+    assert_eq!(bottom_cards.len(), expected_bottom_size);
+    for card in &bottom_cards {
+        let index = hands[dealer_position]
+            .iter()
+            .position(|candidate| candidate == card)
+            .expect("concurrent upgrade bottom card in dealer hand");
+        hands[dealer_position].remove(index);
+    }
+    send_request(
+        &mut *clients[dealer_position],
+        UpgradeRoutes::BURY_BOTTOM as i32,
+        json!({ "cards": bottom_cards }),
+    )
+    .await;
+    let play_snapshot =
+        wait_upgrade_round_snapshot(&mut *clients[dealer_position], UpgradePhase::Play, 0, 0).await;
+    let buried = wait_for_response(
+        &mut *clients[dealer_position],
+        UpgradeRoutes::BURY_BOTTOM as i32,
+    )
+    .await;
+    assert_eq!(buried["code"], json!(WsResponseCode::OK as i32));
+    assert_eq!(play_snapshot["data"]["deck_count"], json!(deck_count));
+    assert_eq!(
+        play_snapshot["data"]["removed_rank_count"],
+        json!(removed_rank_count)
+    );
+    assert_eq!(
+        play_snapshot["data"]["total_deal_count"],
+        json!(expected_hand_size * 4)
+    );
+    let rules = combo::UpgradeComboRules {
+        target_rank: upgrade_rank(
+            play_snapshot["data"]["target_rank"]
+                .as_i64()
+                .expect("concurrent upgrade target rank"),
+        ),
+        trump_suit: Some(upgrade_suit(
+            play_snapshot["data"]["trump_suit"]
+                .as_i64()
+                .expect("concurrent upgrade trump suit"),
+        )),
+    };
+    let mut current_position = dealer_position;
+    let mut lead_combo = None;
+    let mut final_snapshot = None;
+    for play_index in 0..4 {
+        let hand = &hands[current_position];
+        let hand_cards = hand
+            .iter()
+            .copied()
+            .map(|card| Card::try_from(card).expect("concurrent upgrade hand card"))
+            .collect::<Vec<_>>();
+        let requested_card = if let Some(lead) = lead_combo.as_ref() {
+            hand.iter()
+                .copied()
+                .find(|candidate| {
+                    let candidate =
+                        Card::try_from(*candidate).expect("concurrent upgrade follow candidate");
+                    combo::follow_is_legal(&hand_cards, &[candidate], lead, rules)
+                })
+                .expect("concurrent upgrade legal follow")
+        } else {
+            *hand.first().expect("concurrent upgrade lead card")
+        };
+        send_request(
+            &mut *clients[current_position],
+            Routes::PLAY as i32,
+            json!({ "cards": [requested_card] }),
+        )
+        .await;
+        let played = wait_upgrade_play(&mut *clients[current_position], current_position).await;
+        assert_eq!(
+            played["data"]["name"],
+            json!(format!("{room}-player-{current_position}")),
+            "upgrade play events must not cross room boundaries"
+        );
+        let played_card = played["data"]["cards"][0]
+            .as_i64()
+            .expect("concurrent upgrade played card") as i32;
+        let index = hands[current_position]
+            .iter()
+            .position(|candidate| *candidate == played_card)
+            .expect("concurrent upgrade played card in hand");
+        hands[current_position].remove(index);
+        let snapshot = wait_upgrade_round_snapshot(
+            &mut *clients[current_position],
+            UpgradePhase::Play,
+            if play_index == 3 { 1 } else { 0 },
+            0,
+        )
+        .await;
+        let response =
+            wait_for_response(&mut *clients[current_position], Routes::PLAY as i32).await;
+        assert_eq!(response["code"], json!(WsResponseCode::OK as i32));
+        if play_index == 3 {
+            final_snapshot = Some(snapshot);
+            break;
+        }
+        current_position = snapshot["data"]["current_position"]
+            .as_i64()
+            .expect("concurrent upgrade next position") as usize;
+        let lead_card = snapshot["data"]["current_trick"][0]["cards"][0]
+            .as_i64()
+            .expect("concurrent upgrade trick lead") as i32;
+        lead_combo = Some(
+            combo::classify(
+                &[Card::try_from(lead_card).expect("concurrent upgrade lead")],
+                rules,
+            )
+            .expect("concurrent upgrade lead combo"),
+        );
+    }
+    final_snapshot.expect("concurrent upgrade room must finish its first trick")
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn upgrade_server_accepts_only_its_own_game_id() {
     let runtime = start_test_runtime(
@@ -672,6 +871,44 @@ async fn upgrade_server_accepts_only_its_own_game_id() {
     assert_eq!(accepted["data"]["self_position"], json!(0));
     assert_eq!(accepted["data"]["current_configs"]["deck_count"], json!(0));
     assert_eq!(accepted["data"]["current_configs"]["play_time"], json!(30));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn upgrade_ws_keeps_concurrent_rooms_isolated() {
+    let runtime = start_test_runtime(
+        "upgrade-concurrent-rooms-test",
+        Duration::from_secs(60),
+        TestUpgradeHandler::default(),
+    )
+    .await;
+    let (three_deck, four_deck) = tokio::join!(
+        run_concurrent_upgrade_room(
+            &runtime.url,
+            "upgrade-room-three",
+            0,
+            3,
+            0,
+            UpgradeRank::THREE,
+            38,
+            10,
+        ),
+        run_concurrent_upgrade_room(
+            &runtime.url,
+            "upgrade-room-four",
+            1,
+            4,
+            2,
+            UpgradeRank::FIVE,
+            44,
+            8,
+        ),
+    );
+    assert_eq!(three_deck["data"]["deck_count"], json!(3));
+    assert_eq!(three_deck["data"]["removed_rank_count"], json!(0));
+    assert_eq!(three_deck["data"]["trick_index"], json!(1));
+    assert_eq!(four_deck["data"]["deck_count"], json!(4));
+    assert_eq!(four_deck["data"]["removed_rank_count"], json!(2));
+    assert_eq!(four_deck["data"]["trick_index"], json!(1));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
