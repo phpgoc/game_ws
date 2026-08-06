@@ -103,3 +103,37 @@ fn pair_follow_cannot_be_split_when_the_follower_has_the_pair() {
     assert_eq!(legal.cards, vec![6, 106]);
     assert_eq!(state.current_trick.len(), 2);
 }
+
+#[test]
+fn successful_throw_uses_the_largest_component_for_bottom_score() {
+    let state_hands = HashMap::from([
+        (0, vec![2, 102, 202, 12, 112, 13]),
+        (1, vec![3, 6, 7, 8, 10, 11]),
+        (2, vec![103, 106, 107, 108, 110, 111]),
+        (3, vec![203, 206, 207, 208, 210, 211]),
+    ]);
+    let mut state = state_with_hands(rules(3), vec![9], state_hands);
+
+    let attempted = vec![2, 102, 202, 12, 112, 13];
+    let lead = state
+        .play_cards(0, "p0".to_owned(), attempted.clone())
+        .expect("strong throw should be accepted");
+    assert_eq!(lead.cards, attempted);
+
+    for (position, cards) in [
+        (1, vec![3, 6, 7, 8, 10, 11]),
+        (2, vec![103, 106, 107, 108, 110, 111]),
+        (3, vec![203, 206, 207, 208, 210, 211]),
+    ] {
+        state
+            .play_cards(position, format!("p{position}"), cards)
+            .expect("same-group throw follow should be accepted");
+    }
+
+    assert_eq!(state.phase, TractorPhase::Settlement);
+    assert_eq!(state.last_trick_winner, Some(0));
+    assert_eq!(state.bottom_multiplier, 6);
+    // The lead contains a ten-point king pair and the bottom contains a
+    // ten-point card: 20 trick points + 10 × the strongest triple multiplier.
+    assert_eq!(state.collected_scores.get(&0), Some(&80));
+}
