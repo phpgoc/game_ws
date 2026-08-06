@@ -129,3 +129,35 @@ fn upgrade_follow_preserves_the_longest_components_without_tractor_continuity() 
         .expect("non-consecutive pairs with a single component should follow");
     assert_eq!(legal.played_cards, vec![10, 110, 9, 109, 8, 7]);
 }
+
+#[test]
+fn six_deck_bottom_score_keeps_a_four_copy_component_as_the_maximum() {
+    let mut state = state_with_hands(
+        vec![9],
+        HashMap::from([
+            (0, vec![13, 113, 213, 313, 12, 112, 11]),
+            (1, vec![10, 110, 210, 310, 8, 108, 7]),
+            (2, vec![9, 109, 209, 309, 6, 106, 5]),
+            (3, vec![8, 108, 208, 308, 4, 104, 3]),
+        ]),
+    );
+    state.rules.deck_count = upgrade::UpgradeDeckCount::new(6).unwrap();
+
+    let lead = vec![13, 113, 213, 313, 12, 112, 11];
+    state
+        .play_cards(0, lead.clone())
+        .expect("six-deck long throw should be accepted");
+    for (position, cards) in [
+        (1, vec![10, 110, 210, 310, 8, 108, 7]),
+        (2, vec![9, 109, 209, 309, 6, 106, 5]),
+        (3, vec![8, 108, 208, 308, 4, 104, 3]),
+    ] {
+        state
+            .play_cards(position, cards)
+            .expect("six-deck component follow should be accepted");
+    }
+
+    assert_eq!(state.phase, UpgradePhase::Settlement);
+    assert_eq!(state.last_trick_winner, Some(0));
+    assert_eq!(state.bottom_multiplier, 4);
+}
