@@ -1337,13 +1337,27 @@ async fn upgrade_ws_rejoin_preserves_running_bury_state() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn upgrade_five_deck_ws_deals_and_buries_the_correct_counts() {
+    assert_upgrade_deck_ws_deals_and_buries(2, 5, 10, 65).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn upgrade_six_deck_ws_deals_and_buries_the_correct_counts() {
+    assert_upgrade_deck_ws_deals_and_buries(3, 6, 8, 79).await;
+}
+
+async fn assert_upgrade_deck_ws_deals_and_buries(
+    deck_setting: i32,
+    expected_deck_count: usize,
+    expected_bottom_count: usize,
+    expected_hand_count: usize,
+) {
     let port = free_port();
     let listen_addr = format!("127.0.0.1:{port}");
     let url = format!("ws://{listen_addr}");
     let server = tokio::spawn(run_room_runtime(
         RuntimeConfig {
-            service_name: "upgrade-six-deck-test",
+            service_name: "upgrade-multi-deck-test",
             listen_addr,
             idle_timeout: Duration::from_secs(45),
             heartbeat_interval: Duration::from_secs(45),
@@ -1355,13 +1369,13 @@ async fn upgrade_six_deck_ws_deals_and_buries_the_correct_counts() {
     let mut b = connect_client(&url).await;
     let mut c = connect_client(&url).await;
     let mut d = connect_client(&url).await;
-    let room = "upgrade-six-deck-room";
+    let room = "upgrade-multi-deck-room";
     for (position, client) in [&mut a, &mut b, &mut c, &mut d].into_iter().enumerate() {
         let joined = join_as(
             client,
             GameId::UPGRADE,
             room,
-            &format!("six-deck-player-{position}"),
+            &format!("multi-deck-player-{position}"),
         )
         .await;
         assert_eq!(joined["code"], json!(WsResponseCode::JOINED as i32));
@@ -1372,7 +1386,7 @@ async fn upgrade_six_deck_ws_deals_and_buries_the_correct_counts() {
         Routes::SETTING as i32,
         json!({
             "current_configs": {
-                "deck_count": 3,
+                "deck_count": deck_setting,
                 "removed_rank_count": 0,
                 "attacking_win_score": 80,
                 "score_per_level": 40,
@@ -1398,30 +1412,35 @@ async fn upgrade_six_deck_ws_deals_and_buries_the_correct_counts() {
     let declaration = wait_for_event(&mut *clients[0], UpgradeWsCode::TRUMP_DECLARED as i32).await;
     let dealer_position = declaration["data"]["position"]
         .as_i64()
-        .expect("six-deck dealer") as usize;
+        .expect("multi-deck dealer") as usize;
     assert!(dealer_position < 4);
     let hands = collect_upgrade_hands(&mut clients).await;
-    assert_eq!(hands[dealer_position].len(), 87);
+    assert_eq!(
+        hands[dealer_position].len(),
+        expected_hand_count + expected_bottom_count
+    );
     assert!(
-        hands
-            .iter()
-            .enumerate()
-            .all(|(position, hand)| position == dealer_position || hand.len() == 79)
+        hands.iter().enumerate().all(
+            |(position, hand)| position == dealer_position || hand.len() == expected_hand_count
+        )
     );
     let bottom_event = recv_upgrade_bottom(&mut *clients[dealer_position], dealer_position).await;
     let bottom_cards = bottom_event["data"]["cards"]
         .as_array()
-        .expect("six-deck bottom cards")
+        .expect("multi-deck bottom cards")
         .iter()
-        .map(|card| card.as_i64().expect("six-deck bottom card") as i32)
+        .map(|card| card.as_i64().expect("multi-deck bottom card") as i32)
         .collect::<Vec<_>>();
-    assert_eq!(bottom_cards.len(), 8);
-    assert_eq!(bottom_event["data"]["required_count"], json!(8));
+    assert_eq!(bottom_cards.len(), expected_bottom_count);
+    assert_eq!(
+        bottom_event["data"]["required_count"],
+        json!(expected_bottom_count)
+    );
 
     send_request(
         &mut *clients[dealer_position],
         UpgradeRoutes::BURY_BOTTOM as i32,
-        json!({ "cards": &bottom_cards[..7] }),
+        json!({ "cards": &bottom_cards[..expected_bottom_count - 1] }),
     )
     .await;
     assert_eq!(
@@ -1440,19 +1459,26 @@ async fn upgrade_six_deck_ws_deals_and_buries_the_correct_counts() {
     .await;
     let snapshot =
         wait_upgrade_snapshot(&mut *clients[dealer_position], UpgradePhase::Play, 0).await;
-    assert_eq!(snapshot["data"]["deck_count"], json!(6));
-    assert_eq!(snapshot["data"]["bottom_card_count"], json!(8));
-    assert_eq!(snapshot["data"]["hand_count"], json!(79));
-    assert_eq!(snapshot["data"]["dealt_count"], json!(316));
-    assert_eq!(snapshot["data"]["total_deal_count"], json!(316));
+    let expected_dealt_count = expected_hand_count * 4;
+    assert_eq!(snapshot["data"]["deck_count"], json!(expected_deck_count));
+    assert_eq!(
+        snapshot["data"]["bottom_card_count"],
+        json!(expected_bottom_count)
+    );
+    assert_eq!(snapshot["data"]["hand_count"], json!(expected_hand_count));
+    assert_eq!(snapshot["data"]["dealt_count"], json!(expected_dealt_count));
+    assert_eq!(
+        snapshot["data"]["total_deal_count"],
+        json!(expected_dealt_count)
+    );
     assert_eq!(
         snapshot["data"]["player_hand_counts"]
             .as_array()
-            .expect("six-deck hand counts")
+            .expect("multi-deck hand counts")
             .iter()
             .map(|entry| entry["hand_count"].as_i64().expect("hand count"))
             .sum::<i64>(),
-        316
+        expected_dealt_count as i64
     );
     assert_eq!(
         wait_for_response(
