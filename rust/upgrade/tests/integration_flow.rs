@@ -548,7 +548,7 @@ async fn upgrade_ws_accepts_a_level_three_declaration_during_first_deal() {
         Routes::SETTING as i32,
         json!({
             "current_configs": {
-                "deck_count": 0,
+                "deck_count": 3,
                 "removed_rank_count": 0,
                 "first_deal_time": 15_000,
                 "deal_time": 3_000,
@@ -568,9 +568,11 @@ async fn upgrade_ws_accepts_a_level_three_declaration_during_first_deal() {
     );
 
     let clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
+    let expected_hand_count = 79;
     let mut dealt_counts = [0_usize; 4];
+    let mut dealt_level_cards: [HashMap<u8, Vec<i32>>; 4] = std::array::from_fn(|_| HashMap::new());
     let mut declared = None;
-    for _ in 0..38 {
+    for _ in 0..expected_hand_count {
         for position in 0..4 {
             let card = wait_upgrade_private_deal(&mut *clients[position], position).await;
             dealt_counts[position] += 1;
@@ -578,6 +580,10 @@ async fn upgrade_ws_accepts_a_level_three_declaration_during_first_deal() {
             if decoded.rank() != Rank::Three || decoded.suit().is_none() {
                 continue;
             }
+            dealt_level_cards[position]
+                .entry(decoded.identity())
+                .or_default()
+                .push(card);
 
             send_request(
                 &mut *clients[position],
@@ -616,16 +622,19 @@ async fn upgrade_ws_accepts_a_level_three_declaration_during_first_deal() {
         }
     }
     let (declaring_position, declared_card) =
-        declared.expect("a three-deck deal must expose a suited level three outside the bottom");
+        declared.expect("a six-deck deal must expose a suited level three outside the bottom");
     let declared_suit = Card::try_from(declared_card)
         .expect("declared upgrade card")
         .suit()
         .expect("declared upgrade card suit");
 
     let mut rejected_equal_declaration = None;
-    'deal: while dealt_counts.iter().any(|count| *count < 38) {
+    'deal: while dealt_counts
+        .iter()
+        .any(|count| *count < expected_hand_count)
+    {
         for position in 0..4 {
-            if dealt_counts[position] >= 38 {
+            if dealt_counts[position] >= expected_hand_count {
                 continue;
             }
             let card = wait_upgrade_private_deal(&mut *clients[position], position).await;
@@ -634,6 +643,10 @@ async fn upgrade_ws_accepts_a_level_three_declaration_during_first_deal() {
             if decoded.rank() != Rank::Three || decoded.suit().is_none() {
                 continue;
             }
+            dealt_level_cards[position]
+                .entry(decoded.identity())
+                .or_default()
+                .push(card);
 
             send_request(
                 &mut *clients[position],
@@ -668,6 +681,86 @@ async fn upgrade_ws_accepts_a_level_three_declaration_during_first_deal() {
     assert!(
         rejected_equal_declaration.is_some(),
         "another dealt level three must not replace an equal-strength declaration"
+    );
+
+    let find_pair = |cards: &[HashMap<u8, Vec<i32>>; 4]| {
+        cards.iter().enumerate().find_map(|(position, groups)| {
+            groups
+                .values()
+                .find(|copies| copies.len() >= 2)
+                .map(|copies| (position, copies[..2].to_vec()))
+        })
+    };
+    let mut stronger_declaration = find_pair(&dealt_level_cards);
+    'deal: while stronger_declaration.is_none()
+        && dealt_counts
+            .iter()
+            .any(|count| *count < expected_hand_count)
+    {
+        for position in 0..4 {
+            if dealt_counts[position] >= expected_hand_count {
+                continue;
+            }
+            let card = wait_upgrade_private_deal(&mut *clients[position], position).await;
+            dealt_counts[position] += 1;
+            let decoded = Card::try_from(card).expect("upgrade stronger declaration candidate");
+            if decoded.rank() != Rank::Three || decoded.suit().is_none() {
+                continue;
+            }
+            let copies = dealt_level_cards[position]
+                .entry(decoded.identity())
+                .or_default();
+            copies.push(card);
+            if copies.len() >= 2 {
+                stronger_declaration = Some((position, copies[..2].to_vec()));
+                break 'deal;
+            }
+        }
+    }
+    let (stronger_position, stronger_cards) = stronger_declaration
+        .expect("a six-deck deal must expose two identical level threes to one player");
+    send_request(
+        &mut *clients[stronger_position],
+        UpgradeRoutes::DECLARE_TRUMP as i32,
+        json!({ "cards": stronger_cards }),
+    )
+    .await;
+    let observer_position = (stronger_position + 1) % 4;
+    let declaration = loop {
+        let candidate = wait_for_event(
+            &mut *clients[observer_position],
+            UpgradeWsCode::TRUMP_DECLARED as i32,
+        )
+        .await;
+        if candidate["data"]["position"] == json!(stronger_position)
+            && candidate["data"]["strength"] == json!(2)
+        {
+            break candidate;
+        }
+    };
+    assert_eq!(declaration["data"]["position"], json!(stronger_position));
+    assert_eq!(declaration["data"]["cards"], json!(stronger_cards));
+    assert_eq!(declaration["data"]["strength"], json!(2));
+    assert_eq!(declaration["data"]["target_rank"], json!(3));
+    let stronger_suit = Card::try_from(stronger_cards[0])
+        .expect("stronger upgrade declaration card")
+        .suit()
+        .expect("stronger upgrade declaration suit");
+    assert_eq!(
+        upgrade_suit(
+            declaration["data"]["trump_suit"]
+                .as_i64()
+                .expect("stronger upgrade declaration protocol suit")
+        ),
+        stronger_suit
+    );
+    assert_eq!(
+        wait_for_response(
+            &mut *clients[stronger_position],
+            UpgradeRoutes::DECLARE_TRUMP as i32
+        )
+        .await["code"],
+        json!(WsResponseCode::OK as i32)
     );
 
     server.abort();
