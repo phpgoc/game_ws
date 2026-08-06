@@ -16,9 +16,10 @@ use ws_common::{
 };
 
 use crate::{
+    game_loop::current_play_time,
     game_setting::{
-        KEY_ATTACKING_WIN_SCORE, KEY_BOTTOM_CARD_COUNT, KEY_DECK_COUNT, KEY_PLAY_TIME,
-        KEY_SCORE_PER_LEVEL, KEY_SHUTOUT_BONUS_LEVELS, KEY_TARGET_RANK, build_tractor_settings,
+        KEY_ATTACKING_WIN_SCORE, KEY_BOTTOM_CARD_COUNT, KEY_DECK_COUNT, KEY_SCORE_PER_LEVEL,
+        KEY_SHUTOUT_BONUS_LEVELS, KEY_TARGET_RANK, build_tractor_settings,
     },
     game_state::{
         MAX_TRACTOR_DECK_COUNT, MIN_TRACTOR_DECK_COUNT, TractorGameState, TractorRules,
@@ -119,6 +120,7 @@ impl TractorGameHandler {
         let Some(state) = self.current_state(room_service, &room_key) else {
             return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
         };
+        let configs = room_service.room_configs(&room_key).unwrap_or_default();
         let (event, hand, snapshot) = {
             let mut state = state.lock().unwrap();
             if state.bury_bottom(position, payload.cards).is_err() {
@@ -128,14 +130,8 @@ impl TractorGameHandler {
                     WsResponseCode::NO_PERMISSION,
                 );
             }
-            let play_time = room_service
-                .room_configs(&room_key)
-                .unwrap_or_default()
-                .get(KEY_PLAY_TIME)
-                .copied()
-                .unwrap_or(30)
-                .max(1) as u32;
-            state.set_turn_countdown(play_time);
+            let countdown = current_play_time(&configs, &state);
+            state.set_turn_countdown(countdown);
             (
                 WsTractorBottomBuriedEvent {
                     position: position as i32,
@@ -254,6 +250,7 @@ impl TractorGameHandler {
             );
         };
 
+        let configs = room_service.room_configs(&room_key).unwrap_or_default();
         let (play_event, snapshot, finished) = {
             let mut s = state.lock().unwrap();
             let name = s.player_name(position);
@@ -265,14 +262,8 @@ impl TractorGameHandler {
                 );
             };
             let failed_throw = s.last_failed_throw_event(position);
-            let play_time = room_service
-                .room_configs(&room_key)
-                .unwrap_or_default()
-                .get(KEY_PLAY_TIME)
-                .copied()
-                .unwrap_or(30)
-                .max(1) as u32;
-            s.set_turn_countdown(play_time);
+            let countdown = current_play_time(&configs, &s);
+            s.set_turn_countdown(countdown);
             let play_event = WsTractorPlayEvent {
                 position: played.position,
                 name,

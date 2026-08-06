@@ -331,7 +331,7 @@ fn build_deal_dispatch(
     dispatch
 }
 
-fn current_play_time(configs: &HashMap<String, i32>, state: &TractorGameState) -> u32 {
+pub(crate) fn current_play_time(configs: &HashMap<String, i32>, state: &TractorGameState) -> u32 {
     let inactive = {
         let base = state.base.lock().unwrap();
         base.is_away(state.current_position) || base.is_disconnected(state.current_position)

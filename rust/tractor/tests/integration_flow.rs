@@ -1876,3 +1876,161 @@ async fn tractor_ws_auto_buries_after_three_play_windows() {
 
     server.abort();
 }
+
+#[cfg(not(feature = "official"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn tractor_ws_uses_away_time_after_play_passes_to_a_disconnected_player() {
+    let port = free_port();
+    let listen_addr = format!("127.0.0.1:{port}");
+    let url = format!("ws://{listen_addr}");
+    let server = tokio::spawn(run_room_runtime(
+        RuntimeConfig {
+            service_name: "tractor-disconnected-next-turn-test",
+            listen_addr,
+            idle_timeout: Duration::from_secs(30),
+            heartbeat_interval: Duration::from_secs(30),
+        },
+        TestTractorHandler::default(),
+    ));
+
+    let mut a = connect_client(&url).await;
+    let mut b = connect_client(&url).await;
+    let mut c = connect_client(&url).await;
+    let mut d = connect_client(&url).await;
+    let room = "tractor-disconnected-next-turn-room";
+    join(&mut a, "a", room).await;
+    join(&mut b, "b", room).await;
+    join(&mut c, "c", room).await;
+    join(&mut d, "d", room).await;
+
+    send_request(
+        &mut a,
+        Routes::SETTING as i32,
+        json!({
+            "current_configs": {
+                "deck_count": 0,
+                "first_deal_time": 1,
+                "deal_time": 1,
+                "play_time": 30,
+                "away_time": 1
+            }
+        }),
+    )
+    .await;
+    recv_until(&mut a, "disconnected next setting response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::SETTING as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+    send_request(&mut a, Routes::START as i32, json!({})).await;
+    recv_until(&mut a, "disconnected next start response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::START as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+
+    let mut clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
+    let hands = collect_tractor_hands(&mut clients, 25).await;
+    let (declaration, bottom_seen_by_first_client) = recv_first_declaration(&mut *clients[0]).await;
+    let dealer_position = declaration["data"]["position"]
+        .as_i64()
+        .expect("disconnected next dealer") as usize;
+    let bottom = if dealer_position == 0 {
+        match bottom_seen_by_first_client {
+            Some(bottom) => bottom,
+            None => recv_tractor_bottom(&mut *clients[dealer_position], dealer_position).await,
+        }
+    } else {
+        recv_tractor_bottom(&mut *clients[dealer_position], dealer_position).await
+    };
+    let bottom_cards = bottom["data"]["cards"]
+        .as_array()
+        .expect("disconnected next bottom")
+        .iter()
+        .map(|card| card.as_i64().expect("bottom card") as i32)
+        .collect::<Vec<_>>();
+
+    send_request(
+        &mut *clients[dealer_position],
+        TractorRoutes::BURY_BOTTOM as i32,
+        json!({ "cards": bottom_cards }),
+    )
+    .await;
+    recv_until(
+        &mut *clients[dealer_position],
+        "disconnected next play phase",
+        |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+                && value["data"]["phase"] == json!(TractorPhase::Play as i8)
+        },
+    )
+    .await;
+    recv_until(
+        &mut *clients[dealer_position],
+        "disconnected next bury response",
+        |value| {
+            value.get("route").and_then(Value::as_i64) == Some(TractorRoutes::BURY_BOTTOM as i64)
+                && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+        },
+    )
+    .await;
+
+    let disconnected_position = (dealer_position + 1) % 4;
+    clients[disconnected_position]
+        .close(None)
+        .await
+        .expect("close next tractor player");
+    let inactive = recv_until(
+        &mut *clients[dealer_position],
+        "next tractor player disconnected",
+        |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::JOIN as i64)
+                && value["data"]["position"] == json!(disconnected_position)
+                && value["data"]["is_active"] == json!(false)
+        },
+    )
+    .await;
+    assert_eq!(inactive["data"]["away"], json!(true));
+
+    let lead_card = *hands[dealer_position]
+        .first()
+        .expect("dealer has a lead card");
+    send_request(
+        &mut *clients[dealer_position],
+        Routes::PLAY as i32,
+        json!({ "cards": [lead_card] }),
+    )
+    .await;
+    recv_until(
+        &mut *clients[dealer_position],
+        "manual lead before disconnected player",
+        |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::PLAY as i64)
+                && value["data"]["position"] == json!(dealer_position)
+        },
+    )
+    .await;
+    let next_snapshot = recv_until(
+        &mut *clients[dealer_position],
+        "disconnected player turn countdown",
+        |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+                && value["data"]["phase"] == json!(TractorPhase::Play as i8)
+                && value["data"]["current_position"] == json!(disconnected_position)
+                && value["data"]["trick_index"] == json!(0)
+        },
+    )
+    .await;
+    assert_eq!(next_snapshot["data"]["turn_countdown"], json!(1));
+    recv_until(
+        &mut *clients[dealer_position],
+        "manual lead response before disconnected player",
+        |value| {
+            value.get("route").and_then(Value::as_i64) == Some(Routes::PLAY as i64)
+                && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+        },
+    )
+    .await;
+
+    server.abort();
+}
