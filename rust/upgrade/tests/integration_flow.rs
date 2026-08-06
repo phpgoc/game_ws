@@ -7,8 +7,8 @@ use std::{
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use share_type_public::{
-    GameId, GameParam, GameParamRange, Routes, UpgradePhase, UpgradeRoutes, UpgradeWsCode, WsCode,
-    WsResponseCode, WsUpgradePlayedCards, WsUpgradeSettlementEvent,
+    GameId, GameParam, GameParamRange, Routes, UpgradePhase, UpgradeRank, UpgradeRoutes,
+    UpgradeWsCode, WsCode, WsResponseCode, WsUpgradePlayedCards, WsUpgradeSettlementEvent,
 };
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use upgrade::combo;
@@ -528,6 +528,128 @@ async fn wait_upgrade_snapshot(
             return value;
         }
     }
+}
+
+async fn wait_upgrade_round_snapshot(
+    client: &mut Client,
+    phase: UpgradePhase,
+    trick_index: i64,
+    round_index: i64,
+) -> Value {
+    loop {
+        let value = recv_json_full(client, "upgrade round table snapshot").await;
+        if value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+            && value["data"]["phase"] == json!(phase as i8)
+            && value["data"]["trick_index"] == json!(trick_index)
+            && value["data"]["round_index"] == json!(round_index)
+        {
+            return value;
+        }
+    }
+}
+
+async fn play_complete_upgrade_round(
+    clients: &mut [&mut Client; 4],
+    hands: &mut [Vec<i32>; 4],
+    dealer_position: usize,
+    round_index: i64,
+    rules: combo::UpgradeComboRules,
+) -> (WsUpgradeSettlementEvent, Value) {
+    let total_play_count = hands.iter().map(Vec::len).sum::<usize>();
+    let mut current_position = dealer_position;
+    let mut lead_combo = None;
+    for play_index in 0..total_play_count {
+        let hand = &hands[current_position];
+        let hand_cards = hand
+            .iter()
+            .copied()
+            .map(|card| Card::try_from(card).expect("complete upgrade round hand card"))
+            .collect::<Vec<_>>();
+        let requested_card = if let Some(lead) = lead_combo.as_ref() {
+            hand.iter()
+                .copied()
+                .find(|candidate| {
+                    let candidate =
+                        Card::try_from(*candidate).expect("complete upgrade round follow card");
+                    combo::follow_is_legal(&hand_cards, &[candidate], lead, rules)
+                })
+                .expect("complete upgrade round legal follow")
+        } else {
+            *hand.first().expect("complete upgrade round lead card")
+        };
+        send_request(
+            &mut *clients[current_position],
+            Routes::PLAY as i32,
+            json!({ "cards": [requested_card] }),
+        )
+        .await;
+        let played = wait_upgrade_play(&mut *clients[current_position], current_position).await;
+        let played_cards = played["data"]["cards"]
+            .as_array()
+            .expect("complete upgrade round played cards")
+            .iter()
+            .map(|card| card.as_i64().expect("complete upgrade round played card") as i32)
+            .collect::<Vec<_>>();
+        assert_eq!(played_cards.len(), 1);
+        let played_card = played_cards[0];
+        let index = hands[current_position]
+            .iter()
+            .position(|candidate| *candidate == played_card)
+            .expect("complete upgrade round played card was in hand");
+        hands[current_position].remove(index);
+
+        let final_play = play_index + 1 == total_play_count;
+        let expected_phase = if final_play {
+            UpgradePhase::Settlement
+        } else {
+            UpgradePhase::Play
+        };
+        let snapshot = wait_upgrade_round_snapshot(
+            &mut *clients[current_position],
+            expected_phase,
+            ((play_index + 1) / 4) as i64,
+            round_index,
+        )
+        .await;
+        if final_play {
+            let game_over =
+                wait_for_event(&mut *clients[current_position], WsCode::GAME_OVER as i32).await;
+            let response =
+                wait_for_response(&mut *clients[current_position], Routes::PLAY as i32).await;
+            assert_eq!(response["code"], json!(WsResponseCode::OK as i32));
+            assert!(hands.iter().all(Vec::is_empty));
+            return (
+                serde_json::from_value(game_over["data"].clone())
+                    .expect("complete upgrade round settlement payload"),
+                snapshot,
+            );
+        }
+
+        let response =
+            wait_for_response(&mut *clients[current_position], Routes::PLAY as i32).await;
+        assert_eq!(response["code"], json!(WsResponseCode::OK as i32));
+        current_position = snapshot["data"]["current_position"]
+            .as_i64()
+            .expect("complete upgrade round next position") as usize;
+        lead_combo = if snapshot["data"]["current_trick"]
+            .as_array()
+            .is_some_and(|trick| trick.is_empty())
+        {
+            None
+        } else {
+            let lead_card = snapshot["data"]["current_trick"][0]["cards"][0]
+                .as_i64()
+                .expect("complete upgrade round lead card") as i32;
+            Some(
+                combo::classify(
+                    &[Card::try_from(lead_card).expect("complete upgrade round lead")],
+                    rules,
+                )
+                .expect("complete upgrade round lead combo"),
+            )
+        };
+    }
+    panic!("complete upgrade round ended without settlement");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1401,6 +1523,201 @@ async fn upgrade_server_completes_round_and_enters_later_round() {
     assert_eq!(
         wait_for_response(&mut *clients[later_dealer], Routes::PLAY as i32).await["code"],
         json!(WsResponseCode::OK as i32)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn upgrade_ws_finishes_a_multi_round_match_at_ace() {
+    let runtime = start_test_runtime(
+        "upgrade-complete-match-test",
+        Duration::from_secs(90),
+        TestUpgradeHandler::default(),
+    )
+    .await;
+    let url = runtime.url.clone();
+
+    let mut a = connect_client(&url).await;
+    let mut b = connect_client(&url).await;
+    let mut c = connect_client(&url).await;
+    let mut d = connect_client(&url).await;
+    let room = "upgrade-complete-match-room";
+    for (position, client) in [&mut a, &mut b, &mut c, &mut d].into_iter().enumerate() {
+        let joined = join_as(
+            client,
+            GameId::UPGRADE,
+            room,
+            &format!("complete-upgrade-player-{position}"),
+        )
+        .await;
+        assert_eq!(joined["code"], json!(WsResponseCode::JOINED as i32));
+        assert_eq!(joined["data"]["self_position"], json!(position));
+    }
+
+    send_request(
+        &mut a,
+        Routes::SETTING as i32,
+        json!({
+            "current_configs": {
+                "deck_count": 0,
+                "removed_rank_count": 7,
+                "attacking_win_score": 400,
+                "score_per_level": 5,
+                "shutout_bonus_levels": 3,
+                "first_deal_time": 1000,
+                "deal_time": 500,
+                "play_time": 30
+            }
+        }),
+    )
+    .await;
+    assert_eq!(
+        wait_for_response(&mut a, Routes::SETTING as i32).await["code"],
+        json!(WsResponseCode::OK as i32)
+    );
+    send_request(&mut a, Routes::START as i32, Value::Null).await;
+    assert_eq!(
+        wait_for_response(&mut a, Routes::START as i32).await["code"],
+        json!(WsResponseCode::OK as i32)
+    );
+
+    let mut clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
+    let declaration = wait_for_event(&mut *clients[0], UpgradeWsCode::TRUMP_DECLARED as i32).await;
+    assert_eq!(
+        declaration["data"]["target_rank"],
+        json!(UpgradeRank::FIVE as i32),
+        "the compact rank path must retain the scoring rank five"
+    );
+    let mut dealer_position = declaration["data"]["position"]
+        .as_i64()
+        .expect("complete upgrade match first dealer") as usize;
+    let mut completed_rounds = 0_usize;
+    let mut final_settlement = None;
+
+    for round_index in 0..10_i64 {
+        let mut hands = collect_upgrade_hands_min(&mut clients, 17).await;
+        assert_eq!(hands[dealer_position].len(), 27);
+        assert!(
+            hands
+                .iter()
+                .enumerate()
+                .all(|(position, hand)| position == dealer_position || hand.len() == 17)
+        );
+        let bottom_event =
+            recv_upgrade_bottom(&mut *clients[dealer_position], dealer_position).await;
+        let bottom_cards = bottom_event["data"]["cards"]
+            .as_array()
+            .expect("complete upgrade match bottom")
+            .iter()
+            .map(|card| card.as_i64().expect("complete upgrade match bottom card") as i32)
+            .collect::<Vec<_>>();
+        assert_eq!(bottom_cards.len(), 10);
+        for card in &bottom_cards {
+            let index = hands[dealer_position]
+                .iter()
+                .position(|candidate| candidate == card)
+                .expect("complete upgrade match bottom card in dealer hand");
+            hands[dealer_position].remove(index);
+        }
+
+        if round_index > 0 {
+            send_request(
+                &mut *clients[dealer_position],
+                UpgradeRoutes::SELECT_TRUMP as i32,
+                json!({ "trump_suit": 0 }),
+            )
+            .await;
+            let selected = wait_for_response(
+                &mut *clients[dealer_position],
+                UpgradeRoutes::SELECT_TRUMP as i32,
+            )
+            .await;
+            assert_eq!(selected["code"], json!(WsResponseCode::OK as i32));
+        }
+        send_request(
+            &mut *clients[dealer_position],
+            UpgradeRoutes::BURY_BOTTOM as i32,
+            json!({ "cards": bottom_cards }),
+        )
+        .await;
+        let play_snapshot = wait_upgrade_round_snapshot(
+            &mut *clients[dealer_position],
+            UpgradePhase::Play,
+            0,
+            round_index,
+        )
+        .await;
+        let buried = wait_for_response(
+            &mut *clients[dealer_position],
+            UpgradeRoutes::BURY_BOTTOM as i32,
+        )
+        .await;
+        assert_eq!(buried["code"], json!(WsResponseCode::OK as i32));
+        assert_eq!(play_snapshot["data"]["removed_rank_count"], json!(7));
+        assert_eq!(play_snapshot["data"]["hand_count"], json!(17));
+        assert_eq!(play_snapshot["data"]["bottom_card_count"], json!(10));
+        let rules = combo::UpgradeComboRules {
+            target_rank: upgrade_rank(
+                play_snapshot["data"]["target_rank"]
+                    .as_i64()
+                    .expect("complete upgrade match target rank"),
+            ),
+            trump_suit: Some(upgrade_suit(
+                play_snapshot["data"]["trump_suit"]
+                    .as_i64()
+                    .expect("complete upgrade match trump suit"),
+            )),
+        };
+        let (settlement, settlement_snapshot) = play_complete_upgrade_round(
+            &mut clients,
+            &mut hands,
+            dealer_position,
+            round_index,
+            rules,
+        )
+        .await;
+        completed_rounds += 1;
+        assert_eq!(
+            settlement_snapshot["data"]["round_index"],
+            json!(round_index)
+        );
+        assert_eq!(settlement.target_rank as i32, rules.target_rank as i32);
+        assert_eq!(settlement.team_target_ranks.len(), 2);
+        if settlement.match_finished {
+            final_settlement = Some(settlement);
+            break;
+        }
+
+        assert!(settlement.next_target_rank.is_some());
+        let winners = settlement
+            .winner_positions
+            .iter()
+            .map(|position| *position as usize)
+            .collect::<Vec<_>>();
+        if !winners.contains(&dealer_position) {
+            dealer_position = winners[0];
+        }
+    }
+
+    let final_settlement =
+        final_settlement.expect("compact upgrade match must finish by round ten");
+    assert!((2..=10).contains(&completed_rounds));
+    assert_eq!(final_settlement.target_rank, UpgradeRank::A);
+    assert_eq!(final_settlement.next_target_rank, None);
+    assert!(
+        final_settlement
+            .team_target_ranks
+            .iter()
+            .any(|rank| *rank == UpgradeRank::A)
+    );
+
+    let unexpected_next_deal = tokio::time::timeout(
+        Duration::from_secs(4),
+        wait_for_event(&mut *clients[0], WsCode::DEAL as i32),
+    )
+    .await;
+    assert!(
+        unexpected_next_deal.is_err(),
+        "finished upgrade match must not deal another round"
     );
 }
 
