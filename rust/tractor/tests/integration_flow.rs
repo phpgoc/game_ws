@@ -443,6 +443,117 @@ fn find_illegal_follow_case(
 }
 
 #[cfg(not(feature = "official"))]
+async fn play_complete_tractor_round(
+    clients: &mut [&mut Client; 4],
+    hands: &mut [Vec<i32>; 4],
+    dealer_position: usize,
+    rules: &TractorRules,
+) -> (WsTractorSettlementEvent, Value) {
+    let total_play_count = hands.iter().map(Vec::len).sum::<usize>();
+    let mut current_position = dealer_position;
+    let mut lead_combo = None;
+    for play_index in 0..total_play_count {
+        let hand = &hands[current_position];
+        let requested_cards = match lead_combo {
+            None => vec![*hand.first().expect("tractor round lead card")],
+            Some(ref lead) => {
+                combo::forced_follow(hand, lead, rules).expect("tractor round legal follow")
+            }
+        };
+        send_request(
+            &mut *clients[current_position],
+            Routes::PLAY as i32,
+            json!({ "cards": requested_cards }),
+        )
+        .await;
+        let played = recv_until(
+            &mut *clients[current_position],
+            "complete tractor round play event",
+            |value| {
+                value.get("code").and_then(Value::as_i64) == Some(WsCode::PLAY as i64)
+                    && value["data"]["position"] == json!(current_position)
+            },
+        )
+        .await;
+        let played_cards = played["data"]["cards"]
+            .as_array()
+            .expect("complete tractor round played cards")
+            .iter()
+            .map(|card| card.as_i64().expect("complete tractor round played card") as i32)
+            .collect::<Vec<_>>();
+        assert!(!played_cards.is_empty());
+        for card in &played_cards {
+            let index = hands[current_position]
+                .iter()
+                .position(|candidate| candidate == card)
+                .expect("complete tractor round played card was in hand");
+            hands[current_position].remove(index);
+        }
+
+        let final_play = play_index + 1 == total_play_count;
+        let expected_phase = if final_play {
+            TractorPhase::Settlement
+        } else {
+            TractorPhase::Play
+        };
+        let snapshot = recv_until(
+            &mut *clients[current_position],
+            "complete tractor round snapshot",
+            |value| {
+                value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+                    && value["data"]["phase"] == json!(expected_phase as i8)
+            },
+        )
+        .await;
+        if final_play {
+            let game_over = recv_until(
+                &mut *clients[current_position],
+                "complete tractor round settlement",
+                |value| value.get("code").and_then(Value::as_i64) == Some(WsCode::GAME_OVER as i64),
+            )
+            .await;
+            recv_until(
+                &mut *clients[current_position],
+                "complete tractor round final play response",
+                |value| value.get("route").and_then(Value::as_i64) == Some(Routes::PLAY as i64),
+            )
+            .await;
+            assert!(hands.iter().all(Vec::is_empty));
+            return (
+                serde_json::from_value(game_over["data"].clone())
+                    .expect("complete tractor round settlement payload"),
+                snapshot,
+            );
+        }
+
+        recv_until(
+            &mut *clients[current_position],
+            "complete tractor round play response",
+            |value| value.get("route").and_then(Value::as_i64) == Some(Routes::PLAY as i64),
+        )
+        .await;
+        current_position = snapshot["data"]["current_position"]
+            .as_i64()
+            .expect("complete tractor round next position") as usize;
+        if snapshot["data"]["current_trick"]
+            .as_array()
+            .is_some_and(|trick| trick.is_empty())
+        {
+            lead_combo = None;
+        } else {
+            let lead_card = snapshot["data"]["current_trick"][0]["cards"][0]
+                .as_i64()
+                .expect("complete tractor round lead card") as i32;
+            lead_combo = Some(
+                combo::classify(&[lead_card], rules)
+                    .expect("complete tractor round single lead combo"),
+            );
+        }
+    }
+    panic!("complete tractor round ended without settlement");
+}
+
+#[cfg(not(feature = "official"))]
 async fn recv_first_declaration(client: &mut Client) -> (Value, Option<Value>) {
     let mut bottom = None;
     loop {
@@ -1739,6 +1850,208 @@ async fn tractor_server_completes_round_and_enters_later_round() {
         },
     )
     .await;
+}
+
+#[cfg(not(feature = "official"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn tractor_ws_finishes_a_two_round_match_at_the_configured_final_rank() {
+    let runtime = start_test_runtime("tractor-complete-match-test", Duration::from_secs(60)).await;
+    let url = runtime.url.clone();
+
+    let mut a = connect_client(&url).await;
+    let mut b = connect_client(&url).await;
+    let mut c = connect_client(&url).await;
+    let mut d = connect_client(&url).await;
+    let room = "tractor-complete-match-room";
+    join(&mut a, "match-a", room).await;
+    join(&mut b, "match-b", room).await;
+    join(&mut c, "match-c", room).await;
+    join(&mut d, "match-d", room).await;
+
+    send_request(
+        &mut a,
+        Routes::SETTING as i32,
+        json!({
+            "current_configs": {
+                "deck_count": 0,
+                "attacking_win_score": 80,
+                "score_per_level": 40,
+                "shutout_bonus_levels": 1,
+                "target_rank": 1,
+                "first_deal_time": 1000,
+                "deal_time": 500,
+                "play_time": 30,
+                "settlement_time": 1
+            }
+        }),
+    )
+    .await;
+    let setting = recv_until(&mut a, "complete tractor match setting response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::SETTING as i64)
+    })
+    .await;
+    assert_eq!(setting["code"], json!(WsResponseCode::OK as i32));
+    send_request(&mut a, Routes::START as i32, json!({})).await;
+    let started = recv_until(&mut a, "complete tractor match start response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::START as i64)
+    })
+    .await;
+    assert_eq!(started["code"], json!(WsResponseCode::OK as i32));
+
+    let mut clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
+    let mut first_hands = collect_tractor_hands(&mut clients, 25).await;
+    let (declaration, bottom_seen_by_first_client) = recv_first_declaration(&mut *clients[0]).await;
+    let first_dealer = declaration["data"]["position"]
+        .as_i64()
+        .expect("complete match first dealer") as usize;
+    let first_bottom_event = if first_dealer == 0 {
+        match bottom_seen_by_first_client {
+            Some(bottom) => bottom,
+            None => recv_tractor_bottom(&mut *clients[first_dealer], first_dealer).await,
+        }
+    } else {
+        recv_tractor_bottom(&mut *clients[first_dealer], first_dealer).await
+    };
+    let first_bottom = first_bottom_event["data"]["cards"]
+        .as_array()
+        .expect("complete match first bottom")
+        .iter()
+        .map(|card| card.as_i64().expect("complete match first bottom card") as i32)
+        .collect::<Vec<_>>();
+    send_request(
+        &mut *clients[first_dealer],
+        TractorRoutes::BURY_BOTTOM as i32,
+        json!({ "cards": first_bottom }),
+    )
+    .await;
+    let first_play_snapshot = recv_until(
+        &mut *clients[first_dealer],
+        "complete tractor match first play phase",
+        |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+                && value["data"]["phase"] == json!(TractorPhase::Play as i8)
+        },
+    )
+    .await;
+    let first_bury = recv_until(
+        &mut *clients[first_dealer],
+        "complete tractor match first bury response",
+        |value| {
+            value.get("route").and_then(Value::as_i64) == Some(TractorRoutes::BURY_BOTTOM as i64)
+        },
+    )
+    .await;
+    assert_eq!(first_bury["code"], json!(WsResponseCode::OK as i32));
+    assert_eq!(first_play_snapshot["data"]["round_index"], json!(0));
+    assert_eq!(first_play_snapshot["data"]["target_rank"], json!(3));
+    assert_eq!(first_play_snapshot["data"]["final_target_rank"], json!(4));
+    let first_trump_suit =
+        first_play_snapshot["data"]["trump_suit"]
+            .as_i64()
+            .map(|suit| match suit {
+                0 => TractorSuit::SPADE,
+                1 => TractorSuit::HEART,
+                2 => TractorSuit::CLUB,
+                3 => TractorSuit::DIAMOND,
+                _ => panic!("invalid complete match first trump suit"),
+            });
+    let first_rules = TractorRules {
+        attacking_win_score: 80,
+        score_per_level: 40,
+        shutout_bonus_levels: 1,
+        bottom_card_count: 8,
+        deck_count: 2,
+        final_target_rank: TractorRank::FOUR,
+        target_rank: TractorRank::THREE,
+        trump_suit: first_trump_suit,
+    };
+    let (first_settlement, first_settlement_snapshot) =
+        play_complete_tractor_round(&mut clients, &mut first_hands, first_dealer, &first_rules)
+            .await;
+    assert_eq!(first_settlement_snapshot["data"]["round_index"], json!(0));
+    assert_eq!(first_settlement.target_rank, TractorRank::THREE);
+    assert!(!first_settlement.match_finished);
+    assert_eq!(first_settlement.next_target_rank, Some(TractorRank::FOUR));
+
+    let later_dealer = *first_settlement
+        .winner_positions
+        .first()
+        .expect("complete match first winners") as usize;
+    let mut later_hands = collect_tractor_hands(&mut clients, 25).await;
+    let later_bottom_event = recv_tractor_bottom(&mut *clients[later_dealer], later_dealer).await;
+    let later_bottom = later_bottom_event["data"]["cards"]
+        .as_array()
+        .expect("complete match later bottom")
+        .iter()
+        .map(|card| card.as_i64().expect("complete match later bottom card") as i32)
+        .collect::<Vec<_>>();
+    send_request(
+        &mut *clients[later_dealer],
+        TractorRoutes::SELECT_TRUMP as i32,
+        json!({ "trump_suit": TractorSuit::SPADE as i8 }),
+    )
+    .await;
+    let selected = recv_until(
+        &mut *clients[later_dealer],
+        "complete tractor match later select response",
+        |value| {
+            value.get("route").and_then(Value::as_i64) == Some(TractorRoutes::SELECT_TRUMP as i64)
+        },
+    )
+    .await;
+    assert_eq!(selected["code"], json!(WsResponseCode::OK as i32));
+    send_request(
+        &mut *clients[later_dealer],
+        TractorRoutes::BURY_BOTTOM as i32,
+        json!({ "cards": later_bottom }),
+    )
+    .await;
+    let later_play_snapshot = recv_until(
+        &mut *clients[later_dealer],
+        "complete tractor match later play phase",
+        |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+                && value["data"]["phase"] == json!(TractorPhase::Play as i8)
+                && value["data"]["round_index"] == json!(1)
+        },
+    )
+    .await;
+    let later_bury = recv_until(
+        &mut *clients[later_dealer],
+        "complete tractor match later bury response",
+        |value| {
+            value.get("route").and_then(Value::as_i64) == Some(TractorRoutes::BURY_BOTTOM as i64)
+        },
+    )
+    .await;
+    assert_eq!(later_bury["code"], json!(WsResponseCode::OK as i32));
+    assert_eq!(later_play_snapshot["data"]["target_rank"], json!(4));
+    let later_rules = TractorRules {
+        target_rank: TractorRank::FOUR,
+        trump_suit: Some(TractorSuit::SPADE),
+        ..first_rules
+    };
+    let (final_settlement, final_snapshot) =
+        play_complete_tractor_round(&mut clients, &mut later_hands, later_dealer, &later_rules)
+            .await;
+    assert_eq!(final_snapshot["data"]["round_index"], json!(1));
+    assert_eq!(final_settlement.target_rank, TractorRank::FOUR);
+    assert!(final_settlement.match_finished);
+    assert_eq!(final_settlement.next_target_rank, None);
+
+    let unexpected_third_deal = tokio::time::timeout(
+        Duration::from_secs(2),
+        recv_until(
+            &mut *clients[0],
+            "unexpected third tractor round",
+            |value| value.get("code").and_then(Value::as_i64) == Some(WsCode::DEAL as i64),
+        ),
+    )
+    .await;
+    assert!(
+        unexpected_third_deal.is_err(),
+        "finished tractor match must not deal a third round"
+    );
 }
 
 #[cfg(not(feature = "official"))]
