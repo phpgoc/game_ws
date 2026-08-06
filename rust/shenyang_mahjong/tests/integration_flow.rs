@@ -4,7 +4,6 @@ use std::{net::TcpListener, time::Duration};
 
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
-#[cfg(feature = "official")]
 use share_type_public::WsCode;
 use share_type_public::{GameId, Routes, WsResponseCode};
 #[cfg(feature = "official")]
@@ -89,7 +88,6 @@ impl GameHandler for TestAiShenyangMahjongHandler {
     }
 }
 
-#[cfg(feature = "official")]
 async fn close_client(client: &mut Client) {
     client
         .send(Message::Close(None))
@@ -108,6 +106,30 @@ fn free_port() -> u16 {
         .local_addr()
         .expect("local addr")
         .port()
+}
+
+async fn start_test_server(
+    service_name: &'static str,
+) -> (String, tokio::task::JoinHandle<anyhow::Result<()>>) {
+    let port = free_port();
+    let listen_addr = format!("127.0.0.1:{port}");
+    let url = format!("ws://{listen_addr}");
+    let server = tokio::spawn(run_room_runtime(
+        RuntimeConfig {
+            service_name,
+            listen_addr,
+            idle_timeout: Duration::from_secs(30),
+            heartbeat_interval: Duration::from_secs(30),
+        },
+        ShenyangMahjongGameHandler::default(),
+    ));
+    for _ in 0..50 {
+        if TokioTcpListener::bind(("127.0.0.1", port)).await.is_err() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    (url, server)
 }
 
 async fn join(client: &mut Client, name: &str, password: &str) -> Value {
@@ -129,7 +151,6 @@ async fn join(client: &mut Client, name: &str, password: &str) -> Value {
     .await
 }
 
-#[cfg(feature = "official")]
 fn my_tiles(event: &Value) -> Vec<i32> {
     event["data"]["my_tiles"]
         .as_array()
@@ -158,18 +179,27 @@ async fn recv_until<F>(client: &mut Client, label: &str, mut pred: F) -> Value
 where
     F: FnMut(&Value) -> bool,
 {
-    let mut recent = Vec::new();
-    for _ in 0..100 {
-        let value = recv_json(client, label).await;
-        if pred(&value) {
-            return value;
+    let receive = async {
+        let mut recent = Vec::new();
+        for _ in 0..100 {
+            let value = recv_json(client, label).await;
+            if pred(&value) {
+                return Ok(value);
+            }
+            recent.push(value);
+            if recent.len() > 8 {
+                recent.remove(0);
+            }
         }
-        recent.push(value);
-        if recent.len() > 8 {
-            recent.remove(0);
+        Err(recent)
+    };
+    match tokio::time::timeout(Duration::from_secs(30), receive).await {
+        Ok(Ok(value)) => value,
+        Ok(Err(recent)) => {
+            panic!("expected websocket frame not received for {label}; recent={recent:?}");
         }
+        Err(_) => panic!("websocket receive loop exceeded 30 seconds while waiting for {label}"),
     }
-    panic!("expected websocket frame not received for {label}; recent={recent:?}");
 }
 
 async fn send_request(client: &mut Client, route: i32, data: Value) {
@@ -219,6 +249,179 @@ async fn shenyang_mahjong_nonofficial_rejects_ai_management() {
             Some(WsResponseCode::NO_PERMISSION as i64)
         );
     }
+
+    server.abort();
+}
+
+#[cfg(not(feature = "official"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn shenyang_mahjong_four_humans_can_start_and_play_over_ws() {
+    let (url, server) = start_test_server("shenyang-mahjong-four-human-test").await;
+    let mut a = connect_client(&url).await;
+    let mut b = connect_client(&url).await;
+    let mut c = connect_client(&url).await;
+    let mut d = connect_client(&url).await;
+    let room = "shenyang-mahjong-four-human-room";
+    let a_join = join(&mut a, "a", room).await;
+    let b_join = join(&mut b, "b", room).await;
+    let c_join = join(&mut c, "c", room).await;
+    let d_join = join(&mut d, "d", room).await;
+    assert_eq!(a_join["data"]["self_position"], json!(0));
+    assert_eq!(b_join["data"]["self_position"], json!(1));
+    assert_eq!(c_join["data"]["self_position"], json!(2));
+    assert_eq!(d_join["data"]["self_position"], json!(3));
+
+    send_request(&mut a, Routes::START as i32, json!({})).await;
+    recv_until(&mut a, "start ok", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::START as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+
+    let a_deal = recv_until(&mut a, "a deal", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::DEAL as i64)
+    })
+    .await;
+    let b_deal = recv_until(&mut b, "b deal", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::DEAL as i64)
+    })
+    .await;
+    let c_deal = recv_until(&mut c, "c deal", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::DEAL as i64)
+    })
+    .await;
+    let d_deal = recv_until(&mut d, "d deal", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::DEAL as i64)
+    })
+    .await;
+    assert_eq!(my_tiles(&a_deal).len(), 14);
+    assert_eq!(my_tiles(&b_deal).len(), 13);
+    assert_eq!(my_tiles(&c_deal).len(), 13);
+    assert_eq!(my_tiles(&d_deal).len(), 13);
+    for deal in [&a_deal, &b_deal, &c_deal, &d_deal] {
+        assert_eq!(deal["data"]["dealer_position"], json!(0));
+        assert_eq!(deal["data"]["current_position"], json!(0));
+        assert!(deal["data"]["wall_count"].as_i64().unwrap_or_default() > 0);
+    }
+
+    let b_tile = my_tiles(&b_deal)[0];
+    send_request(
+        &mut b,
+        Routes::PLAY as i32,
+        json!({ "action": 2, "tiles": [b_tile], "target_tile": b_tile }),
+    )
+    .await;
+    let response = recv_until(&mut b, "non-current mahjong play rejected", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::PLAY as i64)
+    })
+    .await;
+    assert_eq!(
+        response["code"],
+        json!(WsResponseCode::NO_PERMISSION as i32)
+    );
+
+    send_request(
+        &mut a,
+        Routes::PLAY as i32,
+        json!({ "action": 2, "tiles": [99], "target_tile": 99 }),
+    )
+    .await;
+    let response = recv_until(&mut a, "invalid mahjong tile rejected", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::PLAY as i64)
+    })
+    .await;
+    assert_eq!(
+        response["code"],
+        json!(WsResponseCode::NO_PERMISSION as i32)
+    );
+
+    let discard_tile = my_tiles(&a_deal)[0];
+    send_request(
+        &mut a,
+        Routes::PLAY as i32,
+        json!({ "action": 2, "tiles": [discard_tile], "target_tile": discard_tile }),
+    )
+    .await;
+    recv_until(&mut a, "mahjong discard ok", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::PLAY as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+    let play_event = recv_until(&mut b, "mahjong discard broadcast", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::PLAY as i64)
+    })
+    .await;
+    assert_eq!(play_event["data"]["position"], json!(0));
+    assert_eq!(play_event["data"]["action"], json!(2));
+    assert_eq!(play_event["data"]["tiles"], json!([discard_tile]));
+
+    // A discard may open a claim window; otherwise the next draw/phase event
+    // proves the runtime advanced beyond the discarded action.
+    let next_event = recv_until(&mut b, "claim window or next turn", |value| {
+        let code = value.get("code").and_then(Value::as_i64);
+        code == Some(WsCode::CLAIM_WINDOW as i64)
+            || code == Some(WsCode::CHANGE_PHASE as i64)
+            || (code == Some(WsCode::PLAY as i64) && value["data"]["action"] == json!(1))
+    })
+    .await;
+    if next_event["code"] == json!(WsCode::PLAY as i32) {
+        assert_eq!(next_event["data"]["action"], json!(1));
+        assert_eq!(next_event["data"]["position"], json!(1));
+    }
+
+    server.abort();
+}
+
+#[cfg(not(feature = "official"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn shenyang_mahjong_rejoin_receives_play_snapshot_over_ws() {
+    let (url, server) = start_test_server("shenyang-mahjong-rejoin-test").await;
+    let mut a = connect_client(&url).await;
+    let mut b = connect_client(&url).await;
+    let mut c = connect_client(&url).await;
+    let mut d = connect_client(&url).await;
+    let room = "shenyang-mahjong-rejoin-room";
+    join(&mut a, "a", room).await;
+    join(&mut b, "b", room).await;
+    join(&mut c, "c", room).await;
+    join(&mut d, "d", room).await;
+
+    send_request(&mut a, Routes::START as i32, json!({})).await;
+    recv_until(&mut a, "start ok", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::START as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+    let a_deal = recv_until(&mut a, "a deal", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::DEAL as i64)
+    })
+    .await;
+    recv_until(&mut d, "d deal", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::DEAL as i64)
+    })
+    .await;
+    let owner_tiles = my_tiles(&a_deal);
+    assert_eq!(owner_tiles.len(), 14);
+
+    close_client(&mut d).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let mut d = connect_client(&url).await;
+    let rejoin = join(&mut d, "d", room).await;
+    assert_eq!(rejoin["data"]["self_position"], json!(3));
+    let snapshot = recv_until(&mut d, "rejoin table snapshot", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+    })
+    .await;
+    assert_eq!(snapshot["data"]["phase"], json!(1));
+    assert_eq!(snapshot["data"]["dealer_position"], json!(0));
+    assert_eq!(snapshot["data"]["current_position"], json!(0));
+    assert!(snapshot["data"]["wall_count"].as_i64().unwrap_or_default() > 0);
+    assert_eq!(my_tiles(&snapshot).len(), 13);
+    assert_eq!(snapshot["data"]["claim_window"], Value::Null);
+    assert_eq!(
+        snapshot["data"]["players"].as_array().map(Vec::len),
+        Some(4)
+    );
 
     server.abort();
 }

@@ -480,6 +480,129 @@ async fn landlord_three_players_can_start_call_and_play_over_ws() {
     server.abort();
 }
 
+#[cfg(not(feature = "official"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn landlord_rejects_invalid_call_and_play_requests_over_ws() {
+    let port = free_port();
+    let listen_addr = format!("127.0.0.1:{port}");
+    let url = format!("ws://{listen_addr}");
+    let server = tokio::spawn(run_room_runtime(
+        RuntimeConfig {
+            service_name: "landlord-invalid-request-test",
+            listen_addr,
+            idle_timeout: Duration::from_secs(30),
+            heartbeat_interval: Duration::from_secs(30),
+        },
+        LandlordGameHandler::default(),
+    ));
+
+    for _ in 0..50 {
+        if TokioTcpListener::bind(("127.0.0.1", port)).await.is_err() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    let mut a = connect_client(&url).await;
+    let mut b = connect_client(&url).await;
+    let mut c = connect_client(&url).await;
+    let room = "landlord-invalid-request-room";
+    join(&mut a, "a", room).await;
+    join(&mut b, "b", room).await;
+    join(&mut c, "c", room).await;
+
+    send_request(&mut a, Routes::START as i32, json!({})).await;
+    recv_until(&mut a, "start ok", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::START as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+    recv_until(&mut a, "call phase", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::CHANGE_PHASE as i64)
+            && value["data"]["phase"] == json!(1)
+    })
+    .await;
+
+    // A different seat cannot advance bidding, and scores above 3 are invalid.
+    send_request(
+        &mut b,
+        LandlordRoutes::CALL_LANDLORD as i32,
+        json!({ "score": 1 }),
+    )
+    .await;
+    let response = recv_until(&mut b, "non-current call rejected", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(LandlordRoutes::CALL_LANDLORD as i64)
+    })
+    .await;
+    assert_eq!(
+        response["code"],
+        json!(WsResponseCode::NO_PERMISSION as i32)
+    );
+
+    send_request(
+        &mut a,
+        LandlordRoutes::CALL_LANDLORD as i32,
+        json!({ "score": 4 }),
+    )
+    .await;
+    let response = recv_until(&mut a, "invalid score rejected", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(LandlordRoutes::CALL_LANDLORD as i64)
+    })
+    .await;
+    assert_eq!(
+        response["code"],
+        json!(WsResponseCode::NO_PERMISSION as i32)
+    );
+
+    send_request(
+        &mut a,
+        LandlordRoutes::CALL_LANDLORD as i32,
+        json!({ "score": 3 }),
+    )
+    .await;
+    recv_until(&mut a, "valid call accepted", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(LandlordRoutes::CALL_LANDLORD as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+    recv_until(&mut a, "play phase", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::CHANGE_PHASE as i64)
+            && value["data"]["phase"] == json!(2)
+    })
+    .await;
+
+    let hidden = recv_until(&mut a, "hidden cards", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::DEAL_OPEN_CARDS as i64)
+    })
+    .await;
+    let hidden_cards = cards_from_deal(&hidden);
+    assert_eq!(hidden_cards.len(), 3);
+
+    send_request(&mut a, Routes::PLAY as i32, json!({ "cards": [99] })).await;
+    let response = recv_until(&mut a, "invalid play rejected", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::PLAY as i64)
+    })
+    .await;
+    assert_eq!(
+        response["code"],
+        json!(WsResponseCode::NO_PERMISSION as i32)
+    );
+
+    send_request(
+        &mut a,
+        Routes::PLAY as i32,
+        json!({ "cards": [hidden_cards[0]] }),
+    )
+    .await;
+    recv_until(&mut a, "valid play accepted", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::PLAY as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+
+    server.abort();
+}
+
 fn position_from_joined(response: &Value) -> usize {
     response
         .get("data")
@@ -518,18 +641,27 @@ async fn recv_until<F>(client: &mut Client, label: &str, mut pred: F) -> Value
 where
     F: FnMut(&Value) -> bool,
 {
-    let mut recent = Vec::new();
-    for _ in 0..80 {
-        let value = recv_json(client, label).await;
-        if pred(&value) {
-            return value;
+    let receive = async {
+        let mut recent = Vec::new();
+        for _ in 0..80 {
+            let value = recv_json(client, label).await;
+            if pred(&value) {
+                return Ok(value);
+            }
+            recent.push(value);
+            if recent.len() > 8 {
+                recent.remove(0);
+            }
         }
-        recent.push(value);
-        if recent.len() > 8 {
-            recent.remove(0);
+        Err(recent)
+    };
+    match tokio::time::timeout(Duration::from_secs(30), receive).await {
+        Ok(Ok(value)) => value,
+        Ok(Err(recent)) => {
+            panic!("expected websocket frame not received for {label}; recent={recent:?}");
         }
+        Err(_) => panic!("websocket receive loop exceeded 30 seconds while waiting for {label}"),
     }
-    panic!("expected websocket frame not received for {label}; recent={recent:?}");
 }
 
 async fn send_request(client: &mut Client, route: i32, data: Value) {
