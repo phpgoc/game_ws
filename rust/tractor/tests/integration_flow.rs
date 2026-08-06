@@ -9,13 +9,12 @@ use std::time::Instant;
 
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
-use share_type_public::{
-    GameId, Routes, TractorWsCode, WsCode, WsResponseCode, WsTractorPlayedCards,
-    WsTractorSettlementEvent,
-};
+use share_type_public::{GameId, Routes, TractorWsCode, WsCode, WsResponseCode};
 use share_type_public::{GameParam, GameParamRange};
 #[cfg(not(feature = "official"))]
 use share_type_public::{TractorPhase, TractorRank, TractorRoutes, TractorSuit};
+#[cfg(not(feature = "official"))]
+use share_type_public::{WsTractorPlayedCards, WsTractorSettlementEvent};
 use tokio_tungstenite::{WebSocketStream, connect_async, tungstenite::Message};
 #[cfg(not(feature = "official"))]
 use tractor::combo;
