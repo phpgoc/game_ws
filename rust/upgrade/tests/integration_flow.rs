@@ -4,12 +4,12 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use share_type_public::{
     GameId, GameParam, GameParamRange, Routes, UpgradePhase, UpgradeRoutes, UpgradeWsCode, WsCode,
-    WsResponseCode,
+    WsResponseCode, WsUpgradePlayedCards, WsUpgradeSettlementEvent,
 };
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use upgrade::combo;
 use upgrade::game::UpgradeGameHandler;
-use upgrade_common::{Card, Rank};
+use upgrade_common::{Card, Rank, ScoreProgression};
 use ws_common::{
     ClientRequest, Dispatch, GameHandler, GameState, JoinAuthorization, JoinAuthorizationFuture,
     RoomService, RuntimeConfig, SessionId, SessionSenders, SettingsBuilderResult, run_room_runtime,
@@ -290,6 +290,71 @@ fn upgrade_rank(value: i64) -> Rank {
         17 => Rank::BigJoker,
         _ => panic!("invalid upgrade rank"),
     }
+}
+
+fn upgrade_trick_winner(
+    trick: &[WsUpgradePlayedCards],
+    rules: combo::UpgradeComboRules,
+) -> Option<usize> {
+    let lead = trick.first()?;
+    let lead_cards = lead
+        .cards
+        .iter()
+        .copied()
+        .map(|card| Card::try_from(card).ok())
+        .collect::<Option<Vec<_>>>()?;
+    let lead_combo = combo::classify(&lead_cards, rules)?;
+    let mut winner = usize::try_from(lead.position).ok()?;
+    let mut best_priority = i32::from(lead_combo.group.is_none());
+    let mut best = lead_cards
+        .iter()
+        .filter(|card| combo::card_group(**card, rules) == lead_combo.group)
+        .map(|card| combo::card_strength(*card, rules))
+        .max()?;
+    for played in trick.iter().skip(1) {
+        let cards = played
+            .cards
+            .iter()
+            .copied()
+            .map(|card| Card::try_from(card).ok())
+            .collect::<Option<Vec<_>>>()?;
+        let candidate = combo::classify(&cards, rules)?;
+        if !combo::can_compete_with_lead(&cards, &lead_combo, rules) {
+            continue;
+        }
+        let competes = match (lead_combo.group, candidate.group) {
+            (Some(lead_group), Some(candidate_group)) => lead_group == candidate_group,
+            (None, None) | (Some(_), None) => true,
+            (None, Some(_)) => false,
+        };
+        if !competes {
+            continue;
+        }
+        let priority = i32::from(candidate.group.is_none());
+        let Some(value) = cards
+            .iter()
+            .filter(|card| combo::card_group(**card, rules) == candidate.group)
+            .map(|card| combo::card_strength(*card, rules))
+            .max()
+        else {
+            continue;
+        };
+        if priority > best_priority || (priority == best_priority && value > best) {
+            best_priority = priority;
+            best = value;
+            winner = usize::try_from(played.position).ok()?;
+        }
+    }
+    Some(winner)
+}
+
+fn upgrade_points(cards: &[i32]) -> i32 {
+    cards
+        .iter()
+        .copied()
+        .filter_map(|card| Card::try_from(card).ok())
+        .map(|card| i32::from(card.points()))
+        .sum()
 }
 
 async fn wait_upgrade_play(client: &mut Client, position: usize) -> Value {
@@ -652,6 +717,8 @@ async fn upgrade_server_completes_round_and_enters_later_round() {
     };
     let mut current_position = first_dealer;
     let mut lead_combo = None;
+    let mut current_trick = Vec::<WsUpgradePlayedCards>::new();
+    let mut collected_scores = [0_i32; 4];
     let mut later_dealer = None;
     for play_index in 0..152usize {
         let hand = &hands[current_position];
@@ -687,6 +754,9 @@ async fn upgrade_server_completes_round_and_enters_later_round() {
             .map(|card| card.as_i64().expect("played card") as i32)
             .collect::<Vec<_>>();
         assert_eq!(played_cards.len(), 1);
+        current_trick.push(
+            serde_json::from_value(played["data"].clone()).expect("upgrade played event payload"),
+        );
         for card in &played_cards {
             let index = hands[current_position]
                 .iter()
@@ -716,6 +786,32 @@ async fn upgrade_server_completes_round_and_enters_later_round() {
             (152 - play_index - 1) as i64
         );
         if play_index + 1 == 152 {
+            assert_eq!(current_trick.len(), 4);
+            let trick_winner = upgrade_trick_winner(&current_trick, rules).expect("trick winner");
+            collected_scores[trick_winner] += upgrade_points(
+                &current_trick
+                    .iter()
+                    .flat_map(|played| played.cards.iter().copied())
+                    .collect::<Vec<_>>(),
+            );
+            let winning_cards = current_trick
+                .iter()
+                .find(|played| played.position == trick_winner as i32)
+                .expect("winning play")
+                .cards
+                .clone();
+            collected_scores[trick_winner] += upgrade_points(&bottom_cards)
+                * combo::bottom_multiplier(
+                    &winning_cards
+                        .iter()
+                        .copied()
+                        .map(|card| Card::try_from(card).expect("winning card"))
+                        .collect::<Vec<_>>(),
+                ) as i32;
+            let expected_score = [(first_dealer + 1) % 4, (first_dealer + 3) % 4]
+                .into_iter()
+                .map(|position| collected_scores[position])
+                .sum::<i32>();
             let game_over = loop {
                 let value =
                     recv_json_full(&mut *clients[current_position], "upgrade game over").await;
@@ -723,6 +819,31 @@ async fn upgrade_server_completes_round_and_enters_later_round() {
                     break value;
                 }
             };
+            let settlement: WsUpgradeSettlementEvent =
+                serde_json::from_value(game_over["data"].clone()).expect("upgrade settlement");
+            assert_eq!(settlement.score, expected_score);
+            let expected_winners = if expected_score >= 80 {
+                vec![(first_dealer + 1) as i32 % 4, (first_dealer + 3) as i32 % 4]
+            } else {
+                vec![first_dealer as i32, (first_dealer + 2) as i32 % 4]
+            };
+            assert_eq!(settlement.winner_positions, expected_winners);
+            let expected_levels = ScoreProgression::new(80, 40, 1)
+                .expect("score progression")
+                .outcome(expected_score)
+                .levels as i32;
+            assert_eq!(settlement.level_change, expected_levels);
+            for position in 0..4 {
+                let expected_player_score = if expected_winners.contains(&(position as i32)) {
+                    expected_score
+                } else {
+                    -expected_score
+                };
+                assert_eq!(
+                    settlement.player_scores.get(&(position as i32)).copied(),
+                    Some(expected_player_score)
+                );
+            }
             assert!(
                 game_over["data"]["winner_positions"]
                     .as_array()
@@ -757,6 +878,16 @@ async fn upgrade_server_completes_round_and_enters_later_round() {
                 json!(WsResponseCode::OK as i32)
             );
             break;
+        }
+        if current_trick.len() == 4 {
+            let trick_winner = upgrade_trick_winner(&current_trick, rules).expect("trick winner");
+            collected_scores[trick_winner] += upgrade_points(
+                &current_trick
+                    .iter()
+                    .flat_map(|played| played.cards.iter().copied())
+                    .collect::<Vec<_>>(),
+            );
+            current_trick.clear();
         }
         assert_eq!(
             wait_for_response(&mut *clients[current_position], Routes::PLAY as i32).await["code"],
