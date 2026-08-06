@@ -192,7 +192,7 @@ fn build_deal_dispatch(
     dispatch
 }
 
-fn bury_window_time(configs: &std::collections::HashMap<String, i32>) -> u32 {
+pub(crate) fn bury_window_time(configs: &std::collections::HashMap<String, i32>) -> u32 {
     configs
         .get(KEY_PLAY_TIME)
         .copied()

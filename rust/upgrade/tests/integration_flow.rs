@@ -1064,7 +1064,7 @@ async fn upgrade_ws_rejoin_preserves_running_bury_state() {
                 "removed_rank_count": 0,
                 "first_deal_time": 1,
                 "deal_time": 1,
-                "play_time": 30
+                "play_time": 3
             }
         }),
     )
@@ -1097,15 +1097,16 @@ async fn upgrade_ws_rejoin_preserves_running_bury_state() {
     // Reconnect while the single combined select/bury window is still open.
     // The replacement must recover the same seat and the exact authoritative
     // hand rather than starting a new room or receiving a fresh position.
-    clients[0]
+    clients[dealer_position]
         .close(None)
         .await
-        .expect("close upgrade player socket");
+        .expect("close upgrade dealer socket");
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     let mut rejoined = connect_client(&url).await;
-    let joined = join_as(&mut rejoined, GameId::UPGRADE, room, "rejoin-player-0").await;
-    assert_eq!(joined["data"]["self_position"], json!(0));
+    let dealer_name = format!("rejoin-player-{dealer_position}");
+    let joined = join_as(&mut rejoined, GameId::UPGRADE, room, &dealer_name).await;
+    assert_eq!(joined["data"]["self_position"], json!(dealer_position));
     let hand_update = wait_for_event(&mut rejoined, UpgradeWsCode::HAND_UPDATED as i32).await;
     let restored_hand = hand_update["data"]["cards"]
         .as_array()
@@ -1114,30 +1115,132 @@ async fn upgrade_ws_rejoin_preserves_running_bury_state() {
         .map(|card| card.as_i64().expect("upgrade rejoined card") as i32)
         .collect::<Vec<_>>();
     let mut restored_hand_sorted = restored_hand;
-    let mut expected_hand_sorted = hands[0].clone();
+    let mut expected_hand_sorted = hands[dealer_position].clone();
     restored_hand_sorted.sort_unstable();
     expected_hand_sorted.sort_unstable();
     assert_eq!(restored_hand_sorted, expected_hand_sorted);
     let snapshot = wait_for_phase(&mut rejoined, UpgradePhase::Bury).await;
     assert_eq!(snapshot["data"]["round_index"], json!(0));
     assert_eq!(snapshot["data"]["bottom_card_count"], json!(10));
+    assert_eq!(snapshot["data"]["turn_countdown"], json!(9));
 
-    if dealer_position == 0 {
-        send_request(
-            &mut rejoined,
-            UpgradeRoutes::BURY_BOTTOM as i32,
-            json!({ "cards": bottom_cards }),
-        )
-        .await;
-        assert_eq!(
-            wait_for_phase(&mut rejoined, UpgradePhase::Play).await["data"]["round_index"],
-            json!(0)
-        );
-        assert_eq!(
-            wait_for_response(&mut rejoined, UpgradeRoutes::BURY_BOTTOM as i32).await["code"],
-            json!(WsResponseCode::OK as i32)
-        );
+    send_request(
+        &mut rejoined,
+        UpgradeRoutes::BURY_BOTTOM as i32,
+        json!({ "cards": bottom_cards }),
+    )
+    .await;
+    let play_snapshot = wait_for_phase(&mut rejoined, UpgradePhase::Play).await;
+    assert_eq!(play_snapshot["data"]["round_index"], json!(0));
+    assert_eq!(play_snapshot["data"]["turn_countdown"], json!(3));
+    assert_eq!(
+        wait_for_response(&mut rejoined, UpgradeRoutes::BURY_BOTTOM as i32).await["code"],
+        json!(WsResponseCode::OK as i32)
+    );
+
+    let mut dealer_hand = hands[dealer_position].clone();
+    for card in &bottom_cards {
+        let index = dealer_hand
+            .iter()
+            .position(|candidate| candidate == card)
+            .expect("upgrade buried card in dealer hand");
+        dealer_hand.remove(index);
     }
+    let lead_card = *dealer_hand.first().expect("upgrade dealer lead card");
+    send_request(
+        &mut rejoined,
+        Routes::PLAY as i32,
+        json!({ "cards": [lead_card] }),
+    )
+    .await;
+    let lead = wait_upgrade_play(&mut rejoined, dealer_position).await;
+    assert_eq!(lead["data"]["cards"], json!([lead_card]));
+    let next_position = (dealer_position + 1) % 4;
+    let lead_snapshot = wait_upgrade_snapshot(&mut rejoined, UpgradePhase::Play, 0).await;
+    assert_eq!(
+        lead_snapshot["data"]["current_position"],
+        json!(next_position)
+    );
+    assert_eq!(
+        wait_for_response(&mut rejoined, Routes::PLAY as i32).await["code"],
+        json!(WsResponseCode::OK as i32)
+    );
+
+    clients[next_position]
+        .close(None)
+        .await
+        .expect("close upgrade current player socket");
+    tokio::time::sleep(Duration::from_millis(1_200)).await;
+
+    let mut play_rejoined = connect_client(&url).await;
+    let next_name = format!("rejoin-player-{next_position}");
+    let joined = join_as(&mut play_rejoined, GameId::UPGRADE, room, &next_name).await;
+    assert_eq!(joined["data"]["self_position"], json!(next_position));
+    let restored_hand_event =
+        wait_for_event(&mut play_rejoined, UpgradeWsCode::HAND_UPDATED as i32).await;
+    let mut restored_hand = restored_hand_event["data"]["cards"]
+        .as_array()
+        .expect("upgrade play rejoined hand")
+        .iter()
+        .map(|card| card.as_i64().expect("upgrade play rejoined card") as i32)
+        .collect::<Vec<_>>();
+    let mut expected_hand = hands[next_position].clone();
+    restored_hand.sort_unstable();
+    expected_hand.sort_unstable();
+    assert_eq!(restored_hand, expected_hand);
+    let rejoined_snapshot = wait_for_phase(&mut play_rejoined, UpgradePhase::Play).await;
+    assert_eq!(
+        rejoined_snapshot["data"]["current_position"],
+        json!(next_position)
+    );
+    assert_eq!(rejoined_snapshot["data"]["turn_countdown"], json!(3));
+
+    let rules = combo::UpgradeComboRules {
+        target_rank: upgrade_rank(
+            rejoined_snapshot["data"]["target_rank"]
+                .as_i64()
+                .expect("upgrade rejoined target rank"),
+        ),
+        trump_suit: Some(upgrade_suit(
+            rejoined_snapshot["data"]["trump_suit"]
+                .as_i64()
+                .expect("upgrade rejoined trump suit"),
+        )),
+    };
+    let hand_cards = expected_hand
+        .iter()
+        .copied()
+        .map(|card| Card::try_from(card).expect("upgrade rejoined hand card"))
+        .collect::<Vec<_>>();
+    let lead_combo = combo::classify(
+        &[Card::try_from(lead_card).expect("upgrade rejoined lead")],
+        rules,
+    )
+    .expect("upgrade rejoined lead combo");
+    let legal_follow = expected_hand
+        .iter()
+        .copied()
+        .find(|card| {
+            combo::follow_is_legal(
+                &hand_cards,
+                &[Card::try_from(*card).expect("upgrade legal follow card")],
+                &lead_combo,
+                rules,
+            )
+        })
+        .expect("upgrade rejoined legal follow");
+    send_request(
+        &mut play_rejoined,
+        Routes::PLAY as i32,
+        json!({ "cards": [legal_follow] }),
+    )
+    .await;
+    let followed = wait_upgrade_play(&mut play_rejoined, next_position).await;
+    assert_eq!(followed["data"]["cards"], json!([legal_follow]));
+    assert_eq!(
+        wait_for_response(&mut play_rejoined, Routes::PLAY as i32).await["code"],
+        json!(WsResponseCode::OK as i32)
+    );
 
     server.abort();
 }
@@ -1533,7 +1636,7 @@ async fn upgrade_ws_rejects_an_off_group_follow_and_accepts_the_next_legal_card(
                 "deck_count": 0,
                 "first_deal_time": 1,
                 "deal_time": 1,
-                "play_time": 30
+                "play_time": 3
             }
         }),
     )
