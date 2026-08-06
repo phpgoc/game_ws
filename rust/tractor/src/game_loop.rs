@@ -344,7 +344,7 @@ pub(crate) fn current_play_time(configs: &HashMap<String, i32>, state: &TractorG
     configs.get(key).copied().unwrap_or(30).max(1) as u32
 }
 
-fn current_bury_time(configs: &HashMap<String, i32>, state: &TractorGameState) -> u32 {
+pub(crate) fn current_bury_time(configs: &HashMap<String, i32>, state: &TractorGameState) -> u32 {
     let inactive = {
         let base = state.base.lock().unwrap();
         base.is_away(state.dealer_position) || base.is_disconnected(state.dealer_position)

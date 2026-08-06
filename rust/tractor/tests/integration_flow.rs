@@ -767,12 +767,16 @@ async fn tractor_ws_rejoin_preserves_running_bury_state() {
     // The old socket is deliberately closed while the game is waiting for
     // the dealer to bury. The replacement must reclaim the same seat instead
     // of receiving a fresh position or resetting the game state.
-    clients[0].close(None).await.expect("close player a socket");
+    clients[dealer_position]
+        .close(None)
+        .await
+        .expect("close dealer socket");
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     let mut rejoined = connect_client(&url).await;
-    let joined = join(&mut rejoined, "a", room).await;
-    assert_eq!(joined["data"]["self_position"], json!(0));
+    let player_names = ["a", "b", "c", "d"];
+    let joined = join(&mut rejoined, player_names[dealer_position], room).await;
+    assert_eq!(joined["data"]["self_position"], json!(dealer_position));
     let hand_update = recv_until(&mut rejoined, "rejoined private hand", |value| {
         value.get("code").and_then(Value::as_i64) == Some(TractorWsCode::HAND_UPDATED as i64)
     })
@@ -783,10 +787,8 @@ async fn tractor_ws_rejoin_preserves_running_bury_state() {
         .iter()
         .map(|card| card.as_i64().expect("rejoined card") as i32)
         .collect::<Vec<_>>();
-    let mut expected_hand = hands[0].clone();
-    if dealer_position == 0 {
-        expected_hand.extend(bottom_cards.iter().copied());
-    }
+    let mut expected_hand = hands[dealer_position].clone();
+    expected_hand.extend(bottom_cards.iter().copied());
     let mut restored_hand_sorted = restored_hand.clone();
     let mut expected_hand_sorted = expected_hand;
     restored_hand_sorted.sort_unstable();
@@ -798,27 +800,26 @@ async fn tractor_ws_rejoin_preserves_running_bury_state() {
     .await;
     assert_eq!(snapshot["data"]["phase"], json!(TractorPhase::Bury as i8));
     assert_eq!(snapshot["data"]["round_index"], json!(0));
+    assert_eq!(snapshot["data"]["turn_countdown"], json!(90));
 
-    if dealer_position == 0 {
-        send_request(
-            &mut rejoined,
-            TractorRoutes::BURY_BOTTOM as i32,
-            json!({ "cards": bottom_cards }),
-        )
-        .await;
-        let buried = recv_until(&mut rejoined, "rejoined bury event", |value| {
-            value.get("code").and_then(Value::as_i64) == Some(TractorWsCode::BOTTOM_BURIED as i64)
-                && value["data"]["position"] == json!(0)
-        })
-        .await;
-        assert_eq!(buried["data"]["position"], json!(0));
-        let bury_response = recv_until(&mut rejoined, "rejoined bury response", |value| {
-            value.get("route").and_then(Value::as_i64) == Some(TractorRoutes::BURY_BOTTOM as i64)
-                && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
-        })
-        .await;
-        assert_eq!(bury_response["code"], json!(WsResponseCode::OK as i32));
-    }
+    send_request(
+        &mut rejoined,
+        TractorRoutes::BURY_BOTTOM as i32,
+        json!({ "cards": bottom_cards }),
+    )
+    .await;
+    let buried = recv_until(&mut rejoined, "rejoined bury event", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(TractorWsCode::BOTTOM_BURIED as i64)
+            && value["data"]["position"] == json!(dealer_position)
+    })
+    .await;
+    assert_eq!(buried["data"]["position"], json!(dealer_position));
+    let bury_response = recv_until(&mut rejoined, "rejoined bury response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(TractorRoutes::BURY_BOTTOM as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+    assert_eq!(bury_response["code"], json!(WsResponseCode::OK as i32));
 
     server.abort();
 }
@@ -1941,7 +1942,7 @@ async fn tractor_ws_uses_away_time_after_play_passes_to_a_disconnected_player() 
                 "first_deal_time": 1,
                 "deal_time": 1,
                 "play_time": 30,
-                "away_time": 1
+                "away_time": 5
             }
         }),
     )
@@ -2050,7 +2051,7 @@ async fn tractor_ws_uses_away_time_after_play_passes_to_a_disconnected_player() 
         },
     )
     .await;
-    assert_eq!(next_snapshot["data"]["turn_countdown"], json!(1));
+    assert_eq!(next_snapshot["data"]["turn_countdown"], json!(5));
     recv_until(
         &mut *clients[dealer_position],
         "manual lead response before disconnected player",
@@ -2059,6 +2060,82 @@ async fn tractor_ws_uses_away_time_after_play_passes_to_a_disconnected_player() 
                 && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
         },
     )
+    .await;
+
+    let mut rejoined = connect_client(&url).await;
+    let player_names = ["a", "b", "c", "d"];
+    let joined = join(&mut rejoined, player_names[disconnected_position], room).await;
+    assert_eq!(
+        joined["data"]["self_position"],
+        json!(disconnected_position)
+    );
+    let restored_hand_event = recv_until(&mut rejoined, "rejoined play hand", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(TractorWsCode::HAND_UPDATED as i64)
+            && value["data"]["position"] == json!(disconnected_position)
+    })
+    .await;
+    let mut restored_hand = restored_hand_event["data"]["cards"]
+        .as_array()
+        .expect("rejoined play hand cards")
+        .iter()
+        .map(|card| card.as_i64().expect("rejoined play card") as i32)
+        .collect::<Vec<_>>();
+    let mut expected_hand = hands[disconnected_position].clone();
+    restored_hand.sort_unstable();
+    expected_hand.sort_unstable();
+    assert_eq!(restored_hand, expected_hand);
+    let rejoined_snapshot = recv_until(&mut rejoined, "rejoined current turn snapshot", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+            && value["data"]["phase"] == json!(TractorPhase::Play as i8)
+            && value["data"]["current_position"] == json!(disconnected_position)
+            && value["data"]["current_trick"]
+                .as_array()
+                .is_some_and(|trick| trick.len() == 1)
+    })
+    .await;
+    assert_eq!(rejoined_snapshot["data"]["turn_countdown"], json!(30));
+
+    let trump_suit = rejoined_snapshot["data"]["trump_suit"]
+        .as_i64()
+        .map(|suit| match suit {
+            0 => TractorSuit::SPADE,
+            1 => TractorSuit::HEART,
+            2 => TractorSuit::CLUB,
+            3 => TractorSuit::DIAMOND,
+            _ => panic!("invalid rejoined play trump suit"),
+        });
+    let rules = TractorRules {
+        attacking_win_score: 80,
+        score_per_level: 40,
+        shutout_bonus_levels: 1,
+        bottom_card_count: 8,
+        deck_count: 2,
+        final_target_rank: TractorRank::A,
+        target_rank: TractorRank::THREE,
+        trump_suit,
+    };
+    let lead_combo = combo::classify(&[lead_card], &rules).expect("rejoined single lead combo");
+    let legal_follow = expected_hand
+        .iter()
+        .copied()
+        .find(|card| combo::follow_is_legal(&expected_hand, &[*card], &lead_combo, &rules))
+        .expect("rejoined player has a legal follow");
+    send_request(
+        &mut rejoined,
+        Routes::PLAY as i32,
+        json!({ "cards": [legal_follow] }),
+    )
+    .await;
+    let followed = recv_until(&mut rejoined, "rejoined legal follow", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::PLAY as i64)
+            && value["data"]["position"] == json!(disconnected_position)
+    })
+    .await;
+    assert_eq!(followed["data"]["cards"], json!([legal_follow]));
+    recv_until(&mut rejoined, "rejoined legal follow response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::PLAY as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
     .await;
 
     server.abort();
