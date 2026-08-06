@@ -66,6 +66,7 @@ impl GameHandler for TestTractorHandler {
             ("first_deal_time", 1_000),
             ("deal_time", 500),
             ("ai_action_time", 20),
+            ("away_time", 1),
             ("play_time", 1),
             ("settlement_time", 1),
         ] {
@@ -1795,6 +1796,29 @@ async fn tractor_ws_auto_buries_after_three_play_windows() {
         play_snapshot["data"]["turn_countdown"]
             .as_i64()
             .is_some_and(|countdown| countdown > 0)
+    );
+
+    let auto_play = recv_until(&mut *clients[dealer_position], "auto play event", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::PLAY as i64)
+            && value["data"]["position"] == json!(dealer_position)
+    })
+    .await;
+    assert_eq!(auto_play["data"]["cards"].as_array().map(Vec::len), Some(1));
+    assert_eq!(auto_play["data"]["remaining_hand_count"], json!(24));
+    let after_auto_play = recv_until(
+        &mut *clients[dealer_position],
+        "auto play snapshot",
+        |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+                && value["data"]["phase"] == json!(TractorPhase::Play as i8)
+                && value["data"]["trick_index"] == json!(0)
+                && value["data"]["current_position"] != json!(dealer_position)
+        },
+    )
+    .await;
+    assert_ne!(
+        after_auto_play["data"]["current_position"],
+        json!(dealer_position)
     );
 
     server.abort();
