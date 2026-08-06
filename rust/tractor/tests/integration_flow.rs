@@ -21,6 +21,8 @@ use tractor::combo;
 use tractor::game::TractorGameHandler;
 #[cfg(not(feature = "official"))]
 use tractor::game_state::TractorRules;
+#[cfg(not(feature = "official"))]
+use upgrade_common::{Card, Rank};
 use ws_common::RuntimeConfig;
 #[cfg(not(feature = "official"))]
 use ws_common::run_room_runtime;
@@ -511,7 +513,18 @@ async fn tractor_incremental_deal_full_deck_and_bury_flow() {
                 }
                 Some(code) if code == TractorWsCode::TRUMP_DECLARED as i64 => {
                     saw_declaration = true;
-                    assert!(!value["data"]["cards"].as_array().unwrap().is_empty());
+                    assert_eq!(
+                        value["data"]["target_rank"],
+                        json!(TractorRank::THREE as i8)
+                    );
+                    let declaration_cards = value["data"]["cards"]
+                        .as_array()
+                        .expect("first-round declaration cards");
+                    assert!(!declaration_cards.is_empty());
+                    assert!(declaration_cards.iter().all(|card| {
+                        Card::try_from(card.as_i64().expect("declaration card") as i32)
+                            .is_ok_and(|card| card.rank() == Rank::Three)
+                    }));
                 }
                 Some(code) if code == TractorWsCode::BOTTOM_CARDS as i64 && bottom.is_none() => {
                     dealer_position = value["data"]["position"].as_u64();
@@ -537,6 +550,22 @@ async fn tractor_incremental_deal_full_deck_and_bury_flow() {
     assert_eq!(bottom["data"]["required_count"], json!(8));
 
     let dealer = &mut *clients[dealer_position];
+    send_request(
+        dealer,
+        TractorRoutes::SELECT_TRUMP as i32,
+        json!({ "trump_suit": TractorSuit::SPADE as i8 }),
+    )
+    .await;
+    let first_round_select = recv_until(dealer, "first-round select trump response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(TractorRoutes::SELECT_TRUMP as i64)
+            && value.get("code").and_then(Value::as_i64)
+                == Some(WsResponseCode::NO_PERMISSION as i64)
+    })
+    .await;
+    assert_eq!(
+        first_round_select["code"],
+        json!(WsResponseCode::NO_PERMISSION as i32)
+    );
     send_request(
         dealer,
         TractorRoutes::BURY_BOTTOM as i32,
