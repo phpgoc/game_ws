@@ -160,6 +160,42 @@ fn my_tiles(event: &Value) -> Vec<i32> {
         .collect()
 }
 
+fn find_claimable_meld(
+    dealer_tiles: &[i32],
+    opponent_hands: &[Vec<i32>],
+) -> Option<(i32, usize, i32, Vec<i32>)> {
+    if let Some(claim) = dealer_tiles.iter().copied().find_map(|tile| {
+        opponent_hands.iter().enumerate().find_map(|(index, hand)| {
+            (hand.iter().filter(|candidate| **candidate == tile).count() >= 2).then_some((
+                tile,
+                index + 1,
+                4,
+                Vec::new(),
+            ))
+        })
+    }) {
+        return Some(claim);
+    }
+
+    // If this deal has no peng, use a chi from the next seat.  The test still
+    // exercises the same claim-window routing and response resolution path.
+    let next_hand = opponent_hands.first()?;
+    dealer_tiles.iter().copied().find_map(|tile| {
+        [
+            [tile - 2, tile - 1],
+            [tile - 1, tile + 1],
+            [tile + 1, tile + 2],
+        ]
+        .into_iter()
+        .find_map(|consume| {
+            consume
+                .iter()
+                .all(|candidate| next_hand.contains(candidate))
+                .then_some((tile, 1, 3, consume.to_vec()))
+        })
+    })
+}
+
 async fn recv_json(client: &mut Client, label: &str) -> Value {
     loop {
         let frame = tokio::time::timeout(Duration::from_secs(8), client.next())
@@ -370,6 +406,179 @@ async fn shenyang_mahjong_four_humans_can_start_and_play_over_ws() {
     }
 
     server.abort();
+}
+
+#[cfg(not(feature = "official"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn shenyang_mahjong_claim_window_routes_meld_and_pass_over_ws() {
+    for attempt in 0..20 {
+        let (url, server) = start_test_server("shenyang-mahjong-claim-test").await;
+        let mut a = connect_client(&url).await;
+        let mut b = connect_client(&url).await;
+        let mut c = connect_client(&url).await;
+        let mut d = connect_client(&url).await;
+        let room = format!("shenyang-mahjong-claim-room-{attempt}");
+        join(&mut a, "a", &room).await;
+        join(&mut b, "b", &room).await;
+        join(&mut c, "c", &room).await;
+        join(&mut d, "d", &room).await;
+
+        send_request(&mut a, Routes::START as i32, json!({})).await;
+        recv_until(&mut a, "start ok", |value| {
+            value.get("route").and_then(Value::as_i64) == Some(Routes::START as i64)
+                && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+        })
+        .await;
+        let a_deal = recv_until(&mut a, "a deal", |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::DEAL as i64)
+        })
+        .await;
+        let b_deal = recv_until(&mut b, "b deal", |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::DEAL as i64)
+        })
+        .await;
+        let c_deal = recv_until(&mut c, "c deal", |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::DEAL as i64)
+        })
+        .await;
+        let d_deal = recv_until(&mut d, "d deal", |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::DEAL as i64)
+        })
+        .await;
+        let dealer_tiles = my_tiles(&a_deal);
+        let opponent_hands = vec![my_tiles(&b_deal), my_tiles(&c_deal), my_tiles(&d_deal)];
+        let Some((claim_tile, claimant_position, claim_action, consume_tiles)) =
+            find_claimable_meld(&dealer_tiles, &opponent_hands)
+        else {
+            server.abort();
+            continue;
+        };
+
+        send_request(
+            &mut a,
+            Routes::PLAY as i32,
+            json!({ "action": 2, "tiles": [claim_tile], "target_tile": claim_tile }),
+        )
+        .await;
+        recv_until(&mut a, "discard ok", |value| {
+            value.get("route").and_then(Value::as_i64) == Some(Routes::PLAY as i64)
+                && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+        })
+        .await;
+        for client in [&mut b, &mut c, &mut d] {
+            recv_until(client, "discard broadcast", |value| {
+                value.get("code").and_then(Value::as_i64) == Some(WsCode::PLAY as i64)
+                    && value["data"]["action"] == json!(2)
+                    && value["data"]["target_tile"] == json!(claim_tile)
+            })
+            .await;
+        }
+
+        let claimant_claim = match claimant_position {
+            1 => {
+                recv_until(&mut b, "claimant claim window", |value| {
+                    value.get("code").and_then(Value::as_i64) == Some(WsCode::CLAIM_WINDOW as i64)
+                })
+                .await
+            }
+            2 => {
+                recv_until(&mut c, "claimant claim window", |value| {
+                    value.get("code").and_then(Value::as_i64) == Some(WsCode::CLAIM_WINDOW as i64)
+                })
+                .await
+            }
+            3 => {
+                recv_until(&mut d, "claimant claim window", |value| {
+                    value.get("code").and_then(Value::as_i64) == Some(WsCode::CLAIM_WINDOW as i64)
+                })
+                .await
+            }
+            _ => unreachable!("claimant must be an opponent seat"),
+        };
+        let claimant_option = &claimant_claim["data"]["options"][0];
+        assert_eq!(claimant_option["position"], json!(claimant_position as i32));
+        if claim_action == 4 {
+            assert_eq!(claimant_option["can_peng"], json!(true));
+        } else {
+            assert!(
+                claimant_option["chi_options"]
+                    .as_array()
+                    .is_some_and(|options| options
+                        .iter()
+                        .any(|option| option == &json!(consume_tiles)))
+            );
+        }
+
+        // The discarder cannot answer its own claim window.
+        send_request(
+            &mut a,
+            Routes::PLAY as i32,
+            json!({ "action": claim_action, "tiles": consume_tiles, "target_tile": claim_tile }),
+        )
+        .await;
+        let source_response = recv_until(&mut a, "source peng rejected", |value| {
+            value.get("route").and_then(Value::as_i64) == Some(Routes::PLAY as i64)
+        })
+        .await;
+        assert_eq!(
+            source_response["code"],
+            json!(WsResponseCode::NO_PERMISSION as i32)
+        );
+
+        let clients = [&mut a, &mut b, &mut c, &mut d];
+        send_request(
+            clients[claimant_position],
+            Routes::PLAY as i32,
+            json!({ "action": claim_action, "tiles": consume_tiles, "target_tile": claim_tile }),
+        )
+        .await;
+        recv_until(clients[claimant_position], "peng response ok", |value| {
+            value.get("route").and_then(Value::as_i64) == Some(Routes::PLAY as i64)
+                && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+        })
+        .await;
+
+        for position in 1..=3 {
+            if position == claimant_position {
+                continue;
+            }
+            send_request(
+                clients[position],
+                Routes::PLAY as i32,
+                json!({ "action": 6, "tiles": [], "target_tile": claim_tile }),
+            )
+            .await;
+            let pass_response = recv_until(clients[position], "claim pass response", |value| {
+                value.get("route").and_then(Value::as_i64) == Some(Routes::PLAY as i64)
+            })
+            .await;
+            assert!(matches!(
+                pass_response["code"].as_i64(),
+                Some(code)
+                    if code == WsResponseCode::OK as i64
+                        || code == WsResponseCode::NO_PERMISSION as i64
+            ));
+        }
+
+        let peng_event = recv_until(&mut a, "meld broadcast after claim resolution", |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::PLAY as i64)
+                && value["data"]["action"] == json!(claim_action)
+                && value["data"]["position"] == json!(claimant_position as i32)
+        })
+        .await;
+        assert_eq!(peng_event["data"]["target_tile"], json!(claim_tile));
+        assert_eq!(peng_event["data"]["from_position"], json!(0));
+        let expected_event_tiles = if claim_action == 4 {
+            vec![claim_tile, claim_tile]
+        } else {
+            consume_tiles
+        };
+        assert_eq!(peng_event["data"]["tiles"], json!(expected_event_tiles));
+
+        server.abort();
+        return;
+    }
+    panic!("could not produce a claimable meld in 20 four-player deals");
 }
 
 #[cfg(not(feature = "official"))]

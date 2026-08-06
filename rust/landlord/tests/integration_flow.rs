@@ -91,6 +91,13 @@ async fn connect_client(url: &str) -> Client {
     ws
 }
 
+async fn close_client(client: &mut Client) {
+    client
+        .send(Message::Close(None))
+        .await
+        .expect("send close frame");
+}
+
 fn free_port() -> u16 {
     TcpListener::bind("127.0.0.1:0")
         .expect("bind free port")
@@ -599,6 +606,75 @@ async fn landlord_rejects_invalid_call_and_play_requests_over_ws() {
             && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
     })
     .await;
+
+    server.abort();
+}
+
+#[cfg(not(feature = "official"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn landlord_rejoin_preserves_call_phase_snapshot_over_ws() {
+    let port = free_port();
+    let listen_addr = format!("127.0.0.1:{port}");
+    let url = format!("ws://{listen_addr}");
+    let server = tokio::spawn(run_room_runtime(
+        RuntimeConfig {
+            service_name: "landlord-rejoin-test",
+            listen_addr,
+            idle_timeout: Duration::from_secs(30),
+            heartbeat_interval: Duration::from_secs(30),
+        },
+        LandlordGameHandler::default(),
+    ));
+
+    for _ in 0..50 {
+        if TokioTcpListener::bind(("127.0.0.1", port)).await.is_err() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    let mut owner = connect_client(&url).await;
+    let mut player_b = connect_client(&url).await;
+    let mut player_c = connect_client(&url).await;
+    let room = "landlord-rejoin-room";
+    let owner_join = join(&mut owner, "owner", room).await;
+    join(&mut player_b, "b", room).await;
+    join(&mut player_c, "c", room).await;
+    assert_eq!(position_from_joined(&owner_join), 0);
+
+    send_request(&mut owner, Routes::START as i32, json!({})).await;
+    recv_until(&mut owner, "start ok", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::START as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+    let deal = recv_until(&mut owner, "owner deal", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::DEAL as i64)
+    })
+    .await;
+    assert_eq!(cards_from_deal(&deal).len(), 17);
+    recv_until(&mut owner, "call phase", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::CHANGE_PHASE as i64)
+            && value["data"]["phase"] == json!(1)
+    })
+    .await;
+
+    close_client(&mut owner).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let mut owner = connect_client(&url).await;
+    let rejoin = join(&mut owner, "owner", room).await;
+    let snapshot = rejoin["data"]["rejoin_data"]
+        .as_object()
+        .expect("call-phase rejoin data");
+    assert_eq!(snapshot["phase"], json!(1));
+    assert_eq!(snapshot["now_playing"], json!(0));
+    assert_eq!(snapshot["landlord_position"], Value::Null);
+    assert_eq!(snapshot["score"], json!(0));
+    assert_eq!(snapshot["my_cards"].as_array().map(Vec::len), Some(17));
+    assert_eq!(snapshot["hidden_cards"], json!([]));
+    assert_eq!(snapshot["last_play"], json!([]));
+    assert_eq!(snapshot["other_cards_numbers"]["1"], json!(17));
+    assert_eq!(snapshot["other_cards_numbers"]["2"], json!(17));
 
     server.abort();
 }
