@@ -333,6 +333,55 @@ async fn recv_first_declaration(client: &mut Client) -> (Value, Option<Value>) {
     }
 }
 
+#[cfg(not(feature = "official"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tractor_server_accepts_only_its_own_game_id() {
+    let port = free_port();
+    let listen_addr = format!("127.0.0.1:{port}");
+    let url = format!("ws://{listen_addr}");
+    let server = tokio::spawn(run_room_runtime(
+        RuntimeConfig {
+            service_name: "tractor-game-id-test",
+            listen_addr,
+            idle_timeout: Duration::from_secs(30),
+            heartbeat_interval: Duration::from_secs(30),
+        },
+        TestTractorHandler::default(),
+    ));
+
+    let mut wrong_client = connect_client(&url).await;
+    send_request(
+        &mut wrong_client,
+        Routes::JOIN as i32,
+        json!({
+            "name": "wrong-game",
+            "password": "tractor-game-id-room",
+            "game_id": GameId::UPGRADE as i32,
+            "avatar_url": ""
+        }),
+    )
+    .await;
+    let wrong = recv_until(&mut wrong_client, "wrong tractor game id", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::JOIN as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::WRONG_GAME as i64)
+    })
+    .await;
+    assert_eq!(wrong["code"], json!(WsResponseCode::WRONG_GAME as i32));
+
+    let mut tractor_client = connect_client(&url).await;
+    let accepted = join(
+        &mut tractor_client,
+        "tractor-player",
+        "tractor-game-id-room",
+    )
+    .await;
+    assert_eq!(accepted["code"], json!(WsResponseCode::JOINED as i32));
+    assert_eq!(accepted["data"]["self_position"], json!(0));
+    assert_eq!(accepted["data"]["current_configs"]["deck_count"], json!(0));
+
+    server.abort();
+}
+
 #[cfg(feature = "official")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn tractor_official_ai_buries_and_leads_over_websocket() {
