@@ -74,3 +74,32 @@ fn three_deck_titanic_can_lead_the_final_trick_and_score_the_bottom() {
     // multiplied by 18, so the winner collects 35 + 180 = 215.
     assert_eq!(state.collected_scores.get(&0), Some(&215));
 }
+
+#[test]
+fn pair_follow_cannot_be_split_when_the_follower_has_the_pair() {
+    let state_hands = HashMap::from([
+        (0, vec![5, 105]),
+        (1, vec![6, 106, 20]),
+        (2, vec![7, 107]),
+        (3, vec![8, 108]),
+    ]);
+    let mut state = state_with_hands(rules(2), Vec::new(), state_hands);
+
+    state
+        .play_cards(0, "p0".to_owned(), vec![5, 105])
+        .expect("pair lead should be accepted");
+    let hand_before_illegal_follow = state.hands.get(&1).cloned().unwrap();
+
+    let error = state
+        .play_cards(1, "p1".to_owned(), vec![6, 20])
+        .expect_err("a pair follower must not split its available pair");
+    assert_eq!(error, "illegal follow");
+    assert_eq!(state.hands.get(&1), Some(&hand_before_illegal_follow));
+    assert_eq!(state.current_position, 1);
+
+    let legal = state
+        .play_cards(1, "p1".to_owned(), vec![6, 106])
+        .expect("the intact pair should be accepted");
+    assert_eq!(legal.cards, vec![6, 106]);
+    assert_eq!(state.current_trick.len(), 2);
+}
