@@ -1,10 +1,7 @@
 #[cfg(not(feature = "official"))]
 use std::collections::HashMap;
-#[cfg(not(feature = "official"))]
-use std::net::TcpListener;
 use std::time::Duration;
 
-#[cfg(feature = "official")]
 use std::sync::mpsc::sync_channel;
 #[cfg(not(feature = "official"))]
 use std::time::Instant;
@@ -25,15 +22,13 @@ use tractor::game::TractorGameHandler;
 use tractor::game_state::TractorRules;
 #[cfg(not(feature = "official"))]
 use upgrade_common::{Card, Rank};
-use ws_common::RuntimeConfig;
 #[cfg(not(feature = "official"))]
-use ws_common::run_room_runtime;
+use ws_common::RuntimeStopHandle;
 use ws_common::{
     ClientRequest, Dispatch, GameHandler, GameState, JoinAuthorization, JoinAuthorizationFuture,
-    RoomService, SessionId, SessionSenders, SettingsBuilderResult,
+    RoomService, RuntimeConfig, SessionId, SessionSenders, SettingsBuilderResult,
+    run_room_runtime_until_stopped_with_ready, runtime_stop_channel,
 };
-#[cfg(feature = "official")]
-use ws_common::{run_room_runtime_until_stopped_with_ready, runtime_stop_channel};
 
 type Client = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
@@ -125,12 +120,51 @@ async fn connect_client(url: &str) -> Client {
 }
 
 #[cfg(not(feature = "official"))]
-fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .expect("bind free port")
-        .local_addr()
-        .expect("local addr")
-        .port()
+struct TestRuntime {
+    url: String,
+    stop_handle: RuntimeStopHandle,
+    task: tokio::task::JoinHandle<()>,
+}
+
+#[cfg(not(feature = "official"))]
+impl Drop for TestRuntime {
+    fn drop(&mut self) {
+        self.stop_handle.stop();
+        self.task.abort();
+    }
+}
+
+#[cfg(not(feature = "official"))]
+async fn start_test_runtime(service_name: &'static str, timeout: Duration) -> TestRuntime {
+    let (stop_handle, stop_signal) = runtime_stop_channel();
+    let (ready_tx, ready_rx) = sync_channel(1);
+    let task = tokio::spawn(async move {
+        run_room_runtime_until_stopped_with_ready(
+            RuntimeConfig {
+                service_name,
+                listen_addr: "127.0.0.1:0".to_owned(),
+                idle_timeout: timeout,
+                heartbeat_interval: Duration::from_secs(5),
+            },
+            TestTractorHandler::default(),
+            stop_signal,
+            ready_tx,
+        )
+        .await
+        .expect("tractor test runtime");
+    });
+    let stats = tokio::task::spawn_blocking(move || {
+        ready_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("tractor test runtime readiness")
+    })
+    .await
+    .expect("read tractor test runtime readiness");
+    TestRuntime {
+        url: format!("ws://{}", stats.listen_addr()),
+        stop_handle,
+        task,
+    }
 }
 
 async fn join(client: &mut Client, name: &str, password: &str) -> Value {
@@ -157,11 +191,22 @@ async fn recv_json(client: &mut Client, label: &str) -> Value {
         let frame = tokio::time::timeout(Duration::from_secs(60), client.next())
             .await
             .unwrap_or_else(|_| panic!("websocket message timeout while waiting for {label}"))
-            .expect("websocket frame")
-            .expect("websocket frame ok");
+            .unwrap_or_else(|| panic!("websocket closed while waiting for {label}"))
+            .unwrap_or_else(|error| {
+                panic!("websocket read failed while waiting for {label}: {error}")
+            });
         match frame {
             Message::Text(text) => return serde_json::from_str(text.as_ref()).expect("json frame"),
-            Message::Ping(_) | Message::Pong(_) => continue,
+            Message::Ping(payload) => {
+                client
+                    .send(Message::Pong(payload))
+                    .await
+                    .unwrap_or_else(|error| {
+                        panic!("websocket pong failed while waiting for {label}: {error}")
+                    });
+                continue;
+            }
+            Message::Pong(_) => continue,
             other => panic!("unexpected frame: {other:?}"),
         }
     }
@@ -246,6 +291,69 @@ async fn collect_tractor_hands(
         collect_tractor_hand(&mut *d[0], 3, expected_hand_size),
     );
     [a, b, c, d]
+}
+
+#[cfg(not(feature = "official"))]
+struct FirstDealObservation {
+    hand: Vec<i32>,
+    declaration: Value,
+    bottom: Option<Value>,
+    dealer_position: usize,
+}
+
+#[cfg(not(feature = "official"))]
+async fn observe_first_tractor_deal(
+    client: &mut Client,
+    position: usize,
+    expected_hand_size: usize,
+) -> FirstDealObservation {
+    let mut hand = Vec::with_capacity(expected_hand_size);
+    let mut declaration = None;
+    let mut bottom = None;
+    loop {
+        let value = recv_json(client, "incremental deal, declaration and bottom").await;
+        match value.get("code").and_then(Value::as_i64) {
+            Some(code) if code == WsCode::DEAL as i64 => {
+                assert_eq!(value["data"]["position"], json!(position));
+                let cards = value["data"]["cards"].as_array().expect("deal cards");
+                assert_eq!(cards.len(), 1, "deal must be incremental");
+                hand.push(cards[0].as_i64().expect("card") as i32);
+            }
+            Some(code) if code == TractorWsCode::TRUMP_DECLARED as i64 => {
+                declaration = Some(value);
+            }
+            Some(code) if code == TractorWsCode::BOTTOM_CARDS as i64 => {
+                bottom = Some(value);
+            }
+            Some(code)
+                if code == WsCode::TABLE_SNAPSHOT as i64
+                    && value["data"]["phase"] == json!(TractorPhase::Bury as i8) =>
+            {
+                assert_eq!(
+                    hand.len(),
+                    expected_hand_size,
+                    "bury phase must follow a complete private hand"
+                );
+                let dealer_position = value["data"]["dealer_position"]
+                    .as_u64()
+                    .expect("first deal snapshot dealer")
+                    as usize;
+                if dealer_position == position {
+                    assert!(
+                        bottom.is_some(),
+                        "dealer must receive bottom before bury snapshot"
+                    );
+                }
+                return FirstDealObservation {
+                    hand,
+                    declaration: declaration.expect("first deal must declare trump"),
+                    bottom,
+                    dealer_position,
+                };
+            }
+            _ => {}
+        }
+    }
 }
 
 #[cfg(not(feature = "official"))]
@@ -352,18 +460,8 @@ async fn recv_first_declaration(client: &mut Client) -> (Value, Option<Value>) {
 #[cfg(not(feature = "official"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tractor_server_accepts_only_its_own_game_id() {
-    let port = free_port();
-    let listen_addr = format!("127.0.0.1:{port}");
-    let url = format!("ws://{listen_addr}");
-    let server = tokio::spawn(run_room_runtime(
-        RuntimeConfig {
-            service_name: "tractor-game-id-test",
-            listen_addr,
-            idle_timeout: Duration::from_secs(30),
-            heartbeat_interval: Duration::from_secs(30),
-        },
-        TestTractorHandler::default(),
-    ));
+    let runtime = start_test_runtime("tractor-game-id-test", Duration::from_secs(30)).await;
+    let url = runtime.url.clone();
 
     let mut wrong_client = connect_client(&url).await;
     send_request(
@@ -394,25 +492,14 @@ async fn tractor_server_accepts_only_its_own_game_id() {
     assert_eq!(accepted["code"], json!(WsResponseCode::JOINED as i32));
     assert_eq!(accepted["data"]["self_position"], json!(0));
     assert_eq!(accepted["data"]["current_configs"]["deck_count"], json!(0));
-
-    server.abort();
 }
 
 #[cfg(not(feature = "official"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn tractor_ws_accepts_a_level_three_declaration_during_first_deal() {
-    let port = free_port();
-    let listen_addr = format!("127.0.0.1:{port}");
-    let url = format!("ws://{listen_addr}");
-    let server = tokio::spawn(run_room_runtime(
-        RuntimeConfig {
-            service_name: "tractor-first-declaration-test",
-            listen_addr,
-            idle_timeout: Duration::from_secs(45),
-            heartbeat_interval: Duration::from_secs(45),
-        },
-        TestTractorHandler::default(),
-    ));
+    let runtime =
+        start_test_runtime("tractor-first-declaration-test", Duration::from_secs(45)).await;
+    let url = runtime.url.clone();
 
     let mut a = connect_client(&url).await;
     let mut b = connect_client(&url).await;
@@ -585,24 +672,16 @@ async fn tractor_ws_accepts_a_level_three_declaration_during_first_deal() {
         rejected_equal_declaration.is_some(),
         "another dealt level three must not replace an equal-strength tractor declaration"
     );
-
-    server.abort();
 }
 
 #[cfg(not(feature = "official"))]
 async fn try_tractor_pair_counter_declaration(attempt: usize) -> bool {
-    let port = free_port();
-    let listen_addr = format!("127.0.0.1:{port}");
-    let url = format!("ws://{listen_addr}");
-    let server = tokio::spawn(run_room_runtime(
-        RuntimeConfig {
-            service_name: "tractor-pair-counter-declaration-test",
-            listen_addr,
-            idle_timeout: Duration::from_secs(45),
-            heartbeat_interval: Duration::from_secs(45),
-        },
-        TestTractorHandler::default(),
-    ));
+    let runtime = start_test_runtime(
+        "tractor-pair-counter-declaration-test",
+        Duration::from_secs(45),
+    )
+    .await;
+    let url = runtime.url.clone();
 
     let mut a = connect_client(&url).await;
     let mut b = connect_client(&url).await;
@@ -673,6 +752,18 @@ async fn try_tractor_pair_counter_declaration(attempt: usize) -> bool {
                     json!({ "cards": [card] }),
                 )
                 .await;
+                let response = recv_until(
+                    &mut *clients[position],
+                    "tractor initial declaration response before pair counter",
+                    |value| {
+                        value.get("route").and_then(Value::as_i64)
+                            == Some(TractorRoutes::DECLARE_TRUMP as i64)
+                    },
+                )
+                .await;
+                if response["code"] != json!(WsResponseCode::OK as i32) {
+                    return false;
+                }
                 let observer_position = (position + 1) % 4;
                 let declaration = recv_until(
                     &mut *clients[observer_position],
@@ -690,17 +781,6 @@ async fn try_tractor_pair_counter_declaration(attempt: usize) -> bool {
                     declaration["data"]["target_rank"],
                     json!(TractorRank::THREE as i8)
                 );
-                recv_until(
-                    &mut *clients[position],
-                    "tractor initial declaration response before pair counter",
-                    |value| {
-                        value.get("route").and_then(Value::as_i64)
-                            == Some(TractorRoutes::DECLARE_TRUMP as i64)
-                            && value.get("code").and_then(Value::as_i64)
-                                == Some(WsResponseCode::OK as i64)
-                    },
-                )
-                .await;
                 declaring_position = Some(position);
                 continue;
             }
@@ -715,6 +795,18 @@ async fn try_tractor_pair_counter_declaration(attempt: usize) -> bool {
                 json!({ "cards": stronger_cards }),
             )
             .await;
+            let response = recv_until(
+                &mut *clients[position],
+                "tractor pair counter declaration response",
+                |value| {
+                    value.get("route").and_then(Value::as_i64)
+                        == Some(TractorRoutes::DECLARE_TRUMP as i64)
+                },
+            )
+            .await;
+            if response["code"] != json!(WsResponseCode::OK as i32) {
+                return false;
+            }
             let observer_position = (position + 1) % 4;
             let declaration = recv_until(
                 &mut *clients[observer_position],
@@ -742,23 +834,10 @@ async fn try_tractor_pair_counter_declaration(attempt: usize) -> bool {
                 declaration["data"]["trump_suit"],
                 json!(stronger_suit as i8)
             );
-            recv_until(
-                &mut *clients[position],
-                "tractor pair counter declaration response",
-                |value| {
-                    value.get("route").and_then(Value::as_i64)
-                        == Some(TractorRoutes::DECLARE_TRUMP as i64)
-                        && value.get("code").and_then(Value::as_i64)
-                            == Some(WsResponseCode::OK as i64)
-                },
-            )
-            .await;
-            server.abort();
             return true;
         }
     }
 
-    server.abort();
     false
 }
 
@@ -882,18 +961,8 @@ async fn tractor_official_ai_buries_and_leads_over_websocket() {
 #[cfg(not(feature = "official"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn tractor_incremental_deal_full_deck_and_bury_flow() {
-    let port = free_port();
-    let listen_addr = format!("127.0.0.1:{port}");
-    let url = format!("ws://{listen_addr}");
-    let server = tokio::spawn(run_room_runtime(
-        RuntimeConfig {
-            service_name: "tractor-test",
-            listen_addr,
-            idle_timeout: Duration::from_secs(30),
-            heartbeat_interval: Duration::from_secs(30),
-        },
-        TestTractorHandler::default(),
-    ));
+    let runtime = start_test_runtime("tractor-test", Duration::from_secs(30)).await;
+    let url = runtime.url.clone();
 
     let mut a = connect_client(&url).await;
     let mut b = connect_client(&url).await;
@@ -932,54 +1001,41 @@ async fn tractor_incremental_deal_full_deck_and_bury_flow() {
     let started_at = Instant::now();
     send_request(&mut a, Routes::START as i32, json!({})).await;
 
-    let mut clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
-    let mut hands: [Vec<i32>; 4] = std::array::from_fn(|_| Vec::new());
-    let mut dealt_cards = Vec::new();
-    let mut saw_declaration = false;
-    let mut dealer_position = None;
-    let mut bottom = None;
-    while bottom.is_none() || !saw_declaration {
-        for (client_position, client) in clients.iter_mut().enumerate() {
-            let value = recv_json(client, "incremental deal, declaration and bottom").await;
-            match value.get("code").and_then(Value::as_i64) {
-                Some(code) if code == WsCode::DEAL as i64 => {
-                    let cards = value["data"]["cards"].as_array().expect("deal cards");
-                    assert_eq!(cards.len(), 1, "deal must be incremental");
-                    let card = cards[0].as_i64().expect("card") as i32;
-                    hands[client_position].push(card);
-                    if client_position == 0 {
-                        dealt_cards.push(card);
-                    }
-                }
-                Some(code) if code == TractorWsCode::TRUMP_DECLARED as i64 => {
-                    saw_declaration = true;
-                    assert_eq!(
-                        value["data"]["target_rank"],
-                        json!(TractorRank::THREE as i8)
-                    );
-                    let declaration_cards = value["data"]["cards"]
-                        .as_array()
-                        .expect("first-round declaration cards");
-                    assert!(!declaration_cards.is_empty());
-                    assert!(declaration_cards.iter().all(|card| {
-                        Card::try_from(card.as_i64().expect("declaration card") as i32)
-                            .is_ok_and(|card| card.rank() == Rank::Three)
-                    }));
-                }
-                Some(code) if code == TractorWsCode::BOTTOM_CARDS as i64 && bottom.is_none() => {
-                    dealer_position = value["data"]["position"].as_u64();
-                    bottom = Some(value);
-                }
-                _ => {}
-            }
-        }
-    }
-    assert!(saw_declaration, "first deal must declare trump");
-    let dealer_position = dealer_position.expect("bottom event dealer position") as usize;
-    assert!(dealer_position < clients.len());
-    let bottom = bottom.expect("bottom event");
+    let (a_deal, b_deal, c_deal, d_deal) = tokio::join!(
+        observe_first_tractor_deal(&mut a, 0, 25),
+        observe_first_tractor_deal(&mut b, 1, 25),
+        observe_first_tractor_deal(&mut c, 2, 25),
+        observe_first_tractor_deal(&mut d, 3, 25),
+    );
+    let observations = [a_deal, b_deal, c_deal, d_deal];
+    let dealer_position = observations[0].dealer_position;
+    assert!(dealer_position < observations.len());
+    assert!(
+        observations
+            .iter()
+            .all(|observation| observation.dealer_position == dealer_position),
+        "all clients must observe the same first dealer"
+    );
+    let declaration = &observations[0].declaration;
+    assert_eq!(
+        declaration["data"]["target_rank"],
+        json!(TractorRank::THREE as i8)
+    );
+    let declaration_cards = declaration["data"]["cards"]
+        .as_array()
+        .expect("first-round declaration cards");
+    assert!(!declaration_cards.is_empty());
+    assert!(declaration_cards.iter().all(|card| {
+        Card::try_from(card.as_i64().expect("declaration card") as i32)
+            .is_ok_and(|card| card.rank() == Rank::Three)
+    }));
+    let bottom = observations[dealer_position]
+        .bottom
+        .clone()
+        .expect("dealer bottom event");
+    let mut hands = observations.map(|observation| observation.hand);
     assert!(started_at.elapsed() >= Duration::from_millis(1_100));
-    assert_eq!(dealt_cards.len(), 25);
+    assert_eq!(hands[0].len(), 25);
     let bottom_cards = bottom["data"]["cards"]
         .as_array()
         .expect("bottom cards")
@@ -988,6 +1044,8 @@ async fn tractor_incremental_deal_full_deck_and_bury_flow() {
         .collect::<Vec<_>>();
     assert_eq!(bottom_cards.len(), 8);
     assert_eq!(bottom["data"]["required_count"], json!(8));
+
+    let clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
 
     let dealer = &mut *clients[dealer_position];
     send_request(
@@ -998,8 +1056,6 @@ async fn tractor_incremental_deal_full_deck_and_bury_flow() {
     .await;
     let first_round_select = recv_until(dealer, "first-round select trump response", |value| {
         value.get("route").and_then(Value::as_i64) == Some(TractorRoutes::SELECT_TRUMP as i64)
-            && value.get("code").and_then(Value::as_i64)
-                == Some(WsResponseCode::NO_PERMISSION as i64)
     })
     .await;
     assert_eq!(
@@ -1126,25 +1182,13 @@ async fn tractor_incremental_deal_full_deck_and_bury_flow() {
             .expect("played card was in the private hand");
         hands[position].remove(index);
     }
-
-    server.abort();
 }
 
 #[cfg(not(feature = "official"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn tractor_ws_rejoin_preserves_running_bury_state() {
-    let port = free_port();
-    let listen_addr = format!("127.0.0.1:{port}");
-    let url = format!("ws://{listen_addr}");
-    let server = tokio::spawn(run_room_runtime(
-        RuntimeConfig {
-            service_name: "tractor-rejoin-bury-test",
-            listen_addr,
-            idle_timeout: Duration::from_secs(30),
-            heartbeat_interval: Duration::from_secs(30),
-        },
-        TestTractorHandler::default(),
-    ));
+    let runtime = start_test_runtime("tractor-rejoin-bury-test", Duration::from_secs(30)).await;
+    let url = runtime.url.clone();
 
     let mut a = connect_client(&url).await;
     let mut b = connect_client(&url).await;
@@ -1260,25 +1304,13 @@ async fn tractor_ws_rejoin_preserves_running_bury_state() {
     })
     .await;
     assert_eq!(bury_response["code"], json!(WsResponseCode::OK as i32));
-
-    server.abort();
 }
 
 #[cfg(not(feature = "official"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn tractor_server_completes_round_and_enters_later_round() {
-    let port = free_port();
-    let listen_addr = format!("127.0.0.1:{port}");
-    let url = format!("ws://{listen_addr}");
-    let server = tokio::spawn(run_room_runtime(
-        RuntimeConfig {
-            service_name: "tractor-full-round-test",
-            listen_addr,
-            idle_timeout: Duration::from_secs(60),
-            heartbeat_interval: Duration::from_secs(60),
-        },
-        TestTractorHandler::default(),
-    ));
+    let runtime = start_test_runtime("tractor-full-round-test", Duration::from_secs(60)).await;
+    let url = runtime.url.clone();
 
     let mut a = connect_client(&url).await;
     let mut b = connect_client(&url).await;
@@ -1707,25 +1739,13 @@ async fn tractor_server_completes_round_and_enters_later_round() {
         },
     )
     .await;
-
-    server.abort();
 }
 
 #[cfg(not(feature = "official"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn tractor_three_deck_ws_deals_and_buries_the_correct_counts() {
-    let port = free_port();
-    let listen_addr = format!("127.0.0.1:{port}");
-    let url = format!("ws://{listen_addr}");
-    let server = tokio::spawn(run_room_runtime(
-        RuntimeConfig {
-            service_name: "tractor-three-deck-test",
-            listen_addr,
-            idle_timeout: Duration::from_secs(30),
-            heartbeat_interval: Duration::from_secs(30),
-        },
-        TestTractorHandler::default(),
-    ));
+    let runtime = start_test_runtime("tractor-three-deck-test", Duration::from_secs(30)).await;
+    let url = runtime.url.clone();
 
     let mut a = connect_client(&url).await;
     let mut b = connect_client(&url).await;
@@ -1850,25 +1870,13 @@ async fn tractor_three_deck_ws_deals_and_buries_the_correct_counts() {
     )
     .await;
     assert_eq!(buried["code"], json!(WsResponseCode::OK as i32));
-
-    server.abort();
 }
 
 #[cfg(not(feature = "official"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn tractor_ws_failed_throw_reports_attempted_and_played_components() {
-    let port = free_port();
-    let listen_addr = format!("127.0.0.1:{port}");
-    let url = format!("ws://{listen_addr}");
-    let server = tokio::spawn(run_room_runtime(
-        RuntimeConfig {
-            service_name: "tractor-failed-throw-test",
-            listen_addr,
-            idle_timeout: Duration::from_secs(30),
-            heartbeat_interval: Duration::from_secs(30),
-        },
-        TestTractorHandler::default(),
-    ));
+    let runtime = start_test_runtime("tractor-failed-throw-test", Duration::from_secs(30)).await;
+    let url = runtime.url.clone();
 
     let mut a = connect_client(&url).await;
     let mut b = connect_client(&url).await;
@@ -2028,24 +2036,13 @@ async fn tractor_ws_failed_throw_reports_attempted_and_played_components() {
 
     hands[dealer_position].retain(|card| !expected_played.contains(card));
     assert_eq!(hands[dealer_position].len(), 37);
-    server.abort();
 }
 
 #[cfg(not(feature = "official"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn tractor_ws_rejects_an_off_suit_follow_and_accepts_the_next_legal_card() {
-    let port = free_port();
-    let listen_addr = format!("127.0.0.1:{port}");
-    let url = format!("ws://{listen_addr}");
-    let server = tokio::spawn(run_room_runtime(
-        RuntimeConfig {
-            service_name: "tractor-illegal-follow-test",
-            listen_addr,
-            idle_timeout: Duration::from_secs(30),
-            heartbeat_interval: Duration::from_secs(30),
-        },
-        TestTractorHandler::default(),
-    ));
+    let runtime = start_test_runtime("tractor-illegal-follow-test", Duration::from_secs(30)).await;
+    let url = runtime.url.clone();
 
     let mut a = connect_client(&url).await;
     let mut b = connect_client(&url).await;
@@ -2221,25 +2218,14 @@ async fn tractor_ws_rejects_an_off_suit_follow_and_accepts_the_next_legal_card()
         },
     )
     .await;
-
-    server.abort();
 }
 
 #[cfg(not(feature = "official"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn tractor_ws_auto_buries_after_three_play_windows() {
-    let port = free_port();
-    let listen_addr = format!("127.0.0.1:{port}");
-    let url = format!("ws://{listen_addr}");
-    let server = tokio::spawn(run_room_runtime(
-        RuntimeConfig {
-            service_name: "tractor-auto-bury-window-test",
-            listen_addr,
-            idle_timeout: Duration::from_secs(30),
-            heartbeat_interval: Duration::from_secs(30),
-        },
-        TestTractorHandler::default(),
-    ));
+    let runtime =
+        start_test_runtime("tractor-auto-bury-window-test", Duration::from_secs(30)).await;
+    let url = runtime.url.clone();
 
     let mut a = connect_client(&url).await;
     let mut b = connect_client(&url).await;
@@ -2351,25 +2337,17 @@ async fn tractor_ws_auto_buries_after_three_play_windows() {
         after_auto_play["data"]["current_position"],
         json!(dealer_position)
     );
-
-    server.abort();
 }
 
 #[cfg(not(feature = "official"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn tractor_ws_uses_away_time_after_play_passes_to_a_disconnected_player() {
-    let port = free_port();
-    let listen_addr = format!("127.0.0.1:{port}");
-    let url = format!("ws://{listen_addr}");
-    let server = tokio::spawn(run_room_runtime(
-        RuntimeConfig {
-            service_name: "tractor-disconnected-next-turn-test",
-            listen_addr,
-            idle_timeout: Duration::from_secs(30),
-            heartbeat_interval: Duration::from_secs(30),
-        },
-        TestTractorHandler::default(),
-    ));
+    let runtime = start_test_runtime(
+        "tractor-disconnected-next-turn-test",
+        Duration::from_secs(30),
+    )
+    .await;
+    let url = runtime.url.clone();
 
     let mut a = connect_client(&url).await;
     let mut b = connect_client(&url).await;
@@ -2585,6 +2563,4 @@ async fn tractor_ws_uses_away_time_after_play_passes_to_a_disconnected_player() 
             && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
     })
     .await;
-
-    server.abort();
 }
