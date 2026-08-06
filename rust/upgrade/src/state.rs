@@ -854,27 +854,11 @@ impl UpgradeGameState {
             let lead = Self::cards_from_ids(&self.current_trick[0].cards)?;
             let rules = self.combo_rules();
             let lead_combo = combo::classify(&lead, rules).ok_or("invalid lead")?;
-            let count = combo::lead_card_count(&lead_combo);
-            let lead_group = lead_combo.group;
-            let mut selected = hand
-                .iter()
-                .copied()
-                .filter(|card| {
-                    Card::try_from(*card)
-                        .ok()
-                        .is_some_and(|card| combo::card_group(card, rules) == lead_group)
-                })
-                .take(count)
-                .collect::<Vec<_>>();
-            for card in hand {
-                if selected.len() == count {
-                    break;
-                }
-                if !selected.contains(&card) {
-                    selected.push(card);
-                }
-            }
-            selected
+            combo::forced_follow(&Self::cards_from_ids(&hand)?, &lead_combo, rules)
+                .ok_or("cannot build legal follow")?
+                .into_iter()
+                .map(Card::encoded)
+                .collect()
         };
         self.play_cards(position, cards).map(Some)
     }

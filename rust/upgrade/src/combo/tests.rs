@@ -127,6 +127,23 @@ fn pair_follow_cannot_be_split_when_a_pair_is_available() {
 }
 
 #[test]
+fn forced_follow_keeps_an_available_pair_together() {
+    let hand = cards(&[3, 4, 103]);
+    let lead = classify(&cards(&[2, 102]), rules()).unwrap();
+
+    let selected = forced_follow(&hand, &lead, rules()).unwrap();
+
+    assert_eq!(
+        selected
+            .iter()
+            .map(|card| card.encoded())
+            .collect::<Vec<_>>(),
+        vec![3, 103]
+    );
+    assert!(follow_is_legal(&hand, &selected, &lead, rules()));
+}
+
+#[test]
 fn triple_follow_preserves_the_largest_available_component() {
     let hand = cards(&[3, 103, 4, 5]);
     let lead_cards = cards(&[2, 102, 202]);

@@ -426,3 +426,27 @@ fn timeout_actions_keep_the_game_moving_without_a_human_request() {
     }
     assert_eq!(state.phase, UpgradePhase::Settlement);
 }
+
+#[test]
+fn timeout_follow_preserves_an_available_pair() {
+    let mut state = playing_state(HashMap::from([
+        (0, vec![]),
+        (1, vec![5, 6, 105]),
+        (2, vec![7, 107, 8]),
+        (3, vec![9, 109, 10]),
+    ]));
+    state.current_trick.push(WsUpgradePlayedCards {
+        position: 0,
+        name: "p0".into(),
+        cards: vec![4, 104],
+    });
+    state.current_position = 1;
+
+    let played = state
+        .timeout_play()
+        .expect("timeout follow should stay legal")
+        .expect("timeout should play a pair follow");
+
+    assert_eq!(played.played_cards, vec![5, 105]);
+    assert_eq!(state.hands[&1], vec![6]);
+}

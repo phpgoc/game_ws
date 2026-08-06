@@ -229,6 +229,75 @@ pub fn follow_is_legal(
         == component_follow_score(&grouped_hand, &lead.multiplicities)
 }
 
+/// Build one deterministic legal follow while preserving as much of every
+/// same-identity component required by the lead as the hand can supply.
+pub fn forced_follow(hand: &[Card], lead: &Combo, rules: UpgradeComboRules) -> Option<Vec<Card>> {
+    let card_count = lead_card_count(lead);
+    if hand.len() < card_count {
+        return None;
+    }
+
+    let mut grouped = identity_groups(
+        &hand
+            .iter()
+            .copied()
+            .filter(|card| card_group(*card, rules) == lead.group)
+            .collect::<Vec<_>>(),
+    )
+    .into_values()
+    .collect::<Vec<_>>();
+    for component in &mut grouped {
+        component.sort_by_key(|card| (card_strength(*card, rules), card.encoded()));
+    }
+    grouped.sort_by_key(|component| {
+        component
+            .first()
+            .map(|card| (card_strength(*card, rules), card.encoded()))
+            .unwrap_or_default()
+    });
+
+    let required_group_count = grouped.iter().map(Vec::len).sum::<usize>().min(card_count);
+    let mut selected = Vec::with_capacity(card_count);
+    for requirement in &lead.multiplicities {
+        let remaining_slots = required_group_count.saturating_sub(selected.len());
+        if remaining_slots == 0 {
+            break;
+        }
+        let mut best_index = None;
+        let mut best_match = 0;
+        for (index, component) in grouped.iter().enumerate() {
+            let matched = component.len().min(*requirement).min(remaining_slots);
+            if matched > best_match {
+                best_match = matched;
+                best_index = Some(index);
+            }
+        }
+        let Some(best_index) = best_index else {
+            break;
+        };
+        selected.extend(grouped[best_index].drain(..best_match));
+    }
+
+    for component in &mut grouped {
+        let remaining_slots = required_group_count.saturating_sub(selected.len());
+        if remaining_slots == 0 {
+            break;
+        }
+        selected.extend(component.drain(..component.len().min(remaining_slots)));
+    }
+
+    let mut outside = hand
+        .iter()
+        .copied()
+        .filter(|card| card_group(*card, rules) != lead.group)
+        .collect::<Vec<_>>();
+    outside.sort_by_key(|card| (card_strength(*card, rules), card.encoded()));
+    selected.extend(outside.into_iter().take(card_count - selected.len()));
+
+    (selected.len() == card_count && follow_is_legal(hand, &selected, lead, rules))
+        .then_some(selected)
+}
+
 pub fn can_compete_with_lead(cards: &[Card], lead: &Combo, rules: UpgradeComboRules) -> bool {
     let Some(candidate) = classify(cards, rules) else {
         return false;
