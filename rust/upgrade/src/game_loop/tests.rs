@@ -1,11 +1,33 @@
 use std::{collections::HashMap, time::Duration};
 
+use share_type_public::{GameId, Routes, WsJoinRequest};
 use upgrade_common::Card;
-use ws_common::{CommonGameState, RoomService, SessionSenders};
+use ws_common::{ClientRequest, CommonGameState, RoomService, SessionSenders};
 
-use crate::state::UpgradeGameState;
+use crate::{game_setting::build_upgrade_settings, state::UpgradeGameState};
 
 use super::*;
+
+fn room_with_common(room_key: &str) -> (RoomService, Arc<std::sync::Mutex<CommonGameState>>) {
+    let mut room = RoomService::default();
+    let request = ClientRequest {
+        route: Routes::JOIN as i32,
+        data: serde_json::to_value(WsJoinRequest {
+            name: "owner".to_owned(),
+            password: room_key.to_owned(),
+            game_id: GameId::UPGRADE,
+            session_id: String::new(),
+            avatar_url: String::new(),
+        })
+        .expect("serialize upgrade loop join"),
+    };
+    room.handle_common_request(1, &request, GameId::UPGRADE, build_upgrade_settings)
+        .expect("create upgrade loop room");
+    let common = room
+        .room_common_state(room_key)
+        .expect("upgrade loop room common state");
+    (room, common)
+}
 
 #[test]
 fn first_deal_defaults_to_fifteen_seconds_and_never_below_three_times() {
@@ -44,22 +66,23 @@ fn bottom_operation_uses_three_times_the_configured_play_window() {
 
 #[tokio::test]
 async fn game_loop_stops_during_a_long_deal_delay() {
-    let common = Arc::new(std::sync::Mutex::new(CommonGameState::new()));
+    let room_key = "upgrade-stop-during-deal";
+    let (room, common) = room_with_common(room_key);
     let mut game = UpgradeGameState::from_common(common);
     game.phase = UpgradePhase::Deal;
     game.deal_queue
         .push_back((0, Card::try_from(2).unwrap().encoded()));
     game.total_deal_count = 1;
     let state = Arc::new(std::sync::Mutex::new(game));
-    let room = Arc::new(Mutex::new(RoomService::default()));
+    let room = Arc::new(Mutex::new(room));
     let senders: SessionSenders = Arc::new(Mutex::new(HashMap::new()));
     let states = Arc::new(std::sync::Mutex::new(HashMap::from([(
-        "upgrade-stop-during-deal".to_owned(),
+        room_key.to_owned(),
         Arc::clone(&state),
     )])));
 
     start_upgrade_game_loop(
-        "upgrade-stop-during-deal".to_owned(),
+        room_key.to_owned(),
         Arc::clone(&state),
         room,
         senders,
@@ -86,7 +109,8 @@ async fn game_loop_stops_during_a_long_deal_delay() {
 
 #[tokio::test]
 async fn paused_game_loop_does_not_continue_dealing() {
-    let common = Arc::new(std::sync::Mutex::new(CommonGameState::new()));
+    let room_key = "upgrade-paused-during-deal";
+    let (room, common) = room_with_common(room_key);
     common.lock().unwrap().pause();
     let mut game = UpgradeGameState::from_common(common);
     game.phase = UpgradePhase::Deal;
@@ -94,15 +118,15 @@ async fn paused_game_loop_does_not_continue_dealing() {
         .push_back((0, Card::try_from(2).unwrap().encoded()));
     game.total_deal_count = 1;
     let state = Arc::new(std::sync::Mutex::new(game));
-    let room = Arc::new(Mutex::new(RoomService::default()));
+    let room = Arc::new(Mutex::new(room));
     let senders: SessionSenders = Arc::new(Mutex::new(HashMap::new()));
     let states = Arc::new(std::sync::Mutex::new(HashMap::from([(
-        "upgrade-paused-during-deal".to_owned(),
+        room_key.to_owned(),
         Arc::clone(&state),
     )])));
 
     start_upgrade_game_loop(
-        "upgrade-paused-during-deal".to_owned(),
+        room_key.to_owned(),
         Arc::clone(&state),
         room,
         senders,
@@ -143,5 +167,43 @@ fn old_loop_cleanup_does_not_remove_recreated_room_state() {
             .unwrap()
             .get("same-name")
             .is_some_and(|state| Arc::ptr_eq(state, &current))
+    );
+}
+
+#[tokio::test]
+async fn stale_loop_does_not_advance_a_recreated_room() {
+    let room_key = "upgrade-recreated-room";
+    let (room, current_common) = room_with_common(room_key);
+    let old_common = Arc::new(std::sync::Mutex::new(CommonGameState::new()));
+    let mut old_game = UpgradeGameState::from_common(old_common);
+    old_game.phase = UpgradePhase::Deal;
+    old_game
+        .deal_queue
+        .push_back((0, Card::try_from(2).unwrap().encoded()));
+    old_game.total_deal_count = 1;
+    let old_state = Arc::new(std::sync::Mutex::new(old_game));
+    let states = Arc::new(std::sync::Mutex::new(HashMap::from([(
+        room_key.to_owned(),
+        Arc::clone(&old_state),
+    )])));
+    let room_service = Arc::new(Mutex::new(room));
+
+    start_upgrade_game_loop(
+        room_key.to_owned(),
+        Arc::clone(&old_state),
+        Arc::clone(&room_service),
+        Arc::new(Mutex::new(HashMap::new())),
+        Arc::clone(&states),
+    );
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    assert_eq!(old_state.lock().unwrap().dealt_count, 0);
+    assert!(states.lock().unwrap().is_empty());
+    assert!(
+        room_service
+            .lock()
+            .await
+            .room_common_state(room_key)
+            .is_some_and(|common| Arc::ptr_eq(&common, &current_common))
     );
 }

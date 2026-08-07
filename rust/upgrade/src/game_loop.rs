@@ -44,11 +44,15 @@ pub fn start_upgrade_game_loop(
 ) {
     tokio::spawn(async move {
         let common = { Arc::clone(&state.lock().unwrap().base) };
-        let configs = room_service
-            .lock()
-            .await
-            .room_configs(&room_key)
-            .unwrap_or_default();
+        let configs = {
+            let room = room_service.lock().await;
+            if !room_uses_common_state(&room, &room_key, &common) {
+                drop(room);
+                remove_registered_state_if_same(&states, &room_key, &state);
+                return;
+            }
+            room.room_configs(&room_key).unwrap_or_default()
+        };
         let play_time = configs.get("play_time").copied().unwrap_or(30).max(1) as u32;
         loop {
             let (stop_requested, paused, phase) = {
@@ -64,6 +68,13 @@ pub fn start_upgrade_game_loop(
                     break;
                 }
                 continue;
+            }
+            let room_is_current = {
+                let room = room_service.lock().await;
+                room_uses_common_state(&room, &room_key, &common)
+            };
+            if !room_is_current {
+                break;
             }
             match phase {
                 UpgradePhase::Deal => {
@@ -137,6 +148,15 @@ pub fn start_upgrade_game_loop(
             .clear_room_game_state_if_same(&room_key, &common);
         remove_registered_state_if_same(&states, &room_key, &state);
     });
+}
+
+fn room_uses_common_state(
+    room: &RoomService,
+    room_key: &str,
+    common: &Arc<std::sync::Mutex<ws_common::CommonGameState>>,
+) -> bool {
+    room.room_common_state(room_key)
+        .is_some_and(|current| Arc::ptr_eq(&current, common))
 }
 
 fn remove_registered_state_if_same(
