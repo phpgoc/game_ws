@@ -207,3 +207,39 @@ async fn stale_loop_does_not_advance_a_recreated_room() {
             .is_some_and(|common| Arc::ptr_eq(&common, &current_common))
     );
 }
+
+#[tokio::test]
+async fn manually_started_round_survives_the_settlement_delay() {
+    let room_key = "upgrade-manual-next-round";
+    let (room, common) = room_with_common(room_key);
+    let mut game = UpgradeGameState::from_common(common);
+    game.phase = UpgradePhase::Settlement;
+    game.deal_queue
+        .push_back((0, Card::try_from(2).unwrap().encoded()));
+    game.total_deal_count = 1;
+    let state = Arc::new(std::sync::Mutex::new(game));
+    let states = Arc::new(std::sync::Mutex::new(HashMap::from([(
+        room_key.to_owned(),
+        Arc::clone(&state),
+    )])));
+
+    start_upgrade_game_loop(
+        room_key.to_owned(),
+        Arc::clone(&state),
+        Arc::new(Mutex::new(room)),
+        Arc::new(Mutex::new(HashMap::new())),
+        Arc::clone(&states),
+    );
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    state.lock().unwrap().phase = UpgradePhase::Deal;
+
+    tokio::time::timeout(Duration::from_secs(4), async {
+        while state.lock().unwrap().dealt_count == 0 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("manually started upgrade round must keep its game loop");
+
+    state.lock().unwrap().base.lock().unwrap().request_stop();
+}

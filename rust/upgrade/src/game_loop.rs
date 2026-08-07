@@ -109,11 +109,13 @@ pub fn start_upgrade_game_loop(
                     let mut dispatch = Dispatch::default();
                     let advanced = {
                         let mut guard = state.lock().unwrap();
-                        if guard.stop_requested() || guard.phase != UpgradePhase::Settlement {
-                            false
-                        } else {
-                            guard.advance_after_settlement().unwrap_or(false)
+                        if guard.stop_requested() {
+                            break;
                         }
+                        if guard.phase != UpgradePhase::Settlement {
+                            continue;
+                        }
+                        guard.advance_after_settlement().unwrap_or(false)
                     };
                     if advanced {
                         let snapshot = state.lock().unwrap().snapshot();
