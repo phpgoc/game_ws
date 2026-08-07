@@ -825,13 +825,13 @@ impl UpgradeGameState {
             return Ok(false);
         }
         if self.round_index > 0 && self.rules.trump_suit.is_none() {
-            self.select_trump(self.dealer_position, UpgradeSuit::SPADE)?;
+            let suit = crate::ai::best_trump_suit(self, self.dealer_position);
+            self.select_trump(self.dealer_position, suit)?;
         }
-        let cards = self
-            .private_hand(self.dealer_position)
-            .into_iter()
-            .take(self.rules.bottom_card_count)
-            .collect::<Vec<_>>();
+        let cards = crate::ai::choose_bury(self).or_else(|| self.choose_fallback_bury());
+        let Some(cards) = cards else {
+            return Ok(false);
+        };
         if cards.len() != self.rules.bottom_card_count {
             return Ok(false);
         }
@@ -844,23 +844,38 @@ impl UpgradeGameState {
             return Ok(None);
         }
         let position = self.current_position;
-        let hand = self.private_hand(position);
-        let Some(first) = hand.first().copied() else {
+        let Some(cards) =
+            crate::ai::decide(self, position).or_else(|| self.choose_fallback_play(position))
+        else {
             return Ok(None);
         };
+        self.play_cards(position, cards).map(Some)
+    }
+
+    pub(crate) fn choose_fallback_bury(&self) -> Option<Vec<i32>> {
+        let cards = self
+            .private_hand(self.dealer_position)
+            .into_iter()
+            .take(self.rules.bottom_card_count)
+            .collect::<Vec<_>>();
+        (cards.len() == self.rules.bottom_card_count).then_some(cards)
+    }
+
+    pub(crate) fn choose_fallback_play(&self, position: usize) -> Option<Vec<i32>> {
+        let hand = self.private_hand(position);
+        let first = hand.first().copied()?;
         let cards = if self.current_trick.is_empty() {
             vec![first]
         } else {
-            let lead = Self::cards_from_ids(&self.current_trick[0].cards)?;
+            let lead = Self::cards_from_ids(&self.current_trick[0].cards).ok()?;
             let rules = self.combo_rules();
-            let lead_combo = combo::classify(&lead, rules).ok_or("invalid lead")?;
-            combo::forced_follow(&Self::cards_from_ids(&hand)?, &lead_combo, rules)
-                .ok_or("cannot build legal follow")?
+            let lead_combo = combo::classify(&lead, rules)?;
+            combo::forced_follow(&Self::cards_from_ids(&hand).ok()?, &lead_combo, rules)?
                 .into_iter()
                 .map(Card::encoded)
                 .collect()
         };
-        self.play_cards(position, cards).map(Some)
+        Some(cards)
     }
 }
 

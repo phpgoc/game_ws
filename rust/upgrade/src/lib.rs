@@ -4,6 +4,12 @@
 
 #![forbid(unsafe_code)]
 
+#[cfg(feature = "official")]
+#[path = "../../../../ai/upgrade/src/embedded/mod.rs"]
+pub mod ai;
+#[cfg(not(feature = "official"))]
+#[path = "ai_fallback.rs"]
+mod ai;
 pub mod combo;
 pub mod game;
 pub mod game_loop;
