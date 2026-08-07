@@ -71,26 +71,8 @@ fn removed_ranks_shrink_the_deck_and_are_skipped_as_levels() {
     state.phase = UpgradePhase::Settlement;
     state.team_target_ranks = [Rank::Five; 2];
     assert_eq!(state.next_target_rank(), Some(Rank::Ten));
-
-    assert_eq!(final_upgrade_rank(8, Rank::Ace), Rank::Ace);
-    assert_eq!(final_upgrade_rank(9, Rank::Ace), Rank::King);
-}
-
-#[test]
-fn removed_final_rank_finishes_at_the_highest_retained_level() {
-    let mut state = playing_state(HashMap::new());
-    state.phase = UpgradePhase::Settlement;
-    state.rules.removed_rank_count = 9;
-    state.rules.final_target_rank = final_upgrade_rank(9, Rank::Ace);
-    state.rules.target_rank = Rank::King;
-    state.team_target_ranks = [Rank::King; 2];
-
-    let snapshot = state.snapshot();
-    assert_eq!(snapshot.final_target_rank, UpgradeRank::K);
-    let settlement = state.settlement_event();
-    assert!(settlement.match_finished);
-    assert_eq!(settlement.target_rank, UpgradeRank::K);
-    assert_eq!(settlement.next_target_rank, None);
+    assert_eq!(removed_upgrade_ranks(99), &REMOVABLE_RANKS);
+    assert_eq!(first_upgrade_rank(99, Rank::Ace), Rank::Five);
 }
 
 #[test]

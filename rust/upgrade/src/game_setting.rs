@@ -36,7 +36,7 @@ pub fn build_upgrade_settings() -> ws_common::SettingsBuilderResult {
             GameParam::Range(GameParamRange {
                 default: 0,
                 min: 0,
-                max: 9,
+                max: 6,
             }),
         ),
         (

@@ -1810,7 +1810,7 @@ async fn upgrade_ws_finishes_a_multi_round_match_at_ace() {
         json!({
             "current_configs": {
                 "deck_count": 0,
-                "removed_rank_count": 7,
+                "removed_rank_count": 6,
                 "attacking_win_score": 400,
                 "score_per_level": 5,
                 "shutout_bonus_levels": 3,
@@ -1845,13 +1845,13 @@ async fn upgrade_ws_finishes_a_multi_round_match_at_ace() {
     let mut final_settlement = None;
 
     for round_index in 0..10_i64 {
-        let mut hands = collect_upgrade_hands_min(&mut clients, 17).await;
-        assert_eq!(hands[dealer_position].len(), 27);
+        let mut hands = collect_upgrade_hands_min(&mut clients, 20).await;
+        assert_eq!(hands[dealer_position].len(), 30);
         assert!(
             hands
                 .iter()
                 .enumerate()
-                .all(|(position, hand)| position == dealer_position || hand.len() == 17)
+                .all(|(position, hand)| position == dealer_position || hand.len() == 20)
         );
         let bottom_event =
             recv_upgrade_bottom(&mut *clients[dealer_position], dealer_position).await;
@@ -1903,8 +1903,8 @@ async fn upgrade_ws_finishes_a_multi_round_match_at_ace() {
         )
         .await;
         assert_eq!(buried["code"], json!(WsResponseCode::OK as i32));
-        assert_eq!(play_snapshot["data"]["removed_rank_count"], json!(7));
-        assert_eq!(play_snapshot["data"]["hand_count"], json!(17));
+        assert_eq!(play_snapshot["data"]["removed_rank_count"], json!(6));
+        assert_eq!(play_snapshot["data"]["hand_count"], json!(20));
         assert_eq!(play_snapshot["data"]["bottom_card_count"], json!(10));
         let rules = combo::UpgradeComboRules {
             target_rank: upgrade_rank(
@@ -2405,7 +2405,7 @@ async fn upgrade_four_deck_removed_ranks_ws_flow_skips_removed_levels() {
         json!({
             "current_configs": {
                 "deck_count": 1,
-                "removed_rank_count": 9,
+                "removed_rank_count": 6,
                 "first_deal_time": 1,
                 "deal_time": 1,
                 "play_time": 30
@@ -2432,19 +2432,27 @@ async fn upgrade_four_deck_removed_ranks_ws_flow_skips_removed_levels() {
         .expect("removed-ranks dealer") as usize;
     assert!(dealer_position < 4);
 
-    let hands = collect_upgrade_hands_min(&mut clients, 16).await;
-    assert_eq!(hands[dealer_position].len(), 24);
+    let hands = collect_upgrade_hands_min(&mut clients, 28).await;
+    assert_eq!(hands[dealer_position].len(), 36);
     assert!(
         hands
             .iter()
             .enumerate()
-            .all(|(position, hand)| position == dealer_position || hand.len() == 16)
+            .all(|(position, hand)| position == dealer_position || hand.len() == 28)
     );
     assert!(hands.iter().flatten().all(|card| {
         let rank = Card::try_from(*card).expect("removed-ranks card").rank();
         matches!(
             rank,
-            Rank::Five | Rank::Ten | Rank::King | Rank::Two | Rank::SmallJoker | Rank::BigJoker
+            Rank::Five
+                | Rank::Ten
+                | Rank::Jack
+                | Rank::Queen
+                | Rank::King
+                | Rank::Ace
+                | Rank::Two
+                | Rank::SmallJoker
+                | Rank::BigJoker
         )
     }));
 
@@ -2467,19 +2475,19 @@ async fn upgrade_four_deck_removed_ranks_ws_flow_skips_removed_levels() {
     let snapshot =
         wait_upgrade_snapshot(&mut *clients[dealer_position], UpgradePhase::Play, 0).await;
     assert_eq!(snapshot["data"]["deck_count"], json!(4));
-    assert_eq!(snapshot["data"]["removed_rank_count"], json!(9));
+    assert_eq!(snapshot["data"]["removed_rank_count"], json!(6));
     assert_eq!(
         snapshot["data"]["target_rank"],
         json!(UpgradeRank::FIVE as i32)
     );
     assert_eq!(
         snapshot["data"]["final_target_rank"],
-        json!(UpgradeRank::K as i32)
+        json!(UpgradeRank::A as i32)
     );
     assert_eq!(snapshot["data"]["bottom_card_count"], json!(8));
-    assert_eq!(snapshot["data"]["hand_count"], json!(16));
-    assert_eq!(snapshot["data"]["dealt_count"], json!(64));
-    assert_eq!(snapshot["data"]["total_deal_count"], json!(64));
+    assert_eq!(snapshot["data"]["hand_count"], json!(28));
+    assert_eq!(snapshot["data"]["dealt_count"], json!(112));
+    assert_eq!(snapshot["data"]["total_deal_count"], json!(112));
     assert_eq!(
         wait_for_response(
             &mut *clients[dealer_position],

@@ -37,7 +37,7 @@ fn upgrade_settings_expose_decks_timing_and_score_progression() {
     };
     assert_eq!(
         (removed_ranks.default, removed_ranks.min, removed_ranks.max),
-        (0, 0, 9)
+        (0, 0, 6)
     );
 
     let GameParam::Range(attacking_win_score) = &params[KEY_ATTACKING_WIN_SCORE] else {

@@ -263,7 +263,7 @@ fn simulate_random_round(deck_count: u8, seed: u64) -> u8 {
         deck_count,
         target_rank: Rank::Three,
         final_target_rank: Rank::Ace,
-        removed_rank_count: seed as usize % 10,
+        removed_rank_count: seed as usize % 7,
         attacking_win_score: 80,
         score_per_level: 40,
         shutout_bonus_levels: 1,

@@ -180,10 +180,10 @@ fn rules_conversion_and_state_adapter_keep_the_upgrade_contract() {
     assert_eq!(rules.score_per_level, 1);
     assert_eq!(rules.shutout_bonus_levels, 3);
     assert_eq!(rules.deck_count.get(), 6);
-    assert_eq!(rules.removed_rank_count, 9);
+    assert_eq!(rules.removed_rank_count, 6);
     assert_eq!(rules.bottom_card_count, 8);
     assert_eq!(rules.target_rank, Rank::Five);
-    assert_eq!(rules.final_target_rank, Rank::King);
+    assert_eq!(rules.final_target_rank, Rank::Ace);
     assert_eq!(rules.trump_suit, None);
     assert_eq!(UpgradeGameHandler::play_time(&configs), 1);
 
