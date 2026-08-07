@@ -205,17 +205,41 @@ fn simulate_random_match(deck_count: usize, seed: u64) {
         finish_deal_and_bury(&mut state, suit);
         play_random_round(&mut state, &mut rng, seed ^ rounds as u64);
         rounds += 1;
+        let target_ranks_before = state.team_target_ranks;
+        let winning_team = state.winner_positions()[0] as usize % 2;
+        let expected_next_rank = state.next_target_rank();
         if !state
             .advance_after_settlement_with_rng(&mut rng)
             .expect("random tractor match settlement")
         {
+            assert!(expected_next_rank.is_none());
+            assert_eq!(state.team_target_ranks, target_ranks_before);
             break;
         }
+        let other_team = (winning_team + 1) % 2;
+        assert_eq!(
+            state.team_target_ranks[other_team],
+            target_ranks_before[other_team]
+        );
+        assert_eq!(
+            state.team_target_ranks[winning_team],
+            expected_next_rank.unwrap()
+        );
+        assert!(
+            state.team_target_ranks[winning_team] as i32 > target_ranks_before[winning_team] as i32
+        );
+        assert_eq!(
+            state.rules.target_rank,
+            state.team_target_ranks[winning_team]
+        );
         assert_eq!(state.phase, TractorPhase::Deal);
         assert!(state.rules.trump_suit.is_none());
-        assert!(rounds < 4, "random tractor match must converge");
+        assert!(rounds < 6, "random tractor match must converge");
     }
-    assert_eq!(rounds, 3);
+    assert!(
+        (3..=5).contains(&rounds),
+        "two independent team ladders finished in {rounds} rounds"
+    );
     assert!(state.match_finished());
     assert_eq!(state.player_scores_snapshot().len(), 4);
 }

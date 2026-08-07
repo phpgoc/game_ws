@@ -2066,7 +2066,7 @@ async fn tractor_server_completes_round_and_enters_later_round() {
 
 #[cfg(not(feature = "official"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn tractor_ws_finishes_a_two_round_match_at_the_configured_final_rank() {
+async fn tractor_ws_finishes_when_one_team_wins_at_the_configured_final_rank() {
     let runtime = start_test_runtime("tractor-complete-match-test", Duration::from_secs(60)).await;
     let url = runtime.url.clone();
 
@@ -2184,85 +2184,127 @@ async fn tractor_ws_finishes_a_two_round_match_at_the_configured_final_rank() {
     assert_eq!(first_settlement.target_rank, TractorRank::THREE);
     assert!(!first_settlement.match_finished);
     assert_eq!(first_settlement.next_target_rank, Some(TractorRank::FOUR));
+    assert_eq!(
+        first_settlement
+            .team_target_ranks
+            .iter()
+            .filter(|rank| **rank == TractorRank::FOUR)
+            .count(),
+        1
+    );
 
-    let later_dealer = *first_settlement
-        .winner_positions
-        .first()
-        .expect("complete match first winners") as usize;
-    let mut later_hands = collect_tractor_hands(&mut clients, 25).await;
-    let later_bottom_event = recv_tractor_bottom(&mut *clients[later_dealer], later_dealer).await;
-    let later_bottom = later_bottom_event["data"]["cards"]
-        .as_array()
-        .expect("complete match later bottom")
-        .iter()
-        .map(|card| card.as_i64().expect("complete match later bottom card") as i32)
-        .collect::<Vec<_>>();
-    send_request(
-        &mut *clients[later_dealer],
-        TractorRoutes::SELECT_TRUMP as i32,
-        json!({ "trump_suit": TractorSuit::SPADE as i8 }),
-    )
-    .await;
-    let selected = recv_until(
-        &mut *clients[later_dealer],
-        "complete tractor match later select response",
-        |value| {
-            value.get("route").and_then(Value::as_i64) == Some(TractorRoutes::SELECT_TRUMP as i64)
-        },
-    )
-    .await;
-    assert_eq!(selected["code"], json!(WsResponseCode::OK as i32));
-    send_request(
-        &mut *clients[later_dealer],
-        TractorRoutes::BURY_BOTTOM as i32,
-        json!({ "cards": later_bottom }),
-    )
-    .await;
-    let later_play_snapshot = recv_until(
-        &mut *clients[later_dealer],
-        "complete tractor match later play phase",
-        |value| {
-            value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
-                && value["data"]["phase"] == json!(TractorPhase::Play as i8)
-                && value["data"]["round_index"] == json!(1)
-        },
-    )
-    .await;
-    let later_bury = recv_until(
-        &mut *clients[later_dealer],
-        "complete tractor match later bury response",
-        |value| {
-            value.get("route").and_then(Value::as_i64) == Some(TractorRoutes::BURY_BOTTOM as i64)
-        },
-    )
-    .await;
-    assert_eq!(later_bury["code"], json!(WsResponseCode::OK as i32));
-    assert_eq!(later_play_snapshot["data"]["target_rank"], json!(4));
-    let later_rules = TractorRules {
-        target_rank: TractorRank::FOUR,
-        trump_suit: Some(TractorSuit::SPADE),
-        ..first_rules
-    };
+    let mut previous_settlement = first_settlement;
+    let mut final_round = None;
+    for round_index in 1..=2 {
+        let later_dealer = *previous_settlement
+            .winner_positions
+            .first()
+            .expect("complete match previous winners") as usize;
+        let team_ranks_before = previous_settlement.team_target_ranks.clone();
+        let mut later_hands = collect_tractor_hands(&mut clients, 25).await;
+        let later_bottom_event =
+            recv_tractor_bottom(&mut *clients[later_dealer], later_dealer).await;
+        let later_bottom = later_bottom_event["data"]["cards"]
+            .as_array()
+            .expect("complete match later bottom")
+            .iter()
+            .map(|card| card.as_i64().expect("complete match later bottom card") as i32)
+            .collect::<Vec<_>>();
+        send_request(
+            &mut *clients[later_dealer],
+            TractorRoutes::SELECT_TRUMP as i32,
+            json!({ "trump_suit": TractorSuit::SPADE as i8 }),
+        )
+        .await;
+        let selected = recv_until(
+            &mut *clients[later_dealer],
+            "complete tractor match later select response",
+            |value| {
+                value.get("route").and_then(Value::as_i64)
+                    == Some(TractorRoutes::SELECT_TRUMP as i64)
+            },
+        )
+        .await;
+        assert_eq!(selected["code"], json!(WsResponseCode::OK as i32));
+        send_request(
+            &mut *clients[later_dealer],
+            TractorRoutes::BURY_BOTTOM as i32,
+            json!({ "cards": later_bottom }),
+        )
+        .await;
+        let later_play_snapshot = recv_until(
+            &mut *clients[later_dealer],
+            "complete tractor match later play phase",
+            |value| {
+                value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+                    && value["data"]["phase"] == json!(TractorPhase::Play as i8)
+                    && value["data"]["round_index"] == json!(round_index)
+            },
+        )
+        .await;
+        let later_bury = recv_until(
+            &mut *clients[later_dealer],
+            "complete tractor match later bury response",
+            |value| {
+                value.get("route").and_then(Value::as_i64)
+                    == Some(TractorRoutes::BURY_BOTTOM as i64)
+            },
+        )
+        .await;
+        assert_eq!(later_bury["code"], json!(WsResponseCode::OK as i32));
+        assert_eq!(later_play_snapshot["data"]["target_rank"], json!(4));
+        assert_eq!(
+            later_play_snapshot["data"]["team_target_ranks"],
+            json!(team_ranks_before)
+        );
+        let later_rules = TractorRules {
+            target_rank: TractorRank::FOUR,
+            trump_suit: Some(TractorSuit::SPADE),
+            ..first_rules.clone()
+        };
+        let (settlement, snapshot) =
+            play_complete_tractor_round(&mut clients, &mut later_hands, later_dealer, &later_rules)
+                .await;
+        assert_eq!(snapshot["data"]["round_index"], json!(round_index));
+        assert_eq!(settlement.target_rank, TractorRank::FOUR);
+        let winning_team = settlement.winner_positions[0] as usize % 2;
+        let other_team = (winning_team + 1) % 2;
+        assert_eq!(
+            settlement.team_target_ranks[other_team],
+            team_ranks_before[other_team]
+        );
+        if settlement.match_finished {
+            assert_eq!(team_ranks_before[winning_team], TractorRank::FOUR);
+            assert_eq!(settlement.next_target_rank, None);
+            assert_eq!(settlement.team_target_ranks, team_ranks_before);
+            final_round = Some((settlement, snapshot));
+            break;
+        }
+        assert_eq!(team_ranks_before[winning_team], TractorRank::THREE);
+        assert_eq!(settlement.next_target_rank, Some(TractorRank::FOUR));
+        assert_eq!(
+            settlement.team_target_ranks[winning_team],
+            TractorRank::FOUR
+        );
+        previous_settlement = settlement;
+    }
     let (final_settlement, final_snapshot) =
-        play_complete_tractor_round(&mut clients, &mut later_hands, later_dealer, &later_rules)
-            .await;
-    assert_eq!(final_snapshot["data"]["round_index"], json!(1));
-    assert_eq!(final_settlement.target_rank, TractorRank::FOUR);
+        final_round.expect("one team must win while already playing the final rank");
     assert!(final_settlement.match_finished);
-    assert_eq!(final_settlement.next_target_rank, None);
+    assert!((1..=2).contains(&final_snapshot["data"]["round_index"].as_i64().unwrap()));
 
-    let unexpected_third_deal = tokio::time::timeout(
+    let unexpected_next_deal = tokio::time::timeout(
         Duration::from_secs(2),
         recv_until(
             &mut *clients[0],
-            "unexpected third tractor round",
+            "unexpected tractor round after match finish",
             |value| value.get("code").and_then(Value::as_i64) == Some(WsCode::DEAL as i64),
         ),
     )
     .await;
     assert!(
-        unexpected_third_deal.is_err(),
-        "finished tractor match must not deal a third round"
+        unexpected_next_deal.is_err(),
+        "finished tractor match must not deal another round"
     );
 }
 

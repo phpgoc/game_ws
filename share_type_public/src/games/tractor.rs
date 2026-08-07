@@ -171,6 +171,7 @@ pub struct WsTractorSettlementEvent {
     pub target_rank: TractorRank,
     pub match_finished: bool,
     pub next_target_rank: Option<TractorRank>,
+    pub team_target_ranks: Vec<TractorRank>,
     #[serde(default)]
     pub player_scores: HashMap<i32, i32>,
 }
@@ -181,6 +182,7 @@ pub struct WsTractorTableSnapshotEvent {
     pub phase: TractorPhase,
     pub deck_count: i32,
     pub target_rank: TractorRank,
+    pub team_target_ranks: Vec<TractorRank>,
     pub final_target_rank: TractorRank,
     pub removed_rank_count: i32,
     pub round_index: i32,

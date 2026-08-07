@@ -36,6 +36,7 @@ pub struct TractorGameState {
     pub base: Arc<Mutex<CommonGameState>>,
     pub phase: TractorPhase,
     pub rules: TractorRules,
+    pub team_target_ranks: [TractorRank; 2],
     pub hands: HashMap<usize, Vec<i32>>,
     pub deal_queue: VecDeque<(usize, i32)>,
     pub dealt_count: usize,
@@ -307,6 +308,8 @@ impl TractorGameState {
             return Ok(false);
         };
         let winners = self.winner_positions_usize();
+        let winning_team = winners[0] % 2;
+        self.team_target_ranks[winning_team] = next_rank;
         if !winners.contains(&self.dealer_position)
             && let Some(next_dealer) = winners.first().copied()
         {
@@ -612,6 +615,7 @@ impl TractorGameState {
         rules.target_rank = TractorRank::THREE;
         rules.trump_suit = None;
         self.rules = rules;
+        self.team_target_ranks = [TractorRank::THREE; 2];
         self.dealer_position = positions[0];
         self.round_index = 0;
         self.deal_current_round_with_rng(rng)
@@ -800,9 +804,9 @@ impl TractorGameState {
                     // accepted trick, but that trump play does not make the
                     // original plain-suit throw fail at declaration time.
                     .filter(|reply| {
-                        reply.iter().all(|card| {
-                            combo::card_in_group(*card, lead.suit, &self.rules)
-                        })
+                        reply
+                            .iter()
+                            .all(|card| combo::card_in_group(*card, lead.suit, &self.rules))
                     })
                     .filter_map(|reply| combo::combo_win_value(&reply, &lead, &self.rules))
                     .any(|reply_value| reply_value > value)
@@ -828,6 +832,7 @@ impl TractorGameState {
                 target_rank: TractorRank::A,
                 trump_suit: None,
             },
+            team_target_ranks: [TractorRank::THREE; 2],
             hands: HashMap::new(),
             deal_queue: VecDeque::new(),
             dealt_count: 0,
@@ -892,11 +897,21 @@ impl TractorGameState {
     }
 
     pub fn next_target_rank(&self) -> Option<TractorRank> {
+        let winning_team = self.winner_positions_usize()[0] % 2;
         next_match_rank(
-            self.rules.target_rank,
+            self.team_target_ranks[winning_team],
             self.rules.final_target_rank,
             self.level_change() as usize,
         )
+    }
+
+    pub fn settlement_team_target_ranks(&self) -> Vec<TractorRank> {
+        let mut target_ranks = self.team_target_ranks;
+        if let Some(next_target_rank) = self.next_target_rank() {
+            let winning_team = self.winner_positions_usize()[0] % 2;
+            target_ranks[winning_team] = next_target_rank;
+        }
+        target_ranks.to_vec()
     }
 
     pub(crate) fn partner_still_to_play(&self, position: usize) -> bool {
@@ -1138,6 +1153,7 @@ impl TractorGameState {
             phase: self.phase,
             deck_count: self.rules.deck_count as i32,
             target_rank: self.rules.target_rank,
+            team_target_ranks: self.team_target_ranks.to_vec(),
             final_target_rank: self.rules.final_target_rank,
             removed_rank_count: 0,
             round_index: self.round_index,
@@ -1540,11 +1556,16 @@ mod tests {
         let mut state = test_state();
         state.rules.final_target_rank = TractorRank::NINE;
         state.rules.target_rank = TractorRank::EIGHT;
+        state.team_target_ranks = [TractorRank::EIGHT, TractorRank::THREE];
         state.phase = TractorPhase::Settlement;
 
         assert_eq!(state.next_target_rank(), Some(TractorRank::NINE));
         assert!(state.advance_after_settlement().expect("advance"));
         assert_eq!(state.rules.target_rank, TractorRank::NINE);
+        assert_eq!(
+            state.team_target_ranks,
+            [TractorRank::NINE, TractorRank::THREE]
+        );
 
         state.phase = TractorPhase::Settlement;
         assert!(state.match_finished());
@@ -1555,7 +1576,8 @@ mod tests {
     #[test]
     fn high_attacking_score_advances_multiple_ranks() {
         let mut state = test_state();
-        state.rules.target_rank = TractorRank::THREE;
+        state.rules.target_rank = TractorRank::SEVEN;
+        state.team_target_ranks = [TractorRank::SEVEN, TractorRank::THREE];
         state.rules.final_target_rank = TractorRank::A;
         state.phase = TractorPhase::Settlement;
         state.collected_scores = HashMap::from([(1, 120)]);
@@ -1564,6 +1586,28 @@ mod tests {
         assert_eq!(state.next_target_rank(), Some(TractorRank::FIVE));
         assert!(state.advance_after_settlement().expect("advance two ranks"));
         assert_eq!(state.rules.target_rank, TractorRank::FIVE);
+        assert_eq!(state.dealer_position, 1);
+        assert_eq!(
+            state.team_target_ranks,
+            [TractorRank::SEVEN, TractorRank::FIVE]
+        );
+    }
+
+    #[test]
+    fn losing_an_ace_round_does_not_finish_the_other_teams_match() {
+        let mut state = test_state();
+        state.rules.target_rank = TractorRank::A;
+        state.rules.final_target_rank = TractorRank::A;
+        state.team_target_ranks = [TractorRank::A, TractorRank::THREE];
+        state.phase = TractorPhase::Settlement;
+        state.collected_scores = HashMap::from([(1, 80)]);
+
+        assert!(!state.match_finished());
+        assert_eq!(state.next_target_rank(), Some(TractorRank::FOUR));
+        assert_eq!(
+            state.settlement_team_target_ranks(),
+            vec![TractorRank::A, TractorRank::FOUR]
+        );
     }
 
     #[test]
