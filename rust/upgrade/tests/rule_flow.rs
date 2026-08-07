@@ -163,6 +163,30 @@ fn six_deck_bottom_score_keeps_a_four_copy_component_as_the_maximum() {
 }
 
 #[test]
+fn four_identical_cards_play_as_one_atomic_component() {
+    let lead = vec![2, 102, 202, 302];
+    let mut state = state_with_hands(
+        vec![],
+        HashMap::from([
+            (0, lead.clone()),
+            (1, vec![3, 103, 203, 303]),
+            (2, vec![4, 104, 204, 304]),
+            (3, vec![5, 105, 205, 305]),
+        ]),
+    );
+    state.rules.deck_count = upgrade::UpgradeDeckCount::new(4).unwrap();
+    state.rules.target_rank = Rank::Two;
+
+    let resolution = state
+        .play_cards(0, lead.clone())
+        .expect("four identical cards are a legal atomic lead");
+
+    assert_eq!(resolution.played_cards, lead);
+    assert!(resolution.failed_throw.is_none());
+    assert!(state.failed_throws.is_empty());
+}
+
+#[test]
 fn long_throw_winner_compares_the_largest_repeated_component() {
     let lead = vec![3, 103, 203, 12, 112, 13];
     let mut state = state_with_hands(

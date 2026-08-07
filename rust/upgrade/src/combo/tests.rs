@@ -89,6 +89,19 @@ fn four_higher_copies_can_supply_the_three_needed_to_top_a_triple() {
 }
 
 #[test]
+fn four_identical_cards_are_an_atomic_repeated_shape() {
+    let four = cards(&[2, 102, 202, 302]);
+    let higher_four = cards(&[3, 103, 203, 303]);
+
+    assert_eq!(
+        classify(&four, rules()).map(|combo| combo.kind),
+        Some(ComboKind::Repeated { cards: 4 })
+    );
+    assert!(throw_components(&four, rules()).is_none());
+    assert!(failed_throw_component(&four, &higher_four, rules()).is_none());
+}
+
+#[test]
 fn level_cards_and_jokers_stay_above_ordinary_trump_cards() {
     let rules = UpgradeComboRules {
         target_rank: Rank::Three,

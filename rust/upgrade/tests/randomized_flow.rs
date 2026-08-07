@@ -17,6 +17,7 @@ const SINGLE: u8 = 1;
 const PAIR: u8 = 2;
 const TRIPLE: u8 = 4;
 const THROW: u8 = 8;
+const REPEATED: u8 = 16;
 const ALL_KINDS: u8 = SINGLE | PAIR | TRIPLE | THROW;
 
 fn combo_kind_bit(kind: ComboKind) -> u8 {
@@ -24,6 +25,7 @@ fn combo_kind_bit(kind: ComboKind) -> u8 {
         ComboKind::Single => SINGLE,
         ComboKind::Pair => PAIR,
         ComboKind::Triple => TRIPLE,
+        ComboKind::Repeated { .. } => REPEATED,
         ComboKind::Throw { .. } => THROW,
     }
 }
@@ -339,7 +341,7 @@ macro_rules! randomized_cases {
                 for seed in $start..($start + 8) {
                     covered |= simulate_random_round($deck_count, seed);
                 }
-                assert_eq!(covered, ALL_KINDS);
+                assert_eq!(covered & ALL_KINDS, ALL_KINDS);
             }
         )+
     };
@@ -401,7 +403,7 @@ macro_rules! randomized_match_case {
             for seed in $start..($start + 8) {
                 covered |= simulate_random_match($deck_count, seed);
             }
-            assert_eq!(covered, ALL_KINDS);
+            assert_eq!(covered & ALL_KINDS, ALL_KINDS);
         }
     };
 }

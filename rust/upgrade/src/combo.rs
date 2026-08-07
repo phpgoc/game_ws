@@ -14,6 +14,9 @@ pub enum ComboKind {
     Single,
     Pair,
     Triple,
+    Repeated {
+        cards: usize,
+    },
     /// 甩牌只记录张数和最长的相同牌面组件；连续对子不会被合并。
     Throw {
         cards: usize,
@@ -90,6 +93,7 @@ pub fn classify(cards: &[Card], rules: UpgradeComboRules) -> Option<Combo> {
         1 => ComboKind::Single,
         2 if max_multiplicity == 2 && counts.len() == 1 => ComboKind::Pair,
         3 if max_multiplicity == 3 && counts.len() == 1 => ComboKind::Triple,
+        cards if max_multiplicity == cards && counts.len() == 1 => ComboKind::Repeated { cards },
         cards => ComboKind::Throw {
             cards,
             max_multiplicity,
@@ -309,6 +313,7 @@ pub fn can_compete_with_lead(cards: &[Card], lead: &Combo, rules: UpgradeComboRu
         ComboKind::Single => candidate.kind == ComboKind::Single,
         ComboKind::Pair => candidate.kind == ComboKind::Pair,
         ComboKind::Triple => candidate.kind == ComboKind::Triple,
+        ComboKind::Repeated { cards } => candidate.kind == ComboKind::Repeated { cards },
         ComboKind::Throw { .. } => {
             component_follow_score(cards, &lead.multiplicities) == lead.multiplicities
         }
@@ -357,6 +362,7 @@ pub const fn lead_card_count(combo: &Combo) -> usize {
         ComboKind::Single => 1,
         ComboKind::Pair => 2,
         ComboKind::Triple => 3,
+        ComboKind::Repeated { cards } => cards,
         ComboKind::Throw { cards, .. } => cards,
     }
 }
