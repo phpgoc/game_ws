@@ -48,13 +48,20 @@ pub fn start_upgrade_game_loop(
             .unwrap_or_default();
         let play_time = configs.get("play_time").copied().unwrap_or(30).max(1) as u32;
         loop {
-            let phase = {
+            let (stop_requested, paused, phase) = {
                 let guard = state.lock().unwrap();
-                if guard.stop_requested() {
+                let base = guard.base.lock().unwrap();
+                (base.stop_requested(), base.paused, guard.phase)
+            };
+            if stop_requested {
+                break;
+            }
+            if paused {
+                if sleep_or_stop(&state, Duration::from_secs(1)).await {
                     break;
                 }
-                guard.phase
-            };
+                continue;
+            }
             match phase {
                 UpgradePhase::Deal => {
                     let delay = {

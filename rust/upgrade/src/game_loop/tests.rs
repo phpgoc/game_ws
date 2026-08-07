@@ -77,3 +77,35 @@ async fn game_loop_stops_during_a_long_deal_delay() {
     .await
     .expect("upgrade loop must release its state during the deal delay");
 }
+
+#[tokio::test]
+async fn paused_game_loop_does_not_continue_dealing() {
+    let common = Arc::new(std::sync::Mutex::new(CommonGameState::new()));
+    common.lock().unwrap().pause();
+    let mut game = UpgradeGameState::from_common(common);
+    game.phase = UpgradePhase::Deal;
+    game.deal_queue
+        .push_back((0, Card::try_from(2).unwrap().encoded()));
+    game.total_deal_count = 1;
+    let state = Arc::new(std::sync::Mutex::new(game));
+    let room = Arc::new(Mutex::new(RoomService::default()));
+    let senders: SessionSenders = Arc::new(Mutex::new(HashMap::new()));
+
+    start_upgrade_game_loop(
+        "upgrade-paused-during-deal".to_owned(),
+        Arc::clone(&state),
+        room,
+        senders,
+    );
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    assert_eq!(state.lock().unwrap().dealt_count, 0);
+    state.lock().unwrap().base.lock().unwrap().request_stop();
+    tokio::time::timeout(Duration::from_millis(500), async {
+        while Arc::strong_count(&state) > 1 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("paused upgrade loop must still honor stop requests");
+}
