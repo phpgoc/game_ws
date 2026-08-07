@@ -11,6 +11,7 @@ use ws_common::{
 };
 
 use crate::{
+    game::StateRegistry,
     game_setting::{KEY_DEAL_TIME, KEY_FIRST_DEAL_TIME, KEY_PLAY_TIME},
     state::{PLAYER_COUNT, UpgradeStateHandle},
 };
@@ -39,8 +40,10 @@ pub fn start_upgrade_game_loop(
     state: UpgradeStateHandle,
     room_service: Arc<Mutex<RoomService>>,
     senders: SessionSenders,
+    states: StateRegistry,
 ) {
     tokio::spawn(async move {
+        let common = { Arc::clone(&state.lock().unwrap().base) };
         let configs = room_service
             .lock()
             .await
@@ -127,7 +130,27 @@ pub fn start_upgrade_game_loop(
                 break;
             }
         }
+
+        room_service
+            .lock()
+            .await
+            .clear_room_game_state_if_same(&room_key, &common);
+        remove_registered_state_if_same(&states, &room_key, &state);
     });
+}
+
+fn remove_registered_state_if_same(
+    states: &StateRegistry,
+    room_key: &str,
+    state: &UpgradeStateHandle,
+) {
+    let mut states = states.lock().unwrap();
+    if states
+        .get(room_key)
+        .is_some_and(|current| Arc::ptr_eq(current, state))
+    {
+        states.remove(room_key);
+    }
 }
 
 fn build_deal_dispatch(

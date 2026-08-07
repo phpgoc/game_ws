@@ -24,7 +24,7 @@ use crate::{
     state::{UpgradeGameState, UpgradeRules, UpgradeStateHandle, first_upgrade_rank},
 };
 
-type StateRegistry = Arc<std::sync::Mutex<HashMap<String, UpgradeStateHandle>>>;
+pub(crate) type StateRegistry = Arc<std::sync::Mutex<HashMap<String, UpgradeStateHandle>>>;
 
 pub struct UpgradeGameHandler {
     room_service: Option<Arc<Mutex<RoomService>>>,
@@ -227,6 +227,7 @@ impl UpgradeGameHandler {
                 Arc::clone(&state),
                 Arc::clone(room_service_arc),
                 Arc::clone(senders_arc),
+                Arc::clone(&self.states),
             );
         }
 

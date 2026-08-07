@@ -53,12 +53,17 @@ async fn game_loop_stops_during_a_long_deal_delay() {
     let state = Arc::new(std::sync::Mutex::new(game));
     let room = Arc::new(Mutex::new(RoomService::default()));
     let senders: SessionSenders = Arc::new(Mutex::new(HashMap::new()));
+    let states = Arc::new(std::sync::Mutex::new(HashMap::from([(
+        "upgrade-stop-during-deal".to_owned(),
+        Arc::clone(&state),
+    )])));
 
     start_upgrade_game_loop(
         "upgrade-stop-during-deal".to_owned(),
         Arc::clone(&state),
         room,
         senders,
+        Arc::clone(&states),
     );
     tokio::time::timeout(Duration::from_secs(1), async {
         while state.lock().unwrap().phase == UpgradePhase::Deal {
@@ -76,6 +81,7 @@ async fn game_loop_stops_during_a_long_deal_delay() {
     })
     .await
     .expect("upgrade loop must release its state during the deal delay");
+    assert!(states.lock().unwrap().is_empty());
 }
 
 #[tokio::test]
@@ -90,12 +96,17 @@ async fn paused_game_loop_does_not_continue_dealing() {
     let state = Arc::new(std::sync::Mutex::new(game));
     let room = Arc::new(Mutex::new(RoomService::default()));
     let senders: SessionSenders = Arc::new(Mutex::new(HashMap::new()));
+    let states = Arc::new(std::sync::Mutex::new(HashMap::from([(
+        "upgrade-paused-during-deal".to_owned(),
+        Arc::clone(&state),
+    )])));
 
     start_upgrade_game_loop(
         "upgrade-paused-during-deal".to_owned(),
         Arc::clone(&state),
         room,
         senders,
+        Arc::clone(&states),
     );
     tokio::time::sleep(Duration::from_millis(150)).await;
 
@@ -108,4 +119,29 @@ async fn paused_game_loop_does_not_continue_dealing() {
     })
     .await
     .expect("paused upgrade loop must still honor stop requests");
+    assert!(states.lock().unwrap().is_empty());
+}
+
+#[test]
+fn old_loop_cleanup_does_not_remove_recreated_room_state() {
+    let old = Arc::new(std::sync::Mutex::new(UpgradeGameState::from_common(
+        Arc::new(std::sync::Mutex::new(CommonGameState::new())),
+    )));
+    let current = Arc::new(std::sync::Mutex::new(UpgradeGameState::from_common(
+        Arc::new(std::sync::Mutex::new(CommonGameState::new())),
+    )));
+    let states = Arc::new(std::sync::Mutex::new(HashMap::from([(
+        "same-name".to_owned(),
+        Arc::clone(&current),
+    )])));
+
+    remove_registered_state_if_same(&states, "same-name", &old);
+
+    assert!(
+        states
+            .lock()
+            .unwrap()
+            .get("same-name")
+            .is_some_and(|state| Arc::ptr_eq(state, &current))
+    );
 }
