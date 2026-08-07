@@ -60,6 +60,7 @@ pub struct UpgradeGameState {
     pub total_deal_count: usize,
     pub declaration: Option<WsUpgradeTrumpDeclaration>,
     pub current_trick: Vec<WsUpgradePlayedCards>,
+    pub play_history: Vec<WsUpgradePlayedCards>,
     pub trick_index: i32,
     pub player_scores: HashMap<usize, i32>,
     pub collected_scores: HashMap<usize, i32>,
@@ -202,6 +203,7 @@ impl UpgradeGameState {
             total_deal_count: 0,
             declaration: None,
             current_trick: Vec::new(),
+            play_history: Vec::new(),
             trick_index: 0,
             player_scores: HashMap::new(),
             collected_scores: HashMap::new(),
@@ -260,6 +262,7 @@ impl UpgradeGameState {
         self.total_deal_count = self.deal_queue.len();
         self.declaration = None;
         self.current_trick.clear();
+        self.play_history.clear();
         self.trick_index = 0;
         self.collected_scores.clear();
         self.last_trick_winner = None;
@@ -662,7 +665,8 @@ impl UpgradeGameState {
             });
             let _ = failed;
         }
-        self.current_trick.push(played);
+        self.current_trick.push(played.clone());
+        self.play_history.push(played);
         let mut winner = None;
         if self.current_trick.len() == PLAYER_COUNT {
             winner = self.winner_for_trick();

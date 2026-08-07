@@ -249,6 +249,8 @@ fn four_single_plays_finish_the_last_trick_and_settle() {
     }
 
     assert_eq!(state.phase, UpgradePhase::Settlement);
+    assert_eq!(state.play_history.len(), 4);
+    assert_eq!(state.play_history[0].cards, vec![4]);
     assert_eq!(state.last_trick_winner, Some(1));
     assert_eq!(state.collected_scores.get(&1), Some(&5));
     let settlement = state.settlement_event();
