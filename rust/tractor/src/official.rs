@@ -75,13 +75,10 @@ pub fn create_match(room_service: &mut RoomService, room_key: &str) {
             }
         }
 
-        let Some(own_user_id) = user_ids_by_position
+        let own_user_id = user_ids_by_position
             .get(&0)
             .copied()
-            .or(user_ids.first().copied())
-        else {
-            return None;
-        };
+            .or(user_ids.first().copied())?;
 
         match data::service::game_match::create(data::input::GameMatchCreateInput {
             own_user_id,
