@@ -746,6 +746,7 @@ impl RoomService {
                         share_type_public::WsJoinResponse {
                             self_position: position as i32,
                             supports_ai_players: self.ai_players_enabled,
+                            paused: entry.state.is_paused(),
                             current_configs: entry.configs.clone(),
                             existing_members,
                             param_descriptions: Some(entry.param_descriptions.clone()),
@@ -874,6 +875,7 @@ impl RoomService {
                 share_type_public::WsJoinResponse {
                     self_position: position as i32,
                     supports_ai_players: self.ai_players_enabled,
+                    paused: entry.state.is_paused(),
                     current_configs: entry.configs.clone(),
                     existing_members,
                     param_descriptions: Some(entry.param_descriptions.clone()),
@@ -998,6 +1000,7 @@ impl RoomService {
                 share_type_public::WsJoinResponse {
                     self_position: position as i32,
                     supports_ai_players: self.ai_players_enabled,
+                    paused: entry.state.is_paused(),
                     current_configs: entry.configs.clone(),
                     existing_members,
                     param_descriptions: Some(entry.param_descriptions.clone()),
@@ -1054,6 +1057,13 @@ impl RoomService {
         if !self.require_room_membership(session_id, Routes::PAUSE as i32, &mut dispatch) {
             return dispatch;
         }
+        if self.session_position(session_id) != Some(0) {
+            return self.error_response(
+                session_id,
+                Routes::PAUSE as i32,
+                WsResponseCode::NO_PERMISSION,
+            );
+        }
         let Some(room_key) = self.room_key_of(session_id) else {
             return self.error_response(
                 session_id,
@@ -1105,6 +1115,13 @@ impl RoomService {
         let mut dispatch = Dispatch::default();
         if !self.require_room_membership(session_id, Routes::RESUME as i32, &mut dispatch) {
             return dispatch;
+        }
+        if self.session_position(session_id) != Some(0) {
+            return self.error_response(
+                session_id,
+                Routes::RESUME as i32,
+                WsResponseCode::NO_PERMISSION,
+            );
         }
         let Some(room_key) = self.room_key_of(session_id) else {
             return self.error_response(

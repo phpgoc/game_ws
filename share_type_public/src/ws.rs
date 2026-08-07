@@ -51,6 +51,9 @@ pub struct WsJoinResponse {
     /// 当前 WS Server 是否支持服务端 AI 玩家。
     #[serde(default)]
     pub supports_ai_players: bool,
+    /// 房间游戏循环当前是否暂停。
+    #[serde(default)]
+    pub paused: bool,
     pub current_configs: HashMap<String, i32>,
     pub existing_members: Vec<WsMemberInfo>,
     pub param_descriptions: Option<HashMap<String, GameParam>>,

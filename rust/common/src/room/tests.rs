@@ -1607,6 +1607,31 @@ fn pause_resume_must_follow_state() {
         settings,
     );
 
+    let non_owner_pause = service
+        .handle_common_request(
+            2,
+            &WsRequest {
+                route: Routes::PAUSE as i32,
+                data: serde_json::json!({}),
+            },
+            GameId::LANDLORD,
+            settings,
+        )
+        .expect("non-owner pause common");
+    assert!(
+        non_owner_pause
+            .messages
+            .iter()
+            .any(|item| match &item.payload {
+                OutboundPayload::Response(RequestResponse::WithoutData(resp)) => {
+                    item.recipient == 2
+                        && resp.route == Routes::PAUSE as i32
+                        && resp.code as i32 == WsResponseCode::NO_PERMISSION as i32
+                }
+                _ => false,
+            })
+    );
+
     let resume_before_pause = service
         .handle_common_request(
             1,
@@ -1638,6 +1663,59 @@ fn pause_resume_must_follow_state() {
         GameId::LANDLORD,
         settings,
     );
+    let non_owner_resume = service
+        .handle_common_request(
+            2,
+            &WsRequest {
+                route: Routes::RESUME as i32,
+                data: serde_json::json!({}),
+            },
+            GameId::LANDLORD,
+            settings,
+        )
+        .expect("non-owner resume common");
+    assert!(
+        non_owner_resume
+            .messages
+            .iter()
+            .any(|item| match &item.payload {
+                OutboundPayload::Response(RequestResponse::WithoutData(resp)) => {
+                    item.recipient == 2
+                        && resp.route == Routes::RESUME as i32
+                        && resp.code as i32 == WsResponseCode::NO_PERMISSION as i32
+                }
+                _ => false,
+            })
+    );
+
+    service.connect(3);
+    let joined_while_paused = service
+        .handle_common_request(
+            3,
+            &WsRequest {
+                route: Routes::JOIN as i32,
+                data: serde_json::json!({"name":"u3","password":"p1","game_id":GameId::LANDLORD as i32}),
+            },
+            GameId::LANDLORD,
+            settings,
+        )
+        .expect("join paused room");
+    assert!(
+        joined_while_paused
+            .messages
+            .iter()
+            .any(|item| match &item.payload {
+                OutboundPayload::Response(RequestResponse::WithData(resp)) => {
+                    item.recipient == 3
+                        && resp.route == Routes::JOIN as i32
+                        && resp.code as i32 == WsResponseCode::JOINED as i32
+                        && resp.data.get("paused").and_then(serde_json::Value::as_bool)
+                            == Some(true)
+                }
+                _ => false,
+            })
+    );
+
     let pause_again = service
         .handle_common_request(
             1,
