@@ -3,6 +3,7 @@ use std::{sync::Arc, time::Duration};
 use share_type_public::{
     CommonEvent, UpgradePhase, UpgradeWsCode, WsCode, WsUpgradeBottomBuriedEvent,
     WsUpgradeBottomCardsEvent, WsUpgradeDealEvent, WsUpgradeHandEvent, WsUpgradePlayEvent,
+    WsPositionEvent,
 };
 use tokio::sync::Mutex;
 use ws_common::{
@@ -295,6 +296,52 @@ fn deal_step_delay(
     Duration::from_millis((total / total_deal_count.max(1) as u64).max(1))
 }
 
+fn timed_out_human_position(
+    state: &crate::state::UpgradeGameState,
+    phase: UpgradePhase,
+) -> Option<usize> {
+    let position = match phase {
+        UpgradePhase::Bury => state.dealer_position,
+        UpgradePhase::Play => state.current_position,
+        _ => return None,
+    };
+    (!is_ai_controlled_position(state, position)
+        && state.base.lock().unwrap().turn_countdown == 0)
+        .then_some(position)
+}
+
+async fn timed_out_member_position(
+    room_key: &str,
+    state: &UpgradeStateHandle,
+    room_service: &Arc<Mutex<RoomService>>,
+    phase: UpgradePhase,
+) -> Option<usize> {
+    let position = {
+        let guard = state.lock().unwrap();
+        timed_out_human_position(&guard, phase)
+    }?;
+    room_service
+        .lock()
+        .await
+        .room_position_has_active_membership(room_key, position)
+        .then_some(position)
+}
+
+fn mark_timed_out_human(
+    state: &crate::state::UpgradeGameState,
+    position: usize,
+    member_timeout_position: Option<usize>,
+) -> Option<WsPositionEvent> {
+    let mut base = state.base.lock().unwrap();
+    let away_changed = base.mark_away(position);
+    let takeover_changed = member_timeout_position == Some(position)
+        && base.mark_ai_takeover_position(position);
+    (away_changed || takeover_changed).then(|| WsPositionEvent {
+        position: position as i32,
+        is_ai_takeover: base.is_ai_takeover_position(position),
+    })
+}
+
 async fn timeout_bury_dispatch(
     room_key: &str,
     state: &UpgradeStateHandle,
@@ -302,6 +349,14 @@ async fn timeout_bury_dispatch(
     play_time: u32,
 ) -> Dispatch {
     let mut dispatch = Dispatch::default();
+    let member_timeout_position = timed_out_member_position(
+        room_key,
+        state,
+        room_service,
+        UpgradePhase::Bury,
+    )
+    .await;
+    let mut away_event = None;
     let result = {
         let mut guard = state.lock().unwrap();
         let position = guard.dealer_position;
@@ -310,23 +365,31 @@ async fn timeout_bury_dispatch(
             let countdown = guard.base.lock().unwrap().turn_countdown.saturating_sub(1);
             guard.set_turn_countdown(countdown);
             None
-        } else if guard.timeout_bury().unwrap_or(false) {
-            guard.set_turn_countdown(play_time);
-            Some((
-                guard.dealer_position,
-                guard.player_name(guard.dealer_position),
-                guard.rules.bottom_card_count,
-                guard.private_hand(guard.dealer_position),
-                guard.snapshot(),
-            ))
         } else {
-            None
+            if !controlled {
+                away_event = mark_timed_out_human(&guard, position, member_timeout_position);
+            }
+            if guard.timeout_bury().unwrap_or(false) {
+                guard.set_turn_countdown(play_time);
+                Some((
+                    guard.dealer_position,
+                    guard.player_name(guard.dealer_position),
+                    guard.rules.bottom_card_count,
+                    guard.private_hand(guard.dealer_position),
+                    guard.snapshot(),
+                ))
+            } else {
+                None
+            }
         }
     };
+    let room = room_service.lock().await;
+    if let Some(event) = away_event {
+        room.broadcast(room_key, WsCode::AWAY as i32, event, &mut dispatch);
+    }
     let Some((position, name, bottom_card_count, hand, snapshot)) = result else {
         return dispatch;
     };
-    let room = room_service.lock().await;
     room.broadcast(
         room_key,
         UpgradeWsCode::BOTTOM_BURIED as i32,
@@ -364,6 +427,14 @@ async fn timeout_play_dispatch(
     play_time: u32,
 ) -> Dispatch {
     let mut dispatch = Dispatch::default();
+    let member_timeout_position = timed_out_member_position(
+        room_key,
+        state,
+        room_service,
+        UpgradePhase::Play,
+    )
+    .await;
+    let mut away_event = None;
     let result = {
         let mut guard = state.lock().unwrap();
         let position = guard.current_position;
@@ -373,6 +444,9 @@ async fn timeout_play_dispatch(
             guard.set_turn_countdown(countdown);
             None
         } else {
+            if !controlled {
+                away_event = mark_timed_out_human(&guard, position, member_timeout_position);
+            }
             match guard.timeout_play() {
                 Ok(Some(resolution)) => {
                     if !resolution.finished {
@@ -392,12 +466,15 @@ async fn timeout_play_dispatch(
             }
         }
     };
+    let room = room_service.lock().await;
+    if let Some(event) = away_event {
+        room.broadcast(room_key, WsCode::AWAY as i32, event, &mut dispatch);
+    }
     let Some((position, name, resolution, next_position, trick_index, remaining, snapshot)) =
         result
     else {
         return dispatch;
     };
-    let room = room_service.lock().await;
     room.broadcast(
         room_key,
         WsCode::PLAY as i32,

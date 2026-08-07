@@ -244,6 +244,63 @@ async fn ai_takeover_play_ignores_the_human_countdown() {
 }
 
 #[tokio::test]
+async fn member_human_play_timeout_marks_away_and_broadcasts_ai_takeover() {
+    let (room, common) = room_with_players();
+    common.lock().unwrap().set_member_position(0, true);
+    let room = Arc::new(AsyncMutex::new(room));
+    let state = state_handle(common, UpgradePhase::Play);
+    {
+        let mut state = state.lock().unwrap();
+        state.bottom_cards.clear();
+        state.hands = HashMap::from([(0, vec![1]), (1, vec![14]), (2, vec![27]), (3, vec![40])]);
+        state.base.lock().unwrap().turn_countdown = 0;
+    }
+
+    let dispatch = timeout_play_dispatch(ROOM_KEY, &state, &room, 30).await;
+
+    let state = state.lock().unwrap();
+    let base = state.base.lock().unwrap();
+    assert!(base.is_away(0));
+    assert!(base.is_ai_takeover_position(0));
+    drop(base);
+    drop(state);
+    let away = event_payloads(&dispatch, WsCode::AWAY as i32);
+    assert_eq!(away.len(), 4);
+    assert_eq!(away[0]["position"], 0);
+    assert_eq!(away[0]["is_ai_takeover"], true);
+}
+
+#[tokio::test]
+async fn member_human_bury_timeout_marks_away_and_broadcasts_ai_takeover() {
+    let (room, common) = room_with_players();
+    common.lock().unwrap().set_member_position(0, true);
+    let room = Arc::new(AsyncMutex::new(room));
+    let state = state_handle(common, UpgradePhase::Bury);
+    {
+        let mut state = state.lock().unwrap();
+        state.rules.bottom_card_count = 2;
+        state.round_index = 1;
+        state.rules.trump_suit = None;
+        state.bottom_cards = vec![53, 54];
+        state.hands.insert(0, vec![1, 2, 3]);
+        state.base.lock().unwrap().turn_countdown = 0;
+    }
+
+    let dispatch = timeout_bury_dispatch(ROOM_KEY, &state, &room, 30).await;
+
+    let state = state.lock().unwrap();
+    let base = state.base.lock().unwrap();
+    assert!(base.is_away(0));
+    assert!(base.is_ai_takeover_position(0));
+    drop(base);
+    drop(state);
+    let away = event_payloads(&dispatch, WsCode::AWAY as i32);
+    assert_eq!(away.len(), 4);
+    assert_eq!(away[0]["position"], 0);
+    assert_eq!(away[0]["is_ai_takeover"], true);
+}
+
+#[tokio::test]
 async fn delivery_disconnects_a_slow_client_when_its_queue_is_full() {
     let (sender, mut receiver, mut disconnected) = session_sender_channel(1);
     let senders: SessionSenders = Arc::new(AsyncMutex::new(HashMap::from([(1, sender)])));
