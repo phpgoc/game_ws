@@ -137,3 +137,25 @@ fn successful_throw_uses_the_largest_component_for_bottom_score() {
     // ten-point card: 20 trick points + 10 × the strongest triple multiplier.
     assert_eq!(state.collected_scores.get(&0), Some(&80));
 }
+
+#[test]
+fn void_opponent_trumps_do_not_make_a_plain_suit_throw_fail_on_lead() {
+    let state_hands = HashMap::from([
+        (0, vec![13, 113, 11, 111]),
+        // This seat is void in spades and can ruff only after the throw has
+        // been accepted. Its trump pair must not challenge the lead itself.
+        (1, vec![1, 101, 15, 16]),
+        (2, vec![28, 29, 30, 31]),
+        (3, vec![41, 42, 43, 44]),
+    ]);
+    let mut state = state_with_hands(rules(2), Vec::new(), state_hands);
+    let attempted = vec![13, 113, 11, 111];
+
+    let played = state
+        .play_cards(0, "p0".to_owned(), attempted.clone())
+        .expect("a void opponent's trumps must not reject a plain-suit throw");
+
+    assert_eq!(played.cards, attempted);
+    assert!(state.failed_throws.is_empty());
+    assert_eq!(state.hands.get(&0), Some(&Vec::new()));
+}

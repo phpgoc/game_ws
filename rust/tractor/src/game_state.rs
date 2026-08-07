@@ -777,6 +777,15 @@ impl TractorGameState {
                     // seats makes the proposed throw fail.
                     .filter(|other| *other != position)
                     .flat_map(|other| self.legal_follows(other, &lead))
+                    // A throw is challenged only by a higher component in the
+                    // same lead group. A player who is void may ruff the
+                    // accepted trick, but that trump play does not make the
+                    // original plain-suit throw fail at declaration time.
+                    .filter(|reply| {
+                        reply.iter().all(|card| {
+                            combo::card_in_group(*card, lead.suit, &self.rules)
+                        })
+                    })
                     .filter_map(|reply| combo::combo_win_value(&reply, &lead, &self.rules))
                     .any(|reply_value| reply_value > value)
             })
