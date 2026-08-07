@@ -4,7 +4,7 @@ use std::{
 };
 
 use rand::{SeedableRng, rngs::StdRng, seq::IndexedRandom};
-use share_type_public::{TractorPhase, TractorRank};
+use share_type_public::{TractorPhase, TractorRank, TractorSuit};
 use tractor::{
     combo,
     game_state::{TractorGameState, TractorRules},
@@ -62,44 +62,35 @@ fn assert_card_conservation(state: &TractorGameState, expected: usize) {
     );
 }
 
-fn simulate_random_round(deck_count: usize, seed: u64) {
-    let common = Arc::new(Mutex::new(CommonGameState::new()));
-    for position in 0..4 {
-        common.lock().unwrap().add_player(
-            position,
-            position as u64 + 1,
-            &format!("random-{seed}-{position}"),
-        );
-    }
-    let rules = TractorRules {
-        attacking_win_score: 80,
-        score_per_level: 40,
-        shutout_bonus_levels: 1,
-        bottom_card_count: if deck_count == 3 { 10 } else { 8 },
-        deck_count,
-        final_target_rank: TractorRank::A,
-        target_rank: TractorRank::THREE,
-        trump_suit: None,
-    };
-    let mut state = TractorGameState::from_common(common);
-    state.deal_new_round(rules).expect("random tractor deal");
+fn finish_deal_and_bury(state: &mut TractorGameState, suit: TractorSuit) {
     while state.phase == TractorPhase::Deal {
         state
             .deal_next_card()
             .expect("random tractor incremental deal");
     }
     assert_eq!(state.phase, TractorPhase::Bury);
-    assert!(state.declaration.is_some());
+    if state.round_index == 0 {
+        assert!(state.declaration.is_some());
+        assert!(state.rules.trump_suit.is_some());
+    } else {
+        assert!(state.declaration.is_none());
+        assert!(state.rules.trump_suit.is_none());
+        state
+            .select_dealer_trump(state.dealer_position, suit)
+            .expect("random later-round tractor trump selection");
+    }
     let dealer_position = state.dealer_position;
     let bottom_cards = state.bottom_cards.clone();
     state
         .bury_bottom(dealer_position, bottom_cards)
         .expect("random tractor bury");
     assert_eq!(state.phase, TractorPhase::Play);
+}
 
+fn play_random_round(state: &mut TractorGameState, rng: &mut StdRng, seed: u64) {
+    let deck_count = state.rules.deck_count;
     let expected_card_count = deck_count * 54;
-    assert_card_conservation(&state, expected_card_count);
-    let mut rng = StdRng::seed_from_u64(seed);
+    assert_card_conservation(state, expected_card_count);
     let mut action_count = 0_usize;
     while state.phase == TractorPhase::Play {
         action_count += 1;
@@ -116,7 +107,7 @@ fn simulate_random_round(deck_count: usize, seed: u64) {
         let attempted = if state.current_trick.is_empty() {
             let leads = combo::enumerate_leads(&hand, &state.rules);
             leads
-                .choose(&mut rng)
+                .choose(rng)
                 .cloned()
                 .expect("random tractor legal lead")
         } else {
@@ -124,7 +115,7 @@ fn simulate_random_round(deck_count: usize, seed: u64) {
                 .expect("random tractor established lead");
             let follows = combo::enumerate_follows(&hand, &lead, &state.rules);
             follows
-                .choose(&mut rng)
+                .choose(rng)
                 .cloned()
                 .expect("random tractor legal follow")
         };
@@ -135,7 +126,7 @@ fn simulate_random_round(deck_count: usize, seed: u64) {
         assert!(!played.cards.is_empty());
         let remaining_after = state.hands.values().map(Vec::len).sum::<usize>();
         assert_eq!(remaining_before - remaining_after, played.cards.len());
-        assert_card_conservation(&state, expected_card_count);
+        assert_card_conservation(state, expected_card_count);
         if state.current_trick.is_empty() && state.phase == TractorPhase::Play {
             let hand_sizes = state.hands.values().map(Vec::len).collect::<HashSet<_>>();
             assert_eq!(
@@ -148,9 +139,82 @@ fn simulate_random_round(deck_count: usize, seed: u64) {
 
     assert_eq!(state.phase, TractorPhase::Settlement);
     assert!(state.hands.values().all(Vec::is_empty));
-    assert_card_conservation(&state, expected_card_count);
-    let settlement = state.next_target_rank();
-    assert!(settlement.is_some());
+    assert_card_conservation(state, expected_card_count);
+    assert_eq!(state.player_scores_snapshot().len(), 4);
+}
+
+fn common_state(label: &str) -> Arc<Mutex<CommonGameState>> {
+    let common = Arc::new(Mutex::new(CommonGameState::new()));
+    for position in 0..4 {
+        common.lock().unwrap().add_player(
+            position,
+            position as u64 + 1,
+            &format!("{label}-{position}"),
+        );
+    }
+    common
+}
+
+fn simulate_random_round(deck_count: usize, seed: u64) {
+    let rules = TractorRules {
+        attacking_win_score: 80,
+        score_per_level: 40,
+        shutout_bonus_levels: 1,
+        bottom_card_count: if deck_count == 3 { 10 } else { 8 },
+        deck_count,
+        final_target_rank: TractorRank::A,
+        target_rank: TractorRank::THREE,
+        trump_suit: None,
+    };
+    let mut state =
+        TractorGameState::from_common(common_state(&format!("random-{deck_count}-{seed}")));
+    state.deal_new_round(rules).expect("random tractor deal");
+    finish_deal_and_bury(&mut state, TractorSuit::SPADE);
+    let mut rng = StdRng::seed_from_u64(seed ^ ((deck_count as u64) << 32));
+    play_random_round(&mut state, &mut rng, seed);
+    assert!(state.next_target_rank().is_some());
+}
+
+fn simulate_random_match(deck_count: usize, seed: u64) {
+    let rules = TractorRules {
+        attacking_win_score: 80,
+        score_per_level: 10_000,
+        shutout_bonus_levels: 0,
+        bottom_card_count: if deck_count == 3 { 10 } else { 8 },
+        deck_count,
+        final_target_rank: TractorRank::FIVE,
+        target_rank: TractorRank::THREE,
+        trump_suit: None,
+    };
+    let mut state =
+        TractorGameState::from_common(common_state(&format!("random-match-{deck_count}-{seed}")));
+    state
+        .deal_new_round(rules)
+        .expect("random tractor match deal");
+    let mut rng = StdRng::seed_from_u64(seed ^ ((deck_count as u64) << 40));
+    let mut rounds = 0;
+    loop {
+        let suit = match (rounds + seed as usize) % 4 {
+            0 => TractorSuit::SPADE,
+            1 => TractorSuit::HEART,
+            2 => TractorSuit::CLUB,
+            _ => TractorSuit::DIAMOND,
+        };
+        finish_deal_and_bury(&mut state, suit);
+        play_random_round(&mut state, &mut rng, seed ^ rounds as u64);
+        rounds += 1;
+        if !state
+            .advance_after_settlement()
+            .expect("random tractor match settlement")
+        {
+            break;
+        }
+        assert_eq!(state.phase, TractorPhase::Deal);
+        assert!(state.rules.trump_suit.is_none());
+        assert!(rounds < 4, "random tractor match must converge");
+    }
+    assert_eq!(rounds, 3);
+    assert!(state.match_finished());
     assert_eq!(state.player_scores_snapshot().len(), 4);
 }
 
@@ -206,3 +270,17 @@ randomized_cases!(
     (three_deck_seeds_240_247, 240),
     (three_deck_seeds_248_255, 248),
 );
+
+#[test]
+fn two_deck_complete_matches() {
+    for seed in 1_000..1_008 {
+        simulate_random_match(2, seed);
+    }
+}
+
+#[test]
+fn three_deck_complete_matches() {
+    for seed in 1_008..1_016 {
+        simulate_random_match(3, seed);
+    }
+}
