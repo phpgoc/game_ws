@@ -17,6 +17,23 @@ use crate::{
 
 const SETTLEMENT_DELAY: Duration = Duration::from_secs(3);
 
+fn stop_requested(state: &UpgradeStateHandle) -> bool {
+    state.lock().unwrap().stop_requested()
+}
+
+async fn sleep_or_stop(state: &UpgradeStateHandle, duration: Duration) -> bool {
+    let mut remaining = duration.as_millis();
+    while remaining > 0 {
+        if stop_requested(state) {
+            return true;
+        }
+        let step = remaining.min(100) as u64;
+        tokio::time::sleep(Duration::from_millis(step)).await;
+        remaining -= u128::from(step);
+    }
+    stop_requested(state)
+}
+
 pub fn start_upgrade_game_loop(
     room_key: String,
     state: UpgradeStateHandle,
@@ -49,7 +66,9 @@ pub fn start_upgrade_game_loop(
                         build_deal_dispatch(&room_key, &state, &room, &configs)
                     };
                     deliver(dispatch, &senders).await;
-                    tokio::time::sleep(delay).await;
+                    if sleep_or_stop(&state, delay).await {
+                        break;
+                    }
                     continue;
                 }
                 UpgradePhase::Bury => {
@@ -63,7 +82,9 @@ pub fn start_upgrade_game_loop(
                     deliver(dispatch, &senders).await;
                 }
                 UpgradePhase::Settlement => {
-                    tokio::time::sleep(SETTLEMENT_DELAY).await;
+                    if sleep_or_stop(&state, SETTLEMENT_DELAY).await {
+                        break;
+                    }
                     let mut dispatch = Dispatch::default();
                     let advanced = {
                         let mut guard = state.lock().unwrap();
@@ -95,7 +116,9 @@ pub fn start_upgrade_game_loop(
                 }
                 UpgradePhase::Start => break,
             }
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            if sleep_or_stop(&state, Duration::from_secs(1)).await {
+                break;
+            }
         }
     });
 }
