@@ -2,6 +2,14 @@ use share_type_public::UpgradeSuit;
 
 use crate::state::UpgradeGameState;
 
+pub(crate) fn declaration_cards(
+    _state: &UpgradeGameState,
+    _position: usize,
+    _current_strength: usize,
+) -> Option<Vec<i32>> {
+    None
+}
+
 pub(crate) fn choose_bury(state: &UpgradeGameState) -> Option<Vec<i32>> {
     state.choose_fallback_bury()
 }

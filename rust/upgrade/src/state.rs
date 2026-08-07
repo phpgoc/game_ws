@@ -294,10 +294,21 @@ impl UpgradeGameState {
         });
         self.dealt_count += 1;
         let finished = self.deal_queue.is_empty();
-        let mut fallback_declaration = None;
+        let controlled = {
+            let base = self.base.lock().unwrap();
+            base.is_ai_position(position) || base.is_ai_takeover_position(position)
+        };
+        let current_strength = self
+            .declaration
+            .as_ref()
+            .map_or(0, |declaration| declaration.strength.max(0) as usize);
+        let mut automatic_declaration = (self.round_index == 0 && controlled)
+            .then(|| crate::ai::declaration_cards(self, position, current_strength))
+            .flatten()
+            .and_then(|cards| self.declare_trump(position, cards).ok());
         if finished {
             if self.round_index == 0 && self.declaration.is_none() {
-                fallback_declaration = (0..PLAYER_COUNT).find_map(|candidate_position| {
+                automatic_declaration = (0..PLAYER_COUNT).find_map(|candidate_position| {
                     let card =
                         self.hands
                             .get(&candidate_position)?
@@ -312,7 +323,7 @@ impl UpgradeGameState {
                 });
             }
             if self.round_index == 0 && self.declaration.is_none() {
-                fallback_declaration = self.declare_bottom_level_fallback();
+                automatic_declaration = self.declare_bottom_level_fallback();
             }
             if let Some(declaration) = &self.declaration {
                 self.dealer_position = declaration.position as usize;
@@ -328,7 +339,7 @@ impl UpgradeGameState {
             self.phase = UpgradePhase::Bury;
             self.base.lock().unwrap().action_received = false;
         }
-        Some((position, card, finished, fallback_declaration))
+        Some((position, card, finished, automatic_declaration))
     }
 
     fn declare_bottom_level_fallback(&mut self) -> Option<WsUpgradeTrumpDeclaration> {

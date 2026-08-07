@@ -7,7 +7,7 @@ use share_type_public::{UpgradePhase, UpgradeSuit, WsUpgradePlayedCards};
 use upgrade_common::{Rank, Suit};
 use ws_common::CommonGameState;
 
-use super::{best_trump_suit, choose_bury, decide};
+use super::{best_trump_suit, choose_bury, decide, declaration_cards};
 use crate::{
     UpgradeDeckCount,
     state::{UpgradeGameState, UpgradeRules},
@@ -34,6 +34,7 @@ fn fallback_keeps_the_original_deterministic_actions() {
     let mut state = state();
     state.phase = UpgradePhase::Bury;
     state.hands = HashMap::from([(0, vec![4, 5, 6])]);
+    assert!(declaration_cards(&state, 0, 0).is_none());
     assert_eq!(best_trump_suit(&state, 0), UpgradeSuit::SPADE);
     assert_eq!(choose_bury(&state), Some(vec![4, 5]));
 
