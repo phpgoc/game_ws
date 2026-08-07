@@ -79,6 +79,10 @@ fn lead_and_follow_enumeration_keep_throw_candidates_bounded_and_legal() {
             pairs: 0,
         },
         suit: Some(0),
+        pair_count: 0,
+        tractor_pair_count: 0,
+        triple_count: 0,
+        titanic_triple_count: 0,
     };
     assert!(!enumerate_follows(&large_follow_hand, &large_lead, &rules).is_empty());
 

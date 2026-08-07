@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use share_type_public::{TractorPhase, TractorRank};
+use share_type_public::{TractorPhase, TractorRank, TractorSuit, WsTractorPlayedCards};
 use tractor::{
     combo,
     game_state::{TractorGameState, TractorRules},
@@ -214,12 +214,7 @@ fn follower_with_a_tractor_cannot_replace_it_with_non_consecutive_pairs() {
 fn follower_with_a_titanic_cannot_replace_it_with_non_consecutive_triples() {
     let state_hands = HashMap::from([
         (0, vec![2, 102, 202, 3, 103, 203]),
-        (
-            1,
-            vec![
-                4, 104, 204, 5, 105, 205, 7, 107, 207, 9, 109, 209,
-            ],
-        ),
+        (1, vec![4, 104, 204, 5, 105, 205, 7, 107, 207, 9, 109, 209]),
         (2, vec![15, 115, 215, 16, 116, 216]),
         (3, vec![28, 128, 228, 29, 129, 229]),
     ]);
@@ -242,8 +237,7 @@ fn follower_with_a_titanic_cannot_replace_it_with_non_consecutive_triples() {
 #[test]
 fn titanic_follow_uses_the_official_structure_priority_order() {
     let rules = rules(3);
-    let lead = combo::classify(&[2, 102, 202, 3, 103, 203], &rules)
-        .expect("six-card Titanic lead");
+    let lead = combo::classify(&[2, 102, 202, 3, 103, 203], &rules).expect("six-card Titanic lead");
     let cases = [
         // A tractor plus any two cards outranks two non-consecutive triples.
         (
@@ -280,4 +274,57 @@ fn titanic_follow_uses_the_official_structure_priority_order() {
             "automatic follow violated the Titanic priority: {forced:?}"
         );
     }
+}
+
+#[test]
+fn ruffing_a_throw_uses_the_leads_required_structure_instead_of_the_highest_card() {
+    let mut two_deck_rules = rules(2);
+    two_deck_rules.trump_suit = Some(TractorSuit::HEART);
+    let played = |position, cards| WsTractorPlayedCards {
+        position,
+        name: format!("p{position}"),
+        cards,
+    };
+
+    // The lead contains one pair. Both ruffs contain a pair, so the higher
+    // trump pair wins even though its unrelated singleton is lower.
+    let pair_throw = [
+        played(0, vec![4, 104, 5]),
+        played(1, vec![17, 117, 20]),
+        played(2, vec![18, 118, 16]),
+    ];
+    assert_eq!(combo::trick_winner(&pair_throw, &two_deck_rules), Some(2));
+
+    // When the lead contains only singles, a pair in the ruff is broken into
+    // singles. It may ruff, but a later play whose highest card is lower does
+    // not cover it merely because that play also happens to contain a pair.
+    let single_throw = [
+        played(0, vec![4, 5, 6]),
+        played(1, vec![17, 117, 20]),
+        played(2, vec![18, 118, 16]),
+    ];
+    assert_eq!(combo::trick_winner(&single_throw, &two_deck_rules), Some(1));
+
+    // The lead itself must be ranked by that same required structure. A high
+    // unrelated singleton cannot protect its lower pair from a higher pair.
+    let plain_pair_throw = [played(0, vec![3, 103, 13]), played(1, vec![4, 104, 2])];
+    assert_eq!(
+        combo::trick_winner(&plain_pair_throw, &two_deck_rules),
+        Some(1)
+    );
+
+    let trump_pair_throw = [played(0, vec![16, 116, 26]), played(1, vec![17, 117, 15])];
+    assert_eq!(
+        combo::trick_winner(&trump_pair_throw, &two_deck_rules),
+        Some(1)
+    );
+
+    // In a three-deck throw, an independent triple outranks a pair. Compare
+    // the triples even when the lead happens to contain a much higher pair.
+    let rules = rules(3);
+    let triple_throw = [
+        played(0, vec![2, 102, 202, 12, 112, 13]),
+        played(1, vec![3, 103, 203, 11, 111, 4]),
+    ];
+    assert_eq!(combo::trick_winner(&triple_throw, &rules), Some(1));
 }

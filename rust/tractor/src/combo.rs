@@ -25,6 +25,13 @@ pub struct Combo {
     pub kind: ComboKind,
     /// `None` when the combo is trump, otherwise the plain suit index.
     pub suit: Option<i32>,
+    /// Structural resources carried by this play. Throw competition uses the
+    /// lead's requirements, so stronger structure may be broken down but
+    /// weaker structure cannot ruff it.
+    pub pair_count: usize,
+    pub tractor_pair_count: usize,
+    pub triple_count: usize,
+    pub titanic_triple_count: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -98,14 +105,26 @@ pub fn classify(cards: &[i32], rules: &TractorRules) -> Option<Combo> {
         return Some(Combo {
             kind: ComboKind::Single,
             suit,
+            pair_count: 0,
+            tractor_pair_count: 0,
+            triple_count: 0,
+            titanic_triple_count: 0,
         });
     }
 
     let counts = identity_counts(cards);
+    let pair_count = counts.values().map(|count| count / 2).sum();
+    let triple_count = counts.values().map(|count| count / 3).sum();
+    let tractor_pair_count = multiplicity_run_unit_count(cards, 2, rules);
+    let titanic_triple_count = multiplicity_run_unit_count(cards, 3, rules);
     if cards.len() == 2 && counts.len() == 1 {
         return Some(Combo {
             kind: ComboKind::Pair,
             suit,
+            pair_count,
+            tractor_pair_count,
+            triple_count,
+            titanic_triple_count,
         });
     }
 
@@ -120,6 +139,10 @@ pub fn classify(cards: &[i32], rules: &TractorRules) -> Option<Combo> {
             return Some(Combo {
                 kind: ComboKind::Tractor(positions.len()),
                 suit,
+                pair_count,
+                tractor_pair_count,
+                triple_count,
+                titanic_triple_count,
             });
         }
     }
@@ -138,6 +161,10 @@ pub fn classify(cards: &[i32], rules: &TractorRules) -> Option<Combo> {
             return Some(Combo {
                 kind: ComboKind::Titanic(positions.len()),
                 suit,
+                pair_count,
+                tractor_pair_count,
+                triple_count,
+                titanic_triple_count,
             });
         }
     }
@@ -148,6 +175,10 @@ pub fn classify(cards: &[i32], rules: &TractorRules) -> Option<Combo> {
             pairs: counts.values().map(|count| count / 2).sum(),
         },
         suit,
+        pair_count,
+        tractor_pair_count,
+        triple_count,
+        titanic_triple_count,
     })
 }
 
@@ -208,7 +239,20 @@ fn for_each_combination(
 /// is either trump or the exact lead plain suit.
 pub fn combo_win_value(cards: &[i32], lead: &Combo, rules: &TractorRules) -> Option<i32> {
     let combo = classify(cards, rules)?;
-    if combo.kind != lead.kind {
+    let shape_matches = match lead.kind {
+        ComboKind::Throw {
+            cards: required_cards,
+            ..
+        } => {
+            combo.kind.card_count() == required_cards
+                && combo.pair_count >= lead.pair_count
+                && combo.tractor_pair_count >= lead.tractor_pair_count
+                && combo.triple_count >= lead.triple_count
+                && combo.titanic_triple_count >= lead.titanic_triple_count
+        }
+        _ => combo.kind == lead.kind,
+    };
+    if !shape_matches {
         return None;
     }
     match combo.suit {
@@ -217,10 +261,48 @@ pub fn combo_win_value(cards: &[i32], lead: &Combo, rules: &TractorRules) -> Opt
         Some(suit) if lead.suit == Some(suit) => {}
         Some(_) => return None,
     }
+    let counts = identity_counts(cards);
+    let structured_bases = if lead.titanic_triple_count > 0 {
+        multiplicity_run_bases(cards, 3, rules)
+    } else if lead.tractor_pair_count > 0 {
+        multiplicity_run_bases(cards, 2, rules)
+    } else if lead.triple_count > 0 {
+        counts
+            .iter()
+            .filter(|(_, count)| **count >= 3)
+            .map(|(base, _)| *base)
+            .collect()
+    } else if lead.pair_count > 0 {
+        counts
+            .iter()
+            .filter(|(_, count)| **count >= 2)
+            .map(|(base, _)| *base)
+            .collect()
+    } else {
+        Vec::new()
+    };
     cards
         .iter()
+        .filter(|card| structured_bases.is_empty() || structured_bases.contains(&base_card(**card)))
         .map(|card| tractor_card_value(*card, rules, lead.suit))
         .max()
+}
+
+fn multiplicity_run_bases(cards: &[i32], copies: usize, rules: &TractorRules) -> Vec<i32> {
+    let qualified = identity_counts(cards)
+        .into_iter()
+        .filter(|(_, count)| *count >= copies)
+        .map(|(base, _)| (pair_position(base, rules), base))
+        .collect::<Vec<_>>();
+    qualified
+        .iter()
+        .filter(|(position, _)| {
+            qualified.iter().any(|(other, _)| {
+                *other == position.saturating_sub(1) || *other == position.saturating_add(1)
+            })
+        })
+        .map(|(_, base)| *base)
+        .collect()
 }
 
 /// Number of full identity-pairs available in `cards` for the given group.
@@ -246,6 +328,34 @@ pub fn count_group_triples(cards: &[i32], lead_suit: Option<i32>, rules: &Tracto
         .values()
         .map(|count| count / 3)
         .sum()
+}
+
+fn multiplicity_run_unit_count(cards: &[i32], copies: usize, rules: &TractorRules) -> usize {
+    let mut positions = identity_counts(cards)
+        .into_iter()
+        .filter(|(_, count)| *count >= copies)
+        .map(|(base, _)| pair_position(base, rules))
+        .collect::<Vec<_>>();
+    positions.sort_unstable();
+    positions.dedup();
+    let mut total = 0;
+    let mut current = 0;
+    let mut previous = None;
+    for position in positions {
+        if previous.is_some_and(|value| position == value + 1) {
+            current += 1;
+        } else {
+            if current >= 2 {
+                total += current;
+            }
+            current = 1;
+        }
+        previous = Some(position);
+    }
+    if current >= 2 {
+        total += current;
+    }
+    total
 }
 
 fn longest_multiplicity_run(
@@ -281,11 +391,7 @@ fn longest_multiplicity_run(
     longest
 }
 
-fn titanic_follow_priority(
-    cards: &[i32],
-    lead_suit: Option<i32>,
-    rules: &TractorRules,
-) -> u8 {
+fn titanic_follow_priority(cards: &[i32], lead_suit: Option<i32>, rules: &TractorRules) -> u8 {
     let triple_run = longest_multiplicity_run(cards, lead_suit, 3, rules);
     if triple_run >= 2 {
         return 7;
@@ -1083,10 +1189,9 @@ pub fn bottom_multiplier(cards: &[i32], rules: &TractorRules) -> i32 {
         return 1;
     };
     match combo.kind {
-        ComboKind::Single
-        | ComboKind::Pair
-        | ComboKind::Tractor(_)
-        | ComboKind::Titanic(_) => shape_bottom_multiplier(cards.len()),
+        ComboKind::Single | ComboKind::Pair | ComboKind::Tractor(_) | ComboKind::Titanic(_) => {
+            shape_bottom_multiplier(cards.len())
+        }
         ComboKind::Throw { .. } => throw_components(cards, rules)
             .into_iter()
             .flatten()
@@ -1118,11 +1223,7 @@ pub fn trick_winner(trick: &[WsTractorPlayedCards], rules: &TractorRules) -> Opt
     let lead = trick.first()?;
     let lead_combo = classify(&lead.cards, rules)?;
     let mut best_position = usize::try_from(lead.position).ok()?;
-    let mut best_value = lead
-        .cards
-        .iter()
-        .map(|card| tractor_card_value(*card, rules, lead_combo.suit))
-        .max()?;
+    let mut best_value = combo_win_value(&lead.cards, &lead_combo, rules)?;
     for played in trick.iter().skip(1) {
         let Ok(position) = usize::try_from(played.position) else {
             continue;
