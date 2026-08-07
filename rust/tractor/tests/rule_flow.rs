@@ -185,3 +185,99 @@ fn standard_bottom_multiplier_uses_winning_component_card_count_up_to_sixty_four
         8
     );
 }
+
+#[test]
+fn follower_with_a_tractor_cannot_replace_it_with_non_consecutive_pairs() {
+    let state_hands = HashMap::from([
+        (0, vec![2, 102, 3, 103]),
+        (1, vec![4, 104, 5, 105, 7, 107, 9, 109]),
+        (2, vec![15, 115, 16, 116]),
+        (3, vec![28, 128, 29, 129]),
+    ]);
+    let mut state = state_with_hands(rules(2), Vec::new(), state_hands);
+
+    state
+        .play_cards(0, "p0".to_owned(), vec![2, 102, 3, 103])
+        .expect("tractor lead");
+    assert_eq!(
+        state
+            .play_cards(1, "p1".to_owned(), vec![7, 107, 9, 109])
+            .expect_err("a held tractor must be followed intact"),
+        "illegal follow"
+    );
+    state
+        .play_cards(1, "p1".to_owned(), vec![4, 104, 5, 105])
+        .expect("consecutive pair follow");
+}
+
+#[test]
+fn follower_with_a_titanic_cannot_replace_it_with_non_consecutive_triples() {
+    let state_hands = HashMap::from([
+        (0, vec![2, 102, 202, 3, 103, 203]),
+        (
+            1,
+            vec![
+                4, 104, 204, 5, 105, 205, 7, 107, 207, 9, 109, 209,
+            ],
+        ),
+        (2, vec![15, 115, 215, 16, 116, 216]),
+        (3, vec![28, 128, 228, 29, 129, 229]),
+    ]);
+    let mut state = state_with_hands(rules(3), Vec::new(), state_hands);
+
+    state
+        .play_cards(0, "p0".to_owned(), vec![2, 102, 202, 3, 103, 203])
+        .expect("Titanic lead");
+    assert_eq!(
+        state
+            .play_cards(1, "p1".to_owned(), vec![7, 107, 207, 9, 109, 209])
+            .expect_err("a held Titanic must be followed intact"),
+        "illegal follow"
+    );
+    state
+        .play_cards(1, "p1".to_owned(), vec![4, 104, 204, 5, 105, 205])
+        .expect("consecutive triple follow");
+}
+
+#[test]
+fn titanic_follow_uses_the_official_structure_priority_order() {
+    let rules = rules(3);
+    let lead = combo::classify(&[2, 102, 202, 3, 103, 203], &rules)
+        .expect("six-card Titanic lead");
+    let cases = [
+        // A tractor plus any two cards outranks two non-consecutive triples.
+        (
+            vec![4, 104, 5, 105, 7, 107, 207, 9, 109, 209],
+            Some(vec![7, 107, 207, 9, 109, 209]),
+        ),
+        // Two triples outrank one triple, a pair and a singleton.
+        (
+            vec![4, 104, 204, 7, 107, 207, 9, 10],
+            Some(vec![4, 104, 204, 7, 107, 9]),
+        ),
+        // One triple plus a separate pair outranks a triple plus singles.
+        (
+            vec![4, 104, 204, 7, 107, 9, 10],
+            Some(vec![4, 104, 204, 7, 9, 10]),
+        ),
+        (vec![4, 104, 204, 7, 9, 10], None),
+        (vec![4, 104, 7, 107, 9, 10], None),
+        (vec![4, 104, 7, 9, 10, 11], None),
+        (vec![4, 6, 8, 10, 12, 13], None),
+    ];
+
+    for (hand, lower_priority_play) in cases {
+        if let Some(cards) = lower_priority_play {
+            assert!(
+                !combo::follow_is_legal(&hand, &cards, &lead, &rules),
+                "lower-priority Titanic response was accepted: {cards:?}"
+            );
+        }
+        let forced = combo::forced_follow(&hand, &lead, &rules)
+            .expect("every six-card hand can follow a Titanic lead");
+        assert!(
+            combo::follow_is_legal(&hand, &forced, &lead, &rules),
+            "automatic follow violated the Titanic priority: {forced:?}"
+        );
+    }
+}

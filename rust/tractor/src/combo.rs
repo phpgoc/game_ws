@@ -248,6 +248,69 @@ pub fn count_group_triples(cards: &[i32], lead_suit: Option<i32>, rules: &Tracto
         .sum()
 }
 
+fn longest_multiplicity_run(
+    cards: &[i32],
+    lead_suit: Option<i32>,
+    copies: usize,
+    rules: &TractorRules,
+) -> usize {
+    let group = cards
+        .iter()
+        .copied()
+        .filter(|card| card_in_group(*card, lead_suit, rules))
+        .collect::<Vec<_>>();
+    let mut positions = identity_counts(&group)
+        .into_iter()
+        .filter(|(_, count)| *count >= copies)
+        .map(|(base, _)| pair_position(base, rules))
+        .collect::<Vec<_>>();
+    positions.sort_unstable();
+    positions.dedup();
+    let mut longest = 0;
+    let mut current = 0;
+    let mut previous = None;
+    for position in positions {
+        current = if previous.is_some_and(|value| position == value + 1) {
+            current + 1
+        } else {
+            1
+        };
+        longest = longest.max(current);
+        previous = Some(position);
+    }
+    longest
+}
+
+fn titanic_follow_priority(
+    cards: &[i32],
+    lead_suit: Option<i32>,
+    rules: &TractorRules,
+) -> u8 {
+    let triple_run = longest_multiplicity_run(cards, lead_suit, 3, rules);
+    if triple_run >= 2 {
+        return 7;
+    }
+    let pair_run = longest_multiplicity_run(cards, lead_suit, 2, rules);
+    if pair_run >= 2 {
+        return 6;
+    }
+    let triples = count_group_triples(cards, lead_suit, rules);
+    let pairs = count_group_pairs(cards, lead_suit, rules);
+    if triples >= 2 {
+        5
+    } else if triples >= 1 && pairs >= 2 {
+        4
+    } else if triples >= 1 {
+        3
+    } else if pairs >= 2 {
+        2
+    } else if pairs >= 1 {
+        1
+    } else {
+        0
+    }
+}
+
 /// Enumerate strategically distinct legal replies to a lead. Same-shape
 /// winners come from [`enumerate_leads`]; when a player cannot reproduce the
 /// shape, bounded subset enumeration also exposes alternative legal discards
@@ -543,23 +606,122 @@ pub fn follow_is_legal(hand: &[i32], cards: &[i32], lead: &Combo, rules: &Tracto
         }
     }
 
-    let required_triples = match lead.kind {
-        ComboKind::Titanic(n) => n,
-        _ => 0,
-    };
-    if required_triples > 0 {
-        let triples_in_hand = count_group_triples(hand, lead_suit, rules);
-        let must_use_triples = required_triples.min(triples_in_hand);
-        let group_cards: Vec<i32> = cards
-            .iter()
-            .copied()
-            .filter(|card| card_in_group(*card, lead_suit, rules))
-            .collect();
-        if count_group_triples(&group_cards, lead_suit, rules) < must_use_triples {
+    match lead.kind {
+        ComboKind::Tractor(_)
+            if longest_multiplicity_run(hand, lead_suit, 2, rules) >= 2
+                && longest_multiplicity_run(cards, lead_suit, 2, rules) < 2 =>
+        {
             return false;
         }
+        ComboKind::Titanic(_)
+            if titanic_follow_priority(cards, lead_suit, rules)
+                < titanic_follow_priority(hand, lead_suit, rules) =>
+        {
+            return false;
+        }
+        _ => {}
     }
     true
+}
+
+fn multiplicity_units(
+    cards: &[i32],
+    lead_suit: Option<i32>,
+    copies: usize,
+    rules: &TractorRules,
+) -> Vec<(i32, i32, Vec<i32>)> {
+    let mut by_base: HashMap<i32, Vec<i32>> = HashMap::new();
+    for card in cards
+        .iter()
+        .copied()
+        .filter(|card| card_in_group(*card, lead_suit, rules))
+    {
+        by_base.entry(base_card(card)).or_default().push(card);
+    }
+    let mut units = by_base
+        .into_iter()
+        .filter_map(|(base, mut cards)| {
+            cards.sort_unstable();
+            (cards.len() >= copies).then(|| {
+                (
+                    pair_position(base, rules),
+                    base,
+                    cards.into_iter().take(copies).collect(),
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    units.sort_by_key(|(position, base, _)| (*position, *base));
+    units
+}
+
+fn take_units(
+    chosen: &mut Vec<i32>,
+    remaining: &mut Vec<i32>,
+    units: impl IntoIterator<Item = Vec<i32>>,
+    target_len: usize,
+) {
+    for unit in units {
+        if chosen.len() + unit.len() > target_len {
+            break;
+        }
+        for card in unit {
+            take_card(remaining, card);
+            chosen.push(card);
+        }
+    }
+}
+
+fn take_lowest_multiplicity_units(
+    chosen: &mut Vec<i32>,
+    remaining: &mut Vec<i32>,
+    lead_suit: Option<i32>,
+    copies: usize,
+    count: usize,
+    target_len: usize,
+    rules: &TractorRules,
+) {
+    let units = multiplicity_units(remaining, lead_suit, copies, rules)
+        .into_iter()
+        .take(count)
+        .map(|(_, _, cards)| cards);
+    take_units(chosen, remaining, units, target_len);
+}
+
+fn take_best_consecutive_units(
+    chosen: &mut Vec<i32>,
+    remaining: &mut Vec<i32>,
+    lead_suit: Option<i32>,
+    copies: usize,
+    max_units: usize,
+    target_len: usize,
+    rules: &TractorRules,
+) {
+    if max_units < 2 {
+        return;
+    }
+    let units = multiplicity_units(remaining, lead_suit, copies, rules);
+    let mut best = Vec::new();
+    let mut current = Vec::new();
+    let mut previous = None;
+    for (position, _, cards) in units {
+        if previous.is_some_and(|value| position == value + 1) {
+            current.push(cards);
+        } else {
+            if current.len() > best.len() {
+                best = current;
+            }
+            current = vec![cards];
+        }
+        previous = Some(position);
+    }
+    if current.len() > best.len() {
+        best = current;
+    }
+    if best.len() >= 2 {
+        best.truncate(max_units);
+        take_units(chosen, remaining, best, target_len);
+    }
 }
 
 /// Build one guaranteed-legal follow to `lead`, preferring the lowest cards and
@@ -577,37 +739,96 @@ pub fn forced_follow(hand: &[i32], lead: &Combo, rules: &TractorRules) -> Option
     let mut remaining: Vec<i32> = hand.to_vec();
     remaining.sort_by_key(&value);
 
-    let required_triples = match lead.kind {
-        ComboKind::Titanic(n) => n,
-        _ => 0,
-    };
-    let mut group_triples: Vec<Vec<i32>> = {
-        let mut by_base: HashMap<i32, Vec<i32>> = HashMap::new();
-        for card in remaining
-            .iter()
-            .copied()
-            .filter(|card| card_in_group(*card, lead_suit, rules))
-        {
-            by_base.entry(base_card(card)).or_default().push(card);
-        }
-        by_base
-            .into_values()
-            .flat_map(|cards| {
-                cards
-                    .chunks_exact(3)
-                    .map(|triple| triple.to_vec())
-                    .collect::<Vec<_>>()
-            })
-            .collect()
-    };
-    group_triples.sort_by_key(|triple| triple.iter().map(&value).max().unwrap_or(0));
-    for triple in group_triples.into_iter().take(required_triples) {
-        for card in triple {
-            if chosen.len() < lead_len {
-                take_card(&mut remaining, card);
-                chosen.push(card);
+    match lead.kind {
+        ComboKind::Tractor(pair_count) => take_best_consecutive_units(
+            &mut chosen,
+            &mut remaining,
+            lead_suit,
+            2,
+            pair_count,
+            lead_len,
+            rules,
+        ),
+        ComboKind::Titanic(triple_count) => {
+            match titanic_follow_priority(&remaining, lead_suit, rules) {
+                7 => take_best_consecutive_units(
+                    &mut chosen,
+                    &mut remaining,
+                    lead_suit,
+                    3,
+                    triple_count,
+                    lead_len,
+                    rules,
+                ),
+                6 => take_best_consecutive_units(
+                    &mut chosen,
+                    &mut remaining,
+                    lead_suit,
+                    2,
+                    lead_len / 2,
+                    lead_len,
+                    rules,
+                ),
+                5 => take_lowest_multiplicity_units(
+                    &mut chosen,
+                    &mut remaining,
+                    lead_suit,
+                    3,
+                    triple_count,
+                    lead_len,
+                    rules,
+                ),
+                4 => {
+                    take_lowest_multiplicity_units(
+                        &mut chosen,
+                        &mut remaining,
+                        lead_suit,
+                        3,
+                        1,
+                        lead_len,
+                        rules,
+                    );
+                    take_lowest_multiplicity_units(
+                        &mut chosen,
+                        &mut remaining,
+                        lead_suit,
+                        2,
+                        1,
+                        lead_len,
+                        rules,
+                    );
+                }
+                3 => take_lowest_multiplicity_units(
+                    &mut chosen,
+                    &mut remaining,
+                    lead_suit,
+                    3,
+                    1,
+                    lead_len,
+                    rules,
+                ),
+                2 => take_lowest_multiplicity_units(
+                    &mut chosen,
+                    &mut remaining,
+                    lead_suit,
+                    2,
+                    2,
+                    lead_len,
+                    rules,
+                ),
+                1 => take_lowest_multiplicity_units(
+                    &mut chosen,
+                    &mut remaining,
+                    lead_suit,
+                    2,
+                    1,
+                    lead_len,
+                    rules,
+                ),
+                _ => {}
             }
         }
+        _ => {}
     }
 
     // 1. Satisfy required pairs from the lead group, lowest first.
@@ -618,6 +839,8 @@ pub fn forced_follow(hand: &[i32], lead: &Combo, rules: &TractorRules) -> Option
         ComboKind::Titanic(_) => 0,
         ComboKind::Throw { pairs, .. } => pairs,
     };
+    let already_chosen_pairs = count_group_pairs(&chosen, lead_suit, rules);
+    let remaining_required_pairs = required_pairs.saturating_sub(already_chosen_pairs);
     let mut group_pairs: Vec<Vec<i32>> = {
         let group: Vec<i32> = remaining
             .iter()
@@ -639,7 +862,7 @@ pub fn forced_follow(hand: &[i32], lead: &Combo, rules: &TractorRules) -> Option
             .collect()
     };
     group_pairs.sort_by_key(|pair| pair.iter().map(&value).max().unwrap_or(0));
-    for pair in group_pairs.into_iter().take(required_pairs) {
+    for pair in group_pairs.into_iter().take(remaining_required_pairs) {
         for card in pair {
             if chosen.len() < lead_len {
                 take_card(&mut remaining, card);
