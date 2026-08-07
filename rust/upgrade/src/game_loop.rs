@@ -282,7 +282,9 @@ async fn timeout_bury_dispatch(
     let mut dispatch = Dispatch::default();
     let result = {
         let mut guard = state.lock().unwrap();
-        if guard.base.lock().unwrap().turn_countdown > 0 {
+        let position = guard.dealer_position;
+        let controlled = is_ai_controlled_position(&guard, position);
+        if !controlled && guard.base.lock().unwrap().turn_countdown > 0 {
             let countdown = guard.base.lock().unwrap().turn_countdown.saturating_sub(1);
             guard.set_turn_countdown(countdown);
             None
@@ -342,12 +344,13 @@ async fn timeout_play_dispatch(
     let mut dispatch = Dispatch::default();
     let result = {
         let mut guard = state.lock().unwrap();
-        if guard.base.lock().unwrap().turn_countdown > 0 {
+        let position = guard.current_position;
+        let controlled = is_ai_controlled_position(&guard, position);
+        if !controlled && guard.base.lock().unwrap().turn_countdown > 0 {
             let countdown = guard.base.lock().unwrap().turn_countdown.saturating_sub(1);
             guard.set_turn_countdown(countdown);
             None
         } else {
-            let position = guard.current_position;
             match guard.timeout_play() {
                 Ok(Some(resolution)) => {
                     if !resolution.finished {
@@ -403,6 +406,11 @@ async fn timeout_play_dispatch(
         );
     }
     dispatch
+}
+
+fn is_ai_controlled_position(state: &crate::state::UpgradeGameState, position: usize) -> bool {
+    let base = state.base.lock().unwrap();
+    base.is_ai_position(position) || base.is_ai_takeover_position(position)
 }
 
 fn send_private<T: serde::Serialize>(

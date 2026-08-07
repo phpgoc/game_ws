@@ -169,6 +169,35 @@ async fn later_round_timeout_selects_trump_buries_and_broadcasts() {
 }
 
 #[tokio::test]
+async fn ai_controlled_bury_ignores_the_human_countdown() {
+    let (room, common) = room_with_players();
+    let room = Arc::new(AsyncMutex::new(room));
+    let state = state_handle(common, UpgradePhase::Bury);
+    {
+        let mut state = state.lock().unwrap();
+        state.rules.bottom_card_count = 2;
+        state.round_index = 1;
+        state.rules.trump_suit = None;
+        state.bottom_cards = vec![53, 54];
+        state.hands.insert(0, vec![1, 2, 3]);
+        let mut base = state.base.lock().unwrap();
+        base.mark_ai_position(0);
+        base.turn_countdown = 90;
+    }
+
+    let dispatch = timeout_bury_dispatch(ROOM_KEY, &state, &room, 30).await;
+
+    let state = state.lock().unwrap();
+    assert_eq!(state.phase, UpgradePhase::Play);
+    assert_eq!(state.base.lock().unwrap().turn_countdown, 30);
+    drop(state);
+    assert_eq!(
+        event_payloads(&dispatch, UpgradeWsCode::BOTTOM_BURIED as i32).len(),
+        4
+    );
+}
+
+#[tokio::test]
 async fn timeout_play_finishes_the_last_trick_and_broadcasts_settlement() {
     let (room, common) = room_with_players();
     let room = Arc::new(AsyncMutex::new(room));
@@ -189,6 +218,29 @@ async fn timeout_play_finishes_the_last_trick_and_broadcasts_settlement() {
         );
     }
     assert_eq!(state.lock().unwrap().phase, UpgradePhase::Settlement);
+}
+
+#[tokio::test]
+async fn ai_takeover_play_ignores_the_human_countdown() {
+    let (room, common) = room_with_players();
+    let room = Arc::new(AsyncMutex::new(room));
+    let state = state_handle(common, UpgradePhase::Play);
+    {
+        let mut state = state.lock().unwrap();
+        state.bottom_cards.clear();
+        state.hands = HashMap::from([(0, vec![1]), (1, vec![14]), (2, vec![27]), (3, vec![40])]);
+        let mut base = state.base.lock().unwrap();
+        base.mark_ai_takeover_position(0);
+        base.turn_countdown = 30;
+    }
+
+    let dispatch = timeout_play_dispatch(ROOM_KEY, &state, &room, 30).await;
+
+    let state = state.lock().unwrap();
+    assert_eq!(state.current_trick.len(), 1);
+    assert_eq!(state.current_position, 1);
+    drop(state);
+    assert_eq!(event_payloads(&dispatch, WsCode::PLAY as i32).len(), 4);
 }
 
 #[tokio::test]
