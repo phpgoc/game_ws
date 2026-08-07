@@ -2,9 +2,10 @@
 //!
 //! The trump group is made of every card of the current target rank plus both
 //! jokers; all other cards are "plain" and belong to their natural suit. A legal
-//! play is a single group of one of four shapes:
+//! play is a single group of one of six shapes:
 //!   - Single: one card.
 //!   - Pair:   two identical cards (same base card, regardless of deck copy).
+//!   - Triple: three identical cards in a three-deck game (三同张).
 //!   - Tractor: two or more consecutive pairs in the same group (连对).
 //!   - Titanic: two or more consecutive triples in a three-deck game (连三张).
 //!   - Throw: multiple same-group components released together (甩牌).
@@ -38,6 +39,7 @@ pub struct Combo {
 pub enum ComboKind {
     Single,
     Pair,
+    Triple,
     /// A run of `n` consecutive pairs (n >= 2), so `2 * n` cards.
     Tractor(usize),
     /// A run of `n` consecutive triples (n >= 2), so `3 * n` cards.
@@ -120,6 +122,17 @@ pub fn classify(cards: &[i32], rules: &TractorRules) -> Option<Combo> {
     if cards.len() == 2 && counts.len() == 1 {
         return Some(Combo {
             kind: ComboKind::Pair,
+            suit,
+            pair_count,
+            tractor_pair_count,
+            triple_count,
+            titanic_triple_count,
+        });
+    }
+
+    if rules.deck_count >= 3 && cards.len() == 3 && counts.len() == 1 {
+        return Some(Combo {
+            kind: ComboKind::Triple,
             suit,
             pair_count,
             tractor_pair_count,
@@ -689,6 +702,7 @@ pub fn follow_is_legal(hand: &[i32], cards: &[i32], lead: &Combo, rules: &Tracto
     let required_pairs = match lead.kind {
         ComboKind::Single => 0,
         ComboKind::Pair => 1,
+        ComboKind::Triple => 1,
         ComboKind::Tractor(n) => n,
         ComboKind::Titanic(_) => 0,
         ComboKind::Throw { pairs, .. } => pairs,
@@ -713,6 +727,12 @@ pub fn follow_is_legal(hand: &[i32], cards: &[i32], lead: &Combo, rules: &Tracto
     }
 
     match lead.kind {
+        ComboKind::Triple
+            if count_group_triples(hand, lead_suit, rules) > 0
+                && count_group_triples(cards, lead_suit, rules) == 0 =>
+        {
+            return false;
+        }
         ComboKind::Tractor(_)
             if longest_multiplicity_run(hand, lead_suit, 2, rules) >= 2
                 && longest_multiplicity_run(cards, lead_suit, 2, rules) < 2 =>
@@ -846,6 +866,15 @@ pub fn forced_follow(hand: &[i32], lead: &Combo, rules: &TractorRules) -> Option
     remaining.sort_by_key(&value);
 
     match lead.kind {
+        ComboKind::Triple => take_lowest_multiplicity_units(
+            &mut chosen,
+            &mut remaining,
+            lead_suit,
+            3,
+            1,
+            lead_len,
+            rules,
+        ),
         ComboKind::Tractor(pair_count) => take_best_consecutive_units(
             &mut chosen,
             &mut remaining,
@@ -941,6 +970,7 @@ pub fn forced_follow(hand: &[i32], lead: &Combo, rules: &TractorRules) -> Option
     let required_pairs = match lead.kind {
         ComboKind::Single => 0,
         ComboKind::Pair => 1,
+        ComboKind::Triple => 1,
         ComboKind::Tractor(n) => n,
         ComboKind::Titanic(_) => 0,
         ComboKind::Throw { pairs, .. } => pairs,
@@ -1189,9 +1219,11 @@ pub fn bottom_multiplier(cards: &[i32], rules: &TractorRules) -> i32 {
         return 1;
     };
     match combo.kind {
-        ComboKind::Single | ComboKind::Pair | ComboKind::Tractor(_) | ComboKind::Titanic(_) => {
-            shape_bottom_multiplier(cards.len())
-        }
+        ComboKind::Single
+        | ComboKind::Pair
+        | ComboKind::Triple
+        | ComboKind::Tractor(_)
+        | ComboKind::Titanic(_) => shape_bottom_multiplier(cards.len()),
         ComboKind::Throw { .. } => throw_components(cards, rules)
             .into_iter()
             .flatten()
@@ -1243,6 +1275,7 @@ impl ComboKind {
         match self {
             ComboKind::Single => 1,
             ComboKind::Pair => 2,
+            ComboKind::Triple => 3,
             ComboKind::Tractor(n) => 2 * n,
             ComboKind::Titanic(n) => 3 * n,
             ComboKind::Throw { cards, .. } => cards,

@@ -142,6 +142,67 @@ fn successful_throw_uses_the_largest_component_for_bottom_score() {
 }
 
 #[test]
+fn three_of_a_kind_is_its_own_shape_and_must_be_followed_before_a_pair() {
+    let three_deck_rules = rules(3);
+    assert_eq!(
+        combo::classify(&[2, 102, 202], &three_deck_rules).map(|combo| combo.kind),
+        Some(combo::ComboKind::Triple)
+    );
+
+    let state_hands = HashMap::from([
+        (0, vec![2, 102, 202]),
+        (1, vec![3, 103, 203, 4]),
+        (2, vec![15, 16, 17]),
+        (3, vec![28, 29, 30]),
+    ]);
+    let mut state = state_with_hands(three_deck_rules.clone(), Vec::new(), state_hands);
+    state
+        .play_cards(0, "p0".to_owned(), vec![2, 102, 202])
+        .expect("three of a kind lead");
+    assert_eq!(
+        state
+            .play_cards(1, "p1".to_owned(), vec![3, 103, 4])
+            .expect_err("a held triple cannot be split into a pair and singleton"),
+        "illegal follow"
+    );
+    state
+        .play_cards(1, "p1".to_owned(), vec![3, 103, 203])
+        .expect("higher three of a kind follow");
+
+    let lead = combo::classify(&[2, 102, 202], &three_deck_rules).expect("triple lead");
+    for hand in [vec![4, 104, 5], vec![4, 5, 6]] {
+        let forced = combo::forced_follow(&hand, &lead, &three_deck_rules)
+            .expect("fallback response to a triple");
+        assert!(combo::follow_is_legal(
+            &hand,
+            &forced,
+            &lead,
+            &three_deck_rules
+        ));
+    }
+}
+
+#[test]
+fn higher_three_of_a_kind_breaks_a_long_throw_to_that_component() {
+    let attempted = vec![2, 102, 202, 12, 112, 13];
+    let state_hands = HashMap::from([
+        (0, attempted.clone()),
+        (1, vec![3, 103, 203, 5, 6, 7]),
+        (2, vec![15, 16, 17, 18, 19, 20]),
+        (3, vec![28, 29, 30, 31, 32, 33]),
+    ]);
+    let mut state = state_with_hands(rules(3), Vec::new(), state_hands);
+
+    let played = state
+        .play_cards(0, "p0".to_owned(), attempted.clone())
+        .expect("the referee reduces a challenged throw");
+    assert_eq!(played.cards, vec![2, 102, 202]);
+    assert_eq!(state.failed_throws.len(), 1);
+    assert_eq!(state.failed_throws[0].attempted_cards, attempted);
+    assert_eq!(state.failed_throws[0].played_cards, played.cards);
+}
+
+#[test]
 fn void_opponent_trumps_do_not_make_a_plain_suit_throw_fail_on_lead() {
     let state_hands = HashMap::from([
         (0, vec![13, 113, 11, 111]),
