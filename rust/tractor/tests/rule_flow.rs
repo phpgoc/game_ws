@@ -289,6 +289,52 @@ fn follower_with_a_tractor_cannot_replace_it_with_non_consecutive_pairs() {
 }
 
 #[test]
+fn throw_follow_preserves_every_available_tractor_before_loose_pairs() {
+    let two_deck_rules = rules(2);
+    let lead = combo::classify(&[2, 102, 3, 103, 11], &two_deck_rules)
+        .expect("tractor and singleton throw");
+    let hand = vec![4, 104, 5, 105, 7, 107, 9, 109, 11];
+
+    assert!(!combo::follow_is_legal(
+        &hand,
+        &[7, 107, 9, 109, 11],
+        &lead,
+        &two_deck_rules
+    ));
+    assert!(combo::follow_is_legal(
+        &hand,
+        &[4, 104, 5, 105, 11],
+        &lead,
+        &two_deck_rules
+    ));
+
+    // A three-pair tractor lead cannot demand three consecutive pair units
+    // when the hand only has two separate two-pair runs. It must still consume
+    // one intact run plus the maximum remaining pair structure.
+    let lead = combo::classify(&[2, 102, 3, 103, 4, 104, 12], &two_deck_rules)
+        .expect("three-pair tractor and singleton throw");
+    let hand = vec![5, 105, 6, 106, 8, 108, 9, 109, 11];
+    let forced = combo::forced_follow(&hand, &lead, &two_deck_rules)
+        .expect("automatic structured throw follow");
+    assert!(
+        combo::follow_is_legal(&hand, &forced, &lead, &two_deck_rules),
+        "automatic follow lost a required tractor: {forced:?}"
+    );
+
+    // The bounded selector must also split a three-pair run into two units so
+    // that a second two-pair run can satisfy a four-unit throw exactly.
+    let lead = combo::classify(&[2, 102, 3, 103, 5, 105, 6, 106, 13], &two_deck_rules)
+        .expect("two tractors and singleton throw");
+    let hand = vec![7, 107, 8, 108, 9, 109, 11, 111, 12, 112, 13];
+    let forced = combo::forced_follow(&hand, &lead, &two_deck_rules)
+        .expect("automatic multi-run throw follow");
+    assert!(
+        combo::follow_is_legal(&hand, &forced, &lead, &two_deck_rules),
+        "automatic follow failed to split runs at the structural cap: {forced:?}"
+    );
+}
+
+#[test]
 fn follower_with_a_titanic_cannot_replace_it_with_non_consecutive_triples() {
     let state_hands = HashMap::from([
         (0, vec![2, 102, 202, 3, 103, 203]),
