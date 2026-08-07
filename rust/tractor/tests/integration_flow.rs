@@ -1573,7 +1573,7 @@ async fn tractor_ws_rejoin_preserves_running_bury_state() {
         .close(None)
         .await
         .expect("close dealer socket");
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    tokio::time::sleep(Duration::from_millis(1_200)).await;
 
     let mut rejoined = connect_client(&url).await;
     let player_names = ["a", "b", "c", "d"];
@@ -1602,7 +1602,12 @@ async fn tractor_ws_rejoin_preserves_running_bury_state() {
     .await;
     assert_eq!(snapshot["data"]["phase"], json!(TractorPhase::Bury as i8));
     assert_eq!(snapshot["data"]["round_index"], json!(0));
-    assert_eq!(snapshot["data"]["turn_countdown"], json!(90));
+    assert!(
+        snapshot["data"]["turn_countdown"]
+            .as_i64()
+            .is_some_and(|countdown| (1..=89).contains(&countdown)),
+        "rejoin must preserve the elapsed bury countdown: {snapshot}"
+    );
 
     send_request(
         &mut rejoined,
@@ -3039,7 +3044,12 @@ async fn tractor_ws_uses_away_time_after_play_passes_to_a_disconnected_player() 
                 .is_some_and(|trick| trick.len() == 1)
     })
     .await;
-    assert_eq!(rejoined_snapshot["data"]["turn_countdown"], json!(30));
+    assert!(
+        rejoined_snapshot["data"]["turn_countdown"]
+            .as_i64()
+            .is_some_and(|countdown| (1..=5).contains(&countdown)),
+        "rejoin must not replace the five-second away countdown: {rejoined_snapshot}"
+    );
 
     let trump_suit = rejoined_snapshot["data"]["trump_suit"]
         .as_i64()

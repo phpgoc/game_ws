@@ -15,7 +15,6 @@ use ws_common::{
 };
 
 use crate::{
-    game_loop::bury_window_time,
     game_setting::{
         KEY_ATTACKING_WIN_SCORE, KEY_DECK_COUNT, KEY_PLAY_TIME, KEY_REMOVED_RANK_COUNT,
         KEY_SCORE_PER_LEVEL, KEY_SHUTOUT_BONUS_LEVELS, build_upgrade_settings,
@@ -485,29 +484,6 @@ impl GameHandler for UpgradeGameHandler {
         let Some(state) = self.current_state(room_service, &room_key) else {
             return;
         };
-        let Some(position) = room_service.session_position(session_id) else {
-            return;
-        };
-        let configs = room_service.room_configs(&room_key).unwrap_or_default();
-        {
-            let mut state_guard = state.lock().unwrap();
-            let restored_countdown = match state_guard.phase {
-                share_type_public::UpgradePhase::Bury
-                    if state_guard.dealer_position == position =>
-                {
-                    Some(bury_window_time(&configs))
-                }
-                share_type_public::UpgradePhase::Play
-                    if state_guard.current_position == position =>
-                {
-                    Some(Self::play_time(&configs))
-                }
-                _ => None,
-            };
-            if let Some(countdown) = restored_countdown {
-                state_guard.set_turn_countdown(countdown);
-            }
-        }
         self.push_private_hand(dispatch, room_service, session_id, &state);
         self.push_snapshot(dispatch, room_service, &room_key, &state);
     }

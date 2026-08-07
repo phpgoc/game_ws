@@ -2040,7 +2040,7 @@ async fn upgrade_ws_rejoin_preserves_running_bury_state() {
         .close(None)
         .await
         .expect("close upgrade dealer socket");
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    tokio::time::sleep(Duration::from_millis(1_200)).await;
 
     let mut rejoined = connect_client(&url).await;
     let dealer_name = format!("rejoin-player-{dealer_position}");
@@ -2061,7 +2061,12 @@ async fn upgrade_ws_rejoin_preserves_running_bury_state() {
     let snapshot = wait_for_phase(&mut rejoined, UpgradePhase::Bury).await;
     assert_eq!(snapshot["data"]["round_index"], json!(0));
     assert_eq!(snapshot["data"]["bottom_card_count"], json!(10));
-    assert_eq!(snapshot["data"]["turn_countdown"], json!(9));
+    assert!(
+        snapshot["data"]["turn_countdown"]
+            .as_i64()
+            .is_some_and(|countdown| (1..=8).contains(&countdown)),
+        "rejoin must preserve the elapsed bury countdown: {snapshot}"
+    );
 
     send_request(
         &mut rejoined,
@@ -2132,7 +2137,12 @@ async fn upgrade_ws_rejoin_preserves_running_bury_state() {
         rejoined_snapshot["data"]["current_position"],
         json!(next_position)
     );
-    assert_eq!(rejoined_snapshot["data"]["turn_countdown"], json!(3));
+    assert!(
+        rejoined_snapshot["data"]["turn_countdown"]
+            .as_i64()
+            .is_some_and(|countdown| (1..=2).contains(&countdown)),
+        "rejoin must preserve the elapsed play countdown: {rejoined_snapshot}"
+    );
 
     let rules = combo::UpgradeComboRules {
         target_rank: upgrade_rank(

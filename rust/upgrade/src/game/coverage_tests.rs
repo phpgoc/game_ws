@@ -318,3 +318,42 @@ fn successful_action_handlers_update_state_and_broadcast() {
     );
     assert_eq!(state.lock().unwrap().current_trick.len(), 1);
 }
+
+#[test]
+fn rejoin_preserves_the_remaining_operation_countdown() {
+    let (mut handler, mut room) = ready_room();
+    assert_eq!(
+        response_code(&handler.handle_start(&mut room, 1)),
+        WsResponseCode::OK
+    );
+    let state = handler.state(ROOM_KEY).expect("running upgrade state");
+    let request = join_request("u1");
+
+    for (phase, countdown) in [(UpgradePhase::Bury, 17), (UpgradePhase::Play, 11)] {
+        {
+            let mut state = state.lock().unwrap();
+            state.phase = phase;
+            state.dealer_position = 0;
+            state.current_position = 0;
+            state.set_turn_countdown(countdown);
+        }
+        let mut dispatch = Dispatch::default();
+        dispatch.messages.push(ws_common::Delivery {
+            recipient: 1,
+            payload: OutboundPayload::Response(RequestResponse::WithData(
+                share_type_public::ws::WsResponse {
+                    route: Routes::JOIN as i32,
+                    code: WsResponseCode::JOINED,
+                    data: json!({}),
+                },
+            )),
+        });
+
+        handler.after_common_request(&mut room, 1, &request, &mut dispatch);
+
+        assert_eq!(
+            state.lock().unwrap().base.lock().unwrap().turn_countdown,
+            countdown
+        );
+    }
+}

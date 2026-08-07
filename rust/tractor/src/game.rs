@@ -16,7 +16,7 @@ use ws_common::{
 };
 
 use crate::{
-    game_loop::{current_bury_time, current_play_time},
+    game_loop::current_play_time,
     game_setting::{
         KEY_ATTACKING_WIN_SCORE, KEY_BOTTOM_CARD_COUNT, KEY_DECK_COUNT, KEY_SCORE_PER_LEVEL,
         KEY_SHUTOUT_BONUS_LEVELS, KEY_TARGET_RANK, build_tractor_settings,
@@ -580,21 +580,8 @@ impl GameHandler for TractorGameHandler {
         let Some(state) = self.current_state(room_service, &room_key) else {
             return;
         };
-        let configs = room_service.room_configs(&room_key).unwrap_or_default();
         let (hand, snapshot, settlement) = {
-            let mut state = state.lock().unwrap();
-            let restored_countdown = match state.phase {
-                share_type_public::TractorPhase::Bury if state.dealer_position == position => {
-                    Some(current_bury_time(&configs, &state))
-                }
-                share_type_public::TractorPhase::Play if state.current_position == position => {
-                    Some(current_play_time(&configs, &state))
-                }
-                _ => None,
-            };
-            if let Some(countdown) = restored_countdown {
-                state.set_turn_countdown(countdown);
-            }
+            let state = state.lock().unwrap();
             (
                 state.hands.get(&position).cloned().unwrap_or_default(),
                 state.snapshot(),
