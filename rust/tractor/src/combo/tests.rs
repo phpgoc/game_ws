@@ -25,6 +25,29 @@ fn declared_trump_suit_cards_beat_plain_cards() {
 }
 
 #[test]
+fn level_cards_rank_above_ordinary_trump_and_below_jokers() {
+    let mut rules = rules(TractorRank::THREE);
+    rules.trump_suit = Some(share_type_public::TractorSuit::HEART);
+    let ordered_cards = [
+        26, // heart A: highest ordinary trump
+        2,  // spade 3: off-suit level card
+        15, // heart 3: main level card
+        53, // small joker
+        54, // big joker
+    ];
+    let strengths = ordered_cards.map(|card| tractor_card_value(card, &rules, None));
+    assert!(strengths.windows(2).all(|pair| pair[0] < pair[1]));
+
+    let trick = [
+        played(0, vec![26]),
+        played(1, vec![2]),
+        played(2, vec![15]),
+        played(3, vec![53]),
+    ];
+    assert_eq!(trick_winner(&trick, &rules), Some(3));
+}
+
+#[test]
 fn enumerate_leads_finds_pairs_and_tractors() {
     let rules = rules(TractorRank::TWO);
     let hand = vec![2, 102, 3, 103, 20];
