@@ -853,47 +853,32 @@ pub fn throw_components(cards: &[i32], rules: &TractorRules) -> Option<Vec<Vec<i
 /// Standard Tractor bottom multiplier for the winning play of the last trick.
 ///
 /// A successful throw is scored by its strongest component, never by the
-/// total number of cards in the throw.  Two-deck tractors double for every
-/// pair; three-deck triples use the corresponding three-card progression.
+/// total number of cards in the throw. Each independent winning shape scores
+/// `2 ^ card_count`, capped at 64.
 pub fn bottom_multiplier(cards: &[i32], rules: &TractorRules) -> i32 {
     let Some(combo) = classify(cards, rules) else {
         return 1;
     };
     match combo.kind {
-        ComboKind::Single => 2,
-        ComboKind::Pair => 4,
-        ComboKind::Tractor(pairs) => repeated_multiplier(2, pairs, 2),
-        ComboKind::Titanic(triples) => repeated_multiplier(3, triples, 2),
+        ComboKind::Single
+        | ComboKind::Pair
+        | ComboKind::Tractor(_)
+        | ComboKind::Titanic(_) => shape_bottom_multiplier(cards.len()),
         ComboKind::Throw { .. } => throw_components(cards, rules)
             .into_iter()
             .flatten()
-            .map(|component| {
-                let Some(component_combo) = classify(&component, rules) else {
-                    return 1;
-                };
-                match component_combo.kind {
-                    ComboKind::Throw { .. } => throw_component_multiplier(&component, rules),
-                    _ => bottom_multiplier(&component, rules),
-                }
-            })
+            .map(|component| shape_bottom_multiplier(component.len()))
             .max()
             .unwrap_or(1),
     }
 }
 
-fn throw_component_multiplier(cards: &[i32], rules: &TractorRules) -> i32 {
-    let largest = identity_counts(cards).values().copied().max().unwrap_or(1);
-    if rules.deck_count >= 3 && largest >= 3 {
-        6
-    } else if largest >= 2 {
-        4
+fn shape_bottom_multiplier(card_count: usize) -> i32 {
+    if card_count >= 6 {
+        64
     } else {
-        2
+        1_i32 << card_count
     }
-}
-
-fn repeated_multiplier(base: i32, count: usize, initial: i32) -> i32 {
-    (0..count).fold(initial, |value, _| value.saturating_mul(base))
 }
 
 /// Total point value collected in a trick.
@@ -1172,19 +1157,19 @@ mod tests {
         let two_deck = rules(TractorRank::TWO);
         assert_eq!(bottom_multiplier(&[2], &two_deck), 2);
         assert_eq!(bottom_multiplier(&[2, 102], &two_deck), 4);
-        assert_eq!(bottom_multiplier(&[2, 102, 3, 103], &two_deck), 8);
-        assert_eq!(bottom_multiplier(&[2, 102, 3, 103, 4, 104], &two_deck), 16);
+        assert_eq!(bottom_multiplier(&[2, 102, 3, 103], &two_deck), 16);
+        assert_eq!(bottom_multiplier(&[2, 102, 3, 103, 4, 104], &two_deck), 64);
 
         let mut three_deck = two_deck;
         three_deck.deck_count = 3;
-        assert_eq!(bottom_multiplier(&[2, 102, 202], &three_deck), 6);
+        assert_eq!(bottom_multiplier(&[2, 102, 202], &three_deck), 8);
         assert_eq!(
             bottom_multiplier(&[2, 102, 202, 3, 103, 203], &three_deck),
-            18
+            64
         );
         assert_eq!(
             bottom_multiplier(&[2, 102, 202, 12, 112, 13], &three_deck),
-            6
+            8
         );
     }
 

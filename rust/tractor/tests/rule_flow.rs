@@ -4,7 +4,10 @@ use std::{
 };
 
 use share_type_public::{TractorPhase, TractorRank};
-use tractor::game_state::{TractorGameState, TractorRules};
+use tractor::{
+    combo,
+    game_state::{TractorGameState, TractorRules},
+};
 use ws_common::CommonGameState;
 
 fn rules(deck_count: usize) -> TractorRules {
@@ -69,10 +72,10 @@ fn three_deck_titanic_can_lead_the_final_trick_and_score_the_bottom() {
     }
 
     assert_eq!(state.phase, TractorPhase::Settlement);
-    assert_eq!(state.bottom_multiplier, 18);
+    assert_eq!(state.bottom_multiplier, 64);
     // The Titanic trick itself carries 35 points; the ten-point bottom is
-    // multiplied by 18, so the winner collects 35 + 180 = 215.
-    assert_eq!(state.collected_scores.get(&0), Some(&215));
+    // multiplied by 64, so the winner collects 35 + 640 = 675.
+    assert_eq!(state.collected_scores.get(&0), Some(&675));
 }
 
 #[test]
@@ -132,10 +135,10 @@ fn successful_throw_uses_the_largest_component_for_bottom_score() {
 
     assert_eq!(state.phase, TractorPhase::Settlement);
     assert_eq!(state.last_trick_winner, Some(0));
-    assert_eq!(state.bottom_multiplier, 6);
+    assert_eq!(state.bottom_multiplier, 8);
     // The lead contains a ten-point king pair and the bottom contains a
     // ten-point card: 20 trick points + 10 × the strongest triple multiplier.
-    assert_eq!(state.collected_scores.get(&0), Some(&80));
+    assert_eq!(state.collected_scores.get(&0), Some(&100));
 }
 
 #[test]
@@ -158,4 +161,27 @@ fn void_opponent_trumps_do_not_make_a_plain_suit_throw_fail_on_lead() {
     assert_eq!(played.cards, attempted);
     assert!(state.failed_throws.is_empty());
     assert_eq!(state.hands.get(&0), Some(&Vec::new()));
+}
+
+#[test]
+fn standard_bottom_multiplier_uses_winning_component_card_count_up_to_sixty_four() {
+    let two_deck = rules(2);
+    assert_eq!(combo::bottom_multiplier(&[2], &two_deck), 2);
+    assert_eq!(combo::bottom_multiplier(&[2, 102], &two_deck), 4);
+    assert_eq!(combo::bottom_multiplier(&[2, 102, 3, 103], &two_deck), 16);
+    assert_eq!(
+        combo::bottom_multiplier(&[2, 102, 3, 103, 4, 104], &two_deck),
+        64
+    );
+
+    let three_deck = rules(3);
+    assert_eq!(combo::bottom_multiplier(&[2, 102, 202], &three_deck), 8);
+    assert_eq!(
+        combo::bottom_multiplier(&[2, 102, 202, 3, 103, 203], &three_deck),
+        64
+    );
+    assert_eq!(
+        combo::bottom_multiplier(&[2, 102, 202, 12, 112, 13], &three_deck),
+        8
+    );
 }
