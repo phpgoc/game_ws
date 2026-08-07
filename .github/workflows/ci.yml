@@ -116,6 +116,12 @@ jobs:
           - name: tractor
             manifest: rust/tractor/Cargo.toml
             features: ""
+          - name: upgrade-common
+            manifest: rust/upgrade_common/Cargo.toml
+            features: ""
+          - name: upgrade
+            manifest: rust/upgrade/Cargo.toml
+            features: ""
           - name: p2p
             manifest: rust/p2p/Cargo.toml
             features: ""
@@ -194,7 +200,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        game: [landlord, shenyang_mahjong, holdem, tractor, p2p]
+        game: [landlord, shenyang_mahjong, holdem, tractor, upgrade, p2p]
     steps:
       - name: 检出开源仓库
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

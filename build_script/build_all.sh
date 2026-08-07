@@ -6,7 +6,8 @@ WS_DIR="$(dirname "${SCRIPT_DIR}")"
 OUTPUT_DIR="${OUTPUT_DIR:-${SCRIPT_DIR}/output}"
 BUILD_DIR="${BUILD_DIR:-${SCRIPT_DIR}/target}"
 LINUX_TARGET="x86_64-unknown-linux-musl"
-GAMES=(landlord shenyang_mahjong holdem tractor p2p)
+GAMES=(landlord shenyang_mahjong holdem tractor upgrade p2p)
+GAME_COUNT="${#GAMES[@]}"
 
 "${WS_DIR}/ci/prepare-public-build.sh"
 
@@ -31,7 +32,7 @@ fi
 mkdir -p "${OUTPUT_DIR}" "${BUILD_DIR}"
 find "${OUTPUT_DIR}" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
 
-echo "=== Building 5 Linux x86_64 musl release executables ==="
+echo "=== Building ${GAME_COUNT} Linux x86_64 musl release executables ==="
 for game in "${GAMES[@]}"; do
     echo "--- ${game}"
     CARGO_TARGET_DIR="${BUILD_DIR}/linux" cargo build \
@@ -59,11 +60,11 @@ for artifact in "${expected[@]}"; do
 done
 
 artifact_count="$(find "${OUTPUT_DIR}" -maxdepth 1 -type f | wc -l | tr -d ' ')"
-if [[ "${artifact_count}" != "5" ]]; then
-    echo "Expected exactly 5 artifacts, found ${artifact_count}" >&2
+if [[ "${artifact_count}" != "${GAME_COUNT}" ]]; then
+    echo "Expected exactly ${GAME_COUNT} artifacts, found ${artifact_count}" >&2
     exit 1
 fi
 
 echo
-echo "=== Built 5 Linux x86_64 musl artifacts in ${OUTPUT_DIR} ==="
+echo "=== Built ${GAME_COUNT} Linux x86_64 musl artifacts in ${OUTPUT_DIR} ==="
 ls -lh "${OUTPUT_DIR}"
