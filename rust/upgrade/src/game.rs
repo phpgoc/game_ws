@@ -568,3 +568,7 @@ impl ws_common::GameState for UpgradeGameStateHandle {
 #[cfg(test)]
 #[path = "game/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "game/coverage_tests.rs"]
+mod coverage_tests;
