@@ -4,7 +4,7 @@ use std::{
 };
 
 use rand::{SeedableRng, rngs::StdRng, seq::IndexedRandom};
-use share_type_public::{UpgradePhase, UpgradeRank};
+use share_type_public::{UpgradePhase, UpgradeRank, UpgradeSuit};
 use upgrade::{
     UpgradeDeckCount,
     combo::{self, ComboKind, UpgradeComboRules},
@@ -117,55 +117,41 @@ fn assert_card_conservation(state: &UpgradeGameState, played_cards: &[i32], expe
     );
 }
 
-fn simulate_random_round(deck_count: u8, seed: u64) -> u8 {
-    let common = Arc::new(Mutex::new(CommonGameState::new()));
-    for position in 0..4 {
-        common.lock().unwrap().add_player(
-            position,
-            position as u64 + 1,
-            &format!("random-{deck_count}-{seed}-{position}"),
-        );
-    }
-    let deck_count = UpgradeDeckCount::new(deck_count).expect("random upgrade deck count");
-    let removed_rank_count = seed as usize % 10;
-    let rules = UpgradeRules {
-        deck_count,
-        target_rank: Rank::Three,
-        final_target_rank: Rank::Ace,
-        removed_rank_count,
-        attacking_win_score: 80,
-        score_per_level: 40,
-        shutout_bonus_levels: 1,
-        bottom_card_count: 8,
-        trump_suit: None,
-    };
-    let expected_card_count =
-        build_upgrade_deck_with_removed_ranks(deck_count, removed_rank_count).len();
-    let mut state = UpgradeGameState::from_common(common);
-    state
-        .deal_new_round(rules)
-        .expect("random upgrade deal should start");
+fn finish_deal_and_bury(state: &mut UpgradeGameState, suit: UpgradeSuit) {
     while state.phase == UpgradePhase::Deal {
         state
             .deal_next_card()
             .expect("random upgrade incremental deal");
     }
     assert_eq!(state.phase, UpgradePhase::Bury);
-    assert!(state.declaration.is_some());
-    assert!(state.rules.trump_suit.is_some());
+    if state.round_index == 0 {
+        assert!(state.declaration.is_some());
+        assert!(state.rules.trump_suit.is_some());
+    } else {
+        assert!(state.declaration.is_none());
+        assert!(state.rules.trump_suit.is_none());
+        state
+            .select_trump(state.dealer_position, suit)
+            .expect("random later-round upgrade trump selection");
+    }
     let dealer_position = state.dealer_position;
     let bottom_cards = state.bottom_cards.clone();
     state
         .bury_bottom(dealer_position, bottom_cards)
         .expect("random upgrade bury");
     assert_eq!(state.phase, UpgradePhase::Play);
-    assert_card_conservation(&state, &[], expected_card_count);
+}
+
+fn play_random_round(state: &mut UpgradeGameState, rng: &mut StdRng, seed: u64) -> u8 {
+    let deck_count = state.rules.deck_count;
+    let expected_card_count =
+        build_upgrade_deck_with_removed_ranks(deck_count, state.rules.removed_rank_count).len();
+    assert_card_conservation(state, &[], expected_card_count);
 
     let combo_rules = UpgradeComboRules {
         target_rank: state.rules.target_rank,
         trump_suit: state.rules.trump_suit,
     };
-    let mut rng = StdRng::seed_from_u64(seed ^ (u64::from(deck_count.get()) << 32));
     let mut played_cards = Vec::with_capacity(expected_card_count - state.bottom_cards.len());
     let mut lead_kinds = 0_u8;
     let mut action_count = 0_usize;
@@ -187,9 +173,9 @@ fn simulate_random_round(deck_count: u8, seed: u64) -> u8 {
                 })
                 .collect::<Vec<_>>();
             let selected = if missing.is_empty() {
-                candidates.choose(&mut rng).expect("random upgrade lead")
+                candidates.choose(rng).expect("random upgrade lead")
             } else {
-                missing.choose(&mut rng).expect("missing upgrade lead kind")
+                missing.choose(rng).expect("missing upgrade lead kind")
             };
             let kind = combo::classify(&decode_cards(selected), combo_rules)
                 .expect("random upgrade lead shape")
@@ -217,7 +203,7 @@ fn simulate_random_round(deck_count: u8, seed: u64) -> u8 {
             played.played_cards.len()
         );
         played_cards.extend_from_slice(&played.played_cards);
-        assert_card_conservation(&state, &played_cards, expected_card_count);
+        assert_card_conservation(state, &played_cards, expected_card_count);
         if state.current_trick.is_empty() && state.phase == UpgradePhase::Play {
             assert_eq!(
                 state
@@ -238,7 +224,7 @@ fn simulate_random_round(deck_count: u8, seed: u64) -> u8 {
         played_cards.len() + state.bottom_cards.len(),
         expected_card_count
     );
-    assert_card_conservation(&state, &played_cards, expected_card_count);
+    assert_card_conservation(state, &played_cards, expected_card_count);
     let settlement = state.settlement_event();
     assert_eq!(settlement.player_scores.len(), 4);
     assert_eq!(settlement.target_rank, state.target_rank_protocol());
@@ -257,6 +243,91 @@ fn simulate_random_round(deck_count: u8, seed: u64) -> u8 {
             | Some(UpgradeRank::A)
     ));
     lead_kinds
+}
+
+fn common_state(label: &str) -> Arc<Mutex<CommonGameState>> {
+    let common = Arc::new(Mutex::new(CommonGameState::new()));
+    for position in 0..4 {
+        common.lock().unwrap().add_player(
+            position,
+            position as u64 + 1,
+            &format!("{label}-{position}"),
+        );
+    }
+    common
+}
+
+fn simulate_random_round(deck_count: u8, seed: u64) -> u8 {
+    let deck_count = UpgradeDeckCount::new(deck_count).expect("random upgrade deck count");
+    let rules = UpgradeRules {
+        deck_count,
+        target_rank: Rank::Three,
+        final_target_rank: Rank::Ace,
+        removed_rank_count: seed as usize % 10,
+        attacking_win_score: 80,
+        score_per_level: 40,
+        shutout_bonus_levels: 1,
+        bottom_card_count: 8,
+        trump_suit: None,
+    };
+    let mut state =
+        UpgradeGameState::from_common(common_state(&format!("random-{deck_count:?}-{seed}")));
+    state
+        .deal_new_round(rules)
+        .expect("random upgrade deal should start");
+    finish_deal_and_bury(&mut state, UpgradeSuit::SPADE);
+    let mut rng = StdRng::seed_from_u64(seed ^ (u64::from(deck_count.get()) << 32));
+    play_random_round(&mut state, &mut rng, seed)
+}
+
+fn simulate_random_match(deck_count: u8, seed: u64) -> u8 {
+    let deck_count = UpgradeDeckCount::new(deck_count).expect("random match deck count");
+    let rules = UpgradeRules {
+        deck_count,
+        target_rank: Rank::Three,
+        final_target_rank: Rank::Five,
+        removed_rank_count: 0,
+        attacking_win_score: 80,
+        score_per_level: 10_000,
+        shutout_bonus_levels: 0,
+        bottom_card_count: 8,
+        trump_suit: None,
+    };
+    let mut state =
+        UpgradeGameState::from_common(common_state(&format!("random-match-{deck_count:?}-{seed}")));
+    state
+        .deal_new_round(rules)
+        .expect("random upgrade match should start");
+    let mut rng = StdRng::seed_from_u64(seed ^ (u64::from(deck_count.get()) << 40));
+    let mut rounds = 0;
+    let mut covered = 0;
+    loop {
+        let suit = match (rounds + seed as usize) % 4 {
+            0 => UpgradeSuit::SPADE,
+            1 => UpgradeSuit::HEART,
+            2 => UpgradeSuit::CLUB,
+            _ => UpgradeSuit::DIAMOND,
+        };
+        finish_deal_and_bury(&mut state, suit);
+        covered |= play_random_round(&mut state, &mut rng, seed ^ rounds as u64);
+        rounds += 1;
+        if !state
+            .advance_after_settlement()
+            .expect("random upgrade match settlement")
+        {
+            break;
+        }
+        assert_eq!(state.phase, UpgradePhase::Deal);
+        assert!(state.rules.trump_suit.is_none());
+        assert!(rounds < 6, "random upgrade match must converge");
+    }
+    assert!(
+        (3..=5).contains(&rounds),
+        "upgrade match finished in {rounds} rounds for seed {seed}"
+    );
+    assert!(state.settlement_event().match_finished);
+    assert_eq!(state.settlement_event().player_scores.len(), 4);
+    covered
 }
 
 macro_rules! randomized_cases {
@@ -321,3 +392,21 @@ randomized_cases!(
     (six_deck_seeds_240_247, 240),
     (six_deck_seeds_248_255, 248),
 );
+
+macro_rules! randomized_match_case {
+    ($name:ident, $deck_count:expr, $start:expr) => {
+        #[test]
+        fn $name() {
+            let mut covered = 0;
+            for seed in $start..($start + 8) {
+                covered |= simulate_random_match($deck_count, seed);
+            }
+            assert_eq!(covered, ALL_KINDS);
+        }
+    };
+}
+
+randomized_match_case!(three_deck_complete_matches, 3, 1_000);
+randomized_match_case!(four_deck_complete_matches, 4, 1_008);
+randomized_match_case!(five_deck_complete_matches, 5, 1_016);
+randomized_match_case!(six_deck_complete_matches, 6, 1_024);
