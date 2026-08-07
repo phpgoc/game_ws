@@ -106,6 +106,16 @@ pub fn first_upgrade_rank(removed_rank_count: usize, final_rank: Rank) -> Rank {
         .unwrap_or(final_rank)
 }
 
+pub fn final_upgrade_rank(removed_rank_count: usize, configured_final_rank: Rank) -> Rank {
+    level_rank_path(
+        configured_final_rank,
+        removed_upgrade_ranks(removed_rank_count),
+    )
+    .last()
+    .copied()
+    .unwrap_or(configured_final_rank)
+}
+
 pub fn build_upgrade_deck_with_removed_ranks(
     deck_count: UpgradeDeckCount,
     removed_rank_count: usize,
@@ -217,6 +227,8 @@ impl UpgradeGameState {
 
     pub fn deal_new_round(&mut self, mut rules: UpgradeRules) -> Result<(), &'static str> {
         rules.removed_rank_count = rules.removed_rank_count.min(REMOVABLE_RANKS.len());
+        rules.final_target_rank =
+            final_upgrade_rank(rules.removed_rank_count, rules.final_target_rank);
         if self.round_index == 0 {
             rules.target_rank =
                 first_upgrade_rank(rules.removed_rank_count, rules.final_target_rank);
