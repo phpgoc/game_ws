@@ -3753,6 +3753,7 @@ dependencies = [
  "shenyang_mahjong",
  "tokio",
  "tractor",
+ "upgrade",
  "ws_common",
 ]
 

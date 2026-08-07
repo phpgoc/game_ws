@@ -137,6 +137,9 @@ jobs:
           - name: android-bridge-tractor
             manifest: rust/android_server/Cargo.toml
             features: tractor
+          - name: android-bridge-upgrade
+            manifest: rust/android_server/Cargo.toml
+            features: upgrade
     steps:
       - name: 检出开源仓库
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -255,7 +258,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        game: [landlord, shenyang_mahjong, holdem, tractor, p2p]
+        game: [landlord, shenyang_mahjong, holdem, tractor, upgrade, p2p]
     steps:
       - name: 检出开源仓库
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

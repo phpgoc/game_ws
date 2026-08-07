@@ -32,6 +32,12 @@ object GameServerProfiles {
         serviceTitleRes = R.string.title_tractor_ws_service,
         port = 9004,
     )
+    val UPGRADE = GameServerProfile(
+        id = "upgrade",
+        gameNameRes = R.string.game_upgrade,
+        serviceTitleRes = R.string.title_upgrade_ws_service,
+        port = 9006,
+    )
     val P2P = GameServerProfile(
         id = "p2p",
         gameNameRes = R.string.game_p2p,
@@ -44,6 +50,7 @@ val ActiveGameServer: GameServerProfile = when (BuildConfig.GAME_ID) {
     GameServerProfiles.SHENYANG_MAHJONG.id -> GameServerProfiles.SHENYANG_MAHJONG
     GameServerProfiles.HOLDEM.id -> GameServerProfiles.HOLDEM
     GameServerProfiles.TRACTOR.id -> GameServerProfiles.TRACTOR
+    GameServerProfiles.UPGRADE.id -> GameServerProfiles.UPGRADE
     GameServerProfiles.P2P.id -> GameServerProfiles.P2P
     else -> GameServerProfiles.LANDLORD
 }.copy(port = BuildConfig.SERVER_PORT)

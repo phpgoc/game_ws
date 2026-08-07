@@ -20,7 +20,7 @@
 - `rust/upgrade/`: 升级 Rust 服务端。
 - `rust/p2p/`: 独立的两人 WebRTC 信令服务与 STUN/TURN 临时凭证签发器，不依赖其他游戏 crate。
 - `rust/android_server/`: Android JNI bridge，按单游戏 feature 产出 `libws_server.so`。
-- `android/`: 5 个 Rust 服务共用的 Android 前台服务壳，每个 APK 只打包一个 `libws_server.so`。
+- `android/`: 6 个 Rust 服务共用的 Android 前台服务壳，每个 APK 只打包一个 `libws_server.so`。
 
 ## 支持平台与发布规则
 
@@ -102,7 +102,7 @@ cargo test --manifest-path rust/p2p/Cargo.toml
 
 - 对公开 Rust crate 和 Android bridge crate 执行 `rustfmt`、全部 target 测试和 `clippy -D warnings`；
 - 对 6 个服务分别构建 Linux x86_64 musl 静态 release；
-- 对 5 个服务分别构建同时包含 arm64-v8a 与 x86_64 的 Android APK，覆盖 JNI、NDK、Gradle 和 Kotlin 包装；
+- 对 6 个服务分别构建同时包含 arm64-v8a 与 x86_64 的 Android APK，覆盖 JNI、NDK、Gradle 和 Kotlin 包装；
 - 不启用依赖私有 `data` 的 `official` feature，不读取 secrets，不上传 artifact；Cargo 和 Gradle 依赖使用带锁文件哈希的 GitHub Actions cache。
 
 独立检出开源仓库时，Cargo 和 rustfmt 仍需解析可选的私有 `data`、`runtime_common` 路径及仅供官方版使用的外部 AI 模块。
@@ -191,7 +191,7 @@ linker = "x86_64-linux-musl-gcc"
 ### Android APK（用户自行编译）
 
 每个 APK 只包含一个 server。`-Pgame` 可填写 `landlord`、
-`shenyang_mahjong`、`holdem`、`tractor` 或 `p2p`。
+`shenyang_mahjong`、`holdem`、`tractor`、`upgrade` 或 `p2p`。
 
 本机安装 JDK 17、Android SDK 35、NDK 27 后，再安装 Rust Android 工具链：
 
@@ -211,7 +211,7 @@ cd android
 `./gradlew` 换成 `.\gradlew.bat`。完整的环境变量、单 ABI、release APK 与签名说明见
 [`android/README.md`](android/README.md)。
 
-也可以完全用 Docker 编译。下面以拖拉机 APK 为例，替换 `GAME` 即可编译其余 4 个：
+也可以完全用 Docker 编译。下面以拖拉机 APK 为例，替换 `GAME` 即可编译其余 5 个：
 
 ```sh
 mkdir -p build_script/output/android

@@ -17,6 +17,7 @@ val games = mapOf(
     "holdem" to GameBuildConfig("com.example.langame.holdemserver", 9003),
     "tractor" to GameBuildConfig("com.example.langame.tractorserver", 9004),
     "p2p" to GameBuildConfig("com.example.langame.p2pserver", 9005),
+    "upgrade" to GameBuildConfig("com.example.langame.upgradeserver", 9006),
 )
 val game = providers.gradleProperty("game").orElse("landlord").get()
 val gameConfig = games[game]
@@ -32,6 +33,7 @@ val rustAbis = providers.gradleProperty("rustAbis")
 val rustWorkspaceDir = layout.projectDirectory.dir("../..")
 val rustProjectDir = layout.projectDirectory.dir("../../rust/$game")
 val rustCommonDir = layout.projectDirectory.dir("../../rust/common")
+val rustUpgradeCommonDir = layout.projectDirectory.dir("../../rust/upgrade_common")
 val rustBridgeDir = layout.projectDirectory.dir("../../rust/android_server")
 val rustShareTypesDir = layout.projectDirectory.dir("../../share_type_public")
 val rustJniLibsDir = layout.projectDirectory.dir("src/main/jniLibs")
@@ -116,6 +118,10 @@ val buildRustGame by tasks.registering(Exec::class) {
             include("src/**/*.rs")
         },
         fileTree(rustCommonDir) {
+            include("Cargo.toml")
+            include("src/**/*.rs")
+        },
+        fileTree(rustUpgradeCommonDir) {
             include("Cargo.toml")
             include("src/**/*.rs")
         },
