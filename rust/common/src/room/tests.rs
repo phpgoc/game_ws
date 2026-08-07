@@ -816,6 +816,62 @@ fn disconnect_removes_room_only_after_last_connected_human_leaves() {
 }
 
 #[test]
+fn last_human_disconnect_grace_retains_room_until_cleanup() {
+    let mut service = room_service_with_ai();
+    let _ = join_room(&mut service, 1, "owner", "grace-room", GameId::LANDLORD);
+    let common = service
+        .room_common_state("grace-room")
+        .expect("room common state");
+    common.lock().unwrap().turn_countdown = 23;
+
+    let (disconnect, cleanup) = service.disconnect_with_cleanup_grace(1);
+
+    assert!(disconnect.messages.is_empty());
+    assert!(service.room_exists("grace-room"));
+    {
+        let common = common.lock().unwrap();
+        assert!(common.is_disconnected(0));
+        assert!(!common.stop_requested());
+        assert_eq!(common.turn_countdown, 23);
+    }
+
+    assert!(service.cleanup_abandoned_room(cleanup.expect("cleanup token")));
+    assert!(!service.room_exists("grace-room"));
+    let common = common.lock().unwrap();
+    assert!(common.stop_requested());
+    assert_eq!(common.turn_countdown, 0);
+}
+
+#[test]
+fn reconnect_and_later_disconnect_invalidate_the_old_cleanup() {
+    let mut service = room_service_with_ai();
+    let _ = join_room(
+        &mut service,
+        1,
+        "owner",
+        "reconnect-grace-room",
+        GameId::LANDLORD,
+    );
+    let (_, first_cleanup) = service.disconnect_with_cleanup_grace(1);
+
+    let rejoin = join_room(
+        &mut service,
+        2,
+        "owner",
+        "reconnect-grace-room",
+        GameId::LANDLORD,
+    );
+    assert!(has_response(&rejoin, Routes::JOIN, WsResponseCode::JOINED));
+    assert_eq!(service.session_position(2), Some(0));
+
+    let (_, second_cleanup) = service.disconnect_with_cleanup_grace(2);
+    assert!(!service.cleanup_abandoned_room(first_cleanup.expect("first cleanup token")));
+    assert!(service.room_exists("reconnect-grace-room"));
+    assert!(service.cleanup_abandoned_room(second_cleanup.expect("second cleanup token")));
+    assert!(!service.room_exists("reconnect-grace-room"));
+}
+
+#[test]
 fn disconnect_removes_rejoined_ai_room_after_last_human_leaves() {
     let mut service = room_service_with_ai();
     let _ = join_room(

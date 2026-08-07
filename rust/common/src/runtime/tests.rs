@@ -15,8 +15,9 @@ use crate::{
 
 use super::{
     GameHandler, JoinAuthorization, RuntimeConfig, RuntimeStats, SessionSendError, SessionSender,
-    deliver, run_game_server, run_room_runtime, run_room_runtime_until_stopped,
-    runtime_stop_channel, session_sender_channel, tests::TestHandler,
+    cleanup_abandoned_room_after, deliver, run_game_server, run_room_runtime,
+    run_room_runtime_until_stopped, runtime_stop_channel, session_sender_channel,
+    tests::TestHandler,
 };
 
 struct DefaultHookHandler;
@@ -163,6 +164,38 @@ async fn delivery_ignores_unknown_or_closed_session_queues() {
     deliver(dispatch, &senders)
         .await
         .expect("delivery failure handling must not abort the runtime");
+}
+
+#[tokio::test]
+async fn delayed_cleanup_helper_removes_an_abandoned_room_after_its_deadline() {
+    let mut service = RoomService::default();
+    service.connect(1);
+    service
+        .handle_common_request(
+            1,
+            &share_type_public::WsRequest {
+                route: share_type_public::Routes::JOIN as i32,
+                data: serde_json::json!({
+                    "name": "owner",
+                    "password": "delayed-cleanup-room",
+                    "game_id": GameId::LANDLORD as i32
+                }),
+            },
+            GameId::LANDLORD,
+            || (GameSettings::new(1, 4), HashMap::new()),
+        )
+        .expect("join is a common request");
+    let (_, cleanup) = service.disconnect_with_cleanup_grace(1);
+    let service = Arc::new(Mutex::new(service));
+
+    cleanup_abandoned_room_after(
+        Arc::clone(&service),
+        cleanup.expect("cleanup token"),
+        std::time::Duration::ZERO,
+    )
+    .await;
+
+    assert_eq!(service.lock().await.room_count(), 0);
 }
 
 #[tokio::test]

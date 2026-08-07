@@ -41,6 +41,13 @@ struct RoomEntry {
     state: Box<dyn crate::game_state::GameState>,
     official_match_id: Option<i32>,
     official_user_ids_by_position: HashMap<usize, i32>,
+    pending_cleanup_generation: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RoomCleanupToken {
+    room_key: String,
+    generation: u64,
 }
 
 #[derive(Debug, Default)]
@@ -48,6 +55,7 @@ pub struct RoomService {
     sessions: HashMap<SessionId, SessionState>,
     rooms: HashMap<String, RoomEntry>,
     next_ai_sequence: u64,
+    next_cleanup_generation: u64,
     ai_players_enabled: bool,
 }
 
@@ -285,12 +293,65 @@ impl RoomService {
 
     /// 移除断开的会话、更新房间成员状态，并返回需要发送的事件。
     pub fn disconnect(&mut self, session_id: SessionId) -> Dispatch {
+        let (dispatch, cleanup) = self.disconnect_with_cleanup_grace(session_id);
+        if let Some(cleanup) = cleanup {
+            self.cleanup_abandoned_room(cleanup);
+        }
+        dispatch
+    }
+
+    /// 移除断开的会话，但为最后一名真人保留房间，交由运行时延迟清理。
+    pub(crate) fn disconnect_with_cleanup_grace(
+        &mut self,
+        session_id: SessionId,
+    ) -> (Dispatch, Option<RoomCleanupToken>) {
         let mut dispatch = Dispatch::default();
         let Some(mut session) = self.sessions.remove(&session_id) else {
-            return dispatch;
+            return (dispatch, None);
         };
+        let room_key = session.room_key.clone();
         self.mark_disconnected(session_id, &mut session, &mut dispatch);
-        dispatch
+        let cleanup = room_key.and_then(|room_key| self.begin_abandoned_room_cleanup(&room_key));
+        (dispatch, cleanup)
+    }
+
+    fn begin_abandoned_room_cleanup(&mut self, room_key: &str) -> Option<RoomCleanupToken> {
+        if !self.connected_session_ids(room_key).is_empty() || !self.rooms.contains_key(room_key) {
+            return None;
+        }
+        self.next_cleanup_generation = self.next_cleanup_generation.wrapping_add(1).max(1);
+        let generation = self.next_cleanup_generation;
+        self.rooms
+            .get_mut(room_key)
+            .expect("room existence checked")
+            .pending_cleanup_generation = Some(generation);
+        Some(RoomCleanupToken {
+            room_key: room_key.to_owned(),
+            generation,
+        })
+    }
+
+    /// 仅当令牌仍属于当前空房间时停止游戏并移除房间。
+    pub(crate) fn cleanup_abandoned_room(&mut self, cleanup: RoomCleanupToken) -> bool {
+        let token_matches = self
+            .rooms
+            .get(&cleanup.room_key)
+            .is_some_and(|entry| entry.pending_cleanup_generation == Some(cleanup.generation));
+        if !token_matches {
+            return false;
+        }
+        if !self.connected_session_ids(&cleanup.room_key).is_empty() {
+            if let Some(entry) = self.rooms.get_mut(&cleanup.room_key) {
+                entry.pending_cleanup_generation = None;
+            }
+            return false;
+        }
+        let Some(mut entry) = self.rooms.remove(&cleanup.room_key) else {
+            return false;
+        };
+        entry.state.set_turn_countdown(0);
+        entry.state.request_stop();
+        true
     }
 
     /// 构造只发给指定会话的一条通用错误响应。
@@ -784,6 +845,7 @@ impl RoomService {
                     state: Box::new(crate::game_state::SharedGameState::new()),
                     official_match_id: None,
                     official_user_ids_by_position: HashMap::new(),
+                    pending_cleanup_generation: None,
                 },
             );
         } else if self
@@ -1362,13 +1424,7 @@ impl RoomService {
         session.official_session_id = None;
         let mut name = session.name.clone().unwrap_or_default();
         let mut position = session.position.take();
-        let mut recipients = Vec::new();
-        // `disconnect` removes the current session before reaching here. AI
-        // players and disconnected roster entries do not have live sessions,
-        // so they must not keep an otherwise abandoned room alive.
-        let has_connected_human = !self.connected_session_ids(&room_key).is_empty();
-        let mut should_remove_room = false;
-
+        let recipients = self.connected_session_ids(&room_key);
         if let Some(entry) = self.rooms.get_mut(&room_key) {
             let players = entry.state.players();
             if position.is_none()
@@ -1390,47 +1446,28 @@ impl RoomService {
                 }
             }
 
-            if !has_connected_human {
-                entry.state.set_turn_countdown(0);
-                entry.state.request_stop();
-                should_remove_room = true;
+            let Some(pos) = position else {
+                return;
+            };
+            let event = CommonEvent {
+                code: WsCode::JOIN as i32,
+                data: serde_json::to_value(share_type_public::WsMemberInfo {
+                    name,
+                    avatar_url: entry.state.player_avatar(pos),
+                    position: pos as i32,
+                    is_active: false,
+                    is_ai: false,
+                    away: true,
+                    is_ai_takeover: entry.state.is_ai_takeover_position(pos),
+                })
+                .unwrap_or(Value::Null),
+            };
+            for recipient in recipients {
+                dispatch.messages.push(Delivery {
+                    recipient,
+                    payload: OutboundPayload::Event(event.clone()),
+                });
             }
-
-            if !should_remove_room {
-                let Some(pos) = position else {
-                    return;
-                };
-                recipients.extend(
-                    entry
-                        .state
-                        .players()
-                        .values()
-                        .filter_map(|(sid, _)| (*sid != session_id).then_some(*sid)),
-                );
-                let event = CommonEvent {
-                    code: WsCode::JOIN as i32,
-                    data: serde_json::to_value(share_type_public::WsMemberInfo {
-                        name,
-                        avatar_url: entry.state.player_avatar(pos),
-                        position: pos as i32,
-                        is_active: false,
-                        is_ai: false,
-                        away: true,
-                        is_ai_takeover: entry.state.is_ai_takeover_position(pos),
-                    })
-                    .unwrap_or(Value::Null),
-                };
-                for recipient in recipients {
-                    dispatch.messages.push(Delivery {
-                        recipient,
-                        payload: OutboundPayload::Event(event.clone()),
-                    });
-                }
-            }
-        }
-
-        if should_remove_room {
-            self.rooms.remove(&room_key);
         }
     }
 

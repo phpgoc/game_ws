@@ -219,7 +219,7 @@ async fn wait_for_client_count(stats: &ws_common::RuntimeStats, expected: usize)
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn runtime_accepts_a_websocket_join_and_cleans_up_on_close() {
+async fn runtime_keeps_a_room_for_rejoin_after_the_last_client_disconnects() {
     let (stop, signal) = runtime_stop_channel();
     let (ready_tx, ready_rx) = sync_channel(1);
     let server = tokio::spawn(run_room_runtime_until_stopped_with_ready(
@@ -287,12 +287,55 @@ async fn runtime_accepts_a_websocket_join_and_cleans_up_on_close() {
 
     client.close(None).await.expect("close client");
     wait_for_client_count(&stats, 0).await;
+    assert_eq!(stats.room_count().await, 1);
+
+    let (mut rejoined, _) = connect_async(format!("ws://{}", stats.listen_addr()))
+        .await
+        .expect("reconnect websocket client");
+    rejoined
+        .send(Message::Text(
+            serde_json::json!({
+                "route": Routes::JOIN as i32,
+                "data": {
+                    "name": "runtime owner",
+                    "password": "runtime-room",
+                    "game_id": GameId::LANDLORD as i32,
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send rejoin");
+    let rejoin_response = timeout(Duration::from_secs(1), async {
+        loop {
+            match rejoined
+                .next()
+                .await
+                .expect("rejoin frame")
+                .expect("valid frame")
+            {
+                Message::Text(text) => break text,
+                Message::Pong(_) | Message::Ping(_) => continue,
+                frame => panic!("unexpected rejoin response frame: {frame:?}"),
+            }
+        }
+    })
+    .await
+    .expect("rejoin response arrives");
+    let rejoin_response: serde_json::Value =
+        serde_json::from_str(&rejoin_response).expect("rejoin response json");
+    assert_eq!(rejoin_response["route"], Routes::JOIN as i32);
+    assert_eq!(rejoin_response["code"], WsResponseCode::JOINED as i32);
+
+    rejoined.close(None).await.expect("close rejoined client");
+    wait_for_client_count(&stats, 0).await;
     stop.stop();
     let stopped = server
         .await
         .expect("runtime task joins")
         .expect("runtime stops");
-    assert_eq!(stopped.room_count().await, 0);
+    assert_eq!(stopped.room_count().await, 1);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

@@ -32,6 +32,7 @@ use crate::{
     cli::parse_bind_cli,
     from_message,
     net::{resolve_host, resolve_port},
+    room::RoomCleanupToken,
     to_text_message,
 };
 
@@ -39,6 +40,7 @@ const MAX_CONNECTIONS: usize = 4_096;
 const OUTBOUND_QUEUE_CAPACITY: usize = 256;
 const INBOUND_MESSAGES_PER_SECOND: f64 = 30.0;
 const INBOUND_MESSAGE_BURST: f64 = 60.0;
+const LAST_HUMAN_DISCONNECT_GRACE: Duration = Duration::from_secs(30);
 
 struct ConnectionContext<H> {
     idle_timeout: Duration,
@@ -220,6 +222,15 @@ async fn deliver(dispatch: Dispatch, senders: &SessionSenders) -> anyhow::Result
         }
     }
     Ok(())
+}
+
+async fn cleanup_abandoned_room_after(
+    room_service: Arc<Mutex<RoomService>>,
+    cleanup: RoomCleanupToken,
+    grace: Duration,
+) {
+    tokio::time::sleep(grace).await;
+    room_service.lock().await.cleanup_abandoned_room(cleanup);
 }
 
 async fn handle_connection<H>(
@@ -409,9 +420,19 @@ where
         deliver(dispatch, &senders).await?;
     }
 
-    let disconnect_dispatch = room_service.lock().await.disconnect(session_id);
+    let (disconnect_dispatch, cleanup) = room_service
+        .lock()
+        .await
+        .disconnect_with_cleanup_grace(session_id);
     senders.lock().await.remove(&session_id);
     deliver(disconnect_dispatch, &senders).await?;
+    if let Some(cleanup) = cleanup {
+        tokio::spawn(cleanup_abandoned_room_after(
+            Arc::clone(&room_service),
+            cleanup,
+            LAST_HUMAN_DISCONNECT_GRACE,
+        ));
+    }
     heartbeat.abort();
     writer.abort();
     Ok(())
