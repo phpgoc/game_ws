@@ -161,3 +161,34 @@ fn six_deck_bottom_score_keeps_a_four_copy_component_as_the_maximum() {
     assert_eq!(state.last_trick_winner, Some(0));
     assert_eq!(state.bottom_multiplier, 4);
 }
+
+#[test]
+fn long_throw_winner_compares_the_largest_repeated_component() {
+    let lead = vec![3, 103, 203, 12, 112, 13];
+    let mut state = state_with_hands(
+        vec![],
+        HashMap::from([
+            (0, lead.clone()),
+            (1, vec![16, 116, 216, 26, 126, 25]),
+            (2, vec![17, 117, 217, 18, 118, 19]),
+            (3, vec![29, 129, 229, 38, 138, 39]),
+        ]),
+    );
+
+    state
+        .play_cards(0, lead)
+        .expect("triple, pair and singleton lead");
+    for (position, cards) in [
+        (1, vec![16, 116, 216, 26, 126, 25]),
+        (2, vec![17, 117, 217, 18, 118, 19]),
+        (3, vec![29, 129, 229, 38, 138, 39]),
+    ] {
+        state
+            .play_cards(position, cards)
+            .expect("same-structure long throw follow");
+    }
+
+    // Seat 2 owns the higher trump triple. Seat 1's unrelated ace pair must
+    // not protect its lower triple from being covered.
+    assert_eq!(state.last_trick_winner, Some(2));
+}

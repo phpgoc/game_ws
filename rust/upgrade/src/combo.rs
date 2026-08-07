@@ -315,6 +315,21 @@ pub fn can_compete_with_lead(cards: &[Card], lead: &Combo, rules: UpgradeComboRu
     }
 }
 
+/// Return the strength of the lead's largest repeated component when this play
+/// carries the same structure. Unrelated high singles or shorter components
+/// never decide a long-throw cover.
+pub fn combo_win_value(cards: &[Card], lead: &Combo, rules: UpgradeComboRules) -> Option<i32> {
+    if !can_compete_with_lead(cards, lead, rules) {
+        return None;
+    }
+    let required = lead.multiplicities.first().copied().unwrap_or(1);
+    identity_groups(cards)
+        .into_values()
+        .filter(|component| component.len() >= required)
+        .filter_map(|component| component.first().map(|card| card_strength(*card, rules)))
+        .max()
+}
+
 fn component_follow_score(cards: &[Card], requirements: &[usize]) -> Vec<usize> {
     let mut available = identity_groups(cards)
         .into_values()

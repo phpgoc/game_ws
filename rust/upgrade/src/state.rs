@@ -527,19 +527,12 @@ impl UpgradeGameState {
         let lead_combo = combo::classify(&lead_cards, rules)?;
         let mut winner = usize::try_from(lead.position).ok()?;
         let mut best_priority = if lead_combo.group.is_none() { 2 } else { 1 };
-        let mut best = lead_cards
-            .iter()
-            .filter(|card| combo::card_group(**card, rules) == lead_combo.group)
-            .map(|card| combo::card_strength(*card, rules))
-            .max()?;
+        let mut best = combo::combo_win_value(&lead_cards, &lead_combo, rules)?;
         for played in self.current_trick.iter().skip(1) {
             let cards = Self::cards_from_ids(&played.cards).ok()?;
             let Some(candidate) = combo::classify(&cards, rules) else {
                 continue;
             };
-            if !combo::can_compete_with_lead(&cards, &lead_combo, rules) {
-                continue;
-            }
             let competes = match (lead_combo.group, candidate.group) {
                 (Some(lead_group), Some(candidate_group)) => lead_group == candidate_group,
                 (None, None) | (Some(_), None) => true,
@@ -549,12 +542,7 @@ impl UpgradeGameState {
                 continue;
             }
             let priority = if candidate.group.is_none() { 2 } else { 1 };
-            let Some(value) = cards
-                .iter()
-                .filter(|card| combo::card_group(**card, rules) == candidate.group)
-                .map(|card| combo::card_strength(*card, rules))
-                .max()
-            else {
+            let Some(value) = combo::combo_win_value(&cards, &lead_combo, rules) else {
                 continue;
             };
             if priority > best_priority || (priority == best_priority && value > best) {
