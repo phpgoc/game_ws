@@ -16,31 +16,34 @@
 - `rust/shenyang_mahjong/`: 沈阳麻将 Rust 服务端。
 - `rust/holdem/`: Hold'em 系列 Rust 服务端，承载德州、明牌德州、短牌德州和奥马哈。
 - `rust/tractor/`: 拖拉机 Rust 服务端。
+- `rust/upgrade_common/`: 拖拉机与升级共享的牌、等级和分数进阶原语。
+- `rust/upgrade/`: 升级 Rust 服务端。
 - `rust/p2p/`: 独立的两人 WebRTC 信令服务与 STUN/TURN 临时凭证签发器，不依赖其他游戏 crate。
 - `rust/android_server/`: Android JNI bridge，按单游戏 feature 产出 `libws_server.so`。
 - `android/`: 5 个 Rust 服务共用的 Android 前台服务壳，每个 APK 只打包一个 `libws_server.so`。
 
 ## 支持平台与发布规则
 
-当前 5 个 server 都支持从源码编译：
+当前 6 个 server 都支持从源码编译：
 
 - `landlord`
 - `shenyang_mahjong`
 - `holdem`
 - `tractor`
+- `upgrade`
 - `p2p`
 
 平台规则如下：
 
 | 目标平台 | 编译方式 | 官方 release |
 | --- | --- | --- |
-| Linux x86_64 musl | `build_script/build_all.sh` | 是，发布 5 个静态可执行文件 |
+| Linux x86_64 musl | `build_script/build_all.sh` | 是，发布 6 个静态可执行文件 |
 | Windows x86_64 | 按本文 PowerShell 命令自行编译 | 否 |
 | Android APK | 使用 Gradle 或 `Dockerfile.android` 自行编译 | 否 |
 | ARM64 Linux | 使用交叉工具链或 `Dockerfile.arm64` 自行编译 | 否 |
 
 `build_script/build_all.sh` 和 `build_script/build_in_docker.sh` 只负责正式发布的
-5 个 Linux x86_64 musl server，不再构建 APK、Windows 或 ARM Linux 产物。
+6 个 Linux x86_64 musl server，不再构建 APK、Windows 或 ARM Linux 产物。
 
 独立检出开源仓库后，手动运行 Cargo 或 Gradle 命令前先准备不包含私有实现的依赖边界：
 
@@ -63,6 +66,7 @@ cargo run --manifest-path rust/tractor/Cargo.toml -- --host 0.0.0.0 --port 9004
 P2P_TURN_SECRET='replace-with-a-long-random-secret' \
 P2P_TURN_PUBLIC_IP='203.0.113.10' \
 cargo run --manifest-path rust/p2p/Cargo.toml -- --host 0.0.0.0 --port 9005
+cargo run --manifest-path rust/upgrade/Cargo.toml -- --host 0.0.0.0 --port 9006
 ```
 
 `p2p` 会在同一 Rust 进程内监听 UDP 3478 提供 STUN/TURN，并使用 UDP
@@ -85,15 +89,19 @@ cargo test --manifest-path rust/landlord/Cargo.toml
 cargo check --manifest-path rust/shenyang_mahjong/Cargo.toml
 cargo check --manifest-path rust/holdem/Cargo.toml
 cargo check --manifest-path rust/tractor/Cargo.toml
+cargo check --manifest-path rust/upgrade_common/Cargo.toml
+cargo check --manifest-path rust/upgrade/Cargo.toml
 cargo check --manifest-path rust/p2p/Cargo.toml
 cargo test --manifest-path rust/tractor/Cargo.toml
+cargo test --manifest-path rust/upgrade_common/Cargo.toml
+cargo test --manifest-path rust/upgrade/Cargo.toml
 cargo test --manifest-path rust/p2p/Cargo.toml
 ```
 
 公开仓库的 `Public WS CI` 在 push、pull request、手动触发和每周定时任务中免费运行：
 
 - 对公开 Rust crate 和 Android bridge crate 执行 `rustfmt`、全部 target 测试和 `clippy -D warnings`；
-- 对 5 个服务分别构建 Linux x86_64 musl 静态 release；
+- 对 6 个服务分别构建 Linux x86_64 musl 静态 release；
 - 对 5 个服务分别构建同时包含 arm64-v8a 与 x86_64 的 Android APK，覆盖 JNI、NDK、Gradle 和 Kotlin 包装；
 - 不启用依赖私有 `data` 的 `official` feature，不读取 secrets，不上传 artifact；Cargo 和 Gradle 依赖使用带锁文件哈希的 GitHub Actions cache。
 
@@ -104,7 +112,7 @@ crate、`runtime_common` 和 AI 模块。
 
 提交的 `Cargo.lock` 按公开 fixture 的依赖图锁定，保证独立公开检出可以使用 `--locked`；嵌入主仓库时，官方 workspace 使用根仓库自己的锁文件。直接在真实私有 sibling 环境中执行 `ws` 的普通 Cargo 命令即可让 Cargo 解析对应的可选依赖图。
 
-拖拉机房间开始后会锁定设置。当前主要设置包括：`deck_count`（几副牌）、`removed_rank_count`（按 `3/4/6/7/8/9/J/Q/A` 的顺序删掉前 N 个点数，`0` 表示不删）、`first_deal_time`（首局发牌总时间，毫秒）、`deal_time`（后续局发牌总时间，毫秒）、`ai_action_time`（AI/托管行动间隔，毫秒）、`target_rank`（最终目标 rank）、`blood_enabled` / `blood_start_score` / `blood_score_per_unit`（喝血相关）。首局发牌中由所有玩家抢主/反主并决定首庄；第二局起只由既定庄家选择主花色。发完后庄家收底并扣回相同张数，随后进入出牌。
+拖拉机和升级房间开始后都会锁定设置。拖拉机支持 2–3 副完整牌组，不提供删牌设置；升级支持 3–6 副，并可配置从低点数起删除牌面。两个游戏都不支持喝血、进贡或上贡，均按 `attacking_win_score`、`score_per_level` 和 `shutout_bonus_levels` 结算跳级。首局从 3（被删时取首个保留等级）开始，发牌中允许抢主/反主并决定首庄；后续局发牌时不亮主，庄家拿底后在同一个底牌操作窗口内先选主、再埋底。首局默认总发牌 15 秒，后续局 3 秒；底牌操作窗口为出牌时间的 3 倍，选主不会重置倒计时。
 
 ## 编译与发布 Rust WS 服务端
 
@@ -125,7 +133,7 @@ rustup toolchain install stable
 rustup target add x86_64-unknown-linux-musl
 ```
 
-在 `ws` 根目录构建全部 5 个发布文件：
+在 `ws` 根目录构建全部 6 个发布文件：
 
 ```sh
 ./build_script/build_all.sh
@@ -138,10 +146,11 @@ build_script/output/landlord
 build_script/output/shenyang_mahjong
 build_script/output/holdem
 build_script/output/tractor
+build_script/output/upgrade
 build_script/output/p2p
 ```
 
-不想在主机安装 Rust 和 musl 工具链时，可用 Docker 构建相同的 5 个文件：
+不想在主机安装 Rust 和 musl 工具链时，可用 Docker 构建相同的 6 个文件：
 
 ```sh
 ./build_script/build_in_docker.sh
@@ -218,7 +227,7 @@ docker build \
 
 ### ARM64 Linux（用户自行编译）
 
-推荐直接使用独立 Dockerfile 交叉编译 5 个 ARM64 GNU/Linux server：
+推荐直接使用独立 Dockerfile 交叉编译 6 个 ARM64 GNU/Linux server：
 
 ```sh
 mkdir -p build_script/output/arm64
@@ -228,7 +237,7 @@ docker build \
   .
 ```
 
-输出目录包含 `landlord`、`shenyang_mahjong`、`holdem`、`tractor`、`p2p`。
+输出目录包含 `landlord`、`shenyang_mahjong`、`holdem`、`tractor`、`upgrade`、`p2p`。
 这些是 `aarch64-unknown-linux-gnu` 文件，适用于 64 位 ARM Linux；它们会动态依赖
 glibc。Dockerfile 使用 Ubuntu 20.04，以兼容 glibc 2.31 及以上系统。需要兼容更旧系统时，
 应在对应旧版 Linux 镜像或目标 ARM 设备上重新编译。
@@ -248,6 +257,7 @@ cargo build --release \
   -p shenyang_mahjong \
   -p holdem \
   -p tractor \
+  -p upgrade \
   -p p2p \
   --no-default-features
 ```
@@ -275,6 +285,7 @@ try {
     -p shenyang_mahjong `
     -p holdem `
     -p tractor `
+    -p upgrade `
     -p p2p `
     --no-default-features
 } finally {
@@ -289,6 +300,7 @@ target\x86_64-pc-windows-msvc\release\landlord.exe
 target\x86_64-pc-windows-msvc\release\shenyang_mahjong.exe
 target\x86_64-pc-windows-msvc\release\holdem.exe
 target\x86_64-pc-windows-msvc\release\tractor.exe
+target\x86_64-pc-windows-msvc\release\upgrade.exe
 target\x86_64-pc-windows-msvc\release\p2p.exe
 ```
 
@@ -307,8 +319,8 @@ UDP 49160-49200；公网部署还要配置路由器端口映射。
 
 ```text
 推荐 release 产物：Linux x86_64 musl 静态单文件。
-release 包范围：landlord、shenyang_mahjong、holdem、tractor、p2p。
-build_all.sh 和 build_in_docker.sh 只生成上述 5 个 Linux x86_64 文件。
+release 包范围：landlord、shenyang_mahjong、holdem、tractor、upgrade、p2p。
+build_all.sh 和 build_in_docker.sh 只生成上述 6 个 Linux x86_64 文件。
 Android APK 与 ARM64 Linux 可以使用独立 Dockerfile，但只能由用户按文档自行构建，不进入 release。
 Windows 不作为推荐运行环境；如需 Windows 构建说明，只保留 x86_64-pc-windows-msvc + crt-static 的验证命令，并提醒防火墙、杀毒软件、端口开放和执行策略需要额外处理。
 ```
