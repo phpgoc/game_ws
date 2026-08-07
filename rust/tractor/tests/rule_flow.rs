@@ -335,6 +335,47 @@ fn throw_follow_preserves_every_available_tractor_before_loose_pairs() {
 }
 
 #[test]
+fn three_deck_throw_follow_allocates_tractors_before_independent_triples() {
+    let three_deck_rules = rules(3);
+    let triple_throw = combo::classify(&[2, 102, 202, 12, 112, 13], &three_deck_rules)
+        .expect("triple, pair and singleton throw");
+    let hand = vec![3, 103, 203, 4, 104, 5, 6];
+    assert!(!combo::follow_is_legal(
+        &hand,
+        &[3, 103, 4, 104, 5, 6],
+        &triple_throw,
+        &three_deck_rules
+    ));
+    assert!(combo::follow_is_legal(
+        &hand,
+        &[3, 103, 203, 4, 104, 5],
+        &triple_throw,
+        &three_deck_rules
+    ));
+    let forced = combo::forced_follow(&hand, &triple_throw, &three_deck_rules)
+        .expect("automatic triple throw follow");
+    assert!(combo::follow_is_legal(
+        &hand,
+        &forced,
+        &triple_throw,
+        &three_deck_rules
+    ));
+
+    // The same physical copies cannot be required once as a tractor and again
+    // as a triple. Two adjacent triples satisfy the larger tractor component;
+    // the remaining copies are singles, so an independent triple is impossible.
+    let mixed_throw = combo::classify(&[2, 102, 3, 103, 7, 107, 207, 13], &three_deck_rules)
+        .expect("tractor, triple and singleton throw");
+    let hand = vec![4, 104, 204, 5, 105, 205, 9, 109, 13];
+    let forced = combo::forced_follow(&hand, &mixed_throw, &three_deck_rules)
+        .expect("automatic non-overlapping structure follow");
+    assert!(
+        combo::follow_is_legal(&hand, &forced, &mixed_throw, &three_deck_rules),
+        "automatic follow required overlapping tractor and triple cards: {forced:?}"
+    );
+}
+
+#[test]
 fn follower_with_a_titanic_cannot_replace_it_with_non_consecutive_triples() {
     let state_hands = HashMap::from([
         (0, vec![2, 102, 202, 3, 103, 203]),
@@ -398,6 +439,50 @@ fn titanic_follow_uses_the_official_structure_priority_order() {
             "automatic follow violated the Titanic priority: {forced:?}"
         );
     }
+}
+
+#[test]
+fn titanic_inside_a_throw_keeps_the_official_fallback_priority() {
+    let three_deck_rules = rules(3);
+    let lead = combo::classify(&[2, 102, 202, 3, 103, 203, 12], &three_deck_rules)
+        .expect("Titanic and singleton throw");
+
+    let tractor_hand = vec![4, 104, 5, 105, 7, 8, 9];
+    let forced = combo::forced_follow(&tractor_hand, &lead, &three_deck_rules)
+        .expect("tractor fallback inside a throw");
+    assert!(
+        combo::follow_is_legal(&tractor_hand, &forced, &lead, &three_deck_rules),
+        "automatic throw follow lost the Titanic tractor fallback: {forced:?}"
+    );
+
+    let two_triple_hand = vec![4, 104, 204, 7, 107, 207, 9, 10];
+    assert!(!combo::follow_is_legal(
+        &two_triple_hand,
+        &[4, 104, 204, 7, 107, 9, 10],
+        &lead,
+        &three_deck_rules
+    ));
+    let forced = combo::forced_follow(&two_triple_hand, &lead, &three_deck_rules)
+        .expect("two-triple fallback inside a throw");
+    assert!(combo::follow_is_legal(
+        &two_triple_hand,
+        &forced,
+        &lead,
+        &three_deck_rules
+    ));
+
+    let lead = combo::classify(
+        &[2, 102, 202, 3, 103, 203, 7, 107, 8, 108],
+        &three_deck_rules,
+    )
+    .expect("Titanic and tractor throw");
+    let two_tractor_hand = vec![4, 104, 5, 105, 10, 110, 11, 111, 12, 13];
+    let forced = combo::forced_follow(&two_tractor_hand, &lead, &three_deck_rules)
+        .expect("separate Titanic fallback and explicit tractor");
+    assert!(
+        combo::follow_is_legal(&two_tractor_hand, &forced, &lead, &three_deck_rules),
+        "fallback reused the cards required by the explicit tractor: {forced:?}"
+    );
 }
 
 #[test]

@@ -519,14 +519,123 @@ fn required_run_cards(
         .collect()
 }
 
-fn required_run_unit_count(
-    cards: &[i32],
+#[derive(Debug, Default)]
+struct RequiredThrowStructure {
+    cards: Vec<i32>,
+    titanic_units: usize,
+    tractor_units: usize,
+    triple_units: usize,
+}
+
+fn take_lowest_structure_units(
+    chosen: &mut Vec<i32>,
+    remaining: &mut Vec<i32>,
     lead_suit: Option<i32>,
     copies: usize,
-    cap: usize,
+    count: usize,
     rules: &TractorRules,
 ) -> usize {
-    required_run_cards(cards, lead_suit, copies, cap, rules).len() / copies
+    let units = multiplicity_units(remaining, lead_suit, copies, rules)
+        .into_iter()
+        .take(count)
+        .map(|(_, _, cards)| cards)
+        .collect::<Vec<_>>();
+    let selected = units.len();
+    for unit in units {
+        for card in unit {
+            take_card(remaining, card);
+            chosen.push(card);
+        }
+    }
+    selected
+}
+
+fn take_titanic_fallback_structure(
+    chosen: &mut Vec<i32>,
+    remaining: &mut Vec<i32>,
+    lead_suit: Option<i32>,
+    triple_units: usize,
+    rules: &TractorRules,
+) {
+    match titanic_follow_priority(remaining, lead_suit, rules) {
+        6 => {
+            let cards = required_run_cards(remaining, lead_suit, 2, triple_units, rules);
+            for card in cards {
+                take_card(remaining, card);
+                chosen.push(card);
+            }
+        }
+        5 => {
+            take_lowest_structure_units(chosen, remaining, lead_suit, 3, triple_units, rules);
+        }
+        4 => {
+            take_lowest_structure_units(chosen, remaining, lead_suit, 3, 1, rules);
+            take_lowest_structure_units(chosen, remaining, lead_suit, 2, 1, rules);
+        }
+        3 => {
+            take_lowest_structure_units(chosen, remaining, lead_suit, 3, 1, rules);
+        }
+        2 => {
+            take_lowest_structure_units(chosen, remaining, lead_suit, 2, 2, rules);
+        }
+        1 => {
+            take_lowest_structure_units(chosen, remaining, lead_suit, 2, 1, rules);
+        }
+        _ => {}
+    }
+}
+
+fn required_throw_structure(
+    cards: &[i32],
+    lead: &Combo,
+    rules: &TractorRules,
+) -> RequiredThrowStructure {
+    let lead_suit = lead.suit;
+    let mut remaining = cards
+        .iter()
+        .copied()
+        .filter(|card| card_in_group(*card, lead_suit, rules))
+        .collect::<Vec<_>>();
+    remaining.sort_by_key(|card| tractor_card_value(*card, rules, lead_suit));
+    let mut structure = RequiredThrowStructure::default();
+
+    if lead.titanic_triple_count > 0 {
+        let cards = required_run_cards(&remaining, lead_suit, 3, lead.titanic_triple_count, rules);
+        structure.titanic_units = cards.len() / 3;
+        for card in cards {
+            take_card(&mut remaining, card);
+            structure.cards.push(card);
+        }
+        if structure.titanic_units == 0 {
+            take_titanic_fallback_structure(
+                &mut structure.cards,
+                &mut remaining,
+                lead_suit,
+                lead.titanic_triple_count,
+                rules,
+            );
+        }
+    }
+
+    if lead.tractor_pair_count > 0 {
+        let cards = required_run_cards(&remaining, lead_suit, 2, lead.tractor_pair_count, rules);
+        structure.tractor_units = cards.len() / 2;
+        for card in cards {
+            take_card(&mut remaining, card);
+            structure.cards.push(card);
+        }
+    }
+
+    let standalone_triples = lead.triple_count.saturating_sub(lead.titanic_triple_count);
+    structure.triple_units = take_lowest_structure_units(
+        &mut structure.cards,
+        &mut remaining,
+        lead_suit,
+        3,
+        standalone_triples,
+        rules,
+    );
+    structure
 }
 
 fn longest_multiplicity_run(
@@ -903,11 +1012,15 @@ pub fn follow_is_legal(hand: &[i32], cards: &[i32], lead: &Combo, rules: &Tracto
         {
             return false;
         }
-        ComboKind::Throw { .. } if lead.tractor_pair_count > 0 => {
-            let required =
-                required_run_unit_count(hand, lead_suit, 2, lead.tractor_pair_count, rules);
-            if required_run_unit_count(cards, lead_suit, 2, lead.tractor_pair_count, rules)
-                < required
+        ComboKind::Throw { .. } => {
+            let required = required_throw_structure(hand, lead, rules);
+            let played = required_throw_structure(cards, lead, rules);
+            if played.titanic_units < required.titanic_units
+                || played.tractor_units < required.tractor_units
+                || played.triple_units < required.triple_units
+                || (lead.titanic_triple_count > 0
+                    && titanic_follow_priority(cards, lead_suit, rules)
+                        < titanic_follow_priority(hand, lead_suit, rules))
             {
                 return false;
             }
@@ -1130,10 +1243,9 @@ pub fn forced_follow(hand: &[i32], lead: &Combo, rules: &TractorRules) -> Option
                 _ => {}
             }
         }
-        ComboKind::Throw { .. } if lead.tractor_pair_count > 0 => {
-            let run_cards =
-                required_run_cards(&remaining, lead_suit, 2, lead.tractor_pair_count, rules);
-            for card in run_cards {
+        ComboKind::Throw { .. } => {
+            let required = required_throw_structure(&remaining, lead, rules);
+            for card in required.cards {
                 take_card(&mut remaining, card);
                 chosen.push(card);
             }
