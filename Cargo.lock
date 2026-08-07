@@ -1196,6 +1196,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "data",
+ "poker_core",
  "rand 0.10.2",
  "serde_json",
  "share_type_public",
@@ -1849,6 +1850,10 @@ dependencies = [
  "once_cell",
  "regex",
 ]
+
+[[package]]
+name = "poker_core"
+version = "0.1.0"
 
 [[package]]
 name = "portable-atomic"
