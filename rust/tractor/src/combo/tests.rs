@@ -223,19 +223,19 @@ fn bottom_multiplier_uses_the_strongest_standard_shape() {
     let two_deck = rules(TractorRank::TWO);
     assert_eq!(bottom_multiplier(&[2], &two_deck), 2);
     assert_eq!(bottom_multiplier(&[2, 102], &two_deck), 4);
-    assert_eq!(bottom_multiplier(&[2, 102, 3, 103], &two_deck), 16);
-    assert_eq!(bottom_multiplier(&[2, 102, 3, 103, 4, 104], &two_deck), 64);
+    assert_eq!(bottom_multiplier(&[2, 102, 3, 103], &two_deck), 8);
+    assert_eq!(bottom_multiplier(&[2, 102, 3, 103, 4, 104], &two_deck), 16);
 
     let mut three_deck = two_deck;
     three_deck.deck_count = 3;
-    assert_eq!(bottom_multiplier(&[2, 102, 202], &three_deck), 8);
+    assert_eq!(bottom_multiplier(&[2, 102, 202], &three_deck), 6);
     assert_eq!(
         bottom_multiplier(&[2, 102, 202, 3, 103, 203], &three_deck),
-        64
+        18
     );
     assert_eq!(
         bottom_multiplier(&[2, 102, 202, 12, 112, 13], &three_deck),
-        8
+        6
     );
 }
 

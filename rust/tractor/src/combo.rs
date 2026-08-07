@@ -1293,9 +1293,9 @@ pub fn throw_components(cards: &[i32], rules: &TractorRules) -> Option<Vec<Vec<i
 
 /// Standard Tractor bottom multiplier for the winning play of the last trick.
 ///
-/// A successful throw is scored by its strongest component, never by the
-/// total number of cards in the throw. Each independent winning shape scores
-/// `2 ^ card_count`, capped at 64.
+/// The official shape order is Titanic, triple, tractor, pair, then single.
+/// A successful throw uses its highest-priority independent component, never
+/// its total card count.
 pub fn bottom_multiplier(cards: &[i32], rules: &TractorRules) -> i32 {
     let Some(combo) = classify(cards, rules) else {
         return 1;
@@ -1305,21 +1305,30 @@ pub fn bottom_multiplier(cards: &[i32], rules: &TractorRules) -> i32 {
         | ComboKind::Pair
         | ComboKind::Triple
         | ComboKind::Tractor(_)
-        | ComboKind::Titanic(_) => shape_bottom_multiplier(cards.len()),
+        | ComboKind::Titanic(_) => standard_bottom_shape(combo.kind)
+            .map(|(_, multiplier)| multiplier)
+            .unwrap_or(1),
         ComboKind::Throw { .. } => throw_components(cards, rules)
             .into_iter()
             .flatten()
-            .map(|component| shape_bottom_multiplier(component.len()))
-            .max()
+            .filter_map(|component| classify(&component, rules))
+            .filter_map(|component| standard_bottom_shape(component.kind))
+            .max_by_key(|(priority, multiplier)| (*priority, *multiplier))
+            .map(|(_, multiplier)| multiplier)
             .unwrap_or(1),
     }
 }
 
-fn shape_bottom_multiplier(card_count: usize) -> i32 {
-    if card_count >= 6 {
-        64
-    } else {
-        1_i32 << card_count
+fn standard_bottom_shape(kind: ComboKind) -> Option<(u8, i32)> {
+    let powered =
+        |base: i32, length: usize| (0..length).fold(2_i32, |value, _| value.saturating_mul(base));
+    match kind {
+        ComboKind::Single => Some((0, 2)),
+        ComboKind::Pair => Some((1, 4)),
+        ComboKind::Tractor(length) => Some((2, powered(2, length))),
+        ComboKind::Triple => Some((3, 6)),
+        ComboKind::Titanic(length) => Some((4, powered(3, length))),
+        ComboKind::Throw { .. } => None,
     }
 }
 

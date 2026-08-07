@@ -72,10 +72,10 @@ fn three_deck_titanic_can_lead_the_final_trick_and_score_the_bottom() {
     }
 
     assert_eq!(state.phase, TractorPhase::Settlement);
-    assert_eq!(state.bottom_multiplier, 64);
+    assert_eq!(state.bottom_multiplier, 18);
     // The Titanic trick itself carries 35 points; the ten-point bottom is
-    // multiplied by 64, so the winner collects 35 + 640 = 675.
-    assert_eq!(state.collected_scores.get(&0), Some(&675));
+    // multiplied by 18, so the winner collects 35 + 180 = 215.
+    assert_eq!(state.collected_scores.get(&0), Some(&215));
 }
 
 #[test]
@@ -135,10 +135,10 @@ fn successful_throw_uses_the_largest_component_for_bottom_score() {
 
     assert_eq!(state.phase, TractorPhase::Settlement);
     assert_eq!(state.last_trick_winner, Some(0));
-    assert_eq!(state.bottom_multiplier, 8);
+    assert_eq!(state.bottom_multiplier, 6);
     // The lead contains a ten-point king pair and the bottom contains a
     // ten-point card: 20 trick points + 10 × the strongest triple multiplier.
-    assert_eq!(state.collected_scores.get(&0), Some(&100));
+    assert_eq!(state.collected_scores.get(&0), Some(&80));
 }
 
 #[test]
@@ -225,31 +225,31 @@ fn void_opponent_trumps_do_not_make_a_plain_suit_throw_fail_on_lead() {
 }
 
 #[test]
-fn standard_bottom_multiplier_uses_winning_component_card_count_up_to_sixty_four() {
+fn standard_bottom_multiplier_uses_official_shape_formulas_and_priority() {
     let two_deck = rules(2);
     assert_eq!(combo::bottom_multiplier(&[2], &two_deck), 2);
     assert_eq!(combo::bottom_multiplier(&[2, 102], &two_deck), 4);
-    assert_eq!(combo::bottom_multiplier(&[2, 102, 3, 103], &two_deck), 16);
+    assert_eq!(combo::bottom_multiplier(&[2, 102, 3, 103], &two_deck), 8);
     assert_eq!(
         combo::bottom_multiplier(&[2, 102, 3, 103, 4, 104], &two_deck),
-        64
+        16
     );
 
     let three_deck = rules(3);
-    assert_eq!(combo::bottom_multiplier(&[2, 102, 202], &three_deck), 8);
+    assert_eq!(combo::bottom_multiplier(&[2, 102, 202], &three_deck), 6);
     assert_eq!(
         combo::bottom_multiplier(&[2, 102, 202, 3, 103, 203], &three_deck),
-        64
+        18
     );
     assert_eq!(
         combo::bottom_multiplier(&[2, 102, 202, 12, 112, 13], &three_deck),
-        8
+        6
     );
     // Overlapping copies are grouped by the largest available shape: 33344 is
     // a tractor plus a singleton, not a triple plus a pair.
     assert_eq!(
         combo::bottom_multiplier(&[2, 102, 202, 3, 103], &three_deck),
-        16
+        8
     );
     let overlap_components = combo::throw_components(&[2, 102, 202, 3, 103], &three_deck)
         .expect("overlapping triple and pair is a throw");
@@ -260,7 +260,12 @@ fn standard_bottom_multiplier_uses_winning_component_card_count_up_to_sixty_four
     assert!(overlap_components.iter().any(|cards| cards.len() == 1));
     assert_eq!(
         combo::bottom_multiplier(&[2, 102, 202, 3, 103, 4, 104], &three_deck),
-        64
+        16
+    );
+    assert_eq!(
+        combo::bottom_multiplier(&[2, 102, 202, 5, 105, 6, 106, 7, 107, 8, 108], &three_deck),
+        6,
+        "a standalone triple has official priority over a separate tractor"
     );
 }
 
