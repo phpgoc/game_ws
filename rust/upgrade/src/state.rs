@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use rand::seq::SliceRandom;
+use rand::{Rng, seq::SliceRandom};
 use share_type_public::{
     UpgradePhase, UpgradeRank, UpgradeSuit, WsUpgradeFailedThrowEvent, WsUpgradePlayedCards,
     WsUpgradePlayerHandCount, WsUpgradeSettlementEvent, WsUpgradeTableSnapshotEvent,
@@ -212,7 +212,15 @@ impl UpgradeGameState {
         }
     }
 
-    pub fn deal_new_round(&mut self, mut rules: UpgradeRules) -> Result<(), &'static str> {
+    pub fn deal_new_round(&mut self, rules: UpgradeRules) -> Result<(), &'static str> {
+        self.deal_new_round_with_rng(rules, &mut rand::rng())
+    }
+
+    pub fn deal_new_round_with_rng<R: Rng + ?Sized>(
+        &mut self,
+        mut rules: UpgradeRules,
+        rng: &mut R,
+    ) -> Result<(), &'static str> {
         rules.removed_rank_count = rules.removed_rank_count.min(REMOVABLE_RANKS.len());
         if self.round_index == 0 {
             rules.target_rank =
@@ -228,7 +236,7 @@ impl UpgradeGameState {
         {
             return Err("deck cannot be dealt evenly");
         }
-        deck.shuffle(&mut rand::rng());
+        deck.shuffle(rng);
         if self.round_index == 0 {
             self.team_target_ranks = [rules.target_rank; 2];
         }
@@ -776,6 +784,13 @@ impl UpgradeGameState {
     }
 
     pub fn advance_after_settlement(&mut self) -> Result<bool, &'static str> {
+        self.advance_after_settlement_with_rng(&mut rand::rng())
+    }
+
+    pub fn advance_after_settlement_with_rng<R: Rng + ?Sized>(
+        &mut self,
+        rng: &mut R,
+    ) -> Result<bool, &'static str> {
         if self.phase != UpgradePhase::Settlement {
             return Err("not in settlement");
         }
@@ -791,7 +806,7 @@ impl UpgradeGameState {
         self.round_index += 1;
         self.rules.target_rank = next_rank;
         self.rules.trump_suit = None;
-        self.deal_new_round(self.rules)?;
+        self.deal_new_round_with_rng(self.rules, rng)?;
         Ok(true)
     }
 

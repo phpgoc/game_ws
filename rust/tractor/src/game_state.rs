@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use rand::seq::SliceRandom;
+use rand::{Rng, seq::SliceRandom};
 use share_type_public::{
     TractorPhase, TractorRank, TractorSuit, WsTractorFailedThrowEvent, WsTractorPlayedCards,
     WsTractorPlayerHandCount, WsTractorTableSnapshotEvent, WsTractorTrumpDeclaration,
@@ -293,6 +293,13 @@ impl TractorGameState {
     }
 
     pub fn advance_after_settlement(&mut self) -> Result<bool, &'static str> {
+        self.advance_after_settlement_with_rng(&mut rand::rng())
+    }
+
+    pub fn advance_after_settlement_with_rng<R: Rng + ?Sized>(
+        &mut self,
+        rng: &mut R,
+    ) -> Result<bool, &'static str> {
         if self.phase != TractorPhase::Settlement {
             return Err("not in settlement");
         }
@@ -307,7 +314,7 @@ impl TractorGameState {
         }
         self.rules.target_rank = next_rank;
         self.round_index += 1;
-        self.deal_current_round()?;
+        self.deal_current_round_with_rng(rng)?;
         Ok(true)
     }
 
@@ -525,7 +532,10 @@ impl TractorGameState {
         candidates.into_iter().next()
     }
 
-    fn deal_current_round(&mut self) -> Result<(), &'static str> {
+    fn deal_current_round_with_rng<R: Rng + ?Sized>(
+        &mut self,
+        rng: &mut R,
+    ) -> Result<(), &'static str> {
         let positions = self.active_positions();
         if positions.len() != 4 {
             return Err("Tractor requires exactly 4 players");
@@ -535,7 +545,7 @@ impl TractorGameState {
         if deck.len() <= positions.len() {
             return Err("not enough cards");
         }
-        deck.shuffle(&mut rand::rng());
+        deck.shuffle(rng);
         let max_bottom = deck.len().saturating_sub(positions.len());
         let minimum_bottom = min_bottom_card_count(self.rules.deck_count).min(max_bottom);
         self.rules.bottom_card_count = adjusted_bottom_card_count(
@@ -581,7 +591,15 @@ impl TractorGameState {
         Ok(())
     }
 
-    pub fn deal_new_round(&mut self, mut rules: TractorRules) -> Result<(), &'static str> {
+    pub fn deal_new_round(&mut self, rules: TractorRules) -> Result<(), &'static str> {
+        self.deal_new_round_with_rng(rules, &mut rand::rng())
+    }
+
+    pub fn deal_new_round_with_rng<R: Rng + ?Sized>(
+        &mut self,
+        mut rules: TractorRules,
+        rng: &mut R,
+    ) -> Result<(), &'static str> {
         rules.deck_count = rules
             .deck_count
             .clamp(MIN_TRACTOR_DECK_COUNT, MAX_TRACTOR_DECK_COUNT);
@@ -596,7 +614,7 @@ impl TractorGameState {
         self.rules = rules;
         self.dealer_position = positions[0];
         self.round_index = 0;
-        self.deal_current_round()
+        self.deal_current_round_with_rng(rng)
     }
 
     fn best_ai_declaration(&self, forced: bool) -> Option<(usize, crate::ai::DeclarationDecision)> {

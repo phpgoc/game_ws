@@ -272,11 +272,11 @@ fn simulate_random_round(deck_count: u8, seed: u64) -> u8 {
     };
     let mut state =
         UpgradeGameState::from_common(common_state(&format!("random-{deck_count:?}-{seed}")));
+    let mut rng = StdRng::seed_from_u64(seed ^ (u64::from(deck_count.get()) << 32));
     state
-        .deal_new_round(rules)
+        .deal_new_round_with_rng(rules, &mut rng)
         .expect("random upgrade deal should start");
     finish_deal_and_bury(&mut state, UpgradeSuit::SPADE);
-    let mut rng = StdRng::seed_from_u64(seed ^ (u64::from(deck_count.get()) << 32));
     play_random_round(&mut state, &mut rng, seed)
 }
 
@@ -295,10 +295,10 @@ fn simulate_random_match(deck_count: u8, seed: u64) -> u8 {
     };
     let mut state =
         UpgradeGameState::from_common(common_state(&format!("random-match-{deck_count:?}-{seed}")));
-    state
-        .deal_new_round(rules)
-        .expect("random upgrade match should start");
     let mut rng = StdRng::seed_from_u64(seed ^ (u64::from(deck_count.get()) << 40));
+    state
+        .deal_new_round_with_rng(rules, &mut rng)
+        .expect("random upgrade match should start");
     let mut rounds = 0;
     let mut covered = 0;
     loop {
@@ -312,7 +312,7 @@ fn simulate_random_match(deck_count: u8, seed: u64) -> u8 {
         covered |= play_random_round(&mut state, &mut rng, seed ^ rounds as u64);
         rounds += 1;
         if !state
-            .advance_after_settlement()
+            .advance_after_settlement_with_rng(&mut rng)
             .expect("random upgrade match settlement")
         {
             break;

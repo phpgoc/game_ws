@@ -168,9 +168,11 @@ fn simulate_random_round(deck_count: usize, seed: u64) {
     };
     let mut state =
         TractorGameState::from_common(common_state(&format!("random-{deck_count}-{seed}")));
-    state.deal_new_round(rules).expect("random tractor deal");
-    finish_deal_and_bury(&mut state, TractorSuit::SPADE);
     let mut rng = StdRng::seed_from_u64(seed ^ ((deck_count as u64) << 32));
+    state
+        .deal_new_round_with_rng(rules, &mut rng)
+        .expect("random tractor deal");
+    finish_deal_and_bury(&mut state, TractorSuit::SPADE);
     play_random_round(&mut state, &mut rng, seed);
     assert!(state.next_target_rank().is_some());
 }
@@ -188,10 +190,10 @@ fn simulate_random_match(deck_count: usize, seed: u64) {
     };
     let mut state =
         TractorGameState::from_common(common_state(&format!("random-match-{deck_count}-{seed}")));
-    state
-        .deal_new_round(rules)
-        .expect("random tractor match deal");
     let mut rng = StdRng::seed_from_u64(seed ^ ((deck_count as u64) << 40));
+    state
+        .deal_new_round_with_rng(rules, &mut rng)
+        .expect("random tractor match deal");
     let mut rounds = 0;
     loop {
         let suit = match (rounds + seed as usize) % 4 {
@@ -204,7 +206,7 @@ fn simulate_random_match(deck_count: usize, seed: u64) {
         play_random_round(&mut state, &mut rng, seed ^ rounds as u64);
         rounds += 1;
         if !state
-            .advance_after_settlement()
+            .advance_after_settlement_with_rng(&mut rng)
             .expect("random tractor match settlement")
         {
             break;
