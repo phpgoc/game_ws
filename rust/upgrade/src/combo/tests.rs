@@ -89,15 +89,22 @@ fn four_higher_copies_can_supply_the_three_needed_to_top_a_triple() {
 }
 
 #[test]
-fn four_identical_cards_are_an_atomic_repeated_shape() {
+fn four_to_six_identical_cards_are_atomic_repeated_shapes() {
+    for (identical, count) in [
+        (vec![2, 102, 202, 302], 4),
+        (vec![2, 102, 202, 302, 402], 5),
+        (vec![2, 102, 202, 302, 402, 502], 6),
+    ] {
+        let repeated = cards(&identical);
+        assert_eq!(
+            classify(&repeated, rules()).map(|combo| combo.kind),
+            Some(ComboKind::Repeated { cards: count })
+        );
+        assert!(throw_components(&repeated, rules()).is_none());
+    }
+
     let four = cards(&[2, 102, 202, 302]);
     let higher_four = cards(&[3, 103, 203, 303]);
-
-    assert_eq!(
-        classify(&four, rules()).map(|combo| combo.kind),
-        Some(ComboKind::Repeated { cards: 4 })
-    );
-    assert!(throw_components(&four, rules()).is_none());
     assert!(failed_throw_component(&four, &higher_four, rules()).is_none());
 }
 

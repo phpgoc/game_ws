@@ -163,15 +163,15 @@ fn six_deck_bottom_score_keeps_a_four_copy_component_as_the_maximum() {
 }
 
 #[test]
-fn four_identical_cards_play_as_one_atomic_component() {
+fn four_identical_cards_win_as_one_component_and_multiply_the_bottom() {
     let lead = vec![2, 102, 202, 302];
     let mut state = state_with_hands(
-        vec![],
+        vec![9],
         HashMap::from([
             (0, lead.clone()),
             (1, vec![3, 103, 203, 303]),
-            (2, vec![4, 104, 204, 304]),
-            (3, vec![5, 105, 205, 305]),
+            (2, vec![5, 105, 205, 305]),
+            (3, vec![6, 106, 206, 306]),
         ]),
     );
     state.rules.deck_count = upgrade::UpgradeDeckCount::new(4).unwrap();
@@ -184,6 +184,54 @@ fn four_identical_cards_play_as_one_atomic_component() {
     assert_eq!(resolution.played_cards, lead);
     assert!(resolution.failed_throw.is_none());
     assert!(state.failed_throws.is_empty());
+
+    for (position, cards) in [
+        (1, vec![3, 103, 203, 303]),
+        (2, vec![5, 105, 205, 305]),
+        (3, vec![6, 106, 206, 306]),
+    ] {
+        state
+            .play_cards(position, cards)
+            .expect("higher repeated components are legal follows");
+    }
+
+    assert_eq!(state.phase, UpgradePhase::Settlement);
+    assert_eq!(state.last_trick_winner, Some(3));
+    assert_eq!(state.bottom_multiplier, 4);
+    assert_eq!(state.collected_scores.get(&3), Some(&40));
+}
+
+#[test]
+fn five_identical_cards_cannot_be_split_when_following() {
+    let lead = vec![2, 102, 202, 302, 402];
+    let repeated = vec![3, 103, 203, 303, 403];
+    let mut follower_hand = repeated.clone();
+    follower_hand.push(4);
+    let mut state = state_with_hands(
+        vec![],
+        HashMap::from([
+            (0, lead.clone()),
+            (1, follower_hand.clone()),
+            (2, vec![5, 105, 205, 305, 405]),
+            (3, vec![6, 106, 206, 306, 406]),
+        ]),
+    );
+    state.rules.deck_count = upgrade::UpgradeDeckCount::new(5).unwrap();
+    state.rules.target_rank = Rank::Two;
+
+    state
+        .play_cards(0, lead)
+        .expect("five identical cards are a legal atomic lead");
+    let error = state
+        .play_cards(1, vec![3, 103, 203, 303, 4])
+        .expect_err("an available five-card component must stay intact");
+    assert_eq!(error, "illegal follow");
+    assert_eq!(state.hands.get(&1), Some(&follower_hand));
+
+    let resolution = state
+        .play_cards(1, repeated.clone())
+        .expect("the complete five-card component is a legal follow");
+    assert_eq!(resolution.played_cards, repeated);
 }
 
 #[test]
