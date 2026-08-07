@@ -1,9 +1,8 @@
 use std::{sync::Arc, time::Duration};
 
 use share_type_public::{
-    CommonEvent, UpgradePhase, UpgradeWsCode, WsCode, WsUpgradeBottomBuriedEvent,
+    CommonEvent, UpgradePhase, UpgradeWsCode, WsCode, WsPositionEvent, WsUpgradeBottomBuriedEvent,
     WsUpgradeBottomCardsEvent, WsUpgradeDealEvent, WsUpgradeHandEvent, WsUpgradePlayEvent,
-    WsPositionEvent,
 };
 use tokio::sync::Mutex;
 use ws_common::{
@@ -305,8 +304,7 @@ fn timed_out_human_position(
         UpgradePhase::Play => state.current_position,
         _ => return None,
     };
-    (!is_ai_controlled_position(state, position)
-        && state.base.lock().unwrap().turn_countdown == 0)
+    (!is_ai_controlled_position(state, position) && state.base.lock().unwrap().turn_countdown == 0)
         .then_some(position)
 }
 
@@ -334,8 +332,8 @@ fn mark_timed_out_human(
 ) -> Option<WsPositionEvent> {
     let mut base = state.base.lock().unwrap();
     let away_changed = base.mark_away(position);
-    let takeover_changed = member_timeout_position == Some(position)
-        && base.mark_ai_takeover_position(position);
+    let takeover_changed =
+        member_timeout_position == Some(position) && base.mark_ai_takeover_position(position);
     (away_changed || takeover_changed).then(|| WsPositionEvent {
         position: position as i32,
         is_ai_takeover: base.is_ai_takeover_position(position),
@@ -349,13 +347,8 @@ async fn timeout_bury_dispatch(
     play_time: u32,
 ) -> Dispatch {
     let mut dispatch = Dispatch::default();
-    let member_timeout_position = timed_out_member_position(
-        room_key,
-        state,
-        room_service,
-        UpgradePhase::Bury,
-    )
-    .await;
+    let member_timeout_position =
+        timed_out_member_position(room_key, state, room_service, UpgradePhase::Bury).await;
     let mut away_event = None;
     let result = {
         let mut guard = state.lock().unwrap();
@@ -427,13 +420,8 @@ async fn timeout_play_dispatch(
     play_time: u32,
 ) -> Dispatch {
     let mut dispatch = Dispatch::default();
-    let member_timeout_position = timed_out_member_position(
-        room_key,
-        state,
-        room_service,
-        UpgradePhase::Play,
-    )
-    .await;
+    let member_timeout_position =
+        timed_out_member_position(room_key, state, room_service, UpgradePhase::Play).await;
     let mut away_event = None;
     let result = {
         let mut guard = state.lock().unwrap();
