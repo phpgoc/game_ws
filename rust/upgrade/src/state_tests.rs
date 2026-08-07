@@ -218,7 +218,7 @@ fn higher_triple_forces_only_the_triple_component_back() {
 }
 
 #[test]
-fn failed_throw_uses_the_weakest_beatable_component_across_all_opponents() {
+fn failed_throw_uses_the_lowest_ranked_beatable_component_across_all_opponents() {
     let attempted = vec![2, 102, 202, 5, 105, 13];
     let mut state = playing_state(HashMap::from([
         (0, attempted.clone()),
@@ -230,7 +230,7 @@ fn failed_throw_uses_the_weakest_beatable_component_across_all_opponents() {
 
     let result = state.play_cards(0, attempted).unwrap();
 
-    assert_eq!(result.played_cards, vec![5, 105]);
+    assert_eq!(result.played_cards, vec![2, 102, 202]);
 }
 
 #[test]

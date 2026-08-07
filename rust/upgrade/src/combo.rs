@@ -114,11 +114,11 @@ pub fn throw_components(cards: &[Card], rules: UpgradeComboRules) -> Option<Vec<
     }
     components.sort_by_key(|component| {
         (
-            component.len(),
             component
                 .first()
                 .map(|card| card_strength(*card, rules))
                 .unwrap_or_default(),
+            component.len(),
             component
                 .first()
                 .map(|card| card.encoded())

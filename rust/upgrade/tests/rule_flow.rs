@@ -192,3 +192,32 @@ fn long_throw_winner_compares_the_largest_repeated_component() {
     // not protect its lower triple from being covered.
     assert_eq!(state.last_trick_winner, Some(2));
 }
+
+#[test]
+fn failed_throw_returns_the_weakest_rank_before_the_shortest_component() {
+    let attempted = vec![8, 3, 103];
+    let mut state = state_with_hands(
+        vec![],
+        HashMap::from([
+            (0, attempted.clone()),
+            // This hand can beat both the nine singleton and the four pair.
+            (1, vec![10, 4, 104]),
+            // A second opponent independently confirms that the pair fails.
+            (2, vec![4, 104, 29]),
+            (3, vec![30, 31, 32]),
+        ]),
+    );
+
+    let result = state
+        .play_cards(0, attempted.clone())
+        .expect("referee reduces the failed throw");
+    assert_eq!(result.attempted_cards, attempted);
+    assert_eq!(result.played_cards, vec![3, 103]);
+    assert_eq!(
+        result
+            .failed_throw
+            .expect("failed throw event")
+            .played_cards,
+        vec![3, 103]
+    );
+}

@@ -48,7 +48,7 @@ fn longest_component_controls_successful_bottom_multiplier() {
             .iter()
             .map(Vec::len)
             .collect::<Vec<_>>(),
-        vec![1, 2, 3]
+        vec![3, 2, 1]
     );
 }
 

@@ -594,11 +594,11 @@ impl UpgradeGameState {
                     })
                     .min_by_key(|component| {
                         (
-                            component.len(),
                             component
                                 .first()
                                 .map(|card| combo::card_strength(*card, rules))
                                 .unwrap_or_default(),
+                            component.len(),
                             component
                                 .first()
                                 .map(|card| card.encoded())
