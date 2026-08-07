@@ -52,6 +52,21 @@ pub enum ComboKind {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ThrowComponentKind {
+    Single,
+    Pair,
+    Triple,
+    Tractor(usize),
+    Titanic(usize),
+}
+
+#[derive(Debug, Clone)]
+struct ThrowComponent {
+    kind: ThrowComponentKind,
+    cards: Vec<i32>,
+}
+
 fn capped_choose(n: usize, k: usize, cap: usize) -> usize {
     if k > n {
         return cap.saturating_add(1);
@@ -182,10 +197,41 @@ pub fn classify(cards: &[i32], rules: &TractorRules) -> Option<Combo> {
         }
     }
 
+    let components = decompose_throw_cards(cards, rules);
+    let pair_count = components
+        .iter()
+        .map(|component| match component.kind {
+            ThrowComponentKind::Single => 0,
+            ThrowComponentKind::Pair | ThrowComponentKind::Triple => 1,
+            ThrowComponentKind::Tractor(units) | ThrowComponentKind::Titanic(units) => units,
+        })
+        .sum();
+    let tractor_pair_count = components
+        .iter()
+        .map(|component| match component.kind {
+            ThrowComponentKind::Tractor(units) => units,
+            _ => 0,
+        })
+        .sum();
+    let triple_count = components
+        .iter()
+        .map(|component| match component.kind {
+            ThrowComponentKind::Triple => 1,
+            ThrowComponentKind::Titanic(units) => units,
+            _ => 0,
+        })
+        .sum();
+    let titanic_triple_count = components
+        .iter()
+        .map(|component| match component.kind {
+            ThrowComponentKind::Titanic(units) => units,
+            _ => 0,
+        })
+        .sum();
     Some(Combo {
         kind: ComboKind::Throw {
             cards: cards.len(),
-            pairs: counts.values().map(|count| count / 2).sum(),
+            pairs: pair_count,
         },
         suit,
         pair_count,
@@ -1082,131 +1128,142 @@ fn take_card(remaining: &mut Vec<i32>, card: i32) {
     }
 }
 
-/// Decompose a throw into maximal tractors, remaining pairs and singles. The
-/// weakest beatable component is the card group forced out when a throw fails.
+fn longest_multiplicity_component(
+    cards: &[i32],
+    copies: usize,
+    rules: &TractorRules,
+) -> Option<Vec<i32>> {
+    let lead_suit = cards.first().and_then(|card| {
+        (!is_trump_card(*card, rules))
+            .then(|| card_suit(*card))
+            .flatten()
+    });
+    let units = multiplicity_units(cards, lead_suit, copies, rules);
+    let mut positions = units
+        .iter()
+        .map(|(position, _, _)| *position)
+        .collect::<Vec<_>>();
+    positions.dedup();
+
+    let mut best = Vec::new();
+    let mut current = Vec::new();
+    for position in positions {
+        if current
+            .last()
+            .is_some_and(|previous| position == *previous + 1)
+        {
+            current.push(position);
+        } else {
+            if current.len() > best.len() {
+                best = current;
+            }
+            current = vec![position];
+        }
+    }
+    if current.len() > best.len() {
+        best = current;
+    }
+    if best.len() < 2 {
+        return None;
+    }
+
+    Some(
+        best.into_iter()
+            .flat_map(|position| {
+                units
+                    .iter()
+                    .find(|(unit_position, _, _)| *unit_position == position)
+                    .expect("selected multiplicity position has a unit")
+                    .2
+                    .clone()
+            })
+            .collect(),
+    )
+}
+
+fn decompose_throw_cards(cards: &[i32], rules: &TractorRules) -> Vec<ThrowComponent> {
+    let mut remaining = cards.to_vec();
+    remaining.sort_unstable();
+    let mut components = Vec::new();
+
+    if rules.deck_count == 3 {
+        while let Some(cards) = longest_multiplicity_component(&remaining, 3, rules) {
+            let units = cards.len() / 3;
+            for card in &cards {
+                take_card(&mut remaining, *card);
+            }
+            components.push(ThrowComponent {
+                kind: ThrowComponentKind::Titanic(units),
+                cards,
+            });
+        }
+    }
+    while let Some(cards) = longest_multiplicity_component(&remaining, 2, rules) {
+        let units = cards.len() / 2;
+        for card in &cards {
+            take_card(&mut remaining, *card);
+        }
+        components.push(ThrowComponent {
+            kind: ThrowComponentKind::Tractor(units),
+            cards,
+        });
+    }
+
+    let mut by_base: HashMap<i32, Vec<i32>> = HashMap::new();
+    for card in remaining {
+        by_base.entry(base_card(card)).or_default().push(card);
+    }
+    for mut copies in by_base.into_values() {
+        copies.sort_unstable();
+        if rules.deck_count == 3 && copies.len() >= 3 {
+            components.push(ThrowComponent {
+                kind: ThrowComponentKind::Triple,
+                cards: copies.drain(..3).collect(),
+            });
+        }
+        while copies.len() >= 2 {
+            components.push(ThrowComponent {
+                kind: ThrowComponentKind::Pair,
+                cards: copies.drain(..2).collect(),
+            });
+        }
+        components.extend(copies.into_iter().map(|card| ThrowComponent {
+            kind: ThrowComponentKind::Single,
+            cards: vec![card],
+        }));
+    }
+
+    components.sort_by_key(|component| {
+        let lead_suit = play_suit(&component.cards, rules);
+        let value = component
+            .cards
+            .iter()
+            .map(|card| tractor_card_value(*card, rules, lead_suit))
+            .max()
+            .unwrap_or_default();
+        (
+            value,
+            component.cards.len(),
+            component.cards.first().copied().unwrap_or_default(),
+        )
+    });
+    components
+}
+
+/// Decompose a throw into non-overlapping maximal shapes. Titanic runs are
+/// selected first, then tractors, triples, pairs and singles. The weakest
+/// beatable component is the card group forced out when a throw fails.
 pub fn throw_components(cards: &[i32], rules: &TractorRules) -> Option<Vec<Vec<i32>>> {
     let classified = classify(cards, rules)?;
     if !matches!(classified.kind, ComboKind::Throw { .. }) {
         return None;
     }
-
-    let mut by_base: HashMap<i32, Vec<i32>> = HashMap::new();
-    for card in cards {
-        by_base.entry(base_card(*card)).or_default().push(*card);
-    }
-    let mut pairs_by_position: HashMap<i32, Vec<Vec<i32>>> = HashMap::new();
-    let mut triples_by_position: HashMap<i32, Vec<Vec<i32>>> = HashMap::new();
-    let mut singles = Vec::new();
-    for (base, mut copies) in by_base {
-        copies.sort_unstable();
-        if rules.deck_count >= 3 {
-            while copies.len() >= 3 {
-                let triple = vec![copies.remove(0), copies.remove(0), copies.remove(0)];
-                triples_by_position
-                    .entry(pair_position(base, rules))
-                    .or_default()
-                    .push(triple);
-            }
-        }
-        while copies.len() >= 2 {
-            let pair = vec![copies.remove(0), copies.remove(0)];
-            pairs_by_position
-                .entry(pair_position(base, rules))
-                .or_default()
-                .push(pair);
-        }
-        singles.extend(copies);
-    }
-
-    let mut components = Vec::new();
-    loop {
-        let mut positions: Vec<_> = triples_by_position
-            .iter()
-            .filter(|(_, triples)| !triples.is_empty())
-            .map(|(position, _)| *position)
-            .collect();
-        positions.sort_unstable();
-        let mut best_run: Vec<i32> = Vec::new();
-        let mut current: Vec<i32> = Vec::new();
-        for position in positions {
-            if current
-                .last()
-                .is_some_and(|previous| position == *previous + 1)
-            {
-                current.push(position);
-            } else {
-                if current.len() > best_run.len() {
-                    best_run = current;
-                }
-                current = vec![position];
-            }
-        }
-        if current.len() > best_run.len() {
-            best_run = current;
-        }
-        if best_run.len() < 2 {
-            break;
-        }
-        let mut titanic = Vec::new();
-        for position in best_run {
-            if let Some(triple) = triples_by_position.get_mut(&position).and_then(Vec::pop) {
-                titanic.extend(triple);
-            }
-        }
-        components.push(titanic);
-    }
-    for triples in triples_by_position.into_values() {
-        components.extend(triples);
-    }
-    loop {
-        let mut positions: Vec<_> = pairs_by_position
-            .iter()
-            .filter(|(_, pairs)| !pairs.is_empty())
-            .map(|(position, _)| *position)
-            .collect();
-        positions.sort_unstable();
-        let mut best_run: Vec<i32> = Vec::new();
-        let mut current: Vec<i32> = Vec::new();
-        for position in positions {
-            if current
-                .last()
-                .is_some_and(|previous| position == *previous + 1)
-            {
-                current.push(position);
-            } else {
-                if current.len() > best_run.len() {
-                    best_run = current;
-                }
-                current = vec![position];
-            }
-        }
-        if current.len() > best_run.len() {
-            best_run = current;
-        }
-        if best_run.len() < 2 {
-            break;
-        }
-        let mut tractor = Vec::new();
-        for position in best_run {
-            if let Some(pair) = pairs_by_position.get_mut(&position).and_then(Vec::pop) {
-                tractor.extend(pair);
-            }
-        }
-        components.push(tractor);
-    }
-    for pairs in pairs_by_position.into_values() {
-        components.extend(pairs);
-    }
-    components.extend(singles.into_iter().map(|card| vec![card]));
-    components.sort_by_key(|component| {
-        combo_win_value(
-            component,
-            &classify(component, rules).expect("throw component is valid"),
-            rules,
-        )
-        .unwrap_or_default()
-    });
-    Some(components)
+    Some(
+        decompose_throw_cards(cards, rules)
+            .into_iter()
+            .map(|component| component.cards)
+            .collect(),
+    )
 }
 
 /// Standard Tractor bottom multiplier for the winning play of the last trick.

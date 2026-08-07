@@ -245,6 +245,23 @@ fn standard_bottom_multiplier_uses_winning_component_card_count_up_to_sixty_four
         combo::bottom_multiplier(&[2, 102, 202, 12, 112, 13], &three_deck),
         8
     );
+    // Overlapping copies are grouped by the largest available shape: 33344 is
+    // a tractor plus a singleton, not a triple plus a pair.
+    assert_eq!(
+        combo::bottom_multiplier(&[2, 102, 202, 3, 103], &three_deck),
+        16
+    );
+    let overlap_components = combo::throw_components(&[2, 102, 202, 3, 103], &three_deck)
+        .expect("overlapping triple and pair is a throw");
+    assert!(overlap_components.iter().any(|cards| {
+        combo::classify(cards, &three_deck).map(|combo| combo.kind)
+            == Some(combo::ComboKind::Tractor(2))
+    }));
+    assert!(overlap_components.iter().any(|cards| cards.len() == 1));
+    assert_eq!(
+        combo::bottom_multiplier(&[2, 102, 202, 3, 103, 4, 104], &three_deck),
+        64
+    );
 }
 
 #[test]
