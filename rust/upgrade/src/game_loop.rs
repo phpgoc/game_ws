@@ -429,3 +429,7 @@ async fn deliver(dispatch: Dispatch, senders: &SessionSenders) {
 #[cfg(test)]
 #[path = "game_loop/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "game_loop/coverage_tests.rs"]
+mod coverage_tests;
