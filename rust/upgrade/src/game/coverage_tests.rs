@@ -357,3 +357,42 @@ fn rejoin_preserves_the_remaining_operation_countdown() {
         );
     }
 }
+
+#[test]
+fn settlement_rejoin_restores_the_game_over_event() {
+    let (mut handler, mut room) = ready_room();
+    assert_eq!(
+        response_code(&handler.handle_start(&mut room, 1)),
+        WsResponseCode::OK
+    );
+    let state = handler.state(ROOM_KEY).expect("running upgrade state");
+    state.lock().unwrap().phase = UpgradePhase::Settlement;
+    let request = join_request("u1");
+    let mut dispatch = Dispatch::default();
+    dispatch.messages.push(ws_common::Delivery {
+        recipient: 1,
+        payload: OutboundPayload::Response(RequestResponse::WithData(
+            share_type_public::ws::WsResponse {
+                route: Routes::JOIN as i32,
+                code: WsResponseCode::JOINED,
+                data: json!({}),
+            },
+        )),
+    });
+
+    handler.after_common_request(&mut room, 1, &request, &mut dispatch);
+
+    let settlement = dispatch.messages.iter().find_map(|message| {
+        if message.recipient != 1 {
+            return None;
+        }
+        let OutboundPayload::Event(event) = &message.payload else {
+            return None;
+        };
+        (event.code == share_type_public::WsCode::GAME_OVER as i32).then(|| event.data.clone())
+    });
+    assert!(
+        settlement.is_some(),
+        "settlement rejoin must restore GAME_OVER"
+    );
+}

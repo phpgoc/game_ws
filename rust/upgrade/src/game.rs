@@ -484,8 +484,22 @@ impl GameHandler for UpgradeGameHandler {
         let Some(state) = self.current_state(room_service, &room_key) else {
             return;
         };
+        let settlement = {
+            let state = state.lock().unwrap();
+            (state.phase == share_type_public::UpgradePhase::Settlement)
+                .then(|| state.settlement_event())
+        };
         self.push_private_hand(dispatch, room_service, session_id, &state);
         self.push_snapshot(dispatch, room_service, &room_key, &state);
+        if let Some(settlement) = settlement {
+            dispatch.messages.push(Delivery {
+                recipient: session_id,
+                payload: OutboundPayload::Event(CommonEvent {
+                    code: WsCode::GAME_OVER as i32,
+                    data: serde_json::to_value(settlement).unwrap_or(Value::Null),
+                }),
+            });
+        }
     }
 
     fn build_game_state(&self) -> Box<dyn ws_common::GameState> {

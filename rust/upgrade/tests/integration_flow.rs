@@ -1956,9 +1956,40 @@ async fn upgrade_ws_finishes_a_multi_round_match_at_ace() {
     assert_eq!(final_settlement.next_target_rank, None);
     assert!(final_settlement.team_target_ranks.contains(&UpgradeRank::A));
 
+    clients[0]
+        .close(None)
+        .await
+        .expect("close final-settlement upgrade socket");
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let mut settlement_rejoined = connect_client(&url).await;
+    let joined = join_as(
+        &mut settlement_rejoined,
+        GameId::UPGRADE,
+        room,
+        "complete-upgrade-player-0",
+    )
+    .await;
+    assert_eq!(joined["data"]["self_position"], json!(0));
+    wait_for_event(&mut settlement_rejoined, UpgradeWsCode::HAND_UPDATED as i32).await;
+    let restored_snapshot =
+        wait_for_phase(&mut settlement_rejoined, UpgradePhase::Settlement).await;
+    assert_eq!(
+        restored_snapshot["data"]["round_index"],
+        json!((completed_rounds - 1) as i64)
+    );
+    let restored_settlement =
+        wait_for_event(&mut settlement_rejoined, WsCode::GAME_OVER as i32).await;
+    let restored_settlement: WsUpgradeSettlementEvent =
+        serde_json::from_value(restored_settlement["data"].clone())
+            .expect("restored upgrade settlement payload");
+    assert_eq!(
+        serde_json::to_value(restored_settlement).expect("serialize restored settlement"),
+        serde_json::to_value(final_settlement).expect("serialize original settlement")
+    );
+
     let unexpected_next_deal = tokio::time::timeout(
         Duration::from_secs(4),
-        wait_for_event(&mut *clients[0], WsCode::DEAL as i32),
+        wait_for_event(&mut settlement_rejoined, WsCode::DEAL as i32),
     )
     .await;
     assert!(
