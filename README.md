@@ -19,17 +19,19 @@
 - `rust/upgrade_common/`: 拖拉机与升级共享的牌、等级和分数进阶原语。
 - `rust/upgrade/`: 升级 Rust 服务端。
 - `rust/p2p/`: 独立的两人 WebRTC 信令服务与 STUN/TURN 临时凭证签发器，不依赖其他游戏 crate。
+- `rust/dominoes/`: 3–4 人双六西洋骨牌 WS 服务，默认端口 9007；公开构建不包含 AI。
 - `rust/android_server/`: Android JNI bridge，按单游戏 feature 产出 `libws_server.so`。
-- `android/`: 6 个 Rust 服务共用的 Android 前台服务壳，每个 APK 只打包一个 `libws_server.so`。
+- `android/`: 7 个 Rust 服务共用的 Android 前台服务壳，每个 APK 只打包一个 `libws_server.so`。
 
 ## 支持平台与发布规则
 
-当前 6 个 server 都支持从源码编译：
+当前 7 个 server 都支持从源码编译：
 
 - `landlord`
 - `shenyang_mahjong`
 - `holdem`
 - `tractor`
+- `dominoes`
 - `upgrade`
 - `p2p`
 
@@ -37,13 +39,13 @@
 
 | 目标平台 | 编译方式 | 官方 release |
 | --- | --- | --- |
-| Linux x86_64 musl | `build_script/build_all.sh` | 是，发布 6 个静态可执行文件 |
+| Linux x86_64 musl | `build_script/build_all.sh` | 是，发布 7 个静态可执行文件 |
 | Windows x86_64 | 按本文 PowerShell 命令自行编译 | 否 |
 | Android APK | 使用 Gradle 或 `Dockerfile.android` 自行编译 | 否 |
 | ARM64 Linux | 使用交叉工具链或 `Dockerfile.arm64` 自行编译 | 否 |
 
 `build_script/build_all.sh` 和 `build_script/build_in_docker.sh` 只负责正式发布的
-6 个 Linux x86_64 musl server，不再构建 APK、Windows 或 ARM Linux 产物。
+7 个 Linux x86_64 musl server，不再构建 APK、Windows 或 ARM Linux 产物。
 
 独立检出开源仓库后，手动运行 Cargo 或 Gradle 命令前先准备不包含私有实现的依赖边界：
 
@@ -67,6 +69,7 @@ P2P_TURN_SECRET='replace-with-a-long-random-secret' \
 P2P_TURN_PUBLIC_IP='203.0.113.10' \
 cargo run --manifest-path rust/p2p/Cargo.toml -- --host 0.0.0.0 --port 9005
 cargo run --manifest-path rust/upgrade/Cargo.toml -- --host 0.0.0.0 --port 9006
+cargo run --manifest-path rust/dominoes/Cargo.toml -- --host 0.0.0.0 --port 9007
 ```
 
 `p2p` 会在同一 Rust 进程内监听 UDP 3478 提供 STUN/TURN，并使用 UDP
@@ -191,7 +194,7 @@ linker = "x86_64-linux-musl-gcc"
 ### Android APK（用户自行编译）
 
 每个 APK 只包含一个 server。`-Pgame` 可填写 `landlord`、
-`shenyang_mahjong`、`holdem`、`tractor`、`upgrade` 或 `p2p`。
+`shenyang_mahjong`、`holdem`、`tractor`、`dominoes`、`upgrade` 或 `p2p`。
 
 本机安装 JDK 17、Android SDK 35、NDK 27 后，再安装 Rust Android 工具链：
 
@@ -211,7 +214,7 @@ cd android
 `./gradlew` 换成 `.\gradlew.bat`。完整的环境变量、单 ABI、release APK 与签名说明见
 [`android/README.md`](android/README.md)。
 
-也可以完全用 Docker 编译。下面以拖拉机 APK 为例，替换 `GAME` 即可编译其余 5 个：
+也可以完全用 Docker 编译。下面以拖拉机 APK 为例，替换 `GAME` 即可编译其余 6 个：
 
 ```sh
 mkdir -p build_script/output/android
@@ -237,7 +240,7 @@ docker build \
   .
 ```
 
-输出目录包含 `landlord`、`shenyang_mahjong`、`holdem`、`tractor`、`upgrade`、`p2p`。
+输出目录包含 `landlord`、`shenyang_mahjong`、`holdem`、`tractor`、`dominoes`、`upgrade`、`p2p`。
 这些是 `aarch64-unknown-linux-gnu` 文件，适用于 64 位 ARM Linux；它们会动态依赖
 glibc。Dockerfile 使用 Ubuntu 20.04，以兼容 glibc 2.31 及以上系统。需要兼容更旧系统时，
 应在对应旧版 Linux 镜像或目标 ARM 设备上重新编译。
@@ -257,7 +260,8 @@ cargo build --release \
   -p shenyang_mahjong \
   -p holdem \
   -p tractor \
-  -p upgrade \
+    -p dominoes \
+    -p upgrade \
   -p p2p \
   --no-default-features
 ```
@@ -300,6 +304,7 @@ target\x86_64-pc-windows-msvc\release\landlord.exe
 target\x86_64-pc-windows-msvc\release\shenyang_mahjong.exe
 target\x86_64-pc-windows-msvc\release\holdem.exe
 target\x86_64-pc-windows-msvc\release\tractor.exe
+target\x86_64-pc-windows-msvc\release\dominoes.exe
 target\x86_64-pc-windows-msvc\release\upgrade.exe
 target\x86_64-pc-windows-msvc\release\p2p.exe
 ```
@@ -319,8 +324,8 @@ UDP 49160-49200；公网部署还要配置路由器端口映射。
 
 ```text
 推荐 release 产物：Linux x86_64 musl 静态单文件。
-release 包范围：landlord、shenyang_mahjong、holdem、tractor、upgrade、p2p。
-build_all.sh 和 build_in_docker.sh 只生成上述 6 个 Linux x86_64 文件。
+release 包范围：landlord、shenyang_mahjong、holdem、tractor、dominoes、upgrade、p2p。
+build_all.sh 和 build_in_docker.sh 只生成上述 7 个 Linux x86_64 文件。
 Android APK 与 ARM64 Linux 可以使用独立 Dockerfile，但只能由用户按文档自行构建，不进入 release。
 Windows 不作为推荐运行环境；如需 Windows 构建说明，只保留 x86_64-pc-windows-msvc + crt-static 的验证命令，并提醒防火墙、杀毒软件、端口开放和执行策略需要额外处理。
 ```

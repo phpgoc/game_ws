@@ -125,6 +125,9 @@ jobs:
           - name: p2p
             manifest: rust/p2p/Cargo.toml
             features: ""
+          - name: dominoes
+            manifest: rust/dominoes/Cargo.toml
+            features: ""
           - name: android-bridge-landlord
             manifest: rust/android_server/Cargo.toml
             features: landlord
@@ -140,6 +143,9 @@ jobs:
           - name: android-bridge-upgrade
             manifest: rust/android_server/Cargo.toml
             features: upgrade
+          - name: android-bridge-dominoes
+            manifest: rust/android_server/Cargo.toml
+            features: dominoes
     steps:
       - name: 检出开源仓库
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -203,7 +209,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        game: [landlord, shenyang_mahjong, holdem, tractor, upgrade, p2p]
+        game: [landlord, shenyang_mahjong, holdem, tractor, upgrade, dominoes, p2p]
     steps:
       - name: 检出开源仓库
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -258,7 +264,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        game: [landlord, shenyang_mahjong, holdem, tractor, upgrade, p2p]
+        game: [landlord, shenyang_mahjong, holdem, tractor, upgrade, dominoes, p2p]
     steps:
       - name: 检出开源仓库
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

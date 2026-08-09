@@ -42,8 +42,8 @@ pub use room::{
 pub use runtime::{
     GameHandler, JoinAuthorization, JoinAuthorizationFuture, RuntimeConfig, RuntimeStats,
     RuntimeStopHandle, SessionSender, SessionSenders, StopSignal, run_game_server_with_cli,
-    run_room_runtime, run_room_runtime_until_stopped, run_room_runtime_until_stopped_with_ready,
-    runtime_stop_channel, session_sender_channel,
+    run_game_server_with_cli_default_port, run_room_runtime, run_room_runtime_until_stopped,
+    run_room_runtime_until_stopped_with_ready, runtime_stop_channel, session_sender_channel,
 };
 pub use tracing;
 

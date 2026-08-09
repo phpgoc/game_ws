@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use ws_common::{
-    RuntimeConfig, RuntimeStats, StopSignal, run_game_server_with_cli,
+    RuntimeConfig, RuntimeStats, StopSignal, run_game_server_with_cli_default_port,
     run_room_runtime_until_stopped, run_room_runtime_until_stopped_with_ready,
 };
 
@@ -11,6 +11,7 @@ pub const DOMINOES_ANDROID_SERVICE_NAME: &str = "dominoes-android";
 pub const DOMINOES_SERVICE_NAME: &str = "dominoes";
 pub const DOMINOES_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(20);
 pub const DOMINOES_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
+pub const DOMINOES_DEFAULT_PORT: u16 = 9007;
 
 pub fn dominoes_runtime_config(service_name: &'static str, listen_addr: String) -> RuntimeConfig {
     RuntimeConfig {
@@ -48,8 +49,9 @@ pub async fn run_dominoes_runtime_until_stopped_with_ready(
 }
 
 pub async fn run_dominoes_server_with_cli() -> anyhow::Result<()> {
-    run_game_server_with_cli(
+    run_game_server_with_cli_default_port(
         DOMINOES_SERVICE_NAME,
+        DOMINOES_DEFAULT_PORT,
         DOMINOES_IDLE_TIMEOUT,
         DominoesGameHandler::default(),
     )

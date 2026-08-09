@@ -6,7 +6,7 @@ WS_DIR="$(dirname "${SCRIPT_DIR}")"
 OUTPUT_DIR="${OUTPUT_DIR:-${SCRIPT_DIR}/output}"
 BUILD_DIR="${BUILD_DIR:-${SCRIPT_DIR}/target}"
 LINUX_TARGET="x86_64-unknown-linux-musl"
-GAMES=(landlord shenyang_mahjong holdem tractor upgrade p2p)
+GAMES=(landlord shenyang_mahjong holdem tractor upgrade dominoes p2p)
 GAME_COUNT="${#GAMES[@]}"
 
 "${WS_DIR}/ci/prepare-public-build.sh"

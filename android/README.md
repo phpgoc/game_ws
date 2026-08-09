@@ -1,6 +1,6 @@
 # Android WS Server Wrapper
 
-这个目录是一套供 6 个服务共用的 Android 前台服务壳：
+这个目录是一套供 7 个服务共用的 Android 前台服务壳：
 
 - `landlord`（斗地主，端口 9001）
 - `shenyang_mahjong`（沈阳麻将，端口 9002）
@@ -8,6 +8,7 @@
 - `tractor`（拖拉机，端口 9004）
 - `p2p`（P2P 信令与内置 STUN/TURN，端口 9005）
 - `upgrade`（升级，端口 9006）
+- `dominoes`（西洋骨牌，端口 9007）
 
 Kotlin 负责 Activity、前台 Service、通知、WakeLock/WifiLock 和状态展示；
 WebSocket、房间及游戏逻辑由对应的 Rust `cdylib` 提供。每个 APK 只包含一个游戏的
@@ -65,6 +66,7 @@ Windows 用户可在 Git Bash 中执行 `bash ci/prepare-public-build.sh`。完�
 | `tractor` | 拖拉机 | 9004 |
 | `p2p` | P2P 信令与内置 STUN/TURN | 9005 |
 | `upgrade` | 升级 | 9006 |
+| `dominoes` | 西洋骨牌 | 9007 |
 
 ## 在本机编译 APK
 
@@ -97,11 +99,11 @@ app/build/outputs/apk/debug/app-debug.apk
 ```
 
 该文件已用本机 debug key 签名，可以直接安装测试。连续编译不同 server 时，Gradle 会
-覆盖同一个 `app-debug.apk`，因此要在每次构建后改名保存。例如一次编译全部 6 个：
+覆盖同一个 `app-debug.apk`，因此要在每次构建后改名保存。例如一次编译全部 7 个：
 
 ```sh
 mkdir -p ../build_script/output/android
-for game in landlord shenyang_mahjong holdem tractor upgrade p2p; do
+for game in landlord shenyang_mahjong holdem tractor dominoes upgrade p2p; do
   ./gradlew --no-daemon :app:assembleDebug -Pgame="$game"
   cp app/build/outputs/apk/debug/app-debug.apk \
     "../build_script/output/android/${game}.apk"
@@ -131,7 +133,7 @@ docker build \
   .
 ```
 
-产物为 `build_script/output/android/tractor.apk`。`GAME` 支持上表中的 6 个值。
+产物为 `build_script/output/android/tractor.apk`。`GAME` 支持上表中的 7 个值。
 默认同时构建两个 ABI；只打包 ARM64 真机版本：
 
 ```sh
@@ -143,7 +145,7 @@ docker build \
   .
 ```
 
-Docker 会缓存 JDK、SDK、NDK 和 Rust 工具链。编译全部 6 个 APK 时，依次替换 `GAME`
+Docker 会缓存 JDK、SDK、NDK 和 Rust 工具链。编译全部 7 个 APK 时，依次替换 `GAME`
 并重复命令即可，已有工具链层不会重复下载。
 
 ## 常见问题
@@ -157,5 +159,5 @@ Docker 会缓存 JDK、SDK、NDK 和 Rust 工具链。编译全部 6 个 APK 时
 ## 发布规则
 
 Android APK 仅供用户自行构建，不进入官方 release。`build_script/build_all.sh` 和
-`build_script/build_in_docker.sh` 只生成 6 个 Linux x86_64 musl server；
+`build_script/build_in_docker.sh` 只生成 7 个 Linux x86_64 musl server；
 `Dockerfile.android` 只在用户执行本文命令时构建所选 APK。

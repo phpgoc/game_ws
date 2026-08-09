@@ -476,6 +476,27 @@ where
     run_game_server(service_name, cli.host, cli.port, idle_timeout, handler).await
 }
 
+/// 与通用命令行入口相同，但在未指定 `--port` 时使用游戏自己的默认端口。
+pub async fn run_game_server_with_cli_default_port<H>(
+    service_name: &'static str,
+    default_port: u16,
+    idle_timeout: Duration,
+    handler: H,
+) -> anyhow::Result<()>
+where
+    H: GameHandler,
+{
+    let cli = parse_bind_cli();
+    run_game_server(
+        service_name,
+        cli.host,
+        cli.port.or(Some(default_port)),
+        idle_timeout,
+        handler,
+    )
+    .await
+}
+
 /// 以给定配置启动房间运行时，并一直运行到进程终止。
 pub async fn run_room_runtime<H>(config: RuntimeConfig, handler: H) -> anyhow::Result<()>
 where

@@ -31,11 +31,12 @@ RUN ./ci/prepare-public-build.sh \
         -p shenyang_mahjong \
         -p holdem \
         -p tractor \
+        -p dominoes \
         -p upgrade \
         -p p2p \
         --no-default-features \
     && mkdir -p /artifact \
-    && for game in landlord shenyang_mahjong holdem tractor upgrade p2p; do \
+    && for game in landlord shenyang_mahjong holdem tractor dominoes upgrade p2p; do \
         install -m 0755 \
             "target/aarch64-unknown-linux-gnu/release/${game}" \
             "/artifact/${game}"; \
