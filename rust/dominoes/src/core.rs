@@ -3,15 +3,22 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use share_type_public::{
-    DominoesNoPlayableTiles, DominoesPhase, DominoesPort, DominoesRule, WsDominoesEndpoint,
-    WsDominoesHandState, WsDominoesPlacement, WsDominoesPlayerState, WsDominoesTableSnapshotEvent,
-    WsDominoesTile,
+    DominoesNoPlayableTiles, DominoesOrientation, DominoesPhase, DominoesPort, DominoesRule,
+    WsDominoesEndpoint, WsDominoesHandState, WsDominoesLegalPlay, WsDominoesPlacement,
+    WsDominoesPlayerState, WsDominoesTableSnapshotEvent, WsDominoesTile,
 };
 use ws_common::CommonGameState;
 
 pub const MIN_PLAYERS: usize = 3;
 pub const MAX_PLAYERS: usize = 4;
 pub const TILE_COUNT: usize = 28;
+pub const DEFAULT_TURN_SECONDS: u32 = 30;
+pub const DISCONNECTED_TURN_SECONDS: u32 = 5;
+pub const ROUND_TRANSITION_SECONDS: u32 = 4;
+
+const TILE_LONG_HALF: i32 = 2;
+const TILE_SHORT_HALF: i32 = 1;
+const LAYOUT_JUMP: i32 = 6;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Tile {
@@ -48,6 +55,10 @@ impl Tile {
     pub fn matches(self, pip: i32) -> bool {
         self.a == pip || self.b == pip
     }
+
+    fn other_pip(self, matched: i32) -> i32 {
+        if self.a == matched { self.b } else { self.a }
+    }
 }
 
 impl From<Tile> for WsDominoesTile {
@@ -66,6 +77,9 @@ pub struct Endpoint {
     pub placement_id: i32,
     pub pip: i32,
     pub port: DominoesPort,
+    pub anchor_x: i32,
+    pub anchor_y: i32,
+    pub direction: DominoesPort,
 }
 
 impl From<Endpoint> for WsDominoesEndpoint {
@@ -75,6 +89,9 @@ impl From<Endpoint> for WsDominoesEndpoint {
             placement_id: endpoint.placement_id,
             pip: endpoint.pip,
             port: endpoint.port,
+            anchor_x: endpoint.anchor_x,
+            anchor_y: endpoint.anchor_y,
+            direction: endpoint.direction,
         }
     }
 }
@@ -85,6 +102,10 @@ pub struct Placement {
     pub tile: Tile,
     pub connected_endpoint_id: Option<i32>,
     pub connected_port: Option<DominoesPort>,
+    pub center_x: i32,
+    pub center_y: i32,
+    pub orientation: DominoesOrientation,
+    pub flipped: bool,
     pub new_endpoints: Vec<Endpoint>,
 }
 
@@ -95,6 +116,10 @@ impl From<Placement> for WsDominoesPlacement {
             tile: placement.tile.into(),
             connected_endpoint_id: placement.connected_endpoint_id,
             connected_port: placement.connected_port,
+            center_x: placement.center_x,
+            center_y: placement.center_y,
+            orientation: placement.orientation,
+            flipped: placement.flipped,
             new_endpoints: placement
                 .new_endpoints
                 .into_iter()
@@ -172,9 +197,22 @@ pub struct DominoesRoundState {
     pub last_play_position: Option<usize>,
     pub consecutive_passes: usize,
     pub drawn_this_turn: bool,
+    pub remaining_seconds: u32,
+    pub turn_revision: i32,
     next_placement_id: i32,
     next_endpoint_id: i32,
     pub round_winner: Option<usize>,
+    rng_state: u64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct LayoutPlan {
+    center_x: i32,
+    center_y: i32,
+    orientation: DominoesOrientation,
+    flipped: bool,
+    connected_port: Option<DominoesPort>,
+    outward_direction: Option<DominoesPort>,
 }
 
 impl DominoesRoundState {
@@ -183,6 +221,16 @@ impl DominoesRoundState {
         rule: DominoesRule,
         no_playable_tiles: DominoesNoPlayableTiles,
         target_score: i32,
+    ) -> Result<Self, CoreError> {
+        Self::new_with_seed(base, rule, no_playable_tiles, target_score, random_seed())
+    }
+
+    pub fn new_with_seed(
+        base: Arc<Mutex<CommonGameState>>,
+        rule: DominoesRule,
+        no_playable_tiles: DominoesNoPlayableTiles,
+        target_score: i32,
+        seed: u64,
     ) -> Result<Self, CoreError> {
         let mut positions = base
             .lock()
@@ -212,9 +260,12 @@ impl DominoesRoundState {
             last_play_position: None,
             consecutive_passes: 0,
             drawn_this_turn: false,
+            remaining_seconds: 0,
+            turn_revision: 0,
             next_placement_id: 0,
             next_endpoint_id: 0,
             round_winner: None,
+            rng_state: seed.max(1),
         })
     }
 
@@ -241,16 +292,12 @@ impl DominoesRoundState {
         if self.positions.is_empty() {
             return Err(CoreError::NoPlayers);
         }
+        let starter = match starter_hint {
+            Some(position) => position,
+            None => self.draw_initial_starter(),
+        };
         let mut deck = Tile::all();
-        shuffle(&mut deck, self.round as u64);
-        let starter = starter_hint.unwrap_or_else(|| {
-            self.positions
-                .iter()
-                .enumerate()
-                .max_by_key(|(index, _)| deck[*index].pip_sum())
-                .map(|(_, position)| *position)
-                .unwrap_or(self.positions[0])
-        });
+        shuffle(&mut deck, &mut self.rng_state);
         let hand_size = self.hand_size();
         self.hands.clear();
         let mut cursor = 0;
@@ -269,27 +316,62 @@ impl DominoesRoundState {
         self.phase = DominoesPhase::Play;
         self.last_play_position = None;
         self.consecutive_passes = 0;
-        self.drawn_this_turn = false;
+        self.begin_turn();
         Ok(starter)
+    }
+
+    fn draw_initial_starter(&mut self) -> usize {
+        let mut hidden_draw = Tile::all();
+        shuffle(&mut hidden_draw, &mut self.rng_state);
+        let best_pips = hidden_draw
+            .iter()
+            .take(self.positions.len())
+            .map(|tile| tile.pip_sum())
+            .max()
+            .unwrap_or_default();
+        let candidates = self
+            .positions
+            .iter()
+            .zip(hidden_draw.iter())
+            .filter(|(_, tile)| tile.pip_sum() == best_pips)
+            .map(|(position, _)| *position)
+            .collect::<Vec<_>>();
+        let choice = next_random(&mut self.rng_state) as usize % candidates.len().max(1);
+        candidates.get(choice).copied().unwrap_or(self.positions[0])
     }
 
     pub fn hand_size(&self) -> usize {
         5
     }
 
-    pub fn legal_tile_ids(&self, position: usize) -> Vec<i32> {
+    pub fn legal_plays(&self, position: usize) -> Vec<WsDominoesLegalPlay> {
         let Some(hand) = self.hands.get(&position) else {
             return Vec::new();
         };
-        let mut ids = hand
-            .iter()
-            .filter(|tile| {
-                self.endpoints.is_empty() || self.endpoints.iter().any(|e| tile.matches(e.pip))
-            })
-            .map(|tile| tile.id)
-            .collect::<Vec<_>>();
-        ids.sort_unstable();
-        ids
+        let mut plays = Vec::new();
+        if self.endpoints.is_empty() {
+            plays.extend(hand.iter().map(|tile| WsDominoesLegalPlay {
+                tile_id: tile.id,
+                endpoint_id: None,
+                score: self.preview_five_up_score(*tile, None),
+            }));
+        } else {
+            for tile in hand {
+                for endpoint in self
+                    .endpoints
+                    .iter()
+                    .filter(|endpoint| tile.matches(endpoint.pip))
+                {
+                    plays.push(WsDominoesLegalPlay {
+                        tile_id: tile.id,
+                        endpoint_id: Some(endpoint.endpoint_id),
+                        score: self.preview_five_up_score(*tile, Some(endpoint.endpoint_id)),
+                    });
+                }
+            }
+        }
+        plays.sort_unstable_by_key(|play| (play.tile_id, play.endpoint_id.unwrap_or(-1)));
+        plays
     }
 
     pub fn play_tile(
@@ -305,43 +387,41 @@ impl DominoesRoundState {
             .position(|tile| tile.id == tile_id)
             .ok_or(CoreError::InvalidTile)?;
         let tile = hand[hand_index];
-        let (connected_endpoint_id, connected_port, new_endpoints) = if self.endpoints.is_empty() {
+        let connected_endpoint = if self.endpoints.is_empty() {
             if endpoint_id.is_some() {
                 return Err(CoreError::InvalidEndpoint);
             }
-            (None, None, self.new_endpoints(tile, None))
+            None
         } else {
             let endpoint_id = endpoint_id.ok_or(CoreError::InvalidEndpoint)?;
-            let endpoint_index = self
+            let endpoint = self
                 .endpoints
                 .iter()
-                .position(|endpoint| endpoint.endpoint_id == endpoint_id)
+                .find(|endpoint| endpoint.endpoint_id == endpoint_id)
+                .copied()
                 .ok_or(CoreError::InvalidEndpoint)?;
-            let endpoint = self.endpoints[endpoint_index];
             if !tile.matches(endpoint.pip) {
                 return Err(CoreError::TileDoesNotMatch);
             }
-            self.endpoints.remove(endpoint_index);
-            let connected_port = if tile.is_double() {
-                DominoesPort::Bottom
-            } else if tile.a == endpoint.pip {
-                DominoesPort::Left
-            } else {
-                DominoesPort::Right
-            };
-            (
-                Some(endpoint_id),
-                Some(connected_port),
-                self.new_endpoints(tile, Some(connected_port)),
-            )
+            Some(endpoint)
         };
+        if let Some(endpoint) = connected_endpoint {
+            self.endpoints
+                .retain(|candidate| candidate.endpoint_id != endpoint.endpoint_id);
+        }
         let placement_id = self.next_placement_id;
         self.next_placement_id = self.next_placement_id.saturating_add(1);
+        let layout = self.layout_for(tile, connected_endpoint);
+        let new_endpoints = self.create_endpoints(placement_id, tile, layout);
         let placement = Placement {
             placement_id,
             tile,
-            connected_endpoint_id,
-            connected_port,
+            connected_endpoint_id: connected_endpoint.map(|endpoint| endpoint.endpoint_id),
+            connected_port: layout.connected_port,
+            center_x: layout.center_x,
+            center_y: layout.center_y,
+            orientation: layout.orientation,
+            flipped: layout.flipped,
             new_endpoints,
         };
         self.endpoints
@@ -367,7 +447,7 @@ impl DominoesRoundState {
 
     pub fn draw_tile(&mut self, position: usize) -> Result<DrawResult, CoreError> {
         self.ensure_turn(position)?;
-        if !self.legal_tile_ids(position).is_empty() {
+        if !self.legal_plays(position).is_empty() {
             return Err(CoreError::PlayAvailable);
         }
         if self.no_playable_tiles == DominoesNoPlayableTiles::PassWithoutDraw {
@@ -382,17 +462,13 @@ impl DominoesRoundState {
                 round_result,
             });
         };
-        let playable = self.endpoints.is_empty()
-            || self
-                .endpoints
-                .iter()
-                .any(|endpoint| tile.matches(endpoint.pip));
         self.hands.entry(position).or_default().push(tile);
         self.hands
             .get_mut(&position)
             .expect("hand exists")
             .sort_unstable_by_key(|item| item.id);
         self.drawn_this_turn = true;
+        let playable = !self.legal_plays(position).is_empty();
         if self.no_playable_tiles == DominoesNoPlayableTiles::DrawOne && !playable {
             let round_result = self.record_pass(position)?;
             return Ok(DrawResult {
@@ -412,7 +488,7 @@ impl DominoesRoundState {
 
     pub fn pass(&mut self, position: usize) -> Result<Option<RoundResult>, CoreError> {
         self.ensure_turn(position)?;
-        if !self.legal_tile_ids(position).is_empty() {
+        if !self.legal_plays(position).is_empty() {
             return Err(CoreError::PlayAvailable);
         }
         let allowed = match self.no_playable_tiles {
@@ -454,44 +530,187 @@ impl DominoesRoundState {
             .position(|item| *item == self.current_position)
             .unwrap_or(0);
         self.current_position = self.positions[(index + 1) % self.positions.len()];
+        self.begin_turn();
     }
 
-    fn new_endpoints(&mut self, tile: Tile, connected_port: Option<DominoesPort>) -> Vec<Endpoint> {
-        let placement_id = self.next_placement_id;
-        let ports = if tile.is_double() {
-            match connected_port {
-                Some(_) => vec![
-                    (DominoesPort::Left, tile.a),
-                    (DominoesPort::Right, tile.a),
-                    (DominoesPort::Top, tile.a),
-                ],
-                None => vec![
-                    (DominoesPort::Left, tile.a),
-                    (DominoesPort::Right, tile.a),
-                    (DominoesPort::Top, tile.a),
-                    (DominoesPort::Bottom, tile.a),
-                ],
-            }
-        } else if connected_port == Some(DominoesPort::Left) {
-            vec![(DominoesPort::Right, tile.b)]
-        } else if connected_port == Some(DominoesPort::Right) {
-            vec![(DominoesPort::Left, tile.a)]
-        } else {
-            vec![(DominoesPort::Left, tile.a), (DominoesPort::Right, tile.b)]
+    fn begin_turn(&mut self) {
+        self.drawn_this_turn = false;
+        self.turn_revision = self.turn_revision.wrapping_add(1).max(1);
+        self.remaining_seconds = DEFAULT_TURN_SECONDS;
+    }
+
+    pub fn cap_remaining_seconds(&mut self, maximum: u32) -> bool {
+        if self.remaining_seconds <= maximum {
+            return false;
+        }
+        self.remaining_seconds = maximum;
+        true
+    }
+
+    pub fn tick_remaining_seconds(&mut self, revision: i32) -> bool {
+        if self.phase != DominoesPhase::Play || self.turn_revision != revision {
+            return false;
+        }
+        self.remaining_seconds = self.remaining_seconds.saturating_sub(1);
+        true
+    }
+
+    pub fn tick_round_transition(&mut self, revision: i32) -> bool {
+        if self.phase != DominoesPhase::RoundOver || self.turn_revision != revision {
+            return false;
+        }
+        self.remaining_seconds = self.remaining_seconds.saturating_sub(1);
+        true
+    }
+
+    fn layout_for(&self, tile: Tile, endpoint: Option<Endpoint>) -> LayoutPlan {
+        let Some(endpoint) = endpoint else {
+            return LayoutPlan {
+                center_x: 0,
+                center_y: 0,
+                orientation: if tile.is_double() {
+                    DominoesOrientation::Vertical
+                } else {
+                    DominoesOrientation::Horizontal
+                },
+                flipped: false,
+                connected_port: None,
+                outward_direction: None,
+            };
         };
-        ports
+        let direction = endpoint.direction;
+        let orientation = if tile.is_double() {
+            perpendicular_orientation(direction)
+        } else {
+            aligned_orientation(direction)
+        };
+        let flipped = if tile.is_double() {
+            false
+        } else {
+            let connection_on_negative_side =
+                matches!(direction, DominoesPort::Right | DominoesPort::Bottom);
+            let a_matches = tile.a == endpoint.pip;
+            if connection_on_negative_side {
+                !a_matches
+            } else {
+                a_matches
+            }
+        };
+        let extent = extent_in_direction(orientation, direction);
+        let (dx, dy) = direction_vector(direction);
+        let mut center_x = endpoint.anchor_x + dx * extent;
+        let mut center_y = endpoint.anchor_y + dy * extent;
+        while self.placement_collides(center_x, center_y, orientation) {
+            center_x += dx * LAYOUT_JUMP;
+            center_y += dy * LAYOUT_JUMP;
+        }
+        LayoutPlan {
+            center_x,
+            center_y,
+            orientation,
+            flipped,
+            connected_port: Some(opposite(direction)),
+            outward_direction: Some(direction),
+        }
+    }
+
+    fn placement_collides(
+        &self,
+        center_x: i32,
+        center_y: i32,
+        orientation: DominoesOrientation,
+    ) -> bool {
+        let (half_width, half_height) = half_extents(orientation);
+        self.placements.iter().any(|placement| {
+            let (other_width, other_height) = half_extents(placement.orientation);
+            (center_x - placement.center_x).abs() < half_width + other_width
+                && (center_y - placement.center_y).abs() < half_height + other_height
+        })
+    }
+
+    fn create_endpoints(
+        &mut self,
+        placement_id: i32,
+        tile: Tile,
+        layout: LayoutPlan,
+    ) -> Vec<Endpoint> {
+        let branches = match layout.outward_direction {
+            None if tile.is_double() => vec![
+                (DominoesPort::Left, tile.a),
+                (DominoesPort::Right, tile.a),
+                (DominoesPort::Top, tile.a),
+                (DominoesPort::Bottom, tile.a),
+            ],
+            None => vec![(DominoesPort::Left, tile.a), (DominoesPort::Right, tile.b)],
+            Some(direction) if tile.is_double() => vec![
+                (direction, tile.a),
+                (turn_left(direction), tile.a),
+                (turn_right(direction), tile.a),
+            ],
+            Some(direction) => {
+                let connected_pip = if layout.flipped {
+                    if matches!(direction, DominoesPort::Right | DominoesPort::Bottom) {
+                        tile.b
+                    } else {
+                        tile.a
+                    }
+                } else if matches!(direction, DominoesPort::Right | DominoesPort::Bottom) {
+                    tile.a
+                } else {
+                    tile.b
+                };
+                vec![(direction, tile.other_pip(connected_pip))]
+            }
+        };
+        branches
             .into_iter()
-            .map(|(port, pip)| {
+            .map(|(direction, pip)| {
+                let extent = extent_in_direction(layout.orientation, direction);
+                let (dx, dy) = direction_vector(direction);
                 let endpoint = Endpoint {
                     endpoint_id: self.next_endpoint_id,
                     placement_id,
                     pip,
-                    port,
+                    port: direction,
+                    anchor_x: layout.center_x + dx * extent,
+                    anchor_y: layout.center_y + dy * extent,
+                    direction,
                 };
                 self.next_endpoint_id = self.next_endpoint_id.saturating_add(1);
                 endpoint
             })
             .collect()
+    }
+
+    fn preview_five_up_score(&self, tile: Tile, endpoint_id: Option<i32>) -> i32 {
+        if self.rule != DominoesRule::FiveUp {
+            return 0;
+        }
+        let mut total = self
+            .endpoints
+            .iter()
+            .map(|endpoint| endpoint.pip)
+            .sum::<i32>();
+        match endpoint_id {
+            None if tile.is_double() => total = tile.a * 4,
+            None => total = tile.a + tile.b,
+            Some(endpoint_id) => {
+                let Some(endpoint) = self
+                    .endpoints
+                    .iter()
+                    .find(|endpoint| endpoint.endpoint_id == endpoint_id)
+                else {
+                    return 0;
+                };
+                total -= endpoint.pip;
+                total += if tile.is_double() {
+                    tile.a * 3
+                } else {
+                    tile.other_pip(endpoint.pip)
+                };
+            }
+        }
+        if total % 5 == 0 { total } else { 0 }
     }
 
     fn five_up_score(&self) -> i32 {
@@ -528,6 +747,12 @@ impl DominoesRoundState {
         } else {
             DominoesPhase::RoundOver
         };
+        self.turn_revision = self.turn_revision.wrapping_add(1).max(1);
+        self.remaining_seconds = if game_over {
+            0
+        } else {
+            ROUND_TRANSITION_SECONDS
+        };
         let best = self.scores.values().copied().max().unwrap_or_default();
         let winner_positions = if game_over {
             self.scores
@@ -550,6 +775,7 @@ impl DominoesRoundState {
     }
 
     pub fn table_snapshot(&self) -> WsDominoesTableSnapshotEvent {
+        let common = self.base.lock().unwrap();
         let mut players = self
             .positions
             .iter()
@@ -557,8 +783,12 @@ impl DominoesRoundState {
                 position: *position as i32,
                 hand_count: self.hands.get(position).map_or(0, Vec::len) as i32,
                 score: self.scores.get(position).copied().unwrap_or_default(),
+                is_ai: common.is_ai_position(*position),
+                away: common.is_away(*position) || common.is_disconnected(*position),
+                is_ai_takeover: common.is_ai_takeover_position(*position),
             })
             .collect::<Vec<_>>();
+        drop(common);
         players.sort_by_key(|player| player.position);
         WsDominoesTableSnapshotEvent {
             phase: self.phase,
@@ -578,19 +808,27 @@ impl DominoesRoundState {
             players,
             last_play_position: self.last_play_position.map(|position| position as i32),
             consecutive_passes: self.consecutive_passes as i32,
+            remaining_seconds: self.remaining_seconds as i32,
+            turn_revision: self.turn_revision,
         }
     }
 
     pub fn hand_state(&self, position: usize) -> WsDominoesHandState {
-        let playable_tile_ids = self.legal_tile_ids(position);
+        let is_current_turn =
+            self.phase == DominoesPhase::Play && self.current_position == position;
+        let legal_plays = if is_current_turn {
+            self.legal_plays(position)
+        } else {
+            Vec::new()
+        };
         let can_draw = self.phase == DominoesPhase::Play
-            && self.current_position == position
-            && playable_tile_ids.is_empty()
+            && is_current_turn
+            && legal_plays.is_empty()
             && self.no_playable_tiles != DominoesNoPlayableTiles::PassWithoutDraw
             && !self.boneyard.is_empty();
         let can_pass = self.phase == DominoesPhase::Play
-            && self.current_position == position
-            && playable_tile_ids.is_empty()
+            && is_current_turn
+            && legal_plays.is_empty()
             && match self.no_playable_tiles {
                 DominoesNoPlayableTiles::PassWithoutDraw => true,
                 DominoesNoPlayableTiles::DrawOne => {
@@ -607,24 +845,95 @@ impl DominoesRoundState {
                 .into_iter()
                 .map(Into::into)
                 .collect(),
-            playable_tile_ids,
+            legal_plays,
             can_draw,
             can_pass,
         }
     }
 }
 
-fn shuffle(deck: &mut [Tile], salt: u64) {
-    let now = SystemTime::now()
+fn aligned_orientation(direction: DominoesPort) -> DominoesOrientation {
+    match direction {
+        DominoesPort::Left | DominoesPort::Right => DominoesOrientation::Horizontal,
+        DominoesPort::Top | DominoesPort::Bottom => DominoesOrientation::Vertical,
+    }
+}
+
+fn perpendicular_orientation(direction: DominoesPort) -> DominoesOrientation {
+    match direction {
+        DominoesPort::Left | DominoesPort::Right => DominoesOrientation::Vertical,
+        DominoesPort::Top | DominoesPort::Bottom => DominoesOrientation::Horizontal,
+    }
+}
+
+fn half_extents(orientation: DominoesOrientation) -> (i32, i32) {
+    match orientation {
+        DominoesOrientation::Horizontal => (TILE_LONG_HALF, TILE_SHORT_HALF),
+        DominoesOrientation::Vertical => (TILE_SHORT_HALF, TILE_LONG_HALF),
+    }
+}
+
+fn extent_in_direction(orientation: DominoesOrientation, direction: DominoesPort) -> i32 {
+    let (half_width, half_height) = half_extents(orientation);
+    match direction {
+        DominoesPort::Left | DominoesPort::Right => half_width,
+        DominoesPort::Top | DominoesPort::Bottom => half_height,
+    }
+}
+
+fn direction_vector(direction: DominoesPort) -> (i32, i32) {
+    match direction {
+        DominoesPort::Left => (-1, 0),
+        DominoesPort::Right => (1, 0),
+        DominoesPort::Top => (0, -1),
+        DominoesPort::Bottom => (0, 1),
+    }
+}
+
+fn opposite(direction: DominoesPort) -> DominoesPort {
+    match direction {
+        DominoesPort::Left => DominoesPort::Right,
+        DominoesPort::Right => DominoesPort::Left,
+        DominoesPort::Top => DominoesPort::Bottom,
+        DominoesPort::Bottom => DominoesPort::Top,
+    }
+}
+
+fn turn_left(direction: DominoesPort) -> DominoesPort {
+    match direction {
+        DominoesPort::Left => DominoesPort::Bottom,
+        DominoesPort::Right => DominoesPort::Top,
+        DominoesPort::Top => DominoesPort::Left,
+        DominoesPort::Bottom => DominoesPort::Right,
+    }
+}
+
+fn turn_right(direction: DominoesPort) -> DominoesPort {
+    match direction {
+        DominoesPort::Left => DominoesPort::Top,
+        DominoesPort::Right => DominoesPort::Bottom,
+        DominoesPort::Top => DominoesPort::Right,
+        DominoesPort::Bottom => DominoesPort::Left,
+    }
+}
+
+fn random_seed() -> u64 {
+    SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|value| value.as_nanos() as u64)
-        .unwrap_or(0);
-    let mut seed = now ^ salt.rotate_left(17);
+        .unwrap_or(1)
+}
+
+fn next_random(state: &mut u64) -> u64 {
+    *state ^= *state << 13;
+    *state ^= *state >> 7;
+    *state ^= *state << 17;
+    *state
+}
+
+fn shuffle(deck: &mut [Tile], state: &mut u64) {
     for index in (1..deck.len()).rev() {
-        seed = seed
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
-        let other = (seed >> 32) as usize % (index + 1);
+        let other = next_random(state) as usize % (index + 1);
         deck.swap(index, other);
     }
 }

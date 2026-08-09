@@ -93,6 +93,9 @@ fn keep_drawing_requires_the_boneyard_to_be_exhausted_before_pass() {
         placement_id: 0,
         pip: 6,
         port: share_type_public::DominoesPort::Right,
+        anchor_x: 2,
+        anchor_y: 0,
+        direction: share_type_public::DominoesPort::Right,
     }];
     state.hands = HashMap::from([(0, vec![Tile::from_id(0).expect("0-0 tile")])]);
     state.boneyard = vec![Tile::from_id(1).expect("0-1 tile")];
@@ -115,6 +118,9 @@ fn draw_one_automatically_passes_an_unplayable_draw() {
         placement_id: 0,
         pip: 6,
         port: share_type_public::DominoesPort::Right,
+        anchor_x: 2,
+        anchor_y: 0,
+        direction: share_type_public::DominoesPort::Right,
     }];
     state.hands = HashMap::from([(0, vec![Tile::from_id(0).expect("0-0 tile")])]);
     state.boneyard = vec![Tile::from_id(1).expect("0-1 tile")];
@@ -136,6 +142,9 @@ fn a_block_is_awarded_to_the_last_player_who_placed_a_tile() {
         placement_id: 0,
         pip: 6,
         port: share_type_public::DominoesPort::Right,
+        anchor_x: 2,
+        anchor_y: 0,
+        direction: share_type_public::DominoesPort::Right,
     }];
     state.hands = HashMap::from([
         (0, vec![Tile::from_id(0).expect("0-0 tile")]),
@@ -170,6 +179,36 @@ fn doubles_create_four_open_ends_and_three_when_attached() {
         .play_tile(1, attach.id, Some(endpoint))
         .expect("attach tile");
     assert_eq!(state.endpoints.len(), 4);
+}
+
+#[test]
+fn layout_keeps_all_twenty_eight_tiles_non_overlapping() {
+    let mut state = state();
+    state.phase = DominoesPhase::Play;
+    state.hands = state
+        .positions
+        .iter()
+        .map(|position| (*position, Tile::all()))
+        .collect();
+    for _ in 0..super::TILE_COUNT {
+        let position = state.current_position;
+        let legal = state.legal_plays(position);
+        let selected = legal.first().copied().expect("a legal stress play");
+        state
+            .play_tile(position, selected.tile_id, selected.endpoint_id)
+            .expect("stress play");
+    }
+
+    for (index, placement) in state.placements.iter().enumerate() {
+        let (width, height) = super::half_extents(placement.orientation);
+        for other in state.placements.iter().skip(index + 1) {
+            let (other_width, other_height) = super::half_extents(other.orientation);
+            assert!(
+                !((placement.center_x - other.center_x).abs() < width + other_width
+                    && (placement.center_y - other.center_y).abs() < height + other_height)
+            );
+        }
+    }
 }
 
 #[test]

@@ -2,28 +2,43 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use share_type_public::{
-    DominoesNoPlayableTiles, DominoesPhase, DominoesRoutes, DominoesRule, DominoesWsCode, GameId,
-    Routes, WsCode, WsDominoesDealEvent, WsDominoesDrawEvent, WsDominoesDrawnTileEvent,
-    WsDominoesGameOverEvent, WsDominoesHandState, WsDominoesPassEvent, WsDominoesPlayEvent,
-    WsDominoesPlayRequest, WsDominoesRoundOverEvent, WsDominoesRoundStartEvent,
-    WsDominoesTableSnapshotEvent, WsDominoesTurnEvent, WsReJoinResponse, WsResponseCode,
+    DominoesActionSource, DominoesNoPlayableTiles, DominoesPhase, DominoesRoutes, DominoesRule,
+    DominoesWsCode, GameId, Routes, WsCode, WsDominoesDealEvent, WsDominoesDrawEvent,
+    WsDominoesDrawnTileEvent, WsDominoesGameOverEvent, WsDominoesHandState, WsDominoesPassEvent,
+    WsDominoesPlayEvent, WsDominoesPlayRequest, WsDominoesRoundOverEvent,
+    WsDominoesRoundStartEvent, WsDominoesTableSnapshotEvent, WsDominoesTurnEvent, WsReJoinResponse,
+    WsResponseCode,
 };
+use tokio::sync::Mutex as AsyncMutex;
 use ws_common::{
     ClientRequest, Delivery, Dispatch, GameHandler, OutboundPayload, RequestResponse, RoomService,
-    SessionId, SharedGameState,
+    SessionId, SessionSenders, SharedGameState,
 };
 
+use crate::action::{self, ActionEvent, ActionOutcome};
 use crate::core::{CoreError, DominoesRoundState, RoundResult};
+use crate::game_loop::start_game_loop;
 use crate::game_setting::{
     KEY_NO_PLAYABLE_TILES, KEY_RULE, KEY_TARGET_SCORE, build_dominoes_settings,
     no_playable_from_config, rule_from_config, target_from_config,
 };
 use crate::game_state::DominoesGameState;
 
-type StateHandle = Arc<Mutex<DominoesRoundState>>;
+pub(crate) type StateHandle = Arc<Mutex<DominoesRoundState>>;
+pub(crate) type StateRegistry = Arc<Mutex<HashMap<String, StateHandle>>>;
 
 pub struct DominoesGameHandler {
-    states: Arc<Mutex<HashMap<String, StateHandle>>>,
+    states: StateRegistry,
+    senders: Option<SessionSenders>,
+    room_service: Option<Arc<AsyncMutex<RoomService>>>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct RoundStartBundle {
+    pub event: WsDominoesRoundStartEvent,
+    pub deals: Vec<(usize, WsDominoesDealEvent)>,
+    pub snapshot: WsDominoesTableSnapshotEvent,
+    pub hands: Vec<(usize, WsDominoesHandState)>,
 }
 
 fn state_matches_common(
@@ -57,19 +72,37 @@ impl DominoesGameHandler {
         if state_matches_common(&state, &common) {
             Some(state)
         } else {
-            self.states
-                .lock()
-                .expect("dominoes registry lock")
-                .remove(room_key);
+            self.remove_state_if_same(room_key, &state);
             None
         }
     }
 
-    fn remove_state(&self, room_key: &str) {
+    fn remove_state_if_same(&self, room_key: &str, expected: &StateHandle) {
+        let mut states = self.states.lock().expect("dominoes registry lock");
+        if states
+            .get(room_key)
+            .is_some_and(|state| Arc::ptr_eq(state, expected))
+        {
+            states.remove(room_key);
+        }
+    }
+
+    fn prune_stale_states(&self, room_service: &RoomService) {
         self.states
             .lock()
             .expect("dominoes registry lock")
-            .remove(room_key);
+            .retain(|room_key, state| {
+                room_service
+                    .room_common_state(room_key)
+                    .is_some_and(|common| state_matches_common(state, &common))
+                    && !state
+                        .lock()
+                        .expect("dominoes state lock")
+                        .base
+                        .lock()
+                        .expect("dominoes common state lock")
+                        .stop_requested
+            });
     }
 
     fn configs(
@@ -104,53 +137,15 @@ impl DominoesGameHandler {
 
         if let Some(state) = self.state_for_room(room_service, &room_key) {
             let phase = state.lock().expect("dominoes state lock").phase;
-            match phase {
-                DominoesPhase::RoundOver => {
-                    let (starter, round, hand_size, boneyard_count) = {
-                        let mut state = state.lock().expect("dominoes state lock");
-                        let starter = match state.start_next_round() {
-                            Ok(starter) => starter,
-                            Err(_) => {
-                                return room_service.error_response(
-                                    session_id,
-                                    route,
-                                    WsResponseCode::NO_PERMISSION,
-                                );
-                            }
-                        };
-                        (
-                            starter,
-                            state.round,
-                            state.hand_size(),
-                            state.boneyard.len(),
-                        )
-                    };
-                    self.broadcast_round_start(
-                        room_service,
-                        &room_key,
-                        WsDominoesRoundStartEvent {
-                            round,
-                            starter_position: starter as i32,
-                            hand_size: hand_size as i32,
-                            boneyard_count: boneyard_count as i32,
-                        },
-                        &mut dispatch,
-                    );
-                    room_service.push_ok_response(&mut dispatch, session_id, route);
-                    return dispatch;
-                }
-                DominoesPhase::Play => {
-                    return room_service.error_response(
-                        session_id,
-                        route,
-                        WsResponseCode::NO_PERMISSION,
-                    );
-                }
-                DominoesPhase::GameOver => {
-                    self.remove_state(&room_key);
-                    room_service.clear_room_game_state(&room_key);
-                }
+            if phase != DominoesPhase::GameOver {
+                return room_service.error_response(
+                    session_id,
+                    route,
+                    WsResponseCode::NO_PERMISSION,
+                );
             }
+            self.remove_state_if_same(&room_key, &state);
+            room_service.clear_room_game_state(&room_key);
         }
         if !room_service.room_is_ready_to_start(&room_key) {
             return room_service.error_response(session_id, route, WsResponseCode::NOT_IN_RANGE);
@@ -170,16 +165,9 @@ impl DominoesGameHandler {
                 );
             }
         };
-        let starter = match round.start_new_game() {
-            Ok(starter) => starter,
-            Err(_) => {
-                return room_service.error_response(
-                    session_id,
-                    route,
-                    WsResponseCode::NOT_IN_RANGE,
-                );
-            }
-        };
+        if round.start_new_game().is_err() {
+            return room_service.error_response(session_id, route, WsResponseCode::NOT_IN_RANGE);
+        }
         let round = DominoesGameState::new(round);
         let state = Arc::clone(&round.inner);
         room_service.set_room_game_state(&room_key, Box::new(round));
@@ -187,21 +175,21 @@ impl DominoesGameHandler {
             .lock()
             .expect("dominoes registry lock")
             .insert(room_key.clone(), Arc::clone(&state));
-        let (round_number, hand_size, boneyard_count) = {
-            let state = state.lock().expect("dominoes state lock");
-            (state.round, state.hand_size(), state.boneyard.len())
-        };
-        self.broadcast_round_start(
-            room_service,
-            &room_key,
-            WsDominoesRoundStartEvent {
-                round: round_number,
-                starter_position: starter as i32,
-                hand_size: hand_size as i32,
-                boneyard_count: boneyard_count as i32,
-            },
-            &mut dispatch,
-        );
+
+        if let (Some(room_service_arc), Some(senders)) =
+            (self.room_service.as_ref(), self.senders.as_ref())
+        {
+            start_game_loop(
+                room_key.clone(),
+                Arc::clone(&state),
+                Arc::clone(room_service_arc),
+                Arc::clone(senders),
+                Arc::clone(&self.states),
+            );
+        }
+
+        let bundle = round_start_bundle(&state.lock().expect("dominoes state lock"));
+        append_round_start_bundle(room_service, &room_key, bundle, &mut dispatch);
         room_service.broadcast_connected(
             &room_key,
             WsCode::START as i32,
@@ -210,6 +198,14 @@ impl DominoesGameHandler {
         );
         room_service.push_ok_response(&mut dispatch, session_id, route);
         dispatch
+    }
+
+    fn human_action_allowed(state: &DominoesRoundState, position: usize) -> bool {
+        let common = state.base.lock().expect("dominoes common state lock");
+        !common.is_ai_position(position)
+            && !common.is_ai_takeover_position(position)
+            && !common.is_away(position)
+            && !common.is_disconnected(position)
     }
 
     fn play_tile(
@@ -231,38 +227,31 @@ impl DominoesGameHandler {
         let Some(state) = self.state_for_room(room_service, &room_key) else {
             return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
         };
-        let (placement, score, total_score, round_result, snapshot, hand) = {
+        let outcome = {
             let mut state = state.lock().expect("dominoes state lock");
-            let (placement, score, round_result) =
-                match state.play_tile(position, request.tile_id, request.endpoint_id) {
-                    Ok(result) => result,
-                    Err(error) => {
-                        return room_service.error_response(session_id, route, map_error(error));
-                    }
-                };
-            let total_score = state.scores.get(&position).copied().unwrap_or_default();
-            let snapshot = state.table_snapshot();
-            let hand = state.hand_state(position);
-            (placement, score, total_score, round_result, snapshot, hand)
+            if !Self::human_action_allowed(&state, position) {
+                return room_service.error_response(
+                    session_id,
+                    route,
+                    WsResponseCode::NO_PERMISSION,
+                );
+            }
+            match action::play(
+                &mut state,
+                position,
+                request.tile_id,
+                request.endpoint_id,
+                DominoesActionSource::Human,
+            ) {
+                Ok(outcome) => outcome,
+                Err(error) => {
+                    return room_service.error_response(session_id, route, map_error(error));
+                }
+            }
         };
         let mut dispatch = Dispatch::default();
-        room_service.broadcast_connected(
-            &room_key,
-            DominoesWsCode::PLAY_TILE as i32,
-            WsDominoesPlayEvent {
-                position: position as i32,
-                placement: placement.into(),
-                score,
-                total_score,
-            },
-            &mut dispatch,
-        );
+        append_action_outcome(room_service, &room_key, outcome, &mut dispatch);
         room_service.push_ok_response(&mut dispatch, session_id, route);
-        self.broadcast_snapshot_and_turn(room_service, &room_key, &snapshot, &mut dispatch);
-        self.send_hand_state(room_service, &room_key, position, hand, &mut dispatch);
-        if let Some(result) = round_result {
-            self.broadcast_round_result(room_service, &room_key, result, &mut dispatch);
-        }
         dispatch
     }
 
@@ -277,57 +266,25 @@ impl DominoesGameHandler {
         let Some(state) = self.state_for_room(room_service, &room_key) else {
             return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
         };
-        let (result, snapshot, hand) = {
+        let outcome = {
             let mut state = state.lock().expect("dominoes state lock");
-            let result = match state.draw_tile(position) {
-                Ok(result) => result,
+            if !Self::human_action_allowed(&state, position) {
+                return room_service.error_response(
+                    session_id,
+                    route,
+                    WsResponseCode::NO_PERMISSION,
+                );
+            }
+            match action::draw(&mut state, position, DominoesActionSource::Human) {
+                Ok(outcome) => outcome,
                 Err(error) => {
                     return room_service.error_response(session_id, route, map_error(error));
                 }
-            };
-            (result, state.table_snapshot(), state.hand_state(position))
+            }
         };
         let mut dispatch = Dispatch::default();
-        room_service.broadcast_connected(
-            &room_key,
-            DominoesWsCode::DRAW_TILE as i32,
-            WsDominoesDrawEvent {
-                position: position as i32,
-                boneyard_count: snapshot.boneyard_count,
-            },
-            &mut dispatch,
-        );
-        if let Some(tile) = result.tile {
-            self.send_to_position(
-                room_service,
-                &room_key,
-                position,
-                DominoesWsCode::DRAWN_TILE as i32,
-                WsDominoesDrawnTileEvent {
-                    tile: tile.into(),
-                    playable: result.playable,
-                },
-                &mut dispatch,
-            );
-        }
+        append_action_outcome(room_service, &room_key, outcome, &mut dispatch);
         room_service.push_ok_response(&mut dispatch, session_id, route);
-        if result.passed {
-            room_service.broadcast_connected(
-                &room_key,
-                DominoesWsCode::PASS as i32,
-                WsDominoesPassEvent {
-                    position: position as i32,
-                    consecutive_passes: snapshot.consecutive_passes,
-                },
-                &mut dispatch,
-            );
-        }
-        if let Some(round_result) = result.round_result {
-            self.broadcast_round_result(room_service, &room_key, round_result, &mut dispatch);
-        } else {
-            self.broadcast_snapshot_and_turn(room_service, &room_key, &snapshot, &mut dispatch);
-            self.send_hand_state(room_service, &room_key, position, hand, &mut dispatch);
-        }
         dispatch
     }
 
@@ -342,212 +299,50 @@ impl DominoesGameHandler {
         let Some(state) = self.state_for_room(room_service, &room_key) else {
             return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
         };
-        let (round_result, snapshot, consecutive_passes) = {
+        let outcome = {
             let mut state = state.lock().expect("dominoes state lock");
-            let round_result = match state.pass(position) {
-                Ok(result) => result,
+            if !Self::human_action_allowed(&state, position) {
+                return room_service.error_response(
+                    session_id,
+                    route,
+                    WsResponseCode::NO_PERMISSION,
+                );
+            }
+            match action::pass(&mut state, position, DominoesActionSource::Human) {
+                Ok(outcome) => outcome,
                 Err(error) => {
                     return room_service.error_response(session_id, route, map_error(error));
                 }
-            };
-            (
-                round_result,
-                state.table_snapshot(),
-                state.consecutive_passes as i32,
-            )
+            }
         };
         let mut dispatch = Dispatch::default();
-        room_service.broadcast_connected(
-            &room_key,
-            DominoesWsCode::PASS as i32,
-            WsDominoesPassEvent {
-                position: position as i32,
-                consecutive_passes,
-            },
-            &mut dispatch,
-        );
+        append_action_outcome(room_service, &room_key, outcome, &mut dispatch);
         room_service.push_ok_response(&mut dispatch, session_id, route);
-        if let Some(result) = round_result {
-            self.broadcast_round_result(room_service, &room_key, result, &mut dispatch);
-        } else {
-            self.broadcast_snapshot_and_turn(room_service, &room_key, &snapshot, &mut dispatch);
-        }
         dispatch
     }
 
-    fn broadcast_round_start(
+    fn append_current_snapshot(
         &self,
         room_service: &RoomService,
         room_key: &str,
-        event: WsDominoesRoundStartEvent,
         dispatch: &mut Dispatch,
     ) {
-        room_service.broadcast_connected(
-            room_key,
-            DominoesWsCode::ROUND_START as i32,
-            event.clone(),
-            dispatch,
-        );
-        let Some(state) = self
-            .states
-            .lock()
-            .expect("dominoes registry lock")
-            .get(room_key)
-            .cloned()
-        else {
+        let Some(state) = self.state_for_room(room_service, room_key) else {
             return;
         };
-        let state = state.lock().expect("dominoes state lock");
-        for position in &state.positions {
-            self.send_to_position(
-                room_service,
-                room_key,
-                *position,
-                DominoesWsCode::DEAL as i32,
-                WsDominoesDealEvent {
-                    position: *position as i32,
-                    hand: state
-                        .hands
-                        .get(position)
-                        .cloned()
-                        .unwrap_or_default()
-                        .into_iter()
-                        .map(Into::into)
-                        .collect(),
-                },
-                dispatch,
-            );
-        }
-        self.broadcast_snapshot_and_turn(room_service, room_key, &state.table_snapshot(), dispatch);
-        self.send_hand_state(
-            room_service,
-            room_key,
-            event.starter_position as usize,
-            state.hand_state(event.starter_position as usize),
-            dispatch,
-        );
-    }
-
-    fn broadcast_snapshot_and_turn(
-        &self,
-        room_service: &RoomService,
-        room_key: &str,
-        snapshot: &WsDominoesTableSnapshotEvent,
-        dispatch: &mut Dispatch,
-    ) {
-        room_service.broadcast_connected(
-            room_key,
-            DominoesWsCode::TABLE_SNAPSHOT as i32,
-            snapshot,
-            dispatch,
-        );
-        if snapshot.phase == DominoesPhase::Play {
-            room_service.broadcast_connected(
-                room_key,
-                DominoesWsCode::TURN as i32,
-                WsDominoesTurnEvent {
-                    position: snapshot.current_position,
-                    boneyard_count: snapshot.boneyard_count,
-                },
-                dispatch,
-            );
-        }
-    }
-
-    fn send_hand_state(
-        &self,
-        room_service: &RoomService,
-        room_key: &str,
-        position: usize,
-        hand: WsDominoesHandState,
-        dispatch: &mut Dispatch,
-    ) {
-        self.send_to_position(
-            room_service,
-            room_key,
-            position,
-            DominoesWsCode::HAND_STATE as i32,
-            hand,
-            dispatch,
-        );
-    }
-
-    fn send_to_position<T: serde::Serialize>(
-        &self,
-        room_service: &RoomService,
-        room_key: &str,
-        position: usize,
-        code: i32,
-        payload: T,
-        dispatch: &mut Dispatch,
-    ) {
-        let data = serde_json::to_value(payload).unwrap_or_default();
-        for recipient in room_service.connected_session_ids_for_position(room_key, position) {
-            dispatch.messages.push(Delivery {
-                recipient,
-                payload: OutboundPayload::Event(share_type_public::CommonEvent {
-                    code,
-                    data: data.clone(),
-                }),
-            });
-        }
-    }
-
-    fn broadcast_round_result(
-        &self,
-        room_service: &mut RoomService,
-        room_key: &str,
-        result: RoundResult,
-        dispatch: &mut Dispatch,
-    ) {
-        let remaining_hands = result
-            .remaining_hands
-            .into_iter()
-            .map(|(position, hand)| (position as i32, hand.into_iter().map(Into::into).collect()))
-            .collect();
-        room_service.broadcast_connected(
-            room_key,
-            DominoesWsCode::ROUND_OVER as i32,
-            WsDominoesRoundOverEvent {
-                round: self
-                    .state_for_room(room_service, room_key)
-                    .map(|state| state.lock().expect("dominoes state lock").round)
-                    .unwrap_or_default(),
-                winner_position: result.winner_position as i32,
-                blocked: result.blocked,
-                round_score: result.round_score,
-                scores: result
-                    .scores
+        let (snapshot, hands) = {
+            let state = state.lock().expect("dominoes state lock");
+            (
+                state.table_snapshot(),
+                state
+                    .positions
                     .iter()
-                    .map(|(position, score)| (*position as i32, *score))
+                    .map(|position| (*position, state.hand_state(*position)))
                     .collect(),
-                remaining_hands,
-            },
-            dispatch,
-        );
-        if result.game_over {
-            room_service.broadcast_connected(
-                room_key,
-                DominoesWsCode::GAME_OVER as i32,
-                WsDominoesGameOverEvent {
-                    winner_positions: result
-                        .winner_positions
-                        .iter()
-                        .map(|position| *position as i32)
-                        .collect(),
-                    target_score: self
-                        .state_for_room(room_service, room_key)
-                        .map(|state| state.lock().expect("dominoes state lock").target_score)
-                        .unwrap_or_default(),
-                    scores: result
-                        .scores
-                        .iter()
-                        .map(|(position, score)| (*position as i32, *score))
-                        .collect(),
-                },
-                dispatch,
-            );
-        }
+            )
+        };
+        append_snapshot_and_turn(room_service, room_key, &snapshot, dispatch);
+        append_hand_states(room_service, room_key, hands, dispatch);
     }
 }
 
@@ -555,11 +350,17 @@ impl Default for DominoesGameHandler {
     fn default() -> Self {
         Self {
             states: Arc::new(Mutex::new(HashMap::new())),
+            senders: None,
+            room_service: None,
         }
     }
 }
 
 impl GameHandler for DominoesGameHandler {
+    fn supports_ai_players(&self) -> bool {
+        cfg!(feature = "official")
+    }
+
     fn authorize_join(
         &self,
         join: &share_type_public::WsJoinRequest,
@@ -582,56 +383,69 @@ impl GameHandler for DominoesGameHandler {
         request: &ClientRequest,
         dispatch: &mut Dispatch,
     ) {
-        if request.route == Routes::QUIT as i32 || request.route == Routes::DISBAND as i32 {
-            if let Some(room_key) = room_service.room_key_of(session_id) {
-                self.remove_state(&room_key);
-            }
+        if matches!(
+            request.route,
+            route if route == Routes::QUIT as i32 || route == Routes::DISBAND as i32
+        ) {
+            self.prune_stale_states(room_service);
             return;
         }
-        if request.route != Routes::JOIN as i32 || !join_succeeded(dispatch, session_id) {
-            return;
-        }
-        let Some(room_key) = room_service.room_key_of(session_id) else {
-            return;
-        };
-        let Some(state) = self.state_for_room(room_service, &room_key) else {
-            return;
-        };
-        let position = room_service
-            .session_position(session_id)
-            .unwrap_or_default();
-        let (table, hand) = {
-            let state = state.lock().expect("dominoes state lock");
-            (state.table_snapshot(), state.hand_state(position))
-        };
-        let rejoin = WsReJoinResponse {
-            other_cards_numbers: HashMap::new(),
-            player_scores: HashMap::new(),
-            my_cards: Vec::new(),
-            now_playing: table.current_position,
-            phase: table.phase as i32,
-            landlord_position: None,
-            score: 0,
-            hidden_cards: Vec::new(),
-            last_play_position: table.last_play_position,
-            last_play: Vec::new(),
-            dominoes: Some(share_type_public::WsDominoesReJoinResponse { table, hand }),
-        };
-        for message in &mut dispatch.messages {
-            if message.recipient != session_id {
-                continue;
-            }
-            let OutboundPayload::Response(RequestResponse::WithData(response)) =
-                &mut message.payload
-            else {
-                continue;
+
+        if request.route == Routes::JOIN as i32 && join_succeeded(dispatch, session_id) {
+            let Some(room_key) = room_service.room_key_of(session_id) else {
+                return;
             };
-            if response.route == Routes::JOIN as i32
-                && response.code as i32 == WsResponseCode::JOINED as i32
-            {
-                response.data["rejoin_data"] =
-                    serde_json::to_value(rejoin.clone()).unwrap_or_default();
+            let Some(state) = self.state_for_room(room_service, &room_key) else {
+                return;
+            };
+            let position = room_service
+                .session_position(session_id)
+                .unwrap_or_default();
+            let (table, hand) = {
+                let state = state.lock().expect("dominoes state lock");
+                (state.table_snapshot(), state.hand_state(position))
+            };
+            let rejoin = WsReJoinResponse {
+                other_cards_numbers: HashMap::new(),
+                player_scores: HashMap::new(),
+                my_cards: Vec::new(),
+                now_playing: table.current_position,
+                phase: table.phase as i32,
+                landlord_position: None,
+                score: 0,
+                hidden_cards: Vec::new(),
+                last_play_position: table.last_play_position,
+                last_play: Vec::new(),
+                dominoes: Some(share_type_public::WsDominoesReJoinResponse { table, hand }),
+            };
+            for message in &mut dispatch.messages {
+                if message.recipient != session_id {
+                    continue;
+                }
+                let OutboundPayload::Response(RequestResponse::WithData(response)) =
+                    &mut message.payload
+                else {
+                    continue;
+                };
+                if response.route == Routes::JOIN as i32
+                    && response.code as i32 == WsResponseCode::JOINED as i32
+                {
+                    response.data["rejoin_data"] =
+                        serde_json::to_value(rejoin.clone()).unwrap_or_default();
+                }
             }
+            return;
+        }
+
+        if matches!(
+            request.route,
+            route if route == Routes::AWAY as i32
+                || route == Routes::BACK as i32
+                || route == Routes::PAUSE as i32
+                || route == Routes::RESUME as i32
+        ) && let Some(room_key) = room_service.room_key_of(session_id)
+        {
+            self.append_current_snapshot(room_service, &room_key, dispatch);
         }
     }
 
@@ -666,6 +480,278 @@ impl GameHandler for DominoesGameHandler {
                 room_service.error_response(session_id, request.route, WsResponseCode::NOT_IN_RANGE)
             }
         }
+    }
+
+    fn set_context(&mut self, senders: SessionSenders, room_service: Arc<AsyncMutex<RoomService>>) {
+        self.senders = Some(senders);
+        self.room_service = Some(room_service);
+    }
+}
+
+pub(crate) fn round_start_bundle(state: &DominoesRoundState) -> RoundStartBundle {
+    RoundStartBundle {
+        event: WsDominoesRoundStartEvent {
+            round: state.round,
+            starter_position: state.current_position as i32,
+            hand_size: state.hand_size() as i32,
+            boneyard_count: state.boneyard.len() as i32,
+            remaining_seconds: state.remaining_seconds as i32,
+            turn_revision: state.turn_revision,
+        },
+        deals: state
+            .positions
+            .iter()
+            .map(|position| {
+                (
+                    *position,
+                    WsDominoesDealEvent {
+                        position: *position as i32,
+                        hand: state
+                            .hands
+                            .get(position)
+                            .cloned()
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(Into::into)
+                            .collect(),
+                    },
+                )
+            })
+            .collect(),
+        snapshot: state.table_snapshot(),
+        hands: state
+            .positions
+            .iter()
+            .map(|position| (*position, state.hand_state(*position)))
+            .collect(),
+    }
+}
+
+pub(crate) fn append_round_start_bundle(
+    room_service: &RoomService,
+    room_key: &str,
+    bundle: RoundStartBundle,
+    dispatch: &mut Dispatch,
+) {
+    room_service.broadcast_connected(
+        room_key,
+        DominoesWsCode::ROUND_START as i32,
+        bundle.event,
+        dispatch,
+    );
+    for (position, deal) in bundle.deals {
+        send_to_position(
+            room_service,
+            room_key,
+            position,
+            DominoesWsCode::DEAL as i32,
+            deal,
+            dispatch,
+        );
+    }
+    append_snapshot_and_turn(room_service, room_key, &bundle.snapshot, dispatch);
+    append_hand_states(room_service, room_key, bundle.hands, dispatch);
+}
+
+pub(crate) fn append_action_outcome(
+    room_service: &RoomService,
+    room_key: &str,
+    outcome: ActionOutcome,
+    dispatch: &mut Dispatch,
+) {
+    for event in outcome.events {
+        match event {
+            ActionEvent::Play {
+                position,
+                placement,
+                score,
+                total_score,
+                source,
+            } => room_service.broadcast_connected(
+                room_key,
+                DominoesWsCode::PLAY_TILE as i32,
+                WsDominoesPlayEvent {
+                    position: position as i32,
+                    placement: placement.into(),
+                    score,
+                    total_score,
+                    source,
+                },
+                dispatch,
+            ),
+            ActionEvent::Draw {
+                position,
+                boneyard_count,
+                tile,
+                playable,
+                source,
+            } => {
+                room_service.broadcast_connected(
+                    room_key,
+                    DominoesWsCode::DRAW_TILE as i32,
+                    WsDominoesDrawEvent {
+                        position: position as i32,
+                        boneyard_count: boneyard_count as i32,
+                        source,
+                    },
+                    dispatch,
+                );
+                if let Some(tile) = tile {
+                    send_to_position(
+                        room_service,
+                        room_key,
+                        position,
+                        DominoesWsCode::DRAWN_TILE as i32,
+                        WsDominoesDrawnTileEvent {
+                            tile: tile.into(),
+                            playable,
+                        },
+                        dispatch,
+                    );
+                }
+            }
+            ActionEvent::Pass {
+                position,
+                consecutive_passes,
+                source,
+            } => room_service.broadcast_connected(
+                room_key,
+                DominoesWsCode::PASS as i32,
+                WsDominoesPassEvent {
+                    position: position as i32,
+                    consecutive_passes: consecutive_passes as i32,
+                    source,
+                },
+                dispatch,
+            ),
+        }
+    }
+    append_snapshot_and_turn(room_service, room_key, &outcome.snapshot, dispatch);
+    append_hand_states(room_service, room_key, outcome.hands, dispatch);
+    if let Some(result) = outcome.round_result {
+        append_round_result(room_service, room_key, result, &outcome.snapshot, dispatch);
+    }
+}
+
+pub(crate) fn append_snapshot_and_turn(
+    room_service: &RoomService,
+    room_key: &str,
+    snapshot: &WsDominoesTableSnapshotEvent,
+    dispatch: &mut Dispatch,
+) {
+    room_service.broadcast_connected(
+        room_key,
+        DominoesWsCode::TABLE_SNAPSHOT as i32,
+        snapshot,
+        dispatch,
+    );
+    if snapshot.phase == DominoesPhase::Play {
+        room_service.broadcast_connected(
+            room_key,
+            DominoesWsCode::TURN as i32,
+            WsDominoesTurnEvent {
+                position: snapshot.current_position,
+                boneyard_count: snapshot.boneyard_count,
+                remaining_seconds: snapshot.remaining_seconds,
+                turn_revision: snapshot.turn_revision,
+            },
+            dispatch,
+        );
+    }
+}
+
+fn append_hand_states(
+    room_service: &RoomService,
+    room_key: &str,
+    hands: Vec<(usize, WsDominoesHandState)>,
+    dispatch: &mut Dispatch,
+) {
+    for (position, hand) in hands {
+        send_to_position(
+            room_service,
+            room_key,
+            position,
+            DominoesWsCode::HAND_STATE as i32,
+            hand,
+            dispatch,
+        );
+    }
+}
+
+fn send_to_position<T: serde::Serialize>(
+    room_service: &RoomService,
+    room_key: &str,
+    position: usize,
+    code: i32,
+    payload: T,
+    dispatch: &mut Dispatch,
+) {
+    let data = serde_json::to_value(payload).unwrap_or_default();
+    for recipient in room_service.connected_session_ids_for_position(room_key, position) {
+        dispatch.messages.push(Delivery {
+            recipient,
+            payload: OutboundPayload::Event(share_type_public::CommonEvent {
+                code,
+                data: data.clone(),
+            }),
+        });
+    }
+}
+
+fn append_round_result(
+    room_service: &RoomService,
+    room_key: &str,
+    result: RoundResult,
+    snapshot: &WsDominoesTableSnapshotEvent,
+    dispatch: &mut Dispatch,
+) {
+    let remaining_hands = result
+        .remaining_hands
+        .iter()
+        .map(|(position, hand)| {
+            (
+                *position as i32,
+                hand.iter().copied().map(Into::into).collect(),
+            )
+        })
+        .collect();
+    room_service.broadcast_connected(
+        room_key,
+        DominoesWsCode::ROUND_OVER as i32,
+        WsDominoesRoundOverEvent {
+            round: snapshot.round,
+            winner_position: result.winner_position as i32,
+            blocked: result.blocked,
+            round_score: result.round_score,
+            scores: result
+                .scores
+                .iter()
+                .map(|(position, score)| (*position as i32, *score))
+                .collect(),
+            remaining_hands,
+            remaining_seconds: snapshot.remaining_seconds,
+        },
+        dispatch,
+    );
+    if result.game_over {
+        room_service.broadcast_connected(
+            room_key,
+            DominoesWsCode::GAME_OVER as i32,
+            WsDominoesGameOverEvent {
+                winner_positions: result
+                    .winner_positions
+                    .iter()
+                    .map(|position| *position as i32)
+                    .collect(),
+                target_score: snapshot.target_score,
+                scores: result
+                    .scores
+                    .iter()
+                    .map(|(position, score)| (*position as i32, *score))
+                    .collect(),
+            },
+            dispatch,
+        );
     }
 }
 
