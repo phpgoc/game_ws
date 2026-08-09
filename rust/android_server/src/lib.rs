@@ -5,9 +5,10 @@
     feature = "tractor",
     feature = "upgrade",
     feature = "p2p",
+    feature = "dominoes",
 )))]
 compile_error!(
-    "enable exactly one Android server feature: landlord, shenyang_mahjong, holdem, tractor, upgrade, or p2p"
+    "enable exactly one Android server feature: landlord, shenyang_mahjong, holdem, tractor, upgrade, p2p, or dominoes"
 );
 
 #[cfg(any(
@@ -26,6 +27,12 @@ compile_error!(
     all(feature = "tractor", feature = "upgrade"),
     all(feature = "tractor", feature = "p2p"),
     all(feature = "upgrade", feature = "p2p"),
+    all(feature = "dominoes", feature = "landlord"),
+    all(feature = "dominoes", feature = "shenyang_mahjong"),
+    all(feature = "dominoes", feature = "holdem"),
+    all(feature = "dominoes", feature = "tractor"),
+    all(feature = "dominoes", feature = "upgrade"),
+    all(feature = "dominoes", feature = "p2p"),
 ))]
 compile_error!("enable only one Android server feature");
 
@@ -69,6 +76,17 @@ use ws_common::RuntimeStats;
 ws_common::android_server_jni!(
     stats = RuntimeStats,
     run = tractor::server::run_tractor_runtime_until_stopped_with_ready,
+    client_count = |stats: RuntimeStats| async move { stats.client_count().await },
+    room_count = |stats: RuntimeStats| async move { stats.room_count().await },
+);
+
+#[cfg(feature = "dominoes")]
+use ws_common::RuntimeStats;
+
+#[cfg(feature = "dominoes")]
+ws_common::android_server_jni!(
+    stats = RuntimeStats,
+    run = dominoes::server::run_dominoes_runtime_until_stopped_with_ready,
     client_count = |stats: RuntimeStats| async move { stats.client_count().await },
     room_count = |stats: RuntimeStats| async move { stats.room_count().await },
 );

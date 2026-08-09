@@ -7,12 +7,14 @@
     <string name="game_tractor">拖拉机</string>
     <string name="game_upgrade">升级</string>
     <string name="game_p2p">P2P 信令</string>
+    <string name="game_dominoes">西洋骨牌</string>
     <string name="title_landlord_ws_service">斗地主 WS 服务</string>
     <string name="title_shenyang_mahjong_ws_service">沈阳麻将 WS 服务</string>
     <string name="title_holdem_ws_service">德州扑克合集 WS 服务</string>
     <string name="title_tractor_ws_service">拖拉机 WS 服务</string>
     <string name="title_upgrade_ws_service">升级 WS 服务</string>
     <string name="title_p2p_ws_service">P2P 信令服务</string>
+    <string name="title_dominoes_ws_service">西洋骨牌 WS 服务</string>
     <string name="server_subtitle_format">%1$s · Rust NDK WebSocket 服务</string>
     <string name="service_status_title">服务状态</string>
     <string name="network_section_title">网络地址</string>

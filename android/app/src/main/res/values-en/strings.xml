@@ -7,12 +7,14 @@
     <string name="game_tractor">Tractor</string>
     <string name="game_upgrade">Upgrade</string>
     <string name="game_p2p">P2P Signaling</string>
+    <string name="game_dominoes">Dominoes</string>
     <string name="title_landlord_ws_service">Landlord WS Service</string>
     <string name="title_shenyang_mahjong_ws_service">Shenyang Mahjong WS Service</string>
     <string name="title_holdem_ws_service">Hold\'em Collection WS Service</string>
     <string name="title_tractor_ws_service">Tractor WS Service</string>
     <string name="title_upgrade_ws_service">Upgrade WS Service</string>
     <string name="title_p2p_ws_service">P2P Signaling Service</string>
+    <string name="title_dominoes_ws_service">Dominoes WS Service</string>
     <string name="server_subtitle_format">%1$s · Rust NDK WebSocket service</string>
     <string name="service_status_title">Service status</string>
     <string name="network_section_title">Network address</string>

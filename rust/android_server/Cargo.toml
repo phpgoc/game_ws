@@ -16,6 +16,7 @@ holdem = ["dep:holdem"]
 tractor = ["dep:tractor"]
 upgrade = ["dep:upgrade"]
 p2p = ["dep:p2p"]
+dominoes = ["dep:dominoes"]
 
 [dependencies]
 holdem = { path = "../holdem", optional = true, default-features = false }
@@ -25,4 +26,5 @@ shenyang_mahjong = { path = "../shenyang_mahjong", optional = true, default-feat
 tokio = { version = "1", features = ["rt-multi-thread"] }
 tractor = { path = "../tractor", optional = true, default-features = false }
 upgrade = { path = "../upgrade", optional = true, default-features = false }
+dominoes = { path = "../dominoes", optional = true, default-features = false }
 ws_common = { path = "../common" }

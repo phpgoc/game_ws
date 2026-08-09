@@ -18,6 +18,7 @@ val games = mapOf(
     "tractor" to GameBuildConfig("com.example.langame.tractorserver", 9004),
     "p2p" to GameBuildConfig("com.example.langame.p2pserver", 9005),
     "upgrade" to GameBuildConfig("com.example.langame.upgradeserver", 9006),
+    "dominoes" to GameBuildConfig("com.example.langame.dominoesserver", 9007),
 )
 val game = providers.gradleProperty("game").orElse("landlord").get()
 val gameConfig = games[game]
