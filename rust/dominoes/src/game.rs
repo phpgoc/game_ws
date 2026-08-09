@@ -367,7 +367,7 @@ impl GameHandler for DominoesGameHandler {
     ) -> ws_common::JoinAuthorizationFuture {
         #[cfg(feature = "official")]
         {
-            return Box::pin(crate::official::authorize_join(join.session_id.clone()));
+            Box::pin(crate::official::authorize_join(join.session_id.clone()))
         }
         #[cfg(not(feature = "official"))]
         {
