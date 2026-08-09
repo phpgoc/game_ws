@@ -1,3 +1,4 @@
+pub mod dominoes;
 pub mod landlord;
 pub mod p2p;
 pub mod shenyang_mahjong;

@@ -1990,7 +1990,12 @@ fn settings() -> super::SettingsBuilderResult {
 
 #[test]
 fn official_games_can_swap_two_non_owner_players() {
-    for game_id in [GameId::LANDLORD, GameId::SHENYANG_MAHJONG, GameId::TRACTOR] {
+    for game_id in [
+        GameId::LANDLORD,
+        GameId::SHENYANG_MAHJONG,
+        GameId::TRACTOR,
+        GameId::DOMINOES,
+    ] {
         let mut service = room_service_with_ai();
         service.connect(1);
         service.connect(2);

@@ -481,6 +481,7 @@ impl GameHandler for LandlordGameHandler {
                         Some(state.last_play_position as i32)
                     },
                     last_play: state.last_play.clone(),
+                    dominoes: None,
                 })
             }
         };

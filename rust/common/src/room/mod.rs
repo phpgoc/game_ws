@@ -1760,14 +1760,14 @@ impl RoomService {
     }
 
     /// 判断房间是否支持官方模式的座位交换。
-    /// 仅官方斗地主、沈阳麻将和拖拉机支持；自建 WS 房间与 P2P 游戏不支持。
+    /// 仅官方斗地主、沈阳麻将、拖拉机和西洋骨牌支持；自建 WS 房间与 P2P 游戏不支持。
     pub fn room_supports_official_swap(&self, room_key: &str) -> bool {
         let Some(entry) = self.rooms.get(room_key) else {
             return false;
         };
         if !matches!(
             entry.game_id,
-            GameId::LANDLORD | GameId::SHENYANG_MAHJONG | GameId::TRACTOR
+            GameId::LANDLORD | GameId::SHENYANG_MAHJONG | GameId::TRACTOR | GameId::DOMINOES
         ) {
             return false;
         }

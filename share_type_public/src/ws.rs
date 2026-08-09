@@ -5,6 +5,7 @@ use typeshare::typeshare;
 use crate::{
     GameParam,
     r#const::{GameId, WsResponseCode},
+    games::dominoes::WsDominoesReJoinResponse,
 };
 
 #[typeshare]
@@ -119,6 +120,9 @@ pub struct WsReJoinResponse {
     pub hidden_cards: Vec<i32>,
     pub last_play_position: Option<i32>,
     pub last_play: Vec<i32>,
+    /// 西洋骨牌使用的类型化重连快照；其他游戏保持 `None`。
+    #[serde(default)]
+    pub dominoes: Option<WsDominoesReJoinResponse>,
 }
 
 #[typeshare]

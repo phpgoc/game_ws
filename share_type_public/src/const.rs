@@ -21,6 +21,8 @@ pub enum GameId {
     P2P = 9,
     /// 多副牌“升级”游戏，与强调拖拉机牌型的 `TRACTOR` 独立。
     UPGRADE = 10,
+    /// 参考《世界游戏大全 51》规则、支持 3-4 人的西洋骨牌。
+    DOMINOES = 11,
 }
 
 impl From<GameId> for i32 {
@@ -47,6 +49,7 @@ impl TryFrom<i32> for GameId {
             8 => Ok(Self::RANDOM_MATCH),
             9 => Ok(Self::P2P),
             10 => Ok(Self::UPGRADE),
+            11 => Ok(Self::DOMINOES),
             _ => Err(()),
         }
     }
