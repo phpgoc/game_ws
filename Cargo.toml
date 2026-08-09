@@ -2,6 +2,7 @@
 members = [
     "share_type_public",
     "rust/common",
+    "rust/dominoes",
     "rust/landlord",
     "rust/shenyang_mahjong",
     "rust/poker_core",
@@ -15,6 +16,7 @@ members = [
 default-members = [
     "share_type_public",
     "rust/common",
+    "rust/dominoes",
     "rust/landlord",
     "rust/shenyang_mahjong",
     "rust/poker_core",

@@ -854,6 +854,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "dominoes"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "data",
+ "futures-util",
+ "runtime_common",
+ "serde",
+ "serde_json",
+ "share_type_public",
+ "tokio",
+ "tokio-tungstenite",
+ "tracing",
+ "ws_common",
+]
+
+[[package]]
 name = "dotenvy"
 version = "0.15.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
