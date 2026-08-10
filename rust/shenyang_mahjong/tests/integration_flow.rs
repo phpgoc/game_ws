@@ -525,7 +525,7 @@ async fn shenyang_mahjong_claim_window_routes_meld_and_pass_over_ws() {
             json!(WsResponseCode::NO_PERMISSION as i32)
         );
 
-        let clients = [&mut a, &mut b, &mut c, &mut d];
+        let mut clients = [&mut a, &mut b, &mut c, &mut d];
         send_request(
             clients[claimant_position],
             Routes::PLAY as i32,
@@ -538,17 +538,17 @@ async fn shenyang_mahjong_claim_window_routes_meld_and_pass_over_ws() {
         })
         .await;
 
-        for position in 1..=3 {
+        for (position, client) in clients.iter_mut().enumerate().skip(1) {
             if position == claimant_position {
                 continue;
             }
             send_request(
-                clients[position],
+                client,
                 Routes::PLAY as i32,
                 json!({ "action": 6, "tiles": [], "target_tile": claim_tile }),
             )
             .await;
-            let pass_response = recv_until(clients[position], "claim pass response", |value| {
+            let pass_response = recv_until(client, "claim pass response", |value| {
                 value.get("route").and_then(Value::as_i64) == Some(Routes::PLAY as i64)
             })
             .await;
