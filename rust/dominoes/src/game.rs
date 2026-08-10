@@ -175,6 +175,7 @@ impl DominoesGameHandler {
             .lock()
             .expect("dominoes registry lock")
             .insert(room_key.clone(), Arc::clone(&state));
+        crate::official::create_match(room_service, &room_key);
 
         if let (Some(room_service_arc), Some(senders)) =
             (self.room_service.as_ref(), self.senders.as_ref())
@@ -705,6 +706,13 @@ fn append_round_result(
     snapshot: &WsDominoesTableSnapshotEvent,
     dispatch: &mut Dispatch,
 ) {
+    crate::official::settle_round(
+        room_service,
+        room_key,
+        snapshot.round,
+        snapshot.rule,
+        &result,
+    );
     let remaining_hands = result
         .remaining_hands
         .iter()
