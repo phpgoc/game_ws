@@ -80,6 +80,8 @@ fn five_up_scores_open_ends_during_play_and_divides_round_pips() {
     let result = result.expect("round result");
     assert_eq!(result.round_score, (12 + 8 + 7) / 5);
     assert_eq!(state.scores[&0], 10);
+    assert_eq!(result.score_changes[&0], 10);
+    assert_eq!(result.score_changes[&1], 0);
 }
 
 #[test]
@@ -230,5 +232,7 @@ fn simple_round_scores_opponents_remaining_pips() {
     let result = result.expect("round result");
     assert_eq!(result.round_score, 15);
     assert_eq!(state.scores[&0], 15);
+    assert_eq!(result.score_changes[&0], 15);
+    assert_eq!(result.score_changes[&1], 0);
     assert_eq!(state.phase, DominoesPhase::RoundOver);
 }

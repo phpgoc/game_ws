@@ -135,6 +135,8 @@ pub struct RoundResult {
     pub blocked: bool,
     pub round_score: i32,
     pub scores: HashMap<usize, i32>,
+    /// 每个座位在本轮获得的实际分数；Five-Up 包含出牌即时得分。
+    pub score_changes: HashMap<usize, i32>,
     pub remaining_hands: HashMap<usize, Vec<Tile>>,
     pub game_over: bool,
     pub winner_positions: Vec<usize>,
@@ -193,6 +195,7 @@ pub struct DominoesRoundState {
     pub placements: Vec<Placement>,
     pub endpoints: Vec<Endpoint>,
     pub scores: HashMap<usize, i32>,
+    pub round_score_changes: HashMap<usize, i32>,
     pub current_position: usize,
     pub last_play_position: Option<usize>,
     pub consecutive_passes: usize,
@@ -256,6 +259,7 @@ impl DominoesRoundState {
             placements: Vec::new(),
             endpoints: Vec::new(),
             scores: HashMap::new(),
+            round_score_changes: HashMap::new(),
             current_position: 0,
             last_play_position: None,
             consecutive_passes: 0,
@@ -308,6 +312,11 @@ impl DominoesRoundState {
             self.hands.insert(*position, hand);
         }
         self.boneyard = deck[cursor..].to_vec();
+        self.round_score_changes = self
+            .positions
+            .iter()
+            .map(|position| (*position, 0))
+            .collect();
         self.placements.clear();
         self.endpoints.clear();
         self.next_placement_id = 0;
@@ -436,6 +445,7 @@ impl DominoesRoundState {
         self.last_play_position = Some(position);
         let score = self.five_up_score();
         *self.scores.entry(position).or_default() += score;
+        *self.round_score_changes.entry(position).or_default() += score;
         let round_result = if self.hands.get(&position).is_some_and(Vec::is_empty) {
             Some(self.finish_round(position, false))
         } else {
@@ -737,6 +747,7 @@ impl DominoesRoundState {
             DominoesRule::FiveUp => round_score / 5,
         };
         *self.scores.entry(winner).or_default() += round_score;
+        *self.round_score_changes.entry(winner).or_default() += round_score;
         self.round_winner = Some(winner);
         let game_over = self
             .scores
@@ -763,11 +774,25 @@ impl DominoesRoundState {
         } else {
             Vec::new()
         };
+        let score_changes = self
+            .positions
+            .iter()
+            .map(|position| {
+                (
+                    *position,
+                    self.round_score_changes
+                        .get(position)
+                        .copied()
+                        .unwrap_or_default(),
+                )
+            })
+            .collect();
         RoundResult {
             winner_position: winner,
             blocked,
             round_score,
             scores: self.scores.clone(),
+            score_changes,
             remaining_hands: self.hands.clone(),
             game_over,
             winner_positions,
