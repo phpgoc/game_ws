@@ -37,7 +37,7 @@
 
 平台规则如下：
 
-| 目标平台 | 编译方式 | 官方 release |
+| 目标平台 | 编译方式 | 公开 release |
 | --- | --- | --- |
 | Linux x86_64 musl | `build_script/build_all.sh` | 是，发布 7 个静态可执行文件 |
 | Windows x86_64 | 按本文 PowerShell 命令自行编译 | 否 |
@@ -47,7 +47,7 @@
 `build_script/build_all.sh` 和 `build_script/build_in_docker.sh` 只负责正式发布的
 7 个 Linux x86_64 musl server，不再构建 APK、Windows 或 ARM Linux 产物。
 
-独立检出开源仓库后，手动运行 Cargo 或 Gradle 命令前先准备不包含私有实现的依赖边界：
+独立检出开源仓库后，手动运行 Cargo 或 Gradle 命令前可先校验公开构建边界：
 
 ```sh
 ./ci/prepare-public-build.sh
@@ -104,16 +104,16 @@ cargo test --manifest-path rust/p2p/Cargo.toml
 公开仓库的 `Public WS CI` 在 push、pull request、手动触发和每周定时任务中免费运行：
 
 - 对公开 Rust crate 和 Android bridge crate 执行 `rustfmt`、全部 target 测试和 `clippy -D warnings`；
-- 对 6 个服务分别构建 Linux x86_64 musl 静态 release；
-- 对 6 个服务分别构建同时包含 arm64-v8a 与 x86_64 的 Android APK，覆盖 JNI、NDK、Gradle 和 Kotlin 包装；
-- 不启用依赖私有 `data` 的 `official` feature，不读取 secrets，不上传 artifact；Cargo 和 Gradle 依赖使用带锁文件哈希的 GitHub Actions cache。
+- 对 7 个服务分别构建 Linux x86_64 musl 静态 release；
+- 对 7 个服务分别构建同时包含 arm64-v8a 与 x86_64 的 Android APK，覆盖 JNI、NDK、Gradle 和 Kotlin 包装；
+- 不读取 secrets，不上传 artifact；Cargo 和 Gradle 依赖使用带锁文件哈希的 GitHub Actions cache。
 
-独立检出开源仓库时，Cargo 和 rustfmt 仍需解析可选的私有 `data`、`runtime_common` 路径及仅供官方版使用的外部 AI 模块。
-CI 仅把 `.github/fixtures` 中的空边界链接到预期位置，使未启用的依赖和条件模块能够完成解析；fixture
-不包含私有实现，也不能用于构建 `official` feature。根仓库作为子模块使用时会继续解析真实的 `data`
-crate、`runtime_common` 和 AI 模块。
+公开 `ws` 仓库不声明也不能构建 `official` feature。会员鉴权、官方统计、SQLite、官方日志和 AI
+只存在于主仓库的私有 wrapper（`ai/*`、`deploy/*`）中；公开 checkout 不需要 `data` 或
+`runtime_common`。`ci/prepare-public-build.sh` 只在缺少 sibling `ai` 时安装供 rustfmt
+解析路径的空 stub，不包含任何官方实现，也不能启用官方 feature。
 
-提交的 `Cargo.lock` 按公开 fixture 的依赖图锁定，保证独立公开检出可以使用 `--locked`；嵌入主仓库时，官方 workspace 使用根仓库自己的锁文件。直接在真实私有 sibling 环境中执行 `ws` 的普通 Cargo 命令即可让 Cargo 解析对应的可选依赖图。
+提交的 `Cargo.lock` 只包含公开依赖图，独立公开检出可以直接使用 `--locked`。
 
 拖拉机和升级房间开始后都会锁定设置。拖拉机支持 2–3 副完整牌组，不提供删牌设置；升级支持 3–6 副，并可配置从低点数起删除牌面。两个游戏都不支持喝血、进贡或上贡，均按 `attacking_win_score`、`score_per_level` 和 `shutout_bonus_levels` 结算跳级。首局从 3（被删时取首个保留等级）开始，发牌中允许抢主/反主并决定首庄；后续局发牌时不亮主，庄家拿底后在同一个底牌操作窗口内先选主、再埋底。首局默认总发牌 15 秒，后续局 3 秒；底牌操作窗口为出牌时间的 3 倍，选主不会重置倒计时。
 
@@ -121,11 +121,11 @@ crate、`runtime_common` 和 AI 模块。
 
 公版自建 WS 服务端不包含 official 统计、SQLite 或游戏 AI，也不接受添加/删除 AI
 座位。斗地主、沈阳麻将和拖拉机需要真人凑齐人数；超时只执行保证牌局可继续的合法兜底动作。
-AI 源码保存在私有仓库。私有 `ai` feature 只接入服务端 AI；`official` feature 会包含 `ai`，并额外接入会员校验与统计数据。JOIN 响应通过 `supports_ai_players` 声明当前 WS 实例是否支持 AI，客户端不得根据连接地址或自身打包类型推断该能力。
+JOIN 响应通过 `supports_ai_players` 声明当前 WS 实例是否支持 AI，客户端不得根据连接地址或自身打包类型推断该能力。
 
 推荐下载 Linux x86_64 musl release 产物。该产物是静态单文件，适合大多数 x86_64 Linux 服务器直接运行。
 
-### Linux x86_64 musl（官方 release）
+### Linux x86_64 musl（公开 release）
 
 Ubuntu / Debian 安装依赖：
 
@@ -136,7 +136,7 @@ rustup toolchain install stable
 rustup target add x86_64-unknown-linux-musl
 ```
 
-在 `ws` 根目录构建全部 6 个发布文件：
+在 `ws` 根目录构建全部 7 个发布文件：
 
 ```sh
 ./build_script/build_all.sh
@@ -153,7 +153,7 @@ build_script/output/upgrade
 build_script/output/p2p
 ```
 
-不想在主机安装 Rust 和 musl 工具链时，可用 Docker 构建相同的 6 个文件：
+不想在主机安装 Rust 和 musl 工具链时，可用 Docker 构建相同的 7 个文件：
 
 ```sh
 ./build_script/build_in_docker.sh
@@ -214,7 +214,7 @@ cd android
 `./gradlew` 换成 `.\gradlew.bat`。完整的环境变量、单 ABI、release APK 与签名说明见
 [`android/README.md`](android/README.md)。
 
-也可以完全用 Docker 编译。下面以拖拉机 APK 为例，替换 `GAME` 即可编译其余 6 个：
+也可以完全用 Docker 编译。下面以拖拉机 APK 为例，替换 `GAME` 即可编译其余 7 个：
 
 ```sh
 mkdir -p build_script/output/android
@@ -230,7 +230,7 @@ docker build \
 
 ### ARM64 Linux（用户自行编译）
 
-推荐直接使用独立 Dockerfile 交叉编译 6 个 ARM64 GNU/Linux server：
+推荐直接使用独立 Dockerfile 交叉编译 7 个 ARM64 GNU/Linux server：
 
 ```sh
 mkdir -p build_script/output/arm64

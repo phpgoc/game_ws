@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
     paths:
-      - ".github/fixtures/**"
       - ".github/workflows/ci.yml"
       - "Cargo.lock"
       - "Cargo.toml"
@@ -15,7 +14,6 @@ on:
       - "share_type_public/**"
   pull_request:
     paths:
-      - ".github/fixtures/**"
       - ".github/workflows/ci.yml"
       - "Cargo.lock"
       - "Cargo.toml"
@@ -50,7 +48,8 @@ jobs:
       - name: 检出开源仓库
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: 准备公开依赖边界
+      - name: 准备公开格式化边界
+        shell: bash
         run: ci/prepare-public-build.sh
 
       - name: 定时刷新公开锁文件
@@ -150,9 +149,6 @@ jobs:
       - name: 检出开源仓库
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: 准备公开依赖边界
-        run: ci/prepare-public-build.sh
-
       - name: 定时刷新公开锁文件
         if: github.event_name == 'schedule'
         shell: bash
@@ -214,9 +210,6 @@ jobs:
       - name: 检出开源仓库
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: 准备公开依赖边界
-        run: ci/prepare-public-build.sh
-
       - name: 定时刷新公开锁文件
         if: github.event_name == 'schedule'
         shell: bash
@@ -268,9 +261,6 @@ jobs:
     steps:
       - name: 检出开源仓库
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
-      - name: 准备公开依赖边界
-        run: ci/prepare-public-build.sh
 
       - name: 定时刷新公开锁文件
         if: github.event_name == 'schedule'

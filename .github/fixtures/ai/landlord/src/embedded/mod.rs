@@ -1,3 +1,4 @@
-//! Empty external AI boundary used only to let rustfmt resolve this module.
+//! Empty module boundary used only so rustfmt can resolve the private path.
 //!
-//! Public builds use the in-crate fallback AI and never compile this file.
+//! Public builds never enable the private official feature and use the local
+//! fallback AI instead.
