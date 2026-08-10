@@ -33,7 +33,7 @@ ai_dependency="$repository_root/../ai"
 ai_stub="$repository_root/.github/fixtures/ai"
 
 if [[ -e "$ai_dependency" || -L "$ai_dependency" ]]; then
-  for game in landlord shenyang_mahjong tractor; do
+  for game in landlord shenyang_mahjong tractor upgrade dominoes; do
     if [[ ! -f "$ai_dependency/$game/src/embedded/mod.rs" ]]; then
       echo "The existing sibling AI path is missing $game/src/embedded/mod.rs: $ai_dependency" >&2
       exit 2
