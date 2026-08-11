@@ -6,15 +6,14 @@ license = "MIT"
 
 [features]
 default = []
+official = ["dep:data", "data/cache-redis"]
 
 [dependencies]
 anyhow = "1"
+data = { path = "../../../data", optional = true }
 poker_core = { path = "../poker_core" }
 rand = "0.10.2"
 serde_json = "1"
 share_type_public = { path = "../../share_type_public" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 ws_common = { path = "../common" }
-
-[lints.rust]
-unexpected_cfgs = "allow"

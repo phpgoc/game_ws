@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     paths:
+      - ".github/fixtures/**"
       - ".github/workflows/ci.yml"
       - "Cargo.lock"
       - "Cargo.toml"
@@ -14,6 +15,7 @@ on:
       - "share_type_public/**"
   pull_request:
     paths:
+      - ".github/fixtures/**"
       - ".github/workflows/ci.yml"
       - "Cargo.lock"
       - "Cargo.toml"
@@ -48,9 +50,12 @@ jobs:
       - name: 检出开源仓库
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: 准备公开格式化边界
-        shell: bash
+      - name: 准备公开依赖边界
         run: ci/prepare-public-build.sh
+
+      - name: 校验公开 CI 未启用 official
+        shell: bash
+        run: ci/check-public-feature-boundary.sh
 
       - name: 定时刷新公开锁文件
         if: github.event_name == 'schedule'
@@ -149,6 +154,9 @@ jobs:
       - name: 检出开源仓库
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
+      - name: 准备公开依赖边界
+        run: ci/prepare-public-build.sh
+
       - name: 定时刷新公开锁文件
         if: github.event_name == 'schedule'
         shell: bash
@@ -171,7 +179,7 @@ jobs:
       - name: 安装 Clippy
         run: rustup component add clippy
 
-      - name: 运行全部目标测试
+      - name: 运行全部公开目标测试
         shell: bash
         env:
           MANIFEST: ${{ matrix.manifest }}
@@ -184,7 +192,7 @@ jobs:
           cargo test --locked --manifest-path "$MANIFEST" --all-targets \
             --no-default-features "${feature_args[@]}"
 
-      - name: 将 Clippy 警告视为错误
+      - name: 检查全部公开目标并将 Clippy 警告视为错误
         shell: bash
         env:
           MANIFEST: ${{ matrix.manifest }}
@@ -209,6 +217,9 @@ jobs:
     steps:
       - name: 检出开源仓库
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: 准备公开依赖边界
+        run: ci/prepare-public-build.sh
 
       - name: 定时刷新公开锁文件
         if: github.event_name == 'schedule'
@@ -261,6 +272,9 @@ jobs:
     steps:
       - name: 检出开源仓库
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: 准备公开依赖边界
+        run: ci/prepare-public-build.sh
 
       - name: 定时刷新公开锁文件
         if: github.event_name == 'schedule'

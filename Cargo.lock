@@ -259,6 +259,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "data"
+version = "0.1.0"
+
+[[package]]
 name = "data-encoding"
 version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -291,12 +295,15 @@ name = "dominoes"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "data",
  "futures-util",
+ "runtime_common",
  "serde",
  "serde_json",
  "share_type_public",
  "tokio",
  "tokio-tungstenite",
+ "tracing",
  "ws_common",
 ]
 
@@ -478,6 +485,7 @@ name = "holdem"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "data",
  "poker_core",
  "rand 0.10.2",
  "serde_json",
@@ -673,6 +681,7 @@ name = "landlord"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "data",
  "futures-util",
  "serde_json",
  "share_type_public",
@@ -790,14 +799,17 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64",
+ "data",
  "futures-util",
  "hmac",
+ "runtime_common",
  "serde",
  "serde_json",
  "sha1",
  "share_type_public",
  "tokio",
  "tokio-tungstenite",
+ "tracing",
  "turn",
  "webrtc-util",
  "ws_common",
@@ -972,6 +984,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "runtime_common"
+version = "0.1.0"
+
+[[package]]
 name = "rustversion"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1072,6 +1088,7 @@ name = "shenyang_mahjong"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "data",
  "futures-util",
  "serde",
  "serde_json",
@@ -1348,13 +1365,16 @@ name = "tractor"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "data",
  "futures-util",
  "rand 0.9.5",
+ "runtime_common",
  "serde",
  "serde_json",
  "share_type_public",
  "tokio",
  "tokio-tungstenite",
+ "tracing",
  "upgrade_common",
  "ws_common",
 ]
