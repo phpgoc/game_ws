@@ -3,6 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use serde_json::{Value, json};
 use share_type_public::{
     CommonEvent, GameId, Routes, TractorRank, TractorRoutes, TractorWsCode, WsCode, WsResponseCode,
+    WsSettingPayload,
     games::tractor::{
         WsTractorBottomBuriedEvent, WsTractorBuryBottomRequest, WsTractorDeclareTrumpRequest,
         WsTractorHandEvent, WsTractorPlayEvent, WsTractorPlayRequest, WsTractorSelectTrumpRequest,
@@ -60,7 +61,10 @@ fn setting_succeeded(dispatch: &Dispatch, session_id: SessionId) -> bool {
     })
 }
 
-fn canonical_bottom_card_count(configs: &HashMap<String, i32>) -> usize {
+fn canonical_bottom_card_count(
+    configs: &HashMap<String, i32>,
+    reset_to_deck_minimum: bool,
+) -> usize {
     let deck_count = configs
         .get(KEY_DECK_COUNT)
         .copied()
@@ -69,13 +73,17 @@ fn canonical_bottom_card_count(configs: &HashMap<String, i32>) -> usize {
         as usize
         + MIN_TRACTOR_DECK_COUNT;
     let total_cards = deck_count * 54;
-    let preferred = configs
-        .get(KEY_BOTTOM_CARD_COUNT)
-        .copied()
-        .unwrap_or_else(|| min_bottom_card_count(deck_count) as i32)
-        .max(0) as usize;
-    adjusted_bottom_card_count(total_cards, 4, preferred, min_bottom_card_count(deck_count))
-        .unwrap_or_else(|| min_bottom_card_count(deck_count))
+    let minimum = min_bottom_card_count(deck_count);
+    let preferred = if reset_to_deck_minimum {
+        minimum
+    } else {
+        configs
+            .get(KEY_BOTTOM_CARD_COUNT)
+            .copied()
+            .unwrap_or(minimum as i32)
+            .max(0) as usize
+    };
+    adjusted_bottom_card_count(total_cards, 4, preferred, minimum).unwrap_or(minimum)
 }
 
 fn rewrite_setting_configs(dispatch: &mut Dispatch, configs: &HashMap<String, i32>) {
@@ -649,7 +657,13 @@ impl GameHandler for TractorGameHandler {
             && let Some(room_key) = room_service.room_key_of(session_id)
             && let Some(mut configs) = room_service.room_configs(&room_key)
         {
-            let canonical_bottom = canonical_bottom_card_count(&configs);
+            let requested_configs =
+                serde_json::from_value::<WsSettingPayload>(request.data.clone())
+                    .map(|payload| payload.current_configs)
+                    .unwrap_or_default();
+            let reset_to_deck_minimum = requested_configs.contains_key(KEY_DECK_COUNT)
+                && !requested_configs.contains_key(KEY_BOTTOM_CARD_COUNT);
+            let canonical_bottom = canonical_bottom_card_count(&configs, reset_to_deck_minimum);
             if configs.get(KEY_BOTTOM_CARD_COUNT).copied() != Some(canonical_bottom as i32) {
                 configs.insert(KEY_BOTTOM_CARD_COUNT.to_owned(), canonical_bottom as i32);
                 if room_service

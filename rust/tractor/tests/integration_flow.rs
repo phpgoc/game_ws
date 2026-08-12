@@ -1037,6 +1037,37 @@ async fn tractor_ws_canonicalizes_bottom_count_before_broadcasting_settings() {
         broadcast["data"]["current_configs"]["bottom_card_count"],
         json!(14)
     );
+
+    for (deck_count, expected_bottom) in [(0, 8), (1, 10), (0, 8), (1, 10)] {
+        send_request(
+            &mut a,
+            Routes::SETTING as i32,
+            json!({
+                "current_configs": {
+                    "deck_count": deck_count
+                }
+            }),
+        )
+        .await;
+        let response = recv_until(&mut a, "deck-only canonical setting response", |value| {
+            value.get("route").and_then(Value::as_i64) == Some(Routes::SETTING as i64)
+        })
+        .await;
+        assert_eq!(response["code"], json!(WsResponseCode::OK as i32));
+        assert_eq!(
+            response["data"]["current_configs"]["bottom_card_count"],
+            json!(expected_bottom),
+            "switching only the deck count must use that deck's stable minimum bottom"
+        );
+        let broadcast = recv_until(&mut b, "deck-only canonical setting broadcast", |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::SETTING as i64)
+        })
+        .await;
+        assert_eq!(
+            broadcast["data"]["current_configs"]["bottom_card_count"],
+            json!(expected_bottom)
+        );
+    }
 }
 
 #[cfg(not(feature = "official"))]
