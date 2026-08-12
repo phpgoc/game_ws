@@ -3,11 +3,11 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use rand::{SeedableRng, rngs::StdRng, seq::IndexedRandom};
+use rand::{SeedableRng, rngs::StdRng, seq::IndexedRandom, seq::SliceRandom};
 use share_type_public::{TractorPhase, TractorRank, TractorSuit};
 use tractor::{
     combo,
-    game_state::{TractorGameState, TractorRules},
+    game_state::{TRACTOR_RANKS, TractorGameState, TractorRules, build_tractor_deck},
 };
 use upgrade_common::Card;
 use ws_common::CommonGameState;
@@ -308,5 +308,63 @@ fn two_deck_complete_matches() {
 fn three_deck_complete_matches() {
     for seed in 1_008..1_016 {
         simulate_random_match(3, seed);
+    }
+}
+
+#[test]
+fn forced_follow_exists_and_is_legal_for_random_two_and_three_deck_hands() {
+    let trump_suits = [
+        None,
+        Some(TractorSuit::SPADE),
+        Some(TractorSuit::HEART),
+        Some(TractorSuit::CLUB),
+        Some(TractorSuit::DIAMOND),
+    ];
+
+    for deck_count in [2, 3] {
+        let hand_size = if deck_count == 2 { 25 } else { 38 };
+        for target_rank in TRACTOR_RANKS {
+            for trump_suit in trump_suits {
+                let rules = TractorRules {
+                    attacking_win_score: 80,
+                    score_per_level: 40,
+                    shutout_bonus_levels: 1,
+                    bottom_card_count: if deck_count == 3 { 10 } else { 8 },
+                    deck_count,
+                    final_target_rank: TractorRank::A,
+                    target_rank,
+                    trump_suit,
+                };
+                for sample in 0..24_u64 {
+                    let seed = sample
+                        ^ ((deck_count as u64) << 56)
+                        ^ ((target_rank as u64) << 40)
+                        ^ ((trump_suit.map_or(4, |suit| suit as u64)) << 32);
+                    let mut rng = StdRng::seed_from_u64(seed);
+                    let mut deck = build_tractor_deck(deck_count);
+                    deck.shuffle(&mut rng);
+                    let leader_hand = &deck[..hand_size];
+                    let follower_hand = &deck[hand_size..hand_size * 2];
+
+                    for lead_cards in combo::enumerate_leads(leader_hand, &rules) {
+                        let lead = combo::classify(&lead_cards, &rules).unwrap_or_else(|| {
+                            panic!(
+                                "enumerated invalid lead: deck={deck_count} rank={target_rank:?} trump={trump_suit:?} seed={seed} cards={lead_cards:?}"
+                            )
+                        });
+                        let follow = combo::forced_follow(follower_hand, &lead, &rules)
+                            .unwrap_or_else(|| {
+                                panic!(
+                                    "missing forced follow: deck={deck_count} rank={target_rank:?} trump={trump_suit:?} seed={seed} lead={lead_cards:?} hand={follower_hand:?}"
+                                )
+                            });
+                        assert!(
+                            combo::follow_is_legal(follower_hand, &follow, &lead, &rules),
+                            "illegal forced follow: deck={deck_count} rank={target_rank:?} trump={trump_suit:?} seed={seed} lead={lead_cards:?} hand={follower_hand:?} follow={follow:?}"
+                        );
+                    }
+                }
+            }
+        }
     }
 }
