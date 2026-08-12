@@ -2895,6 +2895,8 @@ async fn tractor_ws_failed_throw_reports_attempted_and_played_components() {
     };
     let (attempted, expected_played) = find_failed_throw_candidate(&hands, dealer_position, &rules)
         .expect("three-deck deal should expose a beatable plain-suit throw");
+    let hand_count_before = hands[dealer_position].len();
+    let expected_remaining_hand_count = hand_count_before - expected_played.len();
     send_request(
         &mut *clients[dealer_position],
         Routes::PLAY as i32,
@@ -2911,6 +2913,10 @@ async fn tractor_ws_failed_throw_reports_attempted_and_played_components() {
     )
     .await;
     assert_eq!(played["data"]["cards"], json!(expected_played.clone()));
+    assert_eq!(
+        played["data"]["remaining_hand_count"],
+        json!(expected_remaining_hand_count)
+    );
     assert_eq!(
         played["data"]["failed_throw"]["attempted_cards"],
         json!(attempted.clone())
@@ -2936,8 +2942,20 @@ async fn tractor_ws_failed_throw_reports_attempted_and_played_components() {
     );
     assert_eq!(
         failed_throws["data"]["failed_throws"][0]["played_cards"],
-        json!(expected_played)
+        json!(expected_played.clone())
     );
+    assert_eq!(
+        failed_throws["data"]["current_trick"][0]["cards"],
+        json!(expected_played.clone())
+    );
+    let snapshot_hand_count = failed_throws["data"]["player_hand_counts"]
+        .as_array()
+        .expect("failed throw hand counts")
+        .iter()
+        .find(|entry| entry["position"] == json!(dealer_position))
+        .and_then(|entry| entry["hand_count"].as_i64())
+        .expect("failed throw dealer hand count");
+    assert_eq!(snapshot_hand_count, expected_remaining_hand_count as i64);
     recv_until(
         &mut *clients[dealer_position],
         "failed throw play response",
@@ -2949,7 +2967,7 @@ async fn tractor_ws_failed_throw_reports_attempted_and_played_components() {
     .await;
 
     hands[dealer_position].retain(|card| !expected_played.contains(card));
-    assert_eq!(hands[dealer_position].len(), 37);
+    assert_eq!(hands[dealer_position].len(), expected_remaining_hand_count);
 }
 
 #[cfg(not(feature = "official"))]
