@@ -204,8 +204,14 @@ fn auto_dispatch_broadcasts_settlement_when_its_play_finishes_every_hand() {
     let dispatch = build_auto_dispatch(ROOM_KEY, &room, &state, &HashMap::new(), None);
 
     assert_eq!(state.lock().unwrap().phase, TractorPhase::Settlement);
+    assert_eq!(state.lock().unwrap().base.lock().unwrap().turn_countdown, 0);
     assert_eq!(event_payloads(&dispatch, WsCode::PLAY as i32).len(), 4);
     assert_eq!(event_payloads(&dispatch, WsCode::GAME_OVER as i32).len(), 4);
+    assert!(
+        event_payloads(&dispatch, WsCode::TABLE_SNAPSHOT as i32)
+            .iter()
+            .all(|snapshot| snapshot["turn_countdown"] == 0)
+    );
 }
 
 #[test]

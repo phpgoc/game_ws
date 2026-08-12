@@ -276,8 +276,11 @@ impl TractorGameHandler {
                 );
             };
             let failed_throw = s.last_failed_throw_event(position);
-            let countdown = current_play_time(&configs, &s);
-            s.set_turn_countdown(countdown);
+            let finished = s.is_finished();
+            if !finished {
+                let countdown = current_play_time(&configs, &s);
+                s.set_turn_countdown(countdown);
+            }
             let play_event = WsTractorPlayEvent {
                 position: played.position,
                 name,
@@ -288,7 +291,6 @@ impl TractorGameHandler {
                 failed_throw,
             };
             let snapshot = s.snapshot();
-            let finished = s.is_finished();
             (play_event, snapshot, finished)
         };
 
@@ -890,6 +892,24 @@ mod tests {
                 assert_eq!(settlement.winner_positions, vec![1, 3]);
                 assert_eq!(settlement.score, 155);
                 assert_eq!(settlement.level_change, 2);
+                assert_eq!(state.lock().unwrap().base.lock().unwrap().turn_countdown, 0);
+                let snapshot = dispatch
+                    .messages
+                    .iter()
+                    .find_map(|message| match &message.payload {
+                        OutboundPayload::Event(event)
+                            if event.code == WsCode::TABLE_SNAPSHOT as i32 =>
+                        {
+                            serde_json::from_value::<WsTractorTableSnapshotEvent>(
+                                event.data.clone(),
+                            )
+                            .ok()
+                        }
+                        _ => None,
+                    })
+                    .expect("settlement snapshot");
+                assert_eq!(snapshot.phase, share_type_public::TractorPhase::Settlement);
+                assert_eq!(snapshot.turn_countdown, 0);
             }
         }
     }

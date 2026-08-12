@@ -205,8 +205,10 @@ fn build_auto_dispatch(
             return dispatch;
         };
         let failed_throw = s.last_failed_throw_event(position);
-        let countdown = current_play_time(configs, &s);
-        s.set_turn_countdown(countdown);
+        if s.phase == TractorPhase::Play {
+            let countdown = current_play_time(configs, &s);
+            s.set_turn_countdown(countdown);
+        }
         let play_event = WsTractorPlayEvent {
             position: played.position,
             name,

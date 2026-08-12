@@ -1024,6 +1024,7 @@ impl TractorGameState {
                 *self.collected_scores.entry(last_winner).or_default() += bottom_score;
             }
             self.phase = TractorPhase::Settlement;
+            self.base.lock().unwrap().turn_countdown = 0;
             self.record_settlement_scores();
         }
         self.base.lock().unwrap().action_received = true;
