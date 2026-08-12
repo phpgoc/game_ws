@@ -670,6 +670,33 @@ impl GameHandler for TractorGameHandler {
             return;
         };
         let Some(state) = self.current_state(room_service, &room_key) else {
+            let configs = room_service.room_configs(&room_key).unwrap_or_default();
+            let Some(common) = room_service.room_common_state(&room_key) else {
+                return;
+            };
+            let mut lobby = TractorGameState::from_common(common);
+            lobby.rules = Self::configs_to_rules(&configs);
+            lobby.hands = lobby
+                .active_positions()
+                .into_iter()
+                .map(|position| (position, Vec::new()))
+                .collect();
+            Self::push_private_event(
+                dispatch,
+                session_id,
+                TractorWsCode::HAND_UPDATED,
+                WsTractorHandEvent {
+                    position: position as i32,
+                    cards: Vec::new(),
+                },
+            );
+            dispatch.messages.push(Delivery {
+                recipient: session_id,
+                payload: OutboundPayload::Event(CommonEvent {
+                    code: WsCode::TABLE_SNAPSHOT as i32,
+                    data: serde_json::to_value(lobby.snapshot()).unwrap_or(Value::Null),
+                }),
+            });
             return;
         };
         let (hand, snapshot, settlement) = {
@@ -906,6 +933,30 @@ mod tests {
                     OutboundPayload::Event(event) if event.code == WsCode::GAME_OVER as i32
                 )
         }));
+    }
+
+    #[test]
+    fn joining_an_idle_room_receives_an_authoritative_empty_table() {
+        let mut handler = TractorGameHandler::default();
+        let mut room = RoomService::default();
+        join_with_hook(&mut handler, &mut room, 1, "u1");
+        join_with_hook(&mut handler, &mut room, 2, "u2");
+
+        let idle = join_with_hook(&mut handler, &mut room, 3, "u3");
+        assert!(private_hand(&idle, 3).cards.is_empty());
+        let snapshot = table_snapshot(&idle, 3);
+        assert_eq!(snapshot.phase, share_type_public::TractorPhase::Start);
+        assert_eq!(snapshot.round_index, 0);
+        assert_eq!(snapshot.target_rank, TractorRank::THREE);
+        assert_eq!(snapshot.team_target_ranks, [TractorRank::THREE; 2]);
+        assert_eq!(snapshot.player_hand_counts.len(), 3);
+        assert!(
+            snapshot
+                .player_hand_counts
+                .iter()
+                .all(|player| player.hand_count == 0)
+        );
+        assert!(snapshot.player_scores.values().all(|score| *score == 0));
     }
 
     #[test]
