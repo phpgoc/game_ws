@@ -2598,6 +2598,274 @@ async fn tractor_server_completes_round_and_enters_later_round() {
 
 #[cfg(not(feature = "official"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn tractor_later_round_timeout_selects_trump_and_buries_in_one_window() {
+    let runtime = start_test_runtime(
+        "tractor-later-auto-bottom-window-test",
+        Duration::from_secs(60),
+    )
+    .await;
+    let url = runtime.url.clone();
+
+    let mut a = connect_client(&url).await;
+    let mut b = connect_client(&url).await;
+    let mut c = connect_client(&url).await;
+    let mut d = connect_client(&url).await;
+    let room = "tractor-later-auto-bottom-window-room";
+    for (position, client) in [&mut a, &mut b, &mut c, &mut d].into_iter().enumerate() {
+        let joined = join(client, &format!("later-auto-player-{position}"), room).await;
+        assert_eq!(joined["data"]["self_position"], json!(position));
+    }
+
+    send_request(
+        &mut a,
+        Routes::SETTING as i32,
+        json!({
+            "current_configs": {
+                "deck_count": 0,
+                "attacking_win_score": 80,
+                "score_per_level": 40,
+                "shutout_bonus_levels": 1,
+                "target_rank": 11,
+                "first_deal_time": 1000,
+                "deal_time": 500,
+                "play_time": 3,
+                "settlement_time": 1
+            }
+        }),
+    )
+    .await;
+    let setting = recv_until(&mut a, "later auto bottom setting", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::SETTING as i64)
+    })
+    .await;
+    assert_eq!(setting["code"], json!(WsResponseCode::OK as i32));
+    send_request(&mut a, Routes::START as i32, json!({})).await;
+    let started = recv_until(&mut a, "later auto bottom start", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::START as i64)
+    })
+    .await;
+    assert_eq!(started["code"], json!(WsResponseCode::OK as i32));
+
+    let mut clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
+    let mut first_hands = collect_tractor_hands(&mut clients, 25).await;
+    let (declaration, bottom_seen_by_first_client) = recv_first_declaration(&mut *clients[0]).await;
+    let first_dealer = declaration["data"]["position"]
+        .as_i64()
+        .expect("later auto first dealer") as usize;
+    let first_bottom_event = if first_dealer == 0 {
+        match bottom_seen_by_first_client {
+            Some(bottom) => bottom,
+            None => recv_tractor_bottom(&mut *clients[first_dealer], first_dealer).await,
+        }
+    } else {
+        recv_tractor_bottom(&mut *clients[first_dealer], first_dealer).await
+    };
+    let first_bottom = first_bottom_event["data"]["cards"]
+        .as_array()
+        .expect("later auto first bottom")
+        .iter()
+        .map(|card| card.as_i64().expect("later auto first bottom card") as i32)
+        .collect::<Vec<_>>();
+    send_request(
+        &mut *clients[first_dealer],
+        TractorRoutes::BURY_BOTTOM as i32,
+        json!({ "cards": first_bottom }),
+    )
+    .await;
+    let first_play_snapshot = recv_until(
+        &mut *clients[first_dealer],
+        "later auto first play snapshot",
+        |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+                && value["data"]["phase"] == json!(TractorPhase::Play as i8)
+        },
+    )
+    .await;
+    let first_bury_response = recv_until(
+        &mut *clients[first_dealer],
+        "later auto first bury response",
+        |value| {
+            value.get("route").and_then(Value::as_i64) == Some(TractorRoutes::BURY_BOTTOM as i64)
+        },
+    )
+    .await;
+    assert_eq!(
+        first_bury_response["code"],
+        json!(WsResponseCode::OK as i32)
+    );
+
+    let first_trump_suit =
+        first_play_snapshot["data"]["trump_suit"]
+            .as_i64()
+            .map(|suit| match suit {
+                0 => TractorSuit::SPADE,
+                1 => TractorSuit::HEART,
+                2 => TractorSuit::CLUB,
+                3 => TractorSuit::DIAMOND,
+                _ => panic!("invalid later auto first trump suit"),
+            });
+    let first_rules = TractorRules {
+        attacking_win_score: 80,
+        score_per_level: 40,
+        shutout_bonus_levels: 1,
+        bottom_card_count: 8,
+        deck_count: 2,
+        final_target_rank: TractorRank::A,
+        target_rank: TractorRank::THREE,
+        trump_suit: first_trump_suit,
+    };
+    let (settlement, _) =
+        play_complete_tractor_round(&mut clients, &mut first_hands, first_dealer, &first_rules)
+            .await;
+    let later_dealer = *settlement
+        .winner_positions
+        .first()
+        .expect("later auto dealer from settlement") as usize;
+
+    let later_hands = collect_tractor_hands(&mut clients, 25).await;
+    let later_bottom_event = recv_tractor_bottom(&mut *clients[later_dealer], later_dealer).await;
+    let later_bottom = later_bottom_event["data"]["cards"]
+        .as_array()
+        .expect("later auto bottom")
+        .iter()
+        .map(|card| card.as_i64().expect("later auto bottom card") as i32)
+        .collect::<Vec<_>>();
+    assert_eq!(later_bottom.len(), 8);
+
+    let bury_snapshot = recv_until(
+        &mut *clients[later_dealer],
+        "later auto shared bottom window",
+        |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+                && value["data"]["round_index"] == json!(1)
+                && value["data"]["phase"] == json!(TractorPhase::Bury as i8)
+        },
+    )
+    .await;
+    assert_eq!(bury_snapshot["data"]["trump_suit"], Value::Null);
+    assert_eq!(bury_snapshot["data"]["declaration"], Value::Null);
+    assert_eq!(bury_snapshot["data"]["turn_countdown"], json!(9));
+
+    let mut automatic_away = None;
+    let mut automatic_declaration = None;
+    let mut automatic_buried = None;
+    let mut automatic_hand = None;
+    let play_snapshot = loop {
+        let value = recv_json(&mut *clients[later_dealer], "later auto bottom completion").await;
+        match value.get("code").and_then(Value::as_i64) {
+            Some(code) if code == WsCode::AWAY as i64 => {
+                assert!(automatic_away.is_none());
+                automatic_away = Some(value);
+            }
+            Some(code) if code == TractorWsCode::TRUMP_DECLARED as i64 => {
+                assert!(automatic_away.is_some());
+                assert!(automatic_declaration.is_none());
+                automatic_declaration = Some(value);
+            }
+            Some(code) if code == TractorWsCode::BOTTOM_BURIED as i64 => {
+                assert!(
+                    automatic_declaration.is_some(),
+                    "automatic trump selection must be broadcast before automatic burial"
+                );
+                automatic_buried = Some(value);
+            }
+            Some(code) if code == TractorWsCode::HAND_UPDATED as i64 => {
+                assert!(automatic_buried.is_some());
+                automatic_hand = Some(value);
+            }
+            Some(code)
+                if code == WsCode::TABLE_SNAPSHOT as i64
+                    && value["data"]["round_index"] == json!(1)
+                    && value["data"]["phase"] == json!(TractorPhase::Play as i8) =>
+            {
+                assert!(automatic_hand.is_some());
+                break value;
+            }
+            _ => {}
+        }
+    };
+
+    let automatic_away = automatic_away.expect("automatic later away event");
+    assert_eq!(automatic_away["data"]["position"], json!(later_dealer));
+    assert_eq!(automatic_away["data"]["is_ai_takeover"], json!(false));
+    let automatic_declaration = automatic_declaration.expect("automatic later declaration");
+    assert_eq!(
+        automatic_declaration["data"]["position"],
+        json!(later_dealer)
+    );
+    assert!(automatic_declaration["data"]["trump_suit"].is_number());
+    let automatic_buried = automatic_buried.expect("automatic later burial");
+    assert_eq!(automatic_buried["data"]["position"], json!(later_dealer));
+    assert_eq!(automatic_buried["data"]["bottom_card_count"], json!(8));
+
+    let automatic_hand = automatic_hand.expect("automatic later private hand");
+    let private_cards = automatic_hand["data"]["cards"]
+        .as_array()
+        .expect("automatic later private cards")
+        .iter()
+        .map(|card| card.as_i64().expect("automatic later private card") as i32)
+        .collect::<Vec<_>>();
+    assert_eq!(private_cards.len(), 25);
+    let mut cards_before_bury = later_hands[later_dealer].clone();
+    cards_before_bury.extend(later_bottom);
+    for card in &private_cards {
+        let index = cards_before_bury
+            .iter()
+            .position(|candidate| candidate == card)
+            .expect("automatic burial must retain only cards from the dealer hand");
+        cards_before_bury.remove(index);
+    }
+    assert_eq!(
+        cards_before_bury.len(),
+        8,
+        "automatic burial must remove exactly the bottom-card count"
+    );
+    assert_eq!(
+        play_snapshot["data"]["dealer_position"],
+        json!(later_dealer)
+    );
+    assert_eq!(
+        play_snapshot["data"]["trump_suit"],
+        automatic_declaration["data"]["trump_suit"]
+    );
+    assert_eq!(
+        play_snapshot["data"]["turn_countdown"],
+        json!(1),
+        "a dealer who exhausted the shared bottom window must continue on the away timer"
+    );
+
+    let played = recv_until(
+        &mut *clients[later_dealer],
+        "later automatic opening play",
+        |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::PLAY as i64)
+                && value["data"]["position"] == json!(later_dealer)
+        },
+    )
+    .await;
+    let played_cards = played["data"]["cards"]
+        .as_array()
+        .expect("later automatic opening cards")
+        .iter()
+        .map(|card| card.as_i64().expect("later automatic opening card") as i32)
+        .collect::<Vec<_>>();
+    assert!(!played_cards.is_empty());
+    let mut hand_after_bury = private_cards.clone();
+    for card in &played_cards {
+        let index = hand_after_bury
+            .iter()
+            .position(|candidate| candidate == card)
+            .expect("later automatic opening card must come from the restored dealer hand");
+        hand_after_bury.remove(index);
+    }
+    assert_eq!(
+        played["data"]["remaining_hand_count"],
+        json!(25 - played_cards.len())
+    );
+}
+
+#[cfg(not(feature = "official"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn tractor_ws_finishes_when_one_team_wins_at_the_configured_final_rank() {
     let runtime = start_test_runtime("tractor-complete-match-test", Duration::from_secs(60)).await;
     let url = runtime.url.clone();
