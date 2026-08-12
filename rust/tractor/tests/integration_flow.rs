@@ -1504,6 +1504,190 @@ async fn tractor_incremental_deal_full_deck_and_bury_flow() {
 
 #[cfg(not(feature = "official"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn tractor_ws_rejoin_during_first_deal_restores_the_complete_private_hand() {
+    let runtime = start_test_runtime("tractor-rejoin-deal-test", Duration::from_secs(30)).await;
+    let url = runtime.url.clone();
+
+    let mut a = connect_client(&url).await;
+    let mut b = connect_client(&url).await;
+    let mut c = connect_client(&url).await;
+    let mut d = connect_client(&url).await;
+    let room = "tractor-rejoin-deal-room";
+    join(&mut a, "a", room).await;
+    join(&mut b, "b", room).await;
+    join(&mut c, "c", room).await;
+    join(&mut d, "d", room).await;
+
+    send_request(
+        &mut a,
+        Routes::SETTING as i32,
+        json!({
+            "current_configs": {
+                "deck_count": 0,
+                "target_rank": 11,
+                "first_deal_time": 3000,
+                "deal_time": 500,
+                "play_time": 30
+            }
+        }),
+    )
+    .await;
+    recv_until(&mut a, "deal rejoin setting response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::SETTING as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+    send_request(&mut a, Routes::START as i32, json!({})).await;
+    recv_until(&mut a, "deal rejoin start response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::START as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+
+    let mut hand_before_disconnect = Vec::new();
+    while hand_before_disconnect.len() < 3 {
+        hand_before_disconnect.push(recv_tractor_private_deal(&mut a, 0).await);
+    }
+    a.close(None).await.expect("close player during first deal");
+
+    // Leave enough time for several cards belonging to this seat to be dealt
+    // while its old WebSocket is absent. Rejoining must recover those cards
+    // from the authoritative game state instead of restarting the deal.
+    tokio::time::sleep(Duration::from_millis(400)).await;
+
+    let mut rejoined = connect_client(&url).await;
+    let joined = join(&mut rejoined, "a", room).await;
+    assert_eq!(joined["data"]["self_position"], json!(0));
+
+    let hand_update = recv_until(&mut rejoined, "rejoined deal hand", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(TractorWsCode::HAND_UPDATED as i64)
+    })
+    .await;
+    let mut restored_hand = hand_update["data"]["cards"]
+        .as_array()
+        .expect("rejoined deal hand cards")
+        .iter()
+        .map(|card| card.as_i64().expect("rejoined deal card") as i32)
+        .collect::<Vec<_>>();
+    assert!(
+        restored_hand.len() > hand_before_disconnect.len(),
+        "rejoin must include cards dealt while the socket was absent"
+    );
+    assert!(
+        restored_hand.len() < 25,
+        "the test must reconnect before the first deal finishes"
+    );
+    assert!(
+        hand_before_disconnect
+            .iter()
+            .all(|card| restored_hand.contains(card)),
+        "the restored hand must retain every card observed before disconnect"
+    );
+
+    let mut continued_deal_count = 0;
+    let mut rejoined_bottom = None;
+    let bury_snapshot = loop {
+        let value = recv_json(&mut rejoined, "continued first deal after rejoin").await;
+        match value.get("code").and_then(Value::as_i64) {
+            Some(code) if code == WsCode::DEAL as i64 => {
+                assert_eq!(value["data"]["position"], json!(0));
+                let cards = value["data"]["cards"]
+                    .as_array()
+                    .expect("continued private deal cards");
+                assert_eq!(cards.len(), 1, "continued deal must remain incremental");
+                let card = cards[0].as_i64().expect("continued private card") as i32;
+                assert!(
+                    !restored_hand.contains(&card),
+                    "a recovered card must not be dealt to the rejoined client twice"
+                );
+                restored_hand.push(card);
+                continued_deal_count += 1;
+            }
+            Some(code) if code == TractorWsCode::BOTTOM_CARDS as i64 => {
+                rejoined_bottom = Some(value);
+            }
+            Some(code)
+                if code == WsCode::TABLE_SNAPSHOT as i64
+                    && value["data"]["phase"] == json!(TractorPhase::Bury as i8) =>
+            {
+                break value;
+            }
+            _ => {}
+        }
+    };
+
+    assert!(
+        continued_deal_count > 0,
+        "rejoined client must receive later deal events"
+    );
+    assert_eq!(
+        restored_hand.len(),
+        25,
+        "two-deck player hand must finish at 25 cards"
+    );
+    let unique_cards = restored_hand
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>();
+    assert_eq!(
+        unique_cards.len(),
+        restored_hand.len(),
+        "rejoin must neither duplicate nor lose physical cards"
+    );
+    assert_eq!(bury_snapshot["data"]["round_index"], json!(0));
+    assert_eq!(bury_snapshot["data"]["dealt_count"], json!(100));
+    assert_eq!(bury_snapshot["data"]["total_deal_count"], json!(100));
+    assert!(
+        !bury_snapshot["data"]["declaration"].is_null(),
+        "first deal must still complete trump declaration before bury"
+    );
+
+    let dealer_position = bury_snapshot["data"]["dealer_position"]
+        .as_u64()
+        .expect("dealer after rejoined first deal") as usize;
+    let dealer = match dealer_position {
+        0 => &mut rejoined,
+        1 => &mut b,
+        2 => &mut c,
+        3 => &mut d,
+        _ => panic!("invalid dealer position {dealer_position}"),
+    };
+    let bottom = if dealer_position == 0 {
+        match rejoined_bottom {
+            Some(bottom) => bottom,
+            None => recv_tractor_bottom(dealer, dealer_position).await,
+        }
+    } else {
+        recv_tractor_bottom(dealer, dealer_position).await
+    };
+    let bottom_cards = bottom["data"]["cards"]
+        .as_array()
+        .expect("bottom cards after rejoined first deal")
+        .iter()
+        .map(|card| card.as_i64().expect("bottom card after deal rejoin") as i32)
+        .collect::<Vec<_>>();
+    assert_eq!(bottom_cards.len(), 8);
+
+    send_request(
+        dealer,
+        TractorRoutes::BURY_BOTTOM as i32,
+        json!({ "cards": bottom_cards }),
+    )
+    .await;
+    recv_until(dealer, "bury after rejoined first deal", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(TractorWsCode::BOTTOM_BURIED as i64)
+            && value["data"]["position"] == json!(dealer_position)
+    })
+    .await;
+    recv_until(dealer, "play after rejoined first deal", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+            && value["data"]["phase"] == json!(TractorPhase::Play as i8)
+    })
+    .await;
+}
+
+#[cfg(not(feature = "official"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn tractor_ws_rejoin_preserves_running_bury_state() {
     let runtime = start_test_runtime("tractor-rejoin-bury-test", Duration::from_secs(30)).await;
     let url = runtime.url.clone();
