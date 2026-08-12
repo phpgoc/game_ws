@@ -294,6 +294,33 @@ fn follower_with_a_tractor_cannot_replace_it_with_non_consecutive_pairs() {
 }
 
 #[test]
+fn follower_with_a_three_pair_tractor_cannot_break_it_into_a_shorter_run() {
+    let three_pair_lead = vec![2, 102, 3, 103, 4, 104];
+    let complete_follow = vec![5, 105, 6, 106, 7, 107];
+    let follower_hand = vec![5, 105, 6, 106, 7, 107, 9, 109];
+    let state_hands = HashMap::from([
+        (0, three_pair_lead.clone()),
+        (1, follower_hand),
+        (2, vec![15, 115, 16, 116, 17, 117]),
+        (3, vec![28, 128, 29, 129, 30, 130]),
+    ]);
+    let mut state = state_with_hands(rules(2), Vec::new(), state_hands);
+
+    state
+        .play_cards(0, "p0".to_owned(), three_pair_lead)
+        .expect("three-pair tractor lead");
+    assert_eq!(
+        state
+            .play_cards(1, "p1".to_owned(), vec![5, 105, 6, 106, 9, 109])
+            .expect_err("a full three-pair tractor cannot be shortened"),
+        "illegal follow"
+    );
+    state
+        .play_cards(1, "p1".to_owned(), complete_follow)
+        .expect("complete three-pair tractor follow");
+}
+
+#[test]
 fn throw_follow_preserves_every_available_tractor_before_loose_pairs() {
     let two_deck_rules = rules(2);
     let lead = combo::classify(&[2, 102, 3, 103, 11], &two_deck_rules)
@@ -402,6 +429,37 @@ fn follower_with_a_titanic_cannot_replace_it_with_non_consecutive_triples() {
     state
         .play_cards(1, "p1".to_owned(), vec![4, 104, 204, 5, 105, 205])
         .expect("consecutive triple follow");
+}
+
+#[test]
+fn follower_with_a_three_triple_titanic_cannot_break_it_into_a_shorter_run() {
+    let three_triple_lead = vec![2, 102, 202, 3, 103, 203, 4, 104, 204];
+    let complete_follow = vec![5, 105, 205, 6, 106, 206, 7, 107, 207];
+    let follower_hand = vec![5, 105, 205, 6, 106, 206, 7, 107, 207, 9, 109, 209];
+    let state_hands = HashMap::from([
+        (0, three_triple_lead.clone()),
+        (1, follower_hand),
+        (2, vec![15, 115, 215, 16, 116, 216, 17, 117, 217]),
+        (3, vec![28, 128, 228, 29, 129, 229, 30, 130, 230]),
+    ]);
+    let mut state = state_with_hands(rules(3), Vec::new(), state_hands);
+
+    state
+        .play_cards(0, "p0".to_owned(), three_triple_lead)
+        .expect("three-triple Titanic lead");
+    assert_eq!(
+        state
+            .play_cards(
+                1,
+                "p1".to_owned(),
+                vec![5, 105, 205, 6, 106, 206, 9, 109, 209],
+            )
+            .expect_err("a full three-triple Titanic cannot be shortened"),
+        "illegal follow"
+    );
+    state
+        .play_cards(1, "p1".to_owned(), complete_follow)
+        .expect("complete three-triple Titanic follow");
 }
 
 #[test]

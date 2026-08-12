@@ -784,9 +784,15 @@ pub fn follow_is_legal(hand: &[i32], cards: &[i32], lead: &Combo, rules: &Tracto
         {
             return false;
         }
-        ComboKind::Tractor(_)
-            if longest_multiplicity_run(hand, lead_suit, 2, rules) >= 2
-                && longest_multiplicity_run(cards, lead_suit, 2, rules) < 2 =>
+        ComboKind::Tractor(required_units)
+            if longest_multiplicity_run(hand, lead_suit, 2, rules) >= required_units
+                && longest_multiplicity_run(cards, lead_suit, 2, rules) < required_units =>
+        {
+            return false;
+        }
+        ComboKind::Titanic(required_units)
+            if longest_multiplicity_run(hand, lead_suit, 3, rules) >= required_units
+                && longest_multiplicity_run(cards, lead_suit, 3, rules) < required_units =>
         {
             return false;
         }
