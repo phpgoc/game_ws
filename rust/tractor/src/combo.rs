@@ -481,6 +481,38 @@ fn titanic_follow_priority(cards: &[i32], lead_suit: Option<i32>, rules: &Tracto
     }
 }
 
+fn titanic_follow_signature(
+    cards: &[i32],
+    lead_suit: Option<i32>,
+    required_units: usize,
+    rules: &TractorRules,
+) -> (u8, usize, usize) {
+    let priority = titanic_follow_priority(cards, lead_suit, rules);
+    let (primary_units, secondary_units) = match priority {
+        7 => (
+            longest_multiplicity_run(cards, lead_suit, 3, rules),
+            count_group_triples(cards, lead_suit, rules),
+        ),
+        6 => (
+            longest_multiplicity_run(cards, lead_suit, 2, rules),
+            count_group_pairs(cards, lead_suit, rules),
+        ),
+        5 => (
+            count_group_triples(cards, lead_suit, rules),
+            count_group_pairs(cards, lead_suit, rules),
+        ),
+        4 => (1, 1),
+        3 | 1 => (1, 0),
+        2 => (count_group_pairs(cards, lead_suit, rules), 0),
+        _ => (0, 0),
+    };
+    (
+        priority,
+        primary_units.min(required_units),
+        secondary_units.min(required_units),
+    )
+}
+
 /// Enumerate strategically distinct legal replies to a lead. Same-shape
 /// winners come from [`enumerate_leads`]; when a player cannot reproduce the
 /// shape, bounded subset enumeration also exposes alternative legal discards
@@ -796,9 +828,9 @@ pub fn follow_is_legal(hand: &[i32], cards: &[i32], lead: &Combo, rules: &Tracto
         {
             return false;
         }
-        ComboKind::Titanic(_)
-            if titanic_follow_priority(cards, lead_suit, rules)
-                < titanic_follow_priority(hand, lead_suit, rules) =>
+        ComboKind::Titanic(required_units)
+            if titanic_follow_signature(cards, lead_suit, required_units, rules)
+                < titanic_follow_signature(hand, lead_suit, required_units, rules) =>
         {
             return false;
         }
@@ -1031,6 +1063,18 @@ pub fn forced_follow(hand: &[i32], lead: &Combo, rules: &TractorRules) -> Option
                     rules,
                 ),
                 _ => {}
+            }
+            if titanic_follow_priority(hand, lead_suit, rules) == 7 {
+                let chosen_triples = count_group_triples(&chosen, lead_suit, rules);
+                take_lowest_multiplicity_units(
+                    &mut chosen,
+                    &mut remaining,
+                    lead_suit,
+                    3,
+                    triple_count.saturating_sub(chosen_triples),
+                    lead_len,
+                    rules,
+                );
             }
         }
         ComboKind::Throw { .. } => {

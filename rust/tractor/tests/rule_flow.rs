@@ -463,6 +463,29 @@ fn follower_with_a_three_triple_titanic_cannot_break_it_into_a_shorter_run() {
 }
 
 #[test]
+fn long_titanic_follow_keeps_an_independent_triple_after_the_best_run() {
+    let rules = rules(3);
+    let lead = combo::classify(&[2, 102, 202, 3, 103, 203, 4, 104, 204], &rules)
+        .expect("three-triple Titanic lead");
+    let hand = vec![5, 105, 205, 6, 106, 206, 9, 109, 209, 11, 12, 13];
+    let split_triple = vec![5, 105, 205, 6, 106, 206, 9, 11, 12];
+
+    assert!(
+        !combo::follow_is_legal(&hand, &split_triple, &lead, &rules),
+        "the independent triple must remain intact after the best Titanic run"
+    );
+    let forced = combo::forced_follow(&hand, &lead, &rules).expect("automatic long Titanic follow");
+    assert!(combo::follow_is_legal(&hand, &forced, &lead, &rules));
+    assert_eq!(
+        forced
+            .iter()
+            .filter(|card| [9, 109, 209].contains(card))
+            .count(),
+        3
+    );
+}
+
+#[test]
 fn titanic_follow_uses_the_official_structure_priority_order() {
     let rules = rules(3);
     let lead = combo::classify(&[2, 102, 202, 3, 103, 203], &rules).expect("six-card Titanic lead");
