@@ -412,6 +412,15 @@ where
                 }
                 handler.after_common_request(&mut room, session_id, &request, &mut dispatch);
                 dispatch
+            } else if room
+                .room_key_of(session_id)
+                .is_some_and(|room_key| room.is_room_paused(&room_key))
+            {
+                room.error_response(
+                    session_id,
+                    request.route,
+                    share_type_public::WsResponseCode::NO_PERMISSION,
+                )
             } else {
                 handler.handle_game_request(&mut room, session_id, request)
             }

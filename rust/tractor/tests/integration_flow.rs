@@ -1161,6 +1161,120 @@ async fn try_tractor_pair_counter_declaration(attempt: usize) -> bool {
 
 #[cfg(not(feature = "official"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn tractor_ws_rejects_declaration_while_paused_and_accepts_it_after_resume() {
+    let runtime =
+        start_test_runtime("tractor-paused-declaration-test", Duration::from_secs(45)).await;
+    let url = runtime.url.clone();
+
+    let mut a = connect_client(&url).await;
+    let mut b = connect_client(&url).await;
+    let mut c = connect_client(&url).await;
+    let mut d = connect_client(&url).await;
+    let room = "tractor-paused-declaration-room";
+    for (position, client) in [&mut a, &mut b, &mut c, &mut d].into_iter().enumerate() {
+        let joined = join(client, &format!("paused-player-{position}"), room).await;
+        assert_eq!(joined["data"]["self_position"], json!(position));
+    }
+
+    send_request(
+        &mut a,
+        Routes::SETTING as i32,
+        json!({
+            "current_configs": {
+                "deck_count": 1,
+                "first_deal_time": 5000,
+                "deal_time": 1000,
+                "play_time": 30
+            }
+        }),
+    )
+    .await;
+    recv_until(&mut a, "paused declaration setting response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::SETTING as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+    send_request(&mut a, Routes::START as i32, json!({})).await;
+    recv_until(&mut a, "paused declaration start response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::START as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+
+    let clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
+    let mut declaration = None;
+    'deal: for _ in 0..38 {
+        for position in 0..4 {
+            let card = recv_tractor_private_deal(&mut *clients[position], position).await;
+            let decoded = Card::try_from(card).expect("paused declaration candidate");
+            if decoded.rank() == Rank::Three && decoded.suit().is_some() {
+                declaration = Some((position, card));
+                break 'deal;
+            }
+        }
+    }
+    let (declaring_position, declared_card) =
+        declaration.expect("three-deck deal must expose a suited level three");
+
+    send_request(&mut *clients[0], Routes::PAUSE as i32, json!({})).await;
+    recv_until(
+        &mut *clients[0],
+        "pause before declaration response",
+        |value| {
+            value.get("route").and_then(Value::as_i64) == Some(Routes::PAUSE as i64)
+                && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+        },
+    )
+    .await;
+
+    send_request(
+        &mut *clients[declaring_position],
+        TractorRoutes::DECLARE_TRUMP as i32,
+        json!({ "cards": [declared_card] }),
+    )
+    .await;
+    let rejected = recv_until(
+        &mut *clients[declaring_position],
+        "declaration rejected while paused",
+        |value| {
+            value.get("route").and_then(Value::as_i64) == Some(TractorRoutes::DECLARE_TRUMP as i64)
+        },
+    )
+    .await;
+    assert_eq!(
+        rejected["code"],
+        json!(WsResponseCode::NO_PERMISSION as i32)
+    );
+
+    send_request(&mut *clients[0], Routes::RESUME as i32, json!({})).await;
+    recv_until(
+        &mut *clients[0],
+        "resume before declaration response",
+        |value| {
+            value.get("route").and_then(Value::as_i64) == Some(Routes::RESUME as i64)
+                && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+        },
+    )
+    .await;
+    send_request(
+        &mut *clients[declaring_position],
+        TractorRoutes::DECLARE_TRUMP as i32,
+        json!({ "cards": [declared_card] }),
+    )
+    .await;
+    let accepted = recv_until(
+        &mut *clients[declaring_position],
+        "declaration accepted after resume",
+        |value| {
+            value.get("route").and_then(Value::as_i64) == Some(TractorRoutes::DECLARE_TRUMP as i64)
+        },
+    )
+    .await;
+    assert_eq!(accepted["code"], json!(WsResponseCode::OK as i32));
+}
+
+#[cfg(not(feature = "official"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn tractor_ws_pair_of_level_threes_overrides_a_single_declaration() {
     for attempt in 0..5 {
         if try_tractor_pair_counter_declaration(attempt).await {
