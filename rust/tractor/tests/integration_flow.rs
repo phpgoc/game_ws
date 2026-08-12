@@ -2471,14 +2471,85 @@ async fn tractor_server_completes_round_and_enters_later_round() {
     )
     .await;
     assert_eq!(selected["code"], json!(WsResponseCode::OK as i32));
+
+    let selected_countdown = selected_snapshot["data"]["turn_countdown"]
+        .as_i64()
+        .expect("later selected bottom countdown");
+    clients[later_dealer]
+        .close(None)
+        .await
+        .expect("disconnect later dealer after selecting trump");
+    tokio::time::sleep(Duration::from_millis(1_200)).await;
+
+    let mut rejoined_later_dealer = connect_client(&url).await;
+    let player_names = ["a", "b", "c", "d"];
+    let joined = join(&mut rejoined_later_dealer, player_names[later_dealer], room).await;
+    assert_eq!(joined["data"]["self_position"], json!(later_dealer));
+
+    let hand_update = recv_until(
+        &mut rejoined_later_dealer,
+        "later dealer hand after selected-trump rejoin",
+        |value| {
+            value.get("code").and_then(Value::as_i64) == Some(TractorWsCode::HAND_UPDATED as i64)
+        },
+    )
+    .await;
+    let mut restored_hand = hand_update["data"]["cards"]
+        .as_array()
+        .expect("later dealer restored hand")
+        .iter()
+        .map(|card| card.as_i64().expect("later dealer restored card") as i32)
+        .collect::<Vec<_>>();
+    let mut expected_hand = later_hands[later_dealer].clone();
+    expected_hand.extend(later_bottom.iter().copied());
+    restored_hand.sort_unstable();
+    expected_hand.sort_unstable();
+    assert_eq!(
+        restored_hand, expected_hand,
+        "rejoining after selecting trump must neither duplicate nor lose the bottom"
+    );
+
+    let rejoined_snapshot = recv_until(
+        &mut rejoined_later_dealer,
+        "later dealer selected-trump snapshot after rejoin",
+        |value| value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64),
+    )
+    .await;
+    assert_eq!(rejoined_snapshot["data"]["round_index"], json!(1));
+    assert_eq!(
+        rejoined_snapshot["data"]["phase"],
+        json!(TractorPhase::Bury as i8)
+    );
+    assert_eq!(
+        rejoined_snapshot["data"]["dealer_position"],
+        json!(later_dealer)
+    );
+    assert_eq!(rejoined_snapshot["data"]["trump_suit"], json!(0));
+    assert_eq!(
+        rejoined_snapshot["data"]["declaration"]["position"],
+        json!(later_dealer)
+    );
+    assert_eq!(
+        rejoined_snapshot["data"]["declaration"]["trump_suit"],
+        json!(0)
+    );
+    let rejoined_countdown = rejoined_snapshot["data"]["turn_countdown"]
+        .as_i64()
+        .expect("later rejoined bottom countdown");
+    assert!(
+        rejoined_countdown <= selected_countdown
+            && rejoined_countdown >= selected_countdown.saturating_sub(5),
+        "selecting trump and rejoining must resume the same bottom window: selected={selected_countdown}, rejoined={rejoined_countdown}"
+    );
+
     send_request(
-        &mut *clients[later_dealer],
+        &mut rejoined_later_dealer,
         TractorRoutes::BURY_BOTTOM as i32,
         json!({ "cards": later_bottom }),
     )
     .await;
     let later_play = recv_until(
-        &mut *clients[later_dealer],
+        &mut rejoined_later_dealer,
         "later tractor play snapshot",
         |value| {
             value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
@@ -2488,7 +2559,7 @@ async fn tractor_server_completes_round_and_enters_later_round() {
     )
     .await;
     recv_until(
-        &mut *clients[later_dealer],
+        &mut rejoined_later_dealer,
         "later tractor bury response",
         |value| {
             value.get("route").and_then(Value::as_i64) == Some(TractorRoutes::BURY_BOTTOM as i64)
@@ -2498,13 +2569,13 @@ async fn tractor_server_completes_round_and_enters_later_round() {
     .await;
     let later_card = later_hands[later_dealer].pop().expect("later dealer card");
     send_request(
-        &mut *clients[later_dealer],
+        &mut rejoined_later_dealer,
         Routes::PLAY as i32,
         json!({ "cards": [later_card] }),
     )
     .await;
     let later_play_event = recv_until(
-        &mut *clients[later_dealer],
+        &mut rejoined_later_dealer,
         "later tractor first play",
         |value| {
             value.get("code").and_then(Value::as_i64) == Some(WsCode::PLAY as i64)
@@ -2515,7 +2586,7 @@ async fn tractor_server_completes_round_and_enters_later_round() {
     assert_eq!(later_play_event["data"]["cards"], json!([later_card]));
     assert_eq!(later_play["data"]["round_index"], json!(1));
     recv_until(
-        &mut *clients[later_dealer],
+        &mut rejoined_later_dealer,
         "later tractor first play response",
         |value| {
             value.get("route").and_then(Value::as_i64) == Some(Routes::PLAY as i64)
