@@ -19,7 +19,7 @@ use super::{
     timed_out_human_position,
 };
 use crate::game_setting::{
-    KEY_AWAY_TIME, KEY_PLAY_TIME, KEY_SETTLEMENT_TIME, build_tractor_settings,
+    KEY_AI_ACTION_TIME, KEY_AWAY_TIME, KEY_PLAY_TIME, KEY_SETTLEMENT_TIME, build_tractor_settings,
 };
 use crate::game_state::TractorRules;
 
@@ -160,6 +160,37 @@ fn auto_bury_member_timeout_enables_ai_takeover_and_keeps_the_event_flag() {
 }
 
 #[test]
+fn existing_member_takeover_waits_for_the_human_bottom_window() {
+    let (room, common) = room_with_players();
+    let state = state_handle(common, TractorPhase::Bury);
+    {
+        let mut guard = state.lock().unwrap();
+        guard.hands.insert(0, vec![1, 2, 3]);
+        let mut base = guard.base.lock().unwrap();
+        base.mark_ai_takeover_position(0);
+        base.turn_countdown = 2;
+    }
+    let configs = HashMap::from([(KEY_AI_ACTION_TIME.to_owned(), 20)]);
+
+    assert_eq!(
+        super::action_loop_delay(&configs, &state.lock().unwrap()),
+        Duration::from_secs(1)
+    );
+    let first = build_auto_bury_dispatch(ROOM_KEY, &room, &state, &configs, None);
+    assert!(first.messages.is_empty());
+    assert_eq!(state.lock().unwrap().base.lock().unwrap().turn_countdown, 1);
+    let second = build_auto_bury_dispatch(ROOM_KEY, &room, &state, &configs, None);
+    assert!(second.messages.is_empty());
+    assert_eq!(state.lock().unwrap().base.lock().unwrap().turn_countdown, 0);
+    let finished = build_auto_bury_dispatch(ROOM_KEY, &room, &state, &configs, None);
+    assert_eq!(state.lock().unwrap().phase, TractorPhase::Play);
+    assert_eq!(
+        event_payloads(&finished, TractorWsCode::BOTTOM_BURIED as i32).len(),
+        4
+    );
+}
+
+#[test]
 fn auto_dispatch_broadcasts_settlement_when_its_play_finishes_every_hand() {
     let (room, common) = room_with_players();
     let state = state_handle(common, TractorPhase::Play);
@@ -210,6 +241,38 @@ fn deal_dispatch_sends_private_deal_and_bottom_cards_then_exposes_the_snapshot()
     assert_eq!(
         event_payloads(&dispatch, WsCode::TABLE_SNAPSHOT as i32).len(),
         4
+    );
+}
+
+#[test]
+fn disconnected_human_dealer_still_receives_the_full_bottom_window() {
+    let (room, common) = room_with_players();
+    let state = state_handle(common, TractorPhase::Deal);
+    {
+        let mut guard = state.lock().unwrap();
+        guard.deal_queue = VecDeque::from([(0, 1)]);
+        guard.total_deal_count = 1;
+        guard.bottom_cards = vec![53, 54];
+        guard.hands.insert(0, Vec::new());
+        guard.base.lock().unwrap().mark_disconnected(0);
+    }
+    let configs = HashMap::from([
+        (KEY_AWAY_TIME.to_owned(), 4),
+        (KEY_PLAY_TIME.to_owned(), 30),
+    ]);
+
+    let dispatch = build_deal_dispatch(ROOM_KEY, &room, &state, &configs);
+    let guard = state.lock().unwrap();
+    assert_eq!(guard.phase, TractorPhase::Bury);
+    assert_eq!(guard.base.lock().unwrap().turn_countdown, 90);
+    drop(guard);
+
+    let snapshots = event_payloads(&dispatch, WsCode::TABLE_SNAPSHOT as i32);
+    assert_eq!(snapshots.len(), 4);
+    assert!(
+        snapshots
+            .iter()
+            .all(|snapshot| snapshot["turn_countdown"] == 90)
     );
 }
 
@@ -287,7 +350,7 @@ async fn loop_helpers_handle_membership_timeout_cleanup_and_stop_requests() {
         (KEY_SETTLEMENT_TIME.to_owned(), 9),
     ]);
     assert_eq!(current_play_time(&configs, &state.lock().unwrap()), 4);
-    assert_eq!(current_bury_time(&configs, &state.lock().unwrap()), 4);
+    assert_eq!(current_bury_time(&configs, &state.lock().unwrap()), 90);
     assert_eq!(settlement_time(&configs), 9);
     assert_eq!(settlement_time(&HashMap::new()), 5);
 

@@ -1688,6 +1688,169 @@ async fn tractor_ws_rejoin_during_first_deal_restores_the_complete_private_hand(
 
 #[cfg(not(feature = "official"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn tractor_disconnected_first_dealer_keeps_the_full_bottom_window_for_rejoin() {
+    let runtime = start_test_runtime(
+        "tractor-disconnected-dealer-window-test",
+        Duration::from_secs(45),
+    )
+    .await;
+    let url = runtime.url.clone();
+
+    let mut a = connect_client(&url).await;
+    let mut b = connect_client(&url).await;
+    let mut c = connect_client(&url).await;
+    let mut d = connect_client(&url).await;
+    let room = "tractor-disconnected-dealer-window-room";
+    for (position, client) in [&mut a, &mut b, &mut c, &mut d].into_iter().enumerate() {
+        let joined = join(client, &format!("bottom-window-player-{position}"), room).await;
+        assert_eq!(joined["data"]["self_position"], json!(position));
+    }
+
+    send_request(
+        &mut a,
+        Routes::SETTING as i32,
+        json!({
+            "current_configs": {
+                "deck_count": 1,
+                "target_rank": 11,
+                "first_deal_time": 5000,
+                "deal_time": 1000,
+                "play_time": 30,
+                "away_time": 4
+            }
+        }),
+    )
+    .await;
+    recv_until(&mut a, "disconnected dealer setting response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::SETTING as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+    send_request(&mut a, Routes::START as i32, json!({})).await;
+    recv_until(&mut a, "disconnected dealer start response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::START as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+
+    let clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
+    let mut declaring = None;
+    'deal: for _ in 0..38 {
+        for position in 0..4 {
+            let card = recv_tractor_private_deal(&mut *clients[position], position).await;
+            let decoded = Card::try_from(card).expect("disconnected dealer declaration card");
+            if decoded.rank() != Rank::Three || decoded.suit().is_none() {
+                continue;
+            }
+            send_request(
+                &mut *clients[position],
+                TractorRoutes::DECLARE_TRUMP as i32,
+                json!({ "cards": [card] }),
+            )
+            .await;
+            let observer_position = (position + 1) % 4;
+            let declaration = recv_until(
+                &mut *clients[observer_position],
+                "declaration before dealer disconnect",
+                |value| {
+                    value.get("code").and_then(Value::as_i64)
+                        == Some(TractorWsCode::TRUMP_DECLARED as i64)
+                        && value["data"]["position"] == json!(position)
+                },
+            )
+            .await;
+            assert_eq!(
+                declaration["data"]["target_rank"],
+                json!(TractorRank::THREE as i8)
+            );
+            declaring = Some((position, observer_position));
+            break 'deal;
+        }
+    }
+    let (dealer_position, observer_position) =
+        declaring.expect("three-deck deal must expose a level three before finishing");
+    clients[dealer_position]
+        .close(None)
+        .await
+        .expect("disconnect first dealer during deal");
+
+    let bury_snapshot = recv_until(
+        &mut *clients[observer_position],
+        "full bottom window for disconnected first dealer",
+        |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+                && value["data"]["phase"] == json!(TractorPhase::Bury as i8)
+        },
+    )
+    .await;
+    assert_eq!(
+        bury_snapshot["data"]["dealer_position"],
+        json!(dealer_position)
+    );
+    assert_eq!(
+        bury_snapshot["data"]["turn_countdown"],
+        json!(90),
+        "a disconnected human dealer must keep the same three-times bottom window"
+    );
+
+    let mut rejoined = connect_client(&url).await;
+    let player_names = [
+        "bottom-window-player-0",
+        "bottom-window-player-1",
+        "bottom-window-player-2",
+        "bottom-window-player-3",
+    ];
+    let joined = join(&mut rejoined, player_names[dealer_position], room).await;
+    assert_eq!(joined["data"]["self_position"], json!(dealer_position));
+    let hand_update = recv_until(&mut rejoined, "rejoined dealer bottom hand", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(TractorWsCode::HAND_UPDATED as i64)
+    })
+    .await;
+    let restored_hand = hand_update["data"]["cards"]
+        .as_array()
+        .expect("rejoined dealer bottom hand cards")
+        .clone();
+    assert_eq!(
+        restored_hand.len(),
+        48,
+        "three-deck dealer receives 38 + 10 cards"
+    );
+    let rejoined_snapshot = recv_until(&mut rejoined, "rejoined dealer bottom snapshot", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+    })
+    .await;
+    assert_eq!(
+        rejoined_snapshot["data"]["phase"],
+        json!(TractorPhase::Bury as i8)
+    );
+    assert!(
+        rejoined_snapshot["data"]["turn_countdown"]
+            .as_i64()
+            .is_some_and(|countdown| (80..=90).contains(&countdown)),
+        "rejoin must resume the remaining bottom window: {rejoined_snapshot}"
+    );
+
+    let bottom_cards = restored_hand.into_iter().take(10).collect::<Vec<_>>();
+    send_request(
+        &mut rejoined,
+        TractorRoutes::BURY_BOTTOM as i32,
+        json!({ "cards": bottom_cards }),
+    )
+    .await;
+    recv_until(&mut rejoined, "rejoined dealer completes bottom", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(TractorWsCode::BOTTOM_BURIED as i64)
+            && value["data"]["position"] == json!(dealer_position)
+    })
+    .await;
+    recv_until(&mut rejoined, "rejoined dealer enters play", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+            && value["data"]["phase"] == json!(TractorPhase::Play as i8)
+    })
+    .await;
+}
+
+#[cfg(not(feature = "official"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn tractor_ws_rejoin_preserves_running_bury_state() {
     let runtime = start_test_runtime("tractor-rejoin-bury-test", Duration::from_secs(30)).await;
     let url = runtime.url.clone();

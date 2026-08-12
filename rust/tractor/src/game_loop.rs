@@ -29,7 +29,11 @@ fn action_loop_delay(configs: &HashMap<String, i32>, state: &TractorGameState) -
         return Duration::ZERO;
     }
     let controlled = match state.phase {
-        TractorPhase::Bury => state.is_ai_controlled_position(state.dealer_position),
+        TractorPhase::Bury => state
+            .base
+            .lock()
+            .unwrap()
+            .is_ai_position(state.dealer_position),
         TractorPhase::Play => state.is_ai_controlled_position(state.current_position),
         _ => false,
     };
@@ -60,8 +64,9 @@ fn build_auto_bury_dispatch(
             return dispatch;
         }
         let position = state.dealer_position;
+        let native_ai = state.base.lock().unwrap().is_ai_position(position);
         let mut controlled = state.is_ai_controlled_position(position);
-        if !controlled && state.base.lock().unwrap().turn_countdown > 0 {
+        if !native_ai && state.base.lock().unwrap().turn_countdown > 0 {
             let next = state.base.lock().unwrap().turn_countdown.saturating_sub(1);
             state.set_turn_countdown(next);
             return dispatch;
@@ -344,14 +349,7 @@ pub(crate) fn current_play_time(configs: &HashMap<String, i32>, state: &TractorG
     configs.get(key).copied().unwrap_or(30).max(1) as u32
 }
 
-pub(crate) fn current_bury_time(configs: &HashMap<String, i32>, state: &TractorGameState) -> u32 {
-    let inactive = {
-        let base = state.base.lock().unwrap();
-        base.is_away(state.dealer_position) || base.is_disconnected(state.dealer_position)
-    };
-    if state.is_ai_controlled_position(state.dealer_position) || inactive {
-        return current_play_time(configs, state);
-    }
+pub(crate) fn current_bury_time(configs: &HashMap<String, i32>, _state: &TractorGameState) -> u32 {
     configs
         .get(KEY_PLAY_TIME)
         .copied()
