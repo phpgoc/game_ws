@@ -625,22 +625,57 @@ pub(crate) fn start_game_loop(
                     if sleep_or_stop(&state, Duration::from_secs(settlement_time(&configs))).await {
                         break;
                     }
-                    let (advanced, snapshot) = {
+                    let (advanced, snapshot, lobby_snapshot) = {
                         let mut guard = state.lock().unwrap();
                         if guard.phase != TractorPhase::Settlement {
                             continue;
                         }
                         if guard.match_finished() {
-                            break;
-                        }
-                        match guard.advance_after_settlement() {
-                            Ok(true) => {
-                                guard.set_turn_countdown(0);
-                                (true, guard.snapshot())
+                            guard.reset_to_lobby();
+                            (false, guard.snapshot(), true)
+                        } else {
+                            match guard.advance_after_settlement() {
+                                Ok(true) => {
+                                    guard.set_turn_countdown(0);
+                                    (true, guard.snapshot(), false)
+                                }
+                                _ => (false, guard.snapshot(), false),
                             }
-                            _ => (false, guard.snapshot()),
                         }
                     };
+                    if lobby_snapshot {
+                        let mut dispatch = Dispatch::default();
+                        {
+                            let room = room_service.lock().await;
+                            if !room_uses_common_state(&room, &room_key, &common) {
+                                break;
+                            }
+                            let members = room.room_members(&room_key);
+                            for (session_id, _, position, _) in members {
+                                push_direct_event(
+                                    &mut dispatch,
+                                    session_id,
+                                    TractorWsCode::HAND_UPDATED as i32,
+                                    WsTractorHandEvent {
+                                        position: position as i32,
+                                        cards: Vec::new(),
+                                    },
+                                );
+                            }
+                            push_table_snapshot(&room_key, &room, snapshot, &mut dispatch);
+                        }
+                        // Release the running game before delivering the lobby
+                        // snapshot. A fast owner can press START as soon as that
+                        // snapshot arrives; keeping the old state registered here
+                        // would create a race and reject the new match.
+                        room_service
+                            .lock()
+                            .await
+                            .clear_room_game_state_if_same(&room_key, &common);
+                        remove_registered_state_if_same(&states, &room_key, &state);
+                        deliver(dispatch, &senders).await;
+                        break;
+                    }
                     if advanced {
                         let mut dispatch = Dispatch::default();
                         {

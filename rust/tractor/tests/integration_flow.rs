@@ -3335,19 +3335,49 @@ async fn tractor_ws_finishes_when_one_team_wins_at_the_configured_final_rank() {
     assert!(final_settlement.match_finished);
     assert!((1..=2).contains(&final_snapshot["data"]["round_index"].as_i64().unwrap()));
 
-    let unexpected_next_deal = tokio::time::timeout(
-        Duration::from_secs(2),
-        recv_until(
+    let lobby_snapshot = loop {
+        let value = recv_json(
             &mut *clients[0],
-            "unexpected tractor round after match finish",
-            |value| value.get("code").and_then(Value::as_i64) == Some(WsCode::DEAL as i64),
-        ),
+            "tractor lobby reset after the match finishes",
+        )
+        .await;
+        assert_ne!(
+            value.get("code").and_then(Value::as_i64),
+            Some(WsCode::DEAL as i64),
+            "finished tractor match must not deal another round automatically"
+        );
+        if value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+            && value["data"]["phase"] == json!(TractorPhase::Start as i8)
+        {
+            break value;
+        }
+    };
+    assert_eq!(lobby_snapshot["data"]["round_index"], json!(0));
+    assert_eq!(
+        lobby_snapshot["data"]["team_target_ranks"],
+        json!([TractorRank::THREE, TractorRank::THREE])
+    );
+    assert!(
+        lobby_snapshot["data"]["player_hand_counts"]
+            .as_array()
+            .is_some_and(|counts| counts.iter().all(|entry| entry["hand_count"] == json!(0)))
+    );
+
+    send_request(&mut *clients[0], Routes::START as i32, json!({})).await;
+    let restarted = recv_until(
+        &mut *clients[0],
+        "tractor start after a finished match",
+        |value| value.get("route").and_then(Value::as_i64) == Some(Routes::START as i64),
     )
     .await;
-    assert!(
-        unexpected_next_deal.is_err(),
-        "finished tractor match must not deal another round"
-    );
+    assert_eq!(restarted["code"], json!(WsResponseCode::OK as i32));
+    let next_match_first_deal = recv_until(
+        &mut *clients[0],
+        "tractor first deal of the next match",
+        |value| value.get("code").and_then(Value::as_i64) == Some(WsCode::DEAL as i64),
+    )
+    .await;
+    assert_eq!(next_match_first_deal["data"]["dealt_count"], json!(1));
 }
 
 #[cfg(not(feature = "official"))]

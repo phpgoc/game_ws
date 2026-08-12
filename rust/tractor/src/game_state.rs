@@ -560,7 +560,11 @@ impl TractorGameState {
         .ok_or("invalid bottom card count")?;
 
         self.phase = TractorPhase::Deal;
-        self.hands.clear();
+        self.hands = self
+            .active_positions()
+            .into_iter()
+            .map(|position| (position, Vec::new()))
+            .collect();
         self.deal_queue.clear();
         self.dealt_count = 0;
         self.total_deal_count = 0;
@@ -860,6 +864,37 @@ impl TractorGameState {
         } else {
             self.hands.values().map(Vec::len).max().unwrap_or_default()
         }
+    }
+
+    /// 将已经结束的整场比赛收敛回可再次开始的房间状态。
+    ///
+    /// 结算事件仍然保留给客户端展示；清理前先发送这个空桌快照，
+    /// 让客户端知道服务端已经停止本场并可以重新 START。
+    pub fn reset_to_lobby(&mut self) {
+        self.phase = TractorPhase::Start;
+        self.rules.target_rank = TractorRank::THREE;
+        self.rules.trump_suit = None;
+        self.team_target_ranks = [TractorRank::THREE; 2];
+        self.hands.clear();
+        self.deal_queue.clear();
+        self.dealt_count = 0;
+        self.total_deal_count = 0;
+        self.bottom_cards.clear();
+        self.declaration = None;
+        self.bottom_multiplier = 1;
+        self.collected_scores.clear();
+        self.player_scores.clear();
+        self.last_trick_winner = None;
+        self.dealer_position = 0;
+        self.current_position = 0;
+        self.round_index = 0;
+        self.trick_index = 0;
+        self.completed_tricks.clear();
+        self.current_trick.clear();
+        self.failed_throws.clear();
+        self.play_count = 0;
+        self.set_turn_countdown(0);
+        self.base.lock().unwrap().action_received = false;
     }
 
     pub fn is_ai_controlled_position(&self, position: usize) -> bool {
