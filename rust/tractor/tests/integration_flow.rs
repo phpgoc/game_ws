@@ -958,6 +958,89 @@ async fn tractor_ws_exposes_only_twenty_to_forty_second_play_time() {
 
 #[cfg(not(feature = "official"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn tractor_ws_canonicalizes_bottom_count_before_broadcasting_settings() {
+    let runtime = start_default_test_runtime(
+        "tractor-bottom-setting-canonicalization-test",
+        Duration::from_secs(30),
+    )
+    .await;
+    let url = runtime.url.clone();
+
+    let mut a = connect_client(&url).await;
+    let mut b = connect_client(&url).await;
+    let mut c = connect_client(&url).await;
+    let mut d = connect_client(&url).await;
+    let room = "tractor-bottom-setting-canonicalization-room";
+    join(&mut a, "canonical-a", room).await;
+    join(&mut b, "canonical-b", room).await;
+    join(&mut c, "canonical-c", room).await;
+    join(&mut d, "canonical-d", room).await;
+
+    send_request(
+        &mut a,
+        Routes::SETTING as i32,
+        json!({
+            "current_configs": {
+                "deck_count": 0,
+                "bottom_card_count": 9
+            }
+        }),
+    )
+    .await;
+    let response = recv_until(&mut a, "canonical two-deck setting response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::SETTING as i64)
+    })
+    .await;
+    assert_eq!(response["code"], json!(WsResponseCode::OK as i32));
+    assert_eq!(response["data"]["current_configs"]["deck_count"], json!(0));
+    assert_eq!(
+        response["data"]["current_configs"]["bottom_card_count"],
+        json!(12),
+        "2-deck bottom count 9 must be canonicalized to an equal-hand value"
+    );
+    let broadcast = recv_until(&mut b, "canonical two-deck setting broadcast", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::SETTING as i64)
+    })
+    .await;
+    assert_eq!(
+        broadcast["data"]["current_configs"]["bottom_card_count"],
+        json!(12)
+    );
+
+    send_request(
+        &mut a,
+        Routes::SETTING as i32,
+        json!({
+            "current_configs": {
+                "deck_count": 1,
+                "bottom_card_count": 11
+            }
+        }),
+    )
+    .await;
+    let response = recv_until(&mut a, "canonical three-deck setting response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::SETTING as i64)
+    })
+    .await;
+    assert_eq!(response["code"], json!(WsResponseCode::OK as i32));
+    assert_eq!(response["data"]["current_configs"]["deck_count"], json!(1));
+    assert_eq!(
+        response["data"]["current_configs"]["bottom_card_count"],
+        json!(14),
+        "3-deck bottom count 11 must be canonicalized to an equal-hand value"
+    );
+    let broadcast = recv_until(&mut b, "canonical three-deck setting broadcast", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::SETTING as i64)
+    })
+    .await;
+    assert_eq!(
+        broadcast["data"]["current_configs"]["bottom_card_count"],
+        json!(14)
+    );
+}
+
+#[cfg(not(feature = "official"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn tractor_ws_keeps_concurrent_rooms_isolated() {
     let runtime =
         start_test_runtime("tractor-concurrent-rooms-test", Duration::from_secs(60)).await;

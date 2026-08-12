@@ -1675,6 +1675,42 @@ impl RoomService {
         self.rooms.get(room_key).map(|e| e.configs.clone())
     }
 
+    /// 在游戏专用规则校验后，覆盖房间配置并同步参数默认值。
+    ///
+    /// 游戏可以用它把相互依赖的设置规范化，再由通用 SETTING 路由统一回传
+    /// 给房主并广播给其他成员。调用方必须先完成自己的权限和游戏状态校验。
+    pub fn replace_room_configs(
+        &mut self,
+        room_key: &str,
+        configs: HashMap<String, i32>,
+    ) -> Result<(), String> {
+        let entry = self
+            .rooms
+            .get_mut(room_key)
+            .ok_or_else(|| "Room not found".to_owned())?;
+        if !entry.state.can_accept_players() {
+            return Err("Room settings are locked after the game starts".to_owned());
+        }
+        if configs
+            .keys()
+            .any(|key| !entry.param_descriptions.contains_key(key))
+        {
+            return Err("Unknown setting in replacement config".to_owned());
+        }
+        entry.configs = configs;
+        for (key, value) in &entry.configs {
+            if let Some(param) = entry.param_descriptions.get_mut(key) {
+                match param {
+                    share_type_public::GameParam::Range(range) => range.default = *value,
+                    share_type_public::GameParam::Enum(item) => {
+                        item.default = (*value).max(0) as usize
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// 返回当前维护的房间数量。
     pub fn room_count(&self) -> usize {
         self.rooms.len()

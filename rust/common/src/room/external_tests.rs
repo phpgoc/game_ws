@@ -257,6 +257,99 @@ fn room_settings_chat_ai_and_owner_swap_keep_the_common_contract() {
 }
 
 #[test]
+fn game_rules_can_atomically_replace_validated_room_configs_before_start() {
+    let mut service = RoomService::default();
+    join_member(
+        &mut service,
+        1,
+        "owner",
+        "replacement-room",
+        "owner-session",
+    );
+
+    let replacement = HashMap::from([
+        ("rounds".to_owned(), 3),
+        ("mode".to_owned(), 1),
+        ("settlement_time".to_owned(), 12),
+    ]);
+    service
+        .replace_room_configs("replacement-room", replacement.clone())
+        .expect("validated game settings can be canonicalized before start");
+    assert_eq!(
+        service.room_configs("replacement-room"),
+        Some(replacement.clone())
+    );
+
+    let entry = service
+        .rooms
+        .get("replacement-room")
+        .expect("replacement room exists");
+    match entry.param_descriptions.get("rounds") {
+        Some(GameParam::Range(range)) => {
+            assert_eq!((range.default, range.min, range.max), (3, 1, 4));
+        }
+        _ => panic!("rounds must remain a range setting"),
+    }
+    match entry.param_descriptions.get("mode") {
+        Some(GameParam::Enum(item)) => {
+            assert_eq!(item.default, 1);
+            assert_eq!(item.options, ["normal", "fast"]);
+        }
+        _ => panic!("mode must remain an enum setting"),
+    }
+    match entry.param_descriptions.get("settlement_time") {
+        Some(GameParam::Range(range)) => {
+            assert_eq!((range.default, range.min, range.max), (12, 1, 30));
+        }
+        _ => panic!("settlement_time must remain a range setting"),
+    }
+
+    let unknown = HashMap::from([
+        ("rounds".to_owned(), 4),
+        ("mode".to_owned(), 0),
+        ("settlement_time".to_owned(), 7),
+        ("unknown".to_owned(), 1),
+    ]);
+    assert!(
+        service
+            .replace_room_configs("replacement-room", unknown)
+            .is_err()
+    );
+    assert_eq!(
+        service.room_configs("replacement-room"),
+        Some(replacement.clone()),
+        "an invalid replacement must not partially mutate the room"
+    );
+
+    let common = service
+        .room_common_state("replacement-room")
+        .expect("room common state before game starts");
+    service.set_room_game_state(
+        "replacement-room",
+        Box::new(LockedGameState {
+            common: Arc::clone(&common),
+        }),
+    );
+    assert!(
+        service
+            .replace_room_configs(
+                "replacement-room",
+                HashMap::from([
+                    ("rounds".to_owned(), 2),
+                    ("mode".to_owned(), 0),
+                    ("settlement_time".to_owned(), 5),
+                ]),
+            )
+            .is_err()
+    );
+    assert_eq!(
+        service.room_configs("replacement-room"),
+        Some(replacement),
+        "running games must keep their existing configuration"
+    );
+}
+
+#[test]
 fn common_router_handles_unknown_routes_and_missing_room_state() {
     let mut service = RoomService::default();
     assert!(
