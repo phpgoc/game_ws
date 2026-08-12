@@ -167,6 +167,39 @@ async fn start_test_runtime(service_name: &'static str, timeout: Duration) -> Te
     }
 }
 
+#[cfg(not(feature = "official"))]
+async fn start_default_test_runtime(service_name: &'static str, timeout: Duration) -> TestRuntime {
+    let (stop_handle, stop_signal) = runtime_stop_channel();
+    let (ready_tx, ready_rx) = sync_channel(1);
+    let task = tokio::spawn(async move {
+        run_room_runtime_until_stopped_with_ready(
+            RuntimeConfig {
+                service_name,
+                listen_addr: "127.0.0.1:0".to_owned(),
+                idle_timeout: timeout,
+                heartbeat_interval: Duration::from_secs(5),
+            },
+            TractorGameHandler::default(),
+            stop_signal,
+            ready_tx,
+        )
+        .await
+        .expect("default tractor test runtime");
+    });
+    let stats = tokio::task::spawn_blocking(move || {
+        ready_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("default tractor test runtime readiness")
+    })
+    .await
+    .expect("read default tractor test runtime readiness");
+    TestRuntime {
+        url: format!("ws://{}", stats.listen_addr()),
+        stop_handle,
+        task,
+    }
+}
+
 async fn join(client: &mut Client, name: &str, password: &str) -> Value {
     send_request(
         client,
@@ -795,6 +828,132 @@ async fn tractor_server_accepts_only_its_own_game_id() {
     assert_eq!(accepted["code"], json!(WsResponseCode::JOINED as i32));
     assert_eq!(accepted["data"]["self_position"], json!(0));
     assert_eq!(accepted["data"]["current_configs"]["deck_count"], json!(0));
+}
+
+#[cfg(not(feature = "official"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn tractor_ws_exposes_only_twenty_to_forty_second_play_time() {
+    let runtime = start_default_test_runtime(
+        "tractor-production-timing-setting-test",
+        Duration::from_secs(45),
+    )
+    .await;
+    let url = runtime.url.clone();
+
+    let mut a = connect_client(&url).await;
+    let mut b = connect_client(&url).await;
+    let mut c = connect_client(&url).await;
+    let mut d = connect_client(&url).await;
+    let room = "tractor-production-timing-setting-room";
+    let owner_join = join(&mut a, "timing-a", room).await;
+    join(&mut b, "timing-b", room).await;
+    join(&mut c, "timing-c", room).await;
+    join(&mut d, "timing-d", room).await;
+
+    assert_eq!(
+        owner_join["data"]["current_configs"]["play_time"],
+        json!(30)
+    );
+    let current_configs = owner_join["data"]["current_configs"]
+        .as_object()
+        .expect("production tractor current configs");
+    let param_descriptions = owner_join["data"]["param_descriptions"]
+        .as_object()
+        .expect("production tractor parameter descriptions");
+    for internal in [
+        "first_deal_time",
+        "deal_time",
+        "ai_action_time",
+        "away_time",
+        "settlement_time",
+    ] {
+        assert!(
+            !current_configs.contains_key(internal),
+            "internal timing setting {internal} must not be exposed as a current config"
+        );
+        assert!(
+            !param_descriptions.contains_key(internal),
+            "internal timing setting {internal} must not be client-configurable"
+        );
+    }
+    assert!(param_descriptions.contains_key("play_time"));
+
+    for rejected in [19, 41] {
+        send_request(
+            &mut a,
+            Routes::SETTING as i32,
+            json!({ "current_configs": { "play_time": rejected } }),
+        )
+        .await;
+        let response = recv_until(&mut a, "rejected production play time", |value| {
+            value.get("route").and_then(Value::as_i64) == Some(Routes::SETTING as i64)
+        })
+        .await;
+        assert_eq!(
+            response["code"],
+            json!(WsResponseCode::ERROR_FORMAT as i32),
+            "production play time {rejected} must be rejected"
+        );
+    }
+
+    send_request(
+        &mut a,
+        Routes::SETTING as i32,
+        json!({ "current_configs": { "play_time": 20 } }),
+    )
+    .await;
+    let lower = recv_until(&mut a, "minimum production play time", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::SETTING as i64)
+    })
+    .await;
+    assert_eq!(lower["code"], json!(WsResponseCode::OK as i32));
+    assert_eq!(lower["data"]["current_configs"]["play_time"], json!(20));
+
+    send_request(
+        &mut a,
+        Routes::SETTING as i32,
+        json!({ "current_configs": { "play_time": 40 } }),
+    )
+    .await;
+    let upper = recv_until(&mut a, "maximum production play time", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::SETTING as i64)
+    })
+    .await;
+    assert_eq!(upper["code"], json!(WsResponseCode::OK as i32));
+    assert_eq!(upper["data"]["current_configs"]["play_time"], json!(40));
+
+    send_request(
+        &mut a,
+        Routes::SETTING as i32,
+        json!({ "current_configs": { "first_deal_time": 15_000 } }),
+    )
+    .await;
+    let internal = recv_until(&mut a, "internal production timing rejection", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::SETTING as i64)
+    })
+    .await;
+    assert_eq!(internal["code"], json!(WsResponseCode::ERROR_FORMAT as i32));
+
+    send_request(&mut a, Routes::START as i32, json!({})).await;
+    let started = recv_until(&mut a, "production timing start", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::START as i64)
+    })
+    .await;
+    assert_eq!(started["code"], json!(WsResponseCode::OK as i32));
+
+    let mut clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
+    let hands = collect_tractor_hands(&mut clients, 25).await;
+    assert!(hands.iter().all(|hand| hand.len() == 25));
+    let bury_snapshot = recv_until(&mut *clients[0], "production bottom window", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
+            && value["data"]["phase"] == json!(TractorPhase::Bury as i8)
+    })
+    .await;
+    assert_eq!(
+        bury_snapshot["data"]["turn_countdown"],
+        json!(120),
+        "the shared select/bury window must be three times the forty-second play time"
+    );
 }
 
 #[cfg(not(feature = "official"))]
