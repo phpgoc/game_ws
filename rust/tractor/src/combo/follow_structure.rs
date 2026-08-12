@@ -87,7 +87,21 @@ fn best_run_unit_choices(run_lengths: &[usize], cap: usize) -> Vec<usize> {
         .unwrap_or_else(|| vec![0; run_lengths.len()])
 }
 
-fn required_run_cards(
+pub(super) fn maximum_run_units(
+    cards: &[i32],
+    lead_suit: Option<i32>,
+    copies: usize,
+    cap: usize,
+    rules: &TractorRules,
+) -> usize {
+    let lengths = multiplicity_run_components(cards, lead_suit, copies, rules)
+        .iter()
+        .map(|component| component.len() / copies)
+        .collect::<Vec<_>>();
+    best_run_unit_choices(&lengths, cap).into_iter().sum()
+}
+
+pub(super) fn required_run_cards(
     cards: &[i32],
     lead_suit: Option<i32>,
     copies: usize,

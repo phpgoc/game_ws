@@ -420,7 +420,7 @@ fn multiplicity_run_unit_count(cards: &[i32], copies: usize, rules: &TractorRule
 #[path = "combo/follow_structure.rs"]
 mod follow_structure;
 
-use follow_structure::required_throw_structure;
+use follow_structure::{maximum_run_units, required_run_cards, required_throw_structure};
 
 fn longest_multiplicity_run(
     cards: &[i32],
@@ -817,8 +817,8 @@ pub fn follow_is_legal(hand: &[i32], cards: &[i32], lead: &Combo, rules: &Tracto
             return false;
         }
         ComboKind::Tractor(required_units)
-            if longest_multiplicity_run(hand, lead_suit, 2, rules) >= required_units
-                && longest_multiplicity_run(cards, lead_suit, 2, rules) < required_units =>
+            if maximum_run_units(cards, lead_suit, 2, required_units, rules)
+                < maximum_run_units(hand, lead_suit, 2, required_units, rules) =>
         {
             return false;
         }
@@ -977,15 +977,12 @@ pub fn forced_follow(hand: &[i32], lead: &Combo, rules: &TractorRules) -> Option
             lead_len,
             rules,
         ),
-        ComboKind::Tractor(pair_count) => take_best_consecutive_units(
-            &mut chosen,
-            &mut remaining,
-            lead_suit,
-            2,
-            pair_count,
-            lead_len,
-            rules,
-        ),
+        ComboKind::Tractor(pair_count) => {
+            for card in required_run_cards(&remaining, lead_suit, 2, pair_count, rules) {
+                take_card(&mut remaining, card);
+                chosen.push(card);
+            }
+        }
         ComboKind::Titanic(triple_count) => {
             match titanic_follow_priority(&remaining, lead_suit, rules) {
                 7 => take_best_consecutive_units(

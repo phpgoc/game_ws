@@ -432,6 +432,34 @@ fn follower_with_a_titanic_cannot_replace_it_with_non_consecutive_triples() {
 }
 
 #[test]
+fn long_tractor_follow_preserves_the_maximum_number_of_run_units() {
+    let rules = rules(2);
+    let lead =
+        combo::classify(&[2, 102, 3, 103, 4, 104, 5, 105], &rules).expect("four-pair tractor lead");
+    let hand = vec![6, 106, 7, 107, 8, 108, 10, 110, 11, 111];
+    let shortened_second_run = vec![6, 106, 7, 107, 8, 108, 10, 110];
+    let two_complete_runs = vec![6, 106, 7, 107, 10, 110, 11, 111];
+
+    assert!(
+        !combo::follow_is_legal(&hand, &shortened_second_run, &lead, &rules),
+        "a three-pair run cannot replace two complete two-pair runs"
+    );
+    assert!(combo::follow_is_legal(
+        &hand,
+        &two_complete_runs,
+        &lead,
+        &rules
+    ));
+
+    let forced = combo::forced_follow(&hand, &lead, &rules).expect("automatic long tractor follow");
+    assert!(combo::follow_is_legal(&hand, &forced, &lead, &rules));
+    assert_eq!(
+        combo::classify(&forced, &rules).map(|combo| combo.kind),
+        Some(combo::ComboKind::Throw { cards: 8, pairs: 4 })
+    );
+}
+
+#[test]
 fn follower_with_a_three_triple_titanic_cannot_break_it_into_a_shorter_run() {
     let three_triple_lead = vec![2, 102, 202, 3, 103, 203, 4, 104, 204];
     let complete_follow = vec![5, 105, 205, 6, 106, 206, 7, 107, 207];
