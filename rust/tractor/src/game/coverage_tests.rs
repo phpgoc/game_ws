@@ -270,6 +270,7 @@ fn request_handlers_broadcast_successful_bury_declaration_selection_and_play() {
         state.dealer_position = 0;
         state.rules.bottom_card_count = 2;
         state.hands.insert(0, vec![1, 2, 3]);
+        state.set_turn_countdown(1);
     }
     assert_eq!(
         response_code(&handler.handle_bury_bottom(&mut room, 1, json!({ "cards": [1, 2] }))),
@@ -336,12 +337,80 @@ fn request_handlers_broadcast_successful_bury_declaration_selection_and_play() {
         state.phase = TractorPhase::Play;
         state.current_position = 0;
         state.hands.insert(0, vec![1]);
+        state.set_turn_countdown(1);
     }
     assert_eq!(
         response_code(&handler.handle_play(&mut room, 1, json!({ "cards": [1] }))),
         WsResponseCode::OK
     );
     assert_eq!(state.lock().unwrap().current_trick.len(), 1);
+}
+
+#[test]
+fn expired_operation_window_rejects_select_trump_bury_and_play_without_mutation() {
+    let (handler, mut room) = ready_room();
+    assert_eq!(
+        response_code(&handler.handle_start(&mut room, 1)),
+        WsResponseCode::OK
+    );
+    let state = handler.state(ROOM_KEY).expect("running tractor state");
+    {
+        let mut state = state.lock().unwrap();
+        state.phase = TractorPhase::Bury;
+        state.round_index = 1;
+        state.dealer_position = 0;
+        state.rules.trump_suit = None;
+        state.declaration = None;
+        state.set_turn_countdown(0);
+    }
+    assert_eq!(
+        response_code(&handler.handle_select_trump(&mut room, 1, select_spade_request())),
+        WsResponseCode::NO_PERMISSION
+    );
+    {
+        let state = state.lock().unwrap();
+        assert_eq!(state.rules.trump_suit, None);
+        assert!(state.declaration.is_none());
+        assert_eq!(state.phase, TractorPhase::Bury);
+    }
+
+    {
+        let mut state = state.lock().unwrap();
+        state.round_index = 0;
+        state.rules.bottom_card_count = 2;
+        state.hands.insert(0, vec![1, 2, 3]);
+        state.bottom_cards = vec![53, 54];
+        state.set_turn_countdown(0);
+    }
+    assert_eq!(
+        response_code(&handler.handle_bury_bottom(&mut room, 1, json!({ "cards": [1, 2] }))),
+        WsResponseCode::NO_PERMISSION
+    );
+    {
+        let state = state.lock().unwrap();
+        assert_eq!(state.hands.get(&0), Some(&vec![1, 2, 3]));
+        assert_eq!(state.bottom_cards, vec![53, 54]);
+        assert_eq!(state.phase, TractorPhase::Bury);
+    }
+
+    {
+        let mut state = state.lock().unwrap();
+        state.phase = TractorPhase::Play;
+        state.current_position = 0;
+        state.hands.insert(0, vec![1]);
+        state.current_trick.clear();
+        state.set_turn_countdown(0);
+    }
+    assert_eq!(
+        response_code(&handler.handle_play(&mut room, 1, json!({ "cards": [1] }))),
+        WsResponseCode::NO_PERMISSION
+    );
+    {
+        let state = state.lock().unwrap();
+        assert_eq!(state.hands.get(&0), Some(&vec![1]));
+        assert!(state.current_trick.is_empty());
+        assert_eq!(state.phase, TractorPhase::Play);
+    }
 }
 
 #[test]

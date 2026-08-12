@@ -123,6 +123,13 @@ impl TractorGameHandler {
         let configs = room_service.room_configs(&room_key).unwrap_or_default();
         let (event, hand, snapshot) = {
             let mut state = state.lock().unwrap();
+            if state.base.lock().unwrap().turn_countdown == 0 {
+                return room_service.error_response(
+                    session_id,
+                    route,
+                    WsResponseCode::NO_PERMISSION,
+                );
+            }
             if state.bury_bottom(position, payload.cards).is_err() {
                 return room_service.error_response(
                     session_id,
@@ -253,6 +260,13 @@ impl TractorGameHandler {
         let configs = room_service.room_configs(&room_key).unwrap_or_default();
         let (play_event, snapshot, finished) = {
             let mut s = state.lock().unwrap();
+            if s.base.lock().unwrap().turn_countdown == 0 {
+                return room_service.error_response(
+                    session_id,
+                    Routes::PLAY as i32,
+                    WsResponseCode::NO_PERMISSION,
+                );
+            }
             let name = s.player_name(position);
             let Ok(played) = s.play_cards(position, name.clone(), payload.cards) else {
                 return room_service.error_response(
@@ -344,6 +358,13 @@ impl TractorGameHandler {
         };
         let (declaration, snapshot) = {
             let mut state = state.lock().unwrap();
+            if state.base.lock().unwrap().turn_countdown == 0 {
+                return room_service.error_response(
+                    session_id,
+                    route,
+                    WsResponseCode::NO_PERMISSION,
+                );
+            }
             let Ok(declaration) = state.select_dealer_trump(position, payload.trump_suit) else {
                 return room_service.error_response(
                     session_id,
@@ -840,6 +861,7 @@ mod tests {
             s.hands.insert(3, vec![6]);
             s.bottom_cards = vec![4, 9, 12, 109, 112, 209, 212, 309];
             s.current_position = 0;
+            s.set_turn_countdown(30);
         }
 
         for (session_id, card) in [(1_u64, 4), (2, 13), (3, 5), (4, 6)] {
