@@ -30,6 +30,16 @@ impl ScoreOutcome {
     }
 }
 
+/// 标准四人升级玩法中，按上一局结果确定下一局庄家。
+///
+/// 庄家方过庄时由庄家的对家接庄；闲家上台时由庄家的下家接庄。
+pub const fn next_four_player_dealer(current_dealer: usize, side: ScoreSide) -> usize {
+    match side {
+        ScoreSide::Defending => (current_dealer + 2) % 4,
+        ScoreSide::Attacking => (current_dealer + 1) % 4,
+    }
+}
+
 /// 可配置的标准分数进阶表。
 ///
 /// `attacking_win_score` 是闲家翻庄的分数线，`score_per_level` 是超出或

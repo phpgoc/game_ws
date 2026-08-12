@@ -13,7 +13,7 @@ use share_type_public::{
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use upgrade::combo;
 use upgrade::game::UpgradeGameHandler;
-use upgrade_common::{Card, Rank, ScoreProgression};
+use upgrade_common::{Card, Rank, ScoreProgression, ScoreSide, next_four_player_dealer};
 use ws_common::{
     ClientRequest, Dispatch, GameHandler, GameState, JoinAuthorization, JoinAuthorizationFuture,
     RoomService, RuntimeConfig, RuntimeStopHandle, SessionId, SessionSenders,
@@ -1944,9 +1944,12 @@ async fn upgrade_ws_finishes_a_multi_round_match_at_ace() {
             .iter()
             .map(|position| *position as usize)
             .collect::<Vec<_>>();
-        if !winners.contains(&dealer_position) {
-            dealer_position = winners[0];
-        }
+        let side = if winners.contains(&dealer_position) {
+            ScoreSide::Defending
+        } else {
+            ScoreSide::Attacking
+        };
+        dealer_position = next_four_player_dealer(dealer_position, side);
     }
 
     let final_settlement =

@@ -364,6 +364,7 @@ fn settlement_can_start_the_next_round_and_raise_target_rank() {
     assert_eq!(state.round_index, 1);
     assert_eq!(state.rules.target_rank, Rank::Five);
     assert_eq!(state.rules.trump_suit, None);
+    assert_eq!(state.dealer_position, 2, "庄家方过庄后应由庄家对家接庄");
 }
 
 #[test]

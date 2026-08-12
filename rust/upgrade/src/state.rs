@@ -10,7 +10,8 @@ use share_type_public::{
     WsUpgradeTrumpDeclaration,
 };
 use upgrade_common::{
-    Card, Rank, ScoreOutcome, ScoreProgression, ScoreSide, Suit, level_rank_path, next_level_rank,
+    Card, Rank, ScoreOutcome, ScoreProgression, ScoreSide, Suit, level_rank_path,
+    next_four_player_dealer, next_level_rank,
 };
 use ws_common::{CommonGameState, GameState};
 
@@ -812,12 +813,11 @@ impl UpgradeGameState {
         let Some(next_rank) = self.next_target_rank() else {
             return Ok(false);
         };
+        let outcome = self.score_outcome();
         let winners = self.winner_positions_usize();
         let winning_team = winners[0] % 2;
         self.team_target_ranks[winning_team] = next_rank;
-        if !winners.contains(&self.dealer_position) {
-            self.dealer_position = winners[0];
-        }
+        self.dealer_position = next_four_player_dealer(self.dealer_position, outcome.side);
         self.round_index += 1;
         self.rules.target_rank = next_rank;
         self.rules.trump_suit = None;

@@ -8,7 +8,9 @@ use share_type_public::{
     TractorPhase, TractorRank, TractorSuit, WsTractorFailedThrowEvent, WsTractorPlayedCards,
     WsTractorPlayerHandCount, WsTractorTableSnapshotEvent, WsTractorTrumpDeclaration,
 };
-use upgrade_common::{Card, Rank, ScoreOutcome, ScoreProgression, next_level_rank};
+use upgrade_common::{
+    Card, Rank, ScoreOutcome, ScoreProgression, next_four_player_dealer, next_level_rank,
+};
 use ws_common::{CommonGameState, GameState};
 
 use crate::combo::{self, Combo};
@@ -307,14 +309,11 @@ impl TractorGameState {
         let Some(next_rank) = self.next_target_rank() else {
             return Ok(false);
         };
+        let outcome = self.score_outcome();
         let winners = self.winner_positions_usize();
         let winning_team = winners[0] % 2;
         self.team_target_ranks[winning_team] = next_rank;
-        if !winners.contains(&self.dealer_position)
-            && let Some(next_dealer) = winners.first().copied()
-        {
-            self.dealer_position = next_dealer;
-        }
+        self.dealer_position = next_four_player_dealer(self.dealer_position, outcome.side);
         self.rules.target_rank = next_rank;
         self.round_index += 1;
         self.deal_current_round_with_rng(rng)?;

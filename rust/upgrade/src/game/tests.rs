@@ -114,10 +114,20 @@ fn owner_can_start_the_next_round_after_settlement() {
         }
         state.set_turn_countdown(90);
     }
-    let bottom = state.lock().unwrap().bottom_cards.clone();
+    let (dealer_position, bottom) = {
+        let state = state.lock().unwrap();
+        (state.dealer_position, state.bottom_cards.clone())
+    };
+    let dealer_session = room
+        .room_members("upgrade-room")
+        .into_iter()
+        .find_map(|(session_id, _, position, _)| {
+            (position == dealer_position).then_some(session_id)
+        })
+        .expect("later-round dealer session");
     let _ = handler.handle_select_trump(
         &mut room,
-        1,
+        dealer_session,
         json!({ "trump_suit": share_type_public::UpgradeSuit::HEART as i8 }),
     );
     assert_eq!(
@@ -128,7 +138,7 @@ fn owner_can_start_the_next_round_after_settlement() {
         state.lock().unwrap().base.lock().unwrap().turn_countdown,
         90
     );
-    let _ = handler.handle_bury_bottom(&mut room, 1, json!({ "cards": bottom }));
+    let _ = handler.handle_bury_bottom(&mut room, dealer_session, json!({ "cards": bottom }));
     assert_eq!(
         state.lock().unwrap().phase,
         share_type_public::UpgradePhase::Play

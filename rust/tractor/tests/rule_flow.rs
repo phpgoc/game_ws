@@ -128,6 +128,33 @@ fn later_round_dealer_can_select_trump_only_once_before_burying() {
 }
 
 #[test]
+fn settlement_rotates_the_dealer_by_the_standard_four_player_rule() {
+    let mut defenders_hold = state_with_hands(rules(2), Vec::new(), HashMap::new());
+    defenders_hold.phase = TractorPhase::Settlement;
+    defenders_hold.dealer_position = 0;
+    defenders_hold.team_target_ranks = [TractorRank::THREE; 2];
+    defenders_hold.collected_scores.clear();
+
+    assert!(defenders_hold.advance_after_settlement().unwrap());
+    assert_eq!(
+        defenders_hold.dealer_position, 2,
+        "庄家方过庄后应由庄家对家接庄"
+    );
+
+    let mut attackers_take_over = state_with_hands(rules(2), Vec::new(), HashMap::new());
+    attackers_take_over.phase = TractorPhase::Settlement;
+    attackers_take_over.dealer_position = 0;
+    attackers_take_over.team_target_ranks = [TractorRank::THREE; 2];
+    attackers_take_over.collected_scores = HashMap::from([(1, 80)]);
+
+    assert!(attackers_take_over.advance_after_settlement().unwrap());
+    assert_eq!(
+        attackers_take_over.dealer_position, 1,
+        "闲家上台后应由原庄家下家接庄"
+    );
+}
+
+#[test]
 fn successful_throw_uses_the_largest_component_for_bottom_score() {
     let state_hands = HashMap::from([
         (0, vec![2, 102, 202, 12, 112, 13]),

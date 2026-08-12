@@ -58,6 +58,14 @@ fn score_progression_rejects_non_positive_configuration() {
 }
 
 #[test]
+fn standard_four_player_dealer_rotates_to_partner_or_next_seat() {
+    assert_eq!(next_four_player_dealer(0, ScoreSide::Defending), 2);
+    assert_eq!(next_four_player_dealer(2, ScoreSide::Defending), 0);
+    assert_eq!(next_four_player_dealer(0, ScoreSide::Attacking), 1);
+    assert_eq!(next_four_player_dealer(3, ScoreSide::Attacking), 0);
+}
+
+#[test]
 fn level_path_supports_standard_and_compact_games() {
     assert_eq!(
         level_rank_path(Rank::Seven, &[]),
