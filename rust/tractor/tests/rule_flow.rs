@@ -108,6 +108,26 @@ fn pair_follow_cannot_be_split_when_the_follower_has_the_pair() {
 }
 
 #[test]
+fn later_round_dealer_can_select_trump_only_once_before_burying() {
+    let mut state = state_with_hands(rules(2), Vec::new(), HashMap::new());
+    state.phase = TractorPhase::Bury;
+    state.round_index = 1;
+    state.dealer_position = 0;
+
+    state
+        .select_dealer_trump(0, TractorSuit::SPADE)
+        .expect("dealer selects trump in the later-round bottom window");
+    assert_eq!(state.rules.trump_suit, Some(TractorSuit::SPADE));
+    assert_eq!(
+        state
+            .select_dealer_trump(0, TractorSuit::HEART)
+            .expect_err("a later selection must not change the established trump"),
+        "dealer trump is already selected"
+    );
+    assert_eq!(state.rules.trump_suit, Some(TractorSuit::SPADE));
+}
+
+#[test]
 fn successful_throw_uses_the_largest_component_for_bottom_score() {
     let state_hands = HashMap::from([
         (0, vec![2, 102, 202, 12, 112, 13]),

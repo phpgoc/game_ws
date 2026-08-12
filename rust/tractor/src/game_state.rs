@@ -1066,6 +1066,9 @@ impl TractorGameState {
         if self.round_index == 0 || self.phase != TractorPhase::Bury {
             return Err("dealer selects trump only in a later-round bottom operation");
         }
+        if self.rules.trump_suit.is_some() {
+            return Err("dealer trump is already selected");
+        }
         if position != self.dealer_position {
             return Err("only dealer selects trump");
         }
