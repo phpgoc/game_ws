@@ -12,7 +12,7 @@ use ws_common::{
 
 use crate::{
     game::StateRegistry,
-    game_setting::{KEY_DEAL_TIME, KEY_FIRST_DEAL_TIME, KEY_PLAY_TIME},
+    game_setting::{KEY_AWAY_TIME, KEY_DEAL_TIME, KEY_FIRST_DEAL_TIME, KEY_PLAY_TIME},
     state::{PLAYER_COUNT, UpgradeStateHandle},
 };
 
@@ -53,7 +53,8 @@ pub fn start_upgrade_game_loop(
             }
             room.room_configs(&room_key).unwrap_or_default()
         };
-        let play_time = configs.get("play_time").copied().unwrap_or(30).max(1) as u32;
+        let play_time = configs.get(KEY_PLAY_TIME).copied().unwrap_or(30).max(1) as u32;
+        let away_time = configs.get(KEY_AWAY_TIME).copied().unwrap_or(5).max(1) as u32;
         loop {
             let (stop_requested, paused, phase) = {
                 let guard = state.lock().unwrap();
@@ -98,8 +99,14 @@ pub fn start_upgrade_game_loop(
                     deliver(dispatch, &senders).await;
                 }
                 UpgradePhase::Play => {
-                    let dispatch =
-                        timeout_play_dispatch(&room_key, &state, &room_service, play_time).await;
+                    let dispatch = timeout_play_dispatch(
+                        &room_key,
+                        &state,
+                        &room_service,
+                        play_time,
+                        away_time,
+                    )
+                    .await;
                     deliver(dispatch, &senders).await;
                 }
                 UpgradePhase::Settlement => {
@@ -418,6 +425,7 @@ async fn timeout_play_dispatch(
     state: &UpgradeStateHandle,
     room_service: &Arc<Mutex<RoomService>>,
     play_time: u32,
+    away_time: u32,
 ) -> Dispatch {
     let mut dispatch = Dispatch::default();
     let member_timeout_position =
@@ -428,7 +436,24 @@ async fn timeout_play_dispatch(
         let position = guard.current_position;
         let controlled = is_ai_controlled_position(&guard, position);
         if !controlled && guard.base.lock().unwrap().turn_countdown > 0 {
-            let countdown = guard.base.lock().unwrap().turn_countdown.saturating_sub(1);
+            // A disconnect after the turn started must converge to the short
+            // away window. Bury is handled separately and remains complete.
+            let inactive = {
+                let base = guard.base.lock().unwrap();
+                base.is_away(position) || base.is_disconnected(position)
+            };
+            let limit = if inactive {
+                away_time.max(1)
+            } else {
+                play_time.max(1)
+            };
+            let countdown = guard
+                .base
+                .lock()
+                .unwrap()
+                .turn_countdown
+                .min(limit)
+                .saturating_sub(1);
             guard.set_turn_countdown(countdown);
             None
         } else {

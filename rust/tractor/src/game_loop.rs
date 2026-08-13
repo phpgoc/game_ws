@@ -175,7 +175,13 @@ fn build_auto_dispatch(
         let position = s.current_position;
         let mut controlled = s.is_ai_controlled_position(position);
         if !controlled && s.base.lock().unwrap().turn_countdown > 0 {
-            let next = s.base.lock().unwrap().turn_countdown.saturating_sub(1);
+            // A player may disconnect after the turn has already started.
+            // Converge the remaining Play window to the short away window;
+            // Bury keeps its separate full three-times-play window.
+            let countdown = s.base.lock().unwrap().turn_countdown;
+            let next = countdown
+                .min(current_play_time(configs, &s))
+                .saturating_sub(1);
             s.set_turn_countdown(next);
             return dispatch;
         }

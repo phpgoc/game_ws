@@ -215,6 +215,27 @@ fn auto_dispatch_broadcasts_settlement_when_its_play_finishes_every_hand() {
 }
 
 #[test]
+fn play_countdown_converges_when_current_human_disconnects_after_turn_started() {
+    let (room, common) = room_with_players();
+    let state = state_handle(common, TractorPhase::Play);
+    {
+        let mut guard = state.lock().unwrap();
+        guard.hands = HashMap::from([(0, vec![1]), (1, vec![14]), (2, vec![27]), (3, vec![40])]);
+        guard.set_turn_countdown(30);
+        guard.base.lock().unwrap().mark_disconnected(0);
+    }
+    let configs = HashMap::from([
+        (KEY_AWAY_TIME.to_owned(), 5),
+        (KEY_PLAY_TIME.to_owned(), 30),
+    ]);
+
+    let dispatch = build_auto_dispatch(ROOM_KEY, &room, &state, &configs, None);
+
+    assert!(dispatch.messages.is_empty());
+    assert_eq!(state.lock().unwrap().base.lock().unwrap().turn_countdown, 4);
+}
+
+#[test]
 fn deal_dispatch_sends_private_deal_and_bottom_cards_then_exposes_the_snapshot() {
     let (room, common) = room_with_players();
     let state = state_handle(common, TractorPhase::Deal);

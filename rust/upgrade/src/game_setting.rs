@@ -8,6 +8,8 @@ use crate::UpgradeDeckCount;
 pub const KEY_DECK_COUNT: &str = "deck_count";
 pub const KEY_DEAL_TIME: &str = "deal_time";
 pub const KEY_FIRST_DEAL_TIME: &str = "first_deal_time";
+/// Internal reconnect grace used by the game loop; it is not a room setting.
+pub const KEY_AWAY_TIME: &str = "away_time";
 pub const KEY_PLAY_TIME: &str = "play_time";
 pub const KEY_REMOVED_RANK_COUNT: &str = "removed_rank_count";
 pub const KEY_ATTACKING_WIN_SCORE: &str = "attacking_win_score";

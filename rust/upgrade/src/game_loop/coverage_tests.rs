@@ -10,7 +10,7 @@ use share_type_public::{
 use tokio::sync::Mutex as AsyncMutex;
 use upgrade_common::Suit;
 use ws_common::{
-    ClientRequest, CommonGameState, OutboundPayload, RoomService, SessionSenders,
+    ClientRequest, CommonGameState, GameState, OutboundPayload, RoomService, SessionSenders,
     session_sender_channel,
 };
 
@@ -210,7 +210,7 @@ async fn timeout_play_finishes_the_last_trick_and_broadcasts_settlement() {
 
     for turn in 0..4 {
         state.lock().unwrap().base.lock().unwrap().turn_countdown = 0;
-        let dispatch = timeout_play_dispatch(ROOM_KEY, &state, &room, 30).await;
+        let dispatch = timeout_play_dispatch(ROOM_KEY, &state, &room, 30, 5).await;
         assert_eq!(event_payloads(&dispatch, WsCode::PLAY as i32).len(), 4);
         assert_eq!(
             event_payloads(&dispatch, WsCode::GAME_OVER as i32).len(),
@@ -218,6 +218,24 @@ async fn timeout_play_finishes_the_last_trick_and_broadcasts_settlement() {
         );
     }
     assert_eq!(state.lock().unwrap().phase, UpgradePhase::Settlement);
+}
+
+#[tokio::test]
+async fn play_countdown_converges_when_current_human_disconnects_after_turn_started() {
+    let (room, common) = room_with_players();
+    let room = Arc::new(AsyncMutex::new(room));
+    let state = state_handle(common, UpgradePhase::Play);
+    {
+        let mut guard = state.lock().unwrap();
+        guard.bottom_cards.clear();
+        guard.hands = HashMap::from([(0, vec![1]), (1, vec![14]), (2, vec![27]), (3, vec![40])]);
+        guard.set_turn_countdown(30);
+        guard.base.lock().unwrap().mark_disconnected(0);
+    }
+    let dispatch = timeout_play_dispatch(ROOM_KEY, &state, &room, 30, 5).await;
+
+    assert!(dispatch.messages.is_empty());
+    assert_eq!(state.lock().unwrap().base.lock().unwrap().turn_countdown, 4);
 }
 
 #[tokio::test]
@@ -234,7 +252,7 @@ async fn ai_takeover_play_ignores_the_human_countdown() {
         base.turn_countdown = 30;
     }
 
-    let dispatch = timeout_play_dispatch(ROOM_KEY, &state, &room, 30).await;
+    let dispatch = timeout_play_dispatch(ROOM_KEY, &state, &room, 30, 5).await;
 
     let state = state.lock().unwrap();
     assert_eq!(state.current_trick.len(), 1);
@@ -256,7 +274,7 @@ async fn member_human_play_timeout_marks_away_and_broadcasts_ai_takeover() {
         state.base.lock().unwrap().turn_countdown = 0;
     }
 
-    let dispatch = timeout_play_dispatch(ROOM_KEY, &state, &room, 30).await;
+    let dispatch = timeout_play_dispatch(ROOM_KEY, &state, &room, 30, 5).await;
 
     let state = state.lock().unwrap();
     let base = state.base.lock().unwrap();
