@@ -166,6 +166,41 @@ fn request_handlers_require_a_running_game_and_reject_wrong_phase_actions() {
 }
 
 #[test]
+fn away_human_cannot_send_a_manual_play_until_back() {
+    let (handler, mut room) = ready_room();
+    assert_eq!(
+        response_code(&handler.handle_start(&mut room, 1)),
+        WsResponseCode::OK
+    );
+    let state = handler.state(ROOM_KEY).expect("started upgrade state");
+    {
+        let mut state = state.lock().unwrap();
+        state.phase = UpgradePhase::Play;
+        state.current_position = 0;
+        state.hands = std::collections::HashMap::from([
+            (0, vec![1]),
+            (1, vec![14]),
+            (2, vec![27]),
+            (3, vec![40]),
+        ]);
+        state.set_turn_countdown(30);
+        state.base.lock().unwrap().mark_away(0);
+    }
+
+    let rejected = handler.handle_play(&mut room, 1, json!({ "cards": [1] }));
+    assert_eq!(response_code(&rejected), WsResponseCode::NO_PERMISSION);
+    assert_eq!(state.lock().unwrap().private_hand(0), vec![1]);
+
+    let back_request = ClientRequest {
+        route: Routes::BACK as i32,
+        data: Value::Null,
+    };
+    room.handle_common_request(1, &back_request, GameId::UPGRADE, build_upgrade_settings);
+    let accepted = handler.handle_play(&mut room, 1, json!({ "cards": [1] }));
+    assert_eq!(response_code(&accepted), WsResponseCode::OK);
+}
+
+#[test]
 fn rules_conversion_and_state_adapter_keep_the_upgrade_contract() {
     let configs = std::collections::HashMap::from([
         (KEY_ATTACKING_WIN_SCORE.to_owned(), -20),

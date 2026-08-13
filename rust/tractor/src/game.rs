@@ -161,6 +161,16 @@ impl TractorGameHandler {
         (is_running && Arc::ptr_eq(&state_common, &room_common)).then_some(state)
     }
 
+    /// A human seat that is away or currently AI-controlled must not race the
+    /// game loop by sending a stale manual action. `BACK` clears these flags.
+    fn human_action_allowed(state: &TractorStateHandle, position: usize) -> bool {
+        let state = state.lock().unwrap();
+        let base = state.base.lock().unwrap();
+        !base.is_away(position)
+            && !base.is_ai_position(position)
+            && !base.is_ai_takeover_position(position)
+    }
+
     fn handle_bury_bottom(
         &self,
         room_service: &mut RoomService,
@@ -180,6 +190,9 @@ impl TractorGameHandler {
         let Some(state) = self.current_state(room_service, &room_key) else {
             return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
         };
+        if !Self::human_action_allowed(&state, position) {
+            return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
+        }
         let configs = room_service.room_configs(&room_key).unwrap_or_default();
         let (event, hand, snapshot) = {
             let mut state = state.lock().unwrap();
@@ -254,6 +267,9 @@ impl TractorGameHandler {
         let Some(state) = self.current_state(room_service, &room_key) else {
             return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
         };
+        if !Self::human_action_allowed(&state, position) {
+            return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
+        }
         let (declaration, snapshot) = {
             let mut state = state.lock().unwrap();
             let Ok(declaration) = state.declare_trump(position, payload.cards) else {
@@ -316,6 +332,13 @@ impl TractorGameHandler {
                 WsResponseCode::NO_PERMISSION,
             );
         };
+        if !Self::human_action_allowed(&state, position) {
+            return room_service.error_response(
+                session_id,
+                Routes::PLAY as i32,
+                WsResponseCode::NO_PERMISSION,
+            );
+        }
 
         let configs = room_service.room_configs(&room_key).unwrap_or_default();
         let (play_event, snapshot, finished) = {
@@ -418,6 +441,9 @@ impl TractorGameHandler {
         let Some(state) = self.current_state(room_service, &room_key) else {
             return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
         };
+        if !Self::human_action_allowed(&state, position) {
+            return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
+        }
         let (declaration, snapshot) = {
             let mut state = state.lock().unwrap();
             if state.base.lock().unwrap().turn_countdown == 0 {
@@ -946,6 +972,58 @@ mod tests {
                     &message.payload,
                     OutboundPayload::Event(event) if event.code == WsCode::GAME_OVER as i32
                 )
+        }));
+    }
+
+    #[test]
+    fn away_human_cannot_send_a_manual_play_until_back() {
+        let mut handler = TractorGameHandler::default();
+        let mut room = RoomService::default();
+        for session_id in 1..=4 {
+            join_with_hook(
+                &mut handler,
+                &mut room,
+                session_id,
+                &format!("u{session_id}"),
+            );
+        }
+        handler.handle_start(&mut room, 1);
+        let state = handler.state("room").expect("tractor state");
+        {
+            let mut state = state.lock().unwrap();
+            state.phase = share_type_public::TractorPhase::Play;
+            state.current_position = 0;
+            state.hands = HashMap::from([(0, vec![4]), (1, vec![13]), (2, vec![5]), (3, vec![6])]);
+            state.set_turn_countdown(30);
+            state.base.lock().unwrap().mark_away(0);
+        }
+
+        let rejected = handler.handle_play(&mut room, 1, serde_json::json!({ "cards": [4] }));
+        assert!(rejected.messages.iter().any(|message| {
+            matches!(
+                &message.payload,
+                OutboundPayload::Response(RequestResponse::WithoutData(response))
+                    if response.route == Routes::PLAY as i32
+                        && response.code as i32 == WsResponseCode::NO_PERMISSION as i32
+            )
+        }));
+        assert_eq!(state.lock().unwrap().hands[&0], vec![4]);
+
+        let back_request = ClientRequest {
+            route: Routes::BACK as i32,
+            data: Value::Null,
+        };
+        room.handle_common_request(1, &back_request, handler.game_id(), || {
+            handler.build_room_settings()
+        });
+        let accepted = handler.handle_play(&mut room, 1, serde_json::json!({ "cards": [4] }));
+        assert!(accepted.messages.iter().any(|message| {
+            matches!(
+                &message.payload,
+                OutboundPayload::Response(RequestResponse::WithoutData(response))
+                    if response.route == Routes::PLAY as i32
+                        && response.code as i32 == WsResponseCode::OK as i32
+            )
         }));
     }
 

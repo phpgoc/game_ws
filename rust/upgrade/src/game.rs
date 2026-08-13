@@ -102,6 +102,16 @@ impl UpgradeGameHandler {
         (running && Arc::ptr_eq(&state_common, &room_common)).then_some(state)
     }
 
+    /// A human seat that is away or currently AI-controlled must not race the
+    /// game loop by sending a stale manual action. `BACK` clears these flags.
+    fn human_action_allowed(state: &UpgradeStateHandle, position: usize) -> bool {
+        let state = state.lock().unwrap();
+        let base = state.base.lock().unwrap();
+        !base.is_away(position)
+            && !base.is_ai_position(position)
+            && !base.is_ai_takeover_position(position)
+    }
+
     fn push_private_event<T: serde::Serialize>(
         dispatch: &mut Dispatch,
         recipient: SessionId,
@@ -260,6 +270,9 @@ impl UpgradeGameHandler {
         let Some(state) = self.current_state(room_service, &room_key) else {
             return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
         };
+        if !Self::human_action_allowed(&state, position) {
+            return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
+        }
         let play_time = Self::play_time(&room_service.room_configs(&room_key).unwrap_or_default());
         let result = {
             let mut state_guard = state.lock().unwrap();
@@ -326,6 +339,9 @@ impl UpgradeGameHandler {
         let Some(state) = self.current_state(room_service, &room_key) else {
             return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
         };
+        if !Self::human_action_allowed(&state, position) {
+            return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
+        }
         let result = {
             let mut state_guard = state.lock().unwrap();
             state_guard.select_trump(position, request.trump_suit)
@@ -364,6 +380,9 @@ impl UpgradeGameHandler {
         let Some(state) = self.current_state(room_service, &room_key) else {
             return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
         };
+        if !Self::human_action_allowed(&state, position) {
+            return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
+        }
         let declaration = match state.lock().unwrap().declare_trump(position, request.cards) {
             Ok(declaration) => declaration,
             Err(_) => {
@@ -404,6 +423,9 @@ impl UpgradeGameHandler {
         let Some(state) = self.current_state(room_service, &room_key) else {
             return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
         };
+        if !Self::human_action_allowed(&state, position) {
+            return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
+        }
         let play_time = Self::play_time(&room_service.room_configs(&room_key).unwrap_or_default());
         let (resolution, event, snapshot, settlement) = {
             let mut state_guard = state.lock().unwrap();
