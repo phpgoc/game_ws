@@ -331,6 +331,7 @@ struct FirstDealObservation {
     hand: Vec<i32>,
     declaration: Value,
     bottom: Option<Value>,
+    bury_snapshot: Value,
     dealer_position: usize,
 }
 
@@ -381,6 +382,7 @@ async fn observe_first_tractor_deal(
                     hand,
                     declaration: declaration.expect("first deal must declare trump"),
                     bottom,
+                    bury_snapshot: value,
                     dealer_position,
                 };
             }
@@ -1738,7 +1740,8 @@ async fn tractor_incremental_deal_full_deck_and_bury_flow() {
         .bottom
         .clone()
         .expect("dealer bottom event");
-    let mut hands = observations.map(|observation| observation.hand);
+    let mut hands: [Vec<i32>; 4] =
+        std::array::from_fn(|position| observations[position].hand.clone());
     assert!(started_at.elapsed() >= Duration::from_millis(1_100));
     assert_eq!(hands[0].len(), 25);
     let bottom_cards = bottom["data"]["cards"]
@@ -1749,6 +1752,15 @@ async fn tractor_incremental_deal_full_deck_and_bury_flow() {
         .collect::<Vec<_>>();
     assert_eq!(bottom_cards.len(), 8);
     assert_eq!(bottom["data"]["required_count"], json!(8));
+    let first_bury_snapshot = &observations[dealer_position].bury_snapshot;
+    let first_trump_suit = first_bury_snapshot["data"]["trump_suit"].clone();
+    let first_bury_countdown = first_bury_snapshot["data"]["turn_countdown"]
+        .as_i64()
+        .expect("first-round bury countdown");
+    assert_eq!(
+        first_bury_countdown, 90,
+        "first-round bury must receive one full three-times-play window"
+    );
 
     let clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
 
@@ -1784,6 +1796,10 @@ async fn tractor_incremental_deal_full_deck_and_bury_flow() {
     })
     .await;
     assert_eq!(snapshot["data"]["deck_count"], json!(2));
+    assert_eq!(
+        snapshot["data"]["trump_suit"], first_trump_suit,
+        "rejected first-round trump selection must not replace the suit established during dealing"
+    );
     assert_eq!(snapshot["data"]["target_rank"], json!(3));
     assert_eq!(snapshot["data"]["final_target_rank"], json!(14));
     assert_eq!(snapshot["data"]["removed_rank_count"], json!(0));
