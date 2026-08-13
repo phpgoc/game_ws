@@ -7,15 +7,86 @@ use serde_json::{Value, json};
 use share_type_public::{DominoesRoutes, DominoesWsCode, GameId, Routes, WsResponseCode};
 use tokio::net::TcpListener as TokioTcpListener;
 use tokio_tungstenite::{WebSocketStream, connect_async, tungstenite::Message};
+#[cfg(feature = "official")]
+use ws_common::{
+    ClientRequest, Dispatch, GameHandler, GameState, JoinAuthorization, JoinAuthorizationFuture,
+    RoomService, SessionId, SessionSenders, SettingsBuilderResult,
+};
 use ws_common::{RuntimeConfig, run_room_runtime};
 
 type Client = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
+#[cfg(feature = "official")]
+#[derive(Default)]
+struct TestAiDominoesHandler(DominoesGameHandler);
+
+#[cfg(feature = "official")]
+impl GameHandler for TestAiDominoesHandler {
+    fn after_common_request(
+        &mut self,
+        room_service: &mut RoomService,
+        session_id: SessionId,
+        request: &ClientRequest,
+        dispatch: &mut Dispatch,
+    ) {
+        self.0
+            .after_common_request(room_service, session_id, request, dispatch);
+    }
+
+    fn authorize_join(&self, _join: &share_type_public::WsJoinRequest) -> JoinAuthorizationFuture {
+        Box::pin(async { JoinAuthorization::ALLOW_NONMEMBER })
+    }
+
+    fn supports_ai_players(&self) -> bool {
+        self.0.supports_ai_players()
+    }
+
+    fn build_game_state(&self) -> Box<dyn GameState> {
+        self.0.build_game_state()
+    }
+
+    fn build_room_settings(&self) -> SettingsBuilderResult {
+        self.0.build_room_settings()
+    }
+
+    fn game_id(&self) -> GameId {
+        self.0.game_id()
+    }
+
+    fn handle_game_request(
+        &mut self,
+        room_service: &mut RoomService,
+        session_id: SessionId,
+        request: ClientRequest,
+    ) -> Dispatch {
+        self.0
+            .handle_game_request(room_service, session_id, request)
+    }
+
+    fn set_context(
+        &mut self,
+        senders: SessionSenders,
+        room_service: std::sync::Arc<tokio::sync::Mutex<RoomService>>,
+    ) {
+        self.0.set_context(senders, room_service);
+    }
+}
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn three_players_can_start_and_place_the_opening_tile() {
     let port = free_port();
     let listen_addr = format!("127.0.0.1:{port}");
     let url = format!("ws://{listen_addr}");
+    let handler = {
+        #[cfg(feature = "official")]
+        {
+            TestAiDominoesHandler::default()
+        }
+        #[cfg(not(feature = "official"))]
+        {
+            DominoesGameHandler::default()
+        }
+    };
     let server = tokio::spawn(run_room_runtime(
         RuntimeConfig {
             service_name: "dominoes-integration-test",
@@ -23,7 +94,7 @@ async fn three_players_can_start_and_place_the_opening_tile() {
             idle_timeout: Duration::from_secs(30),
             heartbeat_interval: Duration::from_secs(30),
         },
-        DominoesGameHandler::default(),
+        handler,
     ));
     wait_for_server(port).await;
 
