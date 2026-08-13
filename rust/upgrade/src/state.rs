@@ -825,6 +825,37 @@ impl UpgradeGameState {
         Ok(true)
     }
 
+    /// Return a finished match to the room lobby without replacing the
+    /// shared room membership. The next START request creates a fresh game
+    /// state while the current clients receive an authoritative empty table.
+    pub fn reset_to_lobby(&mut self) {
+        self.phase = UpgradePhase::Start;
+        self.rules.trump_suit = None;
+        self.rules.target_rank =
+            first_upgrade_rank(self.rules.removed_rank_count, self.rules.final_target_rank);
+        self.team_target_ranks = [self.rules.target_rank; 2];
+        self.hands.clear();
+        self.bottom_cards.clear();
+        self.deal_queue.clear();
+        self.dealer_position = 0;
+        self.current_position = 0;
+        self.round_index = 0;
+        self.dealt_count = 0;
+        self.total_deal_count = 0;
+        self.declaration = None;
+        self.current_trick.clear();
+        self.play_history.clear();
+        self.trick_index = 0;
+        self.player_scores.clear();
+        self.collected_scores.clear();
+        self.buried = false;
+        self.last_trick_winner = None;
+        self.bottom_multiplier = 1;
+        self.failed_throws.clear();
+        self.set_turn_countdown(0);
+        self.base.lock().unwrap().action_received = false;
+    }
+
     fn next_target_rank(&self) -> Option<Rank> {
         let winning_team = self.winner_positions_usize()[0] % 2;
         next_level_rank(

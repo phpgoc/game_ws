@@ -159,6 +159,28 @@ fn later_round_selects_trump_then_buries_in_one_operation_window() {
     assert_eq!(later_round.phase, UpgradePhase::Play);
 }
 
+#[test]
+fn reset_to_lobby_clears_finished_round_state() {
+    let common = Arc::new(Mutex::new(CommonGameState::new()));
+    let mut state = UpgradeGameState::from_common(common);
+    state.phase = UpgradePhase::Settlement;
+    state.round_index = 4;
+    state.hands.insert(0, vec![1, 2]);
+    state.bottom_cards = vec![3];
+    state.player_scores.insert(0, 12);
+    state.set_turn_countdown(7);
+
+    state.reset_to_lobby();
+
+    assert_eq!(state.phase, UpgradePhase::Start);
+    assert_eq!(state.round_index, 0);
+    assert!(state.hands.is_empty());
+    assert!(state.bottom_cards.is_empty());
+    assert!(state.player_scores.is_empty());
+    assert_eq!(state.base.lock().unwrap().turn_countdown, 0);
+    assert_eq!(state.snapshot().target_rank, UpgradeRank::THREE);
+}
+
 fn playing_state(hands: HashMap<usize, Vec<i32>>) -> UpgradeGameState {
     let common = Arc::new(Mutex::new(CommonGameState::new()));
     for position in 0..4 {

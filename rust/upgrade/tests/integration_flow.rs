@@ -1990,15 +1990,19 @@ async fn upgrade_ws_finishes_a_multi_round_match_at_ace() {
         serde_json::to_value(final_settlement).expect("serialize original settlement")
     );
 
-    let unexpected_next_deal = tokio::time::timeout(
-        Duration::from_secs(4),
-        wait_for_event(&mut settlement_rejoined, WsCode::DEAL as i32),
-    )
-    .await;
-    assert!(
-        unexpected_next_deal.is_err(),
-        "finished upgrade match must not deal another round"
+    // The server must expose the terminal match boundary as a real lobby
+    // snapshot. Clients should be able to press START again without a page
+    // refresh and receive a fresh first-round deal.
+    let lobby_snapshot = wait_for_phase(&mut settlement_rejoined, UpgradePhase::Start).await;
+    assert_eq!(lobby_snapshot["data"]["round_index"], json!(0));
+    assert_eq!(lobby_snapshot["data"]["dealt_count"], json!(0));
+    assert_eq!(
+        lobby_snapshot["data"]["player_hand_counts"][0]["hand_count"],
+        json!(0)
     );
+    send_request(&mut settlement_rejoined, Routes::START as i32, Value::Null).await;
+    let restarted = wait_for_phase(&mut settlement_rejoined, UpgradePhase::Deal).await;
+    assert_eq!(restarted["data"]["round_index"], json!(0));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

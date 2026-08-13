@@ -15,7 +15,8 @@ use ws_common::{
 };
 
 use super::{
-    build_deal_dispatch, deliver, push_private, timeout_bury_dispatch, timeout_play_dispatch,
+    build_deal_dispatch, build_lobby_dispatch, deliver, push_private, timeout_bury_dispatch,
+    timeout_play_dispatch,
 };
 use crate::{
     game_setting::{KEY_PLAY_TIME, build_upgrade_settings},
@@ -117,6 +118,28 @@ fn deal_dispatch_sends_private_cards_bottom_and_snapshot() {
         event_payloads(&dispatch, WsCode::TABLE_SNAPSHOT as i32).len(),
         4
     );
+}
+
+#[test]
+fn final_settlement_lobby_dispatch_clears_every_private_hand() {
+    let (room, common) = room_with_players();
+    let state = state_handle(common, UpgradePhase::Start);
+    let snapshot = state.lock().unwrap().snapshot();
+    let mut dispatch = ws_common::Dispatch::default();
+
+    build_lobby_dispatch(ROOM_KEY, &room, snapshot, &mut dispatch);
+
+    assert_eq!(
+        event_payloads(&dispatch, UpgradeWsCode::HAND_UPDATED as i32).len(),
+        4
+    );
+    assert_eq!(
+        event_payloads(&dispatch, WsCode::TABLE_SNAPSHOT as i32).len(),
+        4
+    );
+    for payload in event_payloads(&dispatch, UpgradeWsCode::HAND_UPDATED as i32) {
+        assert!(payload["cards"].as_array().is_some_and(Vec::is_empty));
+    }
 }
 
 #[tokio::test]

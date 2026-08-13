@@ -113,8 +113,7 @@ pub fn start_upgrade_game_loop(
                     if sleep_or_stop(&state, SETTLEMENT_DELAY).await {
                         break;
                     }
-                    let mut dispatch = Dispatch::default();
-                    let advanced = {
+                    let (advanced, lobby_snapshot) = {
                         let mut guard = state.lock().unwrap();
                         if guard.stop_requested() {
                             break;
@@ -122,8 +121,29 @@ pub fn start_upgrade_game_loop(
                         if guard.phase != UpgradePhase::Settlement {
                             continue;
                         }
-                        guard.advance_after_settlement().unwrap_or(false)
+                        if guard.advance_after_settlement().unwrap_or(false) {
+                            (true, None)
+                        } else {
+                            guard.reset_to_lobby();
+                            (false, Some(guard.snapshot()))
+                        }
                     };
+                    let mut dispatch = Dispatch::default();
+                    if let Some(snapshot) = lobby_snapshot {
+                        let room = room_service.lock().await;
+                        if !room_uses_common_state(&room, &room_key, &common) {
+                            break;
+                        }
+                        build_lobby_dispatch(&room_key, &room, snapshot, &mut dispatch);
+                        drop(room);
+                        room_service
+                            .lock()
+                            .await
+                            .clear_room_game_state_if_same(&room_key, &common);
+                        remove_registered_state_if_same(&states, &room_key, &state);
+                        deliver(dispatch, &senders).await;
+                        break;
+                    }
                     if advanced {
                         let snapshot = state.lock().unwrap().snapshot();
                         let room = room_service.lock().await;
@@ -166,6 +186,26 @@ fn room_uses_common_state(
 ) -> bool {
     room.room_common_state(room_key)
         .is_some_and(|current| Arc::ptr_eq(&current, common))
+}
+
+fn build_lobby_dispatch(
+    room_key: &str,
+    room: &RoomService,
+    snapshot: share_type_public::WsUpgradeTableSnapshotEvent,
+    dispatch: &mut Dispatch,
+) {
+    for (session_id, _, position, _) in room.room_members(room_key) {
+        push_private(
+            dispatch,
+            session_id,
+            UpgradeWsCode::HAND_UPDATED as i32,
+            WsUpgradeHandEvent {
+                position: position as i32,
+                cards: Vec::new(),
+            },
+        );
+    }
+    room.broadcast(room_key, WsCode::TABLE_SNAPSHOT as i32, snapshot, dispatch);
 }
 
 fn remove_registered_state_if_same(
