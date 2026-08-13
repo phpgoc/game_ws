@@ -23,7 +23,6 @@ COPY . .
 
 RUN ./ci/prepare-public-build.sh \
     && cargo build \
-        --locked \
         --release \
         --target aarch64-unknown-linux-gnu \
         --manifest-path Cargo.toml \

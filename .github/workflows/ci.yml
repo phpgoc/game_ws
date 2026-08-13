@@ -6,7 +6,6 @@ on:
     paths:
       - ".github/fixtures/**"
       - ".github/workflows/ci.yml"
-      - "Cargo.lock"
       - "Cargo.toml"
       - "android/**"
       - "build_script/**"
@@ -17,7 +16,6 @@ on:
     paths:
       - ".github/fixtures/**"
       - ".github/workflows/ci.yml"
-      - "Cargo.lock"
       - "Cargo.toml"
       - "android/**"
       - "build_script/**"
@@ -57,11 +55,6 @@ jobs:
         shell: bash
         run: ci/check-public-feature-boundary.sh
 
-      - name: 定时刷新公开锁文件
-        if: github.event_name == 'schedule'
-        shell: bash
-        run: cargo update --workspace
-
       - name: 安装 Rust 格式组件
         run: rustup component add rustfmt
 
@@ -74,7 +67,7 @@ jobs:
             ~/.cargo/registry/src
             ~/.cargo/git/db
             target
-          key: public-ws-cargo-${{ runner.os }}-quality-${{ hashFiles('Cargo.lock') }}
+          key: public-ws-cargo-${{ runner.os }}-quality-${{ hashFiles('Cargo.toml', 'rust/**/Cargo.toml', 'share_type_public/Cargo.toml') }}
           restore-keys: |
             public-ws-cargo-${{ runner.os }}-quality-
             public-ws-cargo-${{ runner.os }}-
@@ -85,7 +78,7 @@ jobs:
 
       - name: 校验 workspace 元数据
         shell: bash
-        run: cargo metadata --locked --format-version 1 >/dev/null
+        run: cargo metadata --format-version 1 >/dev/null
 
       - name: 检查 shell 语法和 Gradle wrapper
         shell: bash
@@ -157,11 +150,6 @@ jobs:
       - name: 准备公开依赖边界
         run: ci/prepare-public-build.sh
 
-      - name: 定时刷新公开锁文件
-        if: github.event_name == 'schedule'
-        shell: bash
-        run: cargo update --workspace
-
       - name: 缓存 Cargo 依赖与构建产物
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
@@ -171,7 +159,7 @@ jobs:
             ~/.cargo/registry/src
             ~/.cargo/git/db
             target
-          key: public-ws-cargo-${{ runner.os }}-${{ matrix.name }}-${{ hashFiles('Cargo.lock') }}
+          key: public-ws-cargo-${{ runner.os }}-${{ matrix.name }}-${{ hashFiles('Cargo.toml', 'rust/**/Cargo.toml', 'share_type_public/Cargo.toml') }}
           restore-keys: |
             public-ws-cargo-${{ runner.os }}-${{ matrix.name }}-
             public-ws-cargo-${{ runner.os }}-
@@ -189,7 +177,7 @@ jobs:
           if [[ -n "$FEATURES" ]]; then
             feature_args=(--features "$FEATURES")
           fi
-          cargo test --locked --manifest-path "$MANIFEST" --all-targets \
+          cargo test --manifest-path "$MANIFEST" --all-targets \
             --no-default-features "${feature_args[@]}"
 
       - name: 检查全部公开目标并将 Clippy 警告视为错误
@@ -202,7 +190,7 @@ jobs:
           if [[ -n "$FEATURES" ]]; then
             feature_args=(--features "$FEATURES")
           fi
-          cargo clippy --locked --manifest-path "$MANIFEST" --all-targets --no-default-features \
+          cargo clippy --manifest-path "$MANIFEST" --all-targets --no-default-features \
             "${feature_args[@]}" -- -D warnings
 
   linux-musl:
@@ -221,11 +209,6 @@ jobs:
       - name: 准备公开依赖边界
         run: ci/prepare-public-build.sh
 
-      - name: 定时刷新公开锁文件
-        if: github.event_name == 'schedule'
-        shell: bash
-        run: cargo update --workspace
-
       - name: 缓存 Cargo 依赖与构建产物
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
@@ -235,7 +218,7 @@ jobs:
             ~/.cargo/registry/src
             ~/.cargo/git/db
             target
-          key: public-ws-cargo-${{ runner.os }}-musl-${{ matrix.game }}-${{ hashFiles('Cargo.lock') }}
+          key: public-ws-cargo-${{ runner.os }}-musl-${{ matrix.game }}-${{ hashFiles('Cargo.toml', 'rust/**/Cargo.toml', 'share_type_public/Cargo.toml') }}
           restore-keys: |
             public-ws-cargo-${{ runner.os }}-musl-${{ matrix.game }}-
             public-ws-cargo-${{ runner.os }}-
@@ -252,7 +235,7 @@ jobs:
         env:
           GAME: ${{ matrix.game }}
         run: |
-          cargo build --locked --release --target x86_64-unknown-linux-musl \
+          cargo build --release --target x86_64-unknown-linux-musl \
             --manifest-path "rust/$GAME/Cargo.toml" --bin "$GAME" --no-default-features
           binary="target/x86_64-unknown-linux-musl/release/$GAME"
           test -s "$binary"
@@ -276,11 +259,6 @@ jobs:
       - name: 准备公开依赖边界
         run: ci/prepare-public-build.sh
 
-      - name: 定时刷新公开锁文件
-        if: github.event_name == 'schedule'
-        shell: bash
-        run: cargo update --workspace
-
       - name: 缓存 Cargo 依赖与构建产物
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
@@ -290,7 +268,7 @@ jobs:
             ~/.cargo/registry/src
             ~/.cargo/git/db
             target
-          key: public-ws-cargo-${{ runner.os }}-android-${{ matrix.game }}-${{ hashFiles('Cargo.lock') }}
+          key: public-ws-cargo-${{ runner.os }}-android-${{ matrix.game }}-${{ hashFiles('Cargo.toml', 'rust/**/Cargo.toml', 'share_type_public/Cargo.toml') }}
           restore-keys: |
             public-ws-cargo-${{ runner.os }}-android-${{ matrix.game }}-
             public-ws-cargo-${{ runner.os }}-
@@ -322,7 +300,7 @@ jobs:
           GAME: ${{ matrix.game }}
         run: |
           ./gradlew --no-daemon --console=plain :app:assembleDebug \
-            -Pgame="$GAME" -PrustAbis=arm64-v8a,x86_64 -PrustLocked=true
+            -Pgame="$GAME" -PrustAbis=arm64-v8a,x86_64
           apk=app/build/outputs/apk/debug/app-debug.apk
           test -s "$apk"
           native_lib_count="$(unzip -Z1 "$apk" | grep -Ec '^lib/(arm64-v8a|x86_64)/libws_server\.so$')"

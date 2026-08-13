@@ -24,7 +24,6 @@ val game = providers.gradleProperty("game").orElse("landlord").get()
 val gameConfig = games[game]
     ?: throw GradleException("Unknown -Pgame=$game. Expected one of: ${games.keys.joinToString()}")
 val skipRustBuild = providers.gradleProperty("skipRustBuild").orNull?.toBoolean() ?: false
-val rustLocked = providers.gradleProperty("rustLocked").orNull?.toBoolean() ?: false
 val rustAbis = providers.gradleProperty("rustAbis")
     .orNull
     ?.split(",")
@@ -43,7 +42,6 @@ val cargoBinDir = file("${System.getProperty("user.home")}/.cargo/bin")
 val cargoExecutable = providers.gradleProperty("cargo")
     .orElse(cargoBinDir.resolve("cargo").absolutePath)
     .get()
-val cargoLockArgs = if (rustLocked) listOf("--locked") else emptyList()
 
 android {
     namespace = "com.example.langameserver"
@@ -106,13 +104,12 @@ val buildRustGame by tasks.registering(Exec::class) {
                 "--no-default-features",
                 "--features",
                 game,
-            ) + cargoLockArgs,
+            ),
     )
 
     inputs.files(
         fileTree(rustWorkspaceDir) {
             include("Cargo.toml")
-            include("Cargo.lock")
         },
         fileTree(rustProjectDir) {
             include("Cargo.toml")

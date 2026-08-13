@@ -11,11 +11,6 @@ GAME_COUNT="${#GAMES[@]}"
 
 "${WS_DIR}/ci/prepare-public-build.sh"
 
-CARGO_LOCK_ARGS=()
-if [[ "${WS_CARGO_LOCKED:-0}" == "1" || -L "${WS_DIR}/../data" || -L "${WS_DIR}/../runtime_common" || -L "${WS_DIR}/../ai" ]]; then
-    CARGO_LOCK_ARGS+=(--locked)
-fi
-
 require_command() {
     command -v "$1" >/dev/null 2>&1 || {
         echo "Missing required command: $1" >&2
@@ -41,8 +36,7 @@ for game in "${GAMES[@]}"; do
         --manifest-path "${WS_DIR}/Cargo.toml" \
         -p "${game}" \
         --bin "${game}" \
-        --no-default-features \
-        "${CARGO_LOCK_ARGS[@]}"
+        --no-default-features
     install -m 0755 \
         "${BUILD_DIR}/linux/${LINUX_TARGET}/release/${game}" \
         "${OUTPUT_DIR}/${game}"

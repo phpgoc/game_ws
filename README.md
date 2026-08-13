@@ -106,14 +106,14 @@ cargo test --manifest-path rust/p2p/Cargo.toml
 - 对公开 Rust crate 和 Android bridge crate 执行 `rustfmt`、全部 target 测试和 `clippy -D warnings`；
 - 对 7 个服务分别构建 Linux x86_64 musl 静态 release；
 - 对 7 个服务分别构建同时包含 arm64-v8a 与 x86_64 的 Android APK，覆盖 JNI、NDK、Gradle 和 Kotlin 包装；
-- 不启用依赖私有 `data` 的 `official` feature，不读取 secrets，不上传 artifact；Cargo 和 Gradle 依赖使用带锁文件哈希的 GitHub Actions cache。
+- 不启用依赖私有 `data` 的 `official` feature，不读取 secrets，不上传 artifact；Cargo 和 Gradle 依赖缓存按全部 `Cargo.toml` 的内容生成键。
 
 独立检出开源仓库时，Cargo 和 rustfmt 仍需解析可选的私有 `data`、`runtime_common` 路径及仅供官方版使用的外部 AI 模块。
 CI 仅把 `.github/fixtures` 中的空边界链接到预期位置，使未启用的依赖和条件模块能够完成解析；fixture
 不包含私有实现，也不能用于构建 `official` feature。根仓库作为子模块使用时会继续解析真实的 `data`
 crate、`runtime_common` 和 AI 模块。
 
-提交的 `Cargo.lock` 按公开 fixture 的依赖图锁定，保证独立公开检出可以使用 `--locked`；嵌入主仓库时，官方 workspace 使用根仓库自己的锁文件。直接在真实私有 sibling 环境中执行 `ws` 的普通 Cargo 命令即可让 Cargo 解析对应的可选依赖图。
+`ws` 根目录不提交 `Cargo.lock`，构建、测试和元数据检查均根据当前 manifests 解析依赖，也不使用 `--locked`。需要在依赖已经缓存的环境中离线验证时，可使用 `--offline`；它只禁止联网，并不锁定依赖版本。嵌入主仓库时，Cargo 仍会按实际 workspace 和私有 sibling 依赖解析完整依赖图。
 
 拖拉机和升级房间开始后都会锁定设置。拖拉机支持 2–3 副完整牌组，不提供删牌设置；升级支持 3–6 副，并可配置从低点数起删除牌面。两个游戏都不支持喝血、进贡或上贡，均按 `attacking_win_score`、`score_per_level` 和 `shutout_bonus_levels` 结算跳级。首局从 3（被删时取首个保留等级）开始，发牌中允许抢主/反主并决定首庄；后续局发牌时不亮主，庄家拿底后在同一个底牌操作窗口内先选主、再埋底。庄家方过庄后由庄家对家接庄，闲家上台后由原庄家下家接庄。首局默认总发牌 15 秒，后续局 3 秒；底牌操作窗口为出牌时间的 3 倍，选主不会重置倒计时。
 

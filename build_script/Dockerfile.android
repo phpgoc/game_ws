@@ -51,7 +51,6 @@ RUN ./ci/prepare-public-build.sh \
     && ./gradlew --no-daemon --console=plain :app:assembleDebug \
         -Pgame="${GAME}" \
         -PrustAbis="${RUST_ABIS}" \
-        -PrustLocked=true \
     && mkdir -p /artifact \
     && install -m 0644 app/build/outputs/apk/debug/app-debug.apk "/artifact/${GAME}.apk"
 
