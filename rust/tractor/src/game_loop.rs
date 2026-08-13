@@ -378,7 +378,8 @@ fn deal_step_delay(configs: &HashMap<String, i32>, state: &TractorGameState) -> 
     } else {
         regular_total_millis
     };
-    Duration::from_millis((total_millis / state.total_deal_count.max(1) as u64).max(1))
+    let deal_steps = state.total_deal_count.max(1) as u64;
+    Duration::from_millis(total_millis.div_ceil(deal_steps).max(1))
 }
 
 async fn deliver(dispatch: Dispatch, senders: &SessionSenders) {
@@ -888,15 +889,13 @@ mod tests {
             let mut state = state.lock().unwrap();
             state.total_deal_count = 100;
             state.round_index = 0;
-            assert_eq!(
-                deal_step_delay(&defaults, &state),
-                Duration::from_millis(150)
-            );
+            let first_step = deal_step_delay(&defaults, &state);
+            assert_eq!(first_step, Duration::from_millis(150));
+            assert!(first_step * state.total_deal_count as u32 >= Duration::from_secs(15));
             state.round_index = 1;
-            assert_eq!(
-                deal_step_delay(&defaults, &state),
-                Duration::from_millis(30)
-            );
+            let later_step = deal_step_delay(&defaults, &state);
+            assert_eq!(later_step, Duration::from_millis(30));
+            assert!(later_step * state.total_deal_count as u32 >= Duration::from_secs(3));
 
             let configs = HashMap::from([
                 (KEY_FIRST_DEAL_TIME.to_owned(), 2_000),
@@ -906,6 +905,16 @@ mod tests {
             assert_eq!(deal_step_delay(&configs, &state), Duration::from_millis(60));
             state.round_index = 1;
             assert_eq!(deal_step_delay(&configs, &state), Duration::from_millis(20));
+
+            state.total_deal_count = 101;
+            state.round_index = 0;
+            let first_step = deal_step_delay(&defaults, &state);
+            assert_eq!(first_step, Duration::from_millis(149));
+            assert!(first_step * state.total_deal_count as u32 >= Duration::from_secs(15));
+            state.round_index = 1;
+            let later_step = deal_step_delay(&defaults, &state);
+            assert_eq!(later_step, Duration::from_millis(30));
+            assert!(later_step * state.total_deal_count as u32 >= Duration::from_secs(3));
         }
     }
 
