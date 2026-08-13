@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
 };
 
@@ -362,6 +362,107 @@ fn forced_follow_exists_and_is_legal_for_random_two_and_three_deck_hands() {
                             combo::follow_is_legal(follower_hand, &follow, &lead, &rules),
                             "illegal forced follow: deck={deck_count} rank={target_rank:?} trump={trump_suit:?} seed={seed} lead={lead_cards:?} hand={follower_hand:?} follow={follow:?}"
                         );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn random_throw_resolution_always_leaves_a_playable_trick() {
+    let trump_suits = [
+        None,
+        Some(TractorSuit::SPADE),
+        Some(TractorSuit::HEART),
+        Some(TractorSuit::CLUB),
+        Some(TractorSuit::DIAMOND),
+    ];
+
+    for deck_count in [2, 3] {
+        let hand_size = if deck_count == 2 { 25 } else { 38 };
+        for target_rank in TRACTOR_RANKS {
+            for trump_suit in trump_suits {
+                let rules = TractorRules {
+                    attacking_win_score: 80,
+                    score_per_level: 40,
+                    shutout_bonus_levels: 1,
+                    bottom_card_count: if deck_count == 3 { 10 } else { 8 },
+                    deck_count,
+                    final_target_rank: TractorRank::A,
+                    target_rank,
+                    trump_suit,
+                };
+                for sample in 0..2_u64 {
+                    let seed = sample
+                        ^ ((deck_count as u64) << 56)
+                        ^ ((target_rank as u64) << 40)
+                        ^ ((trump_suit.map_or(4, |suit| suit as u64)) << 32)
+                        ^ 0x54_48_52_4f_57;
+                    let mut rng = StdRng::seed_from_u64(seed);
+                    let mut deck = build_tractor_deck(deck_count);
+                    deck.shuffle(&mut rng);
+                    let hands = HashMap::from([
+                        (0, deck[0..hand_size].to_vec()),
+                        (1, deck[hand_size..hand_size * 2].to_vec()),
+                        (2, deck[hand_size * 2..hand_size * 3].to_vec()),
+                        (3, deck[hand_size * 3..hand_size * 4].to_vec()),
+                    ]);
+
+                    for attempted in combo::enumerate_leads(&hands[&0], &rules)
+                        .into_iter()
+                        .filter(|cards| {
+                            matches!(
+                                combo::classify(cards, &rules).map(|combo| combo.kind),
+                                Some(combo::ComboKind::Throw { .. })
+                            )
+                        })
+                    {
+                        let mut state = TractorGameState::from_common(common_state(&format!(
+                            "throw-{deck_count}-{seed}"
+                        )));
+                        state.phase = TractorPhase::Play;
+                        state.rules = rules.clone();
+                        state.hands = hands.clone();
+                        state.current_position = 0;
+
+                        let played = state
+                            .play_cards(0, "p0".to_owned(), attempted.clone())
+                            .unwrap_or_else(|error| {
+                                panic!(
+                                    "random throw was rejected: deck={deck_count} rank={target_rank:?} trump={trump_suit:?} seed={seed} attempted={attempted:?}: {error}"
+                                )
+                            });
+                        let lead = combo::classify(&played.cards, &rules).unwrap_or_else(|| {
+                            panic!(
+                                "throw resolution produced an invalid lead: deck={deck_count} rank={target_rank:?} trump={trump_suit:?} seed={seed} attempted={attempted:?} played={:?}",
+                                played.cards
+                            )
+                        });
+                        assert!(played.cards.iter().all(|card| attempted.contains(card)));
+
+                        for position in 1..4 {
+                            let hand = state.hands[&position].clone();
+                            let follow = combo::forced_follow(&hand, &lead, &rules)
+                                .unwrap_or_else(|| {
+                                    panic!(
+                                        "throw resolution left no forced follow: deck={deck_count} rank={target_rank:?} trump={trump_suit:?} seed={seed} attempted={attempted:?} played={:?} position={position}",
+                                        played.cards
+                                    )
+                                });
+                            assert!(combo::follow_is_legal(&hand, &follow, &lead, &rules));
+                            state
+                                .play_cards(position, format!("p{position}"), follow)
+                                .unwrap_or_else(|error| {
+                                    panic!(
+                                        "legal throw follow was rejected: deck={deck_count} rank={target_rank:?} trump={trump_suit:?} seed={seed} attempted={attempted:?} played={:?} position={position}: {error}",
+                                        played.cards
+                                    )
+                                });
+                        }
+
+                        assert!(state.current_trick.is_empty());
+                        assert_eq!(state.trick_index, 1);
                     }
                 }
             }
