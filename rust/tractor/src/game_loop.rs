@@ -378,8 +378,12 @@ fn deal_step_delay(configs: &HashMap<String, i32>, state: &TractorGameState) -> 
     } else {
         regular_total_millis
     };
-    let deal_steps = state.total_deal_count.max(1) as u64;
-    Duration::from_millis(total_millis.div_ceil(deal_steps).max(1))
+    // The first card is dispatched immediately and the Bury snapshot travels
+    // with the final card, so the visible deal contains one fewer interval
+    // than cards. Divide by those actual intervals or the table reaches Bury
+    // slightly before the configured total duration.
+    let visible_intervals = state.total_deal_count.saturating_sub(1).max(1) as u64;
+    Duration::from_millis(total_millis.div_ceil(visible_intervals).max(1))
 }
 
 async fn deliver(dispatch: Dispatch, senders: &SessionSenders) {
@@ -890,31 +894,43 @@ mod tests {
             state.total_deal_count = 100;
             state.round_index = 0;
             let first_step = deal_step_delay(&defaults, &state);
-            assert_eq!(first_step, Duration::from_millis(150));
-            assert!(first_step * state.total_deal_count as u32 >= Duration::from_secs(15));
+            assert_eq!(first_step, Duration::from_millis(152));
+            assert!(
+                first_step * state.total_deal_count.saturating_sub(1) as u32
+                    >= Duration::from_secs(15)
+            );
             state.round_index = 1;
             let later_step = deal_step_delay(&defaults, &state);
-            assert_eq!(later_step, Duration::from_millis(30));
-            assert!(later_step * state.total_deal_count as u32 >= Duration::from_secs(3));
+            assert_eq!(later_step, Duration::from_millis(31));
+            assert!(
+                later_step * state.total_deal_count.saturating_sub(1) as u32
+                    >= Duration::from_secs(3)
+            );
 
             let configs = HashMap::from([
                 (KEY_FIRST_DEAL_TIME.to_owned(), 2_000),
                 (KEY_DEAL_TIME.to_owned(), 2_000),
             ]);
             state.round_index = 0;
-            assert_eq!(deal_step_delay(&configs, &state), Duration::from_millis(60));
+            assert_eq!(deal_step_delay(&configs, &state), Duration::from_millis(61));
             state.round_index = 1;
-            assert_eq!(deal_step_delay(&configs, &state), Duration::from_millis(20));
+            assert_eq!(deal_step_delay(&configs, &state), Duration::from_millis(21));
 
             state.total_deal_count = 101;
             state.round_index = 0;
             let first_step = deal_step_delay(&defaults, &state);
-            assert_eq!(first_step, Duration::from_millis(149));
-            assert!(first_step * state.total_deal_count as u32 >= Duration::from_secs(15));
+            assert_eq!(first_step, Duration::from_millis(150));
+            assert!(
+                first_step * state.total_deal_count.saturating_sub(1) as u32
+                    >= Duration::from_secs(15)
+            );
             state.round_index = 1;
             let later_step = deal_step_delay(&defaults, &state);
             assert_eq!(later_step, Duration::from_millis(30));
-            assert!(later_step * state.total_deal_count as u32 >= Duration::from_secs(3));
+            assert!(
+                later_step * state.total_deal_count.saturating_sub(1) as u32
+                    >= Duration::from_secs(3)
+            );
         }
     }
 
