@@ -21,7 +21,7 @@ use tractor::game::TractorGameHandler;
 #[cfg(not(feature = "official"))]
 use tractor::game_state::TractorRules;
 #[cfg(not(feature = "official"))]
-use upgrade_common::{Card, Rank};
+use upgrade_common::{Card, Rank, ScoreSide, next_four_player_dealer};
 #[cfg(not(feature = "official"))]
 use ws_common::RuntimeStopHandle;
 use ws_common::{
@@ -31,6 +31,20 @@ use ws_common::{
 };
 
 type Client = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
+#[cfg(not(feature = "official"))]
+fn next_dealer_after_settlement(
+    current_dealer: usize,
+    settlement: &WsTractorSettlementEvent,
+    attacking_win_score: i32,
+) -> usize {
+    let side = if settlement.score >= attacking_win_score {
+        ScoreSide::Attacking
+    } else {
+        ScoreSide::Defending
+    };
+    next_four_player_dealer(current_dealer, side)
+}
 
 #[derive(Default)]
 struct TestTractorHandler(TractorGameHandler);
@@ -960,116 +974,52 @@ async fn tractor_ws_exposes_only_twenty_to_forty_second_play_time() {
 
 #[cfg(not(feature = "official"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn tractor_ws_canonicalizes_bottom_count_before_broadcasting_settings() {
+async fn tractor_ws_ignores_the_retired_bottom_count_setting_from_old_clients() {
     let runtime = start_default_test_runtime(
-        "tractor-bottom-setting-canonicalization-test",
+        "tractor-retired-bottom-setting-test",
         Duration::from_secs(30),
     )
     .await;
-    let url = runtime.url.clone();
-
-    let mut a = connect_client(&url).await;
-    let mut b = connect_client(&url).await;
-    let mut c = connect_client(&url).await;
-    let mut d = connect_client(&url).await;
-    let room = "tractor-bottom-setting-canonicalization-room";
-    join(&mut a, "canonical-a", room).await;
-    join(&mut b, "canonical-b", room).await;
-    join(&mut c, "canonical-c", room).await;
-    join(&mut d, "canonical-d", room).await;
+    let mut owner = connect_client(&runtime.url).await;
+    let mut peer = connect_client(&runtime.url).await;
+    let room = "tractor-retired-bottom-setting-room";
+    join(&mut owner, "retired-owner", room).await;
+    join(&mut peer, "retired-peer", room).await;
 
     send_request(
-        &mut a,
-        Routes::SETTING as i32,
-        json!({
-            "current_configs": {
-                "deck_count": 0,
-                "bottom_card_count": 9
-            }
-        }),
-    )
-    .await;
-    let response = recv_until(&mut a, "canonical two-deck setting response", |value| {
-        value.get("route").and_then(Value::as_i64) == Some(Routes::SETTING as i64)
-    })
-    .await;
-    assert_eq!(response["code"], json!(WsResponseCode::OK as i32));
-    assert_eq!(response["data"]["current_configs"]["deck_count"], json!(0));
-    assert_eq!(
-        response["data"]["current_configs"]["bottom_card_count"],
-        json!(12),
-        "2-deck bottom count 9 must be canonicalized to an equal-hand value"
-    );
-    let broadcast = recv_until(&mut b, "canonical two-deck setting broadcast", |value| {
-        value.get("code").and_then(Value::as_i64) == Some(WsCode::SETTING as i64)
-    })
-    .await;
-    assert_eq!(
-        broadcast["data"]["current_configs"]["bottom_card_count"],
-        json!(12)
-    );
-
-    send_request(
-        &mut a,
+        &mut owner,
         Routes::SETTING as i32,
         json!({
             "current_configs": {
                 "deck_count": 1,
-                "bottom_card_count": 11
+                "bottom_card_count": 32
             }
         }),
     )
     .await;
-    let response = recv_until(&mut a, "canonical three-deck setting response", |value| {
+    let response = recv_until(&mut owner, "retired bottom setting response", |value| {
         value.get("route").and_then(Value::as_i64) == Some(Routes::SETTING as i64)
     })
     .await;
     assert_eq!(response["code"], json!(WsResponseCode::OK as i32));
     assert_eq!(response["data"]["current_configs"]["deck_count"], json!(1));
-    assert_eq!(
-        response["data"]["current_configs"]["bottom_card_count"],
-        json!(14),
-        "3-deck bottom count 11 must be canonicalized to an equal-hand value"
+    assert!(
+        response["data"]["current_configs"]
+            .get("bottom_card_count")
+            .is_none(),
+        "the retired setting must not return to new clients: {response}"
     );
-    let broadcast = recv_until(&mut b, "canonical three-deck setting broadcast", |value| {
+
+    let broadcast = recv_until(&mut peer, "retired bottom setting broadcast", |value| {
         value.get("code").and_then(Value::as_i64) == Some(WsCode::SETTING as i64)
     })
     .await;
-    assert_eq!(
-        broadcast["data"]["current_configs"]["bottom_card_count"],
-        json!(14)
+    assert_eq!(broadcast["data"]["current_configs"]["deck_count"], json!(1));
+    assert!(
+        broadcast["data"]["current_configs"]
+            .get("bottom_card_count")
+            .is_none()
     );
-
-    for (deck_count, expected_bottom) in [(0, 8), (1, 10), (0, 8), (1, 10)] {
-        send_request(
-            &mut a,
-            Routes::SETTING as i32,
-            json!({
-                "current_configs": {
-                    "deck_count": deck_count
-                }
-            }),
-        )
-        .await;
-        let response = recv_until(&mut a, "deck-only canonical setting response", |value| {
-            value.get("route").and_then(Value::as_i64) == Some(Routes::SETTING as i64)
-        })
-        .await;
-        assert_eq!(response["code"], json!(WsResponseCode::OK as i32));
-        assert_eq!(
-            response["data"]["current_configs"]["bottom_card_count"],
-            json!(expected_bottom),
-            "switching only the deck count must use that deck's stable minimum bottom"
-        );
-        let broadcast = recv_until(&mut b, "deck-only canonical setting broadcast", |value| {
-            value.get("code").and_then(Value::as_i64) == Some(WsCode::SETTING as i64)
-        })
-        .await;
-        assert_eq!(
-            broadcast["data"]["current_configs"]["bottom_card_count"],
-            json!(expected_bottom)
-        );
-    }
 }
 
 #[cfg(not(feature = "official"))]
@@ -1079,7 +1029,7 @@ async fn tractor_ws_keeps_concurrent_rooms_isolated() {
         start_test_runtime("tractor-concurrent-rooms-test", Duration::from_secs(60)).await;
     let (two_deck, three_deck) = tokio::join!(
         run_concurrent_tractor_room(&runtime.url, "tractor-room-two", 0, 2, 25, 8),
-        run_concurrent_tractor_room(&runtime.url, "tractor-room-three", 1, 3, 38, 10),
+        run_concurrent_tractor_room(&runtime.url, "tractor-room-three", 1, 3, 39, 6),
     );
     assert_eq!(two_deck["data"]["deck_count"], json!(2));
     assert_eq!(two_deck["data"]["trick_index"], json!(1));
@@ -2215,8 +2165,8 @@ async fn tractor_disconnected_first_dealer_keeps_the_full_bottom_window_for_rejo
         .clone();
     assert_eq!(
         restored_hand.len(),
-        48,
-        "three-deck dealer receives 38 + 10 cards"
+        45,
+        "three-deck dealer receives 39 + 6 cards"
     );
     let rejoined_snapshot = recv_until(&mut rejoined, "rejoined dealer bottom snapshot", |value| {
         value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
@@ -2233,7 +2183,7 @@ async fn tractor_disconnected_first_dealer_keeps_the_full_bottom_window_for_rejo
         "rejoin must resume the remaining bottom window: {rejoined_snapshot}"
     );
 
-    let bottom_cards = restored_hand.into_iter().take(10).collect::<Vec<_>>();
+    let bottom_cards = restored_hand.into_iter().take(6).collect::<Vec<_>>();
     send_request(
         &mut rejoined,
         TractorRoutes::BURY_BOTTOM as i32,
@@ -2624,11 +2574,10 @@ async fn tractor_server_completes_round_and_enters_later_round() {
                     .as_object()
                     .is_some_and(|scores| scores.len() == 4)
             );
-            later_dealer = game_over["data"]["winner_positions"]
-                .as_array()
-                .and_then(|winners| winners.first())
-                .and_then(Value::as_i64)
-                .map(|position| position as usize);
+            later_dealer = Some(next_four_player_dealer(
+                first_dealer,
+                rules.score_progression().outcome(expected_score).side,
+            ));
             recv_until(
                 &mut *clients[current_position],
                 "full tractor final play response",
@@ -3006,10 +2955,7 @@ async fn tractor_later_round_timeout_selects_trump_and_buries_in_one_window() {
     let (settlement, _) =
         play_complete_tractor_round(&mut clients, &mut first_hands, first_dealer, &first_rules)
             .await;
-    let later_dealer = *settlement
-        .winner_positions
-        .first()
-        .expect("later auto dealer from settlement") as usize;
+    let later_dealer = next_dealer_after_settlement(first_dealer, &settlement, 80);
 
     let later_hands = collect_tractor_hands(&mut clients, 25).await;
     let later_bottom_event = recv_tractor_bottom(&mut *clients[later_dealer], later_dealer).await;
@@ -3283,12 +3229,10 @@ async fn tractor_ws_finishes_when_one_team_wins_at_the_configured_final_rank() {
     );
 
     let mut previous_settlement = first_settlement;
+    let mut previous_dealer = first_dealer;
     let mut final_round = None;
     for round_index in 1..=2 {
-        let later_dealer = *previous_settlement
-            .winner_positions
-            .first()
-            .expect("complete match previous winners") as usize;
+        let later_dealer = next_dealer_after_settlement(previous_dealer, &previous_settlement, 80);
         let team_ranks_before = previous_settlement.team_target_ranks.clone();
         let mut later_hands = collect_tractor_hands(&mut clients, 25).await;
         let later_bottom_event =
@@ -3376,6 +3320,7 @@ async fn tractor_ws_finishes_when_one_team_wins_at_the_configured_final_rank() {
             TractorRank::FOUR
         );
         previous_settlement = settlement;
+        previous_dealer = later_dealer;
     }
     let (final_settlement, final_snapshot) =
         final_round.expect("one team must win while already playing the final rank");
@@ -3472,8 +3417,8 @@ async fn tractor_three_deck_ws_deals_and_buries_the_correct_counts() {
     .await;
 
     let mut clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
-    let hands = collect_tractor_hands(&mut clients, 38).await;
-    assert!(hands.iter().all(|hand| hand.len() == 38));
+    let hands = collect_tractor_hands(&mut clients, 39).await;
+    assert!(hands.iter().all(|hand| hand.len() == 39));
     let (declaration, bottom_seen_by_first_client) = recv_first_declaration(&mut *clients[0]).await;
     let dealer_position = declaration["data"]["position"]
         .as_i64()
@@ -3493,13 +3438,13 @@ async fn tractor_three_deck_ws_deals_and_buries_the_correct_counts() {
         .iter()
         .map(|card| card.as_i64().expect("three-deck bottom card") as i32)
         .collect::<Vec<_>>();
-    assert_eq!(bottom_cards.len(), 10);
-    assert_eq!(bottom_event["data"]["required_count"], json!(10));
+    assert_eq!(bottom_cards.len(), 6);
+    assert_eq!(bottom_event["data"]["required_count"], json!(6));
 
     send_request(
         &mut *clients[dealer_position],
         TractorRoutes::BURY_BOTTOM as i32,
-        json!({ "cards": &bottom_cards[..9] }),
+        json!({ "cards": &bottom_cards[..5] }),
     )
     .await;
     let invalid_bury = recv_until(
@@ -3533,10 +3478,10 @@ async fn tractor_three_deck_ws_deals_and_buries_the_correct_counts() {
     )
     .await;
     assert_eq!(snapshot["data"]["deck_count"], json!(3));
-    assert_eq!(snapshot["data"]["bottom_card_count"], json!(10));
-    assert_eq!(snapshot["data"]["hand_count"], json!(38));
-    assert_eq!(snapshot["data"]["dealt_count"], json!(152));
-    assert_eq!(snapshot["data"]["total_deal_count"], json!(152));
+    assert_eq!(snapshot["data"]["bottom_card_count"], json!(6));
+    assert_eq!(snapshot["data"]["hand_count"], json!(39));
+    assert_eq!(snapshot["data"]["dealt_count"], json!(156));
+    assert_eq!(snapshot["data"]["total_deal_count"], json!(156));
     assert_eq!(
         snapshot["data"]["player_hand_counts"]
             .as_array()
@@ -3544,7 +3489,7 @@ async fn tractor_three_deck_ws_deals_and_buries_the_correct_counts() {
             .iter()
             .map(|entry| entry["hand_count"].as_i64().expect("hand count"))
             .sum::<i64>(),
-        152
+        156
     );
     let buried = recv_until(
         &mut *clients[dealer_position],
@@ -3600,7 +3545,7 @@ async fn tractor_ws_failed_throw_reports_attempted_and_played_components() {
     .await;
 
     let mut clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
-    let mut hands = collect_tractor_hands(&mut clients, 38).await;
+    let mut hands = collect_tractor_hands(&mut clients, 39).await;
     let (declaration, bottom_seen_by_first_client) = recv_first_declaration(&mut *clients[0]).await;
     let dealer_position = declaration["data"]["position"]
         .as_i64()
@@ -3619,7 +3564,7 @@ async fn tractor_ws_failed_throw_reports_attempted_and_played_components() {
         .iter()
         .map(|card| card.as_i64().expect("failed throw bottom card") as i32)
         .collect::<Vec<_>>();
-    assert_eq!(bottom_cards.len(), 10);
+    assert_eq!(bottom_cards.len(), 6);
 
     send_request(
         &mut *clients[dealer_position],
@@ -3659,7 +3604,7 @@ async fn tractor_ws_failed_throw_reports_attempted_and_played_components() {
         attacking_win_score: 80,
         score_per_level: 40,
         shutout_bonus_levels: 1,
-        bottom_card_count: 10,
+        bottom_card_count: 6,
         deck_count: 3,
         final_target_rank: TractorRank::A,
         target_rank: TractorRank::THREE,
@@ -3784,7 +3729,7 @@ async fn tractor_ws_rejects_an_off_suit_follow_and_accepts_the_next_legal_card()
     .await;
 
     let mut clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
-    let hands = collect_tractor_hands(&mut clients, 38).await;
+    let hands = collect_tractor_hands(&mut clients, 39).await;
     let (declaration, bottom_seen_by_first_client) = recv_first_declaration(&mut *clients[0]).await;
     let dealer_position = declaration["data"]["position"]
         .as_i64()
@@ -3803,7 +3748,7 @@ async fn tractor_ws_rejects_an_off_suit_follow_and_accepts_the_next_legal_card()
         .iter()
         .map(|card| card.as_i64().expect("illegal follow bottom card") as i32)
         .collect::<Vec<_>>();
-    assert_eq!(bottom_cards.len(), 10);
+    assert_eq!(bottom_cards.len(), 6);
 
     send_request(
         &mut *clients[dealer_position],
@@ -3843,7 +3788,7 @@ async fn tractor_ws_rejects_an_off_suit_follow_and_accepts_the_next_legal_card()
         attacking_win_score: 80,
         score_per_level: 40,
         shutout_bonus_levels: 1,
-        bottom_card_count: 10,
+        bottom_card_count: 6,
         deck_count: 3,
         final_target_rank: TractorRank::A,
         target_rank: TractorRank::THREE,

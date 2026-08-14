@@ -160,7 +160,7 @@ fn simulate_random_round(deck_count: usize, seed: u64) {
         attacking_win_score: 80,
         score_per_level: 40,
         shutout_bonus_levels: 1,
-        bottom_card_count: if deck_count == 3 { 10 } else { 8 },
+        bottom_card_count: if deck_count == 3 { 6 } else { 8 },
         deck_count,
         final_target_rank: TractorRank::A,
         target_rank: TractorRank::THREE,
@@ -182,7 +182,7 @@ fn simulate_random_match(deck_count: usize, seed: u64) {
         attacking_win_score: 80,
         score_per_level: 10_000,
         shutout_bonus_levels: 0,
-        bottom_card_count: if deck_count == 3 { 10 } else { 8 },
+        bottom_card_count: if deck_count == 3 { 6 } else { 8 },
         deck_count,
         final_target_rank: TractorRank::FIVE,
         target_rank: TractorRank::THREE,
@@ -322,14 +322,14 @@ fn forced_follow_exists_and_is_legal_for_random_two_and_three_deck_hands() {
     ];
 
     for deck_count in [2, 3] {
-        let hand_size = if deck_count == 2 { 25 } else { 38 };
+        let hand_size = if deck_count == 2 { 25 } else { 39 };
         for target_rank in TRACTOR_RANKS {
             for trump_suit in trump_suits {
                 let rules = TractorRules {
                     attacking_win_score: 80,
                     score_per_level: 40,
                     shutout_bonus_levels: 1,
-                    bottom_card_count: if deck_count == 3 { 10 } else { 8 },
+                    bottom_card_count: if deck_count == 3 { 6 } else { 8 },
                     deck_count,
                     final_target_rank: TractorRank::A,
                     target_rank,
@@ -380,14 +380,14 @@ fn random_throw_resolution_always_leaves_a_playable_trick() {
     ];
 
     for deck_count in [2, 3] {
-        let hand_size = if deck_count == 2 { 25 } else { 38 };
+        let hand_size = if deck_count == 2 { 25 } else { 39 };
         for target_rank in TRACTOR_RANKS {
             for trump_suit in trump_suits {
                 let rules = TractorRules {
                     attacking_win_score: 80,
                     score_per_level: 40,
                     shutout_bonus_levels: 1,
-                    bottom_card_count: if deck_count == 3 { 10 } else { 8 },
+                    bottom_card_count: if deck_count == 3 { 6 } else { 8 },
                     deck_count,
                     final_target_rank: TractorRank::A,
                     target_rank,

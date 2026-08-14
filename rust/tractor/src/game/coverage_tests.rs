@@ -11,8 +11,8 @@ use ws_common::{
 
 use super::{TractorGameHandler, TractorGameState, TractorGameStateHandle, join_succeeded};
 use crate::game_setting::{
-    KEY_ATTACKING_WIN_SCORE, KEY_BOTTOM_CARD_COUNT, KEY_DECK_COUNT, KEY_SCORE_PER_LEVEL,
-    KEY_SHUTOUT_BONUS_LEVELS, KEY_TARGET_RANK, build_tractor_settings,
+    KEY_ATTACKING_WIN_SCORE, KEY_DECK_COUNT, KEY_SCORE_PER_LEVEL, KEY_SHUTOUT_BONUS_LEVELS,
+    KEY_TARGET_RANK, build_tractor_settings,
 };
 
 const ROOM_KEY: &str = "handler-coverage";
@@ -177,7 +177,7 @@ fn rules_conversion_clamps_settings_and_state_cleanup_keeps_current_room_identit
         (KEY_ATTACKING_WIN_SCORE.to_owned(), -20),
         (KEY_SCORE_PER_LEVEL.to_owned(), -1),
         (KEY_SHUTOUT_BONUS_LEVELS.to_owned(), 99),
-        (KEY_BOTTOM_CARD_COUNT.to_owned(), -1),
+        ("bottom_card_count".to_owned(), -1),
         (KEY_DECK_COUNT.to_owned(), 99),
         ("removed_rank_count".to_owned(), 99),
         (KEY_TARGET_RANK.to_owned(), 99),
@@ -185,7 +185,7 @@ fn rules_conversion_clamps_settings_and_state_cleanup_keeps_current_room_identit
     assert_eq!(rules.attacking_win_score, 1);
     assert_eq!(rules.score_per_level, 1);
     assert_eq!(rules.shutout_bonus_levels, 3);
-    assert_eq!(rules.bottom_card_count, 0);
+    assert_eq!(rules.bottom_card_count, 6);
     assert_eq!(rules.deck_count, 3);
     assert_eq!(rules.target_rank, TractorRank::THREE);
     assert_eq!(rules.trump_suit, None);

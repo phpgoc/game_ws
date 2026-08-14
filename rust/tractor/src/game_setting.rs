@@ -7,7 +7,6 @@ pub const KEY_AI_ACTION_TIME: &str = "ai_action_time";
 
 pub const KEY_AWAY_TIME: &str = "away_time";
 pub const KEY_ATTACKING_WIN_SCORE: &str = "attacking_win_score";
-pub const KEY_BOTTOM_CARD_COUNT: &str = "bottom_card_count";
 pub const KEY_DEAL_TIME: &str = "deal_time";
 pub const KEY_DECK_COUNT: &str = "deck_count";
 pub const KEY_FIRST_DEAL_TIME: &str = "first_deal_time";
@@ -71,14 +70,6 @@ pub fn build_tractor_settings() -> (GameSettings, HashMap<String, GameParam>) {
             }),
         ),
         (
-            KEY_BOTTOM_CARD_COUNT.into(),
-            GameParam::Range(GameParamRange {
-                default: 8,
-                min: 8,
-                max: 32,
-            }),
-        ),
-        (
             KEY_PLAY_TIME.into(),
             GameParam::Range(GameParamRange {
                 default: 30,
@@ -122,6 +113,8 @@ mod tests {
         assert_eq!(settings.values[KEY_ATTACKING_WIN_SCORE], 80);
         assert_eq!(settings.values[KEY_SCORE_PER_LEVEL], 40);
         assert_eq!(settings.values[KEY_SHUTOUT_BONUS_LEVELS], 1);
+        assert!(!settings.values.contains_key("bottom_card_count"));
+        assert!(!params.contains_key("bottom_card_count"));
         let GameParam::Enum(deck_count) = &params[KEY_DECK_COUNT] else {
             panic!("deck count must be an enum");
         };

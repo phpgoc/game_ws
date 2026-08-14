@@ -7,7 +7,7 @@ use share_type_public::{TractorPhase, TractorRank, TractorSuit, WsTractorPlayedC
 use ws_common::{CommonGameState, GameState};
 
 use super::{
-    TractorFailedThrow, TractorGameState, adjusted_bottom_card_count, tractor_suit_from_index,
+    TractorFailedThrow, TractorGameState, standard_bottom_card_count, tractor_suit_from_index,
 };
 
 fn state() -> TractorGameState {
@@ -26,10 +26,10 @@ fn state() -> TractorGameState {
 }
 
 #[test]
-fn utility_boundaries_cover_bottom_fallback_and_suit_mapping() {
-    assert_eq!(adjusted_bottom_card_count(10, 0, 4, 2), None);
-    assert_eq!(adjusted_bottom_card_count(10, 4, 10, 10), None);
-    assert_eq!(adjusted_bottom_card_count(13, 4, 8, 2), Some(9));
+fn utility_boundaries_cover_standard_bottom_and_suit_mapping() {
+    assert_eq!(standard_bottom_card_count(2), 8);
+    assert_eq!(standard_bottom_card_count(3), 6);
+    assert_eq!(standard_bottom_card_count(99), 8);
     assert_eq!(tractor_suit_from_index(0), Some(TractorSuit::SPADE));
     assert_eq!(tractor_suit_from_index(1), Some(TractorSuit::HEART));
     assert_eq!(tractor_suit_from_index(2), Some(TractorSuit::CLUB));

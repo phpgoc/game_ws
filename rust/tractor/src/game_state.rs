@@ -88,26 +88,6 @@ pub struct TractorRules {
 
 pub type TractorStateHandle = Arc<Mutex<TractorGameState>>;
 
-pub fn adjusted_bottom_card_count(
-    total_cards: usize,
-    player_count: usize,
-    preferred: usize,
-    minimum: usize,
-) -> Option<usize> {
-    if player_count == 0 || minimum >= total_cards {
-        return None;
-    }
-    let max_bottom = total_cards.saturating_sub(player_count);
-    let preferred = preferred.max(minimum).min(max_bottom);
-    (preferred..=max_bottom)
-        .find(|bottom| (total_cards - bottom).is_multiple_of(player_count))
-        .or_else(|| {
-            (minimum..preferred)
-                .rev()
-                .find(|bottom| (total_cards - bottom).is_multiple_of(player_count))
-        })
-}
-
 pub(crate) fn base_card(card: i32) -> i32 {
     i32::from(decoded_card(card).identity())
 }
@@ -154,9 +134,9 @@ pub(crate) fn is_trump_card(card: i32, rules: &TractorRules) -> bool {
             .is_some_and(|suit| card_suit(card) == Some(suit as i32))
 }
 
-pub fn min_bottom_card_count(deck_count: usize) -> usize {
+pub fn standard_bottom_card_count(deck_count: usize) -> usize {
     match deck_count {
-        3 => 10,
+        3 => 6,
         2 => 8,
         _ => 8,
     }
@@ -548,15 +528,12 @@ impl TractorGameState {
             return Err("not enough cards");
         }
         deck.shuffle(rng);
-        let max_bottom = deck.len().saturating_sub(positions.len());
-        let minimum_bottom = min_bottom_card_count(self.rules.deck_count).min(max_bottom);
-        self.rules.bottom_card_count = adjusted_bottom_card_count(
-            deck.len(),
-            positions.len(),
-            self.rules.bottom_card_count,
-            minimum_bottom,
-        )
-        .ok_or("invalid bottom card count")?;
+        self.rules.bottom_card_count = standard_bottom_card_count(self.rules.deck_count);
+        if self.rules.bottom_card_count >= deck.len()
+            || !(deck.len() - self.rules.bottom_card_count).is_multiple_of(positions.len())
+        {
+            return Err("invalid standard bottom card count");
+        }
 
         self.phase = TractorPhase::Deal;
         self.hands = self
@@ -1263,13 +1240,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn adjusted_bottom_keeps_all_hands_equal() {
+    fn standard_bottom_counts_keep_all_hands_equal() {
+        assert_eq!(standard_bottom_card_count(2), 8);
+        assert_eq!(standard_bottom_card_count(3), 6);
         for deck_count in MIN_TRACTOR_DECK_COUNT..=MAX_TRACTOR_DECK_COUNT {
             let total = build_tractor_deck(deck_count).len();
-            let bottom =
-                adjusted_bottom_card_count(total, 4, 8, min_bottom_card_count(deck_count)).unwrap();
-            assert_eq!((total - bottom) % 4, 0);
-            assert!(bottom >= min_bottom_card_count(deck_count));
+            assert_eq!((total - standard_bottom_card_count(deck_count)) % 4, 0);
         }
     }
 
@@ -1748,11 +1724,12 @@ mod tests {
     }
 
     #[test]
-    fn three_decks_uses_at_least_ten_bottom_cards() {
+    fn three_decks_uses_six_bottom_cards_and_thirty_nine_card_hands() {
         let total = build_tractor_deck(3).len();
-        let bottom = adjusted_bottom_card_count(total, 4, 8, min_bottom_card_count(3)).unwrap();
-        assert_eq!(bottom, 10);
+        let bottom = standard_bottom_card_count(3);
+        assert_eq!(bottom, 6);
         assert_eq!((total - bottom) % 4, 0);
+        assert_eq!((total - bottom) / 4, 39);
     }
 
     #[test]

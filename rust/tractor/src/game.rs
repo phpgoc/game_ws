@@ -19,13 +19,12 @@ use ws_common::{
 use crate::{
     game_loop::current_play_time,
     game_setting::{
-        KEY_ATTACKING_WIN_SCORE, KEY_BOTTOM_CARD_COUNT, KEY_DECK_COUNT, KEY_SCORE_PER_LEVEL,
-        KEY_SHUTOUT_BONUS_LEVELS, KEY_TARGET_RANK, build_tractor_settings,
+        KEY_ATTACKING_WIN_SCORE, KEY_DECK_COUNT, KEY_SCORE_PER_LEVEL, KEY_SHUTOUT_BONUS_LEVELS,
+        KEY_TARGET_RANK, build_tractor_settings,
     },
     game_state::{
         MAX_TRACTOR_DECK_COUNT, MIN_TRACTOR_DECK_COUNT, TractorGameState, TractorRules,
-        TractorStateHandle, adjusted_bottom_card_count, min_bottom_card_count,
-        tractor_rank_from_setting_index,
+        TractorStateHandle, standard_bottom_card_count, tractor_rank_from_setting_index,
     },
 };
 
@@ -49,70 +48,19 @@ fn join_succeeded(dispatch: &Dispatch, session_id: SessionId) -> bool {
     })
 }
 
-fn setting_succeeded(dispatch: &Dispatch, session_id: SessionId) -> bool {
-    dispatch.messages.iter().any(|message| {
-        message.recipient == session_id
-            && matches!(
-                &message.payload,
-                OutboundPayload::Response(RequestResponse::WithData(response))
-                    if response.route == Routes::SETTING as i32
-                        && response.code as i32 == WsResponseCode::OK as i32
-            )
-    })
-}
-
-fn canonical_bottom_card_count(
-    configs: &HashMap<String, i32>,
-    reset_to_deck_minimum: bool,
-) -> usize {
-    let deck_count = configs
-        .get(KEY_DECK_COUNT)
-        .copied()
-        .unwrap_or(0)
-        .clamp(0, (MAX_TRACTOR_DECK_COUNT - MIN_TRACTOR_DECK_COUNT) as i32)
-        as usize
-        + MIN_TRACTOR_DECK_COUNT;
-    let total_cards = deck_count * 54;
-    let minimum = min_bottom_card_count(deck_count);
-    let preferred = if reset_to_deck_minimum {
-        minimum
-    } else {
-        configs
-            .get(KEY_BOTTOM_CARD_COUNT)
-            .copied()
-            .unwrap_or(minimum as i32)
-            .max(0) as usize
-    };
-    adjusted_bottom_card_count(total_cards, 4, preferred, minimum).unwrap_or(minimum)
-}
-
-fn rewrite_setting_configs(dispatch: &mut Dispatch, configs: &HashMap<String, i32>) {
-    for message in &mut dispatch.messages {
-        match &mut message.payload {
-            OutboundPayload::Response(RequestResponse::WithData(response))
-                if response.route == Routes::SETTING as i32
-                    && response.code as i32 == WsResponseCode::OK as i32 =>
-            {
-                if let Some(data) = response.data.as_object_mut() {
-                    data.insert("current_configs".to_owned(), json!(configs));
-                }
-            }
-            OutboundPayload::Event(event) if event.code == WsCode::SETTING as i32 => {
-                if let Some(data) = event.data.as_object_mut() {
-                    data.insert("current_configs".to_owned(), json!(configs));
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
 struct TractorGameStateHandle {
     inner: TractorStateHandle,
 }
 
 impl TractorGameHandler {
     fn configs_to_rules(configs: &HashMap<String, i32>) -> TractorRules {
+        let deck_count = configs
+            .get(KEY_DECK_COUNT)
+            .copied()
+            .unwrap_or(0)
+            .clamp(0, (MAX_TRACTOR_DECK_COUNT - MIN_TRACTOR_DECK_COUNT) as i32)
+            as usize
+            + MIN_TRACTOR_DECK_COUNT;
         TractorRules {
             attacking_win_score: configs
                 .get(KEY_ATTACKING_WIN_SCORE)
@@ -129,18 +77,8 @@ impl TractorGameHandler {
                 .copied()
                 .unwrap_or(1)
                 .clamp(0, 3) as u8,
-            bottom_card_count: configs
-                .get(KEY_BOTTOM_CARD_COUNT)
-                .copied()
-                .unwrap_or(8)
-                .max(0) as usize,
-            deck_count: configs
-                .get(KEY_DECK_COUNT)
-                .copied()
-                .unwrap_or(0)
-                .clamp(0, (MAX_TRACTOR_DECK_COUNT - MIN_TRACTOR_DECK_COUNT) as i32)
-                as usize
-                + MIN_TRACTOR_DECK_COUNT,
+            bottom_card_count: standard_bottom_card_count(deck_count),
+            deck_count,
             final_target_rank: tractor_rank_from_setting_index(
                 configs.get(KEY_TARGET_RANK).copied().unwrap_or(11),
             ),
@@ -660,6 +598,24 @@ impl GameHandler for TractorGameHandler {
         cfg!(feature = "official")
     }
 
+    fn normalize_common_request(&self, request: &mut ClientRequest) {
+        if request.route != Routes::SETTING as i32 {
+            return;
+        }
+        let Ok(mut payload) = serde_json::from_value::<WsSettingPayload>(request.data.clone())
+        else {
+            return;
+        };
+        if payload
+            .current_configs
+            .remove("bottom_card_count")
+            .is_some()
+            && let Ok(data) = serde_json::to_value(payload)
+        {
+            request.data = data;
+        }
+    }
+
     #[cfg(feature = "official")]
     fn authorize_join(
         &self,
@@ -677,28 +633,6 @@ impl GameHandler for TractorGameHandler {
     ) {
         if matches!(request.route, r if r == Routes::QUIT as i32 || r == Routes::DISBAND as i32) {
             self.prune_stopped_states(room_service);
-        }
-        if request.route == Routes::SETTING as i32
-            && setting_succeeded(dispatch, session_id)
-            && let Some(room_key) = room_service.room_key_of(session_id)
-            && let Some(mut configs) = room_service.room_configs(&room_key)
-        {
-            let requested_configs =
-                serde_json::from_value::<WsSettingPayload>(request.data.clone())
-                    .map(|payload| payload.current_configs)
-                    .unwrap_or_default();
-            let reset_to_deck_minimum = requested_configs.contains_key(KEY_DECK_COUNT)
-                && !requested_configs.contains_key(KEY_BOTTOM_CARD_COUNT);
-            let canonical_bottom = canonical_bottom_card_count(&configs, reset_to_deck_minimum);
-            if configs.get(KEY_BOTTOM_CARD_COUNT).copied() != Some(canonical_bottom as i32) {
-                configs.insert(KEY_BOTTOM_CARD_COUNT.to_owned(), canonical_bottom as i32);
-                if room_service
-                    .replace_room_configs(&room_key, configs.clone())
-                    .is_ok()
-                {
-                    rewrite_setting_configs(dispatch, &configs);
-                }
-            }
         }
         if request.route != Routes::JOIN as i32 || !join_succeeded(dispatch, session_id) {
             return;

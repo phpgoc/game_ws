@@ -110,6 +110,11 @@ pub trait GameHandler: Send + 'static {
         // Optional: override in games that need to enrich common responses/events.
     }
 
+    fn normalize_common_request(&self, _request: &mut ClientRequest) {
+        // Optional: override when a game needs to retire a formerly public common setting
+        // without breaking older clients that still send it.
+    }
+
     fn authorize_join(&self, _join: &share_type_public::WsJoinRequest) -> JoinAuthorizationFuture {
         Box::pin(async { JoinAuthorization::ALLOW_NONMEMBER })
     }
@@ -328,7 +333,7 @@ where
             break;
         }
 
-        let request = match from_message::<ClientRequest>(frame) {
+        let mut request = match from_message::<ClientRequest>(frame) {
             Ok(Some(request)) => request,
             Ok(None) => continue,
             Err(err) => {
@@ -342,6 +347,11 @@ where
                 continue;
             }
         };
+
+        game_handler
+            .lock()
+            .await
+            .normalize_common_request(&mut request);
 
         let parsed_join = (request.route == share_type_public::Routes::JOIN as i32)
             .then(|| {

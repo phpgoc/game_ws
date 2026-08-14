@@ -15,7 +15,7 @@ fn rules(deck_count: usize) -> TractorRules {
         attacking_win_score: 80,
         score_per_level: 40,
         shutout_bonus_levels: 1,
-        bottom_card_count: if deck_count == 3 { 10 } else { 8 },
+        bottom_card_count: if deck_count == 3 { 6 } else { 8 },
         deck_count,
         final_target_rank: TractorRank::A,
         target_rank: TractorRank::TWO,
