@@ -285,6 +285,7 @@ fn successful_action_handlers_update_state_and_broadcast() {
         state.rules.trump_suit = Some(Suit::Heart);
         state.rules.bottom_card_count = 2;
         state.hands.insert(0, vec![1, 2, 3]);
+        state.set_turn_countdown(90);
     }
     assert_eq!(
         response_code(&handler.handle_bury_bottom(&mut room, 1, json!({ "cards": [1, 2] }))),
@@ -347,12 +348,65 @@ fn successful_action_handlers_update_state_and_broadcast() {
         state.current_position = 0;
         state.rules.trump_suit = Some(Suit::Heart);
         state.hands.insert(0, vec![1]);
+        state.set_turn_countdown(30);
     }
     assert_eq!(
         response_code(&handler.handle_play(&mut room, 1, json!({ "cards": [1] }))),
         WsResponseCode::OK
     );
     assert_eq!(state.lock().unwrap().current_trick.len(), 1);
+}
+
+#[test]
+fn expired_operation_window_rejects_actions_without_mutation() {
+    let (handler, mut room) = ready_room();
+    assert_eq!(
+        response_code(&handler.handle_start(&mut room, 1)),
+        WsResponseCode::OK
+    );
+    let state = handler.state(ROOM_KEY).expect("running upgrade state");
+
+    {
+        let mut state = state.lock().unwrap();
+        state.phase = UpgradePhase::Bury;
+        state.dealer_position = 0;
+        state.round_index = 1;
+        state.rules.trump_suit = Some(Suit::Heart);
+        state.rules.bottom_card_count = 2;
+        state.hands.insert(0, vec![1, 2, 3]);
+        state.set_turn_countdown(0);
+    }
+    assert_eq!(
+        response_code(&handler.handle_bury_bottom(&mut room, 1, json!({ "cards": [1, 2] }))),
+        WsResponseCode::NO_PERMISSION
+    );
+    assert_eq!(state.lock().unwrap().private_hand(0), vec![1, 2, 3]);
+
+    {
+        let mut state = state.lock().unwrap();
+        state.phase = UpgradePhase::Bury;
+        state.rules.trump_suit = None;
+        state.set_turn_countdown(0);
+    }
+    assert_eq!(
+        response_code(&handler.handle_select_trump(&mut room, 1, select_spade_request())),
+        WsResponseCode::NO_PERMISSION
+    );
+    assert_eq!(state.lock().unwrap().rules.trump_suit, None);
+
+    {
+        let mut state = state.lock().unwrap();
+        state.phase = UpgradePhase::Play;
+        state.current_position = 0;
+        state.rules.trump_suit = Some(Suit::Heart);
+        state.hands.insert(0, vec![1]);
+        state.set_turn_countdown(0);
+    }
+    assert_eq!(
+        response_code(&handler.handle_play(&mut room, 1, json!({ "cards": [1] }))),
+        WsResponseCode::NO_PERMISSION
+    );
+    assert_eq!(state.lock().unwrap().private_hand(0), vec![1]);
 }
 
 #[test]

@@ -276,6 +276,13 @@ impl UpgradeGameHandler {
         let play_time = Self::play_time(&room_service.room_configs(&room_key).unwrap_or_default());
         let result = {
             let mut state_guard = state.lock().unwrap();
+            if state_guard.base.lock().unwrap().turn_countdown == 0 {
+                return room_service.error_response(
+                    session_id,
+                    route,
+                    WsResponseCode::NO_PERMISSION,
+                );
+            }
             let result = state_guard.bury_bottom(position, request.cards);
             if result.is_ok() && state_guard.phase == share_type_public::UpgradePhase::Play {
                 state_guard.set_turn_countdown(play_time);
@@ -344,6 +351,13 @@ impl UpgradeGameHandler {
         }
         let result = {
             let mut state_guard = state.lock().unwrap();
+            if state_guard.base.lock().unwrap().turn_countdown == 0 {
+                return room_service.error_response(
+                    session_id,
+                    route,
+                    WsResponseCode::NO_PERMISSION,
+                );
+            }
             state_guard.select_trump(position, request.trump_suit)
         };
         if result.is_err() {
@@ -429,6 +443,13 @@ impl UpgradeGameHandler {
         let play_time = Self::play_time(&room_service.room_configs(&room_key).unwrap_or_default());
         let (resolution, event, snapshot, settlement) = {
             let mut state_guard = state.lock().unwrap();
+            if state_guard.base.lock().unwrap().turn_countdown == 0 {
+                return room_service.error_response(
+                    session_id,
+                    route,
+                    WsResponseCode::NO_PERMISSION,
+                );
+            }
             let resolution = match state_guard.play_cards(position, request.cards) {
                 Ok(resolution) => resolution,
                 Err(_) => {
