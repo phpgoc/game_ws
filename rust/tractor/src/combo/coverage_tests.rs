@@ -94,3 +94,62 @@ fn lead_and_follow_enumeration_keep_throw_candidates_bounded_and_legal() {
         &rules
     ));
 }
+
+#[test]
+fn forced_follow_handles_all_small_plain_suit_hands() {
+    let rules = rules();
+    let universe: Vec<i32> = (2..=5).flat_map(|card| [card, card + 100]).collect();
+    let mut subsets = Vec::new();
+    for size in 1..=4 {
+        subsets.extend(combinations(&universe, size));
+    }
+    let leads = subsets
+        .iter()
+        .filter_map(|cards| classify(cards, &rules).map(|combo| (cards.clone(), combo)))
+        .collect::<Vec<_>>();
+    for (lead_cards, lead) in &leads {
+        for hand in &subsets {
+            if hand.len() < lead.kind.card_count() {
+                continue;
+            }
+            let Some(follow) = forced_follow(hand, lead, &rules) else {
+                panic!("missing follow for lead={lead_cards:?} hand={hand:?}");
+            };
+            assert!(
+                follow_is_legal(hand, &follow, lead, &rules),
+                "illegal forced follow for lead={lead_cards:?} hand={hand:?} follow={follow:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn three_deck_forced_follow_handles_structure_boundaries() {
+    let mut rules = rules();
+    rules.deck_count = 3;
+    let universe: Vec<i32> = (2..=4)
+        .flat_map(|card| [card, card + 100, card + 200])
+        .collect();
+    let mut subsets = Vec::new();
+    for size in 1..=6 {
+        subsets.extend(combinations(&universe, size));
+    }
+    let leads = subsets
+        .iter()
+        .filter_map(|cards| classify(cards, &rules).map(|combo| (cards.clone(), combo)))
+        .collect::<Vec<_>>();
+    for (lead_cards, lead) in &leads {
+        for hand in &subsets {
+            if hand.len() < lead.kind.card_count() {
+                continue;
+            }
+            let Some(follow) = forced_follow(hand, lead, &rules) else {
+                panic!("missing three-deck follow for lead={lead_cards:?} hand={hand:?}");
+            };
+            assert!(
+                follow_is_legal(hand, &follow, lead, &rules),
+                "illegal three-deck follow for lead={lead_cards:?} hand={hand:?} follow={follow:?}"
+            );
+        }
+    }
+}
