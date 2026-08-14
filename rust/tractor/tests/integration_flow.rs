@@ -498,12 +498,36 @@ async fn play_complete_tractor_round(
     dealer_position: usize,
     rules: &TractorRules,
 ) -> (WsTractorSettlementEvent, Value) {
-    let total_play_count = hands.iter().map(Vec::len).sum::<usize>();
+    let total_card_count = hands.iter().map(Vec::len).sum::<usize>();
     let mut current_position = dealer_position;
     let mut lead_combo = None;
-    for play_index in 0..total_play_count {
+    let mut play_count = 0_usize;
+    let mut complex_lead_attempted = false;
+    loop {
+        assert!(
+            play_count < total_card_count,
+            "complete tractor round exceeded its physical card count"
+        );
         let hand = &hands[current_position];
         let requested_cards = match lead_combo {
+            None if rules.deck_count == 3 => {
+                let complex = combo::enumerate_leads(hand, rules)
+                    .into_iter()
+                    .find(|cards| {
+                        matches!(
+                            combo::classify(cards, rules).map(|combo| combo.kind),
+                            Some(
+                                combo::ComboKind::Tractor(_)
+                                    | combo::ComboKind::Titanic(_)
+                                    | combo::ComboKind::Throw { .. }
+                            )
+                        )
+                    });
+                if complex.is_some() {
+                    complex_lead_attempted = true;
+                }
+                complex.unwrap_or_else(|| vec![*hand.first().expect("tractor round lead card")])
+            }
             None => vec![*hand.first().expect("tractor round lead card")],
             Some(ref lead) => {
                 combo::forced_follow(hand, lead, rules).expect("tractor round legal follow")
@@ -539,7 +563,8 @@ async fn play_complete_tractor_round(
             hands[current_position].remove(index);
         }
 
-        let final_play = play_index + 1 == total_play_count;
+        play_count += 1;
+        let final_play = hands.iter().all(Vec::is_empty);
         let expected_phase = if final_play {
             TractorPhase::Settlement
         } else {
@@ -568,6 +593,12 @@ async fn play_complete_tractor_round(
             )
             .await;
             assert!(hands.iter().all(Vec::is_empty));
+            if rules.deck_count == 3 {
+                assert!(
+                    complex_lead_attempted,
+                    "three-deck round must exercise a complex lead"
+                );
+            }
             return (
                 serde_json::from_value(game_over["data"].clone())
                     .expect("complete tractor round settlement payload"),
@@ -590,16 +621,17 @@ async fn play_complete_tractor_round(
         {
             lead_combo = None;
         } else {
-            let lead_card = snapshot["data"]["current_trick"][0]["cards"][0]
-                .as_i64()
-                .expect("complete tractor round lead card") as i32;
+            let lead_cards = snapshot["data"]["current_trick"][0]["cards"]
+                .as_array()
+                .expect("complete tractor round lead cards")
+                .iter()
+                .map(|card| card.as_i64().expect("complete tractor round lead card") as i32)
+                .collect::<Vec<_>>();
             lead_combo = Some(
-                combo::classify(&[lead_card], rules)
-                    .expect("complete tractor round single lead combo"),
+                combo::classify(&lead_cards, rules).expect("complete tractor round lead combo"),
             );
         }
     }
-    panic!("complete tractor round ended without settlement");
 }
 
 #[cfg(not(feature = "official"))]
@@ -3531,7 +3563,10 @@ async fn tractor_three_deck_ws_deals_and_buries_the_correct_counts() {
     };
     let (settlement, final_snapshot) =
         play_complete_tractor_round(&mut clients, &mut hands, dealer_position, &rules).await;
-    assert_eq!(final_snapshot["data"]["phase"], json!(TractorPhase::Settlement as i8));
+    assert_eq!(
+        final_snapshot["data"]["phase"],
+        json!(TractorPhase::Settlement as i8)
+    );
     assert_eq!(settlement.target_rank, TractorRank::THREE);
     assert_eq!(hands.iter().map(Vec::len).sum::<usize>(), 0);
 }
