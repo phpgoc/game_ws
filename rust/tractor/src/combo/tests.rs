@@ -332,6 +332,35 @@ fn trump_rank_closes_the_tractor_gap() {
 }
 
 #[test]
+fn trump_tractor_edges_keep_level_and_joker_order() {
+    let mut rules = rules(TractorRank::THREE);
+    rules.trump_suit = Some(share_type_public::TractorSuit::HEART);
+
+    // The off-suit level pair, small-joker pair and big-joker pair occupy
+    // consecutive trump slots. Different level-card identities share one
+    // slot, so they cannot form a tractor with each other.
+    assert_eq!(
+        classify(&[2, 102, 53, 153], &rules).map(|combo| combo.kind),
+        Some(ComboKind::Tractor(2))
+    );
+    assert_eq!(
+        classify(&[53, 153, 54, 154], &rules).map(|combo| combo.kind),
+        Some(ComboKind::Tractor(2))
+    );
+    assert_eq!(
+        classify(&[2, 102, 15, 115], &rules).map(|combo| combo.kind),
+        Some(ComboKind::Throw { cards: 4, pairs: 2 })
+    );
+
+    // Ordinary trump ranks remain consecutive on either side of the level
+    // gap; the level card itself is the explicit boundary before the jokers.
+    assert_eq!(
+        classify(&[25, 125, 26, 126], &rules).map(|combo| combo.kind),
+        Some(ComboKind::Tractor(2))
+    );
+}
+
+#[test]
 fn void_in_led_suit_allows_any_cards() {
     let rules = rules(TractorRank::TWO);
     let lead = classify(&[2, 102], &rules).unwrap();
