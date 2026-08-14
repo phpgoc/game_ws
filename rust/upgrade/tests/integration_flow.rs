@@ -1611,24 +1611,19 @@ async fn upgrade_server_completes_round_and_enters_later_round() {
                     .map(|scores| scores.len()),
                 Some(4)
             );
-            later_dealer = game_over["data"]["winner_positions"]
+            let winning_side = if game_over["data"]["winner_positions"]
                 .as_array()
-                .and_then(|winners| winners.first())
-                .and_then(Value::as_i64)
-                .map(|winner| {
-                    if game_over["data"]["winner_positions"]
-                        .as_array()
-                        .is_some_and(|winners| {
-                            winners
-                                .iter()
-                                .any(|position| position == &json!(first_dealer))
-                        })
-                    {
-                        first_dealer
-                    } else {
-                        winner as usize
-                    }
-                });
+                .is_some_and(|winners| {
+                    winners
+                        .iter()
+                        .any(|position| position == &json!(first_dealer))
+                })
+            {
+                ScoreSide::Defending
+            } else {
+                ScoreSide::Attacking
+            };
+            later_dealer = Some(next_four_player_dealer(first_dealer, winning_side));
             assert_eq!(
                 wait_for_response(&mut *clients[current_position], Routes::PLAY as i32).await["code"],
                 json!(WsResponseCode::OK as i32)
