@@ -1458,11 +1458,11 @@ async fn tractor_ws_rejects_declaration_while_paused_and_accepts_it_after_resume
     })
     .await;
 
-    let clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
+    let mut clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
     let mut declaration = None;
     'deal: for _ in 0..38 {
-        for position in 0..4 {
-            let card = recv_tractor_private_deal(&mut *clients[position], position).await;
+        for (position, client) in clients.iter_mut().enumerate() {
+            let card = recv_tractor_private_deal(client, position).await;
             let decoded = Card::try_from(card).expect("paused declaration candidate");
             if decoded.rank() == Rank::Three && decoded.suit().is_some() {
                 declaration = Some((position, card));
