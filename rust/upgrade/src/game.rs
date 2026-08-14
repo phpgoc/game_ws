@@ -20,7 +20,7 @@ use crate::{
         KEY_SCORE_PER_LEVEL, KEY_SHUTOUT_BONUS_LEVELS, build_upgrade_settings,
         deck_count_from_setting,
     },
-    state::{UpgradeGameState, UpgradeRules, UpgradeStateHandle, first_upgrade_rank},
+    state::{PLAYER_COUNT, UpgradeGameState, UpgradeRules, UpgradeStateHandle, first_upgrade_rank},
 };
 
 pub(crate) type StateRegistry = Arc<std::sync::Mutex<HashMap<String, UpgradeStateHandle>>>;
@@ -524,7 +524,35 @@ impl GameHandler for UpgradeGameHandler {
         let Some(room_key) = room_service.room_key_of(session_id) else {
             return;
         };
+        let Some(position) = room_service.session_position(session_id) else {
+            return;
+        };
         let Some(state) = self.current_state(room_service, &room_key) else {
+            let configs = room_service.room_configs(&room_key).unwrap_or_default();
+            let Some(common) = room_service.room_common_state(&room_key) else {
+                return;
+            };
+            let mut lobby = UpgradeGameState::from_common(common);
+            lobby.rules = Self::configs_to_rules(&configs);
+            lobby.hands = (0..PLAYER_COUNT)
+                .map(|position| (position, Vec::new()))
+                .collect();
+            Self::push_private_event(
+                dispatch,
+                session_id,
+                UpgradeWsCode::HAND_UPDATED,
+                WsUpgradeHandEvent {
+                    position: position as i32,
+                    cards: Vec::new(),
+                },
+            );
+            dispatch.messages.push(Delivery {
+                recipient: session_id,
+                payload: OutboundPayload::Event(CommonEvent {
+                    code: WsCode::TABLE_SNAPSHOT as i32,
+                    data: serde_json::to_value(lobby.snapshot()).unwrap_or(Value::Null),
+                }),
+            });
             return;
         };
         let settlement = {

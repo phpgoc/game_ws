@@ -1208,7 +1208,15 @@ async fn four_players_can_deal_bury_and_play_first_round() {
     let dealer = declaration["data"]["position"].as_u64().unwrap() as usize;
     let mut hands = Vec::new();
     for (position, client) in clients.iter_mut().enumerate() {
-        let hand = wait_for_event(client, UpgradeWsCode::HAND_UPDATED as i32).await;
+        let hand = loop {
+            let hand = wait_for_event(client, UpgradeWsCode::HAND_UPDATED as i32).await;
+            if hand["data"]["cards"]
+                .as_array()
+                .is_some_and(|cards| !cards.is_empty())
+            {
+                break hand;
+            }
+        };
         assert_eq!(hand["data"]["position"], json!(position));
         assert_eq!(
             hand["data"]["cards"].as_array().unwrap().len(),

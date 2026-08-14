@@ -166,6 +166,59 @@ fn request_handlers_require_a_running_game_and_reject_wrong_phase_actions() {
 }
 
 #[test]
+fn idle_join_receives_an_empty_upgrade_table() {
+    let mut handler = UpgradeGameHandler::default();
+    let mut room = RoomService::default();
+    let request = join_request("u1");
+    let mut dispatch = room
+        .handle_common_request(1, &request, GameId::UPGRADE, build_upgrade_settings)
+        .expect("common upgrade join dispatch");
+
+    handler.after_common_request(&mut room, 1, &request, &mut dispatch);
+
+    let hand = dispatch.messages.iter().find_map(|message| {
+        if message.recipient != 1 {
+            return None;
+        }
+        match &message.payload {
+            OutboundPayload::Event(event) if event.code == UpgradeWsCode::HAND_UPDATED as i32 => {
+                Some(event.data.clone())
+            }
+            _ => None,
+        }
+    });
+    assert_eq!(hand, Some(json!({ "position": 0, "cards": [] })));
+
+    let snapshot = dispatch.messages.iter().find_map(|message| {
+        if message.recipient != 1 {
+            return None;
+        }
+        match &message.payload {
+            OutboundPayload::Event(event)
+                if event.code == share_type_public::WsCode::TABLE_SNAPSHOT as i32 =>
+            {
+                Some(event.data.clone())
+            }
+            _ => None,
+        }
+    });
+    assert_eq!(
+        snapshot
+            .as_ref()
+            .and_then(|value| value.get("phase"))
+            .and_then(Value::as_i64),
+        Some(UpgradePhase::Start as i64)
+    );
+    assert_eq!(
+        snapshot
+            .as_ref()
+            .and_then(|value| value.get("dealt_count"))
+            .and_then(Value::as_i64),
+        Some(0)
+    );
+}
+
+#[test]
 fn away_human_cannot_send_a_manual_play_until_back() {
     let (handler, mut room) = ready_room();
     assert_eq!(
