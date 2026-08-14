@@ -3417,7 +3417,7 @@ async fn tractor_three_deck_ws_deals_and_buries_the_correct_counts() {
     .await;
 
     let mut clients: [&mut Client; 4] = [&mut a, &mut b, &mut c, &mut d];
-    let hands = collect_tractor_hands(&mut clients, 39).await;
+    let mut hands = collect_tractor_hands(&mut clients, 39).await;
     assert!(hands.iter().all(|hand| hand.len() == 39));
     let (declaration, bottom_seen_by_first_client) = recv_first_declaration(&mut *clients[0]).await;
     let dealer_position = declaration["data"]["position"]
@@ -3501,6 +3501,39 @@ async fn tractor_three_deck_ws_deals_and_buries_the_correct_counts() {
     )
     .await;
     assert_eq!(buried["code"], json!(WsResponseCode::OK as i32));
+
+    hands[dealer_position].extend(bottom_cards.iter().copied());
+    for card in &bottom_cards {
+        let index = hands[dealer_position]
+            .iter()
+            .position(|candidate| candidate == card)
+            .expect("three-deck bottom card was dealt to dealer");
+        hands[dealer_position].remove(index);
+    }
+    let trump_suit = snapshot["data"]["trump_suit"]
+        .as_i64()
+        .map(|suit| match suit {
+            0 => TractorSuit::SPADE,
+            1 => TractorSuit::HEART,
+            2 => TractorSuit::CLUB,
+            3 => TractorSuit::DIAMOND,
+            _ => panic!("invalid three-deck trump suit"),
+        });
+    let rules = TractorRules {
+        attacking_win_score: 80,
+        score_per_level: 40,
+        shutout_bonus_levels: 1,
+        bottom_card_count: 6,
+        deck_count: 3,
+        final_target_rank: TractorRank::A,
+        target_rank: TractorRank::THREE,
+        trump_suit,
+    };
+    let (settlement, final_snapshot) =
+        play_complete_tractor_round(&mut clients, &mut hands, dealer_position, &rules).await;
+    assert_eq!(final_snapshot["data"]["phase"], json!(TractorPhase::Settlement as i8));
+    assert_eq!(settlement.target_rank, TractorRank::THREE);
+    assert_eq!(hands.iter().map(Vec::len).sum::<usize>(), 0);
 }
 
 #[cfg(not(feature = "official"))]
