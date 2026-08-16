@@ -11,6 +11,7 @@ pub enum P2pRoutes {
     SIGNAL = 5002,
     LEAVE = 5003,
     NETWORK_RESULT = 5004,
+    REFRESH_ICE_CONFIG = 5005,
 }
 
 #[typeshare]

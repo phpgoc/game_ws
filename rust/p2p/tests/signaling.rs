@@ -117,6 +117,27 @@ async fn websocket_clients_join_signal_and_leave() {
     send_json(
         &mut first,
         json!({
+            "route": 5005,
+            "data": {}
+        }),
+    )
+    .await;
+    let refresh_response = read_until(&mut first, |value| value["route"] == 5005).await;
+    assert_eq!(refresh_response["code"], 0);
+    let refreshed_turn = read_until(&mut first, |value| {
+        value["code"] == 5001 && value["data"]["turn_enabled"] == true
+    })
+    .await;
+    assert_ne!(refreshed_turn["data"]["credential_expires_at"], "0");
+    assert!(
+        refreshed_turn["data"]["ice_servers"][1]["credential"]
+            .as_str()
+            .is_some_and(|credential| !credential.is_empty())
+    );
+
+    send_json(
+        &mut first,
+        json!({
             "route": 5002,
             "data": {
                 "target_position": 1,

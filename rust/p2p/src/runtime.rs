@@ -452,6 +452,9 @@ async fn handle_request(
             };
             report_network_result(state, ice_config, options, session_id, sender, result).await
         }
+        route if route == P2pRoutes::REFRESH_ICE_CONFIG as i32 => {
+            refresh_ice_config(state, ice_config, session_id, sender).await
+        }
         route => vec![response_delivery(
             sender,
             route,
@@ -607,6 +610,44 @@ async fn join_room(
     };
     for target in start_state_targets {
         deliveries.push(start_state_delivery(target, initial_state));
+    }
+    deliveries
+}
+
+async fn refresh_ice_config(
+    state: &Arc<Mutex<SignalingState>>,
+    ice_config: &IceServiceConfig,
+    session_id: SessionId,
+    sender: Sender,
+) -> Vec<Delivery> {
+    let membership_info = {
+        let state = state.lock().await;
+        state.memberships.get(&session_id).and_then(|membership| {
+            let room = state.rooms.get(&membership.key)?;
+            let peer = room.peers.get(membership.position)?.as_ref()?;
+            (peer.session_id == session_id).then_some((membership.position, room.turn_offered))
+        })
+    };
+    let Some((position, turn_enabled)) = membership_info else {
+        return vec![response_delivery(
+            sender,
+            P2pRoutes::REFRESH_ICE_CONFIG as i32,
+            WsResponseCode::NOT_LOGIN,
+        )];
+    };
+
+    let mut deliveries = vec![response_delivery(
+        sender.clone(),
+        P2pRoutes::REFRESH_ICE_CONFIG as i32,
+        WsResponseCode::OK,
+    )];
+    match ice_config.issue_event_with_turn(session_id, position, turn_enabled) {
+        Ok(event) => deliveries.push(event_delivery(sender, P2pWsCode::ICE_CONFIG, &event)),
+        Err(_) => deliveries.push(response_delivery(
+            sender,
+            P2pRoutes::REFRESH_ICE_CONFIG as i32,
+            WsResponseCode::NO_PERMISSION,
+        )),
     }
     deliveries
 }
