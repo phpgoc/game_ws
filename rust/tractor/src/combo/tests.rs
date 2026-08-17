@@ -118,6 +118,33 @@ fn follow_candidates_include_point_avoiding_single_combinations() {
 }
 
 #[test]
+fn follow_candidates_merge_equivalent_physical_copies() {
+    let mut rules = rules(TractorRank::TWO);
+    rules.deck_count = 3;
+    let lead = classify(&[8, 108], &rules).expect("pair lead");
+    let hand = vec![4, 104, 204];
+    let candidates = enumerate_follows(&hand, &lead, &rules);
+
+    assert_eq!(candidates.len(), 1);
+    assert!(follow_is_legal(&hand, &candidates[0], &lead, &rules));
+}
+
+#[test]
+fn bounded_follow_candidates_keep_the_forced_reply_without_expanding_a_wide_subset() {
+    let mut rules = rules(TractorRank::TWO);
+    rules.deck_count = 3;
+    let lead = classify(&[15, 115, 16, 116, 17, 117], &rules).expect("three-pair tractor");
+    let hand = (15..=26).collect::<Vec<_>>();
+
+    let full = enumerate_follows(&hand, &lead, &rules);
+    let bounded = enumerate_follows_with_subset_limit(&hand, &lead, &rules, 512);
+
+    assert_eq!(full.len(), 924);
+    assert_eq!(bounded.len(), 1);
+    assert!(follow_is_legal(&hand, &bounded[0], &lead, &rules));
+}
+
+#[test]
 fn forced_follow_is_always_legal() {
     let rules = rules(TractorRank::TWO);
     let lead = classify(&[2, 102], &rules).unwrap();

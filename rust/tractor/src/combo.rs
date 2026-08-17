@@ -13,7 +13,7 @@
 //! Pairs are matched by card *identity* (base card), never by rank alone, so
 //! `5♠ + 5♥` is two singles, not a pair.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use share_type_public::WsTractorPlayedCards;
 
@@ -519,17 +519,27 @@ fn titanic_follow_signature(
 /// (for example avoiding a five while following a pair with two singles).
 pub fn enumerate_follows(hand: &[i32], lead: &Combo, rules: &TractorRules) -> Vec<Vec<i32>> {
     const SUBSET_LIMIT: usize = 4_096;
+    enumerate_follows_with_subset_limit(hand, lead, rules, SUBSET_LIMIT)
+}
 
+pub(crate) fn enumerate_follows_with_subset_limit(
+    hand: &[i32],
+    lead: &Combo,
+    rules: &TractorRules,
+    subset_limit: usize,
+) -> Vec<Vec<i32>> {
     let mut out = Vec::new();
+    let mut seen = HashSet::new();
     if let Some(cards) = forced_follow(hand, lead, rules)
         && follow_is_legal(hand, &cards, lead, rules)
     {
+        seen.insert(follow_card_key(&cards));
         out.push(cards);
     }
     for cards in enumerate_leads(hand, rules) {
         if classify(&cards, rules).map(|combo| combo.kind) == Some(lead.kind)
             && follow_is_legal(hand, &cards, lead, rules)
-            && !out.contains(&cards)
+            && seen.insert(follow_card_key(&cards))
         {
             out.push(cards);
         }
@@ -548,15 +558,17 @@ pub fn enumerate_follows(hand: &[i32], lead: &Combo, rules: &TractorRules) -> Ve
         .collect();
     let group_count = group.len().min(lead_len);
     let outside_count = lead_len - group_count;
-    let subset_count = capped_choose(group.len(), group_count, SUBSET_LIMIT)
-        .saturating_mul(capped_choose(outside.len(), outside_count, SUBSET_LIMIT));
-    if subset_count <= SUBSET_LIMIT {
+    let subset_count = capped_choose(group.len(), group_count, subset_limit)
+        .saturating_mul(capped_choose(outside.len(), outside_count, subset_limit));
+    if subset_count <= subset_limit {
         for_each_combination(&group, group_count, |group_cards| {
             for_each_combination(&outside, outside_count, |outside_cards| {
                 let mut cards = Vec::with_capacity(lead_len);
                 cards.extend_from_slice(group_cards);
                 cards.extend_from_slice(outside_cards);
-                if follow_is_legal(hand, &cards, lead, rules) && !out.contains(&cards) {
+                if follow_is_legal(hand, &cards, lead, rules)
+                    && seen.insert(follow_card_key(&cards))
+                {
                     out.push(cards);
                 }
                 true
@@ -565,6 +577,15 @@ pub fn enumerate_follows(hand: &[i32], lead: &Combo, rules: &TractorRules) -> Ve
         });
     }
     out
+}
+
+fn follow_card_key(cards: &[i32]) -> Vec<i32> {
+    let mut key = cards
+        .iter()
+        .map(|card| base_card(*card))
+        .collect::<Vec<_>>();
+    key.sort_unstable();
+    key
 }
 
 /// Enumerate legal lead plays (singles, pairs, tractors) from a hand.
