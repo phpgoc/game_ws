@@ -4,7 +4,7 @@ use std::time::Duration;
 use dominoes::game::DominoesGameHandler;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
-use share_type_public::{DominoesRoutes, DominoesWsCode, GameId, Routes, WsResponseCode};
+use share_type_public::{DominoesRoutes, DominoesWsCode, GameId, Routes, WsCode, WsResponseCode};
 use tokio::net::TcpListener as TokioTcpListener;
 use tokio_tungstenite::{WebSocketStream, connect_async, tungstenite::Message};
 #[cfg(feature = "official")]
@@ -144,6 +144,95 @@ async fn three_players_can_start_and_place_the_opening_tile() {
         response.get("code").and_then(Value::as_i64),
         Some(WsResponseCode::OK as i64)
     );
+
+    server.abort();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn ai_seats_can_reach_and_drop_below_the_three_player_start_limit() {
+    let port = free_port();
+    let listen_addr = format!("127.0.0.1:{port}");
+    let url = format!("ws://{listen_addr}");
+    let server = tokio::spawn(run_room_runtime(
+        RuntimeConfig {
+            service_name: "dominoes-ai-seat-test",
+            listen_addr,
+            idle_timeout: Duration::from_secs(30),
+            heartbeat_interval: Duration::from_secs(30),
+        },
+        DominoesGameHandler::default(),
+    ));
+    wait_for_server(port).await;
+
+    let mut owner = connect_client(&url).await;
+    join(&mut owner, "owner", "dominoes-ai-seat-room").await;
+
+    send_request(&mut owner, Routes::START as i32, json!({})).await;
+    let too_few = recv_until(&mut owner, "one-player start response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::START as i64)
+    })
+    .await;
+    assert_eq!(too_few["code"], json!(WsResponseCode::NOT_IN_RANGE as i32));
+
+    send_request(&mut owner, Routes::ADD_AI as i32, json!({ "count": 2 })).await;
+    let mut ai_names = Vec::new();
+    for expected_position in 1..=2 {
+        let joined = recv_until(&mut owner, "AI join event", |value| {
+            value.get("code").and_then(Value::as_i64) == Some(WsCode::JOIN as i64)
+                && value["data"]["is_ai"] == json!(true)
+        })
+        .await;
+        assert_eq!(joined["data"]["position"], json!(expected_position));
+        ai_names.push(joined["data"]["name"].clone());
+    }
+    let added = recv_until(&mut owner, "add AI response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::ADD_AI as i64)
+    })
+    .await;
+    assert_eq!(added["code"], json!(WsResponseCode::OK as i32));
+
+    send_request(
+        &mut owner,
+        Routes::REMOVE_AI as i32,
+        json!({ "position": 2 }),
+    )
+    .await;
+    let removed = recv_until(&mut owner, "AI quit event", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::QUIT as i64)
+            && value["data"]["name"] == ai_names[1]
+    })
+    .await;
+    assert_eq!(removed["data"]["name"], ai_names[1]);
+    let removed_response = recv_until(&mut owner, "remove AI response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::REMOVE_AI as i64)
+    })
+    .await;
+    assert_eq!(removed_response["code"], json!(WsResponseCode::OK as i32));
+
+    send_request(&mut owner, Routes::START as i32, json!({})).await;
+    let below_limit = recv_until(&mut owner, "two-player start response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::START as i64)
+    })
+    .await;
+    assert_eq!(
+        below_limit["code"],
+        json!(WsResponseCode::NOT_IN_RANGE as i32)
+    );
+
+    send_request(&mut owner, Routes::ADD_AI as i32, json!({ "count": 1 })).await;
+    recv_until(&mut owner, "replacement AI join event", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::JOIN as i64)
+            && value["data"]["is_ai"] == json!(true)
+    })
+    .await;
+    recv_until(&mut owner, "replacement AI response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::ADD_AI as i64)
+    })
+    .await;
+
+    send_request(&mut owner, Routes::START as i32, json!({})).await;
+    let started = recv_start_bundle(&mut owner, true).await;
+    assert_eq!(started.hand.len(), 5);
 
     server.abort();
 }
