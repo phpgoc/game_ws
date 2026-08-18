@@ -37,6 +37,7 @@ fn response_code(dispatch: &ws_common::Dispatch) -> Option<i32> {
 fn handler_owns_only_the_upgrade_game_id() {
     let handler = UpgradeGameHandler::default();
     assert_eq!(handler.game_id(), GameId::UPGRADE);
+    assert!(handler.supports_ai_players());
     assert!(handler.accepts_game_id(GameId::UPGRADE));
     assert!(!handler.accepts_game_id(GameId::TRACTOR));
 }

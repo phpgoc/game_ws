@@ -2,9 +2,6 @@ use tractor::game::TractorGameHandler;
 use ws_common::GameHandler;
 
 #[test]
-fn ai_players_follow_the_official_feature() {
-    assert_eq!(
-        TractorGameHandler::default().supports_ai_players(),
-        cfg!(feature = "official")
-    );
+fn tractor_server_advertises_ai_players() {
+    assert!(TractorGameHandler::default().supports_ai_players());
 }

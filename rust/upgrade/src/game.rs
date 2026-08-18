@@ -511,6 +511,10 @@ impl Default for UpgradeGameHandler {
 }
 
 impl GameHandler for UpgradeGameHandler {
+    fn supports_ai_players(&self) -> bool {
+        true
+    }
+
     fn after_common_request(
         &mut self,
         room_service: &mut RoomService,

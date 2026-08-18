@@ -359,7 +359,7 @@ impl Default for DominoesGameHandler {
 
 impl GameHandler for DominoesGameHandler {
     fn supports_ai_players(&self) -> bool {
-        cfg!(feature = "official")
+        true
     }
 
     fn authorize_join(
