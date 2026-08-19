@@ -38,6 +38,19 @@ fn utility_boundaries_cover_standard_bottom_and_suit_mapping() {
 }
 
 #[test]
+fn ordinary_two_is_not_trump_until_two_becomes_the_level_rank() {
+    let mut state = state();
+    state.rules.target_rank = TractorRank::THREE;
+    state.rules.trump_suit = Some(TractorSuit::HEART);
+
+    assert!(!super::is_trump_card(1, &state.rules));
+    assert!(super::is_trump_card(14, &state.rules));
+
+    state.rules.target_rank = TractorRank::TWO;
+    assert!(super::is_trump_card(1, &state.rules));
+}
+
+#[test]
 fn bury_and_declaration_reject_wrong_phase_cards_and_jokers() {
     let mut state = state();
     state.dealer_position = 0;

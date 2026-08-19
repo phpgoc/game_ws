@@ -125,6 +125,25 @@ fn level_cards_and_jokers_stay_above_ordinary_trump_cards() {
 }
 
 #[test]
+fn an_ordinary_two_stays_in_its_natural_suit_until_two_is_the_level() {
+    let spade_two = cards(&[1])[0];
+    let heart_two = cards(&[14])[0];
+    let non_two_level = UpgradeComboRules {
+        target_rank: Rank::Three,
+        trump_suit: Some(Suit::Heart),
+    };
+
+    assert_eq!(card_group(spade_two, non_two_level), Some(Suit::Spade));
+    assert_eq!(card_group(heart_two, non_two_level), None);
+
+    let two_level = UpgradeComboRules {
+        target_rank: Rank::Two,
+        trump_suit: Some(Suit::Heart),
+    };
+    assert_eq!(card_group(spade_two, two_level), None);
+}
+
+#[test]
 fn higher_pair_forces_a_three_pair_throw_back_to_its_lowest_pair() {
     let attempted = cards(&[5, 105, 6, 106, 7, 107]);
     let opponent = cards(&[8, 108]);
