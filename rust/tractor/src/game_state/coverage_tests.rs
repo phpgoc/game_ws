@@ -42,7 +42,12 @@ fn every_two_is_permanent_trump_and_the_trump_suit_two_is_stronger() {
     let mut state = state();
     state.rules.trump_suit = Some(TractorSuit::HEART);
 
-    for target_rank in [TractorRank::THREE, TractorRank::FIVE, TractorRank::A] {
+    for target_rank in [
+        TractorRank::TWO,
+        TractorRank::THREE,
+        TractorRank::FIVE,
+        TractorRank::A,
+    ] {
         state.rules.target_rank = target_rank;
         for card in [1, 14, 27, 40] {
             assert!(super::is_trump_card(card, &state.rules));

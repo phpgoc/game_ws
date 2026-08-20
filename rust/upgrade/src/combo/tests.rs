@@ -199,7 +199,7 @@ fn follow_uses_every_available_lead_group_card_for_each_lead_size() {
 fn every_two_is_permanent_trump_and_the_trump_suit_two_is_stronger() {
     let all_twos = cards(&[1, 14, 27, 40]);
 
-    for target_rank in [Rank::Three, Rank::Five, Rank::Ace] {
+    for target_rank in [Rank::Two, Rank::Three, Rank::Five, Rank::Ace] {
         let rules = UpgradeComboRules {
             target_rank,
             trump_suit: Some(Suit::Heart),
