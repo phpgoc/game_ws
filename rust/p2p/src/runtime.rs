@@ -511,7 +511,7 @@ async fn join_room(
             return vec![response_delivery(
                 sender,
                 P2pRoutes::JOIN as i32,
-                WsResponseCode::NO_PERMISSION,
+                WsResponseCode::ROOM_FULL,
             )];
         };
         room.peers[position] = Some(Peer {
@@ -968,7 +968,7 @@ mod tests {
             third_response
                 .into_text()
                 .expect("text")
-                .contains("\"code\":403")
+                .contains("\"code\":409")
         );
 
         while red_rx.try_recv().is_ok() {}

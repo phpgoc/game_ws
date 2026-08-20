@@ -130,5 +130,6 @@ pub enum WsResponseCode {
     NOT_LOGIN = 401,
     WRONG_GAME = 402,
     NO_PERMISSION = 403,
+    ROOM_FULL = 409,
     NOT_IN_RANGE = 410,
 }
