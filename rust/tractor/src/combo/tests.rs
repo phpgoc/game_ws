@@ -396,6 +396,41 @@ fn trump_tractor_edges_keep_level_and_joker_order() {
 }
 
 #[test]
+fn trump_titanic_edges_use_the_same_strict_special_sequence() {
+    let mut rules = rules(TractorRank::THREE);
+    rules.deck_count = 3;
+    rules.trump_suit = Some(share_type_public::TractorSuit::HEART);
+
+    for cards in [
+        [26, 126, 226, 1, 101, 201],
+        [1, 101, 201, 14, 114, 214],
+        [14, 114, 214, 2, 102, 202],
+        [2, 102, 202, 15, 115, 215],
+        [15, 115, 215, 53, 153, 253],
+        [53, 153, 253, 54, 154, 254],
+    ] {
+        assert_eq!(
+            classify(&cards, &rules).map(|combo| combo.kind),
+            Some(ComboKind::Titanic(2)),
+            "expected adjacent permanent-trump triples for {cards:?}",
+        );
+    }
+
+    for cards in [
+        [26, 126, 226, 14, 114, 214],
+        [1, 101, 201, 2, 102, 202],
+        [14, 114, 214, 15, 115, 215],
+        [2, 102, 202, 53, 153, 253],
+    ] {
+        assert_eq!(
+            classify(&cards, &rules).map(|combo| combo.kind),
+            Some(ComboKind::Throw { cards: 6, pairs: 2 }),
+            "skipping a permanent-trump layer must not form a Titanic for {cards:?}",
+        );
+    }
+}
+
+#[test]
 fn permanent_two_lead_forces_following_the_trump_group() {
     let mut rules = rules(TractorRank::THREE);
     rules.trump_suit = Some(share_type_public::TractorSuit::HEART);

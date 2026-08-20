@@ -108,6 +108,47 @@ fn pair_follow_cannot_be_split_when_the_follower_has_the_pair() {
 }
 
 #[test]
+fn permanent_two_lead_stays_trump_through_the_game_state_for_every_level() {
+    for (target_rank, ordinary_card) in [
+        (TractorRank::THREE, 3),
+        (TractorRank::FIVE, 2),
+        (TractorRank::A, 2),
+    ] {
+        let mut level_rules = rules(2);
+        level_rules.target_rank = target_rank;
+        level_rules.trump_suit = Some(TractorSuit::HEART);
+        let hands = HashMap::from([
+            (0, vec![1]),
+            (1, vec![27, ordinary_card]),
+            (2, vec![40]),
+            (3, vec![14]),
+        ]);
+        let mut state = state_with_hands(level_rules, Vec::new(), hands);
+
+        state
+            .play_cards(0, "p0".to_owned(), vec![1])
+            .expect("an off-suit two is a legal permanent-trump lead");
+        let follower_hand = state.hands.get(&1).cloned().unwrap();
+        assert_eq!(
+            state
+                .play_cards(1, "p1".to_owned(), vec![ordinary_card])
+                .expect_err("a follower holding another two must follow the trump group"),
+            "illegal follow",
+            "target rank {target_rank:?}",
+        );
+        assert_eq!(state.hands.get(&1), Some(&follower_hand));
+        assert_eq!(
+            state.choose_auto_play(1),
+            Some(vec![27]),
+            "automatic follow must choose the remaining permanent two at target {target_rank:?}",
+        );
+        state
+            .play_cards(1, "p1".to_owned(), vec![27])
+            .expect("another-suit two is a legal trump-group follow");
+    }
+}
+
+#[test]
 fn later_round_dealer_can_select_trump_only_once_before_burying() {
     let mut state = state_with_hands(rules(2), Vec::new(), HashMap::new());
     state.phase = TractorPhase::Bury;

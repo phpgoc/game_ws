@@ -131,6 +131,38 @@ fn upgrade_follow_preserves_the_longest_components_without_tractor_continuity() 
 }
 
 #[test]
+fn permanent_two_lead_uses_the_trump_group_at_every_upgrade_level() {
+    for (target_rank, ordinary_card) in [(Rank::Three, 3), (Rank::Five, 2), (Rank::Ace, 2)] {
+        let mut state = state_with_hands(
+            vec![],
+            HashMap::from([
+                (0, vec![1]),
+                (1, vec![27, ordinary_card]),
+                (2, vec![40]),
+                (3, vec![14]),
+            ]),
+        );
+        state.rules.target_rank = target_rank;
+
+        state
+            .play_cards(0, vec![1])
+            .expect("an off-suit two is a legal permanent-trump lead");
+        let follower_hand = state.hands.get(&1).cloned().unwrap();
+        assert_eq!(
+            state
+                .play_cards(1, vec![ordinary_card])
+                .expect_err("a follower holding another two must follow the trump group"),
+            "illegal follow",
+            "target rank {target_rank:?}",
+        );
+        assert_eq!(state.hands.get(&1), Some(&follower_hand));
+        state
+            .play_cards(1, vec![27])
+            .expect("another-suit two is a legal trump-group follow");
+    }
+}
+
+#[test]
 fn six_deck_bottom_score_keeps_a_four_copy_component_as_the_maximum() {
     let mut state = state_with_hands(
         vec![9],

@@ -119,6 +119,31 @@ fn permanent_twos_and_level_cards_share_the_trump_group() {
 }
 
 #[test]
+fn off_suit_twos_tie_below_the_trump_suit_two_at_every_runtime_level() {
+    for target in [Rank::Three, Rank::Five, Rank::Ace] {
+        let off_suit_positions = [1, 27, 40].map(|encoded| {
+            trump_order_position(Card::try_from(encoded).unwrap(), target, Some(Suit::Heart))
+                .expect("every off-suit two is permanent trump")
+        });
+        assert!(
+            off_suit_positions
+                .windows(2)
+                .all(|positions| positions[0] == positions[1]),
+            "off-suit twos must tie at target {target:?}",
+        );
+
+        let trump_two =
+            trump_order_position(Card::try_from(14).unwrap(), target, Some(Suit::Heart))
+                .expect("trump-suit two is permanent trump");
+        assert_eq!(
+            trump_two,
+            off_suit_positions[0] + 1,
+            "trump-suit two must sit immediately above every off-suit two at target {target:?}",
+        );
+    }
+}
+
+#[test]
 fn trump_order_keeps_every_special_boundary_consecutive() {
     let target = Rank::Three;
     let trump = Some(Suit::Heart);
