@@ -1,7 +1,8 @@
 //! Card-combination logic for tractor (拖拉机 / 升级).
 //!
-//! The trump group is made of every card of the current target rank plus both
-//! jokers; all other cards are "plain" and belong to their natural suit. A legal
+//! The trump group is made of every `2`, every card of the current target rank,
+//! the selected trump suit and both jokers; all other cards are "plain" and belong
+//! to their natural suit. A legal
 //! play is a single group of one of six shapes:
 //!   - Single: one card.
 //!   - Pair:   two identical cards (same base card, regardless of deck copy).
@@ -18,7 +19,8 @@ use std::collections::{HashMap, HashSet};
 use share_type_public::WsTractorPlayedCards;
 
 use crate::game_state::{
-    TractorRules, base_card, card_rank, card_score, card_suit, is_trump_card, tractor_card_value,
+    TractorRules, base_card, card_score, card_suit, is_trump_card, tractor_card_position,
+    tractor_card_value,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -1184,26 +1186,11 @@ fn identity_counts(cards: &[i32]) -> HashMap<i32, usize> {
 /// Position of a pair (identified by base card) within its group's ordering, used
 /// to decide tractor consecutiveness. Only meaningful within a single group.
 ///
-/// Plain suits are ordered by rank with the trump rank squeezed out so the two
-/// ranks bordering the trump rank are consecutive. Trump ordering places every
-/// level-rank pair together, then the small-joker pair, then the big-joker pair.
+/// Plain suits are ordered by rank with the level rank squeezed out so the two
+/// ranks bordering it are consecutive. Trump ordering follows the shared upgrade
+/// family sequence: ordinary trump, vice/main `2`, vice/main level, then jokers.
 fn pair_position(base: i32, rules: &TractorRules) -> i32 {
-    if base == 54 {
-        return 102; // big joker
-    }
-    if base == 53 {
-        return 101; // small joker
-    }
-    let rank = card_rank(base);
-    if rank == rules.target_rank as i32 {
-        return 100; // level rank (all suits share one slot)
-    }
-    // Plain rank: shift ranks above the trump rank down by one so the gap closes.
-    if rank > rules.target_rank as i32 {
-        rank - 1
-    } else {
-        rank
-    }
+    tractor_card_position(base, rules)
 }
 
 /// Suit of a lead play: `None` when it is trump, otherwise the plain suit.

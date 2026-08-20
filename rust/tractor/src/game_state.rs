@@ -9,7 +9,8 @@ use share_type_public::{
     WsTractorPlayerHandCount, WsTractorTableSnapshotEvent, WsTractorTrumpDeclaration,
 };
 use upgrade_common::{
-    Card, Rank, ScoreOutcome, ScoreProgression, next_four_player_dealer, next_level_rank,
+    Card, Rank, ScoreOutcome, ScoreProgression, Suit, card_is_trump, compact_plain_rank_position,
+    next_four_player_dealer, next_level_rank, trump_order_position,
 };
 use ws_common::{CommonGameState, GameState};
 
@@ -127,11 +128,22 @@ pub(crate) fn card_suit(card: i32) -> Option<i32> {
 }
 
 pub(crate) fn is_trump_card(card: i32, rules: &TractorRules) -> bool {
-    card_suit(card).is_none()
-        || card_rank(card) == rules.target_rank as i32
-        || rules
-            .trump_suit
-            .is_some_and(|suit| card_suit(card) == Some(suit as i32))
+    card_is_trump(
+        decoded_card(card),
+        common_rank(rules.target_rank),
+        rules.trump_suit.map(common_suit),
+    )
+}
+
+pub(crate) fn tractor_card_position(card: i32, rules: &TractorRules) -> i32 {
+    let card = decoded_card(card);
+    trump_order_position(
+        card,
+        common_rank(rules.target_rank),
+        rules.trump_suit.map(common_suit),
+    )
+    .or_else(|| compact_plain_rank_position(card.rank(), common_rank(rules.target_rank)))
+    .unwrap_or(card.rank() as i32)
 }
 
 pub fn standard_bottom_card_count(deck_count: usize) -> usize {
@@ -192,21 +204,7 @@ fn team_positions(position: usize) -> [usize; 2] {
 pub(crate) fn tractor_card_value(card: i32, rules: &TractorRules, lead_suit: Option<i32>) -> i32 {
     let rank = card_rank(card);
     if is_trump_card(card, rules) {
-        let suit = card_suit(card);
-        if suit.is_none() {
-            return 1_200 + rank;
-        }
-        if rank == rules.target_rank as i32 {
-            return if rules
-                .trump_suit
-                .is_some_and(|trump| suit == Some(trump as i32))
-            {
-                1_100
-            } else {
-                1_000
-            };
-        }
-        return 900 + rank;
+        return 1_000 + tractor_card_position(card, rules);
     }
     if card_suit(card) == lead_suit {
         return 500 + rank;
@@ -236,6 +234,15 @@ fn common_rank(rank: TractorRank) -> Rank {
         TractorRank::Q => Rank::Queen,
         TractorRank::K => Rank::King,
         TractorRank::A => Rank::Ace,
+    }
+}
+
+fn common_suit(suit: TractorSuit) -> Suit {
+    match suit {
+        TractorSuit::SPADE => Suit::Spade,
+        TractorSuit::HEART => Suit::Heart,
+        TractorSuit::CLUB => Suit::Club,
+        TractorSuit::DIAMOND => Suit::Diamond,
     }
 }
 
@@ -1552,16 +1559,17 @@ mod tests {
     #[test]
     fn play_rejects_wrong_card_count_and_must_follow_suit() {
         let mut state = test_state();
-        state.hands.insert(0, vec![1, 101]);
-        state.hands.insert(1, vec![2, 15, 102]);
+        state.rules.target_rank = TractorRank::THREE;
+        state.hands.insert(0, vec![3, 103]);
+        state.hands.insert(1, vec![4, 17, 104]);
 
         state
-            .play_cards(0, "u0".to_owned(), vec![1, 101])
+            .play_cards(0, "u0".to_owned(), vec![3, 103])
             .expect("lead pair");
-        assert!(state.play_cards(1, "u1".to_owned(), vec![2]).is_err());
-        assert!(state.play_cards(1, "u1".to_owned(), vec![2, 15]).is_err());
+        assert!(state.play_cards(1, "u1".to_owned(), vec![4]).is_err());
+        assert!(state.play_cards(1, "u1".to_owned(), vec![4, 17]).is_err());
         state
-            .play_cards(1, "u1".to_owned(), vec![2, 102])
+            .play_cards(1, "u1".to_owned(), vec![4, 104])
             .expect("follow lead suit pair");
     }
 

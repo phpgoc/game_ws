@@ -89,3 +89,58 @@ fn level_advance_caps_at_the_final_rank_and_finishes_there() {
         Some(Rank::Nine)
     );
 }
+
+#[test]
+fn permanent_twos_and_level_cards_share_the_trump_group() {
+    for target in [Rank::Three, Rank::Five, Rank::Ace] {
+        let rules = (target, Some(Suit::Heart));
+        for encoded in [1, 14, 27, 40] {
+            assert!(card_is_trump(
+                Card::try_from(encoded).unwrap(),
+                rules.0,
+                rules.1
+            ));
+        }
+    }
+    let rules = (Rank::Five, Some(Suit::Heart));
+    for encoded in [4, 17, 30, 43, 53, 54] {
+        assert!(card_is_trump(
+            Card::try_from(encoded).unwrap(),
+            rules.0,
+            rules.1
+        ));
+    }
+    assert!(card_is_trump(Card::try_from(26).unwrap(), rules.0, rules.1));
+    assert!(!card_is_trump(
+        Card::try_from(13).unwrap(),
+        rules.0,
+        rules.1
+    ));
+}
+
+#[test]
+fn trump_order_keeps_every_special_boundary_consecutive() {
+    let target = Rank::Three;
+    let trump = Some(Suit::Heart);
+    let ordered = [
+        26, // 主 A
+        1,  // 副 2
+        14, // 主 2
+        2,  // 副级
+        15, // 主级
+        53, // 小王
+        54, // 大王
+    ];
+    let positions = ordered.map(|encoded| {
+        trump_order_position(Card::try_from(encoded).unwrap(), target, trump).unwrap()
+    });
+    assert!(positions.windows(2).all(|pair| pair[1] == pair[0] + 1));
+}
+
+#[test]
+fn compact_plain_sequence_closes_only_the_level_gap() {
+    assert_eq!(compact_plain_rank_position(Rank::Four, Rank::Five), Some(1));
+    assert_eq!(compact_plain_rank_position(Rank::Six, Rank::Five), Some(2));
+    assert_eq!(compact_plain_rank_position(Rank::Five, Rank::Five), None);
+    assert_eq!(compact_plain_rank_position(Rank::Two, Rank::Five), None);
+}

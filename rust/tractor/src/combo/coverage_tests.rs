@@ -44,9 +44,9 @@ fn combination_and_follow_boundaries_handle_empty_or_insufficient_inputs() {
 #[test]
 fn combo_utilities_handle_trump_groups_throws_and_invalid_positions() {
     let rules = rules();
-    assert_eq!(pair_position(54, &rules), 102);
-    assert_eq!(pair_position(53, &rules), 101);
-    assert_eq!(pair_position(1, &rules), 100);
+    assert_eq!(pair_position(54, &rules), 15);
+    assert_eq!(pair_position(53, &rules), 14);
+    assert_eq!(pair_position(1, &rules), 12);
     assert_eq!(play_suit(&[2], &rules), Some(0));
     assert_eq!(play_suit(&[1], &rules), None);
     assert_eq!(play_suit(&[], &rules), None);

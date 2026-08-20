@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use upgrade_common::{Card, Rank, Suit, largest_identity_group_size};
+use upgrade_common::{
+    Card, Rank, Suit, card_is_trump, largest_identity_group_size, trump_order_position,
+};
 
 /// 升级服务用于牌型比较的主牌信息。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,32 +36,18 @@ pub struct Combo {
 }
 
 pub fn card_group(card: Card, rules: UpgradeComboRules) -> Option<Suit> {
-    if card.suit().is_none() || card.rank() == rules.target_rank || rules.trump_suit == card.suit()
-    {
-        None
-    } else {
-        card.suit()
-    }
+    (!card_is_trump(card, rules.target_rank, rules.trump_suit))
+        .then(|| card.suit())
+        .flatten()
 }
 
-/// Comparison value inside an upgrade trick. Level cards sit above ordinary
-/// trump cards; the level card in the selected trump suit sits above the
-/// off-suit level cards, and jokers remain highest.
+/// Comparison value inside an upgrade trick. Permanent `2`s sit above ordinary
+/// trump cards, level cards sit above the `2`s, and jokers remain highest. The
+/// selected trump suit wins each main/vice tie.
 pub fn card_strength(card: Card, rules: UpgradeComboRules) -> i32 {
-    if card_group(card, rules).is_none() {
-        if card.suit().is_none() {
-            return 1_200 + card.rank() as i32;
-        }
-        if card.rank() == rules.target_rank {
-            return if card.suit() == rules.trump_suit {
-                1_100
-            } else {
-                1_000
-            };
-        }
-        return 900 + card.rank() as i32;
-    }
-    card.rank() as i32
+    trump_order_position(card, rules.target_rank, rules.trump_suit)
+        .map(|position| 1_000 + position)
+        .unwrap_or(card.rank() as i32)
 }
 
 pub fn same_group(cards: &[Card], rules: UpgradeComboRules) -> Option<Option<Suit>> {

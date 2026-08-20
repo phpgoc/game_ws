@@ -30,6 +30,8 @@ fn level_cards_rank_above_ordinary_trump_and_below_jokers() {
     rules.trump_suit = Some(share_type_public::TractorSuit::HEART);
     let ordered_cards = [
         26, // heart A: highest ordinary trump
+        1,  // spade 2: off-suit permanent trump
+        14, // heart 2: main-suit permanent trump
         2,  // spade 3: off-suit level card
         15, // heart 3: main level card
         53, // small joker
@@ -363,28 +365,45 @@ fn trump_tractor_edges_keep_level_and_joker_order() {
     let mut rules = rules(TractorRank::THREE);
     rules.trump_suit = Some(share_type_public::TractorSuit::HEART);
 
-    // The off-suit level pair, small-joker pair and big-joker pair occupy
-    // consecutive trump slots. Different level-card identities share one
-    // slot, so they cannot form a tractor with each other.
-    assert_eq!(
-        classify(&[2, 102, 53, 153], &rules).map(|combo| combo.kind),
-        Some(ComboKind::Tractor(2))
-    );
-    assert_eq!(
-        classify(&[53, 153, 54, 154], &rules).map(|combo| combo.kind),
-        Some(ComboKind::Tractor(2))
-    );
-    assert_eq!(
-        classify(&[2, 102, 15, 115], &rules).map(|combo| combo.kind),
-        Some(ComboKind::Throw { cards: 4, pairs: 2 })
-    );
+    for cards in [
+        [26, 126, 1, 101],  // 主 A -> 副 2
+        [1, 101, 14, 114],  // 副 2 -> 主 2
+        [14, 114, 2, 102],  // 主 2 -> 副级
+        [2, 102, 15, 115],  // 副级 -> 主级
+        [15, 115, 53, 153], // 主级 -> 小王
+        [53, 153, 54, 154], // 小王 -> 大王
+        [25, 125, 26, 126], // 普通主牌保持连续
+    ] {
+        assert_eq!(
+            classify(&cards, &rules).map(|combo| combo.kind),
+            Some(ComboKind::Tractor(2)),
+            "expected adjacent trump pairs for {cards:?}",
+        );
+    }
 
-    // Ordinary trump ranks remain consecutive on either side of the level
-    // gap; the level card itself is the explicit boundary before the jokers.
-    assert_eq!(
-        classify(&[25, 125, 26, 126], &rules).map(|combo| combo.kind),
-        Some(ComboKind::Tractor(2))
-    );
+    for cards in [
+        [26, 126, 14, 114], // 跳过副 2
+        [1, 101, 2, 102],   // 跳过主 2
+        [14, 114, 15, 115], // 跳过副级
+        [2, 102, 53, 153],  // 跳过主级
+    ] {
+        assert_eq!(
+            classify(&cards, &rules).map(|combo| combo.kind),
+            Some(ComboKind::Throw { cards: 4, pairs: 2 }),
+            "skipping a trump layer must not form a tractor for {cards:?}",
+        );
+    }
+}
+
+#[test]
+fn permanent_two_lead_forces_following_the_trump_group() {
+    let mut rules = rules(TractorRank::THREE);
+    rules.trump_suit = Some(share_type_public::TractorSuit::HEART);
+    let lead = classify(&[1, 101], &rules).expect("permanent two pair lead");
+    let hand = vec![27, 127, 3, 103];
+
+    assert!(follow_is_legal(&hand, &[27, 127], &lead, &rules));
+    assert!(!follow_is_legal(&hand, &[3, 103], &lead, &rules));
 }
 
 #[test]

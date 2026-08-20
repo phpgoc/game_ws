@@ -114,14 +114,30 @@ fn level_cards_and_jokers_stay_above_ordinary_trump_cards() {
         target_rank: Rank::Three,
         trump_suit: Some(Suit::Heart),
     };
-    let spade_three = cards(&[2])[0];
-    let heart_three = cards(&[15])[0];
-    let heart_ace = cards(&[26])[0];
-    let small_joker = cards(&[53])[0];
+    let ordered = cards(&[26, 1, 14, 2, 15, 53, 54]);
+    let strengths = ordered
+        .iter()
+        .map(|card| card_strength(*card, rules))
+        .collect::<Vec<_>>();
+    assert!(strengths.windows(2).all(|pair| pair[0] < pair[1]));
+    assert!(
+        ordered
+            .iter()
+            .all(|card| card_group(*card, rules).is_none())
+    );
+}
 
-    assert!(card_strength(spade_three, rules) > card_strength(heart_ace, rules));
-    assert!(card_strength(heart_three, rules) > card_strength(spade_three, rules));
-    assert!(card_strength(small_joker, rules) > card_strength(heart_three, rules));
+#[test]
+fn permanent_two_lead_requires_upgrade_players_to_follow_trump() {
+    let rules = UpgradeComboRules {
+        target_rank: Rank::Three,
+        trump_suit: Some(Suit::Heart),
+    };
+    let hand = cards(&[27, 127, 3, 103]);
+    let lead = classify(&cards(&[1, 101]), rules).unwrap();
+
+    assert!(follow_is_legal(&hand, &cards(&[27, 127]), &lead, rules));
+    assert!(!follow_is_legal(&hand, &cards(&[3, 103]), &lead, rules));
 }
 
 #[test]

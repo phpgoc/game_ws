@@ -8,12 +8,14 @@
 mod card;
 mod level;
 mod score;
+mod trump;
 
 pub use card::{Card, CardDecodeError, Rank, Suit, largest_identity_group_size};
 pub use level::{STANDARD_LEVEL_RANKS, level_rank_path, next_level_rank};
 pub use score::{
     ScoreLevelError, ScoreOutcome, ScoreProgression, ScoreSide, next_four_player_dealer,
 };
+pub use trump::{card_is_trump, compact_plain_rank_position, trump_order_position};
 
 /// 当前升级系游戏能够使用的最大牌副数。
 pub const MAX_DECK_COUNT: u8 = 6;
