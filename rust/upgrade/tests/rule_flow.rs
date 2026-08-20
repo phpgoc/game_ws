@@ -163,6 +163,61 @@ fn permanent_two_lead_uses_the_trump_group_at_every_upgrade_level() {
 }
 
 #[test]
+fn game_state_requires_the_maximum_available_group_count_when_following_n_cards() {
+    for lead_len in 1..=4 {
+        let lead_cards = (0..lead_len)
+            .map(|offset| 13 - offset as i32)
+            .collect::<Vec<_>>();
+        for held_group_count in 0..=lead_len + 2 {
+            let group_cards = (0..lead_len + 2)
+                .map(|offset| 103 + offset as i32)
+                .collect::<Vec<_>>();
+            let outside_cards = (0..lead_len + 1)
+                .map(|offset| 15 + offset as i32)
+                .collect::<Vec<_>>();
+            let mut follower_hand = group_cards[..held_group_count].to_vec();
+            follower_hand.extend_from_slice(&outside_cards);
+            let hands = HashMap::from([
+                (0, lead_cards.clone()),
+                (1, follower_hand.clone()),
+                (2, (0..lead_len).map(|offset| 27 + offset as i32).collect()),
+                (3, (0..lead_len).map(|offset| 40 + offset as i32).collect()),
+            ]);
+            let mut state = state_with_hands(Vec::new(), hands);
+            state
+                .play_cards(0, lead_cards.clone())
+                .expect("high same-suit lead should be accepted");
+
+            let required_group_count = held_group_count.min(lead_len);
+            if required_group_count > 0 {
+                let mut under_follow = group_cards[..required_group_count - 1].to_vec();
+                under_follow.extend_from_slice(
+                    &outside_cards[..lead_len.saturating_sub(required_group_count - 1)],
+                );
+                assert_eq!(under_follow.len(), lead_len);
+                assert_eq!(
+                    state
+                        .play_cards(1, under_follow)
+                        .expect_err("omitting an available group card must be illegal"),
+                    "illegal follow",
+                    "lead_len={lead_len}, held_group_count={held_group_count}",
+                );
+                assert_eq!(state.current_position, 1);
+                assert_eq!(state.hands.get(&1), Some(&follower_hand));
+            }
+
+            let mut legal_follow = group_cards[..required_group_count].to_vec();
+            legal_follow
+                .extend_from_slice(&outside_cards[..lead_len.saturating_sub(required_group_count)]);
+            assert_eq!(legal_follow.len(), lead_len);
+            state
+                .play_cards(1, legal_follow)
+                .expect("all available group cards plus fillers should be legal");
+        }
+    }
+}
+
+#[test]
 fn six_deck_bottom_score_keeps_a_four_copy_component_as_the_maximum() {
     let mut state = state_with_hands(
         vec![9],

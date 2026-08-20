@@ -1290,6 +1290,7 @@ async fn four_players_can_deal_bury_and_play_first_round() {
     let lead_card = upgrade_common::Card::try_from(lead).unwrap();
     let lead_group = if lead_card.suit() == Some(trump_suit)
         || lead_card.suit().is_none()
+        || lead_card.rank() == upgrade_common::Rank::Two
         || lead_card.rank() == upgrade_common::Rank::Three
     {
         None
@@ -1308,6 +1309,7 @@ async fn four_players_can_deal_bury_and_play_first_round() {
                     let decoded = upgrade_common::Card::try_from(*candidate).unwrap();
                     let group = if decoded.suit() == Some(trump_suit)
                         || decoded.suit().is_none()
+                        || decoded.rank() == upgrade_common::Rank::Two
                         || decoded.rank() == upgrade_common::Rank::Three
                     {
                         None

@@ -141,22 +141,76 @@ fn permanent_two_lead_requires_upgrade_players_to_follow_trump() {
 }
 
 #[test]
-fn an_ordinary_two_stays_in_its_natural_suit_until_two_is_the_level() {
-    let spade_two = cards(&[1])[0];
-    let heart_two = cards(&[14])[0];
-    let non_two_level = UpgradeComboRules {
-        target_rank: Rank::Three,
+fn follow_uses_every_available_lead_group_card_for_each_lead_size() {
+    let rules = UpgradeComboRules {
+        target_rank: Rank::Ace,
         trump_suit: Some(Suit::Heart),
     };
 
-    assert_eq!(card_group(spade_two, non_two_level), Some(Suit::Spade));
-    assert_eq!(card_group(heart_two, non_two_level), None);
+    for lead_len in 1..=8 {
+        let lead_values = (0..lead_len)
+            .map(|offset| 2 + offset as i32)
+            .collect::<Vec<_>>();
+        let lead_cards = cards(&lead_values);
+        let lead = classify(&lead_cards, rules).expect("same-suit lead");
+        for held_group_count in 0..=lead_len + 2 {
+            let group_cards = (0..lead_len + 2)
+                .map(|offset| 102 + offset as i32)
+                .collect::<Vec<_>>();
+            let outside_cards = (0..lead_len + 1)
+                .map(|offset| 15 + offset as i32)
+                .collect::<Vec<_>>();
+            let mut hand_values = group_cards[..held_group_count].to_vec();
+            hand_values.extend_from_slice(&outside_cards);
+            let hand = cards(&hand_values);
 
-    let two_level = UpgradeComboRules {
-        target_rank: Rank::Two,
-        trump_suit: Some(Suit::Heart),
-    };
-    assert_eq!(card_group(spade_two, two_level), None);
+            let required_group_count = held_group_count.min(lead_len);
+            let forced = forced_follow(&hand, &lead, rules)
+                .expect("a hand with enough total cards always has a forced follow");
+            assert_eq!(forced.len(), lead_len);
+            assert_eq!(
+                forced
+                    .iter()
+                    .filter(|card| card_group(**card, rules) == lead.group)
+                    .count(),
+                required_group_count,
+                "lead_len={lead_len}, held_group_count={held_group_count}, forced={forced:?}",
+            );
+            assert!(follow_is_legal(&hand, &forced, &lead, rules));
+
+            if required_group_count == 0 {
+                continue;
+            }
+            let mut under_values = group_cards[..required_group_count - 1].to_vec();
+            under_values.extend_from_slice(
+                &outside_cards[..lead_len.saturating_sub(required_group_count - 1)],
+            );
+            let under_follow = cards(&under_values);
+            assert_eq!(under_follow.len(), lead_len);
+            assert!(
+                !follow_is_legal(&hand, &under_follow, &lead, rules),
+                "must not omit one of {required_group_count} available group cards for a {lead_len}-card lead",
+            );
+        }
+    }
+}
+
+#[test]
+fn every_two_is_permanent_trump_and_the_trump_suit_two_is_stronger() {
+    let all_twos = cards(&[1, 14, 27, 40]);
+
+    for target_rank in [Rank::Three, Rank::Five, Rank::Ace] {
+        let rules = UpgradeComboRules {
+            target_rank,
+            trump_suit: Some(Suit::Heart),
+        };
+        assert!(
+            all_twos
+                .iter()
+                .all(|card| card_group(*card, rules).is_none())
+        );
+        assert!(card_strength(all_twos[1], rules) > card_strength(all_twos[0], rules));
+    }
 }
 
 #[test]

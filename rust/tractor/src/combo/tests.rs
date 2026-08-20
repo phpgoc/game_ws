@@ -442,6 +442,55 @@ fn permanent_two_lead_forces_following_the_trump_group() {
 }
 
 #[test]
+fn follow_uses_every_available_lead_group_card_for_each_lead_size() {
+    let rules = rules(TractorRank::A);
+
+    for lead_len in 1..=8 {
+        let lead_cards = (0..lead_len)
+            .map(|offset| 2 + offset as i32)
+            .collect::<Vec<_>>();
+        let lead = classify(&lead_cards, &rules).expect("same-suit lead");
+        for held_group_count in 0..=lead_len + 2 {
+            let group_cards = (0..lead_len + 2)
+                .map(|offset| 102 + offset as i32)
+                .collect::<Vec<_>>();
+            let outside_cards = (0..lead_len + 1)
+                .map(|offset| 15 + offset as i32)
+                .collect::<Vec<_>>();
+            let mut hand = group_cards[..held_group_count].to_vec();
+            hand.extend_from_slice(&outside_cards);
+
+            let required_group_count = held_group_count.min(lead_len);
+            let forced = forced_follow(&hand, &lead, &rules)
+                .expect("a hand with enough total cards always has a forced follow");
+            assert_eq!(forced.len(), lead_len);
+            assert_eq!(
+                forced
+                    .iter()
+                    .filter(|card| card_in_group(**card, lead.suit, &rules))
+                    .count(),
+                required_group_count,
+                "lead_len={lead_len}, held_group_count={held_group_count}, forced={forced:?}",
+            );
+            assert!(follow_is_legal(&hand, &forced, &lead, &rules));
+
+            if required_group_count == 0 {
+                continue;
+            }
+            let mut under_follow = group_cards[..required_group_count - 1].to_vec();
+            under_follow.extend_from_slice(
+                &outside_cards[..lead_len.saturating_sub(required_group_count - 1)],
+            );
+            assert_eq!(under_follow.len(), lead_len);
+            assert!(
+                !follow_is_legal(&hand, &under_follow, &lead, &rules),
+                "must not omit one of {required_group_count} available group cards for a {lead_len}-card lead",
+            );
+        }
+    }
+}
+
+#[test]
 fn void_in_led_suit_allows_any_cards() {
     let rules = rules(TractorRank::TWO);
     let lead = classify(&[2, 102], &rules).unwrap();

@@ -38,16 +38,20 @@ fn utility_boundaries_cover_standard_bottom_and_suit_mapping() {
 }
 
 #[test]
-fn ordinary_two_is_not_trump_until_two_becomes_the_level_rank() {
+fn every_two_is_permanent_trump_and_the_trump_suit_two_is_stronger() {
     let mut state = state();
-    state.rules.target_rank = TractorRank::THREE;
     state.rules.trump_suit = Some(TractorSuit::HEART);
 
-    assert!(!super::is_trump_card(1, &state.rules));
-    assert!(super::is_trump_card(14, &state.rules));
-
-    state.rules.target_rank = TractorRank::TWO;
-    assert!(super::is_trump_card(1, &state.rules));
+    for target_rank in [TractorRank::THREE, TractorRank::FIVE, TractorRank::A] {
+        state.rules.target_rank = target_rank;
+        for card in [1, 14, 27, 40] {
+            assert!(super::is_trump_card(card, &state.rules));
+        }
+        assert!(
+            super::tractor_card_position(14, &state.rules)
+                > super::tractor_card_position(1, &state.rules)
+        );
+    }
 }
 
 #[test]
