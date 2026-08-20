@@ -1619,8 +1619,7 @@ async fn upgrade_server_completes_round_and_enters_later_round() {
                     winners
                         .iter()
                         .any(|position| position == &json!(first_dealer))
-                })
-            {
+                }) {
                 ScoreSide::Defending
             } else {
                 ScoreSide::Attacking
