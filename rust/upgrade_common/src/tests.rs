@@ -163,6 +163,16 @@ fn trump_order_keeps_every_special_boundary_consecutive() {
 }
 
 #[test]
+fn ace_level_keeps_the_highest_remaining_trump_next_to_off_suit_two() {
+    let target = Rank::Ace;
+    let trump = Some(Suit::Heart);
+    let trump_king = trump_order_position(Card::try_from(25).unwrap(), target, trump).unwrap();
+    let off_suit_two = trump_order_position(Card::try_from(1).unwrap(), target, trump).unwrap();
+
+    assert_eq!(off_suit_two, trump_king + 1);
+}
+
+#[test]
 fn compact_plain_sequence_closes_only_the_level_gap() {
     assert_eq!(compact_plain_rank_position(Rank::Four, Rank::Five), Some(1));
     assert_eq!(compact_plain_rank_position(Rank::Six, Rank::Five), Some(2));

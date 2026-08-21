@@ -361,6 +361,17 @@ fn trump_rank_closes_the_tractor_gap() {
 }
 
 #[test]
+fn ace_level_keeps_trump_king_and_off_suit_two_as_a_tractor() {
+    let mut rules = rules(TractorRank::A);
+    rules.trump_suit = Some(share_type_public::TractorSuit::HEART);
+
+    assert_eq!(
+        classify(&[25, 125, 1, 101], &rules).map(|combo| combo.kind),
+        Some(ComboKind::Tractor(2)),
+    );
+}
+
+#[test]
 fn trump_tractor_edges_keep_level_and_joker_order() {
     let mut rules = rules(TractorRank::THREE);
     rules.trump_suit = Some(share_type_public::TractorSuit::HEART);
