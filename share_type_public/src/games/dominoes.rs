@@ -55,6 +55,8 @@ pub enum DominoesActionSource {
     NativeAi = 1,
     AiTakeover = 2,
     Timeout = 3,
+    /// 由“无牌可出”房间规则自动触发的摸牌或过牌。
+    Forced = 4,
 }
 
 #[typeshare]
