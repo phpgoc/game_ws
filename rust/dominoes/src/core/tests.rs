@@ -160,8 +160,59 @@ fn a_block_is_awarded_to_the_last_player_who_placed_a_tile() {
 }
 
 #[test]
-fn doubles_create_four_open_ends_and_three_when_attached() {
+fn simple_doubles_are_visual_crosspieces_but_keep_only_two_open_ends() {
     let mut state = state();
+    state.phase = DominoesPhase::Play;
+    state.current_position = 0;
+    let three_five = Tile::all()
+        .into_iter()
+        .find(|tile| (tile.a, tile.b) == (3, 5))
+        .expect("3-5 tile");
+    let double_five = Tile::all()
+        .into_iter()
+        .find(|tile| (tile.a, tile.b) == (5, 5))
+        .expect("5-5 tile");
+    let five_six = Tile::all()
+        .into_iter()
+        .find(|tile| (tile.a, tile.b) == (5, 6))
+        .expect("5-6 tile");
+    state.hands = HashMap::from([
+        (0, vec![three_five, Tile::from_id(0).expect("0-0 tile")]),
+        (1, vec![double_five, Tile::from_id(1).expect("0-1 tile")]),
+        (2, vec![five_six, Tile::from_id(2).expect("0-2 tile")]),
+        (3, vec![Tile::from_id(3).expect("0-3 tile")]),
+    ]);
+    state.play_tile(0, three_five.id, None).expect("play 3-5");
+    let five_endpoint = state
+        .endpoints
+        .iter()
+        .find(|endpoint| endpoint.pip == 5)
+        .expect("right-side five")
+        .endpoint_id;
+    let (double_placement, _, _) = state
+        .play_tile(1, double_five.id, Some(five_endpoint))
+        .expect("play vertical 5-5");
+    assert_eq!(
+        double_placement.orientation,
+        share_type_public::DominoesOrientation::Vertical
+    );
+    assert_eq!(state.endpoints.len(), 2);
+    let continued_five = state
+        .endpoints
+        .iter()
+        .find(|endpoint| endpoint.placement_id == double_placement.placement_id)
+        .expect("double keeps one outward end")
+        .endpoint_id;
+    state
+        .play_tile(2, five_six.id, Some(continued_five))
+        .expect("play 5-6 after visual crosspiece");
+    assert_eq!(state.endpoints.len(), 2);
+}
+
+#[test]
+fn five_up_doubles_are_spinners_with_extra_open_ends() {
+    let mut state = state();
+    state.rule = DominoesRule::FiveUp;
     state.phase = DominoesPhase::Play;
     state.current_position = 0;
     let double = Tile::from_id(18).expect("3-3 tile");
@@ -171,11 +222,10 @@ fn doubles_create_four_open_ends_and_three_when_attached() {
         .expect("3-4 tile");
     state.hands = HashMap::from([
         (0, vec![double, Tile::from_id(0).expect("0-0 tile")]),
-        (1, vec![attach]),
+        (1, vec![attach, Tile::from_id(1).expect("0-1 tile")]),
     ]);
     let (placement, _, _) = state.play_tile(0, double.id, None).expect("first double");
     assert_eq!(placement.new_endpoints.len(), 4);
-    state.current_position = 1;
     let endpoint = state.endpoints[0].endpoint_id;
     state
         .play_tile(1, attach.id, Some(endpoint))
@@ -202,12 +252,25 @@ fn layout_keeps_all_twenty_eight_tiles_non_overlapping() {
     }
 
     for (index, placement) in state.placements.iter().enumerate() {
+        assert!(placement.center_x.abs() <= super::SIMPLE_LAYOUT_X_LIMIT + 2);
+        assert!(placement.center_y.abs() <= super::SIMPLE_LAYOUT_Y_LIMIT + 2);
         let (width, height) = super::half_extents(placement.orientation);
         for other in state.placements.iter().skip(index + 1) {
             let (other_width, other_height) = super::half_extents(other.orientation);
             assert!(
                 !((placement.center_x - other.center_x).abs() < width + other_width
-                    && (placement.center_y - other.center_y).abs() < height + other_height)
+                    && (placement.center_y - other.center_y).abs() < height + other_height),
+                "placements {} {:?} {:?} at ({}, {}) and {} {:?} {:?} at ({}, {}) overlap",
+                placement.placement_id,
+                placement.tile,
+                placement.orientation,
+                placement.center_x,
+                placement.center_y,
+                other.placement_id,
+                other.tile,
+                other.orientation,
+                other.center_x,
+                other.center_y,
             );
         }
     }
