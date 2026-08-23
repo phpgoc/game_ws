@@ -151,6 +151,29 @@ pub(crate) fn start_game_loop(
                 break;
             }
 
+            let forced_outcome = {
+                let mut state = state.lock().expect("dominoes state lock");
+                if is_paused(&state) {
+                    None
+                } else {
+                    action::forced_no_playable_turn(&mut state).unwrap_or_default()
+                }
+            };
+            if let Some(outcome) = forced_outcome {
+                if !emit_outcome(
+                    &room_key,
+                    &expected_common,
+                    outcome,
+                    &room_service,
+                    &senders,
+                )
+                .await
+                {
+                    break;
+                }
+                continue;
+            }
+
             let (phase, revision, remaining, paused, cap_snapshot, source) = {
                 let mut state = state.lock().expect("dominoes state lock");
                 let paused = is_paused(&state);

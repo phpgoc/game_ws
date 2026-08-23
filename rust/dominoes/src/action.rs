@@ -1,5 +1,6 @@
 use share_type_public::{
-    DominoesActionSource, WsDominoesHandState, WsDominoesLegalPlay, WsDominoesTableSnapshotEvent,
+    DominoesActionSource, DominoesNoPlayableTiles, DominoesPhase, WsDominoesHandState,
+    WsDominoesLegalPlay, WsDominoesTableSnapshotEvent,
 };
 
 use crate::core::{CoreError, DominoesRoundState, Placement, RoundResult, Tile};
@@ -82,13 +83,16 @@ pub(crate) fn draw(
     source: DominoesActionSource,
 ) -> Result<ActionOutcome, CoreError> {
     let result = state.draw_tile(position)?;
-    let mut events = vec![ActionEvent::Draw {
-        position,
-        boneyard_count: state.boneyard.len(),
-        tile: result.tile,
-        playable: result.playable,
-        source,
-    }];
+    let mut events = Vec::new();
+    if result.tile.is_some() {
+        events.push(ActionEvent::Draw {
+            position,
+            boneyard_count: state.boneyard.len(),
+            tile: result.tile,
+            playable: result.playable,
+            source,
+        });
+    }
     if result.passed {
         events.push(ActionEvent::Pass {
             position,
@@ -115,6 +119,69 @@ pub(crate) fn pass(
         round_result,
     ))
 }
+
+/// 自动完成当前玩家由“无牌可出”规则强制触发的摸牌或过牌。
+///
+/// 一旦摸到可出的牌便停下，把选择权交还给玩家或 AI；不会代替玩家出牌。
+pub(crate) fn forced_no_playable_turn(
+    state: &mut DominoesRoundState,
+) -> Result<Option<ActionOutcome>, CoreError> {
+    if state.phase != DominoesPhase::Play {
+        return Ok(None);
+    }
+    let position = state.current_position;
+    if !state.legal_plays(position).is_empty() {
+        return Ok(None);
+    }
+
+    let mut events = Vec::new();
+    let round_result = match state.no_playable_tiles {
+        DominoesNoPlayableTiles::PassWithoutDraw => {
+            let round_result = state.pass(position)?;
+            events.push(ActionEvent::Pass {
+                position,
+                consecutive_passes: state.consecutive_passes,
+                source: DominoesActionSource::Forced,
+            });
+            round_result
+        }
+        DominoesNoPlayableTiles::DrawOne | DominoesNoPlayableTiles::KeepDrawing => loop {
+            let result = state.draw_tile(position)?;
+            if result.tile.is_some() {
+                events.push(ActionEvent::Draw {
+                    position,
+                    boneyard_count: state.boneyard.len(),
+                    tile: result.tile,
+                    playable: result.playable,
+                    source: DominoesActionSource::Forced,
+                });
+            }
+            if result.passed {
+                events.push(ActionEvent::Pass {
+                    position,
+                    consecutive_passes: state.consecutive_passes,
+                    source: DominoesActionSource::Forced,
+                });
+            }
+            if result.round_result.is_some() || state.current_position != position {
+                break result.round_result;
+            }
+            if result.playable {
+                state.refresh_current_turn();
+                break None;
+            }
+            if state.no_playable_tiles == DominoesNoPlayableTiles::DrawOne {
+                break None;
+            }
+        },
+    };
+
+    Ok(Some(ActionOutcome::finish(state, events, round_result)))
+}
+
+#[cfg(test)]
+#[path = "action/tests.rs"]
+mod tests;
 
 pub(crate) fn automatic_turn<F>(
     state: &mut DominoesRoundState,
@@ -151,13 +218,15 @@ where
         let hand = state.hand_state(position);
         if hand.can_draw {
             let result = state.draw_tile(position)?;
-            events.push(ActionEvent::Draw {
-                position,
-                boneyard_count: state.boneyard.len(),
-                tile: result.tile,
-                playable: result.playable,
-                source,
-            });
+            if result.tile.is_some() {
+                events.push(ActionEvent::Draw {
+                    position,
+                    boneyard_count: state.boneyard.len(),
+                    tile: result.tile,
+                    playable: result.playable,
+                    source,
+                });
+            }
             if result.passed {
                 events.push(ActionEvent::Pass {
                     position,
