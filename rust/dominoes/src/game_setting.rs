@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 
 use share_type_public::settings::GameParamEnum;
-use share_type_public::{DominoesNoPlayableTiles, DominoesRule, GameParam};
+use share_type_public::{DominoesNoPlayableTiles, DominoesRule, GameParam, GameParamRange};
 use ws_common::GameSettings;
 
 pub const KEY_RULE: &str = "rule";
 pub const KEY_NO_PLAYABLE_TILES: &str = "no_playable_tiles";
 pub const KEY_TARGET_SCORE: &str = "target_score";
+pub const KEY_SETTLEMENT_TIME: &str = "settlement_time";
 
 pub fn build_dominoes_settings() -> (GameSettings, HashMap<String, GameParam>) {
     let params = HashMap::from([
@@ -35,6 +36,14 @@ pub fn build_dominoes_settings() -> (GameSettings, HashMap<String, GameParam>) {
                 options: vec!["35".to_owned(), "61".to_owned()],
             }),
         ),
+        (
+            KEY_SETTLEMENT_TIME.to_owned(),
+            GameParam::Range(GameParamRange {
+                default: 4,
+                min: 1,
+                max: 30,
+            }),
+        ),
     ]);
     let values = HashMap::from([
         (KEY_RULE.to_owned(), DominoesRule::Simple as i32),
@@ -43,6 +52,7 @@ pub fn build_dominoes_settings() -> (GameSettings, HashMap<String, GameParam>) {
             DominoesNoPlayableTiles::KeepDrawing as i32,
         ),
         (KEY_TARGET_SCORE.to_owned(), 0),
+        (KEY_SETTLEMENT_TIME.to_owned(), 4),
     ]);
     let mut settings = GameSettings::new(3, 4);
     settings.values = values;
@@ -69,6 +79,10 @@ pub fn target_from_config(value: i32) -> i32 {
     if value == 1 { 61 } else { 35 }
 }
 
+pub fn settlement_time_from_config(value: i32) -> u32 {
+    value.clamp(1, 30) as u32
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -79,6 +93,18 @@ mod tests {
         assert_eq!((settings.min_players, settings.max_players), (3, 4));
         assert_eq!(settings.values[KEY_RULE], 0);
         assert_eq!(settings.values[KEY_NO_PLAYABLE_TILES], 0);
+        assert_eq!(settings.values[KEY_SETTLEMENT_TIME], 4);
+        let GameParam::Range(settlement_time) = &params[KEY_SETTLEMENT_TIME] else {
+            panic!("settlement time must be a range");
+        };
+        assert_eq!(
+            (
+                settlement_time.default,
+                settlement_time.min,
+                settlement_time.max
+            ),
+            (4, 1, 30)
+        );
         let GameParam::Enum(no_playable) = &params[KEY_NO_PLAYABLE_TILES] else {
             panic!("no-playable setting must be an enum");
         };

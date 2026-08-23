@@ -39,6 +39,14 @@ pub fn build_shenyang_mahjong_settings() -> (GameSettings, HashMap<String, GameP
                 options: vec!["disabled".into(), "enabled".into()],
             }),
         ),
+        (
+            "settlement_time".into(),
+            GameParam::Range(GameParamRange {
+                default: 5,
+                min: 1,
+                max: 30,
+            }),
+        ),
     ]
     .into_iter()
     .collect();
@@ -77,7 +85,12 @@ mod tests {
         assert!(!descriptions.contains_key("away_time"));
         assert!(!settings.values.contains_key("play_time"));
         assert!(!settings.values.contains_key("claim_time"));
-        assert!(!settings.values.contains_key("settlement_time"));
+        assert_eq!(settings.values.get("settlement_time"), Some(&5));
+        assert!(matches!(
+            descriptions.get("settlement_time"),
+            Some(GameParam::Range(range))
+                if (range.default, range.min, range.max) == (5, 1, 30)
+        ));
         assert_eq!(settings.values.get("max_fan"), Some(&50));
         assert!(matches!(
             descriptions.get("max_fan"),

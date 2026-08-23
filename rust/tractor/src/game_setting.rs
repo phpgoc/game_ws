@@ -77,6 +77,14 @@ pub fn build_tractor_settings() -> (GameSettings, HashMap<String, GameParam>) {
                 max: 40,
             }),
         ),
+        (
+            KEY_SETTLEMENT_TIME.into(),
+            GameParam::Range(GameParamRange {
+                default: 5,
+                min: 1,
+                max: 30,
+            }),
+        ),
     ]
     .into_iter()
     .collect();
@@ -107,7 +115,18 @@ mod tests {
         assert!(!settings.values.contains_key(KEY_DEAL_TIME));
         assert!(!settings.values.contains_key(KEY_AI_ACTION_TIME));
         assert!(!settings.values.contains_key(KEY_AWAY_TIME));
-        assert!(!settings.values.contains_key(KEY_SETTLEMENT_TIME));
+        assert_eq!(settings.values[KEY_SETTLEMENT_TIME], 5);
+        let GameParam::Range(settlement_time) = &params[KEY_SETTLEMENT_TIME] else {
+            panic!("settlement time must be a range");
+        };
+        assert_eq!(
+            (
+                settlement_time.default,
+                settlement_time.min,
+                settlement_time.max
+            ),
+            (5, 1, 30)
+        );
         assert_eq!(settings.values[KEY_PLAY_TIME], 30);
         assert!(!settings.values.contains_key("removed_rank_count"));
         assert_eq!(settings.values[KEY_ATTACKING_WIN_SCORE], 80);

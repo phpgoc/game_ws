@@ -205,6 +205,7 @@ pub struct DominoesRoundState {
     pub consecutive_passes: usize,
     pub drawn_this_turn: bool,
     pub remaining_seconds: u32,
+    settlement_time_seconds: u32,
     pub turn_revision: i32,
     next_placement_id: i32,
     next_endpoint_id: i32,
@@ -269,6 +270,7 @@ impl DominoesRoundState {
             consecutive_passes: 0,
             drawn_this_turn: false,
             remaining_seconds: 0,
+            settlement_time_seconds: ROUND_TRANSITION_SECONDS,
             turn_revision: 0,
             next_placement_id: 0,
             next_endpoint_id: 0,
@@ -286,6 +288,10 @@ impl DominoesRoundState {
         self.round_winner = None;
         self.round = 1;
         self.deal_round(None)
+    }
+
+    pub fn set_settlement_time_seconds(&mut self, seconds: u32) {
+        self.settlement_time_seconds = seconds.clamp(1, 30);
     }
 
     pub fn start_next_round(&mut self) -> Result<usize, CoreError> {
@@ -835,7 +841,7 @@ impl DominoesRoundState {
         self.remaining_seconds = if game_over {
             0
         } else {
-            ROUND_TRANSITION_SECONDS
+            self.settlement_time_seconds
         };
         let best = self.scores.values().copied().max().unwrap_or_default();
         let winner_positions = if game_over {

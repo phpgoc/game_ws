@@ -15,6 +15,7 @@ pub const KEY_REMOVED_RANK_COUNT: &str = "removed_rank_count";
 pub const KEY_ATTACKING_WIN_SCORE: &str = "attacking_win_score";
 pub const KEY_SCORE_PER_LEVEL: &str = "score_per_level";
 pub const KEY_SHUTOUT_BONUS_LEVELS: &str = "shutout_bonus_levels";
+pub const KEY_SETTLEMENT_TIME: &str = "settlement_time";
 
 pub fn build_upgrade_settings() -> ws_common::SettingsBuilderResult {
     let params: HashMap<String, GameParam> = [
@@ -63,6 +64,14 @@ pub fn build_upgrade_settings() -> ws_common::SettingsBuilderResult {
                 default: 1,
                 min: 0,
                 max: 3,
+            }),
+        ),
+        (
+            KEY_SETTLEMENT_TIME.into(),
+            GameParam::Range(GameParamRange {
+                default: 3,
+                min: 1,
+                max: 30,
             }),
         ),
     ]

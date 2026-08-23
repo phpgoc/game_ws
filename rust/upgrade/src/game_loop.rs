@@ -12,11 +12,11 @@ use ws_common::{
 
 use crate::{
     game::StateRegistry,
-    game_setting::{KEY_AWAY_TIME, KEY_DEAL_TIME, KEY_FIRST_DEAL_TIME, KEY_PLAY_TIME},
+    game_setting::{
+        KEY_AWAY_TIME, KEY_DEAL_TIME, KEY_FIRST_DEAL_TIME, KEY_PLAY_TIME, KEY_SETTLEMENT_TIME,
+    },
     state::{PLAYER_COUNT, UpgradeStateHandle},
 };
-
-const SETTLEMENT_DELAY: Duration = Duration::from_secs(3);
 
 fn stop_requested(state: &UpgradeStateHandle) -> bool {
     state.lock().unwrap().stop_requested()
@@ -55,6 +55,11 @@ pub fn start_upgrade_game_loop(
         };
         let play_time = configs.get(KEY_PLAY_TIME).copied().unwrap_or(30).max(1) as u32;
         let away_time = configs.get(KEY_AWAY_TIME).copied().unwrap_or(5).max(1) as u32;
+        let settlement_time = configs
+            .get(KEY_SETTLEMENT_TIME)
+            .copied()
+            .unwrap_or(3)
+            .max(1) as u64;
         loop {
             let (stop_requested, paused, phase) = {
                 let guard = state.lock().unwrap();
@@ -110,7 +115,7 @@ pub fn start_upgrade_game_loop(
                     deliver(dispatch, &senders).await;
                 }
                 UpgradePhase::Settlement => {
-                    if sleep_or_stop(&state, SETTLEMENT_DELAY).await {
+                    if sleep_or_stop(&state, Duration::from_secs(settlement_time)).await {
                         break;
                     }
                     let (advanced, lobby_snapshot) = {

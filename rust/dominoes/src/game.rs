@@ -19,8 +19,9 @@ use crate::action::{self, ActionEvent, ActionOutcome};
 use crate::core::{CoreError, DominoesRoundState, RoundResult};
 use crate::game_loop::start_game_loop;
 use crate::game_setting::{
-    KEY_NO_PLAYABLE_TILES, KEY_RULE, KEY_TARGET_SCORE, build_dominoes_settings,
-    no_playable_from_config, rule_from_config, target_from_config,
+    KEY_NO_PLAYABLE_TILES, KEY_RULE, KEY_SETTLEMENT_TIME, KEY_TARGET_SCORE,
+    build_dominoes_settings, no_playable_from_config, rule_from_config,
+    settlement_time_from_config, target_from_config,
 };
 use crate::game_state::DominoesGameState;
 
@@ -108,7 +109,7 @@ impl DominoesGameHandler {
     fn configs(
         room_service: &RoomService,
         room_key: &str,
-    ) -> (DominoesRule, DominoesNoPlayableTiles, i32) {
+    ) -> (DominoesRule, DominoesNoPlayableTiles, i32, u32) {
         let configs = room_service.room_configs(room_key).unwrap_or_default();
         (
             rule_from_config(configs.get(KEY_RULE).copied().unwrap_or_default()),
@@ -119,6 +120,12 @@ impl DominoesGameHandler {
                     .unwrap_or_default(),
             ),
             target_from_config(configs.get(KEY_TARGET_SCORE).copied().unwrap_or_default()),
+            settlement_time_from_config(
+                configs
+                    .get(KEY_SETTLEMENT_TIME)
+                    .copied()
+                    .unwrap_or(4),
+            ),
         )
     }
 
@@ -153,7 +160,8 @@ impl DominoesGameHandler {
         let Some(common) = room_service.room_common_state(&room_key) else {
             return room_service.error_response(session_id, route, WsResponseCode::NOT_IN_RANGE);
         };
-        let (rule, no_playable_tiles, target_score) = Self::configs(room_service, &room_key);
+        let (rule, no_playable_tiles, target_score, settlement_time) =
+            Self::configs(room_service, &room_key);
         let mut round = match DominoesRoundState::new(common, rule, no_playable_tiles, target_score)
         {
             Ok(round) => round,
@@ -168,6 +176,7 @@ impl DominoesGameHandler {
         if round.start_new_game().is_err() {
             return room_service.error_response(session_id, route, WsResponseCode::NOT_IN_RANGE);
         }
+        round.set_settlement_time_seconds(settlement_time);
         let round = DominoesGameState::new(round);
         let state = Arc::clone(&round.inner);
         room_service.set_room_game_state(&room_key, Box::new(round));

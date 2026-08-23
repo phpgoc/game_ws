@@ -7,13 +7,14 @@ fn upgrade_settings_expose_decks_timing_and_score_progression() {
     let (settings, params) = build_upgrade_settings();
 
     assert_eq!((settings.min_players, settings.max_players), (4, 4));
-    assert_eq!(settings.values.len(), 6);
+    assert_eq!(settings.values.len(), 7);
     assert_eq!(settings.values[KEY_DECK_COUNT], 0);
     assert_eq!(settings.values[KEY_PLAY_TIME], 30);
     assert_eq!(settings.values[KEY_REMOVED_RANK_COUNT], 0);
     assert_eq!(settings.values[KEY_ATTACKING_WIN_SCORE], 80);
     assert_eq!(settings.values[KEY_SCORE_PER_LEVEL], 40);
     assert_eq!(settings.values[KEY_SHUTOUT_BONUS_LEVELS], 1);
+    assert_eq!(settings.values[KEY_SETTLEMENT_TIME], 3);
     assert!(!settings.values.contains_key(KEY_FIRST_DEAL_TIME));
     assert!(!settings.values.contains_key(KEY_DEAL_TIME));
     assert!(!params.keys().any(|key| key.contains("blood")));
@@ -61,6 +62,18 @@ fn upgrade_settings_expose_decks_timing_and_score_progression() {
             score_per_level.max
         ),
         (40, 5, 200)
+    );
+
+    let GameParam::Range(settlement_time) = &params[KEY_SETTLEMENT_TIME] else {
+        panic!("settlement time must be a range");
+    };
+    assert_eq!(
+        (
+            settlement_time.default,
+            settlement_time.min,
+            settlement_time.max
+        ),
+        (3, 1, 30)
     );
 }
 
