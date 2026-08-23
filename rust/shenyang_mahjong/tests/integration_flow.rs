@@ -108,6 +108,7 @@ fn free_port() -> u16 {
         .port()
 }
 
+#[cfg(not(feature = "official"))]
 async fn start_test_server(
     service_name: &'static str,
 ) -> (String, tokio::task::JoinHandle<anyhow::Result<()>>) {
@@ -160,6 +161,7 @@ fn my_tiles(event: &Value) -> Vec<i32> {
         .collect()
 }
 
+#[cfg(not(feature = "official"))]
 fn find_claimable_meld(
     dealer_tiles: &[i32],
     opponent_hands: &[Vec<i32>],
