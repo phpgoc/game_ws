@@ -91,6 +91,7 @@ async fn connect_client(url: &str) -> Client {
     ws
 }
 
+#[cfg(not(feature = "official"))]
 async fn close_client(client: &mut Client) {
     client
         .send(Message::Close(None))
