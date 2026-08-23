@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use serde_json::json;
+use serde_json::{Value, json};
 use share_type_public::settings::GameParamEnum;
 use share_type_public::{
     GameId, GameParam, GameParamRange, Routes, WsCode, WsRequest, WsResponseCode,
@@ -709,6 +709,42 @@ fn common_room_operations_reject_invalid_state_without_mutating_the_room() {
         Routes::SWAP,
         share_type_public::WsResponseCode::ERROR_FORMAT,
     ));
+}
+
+#[test]
+fn manual_away_always_enables_ai_takeover_for_nonmember_players() {
+    let mut service = RoomService::with_ai_players_enabled(true);
+    join_member(
+        &mut service,
+        1,
+        "owner",
+        "manual-away-room",
+        "owner-session",
+    );
+    join_member(
+        &mut service,
+        2,
+        "guest",
+        "manual-away-room",
+        "guest-session",
+    );
+
+    let dispatch = common_request(&mut service, 2, Routes::AWAY, serde_json::Value::Null);
+
+    assert!(has_event(&dispatch, WsCode::AWAY));
+    assert!(service.room_position_is_ai_takeover("manual-away-room", 1));
+    assert!(
+        dispatch.messages.iter().any(|message| {
+            matches!(
+                &message.payload,
+                OutboundPayload::Event(event)
+                    if event.code == WsCode::AWAY as i32
+                        && event.data.get("position").and_then(Value::as_i64) == Some(1)
+                        && event.data.get("is_ai_takeover").and_then(Value::as_bool)
+                            == Some(true)
+            )
+        })
+    );
 }
 
 #[test]
