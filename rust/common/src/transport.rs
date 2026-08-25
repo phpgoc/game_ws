@@ -1,3 +1,8 @@
+//! WebSocket 传输层的最小序列化适配。
+//!
+//! 领域模块只关心 Rust 值，这里负责在文本帧和 JSON 之间转换，并把空帧、
+//! 非文本帧和反序列化错误收敛成统一错误类型。
+
 use serde::{Serialize, de::DeserializeOwned};
 use tokio_tungstenite::tungstenite::Message;
 
@@ -11,6 +16,8 @@ pub enum TransportError {
 
 /// 将 WebSocket 文本帧反序列化为业务数据；控制帧返回 `None`，二进制帧视为错误。
 pub fn from_message<T: DeserializeOwned>(message: Message) -> Result<Option<T>, TransportError> {
+    // 非文本帧交给上层忽略；文本帧即使为空也要返回明确的 JSON 错误，不能
+    // 把客户端协议错误静默当成“没有请求”。
     match message {
         Message::Text(text) => Ok(Some(serde_json::from_str(text.as_ref())?)),
         Message::Binary(_) => Err(TransportError::BinaryFrame),
@@ -20,6 +27,8 @@ pub fn from_message<T: DeserializeOwned>(message: Message) -> Result<Option<T>, 
 
 /// 将可序列化的业务数据编码为 WebSocket 文本帧。
 pub fn to_text_message<T: Serialize>(value: &T) -> Result<Message, TransportError> {
+    // 所有出站事件统一编码成文本帧，保证浏览器原生 WebSocket 和 Tauri
+    // native runtime 看到完全相同的协议。
     Ok(Message::Text(serde_json::to_string(value)?.into()))
 }
 

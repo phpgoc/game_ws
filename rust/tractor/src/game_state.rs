@@ -1,3 +1,5 @@
+//! 拖拉机牌局状态、主牌规则和墩分累计。
+
 use std::{
     collections::{HashMap, VecDeque},
     sync::{Arc, Mutex},
@@ -36,6 +38,7 @@ pub const MAX_TRACTOR_DECK_COUNT: usize = 3;
 
 #[derive(Debug)]
 pub struct TractorGameState {
+    /// 房间公共状态与拖拉机专属的发牌、主牌声明、墩和结算事实。
     pub base: Arc<Mutex<CommonGameState>>,
     pub phase: TractorPhase,
     pub rules: TractorRules,
@@ -77,6 +80,7 @@ pub struct TractorFailedThrow {
 
 #[derive(Debug, Clone)]
 pub struct TractorRules {
+    /// 当前级牌、主花色、副数和底牌规则；一局中不可随意替换。
     pub attacking_win_score: i32,
     pub score_per_level: i32,
     pub shutout_bonus_levels: u8,

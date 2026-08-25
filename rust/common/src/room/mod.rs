@@ -1,4 +1,7 @@
 //! Room membership, settings, and common request handling.
+//!
+//! 房间服务只维护成员、房主、配置和通用状态，不了解具体游戏规则；游戏
+//! handler 通过这里的快照、session 通道和广播接口实现自己的状态机。
 
 mod model;
 

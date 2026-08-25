@@ -1,3 +1,8 @@
+//! 西洋骨牌的纯牌局核心。
+//!
+//! 本模块负责牌堆、可放置位置、方向布局和回合结果，不依赖 WebSocket；
+//! 官方服务端、自建服务端和测试因此可以共享同一套几何/规则判断。
+
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -26,6 +31,7 @@ const SIMPLE_LAYOUT_Y_LIMIT: i32 = 12;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Tile {
+    /// 两端点数；旋转只改变朝向，不改变这两个点数。
     pub id: i32,
     pub a: i32,
     pub b: i32,
@@ -102,6 +108,7 @@ impl From<Endpoint> for WsDominoesEndpoint {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Placement {
+    /// 一次落牌的牌、连接端和布局方向，供客户端重建棋盘。
     pub placement_id: i32,
     pub tile: Tile,
     pub connected_endpoint_id: Option<i32>,

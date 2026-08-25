@@ -1,3 +1,5 @@
+//! 自建服务启动时的本地地址和端口选择。
+
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener};
 
 fn find_bindable_port(host: Ipv4Addr) -> Option<u16> {
@@ -10,6 +12,8 @@ fn is_bindable(host: Ipv4Addr, port: u16) -> bool {
 }
 
 pub(crate) fn resolve_host(host: Option<String>) -> anyhow::Result<Ipv4Addr> {
+    // 未指定地址时优先选择私网 IPv4，方便局域网联机；显式地址必须能解析
+    // 成 IPv4，避免等到 bind 阶段才暴露配置错误。
     match host {
         Some(host) => host
             .parse::<Ipv4Addr>()
@@ -19,6 +23,7 @@ pub(crate) fn resolve_host(host: Option<String>) -> anyhow::Result<Ipv4Addr> {
 }
 
 pub(crate) fn resolve_port(host: Ipv4Addr, port: Option<u16>) -> anyhow::Result<u16> {
+    // 端口必须高于系统保留范围；未指定时从 9001 开始寻找当前可绑定端口。
     match port {
         Some(port) => {
             if port <= 9000 {

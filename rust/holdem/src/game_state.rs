@@ -1,3 +1,5 @@
+//! 德州扑克运行态：街道、下注、底池和玩家筹码。
+
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
@@ -14,6 +16,7 @@ use crate::{
 
 #[derive(Debug)]
 pub struct HoldemGameState {
+    /// 牌局循环独占的可变状态，广播前会根据座位过滤底牌。
     pub base: Arc<Mutex<CommonGameState>>,
     pub variant: PokerVariant,
     pub phase: TexasHoldEmPhase,

@@ -1,3 +1,5 @@
+//! 斗地主运行态和结算摘要。
+
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -37,6 +39,7 @@ pub struct LandlordSettlementSummary {
 /// `base` is shared with RoomService common state.
 #[derive(Debug)]
 pub struct LandlordLoopState {
+    /// 房间公共状态负责连接、离线和托管；本结构只保存牌局事实。
     pub base: Arc<Mutex<CommonGameState>>,
     pub phase: LandlordPhase,
     /// The position that starts the call-landlord phase each deal.
@@ -45,6 +48,7 @@ pub struct LandlordLoopState {
     pub current_position: usize,
     pub hands: HashMap<usize, Vec<i32>>,
     pub hidden_cards: Vec<i32>,
+    /// 地主底牌，结算事件会完整公开，进行中只发送给地主本人。
     pub landlord_position: Option<usize>,
     /// 当前最高叫分: 0 = 未叫, 1/2/3
     pub score: u32,

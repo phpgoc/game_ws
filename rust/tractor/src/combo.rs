@@ -13,6 +13,9 @@
 //!
 //! Pairs are matched by card *identity* (base card), never by rank alone, so
 //! `5♠ + 5♥` is two singles, not a pair.
+//!
+//! 下面的纯函数同时被服务端动作校验和 AI 使用；比较牌力时必须经过主牌、
+//! 级牌和副数规则转换，不能直接比较协议卡牌编号。
 
 use std::collections::{HashMap, HashSet};
 
@@ -25,6 +28,7 @@ use crate::game_state::{
 
 #[derive(Debug, Clone, Copy)]
 pub struct Combo {
+    /// 牌型及其可被后续跟牌使用的结构资源。
     pub kind: ComboKind,
     /// `None` when the combo is trump, otherwise the plain suit index.
     pub suit: Option<i32>,
@@ -99,6 +103,8 @@ pub fn card_in_group(card: i32, lead_suit: Option<i32>, rules: &TractorRules) ->
 /// Classify `cards` as a legal combo shape, or `None` if it is not a single
 /// group of the same suit forming a single / pair / tractor.
 pub fn classify(cards: &[i32], rules: &TractorRules) -> Option<Combo> {
+    // 先转换到统一牌力空间，再识别对子、连对、连三张和甩牌；不完整牌型
+    // 返回 None，避免错误参与墩比较。
     if cards.is_empty() {
         return None;
     }
@@ -299,6 +305,7 @@ fn for_each_combination(
 /// `None`. Higher wins. A play only competes when it matches the lead shape and
 /// is either trump or the exact lead plain suit.
 pub fn combo_win_value(cards: &[i32], lead: &Combo, rules: &TractorRules) -> Option<i32> {
+    // 只有满足领出牌张数和结构的组合才有可比较的墩值。
     let combo = classify(cards, rules)?;
     let shape_matches = match lead.kind {
         ComboKind::Throw {
@@ -520,6 +527,8 @@ fn titanic_follow_signature(
 /// shape, bounded subset enumeration also exposes alternative legal discards
 /// (for example avoiding a five while following a pair with two singles).
 pub fn enumerate_follows(hand: &[i32], lead: &Combo, rules: &TractorRules) -> Vec<Vec<i32>> {
+    // 先按领出组别枚举候选，再过滤必须跟的数量和结构，最后去掉卡牌顺序
+    // 造成的重复结果，供 AI 和 UI 选择器使用。
     const SUBSET_LIMIT: usize = 4_096;
     enumerate_follows_with_subset_limit(hand, lead, rules, SUBSET_LIMIT)
 }
@@ -785,6 +794,7 @@ fn fill_from(
 ///   - if the lead is a pair/tractor and the hand still holds pairs of the lead
 ///     group, the follow must include as many pairs as required/available.
 pub fn follow_is_legal(hand: &[i32], cards: &[i32], lead: &Combo, rules: &TractorRules) -> bool {
+    // 有同组牌时必须跟足同组数量；只有同组不足才允许用其他组补齐张数。
     let lead_len = lead.kind.card_count();
     if cards.len() != lead_len || !hand_contains(hand, cards) {
         return false;
@@ -979,6 +989,8 @@ fn take_best_consecutive_units(
 /// honouring group / pair-preservation rules. Returns `None` only if the hand
 /// cannot supply enough cards (should not happen at a live table).
 pub fn forced_follow(hand: &[i32], lead: &Combo, rules: &TractorRules) -> Option<Vec<i32>> {
+    // 托管使用确定性跟牌：优先保留高结构组合，无法完整跟出时再补齐最小
+    // 合法牌组，最终仍通过 follow_is_legal 复核。
     let lead_len = lead.kind.card_count();
     if hand.len() < lead_len {
         return None;

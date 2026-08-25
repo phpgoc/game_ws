@@ -1,9 +1,12 @@
+//! 所有官方/自建游戏共用的设置描述。
+
 use std::collections::HashMap;
 
 /// 游戏设置 — 基于 HashMap 存储当前值。
 /// 每个游戏的参数描述（GameParam）由各游戏在 build_room_settings 时提供。
 #[derive(Debug, Clone, Default)]
 pub struct GameSettings {
+    /// 前端用于展示标题、说明和设置控件的协议元数据。
     /// 玩家数量限制
     pub min_players: usize,
     pub max_players: usize,

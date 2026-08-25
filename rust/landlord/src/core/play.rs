@@ -1,9 +1,15 @@
+//! 斗地主牌型分类和出牌比较规则。
+//!
+//! 牌型判定不依赖房间状态，叫牌/出牌阶段只需把当前手牌和上手牌型传入；
+//! 这样 AI、请求校验和回放可以共享同一套“能否压过”的逻辑。
+
 use std::collections::HashMap;
 
 use share_type_public::{LandlordPhase, games::landlord::LANDLORD_CARDS};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Combo {
+    /// 牌型类别；比较时先看炸弹/王炸优先级，再看主点数。
     pub kind: ComboKind,
     pub main_rank: u8,
     pub sequence_len: usize,
@@ -29,6 +35,7 @@ pub enum ComboKind {
 
 #[derive(Clone, Copy)]
 pub struct PlayValidationContext<'a> {
+    /// 只有上下文满足当前阶段、当前座位和手牌归属时，牌型比较结果才有效。
     pub phase: LandlordPhase,
     pub current_position: usize,
     pub hand: Option<&'a [i32]>,
@@ -37,6 +44,7 @@ pub struct PlayValidationContext<'a> {
 }
 
 pub fn can_beat(curr: &Combo, prev: &Combo) -> bool {
+    // 王炸不可被任何牌压过；普通炸弹可以压普通牌型，炸弹之间比较主点数。
     if curr.kind == ComboKind::Rocket {
         return prev.kind != ComboKind::Rocket;
     }
@@ -112,6 +120,8 @@ pub fn cards_in_hand(played: &[i32], hand: &[i32]) -> bool {
 }
 
 pub fn classify(cards: &[i32]) -> Option<Combo> {
+    // 先按牌点聚合，再按牌型从高优先级到低优先级匹配；无法完整分类时
+    // 返回 None，调用方不得把它当作“过牌”。
     if cards.is_empty() || !cards.iter().all(is_valid_card_id) {
         return None;
     }

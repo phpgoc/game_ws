@@ -1,3 +1,5 @@
+//! 升级牌堆、底牌、主牌声明和四人队伍的运行态。
+
 use std::{
     collections::{HashMap, VecDeque},
     sync::{Arc, Mutex},
@@ -47,6 +49,7 @@ pub struct UpgradeRules {
 
 #[derive(Debug)]
 pub struct UpgradeGameState {
+    /// 牌局循环独占的可变事实，外层 handle 只提供线程安全共享。
     pub base: Arc<Mutex<CommonGameState>>,
     pub phase: UpgradePhase,
     pub rules: UpgradeRules,
@@ -75,6 +78,7 @@ pub type UpgradeStateHandle = Arc<Mutex<UpgradeGameState>>;
 
 #[derive(Debug, Clone)]
 pub struct FailedThrow {
+    /// 甩牌失败时保留尝试牌和实际拆出的组件，用于事件展示和重试。
     pub position: usize,
     pub attempted_cards: Vec<i32>,
     pub played_cards: Vec<i32>,
@@ -91,6 +95,7 @@ pub struct PlayResolution {
 }
 
 pub fn build_upgrade_deck(deck_count: UpgradeDeckCount) -> Vec<i32> {
+    // 牌堆生成必须和协议卡牌 ID 一致；副数和移除牌面由同一个函数处理。
     build_upgrade_deck_with_removed_ranks(deck_count, 0)
 }
 

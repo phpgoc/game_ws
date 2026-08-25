@@ -1,3 +1,8 @@
+//! 升级的牌型分类、跟牌和甩牌分解。
+//!
+//! 升级的难点是保持领出牌的组别、张数以及同身份组件；本模块把这些约束
+//! 集中在纯函数中，服务端请求和 AI 都使用同一套判定。
+
 use std::collections::HashMap;
 
 use upgrade_common::{
@@ -28,6 +33,7 @@ pub enum ComboKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Combo {
+    /// 组合类别、主牌组别和每个同身份组件的张数。
     pub kind: ComboKind,
     pub group: Option<Suit>,
     /// Same-identity component sizes, largest first. They carry no
@@ -72,6 +78,8 @@ fn identity_groups(cards: &[Card]) -> HashMap<u8, Vec<Card>> {
 
 /// 按升级规则识别一手牌。连续对子故意归入 `Throw`。
 pub fn classify(cards: &[Card], rules: UpgradeComboRules) -> Option<Combo> {
+    // 先检查所有牌是否属于同一组，再按同身份数量识别对子/重复牌；其余
+    // 组合保留为甩牌，不能错误降级成普通散牌。
     let group = same_group(cards, rules)?;
     let counts = identity_groups(cards);
     let max_multiplicity = counts.values().map(Vec::len).max()?;
@@ -185,6 +193,8 @@ pub fn follow_is_legal(
     lead: &Combo,
     rules: UpgradeComboRules,
 ) -> bool {
+    // 跟牌先满足领出组别的数量要求；只有手里没有足够同组牌时，才可用其他
+    // 牌补齐张数，且最终组合仍必须能被 classify 识别。
     if cards.len() != lead_card_count(lead) {
         return false;
     }
@@ -224,6 +234,8 @@ pub fn follow_is_legal(
 /// Build one deterministic legal follow while preserving as much of every
 /// same-identity component required by the lead as the hand can supply.
 pub fn forced_follow(hand: &[Card], lead: &Combo, rules: UpgradeComboRules) -> Option<Vec<Card>> {
+    // 托管需要确定的合法跟牌：优先保留更高结构，无法完整跟出时再补齐最小
+    // 牌组，最后由跟牌校验兜底。
     let card_count = lead_card_count(lead);
     if hand.len() < card_count {
         return None;

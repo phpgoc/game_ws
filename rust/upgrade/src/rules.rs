@@ -1,3 +1,5 @@
+//! 升级牌副数设置的边界校验。
+
 use std::fmt;
 
 use upgrade_common::MAX_DECK_COUNT;
@@ -24,6 +26,7 @@ impl std::error::Error for DeckCountError {}
 
 impl UpgradeDeckCount {
     pub fn new(count: u8) -> Result<Self, DeckCountError> {
+        // 不把越界值截断，调用方可以把错误原样转换成设置响应。
         if (MIN_UPGRADE_DECK_COUNT..=MAX_DECK_COUNT).contains(&count) {
             Ok(Self(count))
         } else {
