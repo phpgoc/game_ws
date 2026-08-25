@@ -1290,13 +1290,15 @@ fn settlement_rejects_missing_discard_win_tile() {
     state.settlement.as_mut().unwrap().win_tile = Some(35);
     let valid_settlement = state.settlement.as_ref().expect("settlement");
 
-    assert!(valid_winner_hand_fan_with_context(
-        &state,
-        valid_settlement,
-        1,
-        ShenyangMahjongWinContext::new(),
-    )
-    .is_some());
+    assert!(
+        valid_winner_hand_fan_with_context(
+            &state,
+            valid_settlement,
+            1,
+            ShenyangMahjongWinContext::new(),
+        )
+        .is_some()
+    );
     assert_eq!(
         build_settlement_event(&state)
             .expect("settlement event")
@@ -1390,13 +1392,15 @@ fn settlement_rejects_public_fifth_claim_tile() {
         &settlement,
         1
     ));
-    assert!(valid_winner_hand_fan_with_context(
-        &state,
-        &settlement,
-        1,
-        ShenyangMahjongWinContext::new(),
-    )
-    .is_some());
+    assert!(
+        valid_winner_hand_fan_with_context(
+            &state,
+            &settlement,
+            1,
+            ShenyangMahjongWinContext::new(),
+        )
+        .is_some()
+    );
 }
 
 #[test]
@@ -1440,13 +1444,15 @@ fn settlement_rejects_public_fifth_copy_used_by_self_draw_winner() {
         &settlement,
         1
     ));
-    assert!(valid_winner_hand_fan_with_context(
-        &state,
-        &settlement,
-        1,
-        ShenyangMahjongWinContext::new(),
-    )
-    .is_some());
+    assert!(
+        valid_winner_hand_fan_with_context(
+            &state,
+            &settlement,
+            1,
+            ShenyangMahjongWinContext::new(),
+        )
+        .is_some()
+    );
     assert_eq!(
         build_settlement_event(&state)
             .expect("settlement event")
@@ -1523,13 +1529,15 @@ fn settlement_rejects_unowned_self_draw_win_tile() {
     state.settlement.as_mut().unwrap().win_tile = Some(35);
     let valid_settlement = state.settlement.as_ref().expect("settlement");
 
-    assert!(valid_winner_hand_fan_with_context(
-        &state,
-        valid_settlement,
-        1,
-        ShenyangMahjongWinContext::new(),
-    )
-    .is_some());
+    assert!(
+        valid_winner_hand_fan_with_context(
+            &state,
+            valid_settlement,
+            1,
+            ShenyangMahjongWinContext::new(),
+        )
+        .is_some()
+    );
     assert_eq!(
         build_settlement_event(&state)
             .expect("settlement event")

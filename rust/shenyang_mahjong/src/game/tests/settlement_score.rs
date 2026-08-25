@@ -21,8 +21,8 @@ fn self_draw_converts_each_payers_final_fan_to_score() {
     assert_eq!(
         settlement_score_changes_for_state(&state, &[0, 1, 2, 3], settlement, &configs)
             .into_iter()
-        .map(|change| (change.position, change.score))
-        .collect::<Vec<_>>(),
+            .map(|change| (change.position, change.score))
+            .collect::<Vec<_>>(),
         vec![(0, -8), (1, -4), (2, -4), (3, 16)]
     );
 }
@@ -76,8 +76,8 @@ fn default_room_self_draw_broadcasts_exponential_score_changes_to_clients() {
         event
             .score_changes
             .iter()
-        .map(|change| (change.position, change.score))
-        .collect::<Vec<_>>(),
+            .map(|change| (change.position, change.score))
+            .collect::<Vec<_>>(),
         vec![(0, -8), (1, -4), (2, -4), (3, 16)]
     );
     assert_eq!(event.winner_details.len(), 1);

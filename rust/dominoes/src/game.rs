@@ -120,12 +120,7 @@ impl DominoesGameHandler {
                     .unwrap_or_default(),
             ),
             target_from_config(configs.get(KEY_TARGET_SCORE).copied().unwrap_or_default()),
-            settlement_time_from_config(
-                configs
-                    .get(KEY_SETTLEMENT_TIME)
-                    .copied()
-                    .unwrap_or(4),
-            ),
+            settlement_time_from_config(configs.get(KEY_SETTLEMENT_TIME).copied().unwrap_or(4)),
         )
     }
 
