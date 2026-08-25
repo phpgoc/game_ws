@@ -1147,6 +1147,64 @@ fn play_request_gang_consumes_triplet_and_draws_replacement() {
 }
 
 #[test]
+fn ting_player_can_gang_another_players_matching_discard() {
+    let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
+    {
+        let mut state = loop_state.lock().unwrap();
+        state.phase = ShenyangMahjongPhase::Play;
+        state.current_position = 0;
+        for position in 0..4 {
+            state.discards.insert(position, Vec::new());
+            state.melds.insert(position, Vec::new());
+        }
+        state.discards.insert(0, vec![34]);
+        state
+            .hands
+            .insert(1, vec![1, 2, 3, 11, 12, 13, 21, 22, 23, 34, 34, 34, 35]);
+        state.ting_positions.insert(1);
+        state.wall = vec![36];
+
+        let options = build_claim_options(&state, 34, 0, &default_configs());
+        let ting_option = options
+            .iter()
+            .find(|option| option.position == 1)
+            .expect("ting player with three north tiles should receive a claim option");
+        assert!(ting_option.can_gang);
+        assert!(!ting_option.can_peng);
+        assert!(ting_option.chi_options.is_empty());
+
+        state.claim_window = Some(ClaimWindowState {
+            tile: 34,
+            from_position: 0,
+            kind: ClaimWindowKind::Discard,
+            eligible_positions: vec![1],
+            responses: HashMap::new(),
+        });
+    }
+
+    let response = handler.handle_game_request(
+        &mut room_service,
+        2,
+        play_request(ShenyangMahjongAction::GANG, Vec::new(), Some(34), Some(0)),
+    );
+
+    assert_eq!(
+        response_code(&response, 2, Routes::PLAY),
+        Some(WsResponseCode::OK as i32)
+    );
+    let state = loop_state.lock().unwrap();
+    assert!(state.is_ting(1));
+    assert!(state.claim_window.is_none());
+    assert_eq!(state.current_position, 1);
+    assert_eq!(state.last_drawn_tile, Some(36));
+    assert!(state.discards.get(&0).unwrap().is_empty());
+    let meld = state.melds.get(&1).unwrap().first().unwrap();
+    assert_eq!(meld.kind, ShenyangMahjongMeldKind::GANG);
+    assert_eq!(meld.tiles, vec![34, 34, 34, 34]);
+    assert_eq!(meld.from_position, Some(0));
+}
+
+#[test]
 fn play_request_gang_rejects_when_replacement_tile_is_unavailable() {
     let (mut room_service, mut handler, _room_key, loop_state) = setup_request_room();
     {

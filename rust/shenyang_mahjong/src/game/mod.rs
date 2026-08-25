@@ -115,8 +115,9 @@ pub(crate) fn build_claim_options(
         let hand = state.hands.get(&position).cloned().unwrap_or_default();
         let can_hu = can_claim_hu_with_configs(state, position, tile, configs);
         let can_claim_meld = position_can_claim_meld(state, position);
+        let can_claim_gang = position_can_claim_gang(state, position);
         let can_peng_now = can_claim_meld && can_peng(&hand, tile);
-        let can_gang_now = can_claim_meld && state.wall_count() > 0 && can_gang(&hand, tile);
+        let can_gang_now = can_claim_gang && state.wall_count() > 0 && can_gang(&hand, tile);
         let chi_options = if can_claim_meld
             && position_can_chi(state, position, configs)
             && position == next_position
@@ -1418,8 +1419,11 @@ fn position_can_chi(
 }
 
 fn position_can_claim_meld(state: &ShenyangMahjongLoopState, position: usize) -> bool {
-    !state.is_ting(position)
-        && position_has_claimable_tile_count(state, position)
+    !state.is_ting(position) && position_can_claim_gang(state, position)
+}
+
+fn position_can_claim_gang(state: &ShenyangMahjongLoopState, position: usize) -> bool {
+    position_has_claimable_tile_count(state, position)
         && position_hand_tiles_are_valid(state, position)
         && !position_has_impossible_known_tile_count(state, position)
         && position_meld_shapes_are_valid(state, position)
@@ -1883,6 +1887,7 @@ pub(crate) fn resolve_claim_window(
         }
         let hand = state.hands.get(position).cloned().unwrap_or_default();
         let can_claim_meld = position_can_claim_meld(state, *position);
+        let can_claim_gang = position_can_claim_gang(state, *position);
         match claim_window.responses.get(position) {
             Some(ClaimResponse::Hu) => {
                 if claim_matches_source
@@ -1904,7 +1909,7 @@ pub(crate) fn resolve_claim_window(
                 if !is_rob_gang
                     && claim_matches_source
                     && !invalid_claim_tile_count
-                    && can_claim_meld
+                    && can_claim_gang
                     && state.wall_count() > 0
                     && can_gang(&hand, claim_window.tile) =>
             {

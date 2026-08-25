@@ -256,7 +256,7 @@ fn declared_ting_can_discard_drawn_tile_after_wait_becomes_dead() {
 }
 
 #[test]
-fn declared_ting_claim_options_allow_only_hu() {
+fn declared_ting_claim_options_allow_hu_and_gang_but_not_chi_or_peng() {
     let mut state = playable_state();
     state.current_position = 0;
     state.discards.insert(0, vec![5]);
@@ -285,7 +285,7 @@ fn declared_ting_claim_options_allow_only_hu() {
         .expect("ting position should retain its hu option");
     assert!(after_option.can_hu);
     assert!(!after_option.can_peng);
-    assert!(!after_option.can_gang);
+    assert!(after_option.can_gang);
     assert!(after_option.chi_options.is_empty());
 }
 

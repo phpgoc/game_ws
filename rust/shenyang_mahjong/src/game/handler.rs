@@ -100,6 +100,7 @@ impl ShenyangMahjongGameHandler {
                 let hand = state.hands.get(&position).cloned().unwrap_or_default();
                 let invalid_claim_tile_count = has_impossible_known_tile_count(&state, claim_tile);
                 let can_claim_meld = position_can_claim_meld(&state, position);
+                let can_claim_gang = position_can_claim_gang(&state, position);
                 let response = match payload.action {
                     ShenyangMahjongAction::PASS => ClaimResponse::Pass,
                     ShenyangMahjongAction::HU => {
@@ -139,7 +140,7 @@ impl ShenyangMahjongGameHandler {
                         if is_rob_gang
                             || !claim_matches_source
                             || invalid_claim_tile_count
-                            || !can_claim_meld
+                            || !can_claim_gang
                             || state.wall_count() == 0
                         {
                             return room_service.error_response(
