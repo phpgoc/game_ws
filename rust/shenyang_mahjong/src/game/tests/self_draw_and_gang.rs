@@ -319,7 +319,7 @@ fn self_draw_last_wall_tile_counts_haidilao_without_gang_draw() {
     assert!(!settlement.is_gang_draw);
     assert!(settlement.is_haidilao);
     assert_eq!(settlement.win_tile, Some(35));
-    assert_eq!(winner_hand_fan(&state, settlement, 0), 3);
+    assert_eq!(winner_hand_fan(&state, settlement, 0), 2);
 
     let event = build_settlement_event_with_configs(&state, &default_configs()).unwrap();
     assert!(!event.is_gang_draw);
@@ -410,7 +410,7 @@ fn self_gang_last_replacement_self_draw_counts_gang_draw_and_haidilao() {
     assert!(settlement.is_gang_draw);
     assert!(settlement.is_haidilao);
     assert_eq!(settlement.win_tile, Some(35));
-    assert_eq!(winner_hand_fan(&state, settlement, 0), 6);
+    assert_eq!(winner_hand_fan(&state, settlement, 0), 5);
 
     let event = build_settlement_event_with_configs(&state, &default_configs()).unwrap();
     assert!(event.is_gang_draw);

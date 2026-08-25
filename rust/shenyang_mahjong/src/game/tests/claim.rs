@@ -849,7 +849,7 @@ fn dragon_xi_gang_is_exposed_without_opening_or_replacement_draw() {
     assert!(!settlement.is_gang_draw);
     assert_eq!(
         winner_hand_fan_with_configs(&state, settlement, 1, &configs),
-        2
+        1
     );
 }
 

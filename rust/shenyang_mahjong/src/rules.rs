@@ -1010,7 +1010,7 @@ pub(crate) fn shenyang_win_pattern(
 
 pub(crate) fn shenyang_win_pattern_base_fan(pattern: ShenyangMahjongWinPattern) -> i32 {
     match pattern {
-        ShenyangMahjongWinPattern::Standard => 1,
+        ShenyangMahjongWinPattern::Standard => 0,
         ShenyangMahjongWinPattern::PiaoHu => 3,
         ShenyangMahjongWinPattern::SevenPairs | ShenyangMahjongWinPattern::PureOneSuit => 4,
     }
@@ -1650,7 +1650,7 @@ mod tests {
                 standard.as_slice(),
                 &[][..],
                 ShenyangMahjongWinPattern::Standard,
-                1,
+                0,
             ),
         ];
 

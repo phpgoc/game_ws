@@ -539,7 +539,10 @@ fn enabled_ting_setting_adds_one_fan_before_the_cap() {
     let enabled = HashMap::from([("ting_fan".to_owned(), 1)]);
     let disabled_fan = winner_hand_fan_with_configs(&state, settlement, 1, &disabled);
 
-    assert!(disabled_fan > 0);
+    assert_eq!(
+        valid_winner_hand_fan_with_configs(&state, settlement, 1, &disabled),
+        Some(disabled_fan)
+    );
     assert_eq!(
         winner_hand_fan_with_configs(&state, settlement, 1, &enabled),
         disabled_fan + 1,
@@ -740,7 +743,13 @@ fn redeal_uses_only_positive_score_winners_for_dealer_rotation() {
     let settlement = state.settlement.as_ref().expect("settlement");
 
     assert_eq!(winner_hand_fan(&state, settlement, 0), 0);
-    assert!(winner_hand_fan(&state, settlement, 1) > 0);
+    assert!(valid_winner_hand_fan_with_context(
+        &state,
+        settlement,
+        1,
+        ShenyangMahjongWinContext::new(),
+    )
+    .is_some());
     assert_eq!(
         positive_winner_positions_for_state(&state, settlement, &HashMap::new()),
         vec![1]

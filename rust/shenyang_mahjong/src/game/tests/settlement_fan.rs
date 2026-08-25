@@ -247,7 +247,7 @@ fn settlement_fan_counts_chi_as_opening_meld() {
     state.enter_settlement(vec![1], Some(0), Some(35), false);
     let settlement = state.settlement.as_ref().expect("settlement");
 
-    assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
 }
 
 #[test]
@@ -260,7 +260,7 @@ fn settlement_fan_counts_concealed_dragon_triplet() {
     state.enter_settlement(vec![1], None, None, true);
     let settlement = state.settlement.as_ref().expect("settlement");
 
-    assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
 }
 
 #[test]
@@ -280,7 +280,15 @@ fn settlement_fan_counts_configured_closed_sequence_dragon_pair_win_as_standard(
     );
     assert_eq!(
         winner_hand_fan_with_configs(&state, settlement, 1, &disabled_configs),
-        1
+        0
+    );
+    assert_eq!(
+        valid_winner_hand_fan_with_configs(&state, settlement, 1, &default_configs),
+        None
+    );
+    assert_eq!(
+        valid_winner_hand_fan_with_configs(&state, settlement, 1, &disabled_configs),
+        Some(0)
     );
     assert_eq!(
         shenyang_win_pattern(state.hands.get(&1).unwrap(), &[]),
@@ -302,7 +310,7 @@ fn settlement_fan_counts_dragon_concealed_gang() {
     state.enter_settlement(vec![1], None, None, true);
     let settlement = state.settlement.as_ref().expect("settlement");
 
-    assert_eq!(winner_hand_fan(&state, settlement, 1), 5);
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 4);
 }
 
 #[test]
@@ -322,7 +330,7 @@ fn settlement_fan_counts_dragon_open_gang() {
     state.enter_settlement(vec![1], None, None, true);
     let settlement = state.settlement.as_ref().expect("settlement");
 
-    assert_eq!(winner_hand_fan(&state, settlement, 1), 3);
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
 }
 
 #[test]
@@ -342,7 +350,7 @@ fn settlement_fan_counts_dragon_peng() {
     state.enter_settlement(vec![1], None, None, true);
     let settlement = state.settlement.as_ref().expect("settlement");
 
-    assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
 }
 
 #[test]
@@ -374,7 +382,7 @@ fn settlement_fan_counts_four_gui_yi_across_chi_meld_and_hand() {
     state.enter_settlement(vec![1], None, None, true);
     let settlement = state.settlement.as_ref().expect("settlement");
 
-    assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
 }
 
 #[test]
@@ -394,7 +402,7 @@ fn settlement_fan_counts_four_gui_yi_across_peng_meld_and_hand() {
     state.enter_settlement(vec![1], None, Some(35), true);
     let settlement = state.settlement.as_ref().expect("settlement");
 
-    assert_eq!(winner_hand_fan(&state, settlement, 1), 3);
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
 }
 
 #[test]
@@ -413,7 +421,7 @@ fn settlement_fan_counts_four_gui_yi_across_xi_gang_and_hand() {
     state.enter_settlement(vec![1], None, Some(21), true);
     let settlement = state.settlement.as_ref().expect("settlement");
 
-    assert_eq!(winner_hand_fan(&state, settlement, 1), 5);
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 4);
     let event = build_settlement_event(&state).expect("settlement event");
     assert_eq!(event.winner_details.len(), 1);
     assert_eq!(event.winner_details[0].score, 150);
@@ -460,7 +468,7 @@ fn settlement_fan_counts_honor_single_wait_once() {
     let melds = state.melds.get(&1).map(Vec::as_slice).unwrap_or(&[]);
 
     assert!(is_single_wait_win(&hand_tiles, melds, settlement.win_tile));
-    assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
 }
 
 #[test]
@@ -498,7 +506,7 @@ fn settlement_fan_counts_ordinary_concealed_gang() {
     state.enter_settlement(vec![1], None, None, true);
     let settlement = state.settlement.as_ref().expect("settlement");
 
-    assert_eq!(winner_hand_fan(&state, settlement, 1), 3);
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
 }
 
 #[test]
@@ -518,7 +526,7 @@ fn settlement_fan_counts_ordinary_open_gang() {
     state.enter_settlement(vec![1], None, None, true);
     let settlement = state.settlement.as_ref().expect("settlement");
 
-    assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
 }
 
 #[test]
@@ -618,7 +626,7 @@ fn settlement_fan_counts_single_middle_pair_wait() {
 
     assert_eq!(hand_tiles, vec![11, 12, 13, 21, 22, 23, 25, 25, 31, 31, 31]);
     assert!(is_single_wait_win(&hand_tiles, melds, settlement.win_tile));
-    assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
 }
 
 #[test]
@@ -685,7 +693,7 @@ fn settlement_fan_counts_terminal_single_wait_when_other_wait_is_discarded_out()
         settlement.win_tile,
         &public_unavailable
     ));
-    assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
 }
 
 #[test]
@@ -716,7 +724,7 @@ fn settlement_fan_counts_terminal_single_wait_when_other_wait_is_exhausted() {
     let melds = state.melds.get(&1).map(Vec::as_slice).unwrap_or(&[]);
 
     assert!(is_single_wait_win(&hand_tiles, melds, settlement.win_tile));
-    assert_eq!(winner_hand_fan(&state, settlement, 1), 3);
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
 }
 
 #[test]
@@ -737,7 +745,7 @@ fn settlement_fan_does_not_count_closed_middle_shape_with_multiple_waits() {
     ));
     let settlement = state.settlement.as_ref().expect("settlement");
 
-    assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 0);
 }
 
 #[test]
@@ -757,7 +765,7 @@ fn settlement_fan_does_not_count_four_gui_yi_for_gang_meld() {
     state.enter_settlement(vec![1], None, None, true);
     let settlement = state.settlement.as_ref().expect("settlement");
 
-    assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
 }
 
 #[test]
@@ -778,7 +786,7 @@ fn settlement_fan_does_not_count_open_two_sided_wait_as_single_wait() {
     ));
     let settlement = state.settlement.as_ref().expect("settlement");
 
-    assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 0);
 }
 
 #[test]
@@ -797,7 +805,7 @@ fn settlement_fan_does_not_count_shou_ba_yi_for_standard_hand() {
     state.enter_settlement(vec![1], Some(0), Some(35), false);
     let settlement = state.settlement.as_ref().expect("settlement");
 
-    assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
 }
 
 #[test]
@@ -816,7 +824,7 @@ fn settlement_fan_does_not_count_terminal_triplet_completion_as_single_wait() {
     ));
     let settlement = state.settlement.as_ref().expect("settlement");
 
-    assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 0);
 }
 
 #[test]
@@ -837,7 +845,7 @@ fn settlement_fan_ignores_gang_draw_flag_on_discard_win() {
     ));
     let settlement = state.settlement.as_ref().expect("settlement");
 
-    assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 0);
     let event = build_settlement_event_with_configs(&state, &default_configs()).unwrap();
     assert!(!event.is_gang_draw);
     assert!(!event.winner_details[0].is_gang_draw);
@@ -861,7 +869,7 @@ fn settlement_fan_ignores_haidilao_flag_on_discard_win() {
     ));
     let settlement = state.settlement.as_ref().expect("settlement");
 
-    assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 0);
     let event = build_settlement_event_with_configs(&state, &default_configs()).unwrap();
     assert!(!event.is_haidilao);
     assert!(!event.winner_details[0].is_haidilao);
@@ -913,7 +921,7 @@ fn settlement_fan_ignores_invalid_source_melds_for_single_wait() {
         settlement.win_tile,
         &public_unavailable
     ));
-    assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 0);
 }
 
 #[test]
@@ -994,7 +1002,7 @@ fn settlement_fan_ignores_reverse_win_flag_on_self_draw() {
     ));
     let settlement = state.settlement.as_ref().expect("settlement");
 
-    assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 0);
     let event = build_settlement_event_with_configs(&state, &default_configs()).unwrap();
     assert_eq!(event.from_position, None);
     assert!(!event.is_reverse_win);
@@ -1028,8 +1036,8 @@ fn ordinary_self_draw_does_not_add_fan_over_the_same_discard_win() {
         1,
     );
 
-    assert_eq!(self_draw_fan, 1);
-    assert_eq!(discard_fan, 1);
+    assert_eq!(self_draw_fan, 0);
+    assert_eq!(discard_fan, 0);
 }
 
 #[test]
@@ -1147,7 +1155,7 @@ fn settlement_fan_requires_gang_meld_and_empty_wall_for_draw_bonuses() {
     ));
     let settlement = state.settlement.clone().expect("settlement");
 
-    assert_eq!(winner_hand_fan(&state, &settlement, 1), 2);
+    assert_eq!(winner_hand_fan(&state, &settlement, 1), 1);
     let no_gang_event = build_settlement_event_with_configs(&state, &default_configs()).unwrap();
     assert!(!no_gang_event.is_gang_draw);
     assert!(no_gang_event.is_haidilao);
@@ -1163,7 +1171,7 @@ fn settlement_fan_requires_gang_meld_and_empty_wall_for_draw_bonuses() {
         ],
     );
 
-    assert_eq!(winner_hand_fan(&state, &settlement, 1), 5);
+    assert_eq!(winner_hand_fan(&state, &settlement, 1), 4);
     let valid_event = build_settlement_event_with_configs(&state, &default_configs()).unwrap();
     assert!(valid_event.is_gang_draw);
     assert!(valid_event.is_haidilao);
@@ -1172,7 +1180,7 @@ fn settlement_fan_requires_gang_meld_and_empty_wall_for_draw_bonuses() {
 
     state.wall = vec![35];
 
-    assert_eq!(winner_hand_fan(&state, &settlement, 1), 4);
+    assert_eq!(winner_hand_fan(&state, &settlement, 1), 3);
     let nonempty_wall_event =
         build_settlement_event_with_configs(&state, &default_configs()).unwrap();
     assert!(nonempty_wall_event.is_gang_draw);
@@ -1199,7 +1207,7 @@ fn settlement_fan_requires_open_peng_source_for_rob_gang() {
     ));
     let settlement = state.settlement.clone().expect("settlement");
 
-    assert_eq!(winner_hand_fan(&state, &settlement, 1), 1);
+    assert_eq!(winner_hand_fan(&state, &settlement, 1), 0);
     let invalid_event = build_settlement_event_with_configs(&state, &default_configs()).unwrap();
     assert!(!invalid_event.is_reverse_win);
     assert!(!invalid_event.winner_details[0].is_reverse_win);
@@ -1213,7 +1221,7 @@ fn settlement_fan_requires_open_peng_source_for_rob_gang() {
         )],
     );
 
-    assert_eq!(winner_hand_fan(&state, &settlement, 1), 2);
+    assert_eq!(winner_hand_fan(&state, &settlement, 1), 1);
     let valid_event = build_settlement_event_with_configs(&state, &default_configs()).unwrap();
     assert!(valid_event.is_reverse_win);
     assert!(valid_event.winner_details[0].is_reverse_win);
@@ -1257,8 +1265,8 @@ fn settlement_fan_uses_shenyang_rules_for_single_wait() {
     ));
     let settlement = state.settlement.as_ref().expect("settlement");
 
-    assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
-    assert_eq!(winner_hand_fan(&state, settlement, 1), 2);
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
+    assert_eq!(winner_hand_fan(&state, settlement, 1), 1);
 }
 
 #[test]
@@ -1282,7 +1290,13 @@ fn settlement_rejects_missing_discard_win_tile() {
     state.settlement.as_mut().unwrap().win_tile = Some(35);
     let valid_settlement = state.settlement.as_ref().expect("settlement");
 
-    assert!(winner_hand_fan(&state, valid_settlement, 1) > 0);
+    assert!(valid_winner_hand_fan_with_context(
+        &state,
+        valid_settlement,
+        1,
+        ShenyangMahjongWinContext::new(),
+    )
+    .is_some());
     assert_eq!(
         build_settlement_event(&state)
             .expect("settlement event")
@@ -1376,7 +1390,13 @@ fn settlement_rejects_public_fifth_claim_tile() {
         &settlement,
         1
     ));
-    assert!(winner_hand_fan(&state, &settlement, 1) > 0);
+    assert!(valid_winner_hand_fan_with_context(
+        &state,
+        &settlement,
+        1,
+        ShenyangMahjongWinContext::new(),
+    )
+    .is_some());
 }
 
 #[test]
@@ -1420,7 +1440,13 @@ fn settlement_rejects_public_fifth_copy_used_by_self_draw_winner() {
         &settlement,
         1
     ));
-    assert!(winner_hand_fan(&state, &settlement, 1) > 0);
+    assert!(valid_winner_hand_fan_with_context(
+        &state,
+        &settlement,
+        1,
+        ShenyangMahjongWinContext::new(),
+    )
+    .is_some());
     assert_eq!(
         build_settlement_event(&state)
             .expect("settlement event")
@@ -1497,7 +1523,13 @@ fn settlement_rejects_unowned_self_draw_win_tile() {
     state.settlement.as_mut().unwrap().win_tile = Some(35);
     let valid_settlement = state.settlement.as_ref().expect("settlement");
 
-    assert!(winner_hand_fan(&state, valid_settlement, 1) > 0);
+    assert!(valid_winner_hand_fan_with_context(
+        &state,
+        valid_settlement,
+        1,
+        ShenyangMahjongWinContext::new(),
+    )
+    .is_some());
     assert_eq!(
         build_settlement_event(&state)
             .expect("settlement event")

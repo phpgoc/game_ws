@@ -2327,8 +2327,8 @@ pub(crate) fn settlement_score_changes_for_state(
     let winner_fans = valid_settlement_winner_positions(&sorted_positions, settlement)
         .into_iter()
         .filter_map(|winner| {
-            let fan = winner_hand_fan_with_configs(state, settlement, winner, configs);
-            (fan > 0).then_some((winner, fan))
+            valid_winner_hand_fan_with_configs(state, settlement, winner, configs)
+                .map(|fan| (winner, fan))
         })
         .collect::<Vec<_>>();
 
@@ -2488,40 +2488,61 @@ fn winner_hand_fan(
     winner_hand_fan_with_context(state, settlement, winner, ShenyangMahjongWinContext::new())
 }
 
+#[cfg(test)]
 fn winner_hand_fan_with_configs(
     state: &ShenyangMahjongLoopState,
     settlement: &crate::game_state::SettlementState,
     winner: usize,
     configs: &HashMap<String, i32>,
 ) -> i32 {
-    let mut fan = winner_hand_fan_with_context(
+    valid_winner_hand_fan_with_configs(state, settlement, winner, configs).unwrap_or(0)
+}
+
+fn valid_winner_hand_fan_with_configs(
+    state: &ShenyangMahjongLoopState,
+    settlement: &crate::game_state::SettlementState,
+    winner: usize,
+    configs: &HashMap<String, i32>,
+) -> Option<i32> {
+    let mut fan = valid_winner_hand_fan_with_context(
         state,
         settlement,
         winner,
         ShenyangMahjongWinContext::from_configs(configs),
-    );
-    if fan > 0 && configs.get("ting_fan").copied() == Some(1) && state.is_ting(winner) {
+    )?;
+    // 听牌加番是合法胡牌的附加规则；普通牌型本身可以是 0 番，不能用番数正负来判断是否合法。
+    if configs.get("ting_fan").copied() == Some(1) && state.is_ting(winner) {
         fan += 1;
     }
-    fan
+    Some(fan)
 }
 
+#[cfg(test)]
 fn winner_hand_fan_with_context(
     state: &ShenyangMahjongLoopState,
     settlement: &crate::game_state::SettlementState,
     winner: usize,
     context: ShenyangMahjongWinContext,
 ) -> i32 {
+    valid_winner_hand_fan_with_context(state, settlement, winner, context).unwrap_or(0)
+}
+
+fn valid_winner_hand_fan_with_context(
+    state: &ShenyangMahjongLoopState,
+    settlement: &crate::game_state::SettlementState,
+    winner: usize,
+    context: ShenyangMahjongWinContext,
+) -> Option<i32> {
     if !settlement_winner_has_valid_win_tile(state, settlement, winner)
         || winner_has_impossible_known_tile_count(state, settlement, winner)
         || !position_meld_sources_are_valid(state, winner)
     {
-        return 0;
+        return None;
     }
     let hand_tiles = winner_final_hand_tiles(state, settlement, winner);
     let melds = state.melds.get(&winner).map(Vec::as_slice).unwrap_or(&[]);
     if !is_complete_win_with_melds_with_context(&hand_tiles, melds, context) {
-        return 0;
+        return None;
     }
     let known_unavailable_tiles = public_unavailable_tiles_for_winner(state, winner);
     let mut fan = shenyang_score_visible_win_fan(
@@ -2540,7 +2561,7 @@ fn winner_hand_fan_with_context(
     if settlement_is_haidilao(state, settlement) {
         fan += 1;
     }
-    fan
+    Some(fan)
 }
 
 fn winner_has_impossible_known_tile_count(
