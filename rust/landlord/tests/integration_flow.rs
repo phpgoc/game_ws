@@ -1,7 +1,7 @@
-#[cfg(not(feature = "official"))]
-use std::collections::HashMap;
 #[cfg(feature = "official")]
 use std::time::Instant;
+#[cfg(not(feature = "official"))]
+use std::{collections::HashMap, sync::mpsc::sync_channel};
 use std::{net::TcpListener, time::Duration};
 
 use futures_util::{SinkExt, StreamExt};
@@ -15,7 +15,10 @@ use ws_common::{
     ClientRequest, Dispatch, GameHandler, GameState, JoinAuthorization, JoinAuthorizationFuture,
     RoomService, SessionId, SessionSenders, SettingsBuilderResult,
 };
-use ws_common::{RuntimeConfig, run_room_runtime};
+use ws_common::{
+    RuntimeConfig, run_room_runtime, run_room_runtime_until_stopped_with_ready,
+    runtime_stop_channel,
+};
 
 type Client = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
@@ -485,6 +488,123 @@ async fn landlord_three_players_can_start_call_and_play_over_ws() {
     let expected_next = (landlord_position + 1) % 3;
     assert_eq!(next_turn["data"]["position"], json!(expected_next as i32));
 
+    server.abort();
+}
+
+#[cfg(not(feature = "official"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn landlord_manual_away_automatically_calls_and_plays_over_ws() {
+    let (stop_handle, stop_signal) = runtime_stop_channel();
+    let (ready_tx, ready_rx) = sync_channel(1);
+    let server = tokio::spawn(run_room_runtime_until_stopped_with_ready(
+        RuntimeConfig {
+            service_name: "landlord-manual-away-test",
+            listen_addr: "127.0.0.1:0".to_owned(),
+            idle_timeout: Duration::from_secs(30),
+            heartbeat_interval: Duration::from_secs(30),
+        },
+        LandlordGameHandler::default(),
+        stop_signal,
+        ready_tx,
+    ));
+
+    let stats = tokio::task::spawn_blocking(move || {
+        ready_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("landlord runtime readiness")
+    })
+    .await
+    .expect("read landlord runtime readiness");
+    let url = format!("ws://{}", stats.listen_addr());
+
+    let mut a = connect_client(&url).await;
+    let mut b = connect_client(&url).await;
+    let mut c = connect_client(&url).await;
+    let clients = [&mut a, &mut b, &mut c];
+    let room = "landlord-manual-away-room";
+    let positions = [
+        position_from_joined(&join(clients[0], "a", room).await),
+        position_from_joined(&join(clients[1], "b", room).await),
+        position_from_joined(&join(clients[2], "c", room).await),
+    ];
+    assert_eq!(positions, [0, 1, 2]);
+
+    send_request(clients[0], Routes::START as i32, json!({})).await;
+    recv_until(clients[0], "manual away start ok", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::START as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+    recv_until(clients[0], "manual away deal", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::DEAL as i64)
+    })
+    .await;
+    let call_phase = recv_until(clients[0], "manual away call phase", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::CHANGE_PHASE as i64)
+            && value["data"]["phase"] == json!(1)
+    })
+    .await;
+    let first_caller = call_phase["data"]["position"]
+        .as_u64()
+        .expect("manual away first caller") as usize;
+
+    // AWAY has no separate response; its room event is the acknowledgement.
+    send_request(clients[first_caller], Routes::AWAY as i32, json!({})).await;
+    recv_until(clients[0], "manual away event", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::AWAY as i64)
+            && value["data"]["position"] == json!(first_caller as i32)
+    })
+    .await;
+    let auto_call = recv_until(clients[0], "manual away automatic call", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::CALL_LANDLORD as i64)
+            && value["data"]["name"] == json!(["a", "b", "c"][first_caller])
+    })
+    .await;
+    assert!(auto_call["data"]["score"].is_number());
+
+    let next_call = recv_until(clients[0], "next caller after manual away", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::CHANGE_DEAL as i64)
+            && value["data"]["position"] != json!(first_caller as i32)
+    })
+    .await;
+    let next_position = next_call["data"]["position"].as_u64().expect("next caller") as usize;
+    send_request(
+        clients[next_position],
+        LandlordRoutes::CALL_LANDLORD as i32,
+        json!({ "score": 3 }),
+    )
+    .await;
+    recv_until(clients[next_position], "next caller accepted", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(LandlordRoutes::CALL_LANDLORD as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+
+    let play_phase = recv_until(clients[0], "manual away play phase", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::CHANGE_PHASE as i64)
+            && value["data"]["phase"] == json!(2)
+    })
+    .await;
+    let landlord_position = play_phase["data"]["position"]
+        .as_u64()
+        .expect("manual away landlord") as usize;
+
+    // The current landlord is now explicitly put into AI control; no PLAY
+    // request is sent from that client.  A PLAY event proves the server acted.
+    send_request(clients[landlord_position], Routes::AWAY as i32, json!({})).await;
+    recv_until(clients[0], "manual away play event", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::AWAY as i64)
+            && value["data"]["position"] == json!(landlord_position as i32)
+    })
+    .await;
+    let auto_play = recv_until(clients[0], "manual away automatic play", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::PLAY as i64)
+            && value["data"]["name"] == json!(["a", "b", "c"][landlord_position])
+    })
+    .await;
+    assert!(auto_play["data"]["cards"].is_array());
+
+    stop_handle.stop();
     server.abort();
 }
 

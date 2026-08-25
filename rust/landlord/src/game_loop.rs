@@ -981,10 +981,18 @@ pub(crate) fn start_game_loop(
                         if s.phase != waiting_phase || s.current_position != waiting_position {
                             continue;
                         }
+                        // A manual AWAY request changes the shared common state while the
+                        // one-second human tick is sleeping.  Re-read the control mode here;
+                        // otherwise this tick would keep the stale human snapshot, decrement
+                        // the countdown, and delay the first automatic action until another
+                        // full turn tick.
+                        let ai_controlled_now = s.is_ai_controlled_position(waiting_position);
                         if s.action_received() {
                             // Action received while waiting this tick.
-                        } else if waiting_for_ai && s.is_ai_controlled_position(waiting_position) {
-                            let ai_plan = ai_plan.expect("AI turn should have a planned action");
+                        } else if ai_controlled_now {
+                            let ai_plan = ai_plan.unwrap_or_else(|| {
+                                plan_ai_action(&s, waiting_position)
+                            });
                             if ai_plan.bomb_signal {
                                 activate_ai_bomb_signal(&mut s, waiting_position);
                             }
