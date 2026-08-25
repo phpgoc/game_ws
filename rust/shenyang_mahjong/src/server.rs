@@ -1,3 +1,8 @@
+//! 沈阳麻将服务端启动配置。
+//!
+//! 运行时参数保持与通用 ws runtime 的心跳、空闲回收和服务名契约一致；
+//! 牌局规则本身不应在这里初始化或修改。
+
 use std::time::Duration;
 
 use ws_common::{
@@ -15,6 +20,7 @@ pub fn shenyang_mahjong_runtime_config(
     service_name: &'static str,
     listen_addr: String,
 ) -> RuntimeConfig {
+    // 心跳和空闲超时使用固定服务契约，CLI 只负责监听地址等部署参数。
     RuntimeConfig {
         service_name,
         listen_addr,

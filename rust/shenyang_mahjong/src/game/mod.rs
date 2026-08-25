@@ -1,3 +1,9 @@
+//! 沈阳麻将的动作编排层。
+//!
+//! 本模块把 WebSocket 请求转换为经过校验的状态迁移，并生成公开/私有事件。
+//! 规则判定委托给 `rules`，牌局事实保存于 `game_state`；这里重点处理动作
+//! 顺序、响应窗口优先级、托管自动行动和结算广播。
+
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -41,6 +47,7 @@ pub(crate) type LoopStateHandle = Arc<std::sync::Mutex<ShenyangMahjongLoopState>
 pub(crate) type LoopStateRegistry = Arc<std::sync::Mutex<HashMap<String, LoopStateHandle>>>;
 
 pub struct ShenyangMahjongGameHandler {
+    /// 请求处理器可能在启动前构造，因此连接依赖全部使用 Option 延迟注入。
     room_service: Option<Arc<Mutex<RoomService>>>,
     senders: Option<SessionSenders>,
     loop_states: LoopStateRegistry,
@@ -53,6 +60,8 @@ pub(crate) fn advance_to_next_turn(
     configs: &HashMap<String, i32>,
     dispatch: &mut Dispatch,
 ) {
+    // 进入下一回合只有两种结果：成功摸牌并广播，或牌山耗尽直接流局。
+    // 听牌玩家的自动胡/杠/弃牌会在摸牌事件之后立即处理。
     let next_position = state.next_position(state.current_position);
     if let Some(tile) = state.draw_for_next_turn(next_position) {
         state.set_turn_countdown(current_play_time(configs));
@@ -99,6 +108,8 @@ pub(crate) fn build_claim_options(
     from_position: usize,
     configs: &HashMap<String, i32>,
 ) -> Vec<WsShenyangMahjongClaimOption> {
+    // 选项生成只读取当前状态，不写入响应窗口；真正提交动作时会再次调用
+    // 同一套资格校验，防止客户端缓存旧选项后越权。
     let mut positions: Vec<usize> = state.players_snapshot().keys().copied().collect();
     positions.sort_unstable();
     let next_position = state.next_position(from_position);
@@ -212,6 +223,8 @@ pub(crate) fn build_settlement_event_with_configs(
     state: &ShenyangMahjongLoopState,
     configs: &HashMap<String, i32>,
 ) -> Option<WsShenyangMahjongSettlementEvent> {
+    // 结算事件必须从服务端状态重建，不能复用客户端提交的赢家列表。非法
+    // 赢家会被过滤，但不会影响其他合法赢家和流局标记。
     let settlement = state.settlement.as_ref()?;
     let players = state.players_snapshot();
     let mut snapshots = Vec::new();
@@ -277,6 +290,8 @@ pub(crate) fn build_table_snapshot_event_with_configs(
     viewer_position: usize,
     configs: &HashMap<String, i32>,
 ) -> WsShenyangMahjongTableSnapshotEvent {
+    // 桌面快照是重连和观察者视图的唯一来源；根据 viewer_position 决定哪些
+    // 暗牌、喜杠选项和响应按钮可以公开。
     let players = state.players_snapshot();
     let mut positions: Vec<usize> = players.keys().copied().collect();
     positions.sort_unstable();
@@ -439,6 +454,7 @@ pub(crate) fn can_declare_xi_gang(
     position: usize,
     tiles: &[i32],
 ) -> bool {
+    // 喜杠使用牌局开始时冻结的组合选项；风牌喜杠还要检查牌山是否能补牌。
     let mut tiles = tiles.to_vec();
     tiles.sort_unstable();
     state.phase == ShenyangMahjongPhase::Play
@@ -472,6 +488,7 @@ pub(crate) fn can_self_draw_hu_with_configs(
     position: usize,
     configs: &HashMap<String, i32>,
 ) -> bool {
+    // 自摸只允许当前回合持有最后摸牌的玩家执行，并把该牌纳入完整胡牌判定。
     if state.phase != ShenyangMahjongPhase::Play
         || state.current_position != position
         || !position_owns_last_drawn_tile(state, position)
@@ -1115,6 +1132,8 @@ pub(crate) fn perform_discard_with_ting(
     dispatch: &mut Dispatch,
     action: DiscardAction,
 ) -> bool {
+    // 先验证当前回合和手牌，再记录听牌声明、牌河和新的响应窗口；任何一步
+    // 失败都不应改变状态。
     let DiscardAction {
         position,
         tile,
@@ -1210,6 +1229,7 @@ pub(crate) fn perform_self_draw_hu(
     dispatch: &mut Dispatch,
     position: usize,
 ) {
+    // 自摸胡不经过弃牌响应窗口，但仍复用完整合法性校验后才进入结算。
     if !can_self_draw_hu_with_configs(state, position, configs) {
         return;
     }
@@ -1273,6 +1293,8 @@ pub(crate) fn perform_self_gang(
     position: usize,
     target_tile: i32,
 ) -> bool {
+    // 暗杠可以立即入明牌列表；加杠如果有人能抢胡，则先打开抢杠胡窗口，
+    // 不能提前补牌或升级碰牌。
     if !can_self_gang_with_configs(state, position, target_tile, configs) {
         return false;
     }
@@ -1364,6 +1386,8 @@ pub(crate) fn perform_xi_gang(
     position: usize,
     tiles: &[i32],
 ) -> bool {
+    // 喜杠只消费已冻结的三张组合，普通风牌喜杠会取补牌，龙牌喜杠则保持
+    // 当前手牌的补牌节奏。
     let mut tiles = tiles.to_vec();
     tiles.sort_unstable();
     if !can_declare_xi_gang(state, position, &tiles)
@@ -1859,6 +1883,8 @@ pub(crate) fn resolve_claim_window(
     configs: &HashMap<String, i32>,
     dispatch: &mut Dispatch,
 ) {
+    // 响应按胡、杠、碰、吃、过的优先级结算，同优先级允许多家胡；所有
+    // 响应在落地前再次校验，超时或不再合法的响应按过处理。
     if state.phase != ShenyangMahjongPhase::Play {
         return;
     }
@@ -2322,6 +2348,8 @@ pub(crate) fn settlement_score_changes_for_state(
     settlement: &crate::game_state::SettlementState,
     configs: &HashMap<String, i32>,
 ) -> Vec<WsShenyangMahjongScoreChange> {
+    // 先筛出合法赢家并得到最终番数，再针对每个付款人叠加庄家/闭门番，
+    // 最后统一做二的幂和支付封顶，保证多家胡的每笔支付互不污染。
     let mut sorted_positions = positions.to_vec();
     sorted_positions.sort_unstable();
     let winner_fans = valid_settlement_winner_positions(&sorted_positions, settlement)
@@ -2397,6 +2425,7 @@ pub(crate) fn settlement_score_changes_for_state(
 }
 
 pub(crate) fn settlement_time(configs: &HashMap<String, i32>) -> u64 {
+    // 结算停留时间只影响展示和后台等待，不参与分数或庄家轮转。
     loop_wait_seconds(configs, "settlement_time", 5).max(1) as u64
 }
 

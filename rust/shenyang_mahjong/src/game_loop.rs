@@ -1,3 +1,9 @@
+//! 沈阳麻将的后台牌局循环。
+//!
+//! 动作请求在 `game` 模块中同步修改状态；本模块负责定时唤醒、处理响应
+//! 超时、标记离线玩家并驱动托管行动。循环不会自行推断牌型，只调用动作层
+//! 的公开入口，保持手动和自动路径一致。
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -16,6 +22,8 @@ use crate::game_state::{ClaimResponse, ShenyangMahjongLoopState};
 use share_type_public::games::shenyang_mahjong::ShenyangMahjongPhase;
 
 fn auto_discard_tile(state: &ShenyangMahjongLoopState, position: usize) -> Option<i32> {
+    // 托管优先弃出最后摸到的牌；若该牌已被动作消耗，则退回到手牌最后一张，
+    // 保证异常状态也能结束回合而不死循环。
     if let Some(tile) = state.last_drawn_tile
         && state
             .hands
@@ -59,6 +67,7 @@ fn perform_auto_discard_or_settle(
     position: usize,
     tile: Option<i32>,
 ) -> bool {
+    // 托管弃牌失败时直接流局，避免后台循环反复尝试一个已经不合法的状态。
     let discarded = tile.is_some_and(|tile| {
         perform_discard(
             room_service,
@@ -171,6 +180,8 @@ pub(crate) fn start_game_loop(
     senders: SessionSenders,
     loop_states: LoopStateRegistry,
 ) {
+    // 每个房间只启动一个循环；结束后清理 registry 中的旧句柄，重建同名房间
+    // 时不会被上一局残留任务阻塞。
     tokio::spawn(async move {
         let common = { Arc::clone(&state.lock().unwrap().base) };
         let configs: HashMap<String, i32> = room_service

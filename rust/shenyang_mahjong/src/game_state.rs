@@ -1,3 +1,9 @@
+//! 沈阳麻将的牌局状态模型。
+//!
+//! 这里保存的是服务端事实：手牌、牌河、明牌、当前行动者、吃碰杠窗口和
+//! 结算快照。快照序列化和 WebSocket 事件都从这些状态派生，避免客户端提交
+//! 一个“看起来合理”的状态后绕过服务端校验。
+
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
@@ -13,6 +19,7 @@ const WALL_SEED_ENV: &str = "SHENYANG_MAHJONG_WALL_SEED";
 
 #[derive(Debug, Clone)]
 pub enum ClaimResponse {
+    /// 玩家明确放弃当前弃牌的吃碰杠胡机会。
     Pass,
     /// AI pass that may join a later confirmed multi-Hu settlement.
     AiPass,
@@ -26,24 +33,31 @@ pub enum ClaimResponse {
 
 #[derive(Debug, Clone)]
 pub enum ClaimWindowKind {
+    /// 普通弃牌触发的吃、碰、杠、胡窗口。
     Discard,
+    /// 加杠触发的抢杠胡窗口，只允许胡牌响应。
     RobGang,
 }
 
 #[derive(Debug, Clone)]
 pub struct ClaimWindowState {
+    /// 触发窗口的牌和出牌者。
     pub tile: i32,
     pub from_position: usize,
     pub kind: ClaimWindowKind,
+    /// 当前还能响应的玩家；已提交响应的玩家仍保留在窗口中，便于审计。
     pub eligible_positions: Vec<usize>,
+    /// 每个玩家最近一次响应，重复响应由动作层拒绝。
     pub responses: HashMap<usize, ClaimResponse>,
 }
 
 #[derive(Debug, Clone)]
 pub struct SettlementState {
+    /// 一个弃牌可能同时被多个玩家胡，因而这里使用位置集合而不是单个赢家。
     pub winner_positions: Vec<usize>,
     pub from_position: Option<usize>,
     pub win_tile: Option<i32>,
+    /// 这些布尔值记录番数来源，结算事件和重新加入房间的快照都需要它们。
     pub is_self_draw: bool,
     pub is_reverse_win: bool,
     pub is_gang_draw: bool,
@@ -79,21 +93,36 @@ pub struct ShenyangMahjongGameState {
 
 #[derive(Debug)]
 pub struct ShenyangMahjongLoopState {
+    /// 通用房间状态；连接、离线和托管标志由它统一维护。
     pub base: Arc<Mutex<CommonGameState>>,
+    /// Play 之前的准备/发牌阶段不能接受任何牌局动作。
     pub phase: ShenyangMahjongPhase,
+    /// 座位编号不是数组下标假设，房间重连时可能只保留部分位置。
     pub dealer_position: usize,
     pub current_position: usize,
+    /// 牌山按“下一张要摸的牌”方向保存，杠后补牌也从这里取。
     pub wall: Vec<i32>,
+    /// 每个位置的未亮手牌；摸到的最后一张牌另外由 `last_drawn_tile` 标记。
     pub hands: HashMap<usize, Vec<i32>>,
+    /// 每个位置自己的弃牌顺序，公开牌计数和视图都从这里派生。
     pub discards: HashMap<usize, Vec<i32>>,
+    /// 明牌按动作保存原始来源，结算时会再次验证形状和来源位置。
     pub melds: HashMap<usize, Vec<WsShenyangMahjongMeld>>,
+    /// 当前弃牌/抢杠胡的待响应窗口；为 None 表示普通摸牌回合。
     pub claim_window: Option<ClaimWindowState>,
+    /// 只有持有这张牌的玩家才能在本回合弃牌或声明相应动作。
     pub last_drawn_tile: Option<i32>,
+    /// 普通杠和杠后补牌之间的来源标志，用于区分杠上花与海底捞月。
     pub pending_gang_draw: bool,
+    /// 首次普通摸牌后冻结的喜杠机会，防止玩家看到后续牌再补报。
     pub first_normal_draw_positions: HashSet<usize>,
+    /// 每个玩家当前可声明的喜杠组合；只有本人和当前回合能看到。
     pub xi_gang_options: HashMap<usize, Vec<Vec<i32>>>,
+    /// 已声明听牌的位置集合；听牌会改变后续可弃牌和自动行动规则。
     pub ting_positions: HashSet<usize>,
+    /// 结算期间保留的赢家、来源和加番来源，供重连快照使用。
     pub settlement: Option<SettlementState>,
+    /// 本局累计分数，重新开局时从这里计算庄家和积分榜变化。
     pub player_scores: HashMap<usize, i32>,
     pub settlement_scores_applied: bool,
     wall_seed_base: Option<u64>,
@@ -106,6 +135,7 @@ pub fn build_meld(
     mut tiles: Vec<i32>,
     from_position: Option<usize>,
 ) -> WsShenyangMahjongMeld {
+    // 所有入口都统一排序明牌，后续的形状校验和前端渲染不必依赖请求顺序。
     sort_tiles(&mut tiles);
     WsShenyangMahjongMeld {
         kind,
@@ -121,6 +151,8 @@ pub fn build_claimed_meld(
     from_position: usize,
     target_tile: i32,
 ) -> WsShenyangMahjongMeld {
+    // `target_tile` 单独记录被吃/碰/杠的那张牌，既能还原牌河，也能验证
+    // 来源位置是否与动作窗口一致。
     let mut meld = build_meld(kind, tiles, Some(from_position));
     meld.target_tile = Some(target_tile);
     meld
@@ -141,6 +173,8 @@ pub(crate) fn meld_source_is_valid_for_positions(
     position: usize,
     player_positions: &HashSet<usize>,
 ) -> bool {
+    // 来源校验是防止伪造明牌的最后一道静态防线：自杠/喜杠没有来源，
+    // 吃牌还必须来自上一个顺序位置，碰和弃牌杠则不能来自自己。
     match (meld.kind, meld.from_position) {
         (ShenyangMahjongMeldKind::GANG | ShenyangMahjongMeldKind::XI_GANG, None) => true,
         (_, Some(source)) => usize::try_from(source).ok().is_some_and(|source| {
@@ -170,6 +204,8 @@ fn system_wall_seed() -> u64 {
 }
 
 fn wall_seed_base_from_env() -> Option<u64> {
+    // 测试可以用环境变量固定牌山；生产环境忽略非法值并回退系统时间，
+    // 不让一个配置拼写错误导致服务启动失败。
     let value = std::env::var(WALL_SEED_ENV).ok()?;
     match value.parse::<u64>() {
         Ok(seed) => Some(seed),

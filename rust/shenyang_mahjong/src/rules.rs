@@ -1,3 +1,9 @@
+//! 沈阳麻将的纯规则层。
+//!
+//! 本模块只处理牌面、牌组、听牌形状和番数计算；它不读取房间连接，也不
+//! 修改牌局状态。`game` 模块负责把请求上下文和公开牌信息传入这里，因而
+//! 规则函数可以在请求校验、AI 和单元测试中重复使用。
+
 use std::collections::{HashMap, HashSet};
 
 use share_type_public::games::shenyang_mahjong::{
@@ -31,6 +37,7 @@ fn encode_set_formation_state(counts: &[u8; 38]) -> Option<u128> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ShenyangMahjongWinContext {
+    /// 是否允许“首吃限制”的特殊例外。
     allow_first_chi: bool,
 }
 
@@ -43,6 +50,7 @@ fn all_tiles_with_melds(tiles: &[i32], melds: &[WsShenyangMahjongMeld]) -> Vec<i
 }
 
 pub fn can_chi(hand: &[i32], target_tile: i32, consume_tiles: &[i32]) -> bool {
+    // 先做长度和花色的快速拒绝，再排序检查唯一的顺子形状。
     if consume_tiles.len() != 2 || !is_suited_tile(target_tile) {
         return false;
     }
@@ -116,6 +124,7 @@ fn can_form_sets(counts: &mut [u8; 38]) -> bool {
 }
 
 fn can_form_sets_cached(counts: &mut [u8; 38], failed_states: &mut HashSet<u128>) -> bool {
+    // 只从当前最小牌尝试刻子/顺子；缓存失败分支，避免多面听牌重复搜索。
     let state_key = encode_set_formation_state(counts);
     if state_key.is_some_and(|key| failed_states.contains(&key)) {
         return false;
@@ -280,6 +289,8 @@ fn can_form_triplets_with_pair(tiles: &[i32]) -> bool {
 }
 
 pub fn can_gang(hand: &[i32], target_tile: i32) -> bool {
+    // 弃牌杠只要求手中已有三张同牌；是否轮到玩家、是否听牌以及牌山是否
+    // 还有补牌由上层动作校验负责，这样规则函数也能用于构造提示选项。
     if !is_valid_tile(target_tile) || !has_valid_tile_multiplicity(hand) {
         return false;
     }
@@ -287,6 +298,7 @@ pub fn can_gang(hand: &[i32], target_tile: i32) -> bool {
 }
 
 pub fn can_peng(hand: &[i32], target_tile: i32) -> bool {
+    // 碰牌的规则层只检查手牌中是否有两张目标牌，并拒绝无效牌和第五张牌。
     if !is_valid_tile(target_tile) || !has_valid_tile_multiplicity(hand) {
         return false;
     }
@@ -441,6 +453,8 @@ fn is_closed_middle_wait(tiles: &[i32], win_tile: i32) -> bool {
 }
 
 pub fn is_complete_win(tiles: &[i32], meld_count: usize) -> bool {
+    // `meld_count` 表示已经亮出的面子数量；剩余手牌必须补足到十四张的
+    // 虚拟牌数，再进入标准面子/将牌拆解。
     if !has_valid_tile_multiplicity(tiles) {
         return false;
     }
@@ -469,6 +483,8 @@ pub fn is_complete_win_with_melds_with_context(
     melds: &[WsShenyangMahjongMeld],
     context: ShenyangMahjongWinContext,
 ) -> bool {
+    // `tiles` 是手牌剩余部分，明牌单独放在 `melds` 中，杠牌不能被当作普通
+    // 十四张手牌重新拆分，否则会把四张同牌错误地重复计入面子。
     if !is_complete_shape_with_melds(tiles, melds) {
         return false;
     }
@@ -502,6 +518,8 @@ fn is_pair_single_wait(tiles: &[i32], win_tile: i32) -> bool {
 }
 
 pub fn is_piao_hu_win(tiles: &[i32], melds: &[WsShenyangMahjongMeld]) -> bool {
+    // 飘胡要求剩余手牌和明牌都能按刻子/杠组织，并保留沈阳规则要求的
+    // 龙对子、三门和幺九字牌条件。
     if !is_complete_win(tiles, melds.len()) || melds.iter().any(|meld| !is_heng_meld(meld)) {
         return false;
     }
@@ -533,6 +551,7 @@ fn is_pure_one_suit_tiles(tiles: &[i32]) -> bool {
 }
 
 pub fn is_pure_one_suit_win(tiles: &[i32], melds: &[WsShenyangMahjongMeld]) -> bool {
+    // 清一色必须把手牌和所有有效明牌一起检查，不能只看未亮出的手牌。
     if !melds.iter().all(is_valid_meld) || !is_complete_win(tiles, melds.len()) {
         return false;
     }
@@ -560,6 +579,7 @@ fn is_seven_pairs_single_wait(tiles: &[i32], win_tile: i32) -> bool {
 }
 
 pub fn is_seven_pairs_win(tiles: &[i32]) -> bool {
+    // 七对允许四张同牌按两对计数，但仍然要求总牌数和每种牌最多四张。
     if tiles.len() != 14 {
         return false;
     }
@@ -600,6 +620,8 @@ pub fn is_single_wait_shape_with_known_unavailable_tiles(
     win_tile: i32,
     known_unavailable_tiles: &[i32],
 ) -> bool {
+    // 公开牌会改变“唯一等待”的真实可行性；例如四张某牌已经在桌面上，
+    // 即使结构上能胡，也不能再把它算作合法等待。
     is_single_wait_shape_with_known_unavailable_tiles_with_context(
         tiles,
         melds,
@@ -774,6 +796,8 @@ pub fn is_xi_gang_tiles(tiles: &[i32]) -> bool {
 }
 
 pub fn remove_tiles(hand: &mut Vec<i32>, tiles: &[i32]) -> bool {
+    // 先验证要移除的每一张牌都存在，验证失败时不修改手牌，保证请求校验
+    // 可以安全地重试或继续生成错误响应。
     if !tiles_in_hand(hand, tiles) {
         return false;
     }
@@ -800,6 +824,8 @@ pub fn satisfies_shenyang_win_with_context(
     melds: &[WsShenyangMahjongMeld],
     context: ShenyangMahjongWinContext,
 ) -> bool {
+    // 先验证基础胡牌形状，再依次处理七对、清一色、飘胡和沈阳麻将的
+    // 三门齐/幺九字牌/开门约束；特殊牌型是普通规则的合法例外。
     if melds.iter().any(|meld| !is_valid_meld(meld)) {
         return false;
     }
@@ -900,6 +926,8 @@ pub(crate) fn shenyang_score_for_fan(fan: i32) -> i32 {
 }
 
 pub(crate) fn shenyang_score_for_fan_with_cap(fan: i32, score_cap: Option<i32>) -> i32 {
+    // 先按番数计算二的幂，再应用支付上限；封顶不能提前截断番数，
+    // 否则庄家和闭门加番会在不同支付路径产生不一致结果。
     let score = shenyang_score_for_fan(fan);
     score_cap
         .filter(|score_cap| *score_cap > 0)
@@ -949,6 +977,8 @@ pub(crate) fn shenyang_score_visible_win_fan(
     context: ShenyangMahjongWinContext,
     known_unavailable_tiles: &[i32],
 ) -> i32 {
+    // 这里只计算赢家牌面贡献的番，不处理庄家、点炮者和支付者闭门状态。
+    // 这些支付上下文由 `shenyang_payment_fan` 在结算阶段统一叠加。
     if !is_complete_win_with_melds_with_context(hand_tiles, melds, context) {
         return 0;
     }
@@ -973,6 +1003,8 @@ pub(crate) fn shenyang_score_wait_fan(
     context: ShenyangMahjongWinContext,
     known_unavailable_tiles: &[i32],
 ) -> i32 {
+    // 单钓/边张/坎张只在唯一等待且等待牌没有被公开耗尽时加番；普通两面
+    // 等待和无法在牌山中出现的理论等待都返回零。
     let Some(win_tile) = win_tile else {
         return 0;
     };
@@ -997,6 +1029,8 @@ pub(crate) fn shenyang_win_pattern(
     hand_tiles: &[i32],
     melds: &[WsShenyangMahjongMeld],
 ) -> ShenyangMahjongWinPattern {
+    // 特殊牌型按优先级匹配，普通牌型作为最后兜底，避免同一手牌被较低级
+    // 的标准拆解遮蔽。
     if melds.is_empty() && is_seven_pairs_win(hand_tiles) {
         ShenyangMahjongWinPattern::SevenPairs
     } else if is_pure_one_suit_win(hand_tiles, melds) {
@@ -1009,6 +1043,8 @@ pub(crate) fn shenyang_win_pattern(
 }
 
 pub(crate) fn shenyang_win_pattern_base_fan(pattern: ShenyangMahjongWinPattern) -> i32 {
+    // 普通牌型是合法的 0 番，不再用 0 同时表示“非法胡牌”；调用方通过
+    // Option 区分合法性，结算时按 2^0 得到一分。
     match pattern {
         ShenyangMahjongWinPattern::Standard => 0,
         ShenyangMahjongWinPattern::PiaoHu => 3,

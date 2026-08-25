@@ -1,3 +1,8 @@
+//! 沈阳麻将房间设置。
+//!
+//! 设置值来自共享协议的通用 `GameParam`，因此这里必须同时负责默认值、
+//! 可选范围和运行时读取，不能把未经校验的整数直接交给结算逻辑。
+
 use std::collections::HashMap;
 
 use share_type_public::{GameParam, GameParamRange, settings::GameParamEnum};
@@ -8,6 +13,8 @@ pub(crate) const MAX_PAYMENT_SCORE_CAP: i32 = 200;
 pub(crate) const MIN_PAYMENT_SCORE_CAP: i32 = 20;
 
 pub(crate) fn payment_score_cap_from_configs(configs: &HashMap<String, i32>) -> i32 {
+    // 支付封顶只接受 20 到 200 的值；缺省或越界值回退到 50，保证旧房间
+    // 配置和新版本服务端之间仍然有确定的结算结果。
     configs
         .get("max_fan")
         .copied()
@@ -16,6 +23,8 @@ pub(crate) fn payment_score_cap_from_configs(configs: &HashMap<String, i32>) -> 
 }
 
 pub fn build_shenyang_mahjong_settings() -> (GameSettings, HashMap<String, GameParam>) {
+    // 这里集中声明前端可展示的设置键；后台结算只读取同一组键，避免出现
+    // “界面可配置但服务端忽略”或“服务端支持但前端没有说明”的分叉。
     let params: HashMap<String, GameParam> = [
         (
             "max_fan".into(),
