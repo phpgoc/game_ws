@@ -108,11 +108,11 @@ fn pair_follow_cannot_be_split_when_the_follower_has_the_pair() {
 }
 
 #[test]
-fn permanent_two_lead_stays_trump_through_the_game_state_for_every_level() {
+fn ordinary_off_suit_two_lead_stays_in_its_natural_suit_at_every_level() {
     for (target_rank, ordinary_card) in [
         (TractorRank::THREE, 3),
-        (TractorRank::FIVE, 2),
-        (TractorRank::A, 2),
+        (TractorRank::FIVE, 3),
+        (TractorRank::A, 3),
     ] {
         let mut level_rules = rules(2);
         level_rules.target_rank = target_rank;
@@ -127,24 +127,11 @@ fn permanent_two_lead_stays_trump_through_the_game_state_for_every_level() {
 
         state
             .play_cards(0, "p0".to_owned(), vec![1])
-            .expect("an off-suit two is a legal permanent-trump lead");
-        let follower_hand = state.hands.get(&1).cloned().unwrap();
-        assert_eq!(
-            state
-                .play_cards(1, "p1".to_owned(), vec![ordinary_card])
-                .expect_err("a follower holding another two must follow the trump group"),
-            "illegal follow",
-            "target rank {target_rank:?}",
-        );
-        assert_eq!(state.hands.get(&1), Some(&follower_hand));
-        assert_eq!(
-            state.choose_auto_play(1),
-            Some(vec![27]),
-            "automatic follow must choose the remaining permanent two at target {target_rank:?}",
-        );
+            .expect("an off-suit two is a legal natural-suit lead");
         state
-            .play_cards(1, "p1".to_owned(), vec![27])
-            .expect("another-suit two is a legal trump-group follow");
+            .play_cards(1, "p1".to_owned(), vec![ordinary_card])
+            .expect("a follower may follow the natural suit");
+        assert_eq!(state.hands.get(&1), Some(&vec![27]));
     }
 }
 

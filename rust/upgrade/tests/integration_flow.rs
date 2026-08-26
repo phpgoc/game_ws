@@ -1288,15 +1288,11 @@ async fn four_players_can_deal_bury_and_play_first_round() {
     }
     let lead = hands[dealer][0];
     let lead_card = upgrade_common::Card::try_from(lead).unwrap();
-    let lead_group = if lead_card.suit() == Some(trump_suit)
-        || lead_card.suit().is_none()
-        || lead_card.rank() == upgrade_common::Rank::Two
-        || lead_card.rank() == upgrade_common::Rank::Three
-    {
-        None
-    } else {
-        lead_card.suit()
+    let combo_rules = upgrade::combo::UpgradeComboRules {
+        target_rank: upgrade_common::Rank::Three,
+        trump_suit: Some(trump_suit),
     };
+    let lead_group = upgrade::combo::card_group(lead_card, combo_rules);
     for play_index in 0..4 {
         let position = (dealer + play_index) % 4;
         let card = if position == dealer {
@@ -1307,15 +1303,7 @@ async fn four_players_can_deal_bury_and_play_first_round() {
                 .copied()
                 .find(|candidate| {
                     let decoded = upgrade_common::Card::try_from(*candidate).unwrap();
-                    let group = if decoded.suit() == Some(trump_suit)
-                        || decoded.suit().is_none()
-                        || decoded.rank() == upgrade_common::Rank::Two
-                        || decoded.rank() == upgrade_common::Rank::Three
-                    {
-                        None
-                    } else {
-                        decoded.suit()
-                    };
+                    let group = upgrade::combo::card_group(decoded, combo_rules);
                     group == lead_group
                 })
                 .unwrap_or(hands[position][0])

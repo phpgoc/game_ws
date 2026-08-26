@@ -38,7 +38,7 @@ fn utility_boundaries_cover_standard_bottom_and_suit_mapping() {
 }
 
 #[test]
-fn every_two_is_permanent_trump_and_the_trump_suit_two_is_stronger() {
+fn only_level_twos_and_the_trump_suit_two_are_trumps() {
     let mut state = state();
     state.rules.trump_suit = Some(TractorSuit::HEART);
 
@@ -50,7 +50,11 @@ fn every_two_is_permanent_trump_and_the_trump_suit_two_is_stronger() {
     ] {
         state.rules.target_rank = target_rank;
         for card in [1, 14, 27, 40] {
-            assert!(super::is_trump_card(card, &state.rules));
+            assert_eq!(
+                super::is_trump_card(card, &state.rules),
+                target_rank == TractorRank::TWO || card == 14,
+                "card {card} at target {target_rank:?}",
+            );
         }
         assert!(
             super::tractor_card_position(14, &state.rules)

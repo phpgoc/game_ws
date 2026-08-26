@@ -492,20 +492,27 @@ fn find_illegal_follow_case(
 }
 
 #[cfg(not(feature = "official"))]
-fn find_permanent_two_follow_case(
+fn find_off_suit_two_follow_case(
     hands: &[Vec<i32>; 4],
     dealer_position: usize,
     rules: &TractorRules,
 ) -> Option<(i32, usize, i32, i32)> {
     let follower_position = (dealer_position + 1) % 4;
+    let trump_suit = rules.trump_suit.map(|suit| match suit {
+        TractorSuit::SPADE => upgrade_common::Suit::Spade,
+        TractorSuit::HEART => upgrade_common::Suit::Heart,
+        TractorSuit::CLUB => upgrade_common::Suit::Club,
+        TractorSuit::DIAMOND => upgrade_common::Suit::Diamond,
+    });
     let lead_card = hands[dealer_position].iter().copied().find(|card| {
-        Card::try_from(*card)
-            .is_ok_and(|decoded| decoded.rank() == Rank::Two && decoded.suit().is_some())
+        Card::try_from(*card).is_ok_and(|decoded| {
+            decoded.rank() == Rank::Two && decoded.suit().is_some() && decoded.suit() != trump_suit
+        })
     })?;
     let lead = combo::classify(&[lead_card], rules)?;
-    assert_eq!(
-        lead.suit, None,
-        "every suited two must enter the shared trump group"
+    assert!(
+        lead.suit.is_some(),
+        "an off-suit two stays in its natural suit"
     );
     let legal = hands[follower_position]
         .iter()
@@ -940,7 +947,6 @@ async fn tractor_ws_exposes_only_twenty_to_forty_second_play_time() {
         "deal_time",
         "ai_action_time",
         "away_time",
-        "settlement_time",
     ] {
         assert!(
             !current_configs.contains_key(internal),
@@ -952,6 +958,8 @@ async fn tractor_ws_exposes_only_twenty_to_forty_second_play_time() {
         );
     }
     assert!(param_descriptions.contains_key("play_time"));
+    assert!(current_configs.contains_key("settlement_time"));
+    assert!(param_descriptions.contains_key("settlement_time"));
 
     for rejected in [19, 41] {
         send_request(
@@ -3965,16 +3973,16 @@ async fn tractor_ws_rejects_an_off_suit_follow_and_accepts_the_next_legal_card()
 }
 
 #[cfg(not(feature = "official"))]
-async fn try_tractor_ws_permanent_two_follow(url: &str, attempt: usize) -> bool {
+async fn try_tractor_ws_off_suit_two_follow(url: &str, attempt: usize) -> bool {
     let mut a = connect_client(url).await;
     let mut b = connect_client(url).await;
     let mut c = connect_client(url).await;
     let mut d = connect_client(url).await;
-    let room = format!("tractor-permanent-two-follow-room-{attempt}");
+    let room = format!("tractor-off-suit-two-follow-room-{attempt}");
     for (position, client) in [&mut a, &mut b, &mut c, &mut d].into_iter().enumerate() {
         let joined = join(
             client,
-            &format!("permanent-two-player-{attempt}-{position}"),
+            &format!("off-suit-two-player-{attempt}-{position}"),
             &room,
         )
         .await;
@@ -3994,13 +4002,13 @@ async fn try_tractor_ws_permanent_two_follow(url: &str, attempt: usize) -> bool 
         }),
     )
     .await;
-    recv_until(&mut a, "permanent two setting response", |value| {
+    recv_until(&mut a, "off-suit two setting response", |value| {
         value.get("route").and_then(Value::as_i64) == Some(Routes::SETTING as i64)
             && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
     })
     .await;
     send_request(&mut a, Routes::START as i32, json!({})).await;
-    recv_until(&mut a, "permanent two start response", |value| {
+    recv_until(&mut a, "off-suit two start response", |value| {
         value.get("route").and_then(Value::as_i64) == Some(Routes::START as i64)
             && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
     })
@@ -4011,7 +4019,7 @@ async fn try_tractor_ws_permanent_two_follow(url: &str, attempt: usize) -> bool 
     let (declaration, bottom_seen_by_first_client) = recv_first_declaration(&mut *clients[0]).await;
     let dealer_position = declaration["data"]["position"]
         .as_i64()
-        .expect("permanent two dealer") as usize;
+        .expect("off-suit two dealer") as usize;
     let bottom = if dealer_position == 0 {
         match bottom_seen_by_first_client {
             Some(bottom) => bottom,
@@ -4022,9 +4030,9 @@ async fn try_tractor_ws_permanent_two_follow(url: &str, attempt: usize) -> bool 
     };
     let bottom_cards = bottom["data"]["cards"]
         .as_array()
-        .expect("permanent two bottom cards")
+        .expect("off-suit two bottom cards")
         .iter()
-        .map(|card| card.as_i64().expect("permanent two bottom card") as i32)
+        .map(|card| card.as_i64().expect("off-suit two bottom card") as i32)
         .collect::<Vec<_>>();
     assert_eq!(bottom_cards.len(), 6);
 
@@ -4035,7 +4043,7 @@ async fn try_tractor_ws_permanent_two_follow(url: &str, attempt: usize) -> bool 
             1 => TractorSuit::HEART,
             2 => TractorSuit::CLUB,
             3 => TractorSuit::DIAMOND,
-            _ => panic!("invalid permanent two trump suit"),
+            _ => panic!("invalid off-suit two trump suit"),
         });
     let rules = TractorRules {
         attacking_win_score: 80,
@@ -4048,23 +4056,26 @@ async fn try_tractor_ws_permanent_two_follow(url: &str, attempt: usize) -> bool 
         trump_suit,
     };
     let Some((lead_card, follower_position, legal_card, illegal_card)) =
-        find_permanent_two_follow_case(&hands, dealer_position, &rules)
+        find_off_suit_two_follow_case(&hands, dealer_position, &rules)
     else {
         return false;
     };
     assert_eq!(
-        Card::try_from(lead_card)
-            .expect("permanent two lead")
-            .rank(),
+        Card::try_from(lead_card).expect("off-suit two lead").rank(),
         Rank::Two
     );
+    let lead_suit = Card::try_from(lead_card)
+        .expect("off-suit two lead card")
+        .suit()
+        .map(|suit| suit as i32);
+    assert!(lead_suit.is_some());
     assert!(
-        combo::card_in_group(legal_card, None, &rules),
-        "the accepted follow candidate must belong to the trump group"
+        combo::card_in_group(legal_card, lead_suit, &rules),
+        "the accepted follow candidate must belong to the lead suit"
     );
     assert!(
-        !combo::card_in_group(illegal_card, None, &rules),
-        "the rejected follow candidate must be outside the trump group"
+        !combo::card_in_group(illegal_card, lead_suit, &rules),
+        "the rejected follow candidate must be outside the lead suit"
     );
 
     send_request(
@@ -4075,7 +4086,7 @@ async fn try_tractor_ws_permanent_two_follow(url: &str, attempt: usize) -> bool 
     .await;
     recv_until(
         &mut *clients[dealer_position],
-        "permanent two play snapshot",
+        "off-suit two play snapshot",
         |value| {
             value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
                 && value["data"]["phase"] == json!(TractorPhase::Play as i8)
@@ -4084,7 +4095,7 @@ async fn try_tractor_ws_permanent_two_follow(url: &str, attempt: usize) -> bool 
     .await;
     recv_until(
         &mut *clients[dealer_position],
-        "permanent two bury response",
+        "off-suit two bury response",
         |value| {
             value.get("route").and_then(Value::as_i64) == Some(TractorRoutes::BURY_BOTTOM as i64)
                 && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
@@ -4100,7 +4111,7 @@ async fn try_tractor_ws_permanent_two_follow(url: &str, attempt: usize) -> bool 
     .await;
     let lead_event = recv_until(
         &mut *clients[dealer_position],
-        "permanent two lead event",
+        "off-suit two lead event",
         |value| {
             value.get("code").and_then(Value::as_i64) == Some(WsCode::PLAY as i64)
                 && value["data"]["position"] == json!(dealer_position)
@@ -4110,7 +4121,7 @@ async fn try_tractor_ws_permanent_two_follow(url: &str, attempt: usize) -> bool 
     assert_eq!(lead_event["data"]["cards"], json!([lead_card]));
     recv_until(
         &mut *clients[dealer_position],
-        "permanent two lead response",
+        "off-suit two lead response",
         |value| {
             value.get("route").and_then(Value::as_i64) == Some(Routes::PLAY as i64)
                 && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
@@ -4126,7 +4137,7 @@ async fn try_tractor_ws_permanent_two_follow(url: &str, attempt: usize) -> bool 
     .await;
     let rejected = recv_until(
         &mut *clients[follower_position],
-        "permanent two off-group rejection",
+        "off-suit two off-group rejection",
         |value| {
             value.get("route").and_then(Value::as_i64) == Some(Routes::PLAY as i64)
                 && value.get("code").and_then(Value::as_i64)
@@ -4147,7 +4158,7 @@ async fn try_tractor_ws_permanent_two_follow(url: &str, attempt: usize) -> bool 
     .await;
     let follow_event = recv_until(
         &mut *clients[follower_position],
-        "permanent two legal trump follow",
+        "off-suit two legal follow",
         |value| {
             value.get("code").and_then(Value::as_i64) == Some(WsCode::PLAY as i64)
                 && value["data"]["position"] == json!(follower_position)
@@ -4157,7 +4168,7 @@ async fn try_tractor_ws_permanent_two_follow(url: &str, attempt: usize) -> bool 
     assert_eq!(follow_event["data"]["cards"], json!([legal_card]));
     recv_until(
         &mut *clients[follower_position],
-        "permanent two legal follow response",
+        "off-suit two legal follow response",
         |value| {
             value.get("route").and_then(Value::as_i64) == Some(Routes::PLAY as i64)
                 && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
@@ -4169,14 +4180,14 @@ async fn try_tractor_ws_permanent_two_follow(url: &str, attempt: usize) -> bool 
 
 #[cfg(not(feature = "official"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn tractor_ws_treats_every_two_lead_as_trump_for_following() {
-    let runtime = start_test_runtime("tractor-permanent-two-test", Duration::from_secs(60)).await;
+async fn tractor_ws_keeps_an_off_suit_two_in_its_natural_suit_for_following() {
+    let runtime = start_test_runtime("tractor-off-suit-two-test", Duration::from_secs(60)).await;
     for attempt in 0..5 {
-        if try_tractor_ws_permanent_two_follow(&runtime.url, attempt).await {
+        if try_tractor_ws_off_suit_two_follow(&runtime.url, attempt).await {
             return;
         }
     }
-    panic!("five three-deck deals exposed no dealer-two/trump-follow integration case");
+    panic!("five three-deck deals exposed no off-suit-two natural-follow integration case");
 }
 
 #[cfg(not(feature = "official"))]

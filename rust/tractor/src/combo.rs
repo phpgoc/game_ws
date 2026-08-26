@@ -1,8 +1,8 @@
 //! Card-combination logic for tractor (拖拉机 / 升级).
 //!
-//! The trump group is made of every `2`, every card of the current target rank,
-//! the selected trump suit and both jokers; all other cards are "plain" and belong
-//! to their natural suit. A legal
+//! The trump group is made of the current target rank, the selected trump suit
+//! and both jokers; a non-level `2` is trump only when it belongs to the selected
+//! trump suit. All other cards are "plain" and belong to their natural suit. A legal
 //! play is a single group of one of six shapes:
 //!   - Single: one card.
 //!   - Pair:   two identical cards (same base card, regardless of deck copy).

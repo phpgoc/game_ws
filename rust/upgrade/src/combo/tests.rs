@@ -109,12 +109,12 @@ fn four_to_six_identical_cards_are_atomic_repeated_shapes() {
 }
 
 #[test]
-fn level_cards_and_jokers_stay_above_ordinary_trump_cards() {
+fn level_cards_and_jokers_stay_above_the_main_suit_two() {
     let rules = UpgradeComboRules {
         target_rank: Rank::Three,
         trump_suit: Some(Suit::Heart),
     };
-    let ordered = cards(&[26, 1, 14, 2, 15, 53, 54]);
+    let ordered = cards(&[26, 14, 2, 15, 53, 54]);
     let strengths = ordered
         .iter()
         .map(|card| card_strength(*card, rules))
@@ -128,7 +128,7 @@ fn level_cards_and_jokers_stay_above_ordinary_trump_cards() {
 }
 
 #[test]
-fn permanent_two_lead_requires_upgrade_players_to_follow_trump() {
+fn ordinary_off_suit_two_lead_requires_following_its_natural_suit() {
     let rules = UpgradeComboRules {
         target_rank: Rank::Three,
         trump_suit: Some(Suit::Heart),
@@ -136,8 +136,8 @@ fn permanent_two_lead_requires_upgrade_players_to_follow_trump() {
     let hand = cards(&[27, 127, 3, 103]);
     let lead = classify(&cards(&[1, 101]), rules).unwrap();
 
-    assert!(follow_is_legal(&hand, &cards(&[27, 127]), &lead, rules));
-    assert!(!follow_is_legal(&hand, &cards(&[3, 103]), &lead, rules));
+    assert!(follow_is_legal(&hand, &cards(&[3, 103]), &lead, rules));
+    assert!(!follow_is_legal(&hand, &cards(&[27, 127]), &lead, rules));
 }
 
 #[test]
@@ -196,20 +196,22 @@ fn follow_uses_every_available_lead_group_card_for_each_lead_size() {
 }
 
 #[test]
-fn every_two_is_permanent_trump_and_the_trump_suit_two_is_stronger() {
+fn only_current_level_twos_and_the_main_suit_two_are_trumps() {
     let all_twos = cards(&[1, 14, 27, 40]);
 
-    for target_rank in [Rank::Two, Rank::Three, Rank::Five, Rank::Ace] {
+    for target_rank in [Rank::Three, Rank::Five, Rank::Ace] {
         let rules = UpgradeComboRules {
             target_rank,
             trump_suit: Some(Suit::Heart),
         };
+        assert_eq!(card_group(all_twos[0], rules), Some(Suit::Spade));
+        assert_eq!(card_group(all_twos[1], rules), None);
+        assert_eq!(card_group(all_twos[2], rules), Some(Suit::Club));
+        assert_eq!(card_group(all_twos[3], rules), Some(Suit::Diamond));
+        let highest_plain = if target_rank == Rank::Ace { 25 } else { 26 };
         assert!(
-            all_twos
-                .iter()
-                .all(|card| card_group(*card, rules).is_none())
+            card_strength(all_twos[1], rules) > card_strength(cards(&[highest_plain])[0], rules)
         );
-        assert!(card_strength(all_twos[1], rules) > card_strength(all_twos[0], rules));
     }
 }
 
@@ -295,4 +297,65 @@ fn throw_can_compete_only_when_every_lead_component_is_covered() {
         rules()
     ));
     assert!(can_compete_with_lead(&three_pairs, &lead, rules()));
+}
+#[test]
+fn throw_component_matching_keeps_two_pairs_when_one_identity_has_three_cards() {
+    let hand = cards(&[4, 104, 204, 5, 105]);
+
+    for _ in 0..32 {
+        assert_eq!(component_follow_score(&hand, &[2, 2]), vec![2, 2]);
+    }
+}
+
+#[test]
+fn throw_component_matching_preserves_large_groups_for_later_requirements() {
+    let rules = rules();
+    let lead = cards(&[
+        2, 102, 202, 302, // four spade threes
+        3, 103, 203, // three spade fours
+        4, 104, // pair of spade fives
+    ]);
+    let lead = classify(&lead, rules).expect("4+3+2 throw");
+    let follow = cards(&[
+        5, 105, 205, 305, 405, // five spade sixes
+        6, 106, 206, 306, // four spade sevens
+    ]);
+
+    assert!(can_compete_with_lead(&follow, &lead, rules));
+}
+
+#[test]
+fn throw_component_matching_uses_a_large_group_when_it_is_needed_later() {
+    let hand = cards(&[
+        2, 102, 202, 302, 402, 502, // six cards of one identity
+        3, 103, 203, 303, 403, // five cards of another identity
+        4, 104, 204, 304, // four cards of a third identity
+    ]);
+
+    assert_eq!(
+        component_follow_score(&hand, &[4, 3, 3, 3]),
+        vec![4, 3, 3, 3]
+    );
+}
+
+#[test]
+fn forced_follow_uses_the_smallest_sufficient_component_first() {
+    let rules = rules();
+    let lead_cards = cards(&[
+        2, 102, 202, 302, // four spade threes
+        3, 103, 203, // three spade fours
+        4, 104, // pair of spade fives
+    ]);
+    let lead = classify(&lead_cards, rules).expect("4+3+2 throw");
+    let hand = cards(&[
+        5, 105, 205, 305, 405, // five spade sixes
+        6, 106, 206, 306, // four spade sevens
+        7, 107, // spare pair outside the required nine cards
+    ]);
+
+    let follow = forced_follow(&hand, &lead, rules).expect("legal forced follow");
+
+    assert_eq!(follow.len(), 9);
+    assert!(follow_is_legal(&hand, &follow, &lead, rules));
+    assert!(can_compete_with_lead(&follow, &lead, rules));
 }

@@ -28,9 +28,10 @@ fn ordinary_trump_count(target_rank: Rank) -> i32 {
 
 /// 返回一张主牌在完整主牌连续序列中的位置，弱牌位置较小。
 ///
-/// 标准等级（3–A）下的顺序为：普通主牌、`副2`、`主2`、`副级`、
-/// `主级`、小王、大王。普通主牌抽走当前级牌后补平，因此最高保留的
-/// 普通主牌与 `副2` 相邻。多个副级或副 2 牌面共享同一位置。
+/// 标准等级（3–A）下的顺序为：普通主牌、主花色 `2`、`副级`、`主级`、
+/// 小王、大王。普通主牌抽走当前级牌后补平，因此最高保留的普通主牌与
+/// 主花色 `2` 相邻。当前级为 `2` 时，四种 `2` 都是级牌，顺序为副级、
+/// 主级、小王、大王；非主花色的普通 `2` 不进入主牌组。
 pub fn trump_order_position(
     card: Card,
     target_rank: Rank,
@@ -39,7 +40,7 @@ pub fn trump_order_position(
     let rank = card.rank();
     let suit = card.suit();
     let ordinary_count = ordinary_trump_count(target_rank);
-    let joker_offset = if target_rank == Rank::Two { 2 } else { 4 };
+    let joker_offset = if target_rank == Rank::Two { 2 } else { 3 };
 
     match suit {
         None => match rank {
@@ -47,18 +48,18 @@ pub fn trump_order_position(
             Rank::BigJoker => Some(ordinary_count + joker_offset + 1),
             _ => None,
         },
-        Some(suit) if rank == target_rank && target_rank != Rank::Two => {
-            Some(ordinary_count + if Some(suit) == trump_suit { 3 } else { 2 })
+        Some(suit) if rank == target_rank => {
+            let level_offset = if target_rank == Rank::Two { 0 } else { 1 };
+            Some(ordinary_count + level_offset + i32::from(Some(suit) == trump_suit))
         }
-        Some(suit) if rank == Rank::Two => {
-            Some(ordinary_count + if Some(suit) == trump_suit { 1 } else { 0 })
-        }
+        Some(suit) if rank == Rank::Two && Some(suit) == trump_suit => Some(ordinary_count),
         Some(suit) if Some(suit) == trump_suit => compact_plain_rank_position(rank, target_rank),
         Some(_) => None,
     }
 }
 
-/// 大小王、所有 `2`、当前级牌和主花色牌都属于主牌组。
+/// 大小王、当前级牌和主花色牌都属于主牌组；普通 `2` 只有在主花色中，
+/// 或当前级本身为 `2` 时，才属于主牌组。
 pub fn card_is_trump(card: Card, target_rank: Rank, trump_suit: Option<Suit>) -> bool {
     trump_order_position(card, target_rank, trump_suit).is_some()
 }

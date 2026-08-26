@@ -131,8 +131,8 @@ fn upgrade_follow_preserves_the_longest_components_without_tractor_continuity() 
 }
 
 #[test]
-fn permanent_two_lead_uses_the_trump_group_at_every_upgrade_level() {
-    for (target_rank, ordinary_card) in [(Rank::Three, 3), (Rank::Five, 2), (Rank::Ace, 2)] {
+fn ordinary_off_suit_two_lead_stays_in_its_natural_suit_at_every_upgrade_level() {
+    for (target_rank, ordinary_card) in [(Rank::Three, 3), (Rank::Five, 3), (Rank::Ace, 3)] {
         let mut state = state_with_hands(
             vec![],
             HashMap::from([
@@ -146,19 +146,11 @@ fn permanent_two_lead_uses_the_trump_group_at_every_upgrade_level() {
 
         state
             .play_cards(0, vec![1])
-            .expect("an off-suit two is a legal permanent-trump lead");
-        let follower_hand = state.hands.get(&1).cloned().unwrap();
-        assert_eq!(
-            state
-                .play_cards(1, vec![ordinary_card])
-                .expect_err("a follower holding another two must follow the trump group"),
-            "illegal follow",
-            "target rank {target_rank:?}",
-        );
-        assert_eq!(state.hands.get(&1), Some(&follower_hand));
+            .expect("an off-suit two is a legal natural-suit lead");
         state
-            .play_cards(1, vec![27])
-            .expect("another-suit two is a legal trump-group follow");
+            .play_cards(1, vec![ordinary_card])
+            .expect("a follower may follow the natural suit");
+        assert_eq!(state.hands.get(&1), Some(&vec![27]));
     }
 }
 

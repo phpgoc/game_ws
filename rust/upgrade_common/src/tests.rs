@@ -91,16 +91,21 @@ fn level_advance_caps_at_the_final_rank_and_finishes_there() {
 }
 
 #[test]
-fn permanent_twos_and_level_cards_share_the_trump_group() {
+fn ordinary_twos_stay_in_their_natural_suit_outside_the_main_suit() {
     for target in [Rank::Three, Rank::Five, Rank::Ace] {
         let rules = (target, Some(Suit::Heart));
-        for encoded in [1, 14, 27, 40] {
-            assert!(card_is_trump(
-                Card::try_from(encoded).unwrap(),
-                rules.0,
-                rules.1
-            ));
-        }
+        assert!(!card_is_trump(Card::try_from(1).unwrap(), rules.0, rules.1));
+        assert!(card_is_trump(Card::try_from(14).unwrap(), rules.0, rules.1));
+        assert!(!card_is_trump(
+            Card::try_from(27).unwrap(),
+            rules.0,
+            rules.1
+        ));
+        assert!(!card_is_trump(
+            Card::try_from(40).unwrap(),
+            rules.0,
+            rules.1
+        ));
     }
     let rules = (Rank::Five, Some(Suit::Heart));
     for encoded in [4, 17, 30, 43, 53, 54] {
@@ -119,26 +124,20 @@ fn permanent_twos_and_level_cards_share_the_trump_group() {
 }
 
 #[test]
-fn off_suit_twos_tie_below_the_trump_suit_two_at_every_runtime_level() {
+fn main_suit_two_beats_plain_cards_at_every_runtime_level() {
     for target in [Rank::Three, Rank::Five, Rank::Ace] {
-        let off_suit_positions = [1, 27, 40].map(|encoded| {
-            trump_order_position(Card::try_from(encoded).unwrap(), target, Some(Suit::Heart))
-                .expect("every off-suit two is permanent trump")
-        });
+        let highest_plain = if target == Rank::Ace { 25 } else { 26 };
+        let highest_plain_position = trump_order_position(
+            Card::try_from(highest_plain).unwrap(),
+            target,
+            Some(Suit::Heart),
+        )
+        .expect("highest main-suit plain card is in the trump suit");
         assert!(
-            off_suit_positions
-                .windows(2)
-                .all(|positions| positions[0] == positions[1]),
-            "off-suit twos must tie at target {target:?}",
-        );
-
-        let trump_two =
             trump_order_position(Card::try_from(14).unwrap(), target, Some(Suit::Heart))
-                .expect("trump-suit two is permanent trump");
-        assert_eq!(
-            trump_two,
-            off_suit_positions[0] + 1,
-            "trump-suit two must sit immediately above every off-suit two at target {target:?}",
+                .expect("main-suit two is trump")
+                > highest_plain_position,
+            "main-suit two must beat the highest plain card at target {target:?}",
         );
     }
 }
@@ -149,7 +148,6 @@ fn trump_order_keeps_every_special_boundary_consecutive() {
     let trump = Some(Suit::Heart);
     let ordered = [
         26, // 主 A
-        1,  // 副 2
         14, // 主 2
         2,  // 副级
         15, // 主级
@@ -163,13 +161,13 @@ fn trump_order_keeps_every_special_boundary_consecutive() {
 }
 
 #[test]
-fn ace_level_keeps_the_highest_remaining_trump_next_to_off_suit_two() {
+fn ace_level_keeps_the_highest_remaining_trump_next_to_main_suit_two() {
     let target = Rank::Ace;
     let trump = Some(Suit::Heart);
     let trump_king = trump_order_position(Card::try_from(25).unwrap(), target, trump).unwrap();
-    let off_suit_two = trump_order_position(Card::try_from(1).unwrap(), target, trump).unwrap();
+    let main_suit_two = trump_order_position(Card::try_from(14).unwrap(), target, trump).unwrap();
 
-    assert_eq!(off_suit_two, trump_king + 1);
+    assert_eq!(main_suit_two, trump_king + 1);
 }
 
 #[test]

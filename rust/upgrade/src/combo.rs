@@ -47,9 +47,8 @@ pub fn card_group(card: Card, rules: UpgradeComboRules) -> Option<Suit> {
         .flatten()
 }
 
-/// Comparison value inside an upgrade trick. Permanent `2`s sit above ordinary
-/// trump cards, level cards sit above the `2`s, and jokers remain highest. The
-/// selected trump suit wins each main/vice tie.
+/// Comparison value inside an upgrade trick. The selected trump suit wins each
+/// main/vice tie; a non-level `2` is a trump only when it belongs to that suit.
 pub fn card_strength(card: Card, rules: UpgradeComboRules) -> i32 {
     trump_order_position(card, rules.target_rank, rules.trump_suit)
         .map(|position| 1_000 + position)
@@ -335,26 +334,147 @@ pub fn combo_win_value(cards: &[Card], lead: &Combo, rules: UpgradeComboRules) -
         .max()
 }
 
+const MAX_COMPONENT_CAPACITY: usize = 6;
+const COMPONENT_MATCH_STATE_BUDGET: usize = 8_192;
+
 fn component_follow_score(cards: &[Card], requirements: &[usize]) -> Vec<usize> {
-    let mut available = identity_groups(cards)
-        .into_values()
-        .map(|cards| cards.len())
-        .collect::<Vec<_>>();
-    let mut score = Vec::with_capacity(requirements.len());
-    for requirement in requirements {
-        let Some((index, matched)) = available
-            .iter()
-            .enumerate()
-            .map(|(index, count)| (index, (*count).min(*requirement)))
-            .max_by_key(|(_, matched)| *matched)
-        else {
-            score.push(0);
+    let mut histogram = [0_u8; MAX_COMPONENT_CAPACITY + 1];
+    for count in identity_groups(cards).values().map(Vec::len) {
+        if count > MAX_COMPONENT_CAPACITY {
+            return component_follow_score_greedy(
+                &identity_groups(cards)
+                    .values()
+                    .map(Vec::len)
+                    .collect::<Vec<_>>(),
+                requirements,
+            );
+        }
+        histogram[count] = histogram[count].saturating_add(1);
+    }
+
+    let mut memo = HashMap::new();
+    let mut states = 0;
+    component_follow_score_bounded(histogram, requirements, 0, &mut memo, &mut states)
+        .into_iter()
+        .map(usize::from)
+        .collect()
+}
+
+/// Each lead component is supplied by one identity group, while a group may
+/// be split between later components. The current score is lexicographically
+/// fixed by the largest remaining group; only equal-score group choices need
+/// to be explored. This keeps the search bounded by the small six-deck copy
+/// limit instead of enumerating card subsets.
+fn component_follow_score_bounded(
+    histogram: [u8; MAX_COMPONENT_CAPACITY + 1],
+    requirements: &[usize],
+    requirement_index: usize,
+    memo: &mut HashMap<(usize, [u8; MAX_COMPONENT_CAPACITY + 1]), Vec<u8>>,
+    states: &mut usize,
+) -> Vec<u8> {
+    if requirement_index == requirements.len() {
+        return Vec::new();
+    }
+
+    let key = (requirement_index, histogram);
+    if let Some(score) = memo.get(&key) {
+        return score.clone();
+    }
+    if *states >= COMPONENT_MATCH_STATE_BUDGET {
+        return component_follow_score_greedy_histogram(histogram, requirements, requirement_index);
+    }
+    *states += 1;
+
+    let largest = (1..=MAX_COMPONENT_CAPACITY)
+        .rev()
+        .find(|capacity| histogram[*capacity] > 0)
+        .unwrap_or_default();
+    let matched = largest.min(requirements[requirement_index]);
+    if matched == 0 {
+        let score = vec![0; requirements.len() - requirement_index];
+        memo.insert(key, score.clone());
+        return score;
+    }
+
+    let mut best = None;
+    for capacity in matched..=MAX_COMPONENT_CAPACITY {
+        if histogram[capacity] == 0 {
             continue;
-        };
-        score.push(matched);
-        available[index] -= matched;
+        }
+        let mut next = histogram;
+        next[capacity] -= 1;
+        if capacity > matched {
+            next[capacity - matched] = next[capacity - matched].saturating_add(1);
+        }
+        let suffix =
+            component_follow_score_bounded(next, requirements, requirement_index + 1, memo, states);
+        let mut candidate = Vec::with_capacity(suffix.len() + 1);
+        candidate.push(matched as u8);
+        candidate.extend(suffix);
+        if best
+            .as_ref()
+            .is_none_or(|current: &Vec<u8>| candidate > *current)
+        {
+            best = Some(candidate);
+        }
+    }
+
+    let score = best.unwrap_or_else(|| {
+        component_follow_score_greedy_histogram(histogram, requirements, requirement_index)
+    });
+    memo.insert(key, score.clone());
+    score
+}
+
+fn component_follow_score_greedy_histogram(
+    mut histogram: [u8; MAX_COMPONENT_CAPACITY + 1],
+    requirements: &[usize],
+    requirement_index: usize,
+) -> Vec<u8> {
+    let mut score = Vec::with_capacity(requirements.len() - requirement_index);
+    for requirement in &requirements[requirement_index..] {
+        let largest = (1..=MAX_COMPONENT_CAPACITY)
+            .rev()
+            .find(|capacity| histogram[*capacity] > 0)
+            .unwrap_or_default();
+        let matched = largest.min(*requirement);
+        score.push(matched as u8);
+        if matched == 0 {
+            continue;
+        }
+        let capacity = (matched..=MAX_COMPONENT_CAPACITY)
+            .find(|capacity| histogram[*capacity] > 0)
+            .unwrap_or(largest);
+        histogram[capacity] -= 1;
+        if capacity > matched {
+            histogram[capacity - matched] = histogram[capacity - matched].saturating_add(1);
+        }
     }
     score
+}
+
+fn component_follow_score_greedy(available: &[usize], requirements: &[usize]) -> Vec<usize> {
+    let mut available = available.to_vec();
+    available.sort_unstable();
+    requirements
+        .iter()
+        .map(|requirement| {
+            let matched = available
+                .iter()
+                .copied()
+                .filter(|count| *count > 0)
+                .max()
+                .unwrap_or_default()
+                .min(*requirement);
+            let index = available
+                .iter()
+                .position(|count| *count >= matched && *count > 0);
+            if let Some(index) = index {
+                available[index] -= matched;
+            }
+            matched
+        })
+        .collect()
 }
 
 pub const fn lead_card_count(combo: &Combo) -> usize {
