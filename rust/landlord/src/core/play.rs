@@ -264,11 +264,19 @@ pub fn classify(cards: &[i32]) -> Option<Combo> {
     if len == 6
         && let Some((rank, _)) = groups.iter().find(|(_, c)| *c == 4)
     {
-        return Some(Combo {
-            kind: ComboKind::FourWithTwoSingles,
-            main_rank: *rank,
-            sequence_len: 1,
-        });
+        // 四带二单的两张翼必须来自不同牌点；一对只能作为四带两对，
+        // 不能把同牌点的两张牌伪装成两张单牌。
+        let single_wings = groups
+            .iter()
+            .filter(|(wing_rank, count)| *wing_rank != *rank && *count == 1)
+            .count();
+        if groups.len() == 3 && single_wings == 2 {
+            return Some(Combo {
+                kind: ComboKind::FourWithTwoSingles,
+                main_rank: *rank,
+                sequence_len: 1,
+            });
+        }
     }
     if len == 8
         && let Some((rank, _)) = groups.iter().find(|(_, c)| *c == 4)

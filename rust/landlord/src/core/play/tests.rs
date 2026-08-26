@@ -94,6 +94,11 @@ fn malformed_combo_shapes_do_not_match_partial_patterns() {
     assert_eq!(classify(&[1, 14, 27, 2, 15, 3, 16, 4, 5]), None);
     assert_eq!(classify(&[1, 3, 5, 7, 9]), None);
     assert_eq!(classify(&[1, 14, 27, 40, 2, 15, 3, 4]), None);
+    assert_eq!(
+        classify(&[1, 14, 27, 40, 2, 15]),
+        None,
+        "四带二单不能使用同牌点的一对翼"
+    );
 }
 
 #[test]
