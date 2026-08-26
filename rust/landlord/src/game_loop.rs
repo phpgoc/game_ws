@@ -990,9 +990,8 @@ pub(crate) fn start_game_loop(
                         if s.action_received() {
                             // Action received while waiting this tick.
                         } else if ai_controlled_now {
-                            let ai_plan = ai_plan.unwrap_or_else(|| {
-                                plan_ai_action(&s, waiting_position)
-                            });
+                            let ai_plan =
+                                ai_plan.unwrap_or_else(|| plan_ai_action(&s, waiting_position));
                             if ai_plan.bomb_signal {
                                 activate_ai_bomb_signal(&mut s, waiting_position);
                             }

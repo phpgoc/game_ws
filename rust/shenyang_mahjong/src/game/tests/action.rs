@@ -2483,8 +2483,8 @@ fn play_request_rob_gang_allows_multiple_hu() {
         event
             .score_changes
             .iter()
-        .map(|change| (change.position, change.score))
-        .collect::<Vec<_>>(),
+            .map(|change| (change.position, change.score))
+            .collect::<Vec<_>>(),
         vec![(0, -8), (1, 4), (2, 4), (3, 0)]
     );
     assert_eq!(
