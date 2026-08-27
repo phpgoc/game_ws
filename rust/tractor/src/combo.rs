@@ -628,7 +628,9 @@ pub fn enumerate_leads(hand: &[i32], rules: &TractorRules) -> Vec<Vec<i32>> {
             .iter()
             .flat_map(|(base, cards)| {
                 cards
-                    .chunks_exact(2)
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
                     .map(move |pair| (*base, pair.to_vec()))
             })
             .collect();
@@ -647,7 +649,7 @@ pub fn enumerate_leads(hand: &[i32], rules: &TractorRules) -> Vec<Vec<i32>> {
         }
         let mut singles: Vec<i32> = by_base
             .values()
-            .flat_map(|cards| cards.chunks_exact(2).remainder().iter().copied())
+            .flat_map(|cards| cards.as_chunks::<2>().1.iter().copied())
             .collect();
         singles.sort_unstable();
         for (_, pair) in &pairs {
@@ -1144,7 +1146,9 @@ pub fn forced_follow(hand: &[i32], lead: &Combo, rules: &TractorRules) -> Option
             .into_values()
             .flat_map(|cards| {
                 cards
-                    .chunks_exact(2)
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
                     .map(|pair| pair.to_vec())
                     .collect::<Vec<_>>()
             })
