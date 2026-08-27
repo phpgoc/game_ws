@@ -40,9 +40,11 @@ fn deal_has_four_even_hands_and_private_bottom() {
     assert_eq!(state.hand_count(), 52);
     let dealer = state.dealer_position;
     assert_eq!(state.hands[&dealer].len(), 60);
-    assert!((0..4).filter(|position| *position != dealer).all(|position| {
-        state.hands[&position].len() == 52
-    }));
+    assert!(
+        (0..4)
+            .filter(|position| *position != dealer)
+            .all(|position| { state.hands[&position].len() == 52 })
+    );
     assert_eq!(state.dealt_count, 208);
     assert_eq!(
         state.declaration.as_ref().map(|item| item.target_rank),
