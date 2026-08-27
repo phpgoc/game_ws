@@ -1,22 +1,4 @@
-FROM ubuntu:20.04 AS builder
-
-ENV DEBIAN_FRONTEND=noninteractive \
-    CARGO_HOME=/root/.cargo \
-    CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
-ENV PATH="${CARGO_HOME}/bin:${PATH}"
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        build-essential \
-        ca-certificates \
-        curl \
-        gcc-aarch64-linux-gnu \
-        pkg-config \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-        | sh -s -- -y --default-toolchain stable \
-    && rustup target add aarch64-unknown-linux-gnu
+FROM ghcr.io/rust-cross/rust-musl-cross:aarch64-musl AS builder
 
 WORKDIR /workspace
 COPY . .
@@ -24,7 +6,7 @@ COPY . .
 RUN ./ci/prepare-public-build.sh \
     && cargo build \
         --release \
-        --target aarch64-unknown-linux-gnu \
+        --target aarch64-unknown-linux-musl \
         --manifest-path Cargo.toml \
         -p landlord \
         -p shenyang_mahjong \
@@ -37,7 +19,7 @@ RUN ./ci/prepare-public-build.sh \
     && mkdir -p /artifact \
     && for game in landlord shenyang_mahjong holdem tractor dominoes upgrade p2p; do \
         install -m 0755 \
-            "target/aarch64-unknown-linux-gnu/release/${game}" \
+            "target/aarch64-unknown-linux-musl/release/${game}" \
             "/artifact/${game}"; \
     done
 

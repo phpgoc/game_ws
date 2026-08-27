@@ -42,7 +42,7 @@
 | Linux x86_64 musl | `build_script/build_all.sh` | 是，发布 7 个静态可执行文件 |
 | Windows x86_64 | 使用 `Dockerfile.windows` 交叉编译 GNU 版，或按本文 PowerShell 命令编译 MSVC 版 | 否 |
 | Android APK | 使用 Gradle 或 `Dockerfile.android` 自行编译 | 否 |
-| ARM64 Linux | 使用交叉工具链或 `Dockerfile.arm64` 自行编译 | 否 |
+| ARM64 Linux musl | 使用交叉工具链或 `Dockerfile.arm64` 自行编译 | 否 |
 
 本文的 Docker 命令可在 Linux、Intel Mac 和 Apple Silicon Mac 上使用。统一指定
 `linux/amd64` 是为了让 Android SDK 与交叉编译器使用一致的容器架构；Apple Silicon
@@ -253,7 +253,7 @@ docker build \
 
 ### ARM64 Linux（用户自行编译）
 
-推荐直接使用独立 Dockerfile 交叉编译 7 个 ARM64 GNU/Linux server：
+推荐直接使用独立 Dockerfile 交叉编译 7 个 ARM64 musl Linux server：
 
 ```sh
 mkdir -p build_script/output/arm64
@@ -265,20 +265,18 @@ docker build \
 ```
 
 输出目录包含 `landlord`、`shenyang_mahjong`、`holdem`、`tractor`、`dominoes`、`upgrade`、`p2p`。
-这些是 `aarch64-unknown-linux-gnu` 文件，适用于 64 位 ARM Linux；它们会动态依赖
-glibc。Dockerfile 使用 Ubuntu 20.04，以兼容 glibc 2.31 及以上系统。需要兼容更旧系统时，
-应在对应旧版 Linux 镜像或目标 ARM 设备上重新编译。
+这些是 `aarch64-unknown-linux-musl` 静态可执行文件，适用于 64 位 ARM Linux。每个服务
+只需分发一个文件，不依赖目标机器的 glibc 或其他外部 `.so`。
 
-不用 Docker 时，可以在 Ubuntu / Debian x86_64 主机安装 ARM64 交叉编译器：
+不用 Docker 时，需要先自行安装提供 `aarch64-linux-musl-gcc` 的 musl 交叉工具链，
+然后安装 Rust target：
 
 ```sh
-sudo apt update
-sudo apt install -y build-essential gcc-aarch64-linux-gnu pkg-config
-rustup target add aarch64-unknown-linux-gnu
-export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+rustup target add aarch64-unknown-linux-musl
+export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-musl-gcc
 
 cargo build --release \
-  --target aarch64-unknown-linux-gnu \
+  --target aarch64-unknown-linux-musl \
   --manifest-path Cargo.toml \
   -p landlord \
   -p shenyang_mahjong \
@@ -290,9 +288,9 @@ cargo build --release \
   --no-default-features
 ```
 
-本机构建产物位于 `target/aarch64-unknown-linux-gnu/release/`。如果设备显示
-`armv7l` 而不是 `aarch64`，则需改用 `armv7-unknown-linux-gnueabihf` target 和
-`gcc-arm-linux-gnueabihf` linker；ARMv7 不使用 `Dockerfile.arm64`。
+本机构建产物位于 `target/aarch64-unknown-linux-musl/release/`。如果设备显示
+`armv7l` 而不是 `aarch64`，则需改用 `armv7-unknown-linux-musleabihf` target 和
+对应的 ARMv7 musl 交叉工具链；ARMv7 不使用 `Dockerfile.arm64`。
 
 ### Windows x86_64（兼容构建，不进入 release）
 
@@ -371,7 +369,7 @@ UDP 49160-49200；公网部署还要配置路由器端口映射。
 推荐 release 产物：Linux x86_64 musl 静态单文件。
 release 包范围：landlord、shenyang_mahjong、holdem、tractor、dominoes、upgrade、p2p。
 build_all.sh 和 build_in_docker.sh 只生成上述 7 个 Linux x86_64 文件。
-Android APK、ARM64 Linux 与 Windows GNU 可以使用独立 Dockerfile，但只能由用户按文档自行构建，不进入 release。
+Android APK、ARM64 Linux musl 与 Windows GNU 可以使用独立 Dockerfile，但只能由用户按文档自行构建，不进入 release。
 Windows 不作为推荐运行环境；Docker 交叉编译使用 x86_64-pc-windows-gnu，本机编译使用 x86_64-pc-windows-msvc + crt-static，并提醒防火墙、杀毒软件、端口开放和执行策略需要额外处理。
 ```
 
