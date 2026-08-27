@@ -40,9 +40,13 @@
 | 目标平台 | 编译方式 | 公开 release |
 | --- | --- | --- |
 | Linux x86_64 musl | `build_script/build_all.sh` | 是，发布 7 个静态可执行文件 |
-| Windows x86_64 | 按本文 PowerShell 命令自行编译 | 否 |
+| Windows x86_64 | 使用 `Dockerfile.windows` 交叉编译 GNU 版，或按本文 PowerShell 命令编译 MSVC 版 | 否 |
 | Android APK | 使用 Gradle 或 `Dockerfile.android` 自行编译 | 否 |
 | ARM64 Linux | 使用交叉工具链或 `Dockerfile.arm64` 自行编译 | 否 |
+
+本文的 Docker 命令可在 Linux、Intel Mac 和 Apple Silicon Mac 上使用。统一指定
+`linux/amd64` 是为了让 Android SDK 与交叉编译器使用一致的容器架构；Apple Silicon
+会通过 Docker Desktop 的 amd64 模拟运行，因此首次构建会比 Intel/AMD 主机慢。
 
 `build_script/build_all.sh` 和 `build_script/build_in_docker.sh` 只负责正式发布的
 7 个 Linux x86_64 musl server，不再构建 APK、Windows 或 ARM Linux 产物。
@@ -166,6 +170,7 @@ build_script/output/landlord
 build_script/output/shenyang_mahjong
 build_script/output/holdem
 build_script/output/tractor
+build_script/output/dominoes
 build_script/output/upgrade
 build_script/output/p2p
 ```
@@ -236,6 +241,7 @@ cd android
 ```sh
 mkdir -p build_script/output/android
 docker build \
+  --platform linux/amd64 \
   --file build_script/Dockerfile.android \
   --build-arg GAME=tractor \
   --output type=local,dest=build_script/output/android \
@@ -252,6 +258,7 @@ docker build \
 ```sh
 mkdir -p build_script/output/arm64
 docker build \
+  --platform linux/amd64 \
   --file build_script/Dockerfile.arm64 \
   --output type=local,dest=build_script/output/arm64 \
   .
@@ -277,8 +284,8 @@ cargo build --release \
   -p shenyang_mahjong \
   -p holdem \
   -p tractor \
-    -p dominoes \
-    -p upgrade \
+  -p dominoes \
+  -p upgrade \
   -p p2p \
   --no-default-features
 ```
@@ -291,9 +298,29 @@ cargo build --release \
 
 Windows 不是推荐运行环境。WS 服务端即使能运行，也要额外考虑 Windows 防火墙、局域网发现、杀毒软件、端口开放和执行策略等问题。Windows release 仅用于验证或自行构建；公开发布页优先提供 Linux musl 静态产物。
 
-Windows 版本应在 Windows 原生环境编译，不使用 Linux Docker 交叉编译 MSVC。
-先安装 Rust stable，并在 Visual Studio Installer 中安装“使用 C++ 的桌面开发”和
-Windows SDK。然后在 `ws` 根目录的 PowerShell 中静态链接 MSVC CRT：
+#### Docker 交叉编译 GNU 版
+
+Linux Docker 可以使用 MinGW-w64 为 64 位 Windows 交叉编译 7 个 `.exe`。Dockerfile
+使用 Rust 的 `x86_64-pc-windows-gnu` target；它不是 MSVC ABI，但产物可直接在 64 位
+Windows 上运行：
+
+```sh
+mkdir -p build_script/output/windows-x86_64
+docker build \
+  --platform linux/amd64 \
+  --file build_script/Dockerfile.windows \
+  --output type=local,dest=build_script/output/windows-x86_64 \
+  .
+```
+
+输出目录包含 `landlord.exe`、`shenyang_mahjong.exe`、`holdem.exe`、`tractor.exe`、
+`dominoes.exe`、`upgrade.exe` 和 `p2p.exe`。
+
+#### Windows 原生编译 MSVC 版
+
+需要 MSVC ABI 时，应在 Windows 原生环境编译。先安装 Rust stable，并在 Visual Studio
+Installer 中安装“使用 C++ 的桌面开发”和 Windows SDK。然后在 `ws` 根目录的
+PowerShell 中静态链接 MSVC CRT：
 
 ```powershell
 rustup target add x86_64-pc-windows-msvc
@@ -306,6 +333,7 @@ try {
     -p shenyang_mahjong `
     -p holdem `
     -p tractor `
+    -p dominoes `
     -p upgrade `
     -p p2p `
     --no-default-features
@@ -343,8 +371,8 @@ UDP 49160-49200；公网部署还要配置路由器端口映射。
 推荐 release 产物：Linux x86_64 musl 静态单文件。
 release 包范围：landlord、shenyang_mahjong、holdem、tractor、dominoes、upgrade、p2p。
 build_all.sh 和 build_in_docker.sh 只生成上述 7 个 Linux x86_64 文件。
-Android APK 与 ARM64 Linux 可以使用独立 Dockerfile，但只能由用户按文档自行构建，不进入 release。
-Windows 不作为推荐运行环境；如需 Windows 构建说明，只保留 x86_64-pc-windows-msvc + crt-static 的验证命令，并提醒防火墙、杀毒软件、端口开放和执行策略需要额外处理。
+Android APK、ARM64 Linux 与 Windows GNU 可以使用独立 Dockerfile，但只能由用户按文档自行构建，不进入 release。
+Windows 不作为推荐运行环境；Docker 交叉编译使用 x86_64-pc-windows-gnu，本机编译使用 x86_64-pc-windows-msvc + crt-static，并提醒防火墙、杀毒软件、端口开放和执行策略需要额外处理。
 ```
 
 ## 网络配置

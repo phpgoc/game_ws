@@ -1,0 +1,47 @@
+FROM ubuntu:24.04 AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    CARGO_HOME=/root/.cargo \
+    CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc \
+    CC_x86_64_pc_windows_gnu=x86_64-w64-mingw32-gcc \
+    AR_x86_64_pc_windows_gnu=x86_64-w64-mingw32-ar
+ENV PATH="${CARGO_HOME}/bin:${PATH}"
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        curl \
+        gcc-mingw-w64-x86-64 \
+        pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+        | sh -s -- -y --default-toolchain stable \
+    && rustup target add x86_64-pc-windows-gnu
+
+WORKDIR /workspace
+COPY . .
+
+RUN ./ci/prepare-public-build.sh \
+    && cargo build \
+        --release \
+        --target x86_64-pc-windows-gnu \
+        --manifest-path Cargo.toml \
+        -p landlord \
+        -p shenyang_mahjong \
+        -p holdem \
+        -p tractor \
+        -p dominoes \
+        -p upgrade \
+        -p p2p \
+        --no-default-features \
+    && mkdir -p /artifact \
+    && for game in landlord shenyang_mahjong holdem tractor dominoes upgrade p2p; do \
+        install -m 0755 \
+            "target/x86_64-pc-windows-gnu/release/${game}.exe" \
+            "/artifact/${game}.exe"; \
+    done
+
+FROM scratch AS artifact
+COPY --from=builder /artifact/ /
