@@ -21,7 +21,7 @@ fn e2e_fixture_compresses_internal_loop_waits_without_room_settings() {
         ("settlement_time".to_owned(), 99),
     ]);
 
-    assert_eq!(current_claim_time(&configs), 1);
+    assert_eq!(current_claim_time(&configs), 10);
     assert_eq!(current_play_time(&configs), 1);
     assert_eq!(settlement_time(&configs), 1);
 }

@@ -711,8 +711,10 @@ fn config_value(configs: &HashMap<String, i32>, key: &str, fallback: i32) -> i32
 /// 压缩服务端循环的等待时间，以便在隔离环境中验收完整自动对局。
 #[cfg(feature = "e2e-fixture")]
 fn loop_wait_seconds(configs: &HashMap<String, i32>, key: &str, fallback: i32) -> i32 {
-    let _ = (configs, key, fallback);
-    1
+    let _ = (configs, fallback);
+    // 抢杠窗口需要覆盖四人真实动作和 PWA 双构建更新；保持其它
+    // E2E 回合压缩为 1 秒，避免改变生产默认计时。
+    if key == "claim_time" { 10 } else { 1 }
 }
 
 #[cfg(not(feature = "e2e-fixture"))]
@@ -2249,7 +2251,7 @@ fn rob_gang_claim_matches_source(
     from_position: usize,
 ) -> bool {
     if state.wall_count() == 0
-        || state.last_drawn_tile != Some(tile)
+        || !position_owns_last_drawn_tile(state, from_position)
         || !position_has_discardable_tile_count(state, from_position)
         || has_impossible_known_tile_count(state, tile)
     {

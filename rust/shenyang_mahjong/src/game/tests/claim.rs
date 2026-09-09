@@ -19,7 +19,9 @@ fn added_gang_opens_rob_gang_claim_window_before_replacement_draw() {
         .insert(1, vec![1, 2, 11, 12, 13, 31, 31, 31, 35, 35]);
     state.melds.insert(1, vec![open_peng_meld(21, 3)]);
     state.wall = vec![36];
-    state.last_drawn_tile = Some(3);
+    // 加杠牌可以来自手中既有的碰牌；本回合摸到另一张牌时，抢杠窗口
+    // 仍必须能被快照恢复，不能把摸牌牌面误当成加杠来源。
+    state.last_drawn_tile = Some(4);
     let mut dispatch = Dispatch::default();
 
     assert!(perform_self_gang(
@@ -37,8 +39,9 @@ fn added_gang_opens_rob_gang_claim_window_before_replacement_draw() {
     assert_eq!(claim_window.tile, 3);
     assert_eq!(claim_window.from_position, 0);
     assert_eq!(claim_window.eligible_positions, vec![1]);
-    assert_eq!(state.last_drawn_tile, Some(3));
+    assert_eq!(state.last_drawn_tile, Some(4));
     assert!(state.hands.get(&0).unwrap().contains(&3));
+    assert!(claim_window_matches_source(&state, claim_window));
     assert_eq!(
         state.melds.get(&0).unwrap().first().unwrap().kind,
         ShenyangMahjongMeldKind::PENG
