@@ -53,7 +53,9 @@ impl ShenyangMahjongGameHandler {
 
         {
             let mut state = loop_state.lock().unwrap();
-            if state.phase != ShenyangMahjongPhase::Play {
+            if state.phase != ShenyangMahjongPhase::Play
+                || !state.accepts_action_context(session_id, payload.action_context.as_ref())
+            {
                 return room_service.error_response(
                     session_id,
                     Routes::PLAY as i32,

@@ -39,6 +39,7 @@ fn join(room: &mut RoomService, session_id: u64) {
 
 fn play_request(action: ShenyangMahjongAction) -> Value {
     serde_json::to_value(WsShenyangMahjongPlayRequest {
+        action_context: None,
         action,
         tiles: Vec::new(),
         target_tile: None,

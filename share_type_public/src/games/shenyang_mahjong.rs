@@ -64,9 +64,19 @@ pub struct WsShenyangMahjongClaimOption {
     pub chi_options: Vec<Vec<i32>>,
 }
 
+/// Identifies one round and decision window; partial claims keep the same identity.
+#[typeshare]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WsShenyangMahjongActionContext {
+    pub round_id: String,
+    pub action_id: u32,
+}
+
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsShenyangMahjongClaimWindowEvent {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action_context: Option<WsShenyangMahjongActionContext>,
     pub tile: i32,
     pub from_position: i32,
     pub eligible_positions: Vec<i32>,
@@ -80,6 +90,8 @@ pub struct WsShenyangMahjongClaimWindowEvent {
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsShenyangMahjongDealEvent {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action_context: Option<WsShenyangMahjongActionContext>,
     pub my_tiles: Vec<i32>,
     pub dealer_position: i32,
     pub current_position: i32,
@@ -105,6 +117,8 @@ pub struct WsShenyangMahjongMeld {
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsShenyangMahjongPlayEvent {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action_context: Option<WsShenyangMahjongActionContext>,
     pub name: String,
     pub position: i32,
     pub action: ShenyangMahjongAction,
@@ -123,6 +137,9 @@ pub struct WsShenyangMahjongPlayEvent {
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsShenyangMahjongPlayRequest {
+    /// Echo the context received from this server; omission supports legacy clients only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action_context: Option<WsShenyangMahjongActionContext>,
     pub action: ShenyangMahjongAction,
     pub tiles: Vec<i32>,
     pub target_tile: Option<i32>,
@@ -192,6 +209,8 @@ pub struct WsShenyangMahjongSettlementEvent {
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsShenyangMahjongTableSnapshotEvent {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action_context: Option<WsShenyangMahjongActionContext>,
     pub my_tiles: Vec<i32>,
     pub players: Vec<WsShenyangMahjongPublicPlayerSnapshot>,
     pub phase: ShenyangMahjongPhase,

@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 
 use share_type_public::games::shenyang_mahjong::{
     SHENYANG_MAHJONG_TILE_KINDS, ShenyangMahjongAction, ShenyangMahjongMeldKind,
-    ShenyangMahjongPhase, WsShenyangMahjongMeld,
+    ShenyangMahjongPhase, WsShenyangMahjongActionContext, WsShenyangMahjongMeld,
 };
 use ws_common::{CommonGameState, GameState, SessionId};
 
@@ -93,6 +93,8 @@ pub struct ShenyangMahjongGameState {
 
 #[derive(Debug)]
 pub struct ShenyangMahjongLoopState {
+    action_context: WsShenyangMahjongActionContext,
+    context_sessions: HashSet<SessionId>,
     /// 通用房间状态；连接、离线和托管标志由它统一维护。
     pub base: Arc<Mutex<CommonGameState>>,
     /// Play 之前的准备/发牌阶段不能接受任何牌局动作。
@@ -256,6 +258,7 @@ impl ShenyangMahjongLoopState {
     }
 
     pub fn deal_new_round(&mut self) {
+        self.action_context = Self::new_action_context();
         self.phase = ShenyangMahjongPhase::Play;
         self.claim_window = None;
         self.last_drawn_tile = None;
@@ -349,6 +352,7 @@ impl ShenyangMahjongLoopState {
         self.current_position = position;
         self.last_drawn_tile = Some(tile);
         self.pending_gang_draw = false;
+        self.advance_action_context();
         Some(tile)
     }
 
@@ -371,6 +375,7 @@ impl ShenyangMahjongLoopState {
     }
 
     pub fn enter_settlement_with_reverse_win(&mut self, settlement: SettlementState) {
+        self.advance_action_context();
         self.phase = ShenyangMahjongPhase::Settlement;
         self.claim_window = None;
         self.last_drawn_tile = None;
@@ -458,6 +463,8 @@ impl ShenyangMahjongLoopState {
             state.players.keys().copied().min().unwrap_or(0)
         };
         Self {
+            action_context: Self::new_action_context(),
+            context_sessions: HashSet::new(),
             base,
             phase: ShenyangMahjongPhase::Start,
             dealer_position,
@@ -528,6 +535,7 @@ impl ShenyangMahjongLoopState {
     }
 
     pub fn redeal(&mut self) {
+        self.advance_action_context();
         let dealer_should_continue = self
             .settlement
             .as_ref()
@@ -575,7 +583,49 @@ impl ShenyangMahjongLoopState {
         let Some(hand) = self.hands.get_mut(&position) else {
             return false;
         };
-        remove_tiles(hand, tiles)
+        let removed = remove_tiles(hand, tiles);
+        if removed && !tiles.is_empty() {
+            self.advance_action_context();
+        }
+        removed
+    }
+
+    pub fn action_context(&self) -> WsShenyangMahjongActionContext {
+        self.action_context.clone()
+    }
+
+    pub fn accepts_action_context(
+        &mut self,
+        session_id: SessionId,
+        context: Option<&WsShenyangMahjongActionContext>,
+    ) -> bool {
+        match context {
+            Some(context) if context == &self.action_context => {
+                let players = self.players_snapshot();
+                self.context_sessions
+                    .retain(|session| players.values().any(|(current, _)| current == session));
+                self.context_sessions.insert(session_id);
+                true
+            }
+            Some(_) => false,
+            None => !self.context_sessions.contains(&session_id),
+        }
+    }
+
+    pub fn advance_action_context(&mut self) {
+        if let Some(next) = self.action_context.action_id.checked_add(1) {
+            self.action_context.action_id = next;
+        } else {
+            // Never reuse an identity even if an unexpectedly long round exhausts the counter.
+            self.action_context = Self::new_action_context();
+        }
+    }
+
+    fn new_action_context() -> WsShenyangMahjongActionContext {
+        WsShenyangMahjongActionContext {
+            round_id: uuid::Uuid::new_v4().simple().to_string(),
+            action_id: 1,
+        }
     }
 
     pub fn request_stop(&self) {

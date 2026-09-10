@@ -160,10 +160,11 @@ pub(crate) fn build_claim_window_event(
     configs: &HashMap<String, i32>,
 ) -> WsShenyangMahjongClaimWindowEvent {
     let options = build_claim_options(state, tile, from_position, configs);
-    build_claim_window_event_with_options(tile, from_position, seconds, options, false)
+    build_claim_window_event_with_options(state, tile, from_position, seconds, options, false)
 }
 
 fn build_claim_window_event_with_options(
+    state: &ShenyangMahjongLoopState,
     tile: i32,
     from_position: usize,
     seconds: i32,
@@ -172,6 +173,7 @@ fn build_claim_window_event_with_options(
 ) -> WsShenyangMahjongClaimWindowEvent {
     let eligible_positions = options.iter().map(|option| option.position).collect();
     WsShenyangMahjongClaimWindowEvent {
+        action_context: Some(state.action_context()),
         tile,
         from_position: from_position as i32,
         eligible_positions,
@@ -209,7 +211,7 @@ fn build_rob_gang_claim_window_event(
             )
         })
         .collect();
-    build_claim_window_event_with_options(tile, from_position, seconds, options, true)
+    build_claim_window_event_with_options(state, tile, from_position, seconds, options, true)
 }
 
 pub(crate) fn build_current_claim_window_event(
@@ -341,6 +343,7 @@ pub(crate) fn build_table_snapshot_event_with_configs(
     }
 
     WsShenyangMahjongTableSnapshotEvent {
+        action_context: Some(state.action_context()),
         my_tiles: state
             .hands
             .get(&viewer_position)
@@ -827,6 +830,7 @@ fn finish_added_gang(
         dispatch,
         WsCode::PLAY as i32,
         WsShenyangMahjongPlayEvent {
+            action_context: Some(state.action_context()),
             name: state.player_name(position),
             position: position as i32,
             action: ShenyangMahjongAction::GANG,
@@ -1191,6 +1195,7 @@ pub(crate) fn perform_discard_with_ting(
         dispatch,
         WsCode::PLAY as i32,
         WsShenyangMahjongPlayEvent {
+            action_context: Some(state.action_context()),
             name: state.player_name(position),
             position: position as i32,
             action: ShenyangMahjongAction::DISCARD,
@@ -1250,6 +1255,7 @@ pub(crate) fn perform_self_draw_hu(
         dispatch,
         WsCode::PLAY as i32,
         WsShenyangMahjongPlayEvent {
+            action_context: Some(state.action_context()),
             name: state.player_name(position),
             position: position as i32,
             action: ShenyangMahjongAction::HU,
@@ -1334,6 +1340,7 @@ pub(crate) fn perform_self_gang(
             .map(|position| *position as usize)
             .collect::<Vec<_>>();
         if !eligible_positions.is_empty() {
+            state.advance_action_context();
             state.claim_window = Some(ClaimWindowState {
                 tile: target_tile,
                 from_position: position,
@@ -1371,6 +1378,7 @@ pub(crate) fn perform_self_gang(
         dispatch,
         WsCode::PLAY as i32,
         WsShenyangMahjongPlayEvent {
+            action_context: Some(state.action_context()),
             name: state.player_name(position),
             position: position as i32,
             action: ShenyangMahjongAction::GANG,
@@ -1664,6 +1672,8 @@ fn push_claim_window_events(
     dispatch: &mut Dispatch,
     event: &WsShenyangMahjongClaimWindowEvent,
 ) {
+    let mut event = event.clone();
+    event.action_context = Some(state.action_context());
     for (position, (session_id, _)) in state.players_snapshot() {
         let can_respond = event.eligible_positions.contains(&(position as i32))
             && state
@@ -1674,7 +1684,7 @@ fn push_claim_window_events(
             dispatch,
             session_id,
             WsCode::CLAIM_WINDOW as i32,
-            claim_window_event_for_viewer(event, position, can_respond),
+            claim_window_event_for_viewer(&event, position, can_respond),
         );
     }
 }
@@ -1739,6 +1749,7 @@ pub(crate) fn push_draw_events(
             session_id,
             WsCode::PLAY as i32,
             WsShenyangMahjongPlayEvent {
+                action_context: Some(state.action_context()),
                 name: name.clone(),
                 position: position as i32,
                 action: ShenyangMahjongAction::DRAW,
@@ -1814,6 +1825,7 @@ pub(crate) fn push_private_deal_events(
             session_id,
             WsCode::DEAL as i32,
             WsShenyangMahjongDealEvent {
+                action_context: Some(state.action_context()),
                 my_tiles,
                 dealer_position: state.dealer_position as i32,
                 current_position: state.current_position as i32,
@@ -1853,6 +1865,7 @@ fn push_xi_gang_events(
             session_id,
             WsCode::PLAY as i32,
             WsShenyangMahjongPlayEvent {
+                action_context: Some(state.action_context()),
                 name: name.clone(),
                 position: position as i32,
                 action: ShenyangMahjongAction::XI_GANG,
@@ -2001,6 +2014,7 @@ pub(crate) fn resolve_claim_window(
                 dispatch,
                 WsCode::PLAY as i32,
                 WsShenyangMahjongPlayEvent {
+                    action_context: Some(state.action_context()),
                     name: state.player_name(*winner),
                     position: *winner as i32,
                     action: ShenyangMahjongAction::HU,
@@ -2101,6 +2115,7 @@ pub(crate) fn resolve_claim_window(
                         dispatch,
                         WsCode::PLAY as i32,
                         WsShenyangMahjongPlayEvent {
+                            action_context: Some(state.action_context()),
                             name: state.player_name(winner),
                             position: winner as i32,
                             action: ShenyangMahjongAction::PENG,
@@ -2155,6 +2170,7 @@ pub(crate) fn resolve_claim_window(
                     dispatch,
                     WsCode::PLAY as i32,
                     WsShenyangMahjongPlayEvent {
+                        action_context: Some(state.action_context()),
                         name: state.player_name(winner),
                         position: winner as i32,
                         action: ShenyangMahjongAction::GANG,
@@ -2224,6 +2240,7 @@ pub(crate) fn resolve_claim_window(
                 dispatch,
                 WsCode::PLAY as i32,
                 WsShenyangMahjongPlayEvent {
+                    action_context: Some(state.action_context()),
                     name: state.player_name(winner),
                     position: winner as i32,
                     action: ShenyangMahjongAction::CHI,
