@@ -212,6 +212,29 @@ fn build_rob_gang_claim_window_event(
     build_claim_window_event_with_options(tile, from_position, seconds, options, true)
 }
 
+pub(crate) fn build_current_claim_window_event(
+    state: &ShenyangMahjongLoopState,
+    window: &ClaimWindowState,
+    configs: &HashMap<String, i32>,
+) -> WsShenyangMahjongClaimWindowEvent {
+    match window.kind {
+        ClaimWindowKind::Discard => build_claim_window_event(
+            state,
+            window.tile,
+            window.from_position,
+            state.turn_countdown() as i32,
+            configs,
+        ),
+        ClaimWindowKind::RobGang => build_rob_gang_claim_window_event(
+            state,
+            window.tile,
+            window.from_position,
+            state.turn_countdown() as i32,
+            configs,
+        ),
+    }
+}
+
 #[cfg(test)]
 pub(crate) fn build_settlement_event(
     state: &ShenyangMahjongLoopState,
@@ -346,22 +369,7 @@ pub(crate) fn build_table_snapshot_event_with_configs(
                     && claim_window_matches_source(state, window)
             })
             .map(|window| {
-                let event = match window.kind {
-                    ClaimWindowKind::Discard => build_claim_window_event(
-                        state,
-                        window.tile,
-                        window.from_position,
-                        state.turn_countdown() as i32,
-                        configs,
-                    ),
-                    ClaimWindowKind::RobGang => build_rob_gang_claim_window_event(
-                        state,
-                        window.tile,
-                        window.from_position,
-                        state.turn_countdown() as i32,
-                        configs,
-                    ),
-                };
+                let event = build_current_claim_window_event(state, window, configs);
                 let can_respond = window.eligible_positions.contains(&viewer_position)
                     && !window.responses.contains_key(&viewer_position);
                 claim_window_event_for_viewer(&event, viewer_position, can_respond)

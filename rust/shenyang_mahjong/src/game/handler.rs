@@ -210,6 +210,11 @@ impl ShenyangMahjongGameHandler {
                         &configs,
                         &mut dispatch,
                     );
+                } else if let Some(window) = state.claim_window.as_ref() {
+                    // 部分响应后立即刷新所有客户端：已响应者收起动作，
+                    // 其余响应者继续看到自己的选项；重连快照沿用同一份过滤规则。
+                    let event = build_current_claim_window_event(&state, window, &configs);
+                    push_claim_window_events(&state, &mut dispatch, &event);
                 }
             } else {
                 if state.current_position != position {

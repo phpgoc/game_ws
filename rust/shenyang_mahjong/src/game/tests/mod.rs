@@ -1,6 +1,7 @@
 mod action;
 mod claim;
 mod claim_resolution;
+mod claim_updates;
 mod lifecycle;
 mod self_draw_and_gang;
 mod settlement_fan;
