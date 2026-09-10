@@ -10,6 +10,8 @@ mod ai;
 #[cfg(not(feature = "official"))]
 #[path = "ai_fallback.rs"]
 mod ai;
+#[cfg(feature = "e2e-fixture")]
+mod e2e_wall;
 /// WebSocket 请求处理、动作校验和结算事件构造。
 pub mod game;
 /// 后台循环负责超时、托管和自动行动，不直接决定牌型是否合法。

@@ -268,10 +268,21 @@ impl ShenyangMahjongLoopState {
         let seed = self.next_wall_seed();
         self.wall = Self::shuffle_wall_with_seed(seed);
         self.last_wall_seed = Some(seed);
+        #[cfg(feature = "e2e-fixture")]
+        if let Some(wall) = crate::e2e_wall::wall_for_fixture(
+            std::env::var("SHENYANG_MAHJONG_E2E_WALL").ok().as_deref(),
+            self.wall_round_index,
+            self.dealer_position,
+        ) {
+            self.wall = wall;
+            // 编排牌山不是随机种子的输出，不能用 seed 为它背书。
+            self.last_wall_seed = None;
+        }
         self.wall_round_index = self.wall_round_index.wrapping_add(1);
         ws_common::dlog!(
             ws_common::tracing::Level::DEBUG,
-            "shenyang mahjong deal wall_seed={seed} wall_round_index={}",
+            "shenyang mahjong deal wall_seed={:?} wall_round_index={}",
+            self.last_wall_seed,
             self.wall_round_index.saturating_sub(1)
         );
         self.hands.clear();
