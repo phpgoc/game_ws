@@ -1,6 +1,6 @@
 use super::*;
 
-fn rob_gang_room() -> (RoomService, ShenyangMahjongGameHandler, LoopStateHandle) {
+pub(super) fn rob_gang_room() -> (RoomService, ShenyangMahjongGameHandler, LoopStateHandle) {
     let (mut room, mut handler, _, shared) = setup_request_room();
     {
         let mut state = shared.lock().unwrap();
@@ -58,7 +58,10 @@ fn claim_for(dispatch: &Dispatch, recipient: SessionId) -> WsShenyangMahjongClai
     events.into_iter().next().unwrap()
 }
 
-fn plays_for(dispatch: &Dispatch, recipient: SessionId) -> Vec<WsShenyangMahjongPlayEvent> {
+pub(super) fn plays_for(
+    dispatch: &Dispatch,
+    recipient: SessionId,
+) -> Vec<WsShenyangMahjongPlayEvent> {
     dispatch
         .messages
         .iter()

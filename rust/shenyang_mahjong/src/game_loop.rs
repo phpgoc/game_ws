@@ -119,17 +119,6 @@ fn timed_out_positions(state: &ShenyangMahjongLoopState) -> Vec<usize> {
     vec![state.current_position]
 }
 
-async fn position_has_active_membership(
-    room_service: &Arc<Mutex<RoomService>>,
-    room_key: &str,
-    position: usize,
-) -> bool {
-    room_service
-        .lock()
-        .await
-        .room_position_has_active_membership(room_key, position)
-}
-
 fn apply_timeout_control(
     state: &mut ShenyangMahjongLoopState,
     authorizations: &[(usize, bool)],
@@ -155,6 +144,68 @@ fn apply_timeout_control(
         }
     }
     newly_away
+}
+
+pub(crate) fn resolve_timeout(
+    room: &RoomService,
+    room_key: &str,
+    state: &mut ShenyangMahjongLoopState,
+    configs: &HashMap<String, i32>,
+    dispatch: &mut ws_common::Dispatch,
+) -> bool {
+    // 请求处理和这里持有同一房间/牌局锁。等待锁期间最后一个响应可能已经
+    // 结算、补牌或开启新窗口，不能继续执行等待之前观察到的超时。
+    if state.phase != ShenyangMahjongPhase::Play
+        || state.stop_requested()
+        || state.is_paused()
+        || state.turn_countdown() != 0
+    {
+        return false;
+    }
+    let authorizations = timed_out_positions(state)
+        .into_iter()
+        .map(|position| {
+            // RoomService 的 GameState 包装会重入牌局锁；这里读取已确认属于
+            // 当前房间的同一份 CommonGameState，不释放锁也不重复查询资格。
+            (
+                position,
+                state.base.lock().unwrap().is_member_position(position),
+            )
+        })
+        .collect::<Vec<_>>();
+    for (position, is_ai_takeover) in apply_timeout_control(state, &authorizations) {
+        push_room_event(
+            room,
+            room_key,
+            dispatch,
+            WsCode::AWAY as i32,
+            WsPositionEvent {
+                position: position as i32,
+                is_ai_takeover,
+            },
+        );
+    }
+    if state.claim_window.is_some() {
+        let _ = maybe_resolve_ai_claims(room, room_key, state, configs, dispatch);
+        if let Some(claim_window) = state.claim_window.as_mut() {
+            for position in claim_window.eligible_positions.clone() {
+                claim_window
+                    .responses
+                    .entry(position)
+                    .or_insert(ClaimResponse::Pass);
+            }
+            resolve_claim_window(room, room_key, state, configs, dispatch);
+        }
+    } else {
+        let position = state.current_position;
+        if !maybe_play_ai_turn(room, room_key, state, configs, dispatch) {
+            let tile = auto_discard_tile(state, position);
+            let _ = perform_auto_discard_or_settle(
+                room, room_key, state, configs, dispatch, position, tile,
+            );
+        }
+    }
+    true
 }
 
 async fn sleep_or_stop(
@@ -278,88 +329,16 @@ pub(crate) fn start_game_loop(
                         continue;
                     }
 
+                    let mut dispatch = ws_common::Dispatch::default();
                     let timed_out = {
-                        let guard = state.lock().unwrap();
-                        if guard.stop_requested() {
+                        let room = room_service.lock().await;
+                        if !room_uses_common_state(&room, &room_key, &common) {
                             break;
                         }
-                        timed_out_positions(&guard)
+                        let mut guard = state.lock().unwrap();
+                        resolve_timeout(&room, &room_key, &mut guard, &configs, &mut dispatch)
                     };
-                    if !timed_out.is_empty() {
-                        let mut authorizations = Vec::with_capacity(timed_out.len());
-                        for position in timed_out {
-                            authorizations.push((
-                                position,
-                                position_has_active_membership(&room_service, &room_key, position)
-                                    .await,
-                            ));
-                        }
-                        let mut dispatch = ws_common::Dispatch::default();
-                        {
-                            let room = room_service.lock().await;
-                            if !room_uses_common_state(&room, &room_key, &common) {
-                                break;
-                            }
-                            let mut guard = state.lock().unwrap();
-                            let newly_away = apply_timeout_control(&mut guard, &authorizations);
-                            for (position, is_ai_takeover) in newly_away {
-                                push_room_event(
-                                    &room,
-                                    &room_key,
-                                    &mut dispatch,
-                                    WsCode::AWAY as i32,
-                                    WsPositionEvent {
-                                        position: position as i32,
-                                        is_ai_takeover,
-                                    },
-                                );
-                            }
-                            let resolving_claims = guard.claim_window.is_some();
-                            if resolving_claims {
-                                let _ = maybe_resolve_ai_claims(
-                                    &room,
-                                    &room_key,
-                                    &mut guard,
-                                    &configs,
-                                    &mut dispatch,
-                                );
-                                if let Some(claim_window) = guard.claim_window.as_mut() {
-                                    for position in claim_window.eligible_positions.clone() {
-                                        claim_window
-                                            .responses
-                                            .entry(position)
-                                            .or_insert(ClaimResponse::Pass);
-                                    }
-                                    resolve_claim_window(
-                                        &room,
-                                        &room_key,
-                                        &mut guard,
-                                        &configs,
-                                        &mut dispatch,
-                                    );
-                                }
-                            } else {
-                                let position = guard.current_position;
-                                if !maybe_play_ai_turn(
-                                    &room,
-                                    &room_key,
-                                    &mut guard,
-                                    &configs,
-                                    &mut dispatch,
-                                ) {
-                                    let tile = auto_discard_tile(&guard, position);
-                                    let _ = perform_auto_discard_or_settle(
-                                        &room,
-                                        &room_key,
-                                        &mut guard,
-                                        &configs,
-                                        &mut dispatch,
-                                        position,
-                                        tile,
-                                    );
-                                }
-                            }
-                        }
+                    if timed_out {
                         deliver(dispatch, &senders).await;
                         continue;
                     }
@@ -368,6 +347,9 @@ pub(crate) fn start_game_loop(
                         let guard = state.lock().unwrap();
                         if guard.stop_requested() {
                             break;
+                        }
+                        if guard.phase != ShenyangMahjongPhase::Play || guard.is_paused() {
+                            continue;
                         }
                         let countdown = guard.turn_countdown();
                         if countdown > 0 {
