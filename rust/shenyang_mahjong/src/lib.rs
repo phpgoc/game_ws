@@ -10,7 +10,7 @@ mod ai;
 #[cfg(not(feature = "official"))]
 #[path = "ai_fallback.rs"]
 mod ai;
-#[cfg(feature = "e2e-fixture")]
+#[cfg(feature = "e2e-wall")]
 mod e2e_wall;
 /// WebSocket 请求处理、动作校验和结算事件构造。
 pub mod game;

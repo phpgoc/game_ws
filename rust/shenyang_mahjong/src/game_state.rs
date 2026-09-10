@@ -268,7 +268,7 @@ impl ShenyangMahjongLoopState {
         let seed = self.next_wall_seed();
         self.wall = Self::shuffle_wall_with_seed(seed);
         self.last_wall_seed = Some(seed);
-        #[cfg(feature = "e2e-fixture")]
+        #[cfg(feature = "e2e-wall")]
         if let Some(wall) = crate::e2e_wall::wall_for_fixture(
             std::env::var("SHENYANG_MAHJONG_E2E_WALL").ok().as_deref(),
             self.wall_round_index,
