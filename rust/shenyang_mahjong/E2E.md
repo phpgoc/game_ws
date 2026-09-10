@@ -78,3 +78,28 @@ Web 正常计时的 `hu-expired`、`pending-expired` 和跨局重新发牌三条
 修改建议：继续真实网络延迟请求的浏览器验证和跨局 `round_id/event_seq`；本包证明
 持锁状态迁移的互斥结果，不证明任意网络事件顺序或严格毫秒截止。另需补齐 official
 二进制日志依赖并完成其集成验收；手机/Tauri、历史产物与正式发布观察仍待独立验收。
+
+## official 二进制的日志依赖
+
+修改结果（2026-09-11，第 62 包）：在麻将 crate 中补齐可选 `runtime_common` 和
+`tracing` 依赖，仅由 `official` 特性启用，与现有官方入口及其他游戏的声明一致。
+修复前 official 集成测试编译因入口引用这两个未声明的库而失败；修复后入口成功编译，
+`cargo test -p shenyang_mahjong --features official --test integration_flow --test ai_capability --quiet`
+的四项真实 WS 流程和一项 AI 能力测试全部通过。集成流程使用测试授权 handler，覆盖
+AI 开局、最后真人退出清房、暂离及断线后的超时出牌；不代表生产会员认证或数据库验收。
+
+`cargo test -p shenyang_mahjong --no-default-features --quiet` 的 398 项单测、
+一项能力测试和四项集成测试全部通过，`cargo fmt -p shenyang_mahjong -- --check`
+通过。默认依赖树不启用私有 `data`/`runtime_common` 或新增的直接 `tracing` 依赖；
+`ws_common` 原有的间接 tracing 依赖保持原状。本包不新增环境变量。
+
+官方全量单测实际结果为 1275 通过、2 失败、30 忽略，不能标记为全绿。两项失败为
+`ai::engine::tests::ai_claim_passes_invalid_rob_gang_source` 和
+`official::tests::official_winner_scores_record_every_discard_winner`，分别涉及抢杠来源
+的测试前提及双胡计分期望（实际 8、期望 16），需对照当前规则单独核实。公开 CI 边界
+脚本在本机 BSD grep 上因 `{0,300}` 超出重复上限未通过；本次使用 Cargo 依赖树确认
+默认/official 特性边界，未把它计为 Linux CI 验收。
+
+修改建议：下一包优先核实这两项官方回归，不通过忽略测试或放宽牌局规则消除失败。
+之后继续跨窗口/跨局请求身份与事件顺序保护。WS 在 main 独立提交，主仓库 gitlink
+保持原节点；本包只修复构建前置，不扩大已有 PWA 或正式发布验收结论。
