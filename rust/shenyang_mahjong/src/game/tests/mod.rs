@@ -4,6 +4,7 @@ mod claim;
 mod claim_resolution;
 mod claim_timeout;
 mod claim_updates;
+mod event_sequence;
 mod lifecycle;
 mod self_draw_and_gang;
 mod settlement_fan;
@@ -14,6 +15,7 @@ mod xi_gang;
 
 use std::sync::{Arc, Mutex as StdMutex};
 
+use serde_json::json;
 use ws_common::CommonGameState;
 
 use super::*;

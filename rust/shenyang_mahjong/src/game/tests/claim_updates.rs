@@ -100,7 +100,8 @@ fn partial_rob_gang_responses_refresh_private_options_without_resolving_or_reset
             assert_eq!(state.melds[&0][0].kind, ShenyangMahjongMeldKind::PENG);
             assert!(state.hands[&0].contains(&6));
             for viewer in 0..4 {
-                let event = claim_for(&response, viewer as u64 + 1);
+                let mut event = claim_for(&response, viewer as u64 + 1);
+                assert!(event.event_context.take().is_some());
                 let snapshot =
                     build_table_snapshot_event_with_configs(&state, viewer, &default_configs());
                 assert_eq!(

@@ -72,9 +72,50 @@ pub struct WsShenyangMahjongActionContext {
     pub action_id: u32,
 }
 
+/// Ordered table-event stream for one receiving connection, retained across rounds.
+#[typeshare]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WsShenyangMahjongEventContext {
+    pub stream_id: String,
+    pub event_seq: u32,
+}
+
+#[typeshare]
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, Serialize_repr, Deserialize_repr)]
+#[allow(non_camel_case_types)]
+pub enum ShenyangMahjongRoutes {
+    SYNC_TABLE = 2002,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsShenyangMahjongSyncRequest {
+    pub request_id: String,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsShenyangMahjongStartEvent {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event_context: Option<WsShenyangMahjongEventContext>,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsShenyangMahjongPhaseEvent {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event_context: Option<WsShenyangMahjongEventContext>,
+    pub phase: ShenyangMahjongPhase,
+    pub position: i32,
+    pub turn_countdown: i32,
+}
+
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsShenyangMahjongClaimWindowEvent {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event_context: Option<WsShenyangMahjongEventContext>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub action_context: Option<WsShenyangMahjongActionContext>,
     pub tile: i32,
@@ -90,6 +131,8 @@ pub struct WsShenyangMahjongClaimWindowEvent {
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsShenyangMahjongDealEvent {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event_context: Option<WsShenyangMahjongEventContext>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub action_context: Option<WsShenyangMahjongActionContext>,
     pub my_tiles: Vec<i32>,
@@ -117,6 +160,8 @@ pub struct WsShenyangMahjongMeld {
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsShenyangMahjongPlayEvent {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event_context: Option<WsShenyangMahjongEventContext>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub action_context: Option<WsShenyangMahjongActionContext>,
     pub name: String,
@@ -188,6 +233,8 @@ pub struct WsShenyangMahjongScoreChange {
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsShenyangMahjongSettlementEvent {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event_context: Option<WsShenyangMahjongEventContext>,
     pub winner_positions: Vec<i32>,
     pub from_position: Option<i32>,
     pub win_tile: Option<i32>,
@@ -209,6 +256,12 @@ pub struct WsShenyangMahjongSettlementEvent {
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsShenyangMahjongTableSnapshotEvent {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event_context: Option<WsShenyangMahjongEventContext>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync_request_id: Option<String>,
+    #[serde(default)]
+    pub paused: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub action_context: Option<WsShenyangMahjongActionContext>,
     pub my_tiles: Vec<i32>,

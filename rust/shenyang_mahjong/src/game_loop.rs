@@ -177,6 +177,7 @@ pub(crate) fn resolve_timeout(
         push_room_event(
             room,
             room_key,
+            state,
             dispatch,
             WsCode::AWAY as i32,
             WsPositionEvent {
@@ -272,6 +273,7 @@ pub(crate) fn start_game_loop(
                         push_phase_change(
                             &room,
                             &room_key,
+                            &guard,
                             &mut dispatch,
                             guard.phase,
                             guard.current_position,
@@ -281,6 +283,7 @@ pub(crate) fn start_game_loop(
                         push_room_event(
                             &room,
                             &room_key,
+                            &guard,
                             &mut dispatch,
                             WsCode::CHANGE_DEAL as i32,
                             serde_json::json!({
@@ -380,6 +383,7 @@ pub(crate) fn start_game_loop(
                         push_phase_change(
                             &room,
                             &room_key,
+                            &guard,
                             &mut dispatch,
                             guard.phase,
                             guard.current_position,

@@ -93,6 +93,12 @@ pub struct ShenyangMahjongGameState {
 
 #[derive(Debug)]
 pub struct ShenyangMahjongLoopState {
+    pub(crate) event_streams: Mutex<
+        HashMap<
+            SessionId,
+            share_type_public::games::shenyang_mahjong::WsShenyangMahjongEventContext,
+        >,
+    >,
     action_context: WsShenyangMahjongActionContext,
     context_sessions: HashSet<SessionId>,
     /// 通用房间状态；连接、离线和托管标志由它统一维护。
@@ -464,6 +470,7 @@ impl ShenyangMahjongLoopState {
         };
         Self {
             action_context: Self::new_action_context(),
+            event_streams: Mutex::new(HashMap::new()),
             context_sessions: HashSet::new(),
             base,
             phase: ShenyangMahjongPhase::Start,

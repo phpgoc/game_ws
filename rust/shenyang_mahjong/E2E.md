@@ -153,3 +153,22 @@ handler 在同一牌局锁中比较请求身份，再执行权限/牌型检查�
 修改建议：操作编号不是事件序号；同窗口事件、旧 DEAL/快照、CHANGE_PHASE/GAME_OVER
 和迟到请求响应仍需完整 `event_seq` 与响应关联。继续这些边界及实机/正式发布验收，
 不把本轮标记为任意乱序保护完成。WS 只用 main，主仓库节点不更新。
+
+## 连接事件序号与缺口恢复（2026-09-12，第 66 包）
+
+新增 `event_context={stream_id,event_seq}`。事件序号由实际接收连接独立维护，
+覆盖 START、DEAL、PLAY、CLAIM_WINDOW、CHANGE_PHASE、GAME_OVER 和
+TABLE_SNAPSHOT；同一连接跨局递增，私有快照不会消耗其他连接的序号，计数溢出换用
+新的流标识。既有 `action_context` 仍只负责局和操作窗口身份。
+
+新增 `SYNC_TABLE`（2002）只向调用连接返回完整私有快照，并回显 ASCII、最多 64
+字符的 `sync_request_id`；不改变牌局、倒计时或事件流。四组序号/同步回归覆盖私有
+快照、双胡广播、关联回显和溢出换流；既有快照断言明确忽略传输层字段。
+
+验证：`cargo test -p shenyang_mahjong --no-default-features --quiet` 通过 407 项
+单测、1 项能力和 4 项集成；official 通过 1287 项单测、30 项原有忽略、1 项能力和
+4 项集成；fmt 通过。未新增部署环境变量。此包仍未覆盖正式网络抖动、历史产物、
+手机/Tauri 或发布窗口验收。
+
+修改建议：客户端缺口恢复以完整快照作为新基线，后续仍需把 JOIN/START/PLAY 响应与
+事件统一绑定 request id，并明确断线期间事件流切换的服务端重放边界。

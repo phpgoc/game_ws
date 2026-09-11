@@ -7,7 +7,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use serde_json::{Value, json};
+use serde_json::Value;
 use share_type_public::games::shenyang_mahjong::{
     SHENYANG_MAHJONG_TILE_KINDS, ShenyangMahjongAction, ShenyangMahjongMeldKind,
     ShenyangMahjongPhase, ShenyangMahjongWinPattern, WsShenyangMahjongClaimOption,
@@ -42,6 +42,10 @@ use crate::rules::{
     is_single_wait_shape_with_known_unavailable_tiles_with_context, shenyang_score_four_gui_yi_fan,
     shenyang_score_meld_fan,
 };
+
+mod events;
+mod sync;
+pub(crate) use events::{push_direct_event, push_phase_change, push_room_event};
 
 pub(crate) type LoopStateHandle = Arc<std::sync::Mutex<ShenyangMahjongLoopState>>;
 pub(crate) type LoopStateRegistry = Arc<std::sync::Mutex<HashMap<String, LoopStateHandle>>>;
@@ -87,6 +91,7 @@ pub(crate) fn advance_to_next_turn(
         push_phase_change(
             room_service,
             room_key,
+            state,
             dispatch,
             state.phase,
             state.current_position,
@@ -173,6 +178,7 @@ fn build_claim_window_event_with_options(
 ) -> WsShenyangMahjongClaimWindowEvent {
     let eligible_positions = options.iter().map(|option| option.position).collect();
     WsShenyangMahjongClaimWindowEvent {
+        event_context: None,
         action_context: Some(state.action_context()),
         tile,
         from_position: from_position as i32,
@@ -285,6 +291,7 @@ pub(crate) fn build_settlement_event_with_configs(
     let winner_details = build_winner_details(state, settlement, &score_changes, configs);
 
     Some(WsShenyangMahjongSettlementEvent {
+        event_context: None,
         winner_positions: winner_positions
             .iter()
             .map(|position| *position as i32)
@@ -343,6 +350,9 @@ pub(crate) fn build_table_snapshot_event_with_configs(
     }
 
     WsShenyangMahjongTableSnapshotEvent {
+        event_context: None,
+        sync_request_id: None,
+        paused: state.is_paused(),
         action_context: Some(state.action_context()),
         my_tiles: state
             .hands
@@ -780,6 +790,7 @@ fn draw_after_gang_or_settle(
         push_phase_change(
             room_service,
             room_key,
+            state,
             dispatch,
             state.phase,
             state.current_position,
@@ -827,9 +838,11 @@ fn finish_added_gang(
     push_room_event(
         room_service,
         room_key,
+        state,
         dispatch,
         WsCode::PLAY as i32,
         WsShenyangMahjongPlayEvent {
+            event_context: None,
             action_context: Some(state.action_context()),
             name: state.player_name(position),
             position: position as i32,
@@ -1192,9 +1205,11 @@ pub(crate) fn perform_discard_with_ting(
     push_room_event(
         room_service,
         room_key,
+        state,
         dispatch,
         WsCode::PLAY as i32,
         WsShenyangMahjongPlayEvent {
+            event_context: None,
             action_context: Some(state.action_context()),
             name: state.player_name(position),
             position: position as i32,
@@ -1252,9 +1267,11 @@ pub(crate) fn perform_self_draw_hu(
     push_room_event(
         room_service,
         room_key,
+        state,
         dispatch,
         WsCode::PLAY as i32,
         WsShenyangMahjongPlayEvent {
+            event_context: None,
             action_context: Some(state.action_context()),
             name: state.player_name(position),
             position: position as i32,
@@ -1284,6 +1301,7 @@ pub(crate) fn perform_self_draw_hu(
     push_phase_change(
         room_service,
         room_key,
+        state,
         dispatch,
         ShenyangMahjongPhase::Settlement,
         state.current_position,
@@ -1293,6 +1311,7 @@ pub(crate) fn perform_self_draw_hu(
         push_room_event(
             room_service,
             room_key,
+            state,
             dispatch,
             WsCode::GAME_OVER as i32,
             event,
@@ -1375,9 +1394,11 @@ pub(crate) fn perform_self_gang(
     push_room_event(
         room_service,
         room_key,
+        state,
         dispatch,
         WsCode::PLAY as i32,
         WsShenyangMahjongPlayEvent {
+            event_context: None,
             action_context: Some(state.action_context()),
             name: state.player_name(position),
             position: position as i32,
@@ -1681,6 +1702,7 @@ fn push_claim_window_events(
                 .as_ref()
                 .is_none_or(|window| !window.responses.contains_key(&position));
         push_direct_event(
+            state,
             dispatch,
             session_id,
             WsCode::CLAIM_WINDOW as i32,
@@ -1711,21 +1733,6 @@ fn record_automatic_ting_hu_responses(
         .all(|position| claim_window.responses.contains_key(position))
 }
 
-pub(crate) fn push_direct_event<T: serde::Serialize>(
-    dispatch: &mut Dispatch,
-    session_id: SessionId,
-    code: i32,
-    payload: T,
-) {
-    dispatch.messages.push(Delivery {
-        recipient: session_id,
-        payload: OutboundPayload::Event(share_type_public::CommonEvent {
-            code,
-            data: serde_json::to_value(payload).unwrap_or(Value::Null),
-        }),
-    });
-}
-
 pub(crate) fn push_draw_events(
     _room_service: &RoomService,
     _room_key: &str,
@@ -1745,10 +1752,12 @@ pub(crate) fn push_draw_events(
             Vec::new()
         };
         push_direct_event(
+            state,
             dispatch,
             session_id,
             WsCode::PLAY as i32,
             WsShenyangMahjongPlayEvent {
+                event_context: None,
                 action_context: Some(state.action_context()),
                 name: name.clone(),
                 position: position as i32,
@@ -1781,33 +1790,13 @@ fn push_private_table_snapshot(
 ) {
     if let Some((session_id, _)) = state.players_snapshot().get(&position) {
         push_direct_event(
+            state,
             dispatch,
             *session_id,
             WsCode::TABLE_SNAPSHOT as i32,
             build_table_snapshot_event_with_configs(state, position, configs),
         );
     }
-}
-
-pub(crate) fn push_phase_change(
-    room_service: &RoomService,
-    room_key: &str,
-    dispatch: &mut Dispatch,
-    phase: ShenyangMahjongPhase,
-    current_position: usize,
-    turn_countdown: u32,
-) {
-    push_room_event(
-        room_service,
-        room_key,
-        dispatch,
-        WsCode::CHANGE_PHASE as i32,
-        json!({
-            "phase": phase as i32,
-            "position": current_position as i32,
-            "turn_countdown": turn_countdown as i32,
-        }),
-    );
 }
 
 pub(crate) fn push_private_deal_events(
@@ -1821,10 +1810,12 @@ pub(crate) fn push_private_deal_events(
     for (position, (session_id, _)) in players {
         let my_tiles = state.hands.get(&position).cloned().unwrap_or_default();
         push_direct_event(
+            state,
             dispatch,
             session_id,
             WsCode::DEAL as i32,
             WsShenyangMahjongDealEvent {
+                event_context: None,
                 action_context: Some(state.action_context()),
                 my_tiles,
                 dealer_position: state.dealer_position as i32,
@@ -1842,16 +1833,6 @@ pub(crate) fn push_private_deal_events(
     }
 }
 
-pub(crate) fn push_room_event<T: serde::Serialize>(
-    room_service: &RoomService,
-    room_key: &str,
-    dispatch: &mut Dispatch,
-    code: i32,
-    payload: T,
-) {
-    room_service.broadcast_connected(room_key, code, payload, dispatch);
-}
-
 fn push_xi_gang_events(
     state: &ShenyangMahjongLoopState,
     dispatch: &mut Dispatch,
@@ -1861,10 +1842,12 @@ fn push_xi_gang_events(
     let name = state.player_name(position);
     for (member_position, (session_id, _)) in state.players_snapshot() {
         push_direct_event(
+            state,
             dispatch,
             session_id,
             WsCode::PLAY as i32,
             WsShenyangMahjongPlayEvent {
+                event_context: None,
                 action_context: Some(state.action_context()),
                 name: name.clone(),
                 position: position as i32,
@@ -2011,9 +1994,11 @@ pub(crate) fn resolve_claim_window(
             push_room_event(
                 room_service,
                 room_key,
+                state,
                 dispatch,
                 WsCode::PLAY as i32,
                 WsShenyangMahjongPlayEvent {
+                    event_context: None,
                     action_context: Some(state.action_context()),
                     name: state.player_name(*winner),
                     position: *winner as i32,
@@ -2041,6 +2026,7 @@ pub(crate) fn resolve_claim_window(
         push_phase_change(
             room_service,
             room_key,
+            state,
             dispatch,
             ShenyangMahjongPhase::Settlement,
             state.current_position,
@@ -2050,6 +2036,7 @@ pub(crate) fn resolve_claim_window(
             push_room_event(
                 room_service,
                 room_key,
+                state,
                 dispatch,
                 WsCode::GAME_OVER as i32,
                 event,
@@ -2066,6 +2053,7 @@ pub(crate) fn resolve_claim_window(
             push_phase_change(
                 room_service,
                 room_key,
+                state,
                 dispatch,
                 state.phase,
                 state.current_position,
@@ -2112,9 +2100,11 @@ pub(crate) fn resolve_claim_window(
                     push_room_event(
                         room_service,
                         room_key,
+                        state,
                         dispatch,
                         WsCode::PLAY as i32,
                         WsShenyangMahjongPlayEvent {
+                            event_context: None,
                             action_context: Some(state.action_context()),
                             name: state.player_name(winner),
                             position: winner as i32,
@@ -2132,6 +2122,7 @@ pub(crate) fn resolve_claim_window(
                     push_phase_change(
                         room_service,
                         room_key,
+                        state,
                         dispatch,
                         state.phase,
                         state.current_position,
@@ -2167,9 +2158,11 @@ pub(crate) fn resolve_claim_window(
                 push_room_event(
                     room_service,
                     room_key,
+                    state,
                     dispatch,
                     WsCode::PLAY as i32,
                     WsShenyangMahjongPlayEvent {
+                        event_context: None,
                         action_context: Some(state.action_context()),
                         name: state.player_name(winner),
                         position: winner as i32,
@@ -2198,6 +2191,7 @@ pub(crate) fn resolve_claim_window(
                     push_phase_change(
                         room_service,
                         room_key,
+                        state,
                         dispatch,
                         state.phase,
                         state.current_position,
@@ -2237,9 +2231,11 @@ pub(crate) fn resolve_claim_window(
             push_room_event(
                 room_service,
                 room_key,
+                state,
                 dispatch,
                 WsCode::PLAY as i32,
                 WsShenyangMahjongPlayEvent {
+                    event_context: None,
                     action_context: Some(state.action_context()),
                     name: state.player_name(winner),
                     position: winner as i32,
@@ -2257,6 +2253,7 @@ pub(crate) fn resolve_claim_window(
             push_phase_change(
                 room_service,
                 room_key,
+                state,
                 dispatch,
                 state.phase,
                 state.current_position,
@@ -2307,6 +2304,7 @@ pub(crate) fn settle_draw(
     push_phase_change(
         room_service,
         room_key,
+        state,
         dispatch,
         ShenyangMahjongPhase::Settlement,
         state.current_position,
@@ -2316,6 +2314,7 @@ pub(crate) fn settle_draw(
         push_room_event(
             room_service,
             room_key,
+            state,
             dispatch,
             WsCode::GAME_OVER as i32,
             event,

@@ -1,4 +1,7 @@
 use super::*;
+use share_type_public::games::shenyang_mahjong::{
+    ShenyangMahjongRoutes, WsShenyangMahjongStartEvent,
+};
 
 impl ShenyangMahjongGameHandler {
     pub(super) fn current_loop_state(
@@ -443,18 +446,22 @@ impl ShenyangMahjongGameHandler {
         {
             start_game_loop(
                 room_key.clone(),
-                loop_state,
+                Arc::clone(&loop_state),
                 Arc::clone(room_service_arc),
                 Arc::clone(senders_arc),
                 Arc::clone(&self.loop_states),
             );
         }
 
-        room_service.broadcast(
+        push_room_event(
+            room_service,
             &room_key,
-            WsCode::START as i32,
-            serde_json::json!({}),
+            &loop_state.lock().unwrap(),
             &mut dispatch,
+            WsCode::START as i32,
+            WsShenyangMahjongStartEvent {
+                event_context: None,
+            },
         );
         room_service.push_ok_response(&mut dispatch, session_id, Routes::START as i32);
         dispatch
@@ -532,10 +539,8 @@ impl GameHandler for ShenyangMahjongGameHandler {
         };
         let configs = room_service.room_configs(&room_key).unwrap_or_default();
         let state = loop_state.lock().unwrap();
-        if state.phase == ShenyangMahjongPhase::Start {
-            return;
-        }
         push_direct_event(
+            &state,
             dispatch,
             session_id,
             WsCode::TABLE_SNAPSHOT as i32,
@@ -562,6 +567,9 @@ impl GameHandler for ShenyangMahjongGameHandler {
         request: ClientRequest,
     ) -> Dispatch {
         match request.route {
+            r if r == ShenyangMahjongRoutes::SYNC_TABLE as i32 => {
+                self.handle_sync_table(room_service, session_id, request.data)
+            }
             r if r == Routes::START as i32 => self.handle_start(room_service, session_id),
             r if r == Routes::PLAY as i32 => {
                 self.handle_play(room_service, session_id, request.data)
