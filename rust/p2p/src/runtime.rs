@@ -380,6 +380,7 @@ async fn handle_connection(
                 send_serialized(
                     &sender,
                     &WsWithoutDataResponse {
+                        request_id: None,
                         route: 0,
                         code: WsResponseCode::ERROR_FORMAT,
                     },
@@ -580,6 +581,7 @@ async fn join_room(
     let mut deliveries = vec![serialized_delivery(
         sender.clone(),
         &WsResponse {
+            request_id: None,
             route: P2pRoutes::JOIN as i32,
             code: WsResponseCode::JOINED,
             data: WsP2pJoinResponse {
@@ -683,7 +685,14 @@ async fn leave_room(state: &Arc<Mutex<SignalingState>>, session_id: SessionId) -
 }
 
 fn response_delivery(sender: Sender, route: i32, code: WsResponseCode) -> Delivery {
-    serialized_delivery(sender, &WsWithoutDataResponse { route, code })
+    serialized_delivery(
+        sender,
+        &WsWithoutDataResponse {
+            request_id: None,
+            route,
+            code,
+        },
+    )
 }
 
 pub async fn run_p2p_listener(

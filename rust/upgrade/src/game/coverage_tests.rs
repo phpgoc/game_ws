@@ -301,6 +301,7 @@ fn rules_conversion_and_state_adapter_keep_the_upgrade_contract() {
         recipient: 7,
         payload: OutboundPayload::Response(RequestResponse::WithData(
             share_type_public::ws::WsResponse {
+                request_id: None,
                 route: Routes::JOIN as i32,
                 code: WsResponseCode::JOINED,
                 data: json!({}),
@@ -486,6 +487,7 @@ fn rejoin_preserves_the_remaining_operation_countdown() {
             recipient: 1,
             payload: OutboundPayload::Response(RequestResponse::WithData(
                 share_type_public::ws::WsResponse {
+                    request_id: None,
                     route: Routes::JOIN as i32,
                     code: WsResponseCode::JOINED,
                     data: json!({}),
@@ -517,6 +519,7 @@ fn settlement_rejoin_restores_the_game_over_event() {
         recipient: 1,
         payload: OutboundPayload::Response(RequestResponse::WithData(
             share_type_public::ws::WsResponse {
+                request_id: None,
                 route: Routes::JOIN as i32,
                 code: WsResponseCode::JOINED,
                 data: json!({}),

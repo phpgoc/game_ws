@@ -255,7 +255,11 @@ impl RoomService {
         Delivery {
             recipient,
             payload: OutboundPayload::Response(RequestResponse::WithoutData(
-                WsWithoutDataResponse { route, code },
+                WsWithoutDataResponse {
+                    request_id: None,
+                    route,
+                    code,
+                },
             )),
         }
     }
@@ -1554,6 +1558,7 @@ impl RoomService {
         dispatch.messages.push(Delivery {
             recipient: session_id,
             payload: OutboundPayload::Response(RequestResponse::WithData(WsResponse {
+                request_id: None,
                 route,
                 code,
                 data: serde_json::to_value(data).unwrap_or(Value::Null),

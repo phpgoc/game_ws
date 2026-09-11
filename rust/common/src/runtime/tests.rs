@@ -145,6 +145,7 @@ async fn delivery_ignores_unknown_or_closed_session_queues() {
                 recipient: 1,
                 payload: OutboundPayload::Response(RequestResponse::WithoutData(
                     WsWithoutDataResponse {
+                        request_id: None,
                         route: 2,
                         code: WsResponseCode::OK,
                     },
@@ -154,6 +155,7 @@ async fn delivery_ignores_unknown_or_closed_session_queues() {
                 recipient: 2,
                 payload: OutboundPayload::Response(RequestResponse::WithoutData(
                     WsWithoutDataResponse {
+                        request_id: None,
                         route: 2,
                         code: WsResponseCode::OK,
                     },

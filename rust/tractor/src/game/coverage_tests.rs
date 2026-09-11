@@ -21,6 +21,7 @@ fn join_request(name: &str) -> ClientRequest {
     ClientRequest {
         route: Routes::JOIN as i32,
         data: serde_json::to_value(WsJoinRequest {
+            request_id: None,
             name: name.to_owned(),
             password: ROOM_KEY.to_owned(),
             game_id: GameId::TRACTOR,
@@ -230,6 +231,7 @@ fn handler_state_adapter_and_join_response_helpers_follow_the_common_contract() 
         recipient: 7,
         payload: OutboundPayload::Response(RequestResponse::WithData(
             share_type_public::ws::WsResponse {
+                request_id: None,
                 route: Routes::JOIN as i32,
                 code: WsResponseCode::JOINED,
                 data: json!({}),
@@ -436,6 +438,7 @@ fn rejoin_preserves_the_remaining_operation_countdown() {
             recipient: 1,
             payload: OutboundPayload::Response(RequestResponse::WithData(
                 share_type_public::ws::WsResponse {
+                    request_id: None,
                     route: Routes::JOIN as i32,
                     code: WsResponseCode::JOINED,
                     data: json!({}),

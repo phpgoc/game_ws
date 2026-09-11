@@ -141,6 +141,9 @@ pub struct WsRequest<T> {
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsResponse<T> {
+    /// 请求关联标识；旧服务端响应可省略。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
     pub route: i32,
     pub code: WsResponseCode,
     pub data: T,
@@ -171,6 +174,9 @@ pub struct WsWithoutDataRequest {
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsWithoutDataResponse {
+    /// 请求关联标识；旧服务端响应可省略。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
     pub route: i32,
     pub code: WsResponseCode,
 }

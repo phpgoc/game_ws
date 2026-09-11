@@ -28,7 +28,8 @@ use tokio_tungstenite::{
 use tracing::{debug, error, warn};
 
 use crate::{
-    ClientRequest, Dispatch, RoomService, SessionId, SettingsBuilderResult,
+    ClientRequest, Dispatch, OutboundPayload, RequestResponse, RoomService, SessionId,
+    SettingsBuilderResult,
     cli::parse_bind_cli,
     from_message,
     net::{resolve_host, resolve_port},
@@ -352,6 +353,8 @@ where
             .lock()
             .await
             .normalize_common_request(&mut request);
+        let request_route = request.route;
+        let request_data = request.data.clone();
 
         let parsed_join = (request.route == share_type_public::Routes::JOIN as i32)
             .then(|| {
@@ -436,6 +439,8 @@ where
             }
         };
 
+        let mut dispatch = dispatch;
+        annotate_request_id(&mut dispatch, session_id, request_route, &request_data);
         deliver(dispatch, &senders).await?;
     }
 
@@ -455,6 +460,41 @@ where
     heartbeat.abort();
     writer.abort();
     Ok(())
+}
+
+/// 将请求 payload 中的可选 request_id 回显到同一路由的私有响应，覆盖
+/// common handler 和具体游戏 handler 的成功、失败分支。
+fn annotate_request_id(
+    dispatch: &mut Dispatch,
+    session_id: SessionId,
+    route: i32,
+    data: &serde_json::Value,
+) {
+    let Some(request_id) = data
+        .get("request_id")
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.is_empty() && value.len() <= 64 && value.is_ascii())
+    else {
+        return;
+    };
+    for delivery in &mut dispatch.messages {
+        if delivery.recipient != session_id {
+            continue;
+        }
+        match &mut delivery.payload {
+            OutboundPayload::Response(RequestResponse::WithoutData(response))
+                if response.route == route =>
+            {
+                response.request_id = Some(request_id.to_owned());
+            }
+            OutboundPayload::Response(RequestResponse::WithData(response))
+                if response.route == route =>
+            {
+                response.request_id = Some(request_id.to_owned());
+            }
+            _ => {}
+        }
+    }
 }
 
 async fn run_game_server<H>(
@@ -710,6 +750,7 @@ mod tests {
     use std::{collections::HashMap, sync::mpsc::sync_channel, time::Duration};
 
     use share_type_public::GameId;
+    use share_type_public::{WsResponseCode, WsWithoutDataResponse};
     use tokio_tungstenite::tungstenite::Message;
 
     use crate::{
@@ -718,7 +759,8 @@ mod tests {
 
     use super::{
         GameHandler, INBOUND_MESSAGE_BURST, MessageRateLimiter, RuntimeConfig, SessionSendError,
-        run_room_runtime_until_stopped_with_ready, runtime_stop_channel, session_sender_channel,
+        annotate_request_id, run_room_runtime_until_stopped_with_ready, runtime_stop_channel,
+        session_sender_channel,
     };
 
     pub(super) struct TestHandler;
@@ -730,6 +772,34 @@ mod tests {
             assert!(limiter.allow());
         }
         assert!(!limiter.allow());
+    }
+
+    #[test]
+    fn request_id_is_echoed_on_private_response_only() {
+        let mut dispatch = Dispatch {
+            messages: vec![crate::Delivery {
+                recipient: 7,
+                payload: crate::OutboundPayload::Response(crate::RequestResponse::WithoutData(
+                    WsWithoutDataResponse {
+                        request_id: None,
+                        route: 10,
+                        code: WsResponseCode::NO_PERMISSION,
+                    },
+                )),
+            }],
+        };
+        annotate_request_id(
+            &mut dispatch,
+            7,
+            10,
+            &serde_json::json!({"request_id": "req-1"}),
+        );
+        let crate::OutboundPayload::Response(crate::RequestResponse::WithoutData(response)) =
+            &dispatch.messages[0].payload
+        else {
+            panic!("expected response");
+        };
+        assert_eq!(response.request_id.as_deref(), Some("req-1"));
     }
 
     #[tokio::test]

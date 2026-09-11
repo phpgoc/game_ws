@@ -180,3 +180,11 @@ TABLE_SNAPSHOT；同一连接跨局递增，私有快照不会消耗其他连接
 `ws/main` 的麻将 JOIN、START、PLAY、SYNC_TABLE 请求可在 payload 中携带 `request_id`。服务端成功响应回显该标识，Web 控制器据此匹配 pending；错配响应不会释放当前请求，旧客户端省略标识时继续走兼容路径。request_id 不进入事件序号或 action_context，三者职责保持独立。
 
 修改建议：继续覆盖错误响应的 request_id 回显、跨连接迟到响应和历史发布产物；本包不代表 common 层全部路由或手机/Tauri 已完成统一关联验收。
+
+
+
+## WS envelope 请求关联回显（第 68 包）
+
+公共 WS 响应 envelope 的 `request_id` 现在由 runtime 根据请求 payload 自动回显，限定在同一 session 和同一路由，成功与错误响应均适用。麻将 payload 中的请求 ID、`event_context` 和 `action_context` 继续分别承担响应关联、事件顺序和操作窗口身份。
+
+新增 ws_common 回归覆盖私有响应回显；旧客户端未携带标识时线协议保持兼容。修改建议：下一步让 common 客户端统一发送请求 ID，并补跨游戏/跨连接乱序与历史发布产物验证。
