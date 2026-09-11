@@ -188,3 +188,11 @@ TABLE_SNAPSHOT；同一连接跨局递增，私有快照不会消耗其他连接
 公共 WS 响应 envelope 的 `request_id` 现在由 runtime 根据请求 payload 自动回显，限定在同一 session 和同一路由，成功与错误响应均适用。麻将 payload 中的请求 ID、`event_context` 和 `action_context` 继续分别承担响应关联、事件顺序和操作窗口身份。
 
 新增 ws_common 回归覆盖私有响应回显；旧客户端未携带标识时线协议保持兼容。修改建议：下一步让 common 客户端统一发送请求 ID，并补跨游戏/跨连接乱序与历史发布产物验证。
+
+
+
+## 麻将 common 命令请求关联（第 69 包）
+
+麻将控制器为所有带 pending 的 common 命令生成 request ID，无 data 路由也通过兼容 payload 携带；runtime 负责将其回显到同 session、同路由的成功或错误响应。事件序号与操作窗口身份仍保持独立。前端暂停命令回归确认 payload 已带关联标识。
+
+修改建议：继续迁移其他游戏控制器，并补跨连接迟到响应、历史发布服务端及移动/Tauri 实机验收。
