@@ -42,6 +42,7 @@ fn join_request(name: &str) -> ClientRequest {
     ClientRequest {
         route: Routes::JOIN as i32,
         data: serde_json::to_value(WsJoinRequest {
+            request_id: None,
             name: name.to_owned(),
             password: "room".to_owned(),
             game_id: GameId::TEXAS_HOLD_EM,

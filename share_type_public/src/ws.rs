@@ -32,6 +32,9 @@ pub struct WsCreateResponse {
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsJoinRequest {
+    /// 请求关联标识；旧客户端可省略。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
     pub name: String,
     pub password: String,
     #[serde(default)]
@@ -48,6 +51,9 @@ pub struct WsJoinRequest {
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsJoinResponse {
+    /// 回显 JOIN 请求关联标识；旧服务端响应可省略。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
     pub self_position: i32,
     /// 当前 WS Server 是否支持服务端 AI 玩家。
     #[serde(default)]

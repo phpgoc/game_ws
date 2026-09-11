@@ -94,6 +94,20 @@ pub struct WsShenyangMahjongSyncRequest {
     pub request_id: String,
 }
 
+/// START/PLAY 成功或失败响应使用的请求关联标识。
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsShenyangMahjongRequestAck {
+    pub request_id: String,
+}
+
+/// 带请求关联标识的 START 请求。
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsShenyangMahjongStartRequest {
+    pub request_id: String,
+}
+
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsShenyangMahjongStartEvent {
@@ -182,6 +196,9 @@ pub struct WsShenyangMahjongPlayEvent {
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsShenyangMahjongPlayRequest {
+    /// 请求关联标识；旧客户端可省略。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
     /// Echo the context received from this server; omission supports legacy clients only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub action_context: Option<WsShenyangMahjongActionContext>,

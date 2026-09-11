@@ -1,6 +1,7 @@
 use super::*;
 use share_type_public::games::shenyang_mahjong::{
-    ShenyangMahjongRoutes, WsShenyangMahjongStartEvent,
+    ShenyangMahjongRoutes, WsShenyangMahjongRequestAck, WsShenyangMahjongStartEvent,
+    WsShenyangMahjongStartRequest,
 };
 
 impl ShenyangMahjongGameHandler {
@@ -344,15 +345,39 @@ impl ShenyangMahjongGameHandler {
             }
         }
 
-        room_service.push_ok_response(&mut dispatch, session_id, Routes::PLAY as i32);
+        if let Some(request_id) = payload.request_id.filter(|id| !id.is_empty()) {
+            room_service.push_response_with_data(
+                session_id,
+                Routes::PLAY as i32,
+                WsResponseCode::OK,
+                WsShenyangMahjongRequestAck { request_id },
+                &mut dispatch,
+            );
+        } else {
+            room_service.push_ok_response(&mut dispatch, session_id, Routes::PLAY as i32);
+        }
         dispatch
     }
 
+    #[cfg(test)]
     pub(super) fn handle_start(
         &mut self,
         room_service: &mut RoomService,
         session_id: SessionId,
     ) -> Dispatch {
+        self.handle_start_with_data(room_service, session_id, serde_json::json!({}))
+    }
+
+    fn handle_start_with_data(
+        &mut self,
+        room_service: &mut RoomService,
+        session_id: SessionId,
+        data: Value,
+    ) -> Dispatch {
+        let request_id = serde_json::from_value::<WsShenyangMahjongStartRequest>(data)
+            .ok()
+            .map(|request| request.request_id)
+            .filter(|request_id| !request_id.is_empty());
         let Some(position) = room_service.session_position(session_id) else {
             return room_service.error_response(
                 session_id,
@@ -463,7 +488,17 @@ impl ShenyangMahjongGameHandler {
                 event_context: None,
             },
         );
-        room_service.push_ok_response(&mut dispatch, session_id, Routes::START as i32);
+        if let Some(request_id) = request_id {
+            room_service.push_response_with_data(
+                session_id,
+                Routes::START as i32,
+                WsResponseCode::OK,
+                WsShenyangMahjongRequestAck { request_id },
+                &mut dispatch,
+            );
+        } else {
+            room_service.push_ok_response(&mut dispatch, session_id, Routes::START as i32);
+        }
         dispatch
     }
 
@@ -570,7 +605,9 @@ impl GameHandler for ShenyangMahjongGameHandler {
             r if r == ShenyangMahjongRoutes::SYNC_TABLE as i32 => {
                 self.handle_sync_table(room_service, session_id, request.data)
             }
-            r if r == Routes::START as i32 => self.handle_start(room_service, session_id),
+            r if r == Routes::START as i32 => {
+                self.handle_start_with_data(room_service, session_id, request.data)
+            }
             r if r == Routes::PLAY as i32 => {
                 self.handle_play(room_service, session_id, request.data)
             }

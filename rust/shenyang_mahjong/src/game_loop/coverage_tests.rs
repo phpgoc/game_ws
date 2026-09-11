@@ -28,6 +28,7 @@ fn join_request(name: &str) -> ClientRequest {
     ClientRequest {
         route: Routes::JOIN as i32,
         data: serde_json::to_value(WsJoinRequest {
+            request_id: None,
             name: name.to_string(),
             password: "room".to_string(),
             game_id: GameId::SHENYANG_MAHJONG,

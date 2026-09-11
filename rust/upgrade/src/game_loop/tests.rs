@@ -13,6 +13,7 @@ fn room_with_common(room_key: &str) -> (RoomService, Arc<std::sync::Mutex<Common
     let request = ClientRequest {
         route: Routes::JOIN as i32,
         data: serde_json::to_value(WsJoinRequest {
+            request_id: None,
             name: "owner".to_owned(),
             password: room_key.to_owned(),
             game_id: GameId::UPGRADE,

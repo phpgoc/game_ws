@@ -172,3 +172,11 @@ TABLE_SNAPSHOT；同一连接跨局递增，私有快照不会消耗其他连接
 
 修改建议：客户端缺口恢复以完整快照作为新基线，后续仍需把 JOIN/START/PLAY 响应与
 事件统一绑定 request id，并明确断线期间事件流切换的服务端重放边界。
+
+
+
+## 请求与响应关联（第 67 包）
+
+`ws/main` 的麻将 JOIN、START、PLAY、SYNC_TABLE 请求可在 payload 中携带 `request_id`。服务端成功响应回显该标识，Web 控制器据此匹配 pending；错配响应不会释放当前请求，旧客户端省略标识时继续走兼容路径。request_id 不进入事件序号或 action_context，三者职责保持独立。
+
+修改建议：继续覆盖错误响应的 request_id 回显、跨连接迟到响应和历史发布产物；本包不代表 common 层全部路由或手机/Tauri 已完成统一关联验收。

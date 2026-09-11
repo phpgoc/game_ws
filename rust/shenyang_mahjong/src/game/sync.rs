@@ -1,6 +1,6 @@
 use super::*;
 use share_type_public::games::shenyang_mahjong::{
-    ShenyangMahjongRoutes, WsShenyangMahjongSyncRequest,
+    ShenyangMahjongRoutes, WsShenyangMahjongRequestAck, WsShenyangMahjongSyncRequest,
 };
 
 impl ShenyangMahjongGameHandler {
@@ -33,6 +33,7 @@ impl ShenyangMahjongGameHandler {
         let configs = room.room_configs(&room_key).unwrap_or_default();
         let mut snapshot = build_table_snapshot_event_with_configs(&state, position, &configs);
         snapshot.sync_request_id = Some(request.request_id);
+        let request_id = snapshot.sync_request_id.clone().unwrap_or_default();
         let mut dispatch = Dispatch::default();
         push_direct_event(
             &state,
@@ -41,7 +42,13 @@ impl ShenyangMahjongGameHandler {
             WsCode::TABLE_SNAPSHOT as i32,
             snapshot,
         );
-        room.push_ok_response(&mut dispatch, session_id, route);
+        room.push_response_with_data(
+            session_id,
+            route,
+            WsResponseCode::OK,
+            WsShenyangMahjongRequestAck { request_id },
+            &mut dispatch,
+        );
         dispatch
     }
 }

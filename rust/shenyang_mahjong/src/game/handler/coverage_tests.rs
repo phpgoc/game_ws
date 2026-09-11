@@ -17,6 +17,7 @@ fn join_request(name: &str) -> ClientRequest {
     ClientRequest {
         route: Routes::JOIN as i32,
         data: serde_json::to_value(WsJoinRequest {
+            request_id: None,
             name: name.to_owned(),
             password: ROOM_KEY.to_owned(),
             game_id: GameId::SHENYANG_MAHJONG,
@@ -39,6 +40,7 @@ fn join(room: &mut RoomService, session_id: u64) {
 
 fn play_request(action: ShenyangMahjongAction) -> Value {
     serde_json::to_value(WsShenyangMahjongPlayRequest {
+        request_id: None,
         action_context: None,
         action,
         tiles: Vec::new(),

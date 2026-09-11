@@ -91,6 +91,7 @@ async fn default_game_handler_hooks_keep_nonmember_rooms_enabled() {
 
     let authorization = handler
         .authorize_join(&WsJoinRequest {
+            request_id: None,
             name: "player".to_owned(),
             password: "room".to_owned(),
             game_id: GameId::LANDLORD,

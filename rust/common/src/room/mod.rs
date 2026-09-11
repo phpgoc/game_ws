@@ -753,6 +753,7 @@ impl RoomService {
         };
         let password = payload.password;
         let name = payload.name;
+        let request_id = payload.request_id;
         let official_session_id = (!payload.session_id.is_empty()).then_some(payload.session_id);
         let avatar_url = payload.avatar_url;
         if !accepts_game_id(payload.game_id) {
@@ -810,6 +811,7 @@ impl RoomService {
                         Routes::JOIN as i32,
                         WsResponseCode::JOINED,
                         share_type_public::WsJoinResponse {
+                            request_id: request_id.clone(),
                             self_position: position as i32,
                             supports_ai_players: self.ai_players_enabled,
                             paused: entry.state.is_paused(),
@@ -940,6 +942,7 @@ impl RoomService {
                 Routes::JOIN as i32,
                 WsResponseCode::JOINED,
                 share_type_public::WsJoinResponse {
+                    request_id: request_id.clone(),
                     self_position: position as i32,
                     supports_ai_players: self.ai_players_enabled,
                     paused: entry.state.is_paused(),
@@ -1065,6 +1068,7 @@ impl RoomService {
                 Routes::JOIN as i32,
                 WsResponseCode::JOINED,
                 share_type_public::WsJoinResponse {
+                    request_id: request_id.clone(),
                     self_position: position as i32,
                     supports_ai_players: self.ai_players_enabled,
                     paused: entry.state.is_paused(),

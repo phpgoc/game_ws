@@ -150,6 +150,7 @@ mod tests {
         ClientRequest {
             route: Routes::JOIN as i32,
             data: serde_json::to_value(WsJoinRequest {
+                request_id: None,
                 name: name.to_owned(),
                 password: "official-holdem-room".to_owned(),
                 game_id: GameId::TEXAS_HOLD_EM,
