@@ -71,6 +71,9 @@ pub struct WsP2pIceServer {
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WsP2pJoinRequest {
+    /// 请求关联标识；旧客户端可省略。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
     pub game: String,
     pub room: String,
     pub name: String,
@@ -81,6 +84,9 @@ pub struct WsP2pJoinRequest {
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WsP2pNetworkResultRequest {
+    /// 请求关联标识；旧客户端可省略。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
     pub direct: bool,
 }
 
@@ -140,6 +146,9 @@ pub struct WsP2pSignalEvent {
 #[typeshare]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WsP2pSignalRequest {
+    /// 请求关联标识；旧客户端可省略。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
     pub target_position: i32,
     pub kind: P2pSignalKind,
     #[serde(skip_serializing_if = "Option::is_none")]

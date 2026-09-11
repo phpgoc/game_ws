@@ -388,7 +388,9 @@ async fn handle_connection(
                 continue;
             }
         };
-        let deliveries = handle_request(
+        let request_route = request.route;
+        let request_data = request.data.clone();
+        let mut deliveries = handle_request(
             &state,
             &ice_config,
             &options,
@@ -397,6 +399,7 @@ async fn handle_connection(
             request,
         )
         .await;
+        annotate_request_id(&mut deliveries, request_route, &request_data);
         deliver(deliveries);
     }
 
@@ -461,6 +464,31 @@ async fn handle_request(
             route,
             WsResponseCode::NOT_IN_RANGE,
         )],
+    }
+}
+
+/// 将请求 payload 中的合法 request_id 回显到同一路由的响应 envelope。
+/// 事件消息没有 route，因此不会被错误地标记。
+fn annotate_request_id(deliveries: &mut [Delivery], route: i32, data: &Value) {
+    let Some(request_id) = data
+        .get("request_id")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty() && value.len() <= 64 && value.is_ascii())
+    else {
+        return;
+    };
+    for delivery in deliveries {
+        let Message::Text(text) = &mut delivery.message else {
+            continue;
+        };
+        let Ok(mut value) = serde_json::from_str::<Value>(text) else {
+            continue;
+        };
+        if value.get("route").and_then(Value::as_i64) != Some(route as i64) {
+            continue;
+        }
+        value["request_id"] = Value::String(request_id.to_owned());
+        *text = value.to_string().into();
     }
 }
 
@@ -943,6 +971,36 @@ mod tests {
         .expect("ICE config")
     }
 
+    #[test]
+    fn request_id_annotation_marks_only_matching_response_route() {
+        let (sender, _receiver) = channel();
+        let mut deliveries = vec![
+            Delivery {
+                sender: sender.clone(),
+                message: Message::Text(r#"{"route":5001,"code":201,"data":{}}"#.to_owned().into()),
+            },
+            Delivery {
+                sender,
+                message: Message::Text(r#"{"code":5002,"data":{}}"#.to_owned().into()),
+            },
+        ];
+        annotate_request_id(
+            &mut deliveries,
+            5001,
+            &serde_json::json!({"request_id":"p2p-1"}),
+        );
+        let response = match &deliveries[0].message {
+            Message::Text(text) => serde_json::from_str::<Value>(text).expect("response JSON"),
+            _ => panic!("expected text response"),
+        };
+        let event = match &deliveries[1].message {
+            Message::Text(text) => serde_json::from_str::<Value>(text).expect("event JSON"),
+            _ => panic!("expected text event"),
+        };
+        assert_eq!(response["request_id"], "p2p-1");
+        assert!(event.get("request_id").is_none());
+    }
+
     #[tokio::test]
     async fn room_is_limited_to_two_and_disconnect_notifies_peer() {
         let state = Arc::new(Mutex::new(SignalingState::default()));
@@ -963,6 +1021,7 @@ mod tests {
                     session,
                     sender,
                     WsP2pJoinRequest {
+                        request_id: None,
                         game: "game_a".into(),
                         room: "room".into(),
                         name: name.into(),
@@ -998,6 +1057,7 @@ mod tests {
         let (red_sender, mut red_rx) = channel();
         let (black_sender, mut black_rx) = channel();
         let red = WsP2pJoinRequest {
+            request_id: None,
             game: "game_a".into(),
             room: "room".into(),
             name: "red".into(),
@@ -1005,6 +1065,7 @@ mod tests {
         };
         deliver(join_room(&state, &ice_config(), &options, 1, red_sender.clone(), red).await);
         let black = WsP2pJoinRequest {
+            request_id: None,
             game: "game_a".into(),
             room: "room".into(),
             name: "black".into(),
@@ -1047,6 +1108,7 @@ mod tests {
         );
 
         let signal = WsP2pSignalRequest {
+            request_id: None,
             target_position: 1,
             kind: P2pSignalKind::OFFER,
             sdp: Some("v=0".into()),
