@@ -107,6 +107,7 @@ fn build_auto_bury_dispatch(
             state.rules.bottom_card_count,
             state.hands.get(&position).cloned().unwrap_or_default(),
             state.snapshot(),
+            state.round_index,
             trump_declaration,
         ))
     };
@@ -119,7 +120,8 @@ fn build_auto_bury_dispatch(
             &mut dispatch,
         );
     }
-    let Some((position, name, bottom_card_count, hand, snapshot, trump_declaration)) = result
+    let Some((position, name, bottom_card_count, hand, snapshot, round_index, trump_declaration)) =
+        result
     else {
         return dispatch;
     };
@@ -150,6 +152,7 @@ fn build_auto_bury_dispatch(
                 WsTractorHandEvent {
                     position: position as i32,
                     cards: hand.clone(),
+                    round_index: Some(round_index),
                 },
             );
         }
@@ -670,6 +673,7 @@ pub(crate) fn start_game_loop(
                                     WsTractorHandEvent {
                                         position: position as i32,
                                         cards: Vec::new(),
+                                        round_index: None,
                                     },
                                 );
                             }

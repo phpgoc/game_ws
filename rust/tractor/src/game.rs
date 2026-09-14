@@ -174,6 +174,7 @@ impl TractorGameHandler {
             WsTractorHandEvent {
                 position: position as i32,
                 cards: hand,
+                round_index: Some(state.lock().unwrap().round_index),
             },
         );
         room_service.broadcast(
@@ -662,6 +663,7 @@ impl GameHandler for TractorGameHandler {
                 WsTractorHandEvent {
                     position: position as i32,
                     cards: Vec::new(),
+                    round_index: None,
                 },
             );
             dispatch.messages.push(Delivery {
@@ -700,6 +702,7 @@ impl GameHandler for TractorGameHandler {
             WsTractorHandEvent {
                 position: position as i32,
                 cards: hand,
+                round_index: Some(state.lock().unwrap().round_index),
             },
         );
         dispatch.messages.push(Delivery {

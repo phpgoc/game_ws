@@ -137,7 +137,9 @@ impl UpgradeGameHandler {
         let Some(position) = room_service.session_position(session_id) else {
             return;
         };
-        let hand = state.lock().unwrap().private_hand(position);
+        let state_guard = state.lock().unwrap();
+        let hand = state_guard.private_hand(position);
+        let round_index = state_guard.round_index;
         Self::push_private_event(
             dispatch,
             session_id,
@@ -145,6 +147,7 @@ impl UpgradeGameHandler {
             WsUpgradeHandEvent {
                 position: position as i32,
                 cards: hand,
+                round_index: Some(round_index),
             },
         );
     }
@@ -300,6 +303,7 @@ impl UpgradeGameHandler {
         };
         let snapshot = state_guard.snapshot();
         let hand = state_guard.private_hand(position);
+        let round_index = state_guard.round_index;
         drop(state_guard);
         let mut dispatch = Dispatch::default();
         room_service.broadcast(
@@ -315,6 +319,7 @@ impl UpgradeGameHandler {
             WsUpgradeHandEvent {
                 position: position as i32,
                 cards: hand,
+                round_index: Some(round_index),
             },
         );
         room_service.broadcast(
@@ -548,6 +553,7 @@ impl GameHandler for UpgradeGameHandler {
                 WsUpgradeHandEvent {
                     position: position as i32,
                     cards: Vec::new(),
+                    round_index: None,
                 },
             );
             dispatch.messages.push(Delivery {

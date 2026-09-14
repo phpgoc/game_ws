@@ -207,6 +207,7 @@ fn build_lobby_dispatch(
             WsUpgradeHandEvent {
                 position: position as i32,
                 cards: Vec::new(),
+                round_index: None,
             },
         );
     }
@@ -294,6 +295,7 @@ fn build_deal_dispatch(
                 WsUpgradeHandEvent {
                     position: member_position as i32,
                     cards: hands.get(member_position).cloned().unwrap_or_default(),
+                    round_index: None,
                 },
             );
             if member_position == dealer {
@@ -453,6 +455,7 @@ async fn timeout_bury_dispatch(
         WsUpgradeHandEvent {
             position: position as i32,
             cards: hand,
+            round_index: None,
         },
         &mut dispatch,
     );

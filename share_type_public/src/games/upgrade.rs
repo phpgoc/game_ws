@@ -112,6 +112,8 @@ pub struct WsUpgradeDeclareTrumpRequest {
 pub struct WsUpgradeHandEvent {
     pub position: i32,
     pub cards: Vec<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub round_index: Option<i32>,
 }
 
 #[typeshare]
