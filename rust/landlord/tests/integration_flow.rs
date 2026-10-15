@@ -15,10 +15,9 @@ use ws_common::{
     ClientRequest, Dispatch, GameHandler, GameState, JoinAuthorization, JoinAuthorizationFuture,
     RoomService, SessionId, SessionSenders, SettingsBuilderResult,
 };
-use ws_common::{
-    RuntimeConfig, run_room_runtime, run_room_runtime_until_stopped_with_ready,
-    runtime_stop_channel,
-};
+use ws_common::{RuntimeConfig, run_room_runtime};
+#[cfg(not(feature = "official"))]
+use ws_common::{run_room_runtime_until_stopped_with_ready, runtime_stop_channel};
 
 type Client = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
