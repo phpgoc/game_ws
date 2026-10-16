@@ -16,6 +16,9 @@ use crate::ai::{choose_bid, choose_play, hand_has_bomb};
 use crate::core::play::{classify, hand_has_bomb_response};
 use crate::game_state::{LandlordLoopState, LandlordPlayRecord};
 
+mod ai_decision;
+use ai_decision::prepare_ai_action;
+
 const AI_ACTION_DELAY: Duration = Duration::from_millis(300);
 const AI_BOMB_SIGNAL_DELAY: Duration = Duration::from_millis(1_200);
 const AI_BOMB_SIGNAL_MIN_HISTORY: usize = 6;
@@ -611,6 +614,7 @@ fn should_signal_ai_bomb(state: &LandlordLoopState, position: usize, planned_pla
         })
 }
 
+#[cfg(any(test, not(feature = "official")))]
 fn plan_ai_action(state: &LandlordLoopState, position: usize) -> PlannedAiAction {
     let play = (state.phase == LandlordPhase::Play).then(|| choose_play(state, position));
     let bomb_signal = play
@@ -660,13 +664,23 @@ fn handle_automatic_action(
     state: &mut LandlordLoopState,
     reason: AutoActionReason,
 ) -> (Option<usize>, Option<AutoBroadcastEvent>) {
-    handle_automatic_action_with_play(state, reason, None)
+    handle_automatic_action_with_plan(state, reason, None, None)
 }
 
+#[cfg(test)]
 fn handle_automatic_action_with_play(
     state: &mut LandlordLoopState,
     reason: AutoActionReason,
     planned_play: Option<Vec<i32>>,
+) -> (Option<usize>, Option<AutoBroadcastEvent>) {
+    handle_automatic_action_with_plan(state, reason, planned_play, None)
+}
+
+fn handle_automatic_action_with_plan(
+    state: &mut LandlordLoopState,
+    reason: AutoActionReason,
+    planned_play: Option<Vec<i32>>,
+    planned_bid: Option<u8>,
 ) -> (Option<usize>, Option<AutoBroadcastEvent>) {
     let pos = state.current_position;
     let newly_away = if matches!(
@@ -684,7 +698,7 @@ fn handle_automatic_action_with_play(
     match state.phase {
         LandlordPhase::CallLandlord => {
             let score = if reason != AutoActionReason::Timeout {
-                choose_bid(state, pos)
+                planned_bid.unwrap_or_else(|| choose_bid(state, pos))
             } else {
                 0
             };
@@ -937,20 +951,21 @@ pub(crate) fn start_game_loop(
                         let s = state.lock().unwrap();
                         (!s.action_received()).then(|| {
                             let waiting_for_ai = s.is_ai_controlled_position(s.current_position);
-                            let ai_plan = if waiting_for_ai {
-                                Some(plan_ai_action(&s, s.current_position))
-                            } else {
-                                None
-                            };
-                            (s.phase, s.current_position, waiting_for_ai, ai_plan)
+                            (s.phase, s.current_position, waiting_for_ai)
                         })
                     };
-                    if let Some((waiting_phase, waiting_position, waiting_for_ai, ai_plan)) =
-                        pending_turn
-                    {
+                    if let Some((waiting_phase, waiting_position, waiting_for_ai)) = pending_turn {
+                        let mut ai_plan = if waiting_for_ai {
+                            let Some(plan) = prepare_ai_action(&state).await else {
+                                continue;
+                            };
+                            Some(plan)
+                        } else {
+                            None
+                        };
                         let wait_duration = ai_plan
                             .as_ref()
-                            .map(|plan| plan.delay)
+                            .map(|prepared| prepared.plan.delay)
                             .unwrap_or(Duration::from_secs(1));
                         if sleep_or_stop(&state, wait_duration).await {
                             break;
@@ -977,48 +992,81 @@ pub(crate) fn start_game_loop(
                                 )
                                 .await
                         };
-                        let mut s = state.lock().unwrap();
-                        if s.phase != waiting_phase || s.current_position != waiting_position {
-                            continue;
-                        }
                         // A manual AWAY request changes the shared common state while the
                         // one-second human tick is sleeping.  Re-read the control mode here;
                         // otherwise this tick would keep the stale human snapshot, decrement
                         // the countdown, and delay the first automatic action until another
                         // full turn tick.
+                        let prepare_now = {
+                            let s = state.lock().unwrap();
+                            if s.phase != waiting_phase || s.current_position != waiting_position {
+                                continue;
+                            }
+                            if !s.action_received()
+                                && s.turn_countdown() == 0
+                                && member_timeout_authorized
+                            {
+                                s.base
+                                    .lock()
+                                    .unwrap()
+                                    .mark_ai_takeover_position(waiting_position);
+                            }
+                            !s.action_received()
+                                && s.is_ai_controlled_position(waiting_position)
+                                && ai_plan
+                                    .as_ref()
+                                    .is_none_or(|prepared| !prepared.is_current(&s))
+                        };
+                        if prepare_now {
+                            ai_plan = prepare_ai_action(&state).await;
+                            if ai_plan.is_none() {
+                                continue;
+                            }
+                        }
+                        // 推理或延迟期间房间可能已被替换；旧牌局不得应用计算结果。
+                        let room_guard = room_service.lock().await;
+                        if !room_matches_common(&room_guard, &room_key, &expected_common) {
+                            break;
+                        }
+                        let mut s = state.lock().unwrap();
+                        if s.phase != waiting_phase || s.current_position != waiting_position {
+                            continue;
+                        }
+                        if s.stop_requested() || s.is_paused() || s.players_snapshot().len() != 3 {
+                            continue;
+                        }
                         let ai_controlled_now = s.is_ai_controlled_position(waiting_position);
                         if s.action_received() {
                             // Action received while waiting this tick.
                         } else if ai_controlled_now {
-                            let ai_plan =
-                                ai_plan.unwrap_or_else(|| plan_ai_action(&s, waiting_position));
-                            if ai_plan.bomb_signal {
+                            let Some(prepared) = ai_plan.filter(|prepared| prepared.is_current(&s))
+                            else {
+                                continue;
+                            };
+                            if prepared.plan.bomb_signal {
                                 activate_ai_bomb_signal(&mut s, waiting_position);
                             }
-                            (away_position, auto_event) = handle_automatic_action_with_play(
+                            let reason = if s.is_ai_takeover_position(waiting_position)
+                                && !s.is_ai_position(waiting_position)
+                                && !s.is_away(waiting_position)
+                            {
+                                AutoActionReason::MemberTimeout
+                            } else {
+                                AutoActionReason::Ai
+                            };
+                            (away_position, auto_event) = handle_automatic_action_with_plan(
                                 &mut s,
-                                AutoActionReason::Ai,
-                                ai_plan.play,
+                                reason,
+                                prepared.plan.play,
+                                prepared.bid,
                             );
                         } else if s.turn_countdown() > 0 {
                             let next_countdown = s.turn_countdown() - 1;
                             s.set_turn_countdown(next_countdown);
                             continue;
                         } else {
-                            if member_timeout_authorized {
-                                s.base
-                                    .lock()
-                                    .unwrap()
-                                    .mark_ai_takeover_position(waiting_position);
-                            }
-                            (away_position, auto_event) = handle_automatic_action(
-                                &mut s,
-                                if member_timeout_authorized {
-                                    AutoActionReason::MemberTimeout
-                                } else {
-                                    AutoActionReason::Timeout
-                                },
-                            );
+                            (away_position, auto_event) =
+                                handle_automatic_action(&mut s, AutoActionReason::Timeout);
                         }
                     }
                     if away_position.is_some() || auto_event.is_some() {
