@@ -156,7 +156,16 @@ impl LandlordLoopState {
     /// positions, storing the remaining 3 as hidden cards (底牌).
     /// Each player's hand is sorted for convenience.
     pub fn generate_card(&mut self) {
-        let deck = Self::shuffle();
+        let seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(42);
+        self.generate_card_with_seed(seed);
+    }
+
+    /// 与生产相同的发牌入口，允许离线对照固定种子复现。
+    pub(crate) fn generate_card_with_seed(&mut self, seed: u64) {
+        let deck = Self::shuffle_with_seed(seed);
         let mut sorted: Vec<usize> = self.players_snapshot().keys().copied().collect();
         sorted.sort();
         self.hands.clear();
@@ -289,12 +298,8 @@ impl LandlordLoopState {
         self.base.lock().unwrap().turn_countdown = turn_countdown;
     }
 
-    fn shuffle() -> Vec<i32> {
+    fn shuffle_with_seed(seed: u64) -> Vec<i32> {
         let mut deck: Vec<i32> = (1..=54).collect();
-        let seed = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos() as u64)
-            .unwrap_or(42);
         let mut rng = seed;
         for i in (1..deck.len()).rev() {
             rng = rng
