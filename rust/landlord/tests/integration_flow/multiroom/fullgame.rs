@@ -23,7 +23,7 @@ fn sampled_rss_kib() -> Option<u64> {
 
 fn counts_since(before: PlayModelStats) -> Value {
     let after = play_model_stats();
-    json!({"model":after.model-before.model,"disabled":after.disabled-before.disabled,
+    json!({"model":after.model-before.model,"forced":after.forced-before.forced,"disabled":after.disabled-before.disabled,
         "unavailable":after.unavailable-before.unavailable,"fallback":after.fallback-before.fallback})
 }
 
