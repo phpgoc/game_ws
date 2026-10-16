@@ -22,6 +22,10 @@ use ws_common::{run_room_runtime_until_stopped_with_ready, runtime_stop_channel}
 type Client = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 #[cfg(feature = "official")]
+#[path = "integration_flow/multiroom.rs"]
+mod multiroom;
+
+#[cfg(feature = "official")]
 #[derive(Default)]
 struct TestAiLandlordHandler(LandlordGameHandler);
 
