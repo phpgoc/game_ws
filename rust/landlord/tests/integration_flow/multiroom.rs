@@ -4,6 +4,9 @@ use super::*;
 use std::sync::Arc;
 use tokio::sync::Barrier;
 
+#[path = "multiroom/fullgame.rs"]
+mod fullgame;
+
 fn is_ok(value: &Value, route: Routes) -> bool {
     value["route"] == json!(route as i32) && value["code"] == json!(WsResponseCode::OK as i32)
 }
@@ -133,6 +136,10 @@ async fn measured_room(mut owner: Client, barrier: Arc<Barrier>) -> Value {
 }
 
 fn percentiles(mut values: Vec<u64>) -> Value {
+    // 整局可能一手结束；没有该阶段样本时保留空分布，不伪造零延迟。
+    if values.is_empty() {
+        return json!({"count": 0});
+    }
     values.sort_unstable();
     let at = |fraction: f64| values[((values.len() - 1) as f64 * fraction).round() as usize];
     json!({"count":values.len(),"median_us":at(0.5),"p95_us":at(0.95),"p99_us":at(0.99),"max_us":at(1.0)})
