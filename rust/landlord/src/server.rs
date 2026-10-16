@@ -62,8 +62,11 @@ pub async fn run_landlord_server_with_cli() -> anyhow::Result<()> {
 
 fn initialize_official_ai() {
     #[cfg(feature = "official")]
-    // 模型身份或文件错误已记录，继续使用现有 AI；权重在接收房间前只加载一次。
-    let _ = crate::ai::initialize_play_model();
+    {
+        // 加载错误已记录并回退原策略；在接收房间前加载，避免首轮阻塞。
+        let _ = crate::ai::initialize_play_model();
+        let _ = crate::ai::initialize_bid_model();
+    }
 }
 
 #[cfg(test)]
