@@ -26,6 +26,7 @@ pub async fn run_landlord_runtime_until_stopped(
     listen_addr: String,
     stop_signal: StopSignal,
 ) -> anyhow::Result<RuntimeStats> {
+    initialize_official_ai();
     run_room_runtime_until_stopped(
         landlord_runtime_config(LANDLORD_ANDROID_SERVICE_NAME, listen_addr),
         LandlordGameHandler::default(),
@@ -39,6 +40,7 @@ pub async fn run_landlord_runtime_until_stopped_with_ready(
     stop_signal: StopSignal,
     ready: std::sync::mpsc::SyncSender<RuntimeStats>,
 ) -> anyhow::Result<RuntimeStats> {
+    initialize_official_ai();
     run_room_runtime_until_stopped_with_ready(
         landlord_runtime_config(LANDLORD_ANDROID_SERVICE_NAME, listen_addr),
         LandlordGameHandler::default(),
@@ -49,12 +51,19 @@ pub async fn run_landlord_runtime_until_stopped_with_ready(
 }
 
 pub async fn run_landlord_server_with_cli() -> anyhow::Result<()> {
+    initialize_official_ai();
     run_game_server_with_cli(
         LANDLORD_SERVICE_NAME,
         LANDLORD_IDLE_TIMEOUT,
         LandlordGameHandler::default(),
     )
     .await
+}
+
+fn initialize_official_ai() {
+    #[cfg(feature = "official")]
+    // 模型身份或文件错误已记录，继续使用现有 AI；权重在接收房间前只加载一次。
+    let _ = crate::ai::initialize_play_model();
 }
 
 #[cfg(test)]
