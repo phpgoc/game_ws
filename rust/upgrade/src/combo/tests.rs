@@ -114,7 +114,7 @@ fn level_cards_and_jokers_stay_above_the_main_suit_two() {
         target_rank: Rank::Three,
         trump_suit: Some(Suit::Heart),
     };
-    let ordered = cards(&[26, 14, 2, 15, 53, 54]);
+    let ordered = cards(&[26, 1, 14, 2, 15, 53, 54]);
     let strengths = ordered
         .iter()
         .map(|card| card_strength(*card, rules))
@@ -128,7 +128,7 @@ fn level_cards_and_jokers_stay_above_the_main_suit_two() {
 }
 
 #[test]
-fn ordinary_off_suit_two_lead_requires_following_its_natural_suit() {
+fn off_suit_two_lead_requires_following_trump() {
     let rules = UpgradeComboRules {
         target_rank: Rank::Three,
         trump_suit: Some(Suit::Heart),
@@ -136,8 +136,8 @@ fn ordinary_off_suit_two_lead_requires_following_its_natural_suit() {
     let hand = cards(&[27, 127, 3, 103]);
     let lead = classify(&cards(&[1, 101]), rules).unwrap();
 
-    assert!(follow_is_legal(&hand, &cards(&[3, 103]), &lead, rules));
-    assert!(!follow_is_legal(&hand, &cards(&[27, 127]), &lead, rules));
+    assert!(!follow_is_legal(&hand, &cards(&[3, 103]), &lead, rules));
+    assert!(follow_is_legal(&hand, &cards(&[27, 127]), &lead, rules));
 }
 
 #[test]
@@ -196,7 +196,7 @@ fn follow_uses_every_available_lead_group_card_for_each_lead_size() {
 }
 
 #[test]
-fn only_current_level_twos_and_the_main_suit_two_are_trumps() {
+fn all_twos_are_trumps_at_every_upgrade_level() {
     let all_twos = cards(&[1, 14, 27, 40]);
 
     for target_rank in [Rank::Three, Rank::Five, Rank::Ace] {
@@ -204,10 +204,23 @@ fn only_current_level_twos_and_the_main_suit_two_are_trumps() {
             target_rank,
             trump_suit: Some(Suit::Heart),
         };
-        assert_eq!(card_group(all_twos[0], rules), Some(Suit::Spade));
-        assert_eq!(card_group(all_twos[1], rules), None);
-        assert_eq!(card_group(all_twos[2], rules), Some(Suit::Club));
-        assert_eq!(card_group(all_twos[3], rules), Some(Suit::Diamond));
+        assert!(
+            all_twos
+                .iter()
+                .all(|card| card_group(*card, rules).is_none())
+        );
+        assert_eq!(
+            card_strength(all_twos[0], rules),
+            card_strength(all_twos[2], rules)
+        );
+        assert_eq!(
+            card_strength(all_twos[2], rules),
+            card_strength(all_twos[3], rules)
+        );
+        assert_eq!(
+            card_strength(all_twos[1], rules),
+            card_strength(all_twos[0], rules) + 1
+        );
         let highest_plain = if target_rank == Rank::Ace { 25 } else { 26 };
         assert!(
             card_strength(all_twos[1], rules) > card_strength(cards(&[highest_plain])[0], rules)

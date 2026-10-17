@@ -402,12 +402,12 @@ fn trump_rank_closes_the_tractor_gap() {
 }
 
 #[test]
-fn ace_level_keeps_trump_king_and_main_suit_two_as_a_tractor() {
+fn ace_level_keeps_trump_king_and_off_suit_two_as_a_tractor() {
     let mut rules = rules(TractorRank::A);
     rules.trump_suit = Some(share_type_public::TractorSuit::HEART);
 
     assert_eq!(
-        classify(&[25, 125, 14, 114], &rules).map(|combo| combo.kind),
+        classify(&[25, 125, 1, 101], &rules).map(|combo| combo.kind),
         Some(ComboKind::Tractor(2)),
     );
 }
@@ -418,7 +418,8 @@ fn trump_tractor_edges_keep_level_and_joker_order() {
     rules.trump_suit = Some(share_type_public::TractorSuit::HEART);
 
     for cards in [
-        [26, 126, 14, 114], // 主 A -> 主 2
+        [26, 126, 1, 101],  // 主 A -> 副 2
+        [1, 101, 14, 114],  // 副 2 -> 主 2
         [14, 114, 2, 102],  // 主 2 -> 副级
         [2, 102, 15, 115],  // 副级 -> 主级
         [15, 115, 53, 153], // 主级 -> 小王
@@ -433,6 +434,7 @@ fn trump_tractor_edges_keep_level_and_joker_order() {
     }
 
     for cards in [
+        [26, 126, 14, 114], // 跳过副 2
         [26, 126, 2, 102],  // 跳过主 2
         [14, 114, 15, 115], // 跳过副级
         [2, 102, 53, 153],  // 跳过主级
@@ -453,7 +455,8 @@ fn trump_titanic_edges_use_the_same_strict_special_sequence() {
     rules.trump_suit = Some(share_type_public::TractorSuit::HEART);
 
     for cards in [
-        [26, 126, 226, 14, 114, 214],
+        [26, 126, 226, 1, 101, 201],
+        [1, 101, 201, 14, 114, 214],
         [14, 114, 214, 2, 102, 202],
         [2, 102, 202, 15, 115, 215],
         [15, 115, 215, 53, 153, 253],
@@ -467,6 +470,7 @@ fn trump_titanic_edges_use_the_same_strict_special_sequence() {
     }
 
     for cards in [
+        [26, 126, 226, 14, 114, 214],
         [26, 126, 226, 2, 102, 202],
         [14, 114, 214, 15, 115, 215],
         [2, 102, 202, 53, 153, 253],
@@ -481,14 +485,14 @@ fn trump_titanic_edges_use_the_same_strict_special_sequence() {
 }
 
 #[test]
-fn ordinary_off_suit_two_lead_follows_its_natural_suit() {
+fn off_suit_two_lead_requires_following_trump() {
     let mut rules = rules(TractorRank::THREE);
     rules.trump_suit = Some(share_type_public::TractorSuit::HEART);
-    let lead = classify(&[1, 101], &rules).expect("ordinary off-suit two pair lead");
+    let lead = classify(&[1, 101], &rules).expect("permanent trump two pair lead");
     let hand = vec![27, 127, 3, 103];
 
-    assert!(follow_is_legal(&hand, &[3, 103], &lead, &rules));
-    assert!(!follow_is_legal(&hand, &[27, 127], &lead, &rules));
+    assert!(!follow_is_legal(&hand, &[3, 103], &lead, &rules));
+    assert!(follow_is_legal(&hand, &[27, 127], &lead, &rules));
 }
 
 #[test]

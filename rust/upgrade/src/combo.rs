@@ -47,8 +47,9 @@ pub fn card_group(card: Card, rules: UpgradeComboRules) -> Option<Suit> {
         .flatten()
 }
 
-/// Comparison value inside an upgrade trick. The selected trump suit wins each
-/// main/vice tie; a non-level `2` is a trump only when it belongs to that suit.
+/// Comparison value inside an upgrade trick. Every `2` is permanent trump above
+/// ordinary trump cards and below level cards; the selected trump suit wins each
+/// main/vice tie. At level `2` the permanent and level ranks share the same layer.
 pub fn card_strength(card: Card, rules: UpgradeComboRules) -> i32 {
     trump_order_position(card, rules.target_rank, rules.trump_suit)
         .map(|position| 1_000 + position)

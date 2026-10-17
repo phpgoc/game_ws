@@ -511,8 +511,8 @@ fn find_off_suit_two_follow_case(
     })?;
     let lead = combo::classify(&[lead_card], rules)?;
     assert!(
-        lead.suit.is_some(),
-        "an off-suit two stays in its natural suit"
+        lead.suit.is_none(),
+        "every off-suit two leads the permanent-trump group"
     );
     let legal = hands[follower_position]
         .iter()
@@ -4064,18 +4064,15 @@ async fn try_tractor_ws_off_suit_two_follow(url: &str, attempt: usize) -> bool {
         Card::try_from(lead_card).expect("off-suit two lead").rank(),
         Rank::Two
     );
-    let lead_suit = Card::try_from(lead_card)
-        .expect("off-suit two lead card")
-        .suit()
-        .map(|suit| suit as i32);
-    assert!(lead_suit.is_some());
+    let lead = combo::classify(&[lead_card], &rules).expect("off-suit permanent-trump lead");
+    assert!(lead.suit.is_none());
     assert!(
-        combo::card_in_group(legal_card, lead_suit, &rules),
-        "the accepted follow candidate must belong to the lead suit"
+        combo::card_in_group(legal_card, lead.suit, &rules),
+        "the accepted follow candidate must be trump"
     );
     assert!(
-        !combo::card_in_group(illegal_card, lead_suit, &rules),
-        "the rejected follow candidate must be outside the lead suit"
+        !combo::card_in_group(illegal_card, lead.suit, &rules),
+        "the rejected follow candidate must be a plain-suit card"
     );
 
     send_request(
@@ -4180,7 +4177,7 @@ async fn try_tractor_ws_off_suit_two_follow(url: &str, attempt: usize) -> bool {
 
 #[cfg(not(feature = "official"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn tractor_ws_keeps_an_off_suit_two_in_its_natural_suit_for_following() {
+async fn tractor_ws_requires_trump_after_an_off_suit_two_lead() {
     let runtime = start_test_runtime("tractor-off-suit-two-test", Duration::from_secs(60)).await;
     for attempt in 0..5 {
         if try_tractor_ws_off_suit_two_follow(&runtime.url, attempt).await {

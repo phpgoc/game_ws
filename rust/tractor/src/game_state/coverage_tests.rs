@@ -38,7 +38,7 @@ fn utility_boundaries_cover_standard_bottom_and_suit_mapping() {
 }
 
 #[test]
-fn only_level_twos_and_the_trump_suit_two_are_trumps() {
+fn all_twos_are_permanent_trumps_at_every_level() {
     let mut state = state();
     state.rules.trump_suit = Some(TractorSuit::HEART);
 
@@ -50,9 +50,8 @@ fn only_level_twos_and_the_trump_suit_two_are_trumps() {
     ] {
         state.rules.target_rank = target_rank;
         for card in [1, 14, 27, 40] {
-            assert_eq!(
+            assert!(
                 super::is_trump_card(card, &state.rules),
-                target_rank == TractorRank::TWO || card == 14,
                 "card {card} at target {target_rank:?}",
             );
         }

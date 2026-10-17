@@ -108,7 +108,7 @@ fn pair_follow_cannot_be_split_when_the_follower_has_the_pair() {
 }
 
 #[test]
-fn ordinary_off_suit_two_lead_stays_in_its_natural_suit_at_every_level() {
+fn off_suit_two_lead_requires_trump_at_every_level() {
     for (target_rank, ordinary_card) in [
         (TractorRank::THREE, 3),
         (TractorRank::FIVE, 3),
@@ -127,11 +127,19 @@ fn ordinary_off_suit_two_lead_stays_in_its_natural_suit_at_every_level() {
 
         state
             .play_cards(0, "p0".to_owned(), vec![1])
-            .expect("an off-suit two is a legal natural-suit lead");
+            .expect("an off-suit two is a legal permanent-trump lead");
+        let hand_before = state.hands[&1].clone();
+        assert_eq!(
+            state
+                .play_cards(1, "p1".to_owned(), vec![ordinary_card])
+                .unwrap_err(),
+            "illegal follow",
+        );
+        assert_eq!(state.hands[&1], hand_before);
         state
-            .play_cards(1, "p1".to_owned(), vec![ordinary_card])
-            .expect("a follower may follow the natural suit");
-        assert_eq!(state.hands.get(&1), Some(&vec![27]));
+            .play_cards(1, "p1".to_owned(), vec![27])
+            .expect("a follower must follow with another permanent trump");
+        assert_eq!(state.hands.get(&1), Some(&vec![ordinary_card]));
     }
 }
 
