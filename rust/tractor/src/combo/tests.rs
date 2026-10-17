@@ -161,6 +161,44 @@ fn forced_follow_is_always_legal() {
 }
 
 #[test]
+fn forced_follow_tied_off_suit_level_pairs_are_stable() {
+    for decks in [2, 3] {
+        for rank in [TractorRank::TWO, TractorRank::THREE, TractorRank::A] {
+            for trump in [
+                None,
+                Some(share_type_public::TractorSuit::SPADE),
+                Some(share_type_public::TractorSuit::HEART),
+                Some(share_type_public::TractorSuit::CLUB),
+                Some(share_type_public::TractorSuit::DIAMOND),
+            ] {
+                let mut rules = rules(rank);
+                rules.deck_count = decks;
+                rules.trump_suit = trump;
+                let lead = classify(&[53, 153], &rules).unwrap();
+                let bases = (1..=52)
+                    .filter(|base| {
+                        crate::game_state::card_rank(*base) == rank as i32
+                            && card_suit(*base) != trump.map(|suit| suit as i32)
+                    })
+                    .collect::<Vec<_>>();
+                let mut hand = bases
+                    .iter()
+                    .rev()
+                    .flat_map(|base| (0..decks).map(move |copy| *base + copy as i32 * 100))
+                    .collect::<Vec<_>>();
+                let expected = vec![bases[0], bases[0] + 100];
+                for _ in 0..32 {
+                    let chosen = forced_follow(&hand, &lead, &rules).unwrap();
+                    assert!(follow_is_legal(&hand, &chosen, &lead, &rules));
+                    assert_eq!(chosen, expected);
+                    hand.rotate_left(1);
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn forced_tractor_follow_uses_multiple_pairs_of_one_identity() {
     let rules = rules(TractorRank::TWO);
     let lead = classify(&[16, 116, 17, 117, 18, 118], &rules).expect("three-pair tractor");

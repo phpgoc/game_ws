@@ -1002,7 +1002,7 @@ pub fn forced_follow(hand: &[i32], lead: &Combo, rules: &TractorRules) -> Option
 
     let mut chosen: Vec<i32> = Vec::with_capacity(lead_len);
     let mut remaining: Vec<i32> = hand.to_vec();
-    remaining.sort_by_key(&value);
+    remaining.sort_by_key(|card| (value(card), *card));
 
     match lead.kind {
         ComboKind::Triple => take_lowest_multiplicity_units(
@@ -1154,7 +1154,14 @@ pub fn forced_follow(hand: &[i32], lead: &Combo, rules: &TractorRules) -> Option
             })
             .collect()
     };
-    group_pairs.sort_by_key(|pair| pair.iter().map(&value).max().unwrap_or(0));
+    // 副级可能同档，HashMap 的随机遍历顺序不能决定托管或 AI 唯一候选。
+    group_pairs.sort_by(|left, right| {
+        left.iter()
+            .map(&value)
+            .max()
+            .cmp(&right.iter().map(&value).max())
+            .then_with(|| left.cmp(right))
+    });
     for pair in group_pairs.into_iter().take(remaining_required_pairs) {
         for card in pair {
             if chosen.len() < lead_len {
