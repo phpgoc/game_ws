@@ -72,21 +72,22 @@ impl GameHandler for TestAiDominoesHandler {
     }
 }
 
+fn test_handler() -> impl ws_common::GameHandler {
+    #[cfg(feature = "official")]
+    {
+        TestAiDominoesHandler::default()
+    }
+    #[cfg(not(feature = "official"))]
+    {
+        DominoesGameHandler::default()
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn three_players_can_start_and_place_the_opening_tile() {
     let port = free_port();
     let listen_addr = format!("127.0.0.1:{port}");
     let url = format!("ws://{listen_addr}");
-    let handler = {
-        #[cfg(feature = "official")]
-        {
-            TestAiDominoesHandler::default()
-        }
-        #[cfg(not(feature = "official"))]
-        {
-            DominoesGameHandler::default()
-        }
-    };
     let server = tokio::spawn(run_room_runtime(
         RuntimeConfig {
             service_name: "dominoes-integration-test",
@@ -94,7 +95,7 @@ async fn three_players_can_start_and_place_the_opening_tile() {
             idle_timeout: Duration::from_secs(30),
             heartbeat_interval: Duration::from_secs(30),
         },
-        handler,
+        test_handler(),
     ));
     wait_for_server(port).await;
 
@@ -160,7 +161,7 @@ async fn ai_seats_can_reach_and_drop_below_the_three_player_start_limit() {
             idle_timeout: Duration::from_secs(30),
             heartbeat_interval: Duration::from_secs(30),
         },
-        DominoesGameHandler::default(),
+        test_handler(),
     ));
     wait_for_server(port).await;
 

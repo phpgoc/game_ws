@@ -14,6 +14,11 @@ use share_type_public::{
 };
 use ws_common::CommonGameState;
 
+#[cfg(any(feature = "official", test))]
+mod public_history;
+#[cfg(any(feature = "official", test))]
+pub use public_history::{PublicPlayContext, PublicPlayEvidence};
+
 pub const MIN_PLAYERS: usize = 3;
 pub const MAX_PLAYERS: usize = 4;
 pub const TILE_COUNT: usize = 28;
@@ -192,7 +197,7 @@ impl CoreError {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DominoesRoundState {
     pub base: Arc<Mutex<CommonGameState>>,
     pub phase: DominoesPhase,
@@ -218,6 +223,10 @@ pub struct DominoesRoundState {
     next_endpoint_id: i32,
     pub round_winner: Option<usize>,
     rng_state: u64,
+    #[cfg(any(feature = "official", test))]
+    public_missing_pips: HashMap<usize, u8>,
+    #[cfg(any(feature = "official", test))]
+    public_plays: HashMap<usize, Arc<PublicPlayEvidence>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -283,6 +292,10 @@ impl DominoesRoundState {
             next_endpoint_id: 0,
             round_winner: None,
             rng_state: seed.max(1),
+            #[cfg(any(feature = "official", test))]
+            public_missing_pips: HashMap::new(),
+            #[cfg(any(feature = "official", test))]
+            public_plays: HashMap::new(),
         })
     }
 
@@ -336,6 +349,11 @@ impl DominoesRoundState {
             .collect();
         self.placements.clear();
         self.endpoints.clear();
+        #[cfg(any(feature = "official", test))]
+        {
+            self.public_missing_pips.clear();
+            self.public_plays.clear();
+        }
         self.next_placement_id = 0;
         self.next_endpoint_id = 0;
         self.current_position = starter;
@@ -431,6 +449,8 @@ impl DominoesRoundState {
             }
             Some(endpoint)
         };
+        #[cfg(any(feature = "official", test))]
+        let evidence = self.public_play_evidence(tile, endpoint_id, hand.len() - 1);
         if let Some(endpoint) = connected_endpoint {
             self.endpoints
                 .retain(|candidate| candidate.endpoint_id != endpoint.endpoint_id);
@@ -463,6 +483,8 @@ impl DominoesRoundState {
         let score = self.five_up_score();
         *self.scores.entry(position).or_default() += score;
         *self.round_score_changes.entry(position).or_default() += score;
+        #[cfg(any(feature = "official", test))]
+        self.public_plays.insert(position, Arc::new(evidence));
         let round_result = if self.hands.get(&position).is_some_and(Vec::is_empty) {
             Some(self.finish_round(position, false))
         } else {
@@ -489,6 +511,12 @@ impl DominoesRoundState {
                 round_result,
             });
         };
+        #[cfg(any(feature = "official", test))]
+        {
+            // 实际摸牌可能补回旧缺门，剩手也不能再加回最近落牌来重建旧手牌。
+            self.public_missing_pips.remove(&position);
+            self.public_plays.remove(&position);
+        }
         self.hands.entry(position).or_default().push(tile);
         self.hands
             .get_mut(&position)
@@ -496,6 +524,10 @@ impl DominoesRoundState {
             .sort_unstable_by_key(|item| item.id);
         self.drawn_this_turn = true;
         let playable = !self.legal_plays(position).is_empty();
+        #[cfg(any(feature = "official", test))]
+        if !playable {
+            self.record_public_missing_pips(position);
+        }
         if self.no_playable_tiles == DominoesNoPlayableTiles::DrawOne && !playable {
             let round_result = self.record_pass(position)?;
             return Ok(DrawResult {
@@ -530,6 +562,8 @@ impl DominoesRoundState {
     }
 
     fn record_pass(&mut self, position: usize) -> Result<Option<RoundResult>, CoreError> {
+        #[cfg(any(feature = "official", test))]
+        self.record_public_missing_pips(position);
         self.drawn_this_turn = false;
         self.consecutive_passes = self.consecutive_passes.saturating_add(1);
         if self.consecutive_passes >= self.positions.len() {

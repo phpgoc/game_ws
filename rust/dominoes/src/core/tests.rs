@@ -6,6 +6,9 @@ use ws_common::CommonGameState;
 
 use super::{DominoesRoundState, Tile};
 
+#[path = "tests/public_history.rs"]
+mod public_history;
+
 fn state_with_players(player_count: usize) -> DominoesRoundState {
     let mut common = CommonGameState::new();
     for position in 0..player_count {
