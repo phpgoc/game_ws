@@ -97,13 +97,13 @@ fn partial_response_keeps_the_other_players_request_and_snapshot_context_valid()
         Some(context.clone())
     );
     for message in first.messages {
-        if let OutboundPayload::Event(event) = message.payload {
-            if event.code == WsCode::CLAIM_WINDOW as i32 {
-                assert_eq!(
-                    event.data["action_context"],
-                    serde_json::to_value(&context).unwrap()
-                );
-            }
+        if let OutboundPayload::Event(event) = message.payload
+            && event.code == WsCode::CLAIM_WINDOW as i32
+        {
+            assert_eq!(
+                event.data["action_context"],
+                serde_json::to_value(&context).unwrap()
+            );
         }
     }
     drop(state);
