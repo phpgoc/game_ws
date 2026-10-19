@@ -1077,12 +1077,13 @@ pub fn forced_follow(hand: &[i32], lead: &Combo, rules: &TractorRules) -> Option
                     lead_len,
                     rules,
                 ),
+                // 散对降级跟连三仍按领出连三长度尽量跟足对子数。
                 2 => take_lowest_multiplicity_units(
                     &mut chosen,
                     &mut remaining,
                     lead_suit,
                     2,
-                    2,
+                    triple_count,
                     lead_len,
                     rules,
                 ),

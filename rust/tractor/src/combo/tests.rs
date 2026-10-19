@@ -161,6 +161,36 @@ fn forced_follow_is_always_legal() {
 }
 
 #[test]
+fn titanic_forced_follow_preserves_three_required_disconnected_pairs() {
+    let mut rules = rules(TractorRank::SIX);
+    rules.deck_count = 3;
+    rules.trump_suit = Some(share_type_public::TractorSuit::DIAMOND);
+    let lead = classify(&[42, 43, 45, 142, 143, 145, 242, 243, 245], &rules).unwrap();
+    assert_eq!(lead.kind, ComboKind::Titanic(3));
+    // 真实新种子 round10 的 39 张持牌；旧回退只取两对再补单张，
+    // 没有按三连三的签名要求跟第三对，official 和托管均会非法跟牌。
+    let hand = vec![
+        241, 116, 104, 6, 107, 7, 146, 207, 21, 147, 135, 48, 35, 49, 123, 50, 11, 150, 211, 237,
+        251, 212, 138, 52, 39, 113, 26, 239, 226, 101, 27, 201, 127, 218, 31, 118, 5, 253, 153,
+    ];
+    for _ in 0..8 {
+        let follow = forced_follow(&hand, &lead, &rules).unwrap();
+        assert!(
+            follow_is_legal(&hand, &follow, &lead, &rules),
+            "{follow:?} hand_signature={:?} play_signature={:?} units={:?}",
+            titanic_follow_signature(&hand, lead.suit, 3, &rules),
+            titanic_follow_signature(&follow, lead.suit, 3, &rules),
+            multiplicity_units(&hand, lead.suit, 2, &rules)
+        );
+        assert_eq!(
+            titanic_follow_signature(&follow, lead.suit, 3, &rules),
+            titanic_follow_signature(&hand, lead.suit, 3, &rules)
+        );
+        assert!(!enumerate_follows_with_subset_limit(&hand, &lead, &rules, 512).is_empty());
+    }
+}
+
+#[test]
 fn forced_follow_tied_off_suit_level_pairs_are_stable() {
     for decks in [2, 3] {
         for rank in [TractorRank::TWO, TractorRank::THREE, TractorRank::A] {
