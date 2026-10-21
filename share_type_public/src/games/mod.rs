@@ -5,6 +5,7 @@ pub mod shenyang_mahjong;
 pub mod texas_hold_em;
 pub mod tractor;
 pub mod upgrade;
+pub mod who_is_landlord;
 
 pub use crate::GameParamRange;
 use serde::{Deserialize, Serialize};

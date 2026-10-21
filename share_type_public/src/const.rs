@@ -23,6 +23,8 @@ pub enum GameId {
     UPGRADE = 10,
     /// 参考《世界游戏大全 51》规则、支持 3-4 人的西洋骨牌。
     DOMINOES = 11,
+    /// 隐藏身份、地主埋三张牌的三人官方游戏。
+    WHO_IS_LANDLORD = 12,
 }
 
 impl From<GameId> for i32 {
@@ -50,6 +52,7 @@ impl TryFrom<i32> for GameId {
             9 => Ok(Self::P2P),
             10 => Ok(Self::UPGRADE),
             11 => Ok(Self::DOMINOES),
+            12 => Ok(Self::WHO_IS_LANDLORD),
             _ => Err(()),
         }
     }
