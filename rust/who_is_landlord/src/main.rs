@@ -15,11 +15,18 @@ async fn main() {
     #[cfg(feature = "official")]
     let _logging_scope = logging.enter();
 
-    if let Err(error) = run_who_is_landlord_server_with_cli().await {
+    if let Err(error) = run().await {
         #[cfg(feature = "official")]
         tracing::error!(error = %error, "who_is_landlord server stopped with an error");
         #[cfg(not(feature = "official"))]
         eprintln!("{error}");
         process::exit(2);
     }
+}
+
+async fn run() -> anyhow::Result<()> {
+    #[cfg(feature = "official")]
+    data::init().await?;
+
+    run_who_is_landlord_server_with_cli().await
 }
