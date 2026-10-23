@@ -317,4 +317,32 @@ fn simple_round_scores_opponents_remaining_pips() {
     assert_eq!(result.score_changes[&0], 15);
     assert_eq!(result.score_changes[&1], 0);
     assert_eq!(state.phase, DominoesPhase::RoundOver);
+    assert_eq!(state.last_round_result.as_ref(), Some(&result));
+}
+
+#[test]
+fn round_result_is_kept_for_rejoin_until_the_next_round_starts() {
+    let mut state = state();
+    state.phase = DominoesPhase::Play;
+    state.current_position = 0;
+    state.scores.insert(0, 34);
+    let winner_tile = Tile::from_id(0).expect("0-0 tile");
+    state.hands = HashMap::from([
+        (0, vec![winner_tile]),
+        (1, vec![Tile::from_id(27).expect("6-6 tile")]),
+        (2, vec![Tile::from_id(1).expect("0-1 tile")]),
+        (3, vec![Tile::from_id(2).expect("0-2 tile")]),
+    ]);
+
+    let (_, _, result) = state
+        .play_tile(0, winner_tile.id, None)
+        .expect("winning play");
+    let result = result.expect("round result");
+    assert!(result.game_over);
+    assert_eq!(state.phase, DominoesPhase::GameOver);
+    assert_eq!(state.last_round_result.as_ref(), Some(&result));
+
+    state.phase = DominoesPhase::RoundOver;
+    state.start_next_round().expect("next round");
+    assert!(state.last_round_result.is_none());
 }

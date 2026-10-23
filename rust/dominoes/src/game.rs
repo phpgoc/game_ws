@@ -421,7 +421,10 @@ impl GameHandler for DominoesGameHandler {
                 hidden_cards: Vec::new(),
                 last_play_position: table.last_play_position,
                 last_play: Vec::new(),
-                dominoes: Some(share_type_public::WsDominoesReJoinResponse { table, hand }),
+                dominoes: Some(share_type_public::WsDominoesReJoinResponse {
+                    table: table.clone(),
+                    hand,
+                }),
             };
             for message in &mut dispatch.messages {
                 if message.recipient != session_id {
@@ -437,6 +440,27 @@ impl GameHandler for DominoesGameHandler {
                 {
                     response.data["rejoin_data"] =
                         serde_json::to_value(rejoin.clone()).unwrap_or_default();
+                }
+            }
+            let state = state.lock().expect("dominoes state lock");
+            if let Some(result) = state.last_round_result.as_ref() {
+                dispatch.messages.push(Delivery {
+                    recipient: session_id,
+                    payload: OutboundPayload::Event(share_type_public::CommonEvent {
+                        code: DominoesWsCode::ROUND_OVER as i32,
+                        data: serde_json::to_value(round_over_event(&table, result))
+                            .unwrap_or_default(),
+                    }),
+                });
+                if result.game_over {
+                    dispatch.messages.push(Delivery {
+                        recipient: session_id,
+                        payload: OutboundPayload::Event(share_type_public::CommonEvent {
+                            code: DominoesWsCode::GAME_OVER as i32,
+                            data: serde_json::to_value(game_over_event(&table, result))
+                                .unwrap_or_default(),
+                        }),
+                    });
                 }
             }
             return;
@@ -717,53 +741,66 @@ fn append_round_result(
         snapshot.rule,
         &result,
     );
-    let remaining_hands = result
-        .remaining_hands
-        .iter()
-        .map(|(position, hand)| {
-            (
-                *position as i32,
-                hand.iter().copied().map(Into::into).collect(),
-            )
-        })
-        .collect();
     room_service.broadcast_connected(
         room_key,
         DominoesWsCode::ROUND_OVER as i32,
-        WsDominoesRoundOverEvent {
-            round: snapshot.round,
-            winner_position: result.winner_position as i32,
-            blocked: result.blocked,
-            round_score: result.round_score,
-            scores: result
-                .scores
-                .iter()
-                .map(|(position, score)| (*position as i32, *score))
-                .collect(),
-            remaining_hands,
-            remaining_seconds: snapshot.remaining_seconds,
-        },
+        round_over_event(snapshot, &result),
         dispatch,
     );
     if result.game_over {
         room_service.broadcast_connected(
             room_key,
             DominoesWsCode::GAME_OVER as i32,
-            WsDominoesGameOverEvent {
-                winner_positions: result
-                    .winner_positions
-                    .iter()
-                    .map(|position| *position as i32)
-                    .collect(),
-                target_score: snapshot.target_score,
-                scores: result
-                    .scores
-                    .iter()
-                    .map(|(position, score)| (*position as i32, *score))
-                    .collect(),
-            },
+            game_over_event(snapshot, &result),
             dispatch,
         );
+    }
+}
+
+fn round_over_event(
+    snapshot: &WsDominoesTableSnapshotEvent,
+    result: &RoundResult,
+) -> WsDominoesRoundOverEvent {
+    WsDominoesRoundOverEvent {
+        round: snapshot.round,
+        winner_position: result.winner_position as i32,
+        blocked: result.blocked,
+        round_score: result.round_score,
+        scores: result
+            .scores
+            .iter()
+            .map(|(position, score)| (*position as i32, *score))
+            .collect(),
+        remaining_hands: result
+            .remaining_hands
+            .iter()
+            .map(|(position, hand)| {
+                (
+                    *position as i32,
+                    hand.iter().copied().map(Into::into).collect(),
+                )
+            })
+            .collect(),
+        remaining_seconds: snapshot.remaining_seconds,
+    }
+}
+
+fn game_over_event(
+    snapshot: &WsDominoesTableSnapshotEvent,
+    result: &RoundResult,
+) -> WsDominoesGameOverEvent {
+    WsDominoesGameOverEvent {
+        winner_positions: result
+            .winner_positions
+            .iter()
+            .map(|position| *position as i32)
+            .collect(),
+        target_score: snapshot.target_score,
+        scores: result
+            .scores
+            .iter()
+            .map(|(position, score)| (*position as i32, *score))
+            .collect(),
     }
 }
 

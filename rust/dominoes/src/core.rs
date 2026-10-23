@@ -222,6 +222,8 @@ pub struct DominoesRoundState {
     next_placement_id: i32,
     next_endpoint_id: i32,
     pub round_winner: Option<usize>,
+    /// 最近一轮的结算结果，供重连恢复结算界面。
+    pub last_round_result: Option<RoundResult>,
     rng_state: u64,
     #[cfg(any(feature = "official", test))]
     public_missing_pips: HashMap<usize, u8>,
@@ -291,6 +293,7 @@ impl DominoesRoundState {
             next_placement_id: 0,
             next_endpoint_id: 0,
             round_winner: None,
+            last_round_result: None,
             rng_state: seed.max(1),
             #[cfg(any(feature = "official", test))]
             public_missing_pips: HashMap::new(),
@@ -306,6 +309,7 @@ impl DominoesRoundState {
             .map(|position| (*position, 0))
             .collect();
         self.round_winner = None;
+        self.last_round_result = None;
         self.round = 1;
         self.deal_round(None)
     }
@@ -356,6 +360,7 @@ impl DominoesRoundState {
         }
         self.next_placement_id = 0;
         self.next_endpoint_id = 0;
+        self.last_round_result = None;
         self.current_position = starter;
         self.phase = DominoesPhase::Play;
         self.last_play_position = None;
@@ -914,7 +919,7 @@ impl DominoesRoundState {
                 )
             })
             .collect();
-        RoundResult {
+        let result = RoundResult {
             winner_position: winner,
             blocked,
             round_score,
@@ -923,7 +928,9 @@ impl DominoesRoundState {
             remaining_hands: self.hands.clone(),
             game_over,
             winner_positions,
-        }
+        };
+        self.last_round_result = Some(result.clone());
+        result
     }
 
     pub fn table_snapshot(&self) -> WsDominoesTableSnapshotEvent {
