@@ -363,6 +363,7 @@ async fn official_room_replays_a_round_and_reaches_the_next_phase() {
     }
 
     assert!(plays_seen > 0, "the room never accepted a play");
+    assert_eq!(draws_seen, 0, "pass-without-draw emitted a draw event");
     assert!(
         round_over_seen || game_over_seen,
         "the round never reached settlement"
