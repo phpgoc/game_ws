@@ -1,18 +1,19 @@
-use std::net::TcpListener;
+use std::sync::mpsc::sync_channel;
 use std::time::Duration;
 
 use dominoes::game::DominoesGameHandler;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use share_type_public::{DominoesRoutes, DominoesWsCode, GameId, Routes, WsCode, WsResponseCode};
-use tokio::net::TcpListener as TokioTcpListener;
 use tokio_tungstenite::{WebSocketStream, connect_async, tungstenite::Message};
 #[cfg(feature = "official")]
 use ws_common::{
     ClientRequest, Dispatch, GameHandler, GameState, JoinAuthorization, JoinAuthorizationFuture,
     RoomService, SessionId, SessionSenders, SettingsBuilderResult,
 };
-use ws_common::{RuntimeConfig, run_room_runtime};
+use ws_common::{
+    RuntimeConfig, RuntimeStats, run_room_runtime_until_stopped_with_ready, runtime_stop_channel,
+};
 
 type Client = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
@@ -85,20 +86,8 @@ fn test_handler() -> impl ws_common::GameHandler {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn three_players_can_start_and_place_the_opening_tile() {
-    let port = free_port();
-    let listen_addr = format!("127.0.0.1:{port}");
-    let url = format!("ws://{listen_addr}");
-    let server = tokio::spawn(run_room_runtime(
-        RuntimeConfig {
-            service_name: "dominoes-integration-test",
-            listen_addr,
-            idle_timeout: Duration::from_secs(30),
-            heartbeat_interval: Duration::from_secs(30),
-        },
-        test_handler(),
-    ));
-    wait_for_server(port).await;
-
+    let (server, url, _stop_handle) =
+        start_server("dominoes-integration-test", test_handler()).await;
     let mut owner = connect_client(&url).await;
     let mut second = connect_client(&url).await;
     let mut third = connect_client(&url).await;
@@ -149,21 +138,44 @@ async fn three_players_can_start_and_place_the_opening_tile() {
     server.abort();
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn ai_seats_can_reach_and_drop_below_the_three_player_start_limit() {
-    let port = free_port();
-    let listen_addr = format!("127.0.0.1:{port}");
-    let url = format!("ws://{listen_addr}");
-    let server = tokio::spawn(run_room_runtime(
+async fn start_server<H>(
+    service_name: &'static str,
+    handler: H,
+) -> (
+    tokio::task::JoinHandle<anyhow::Result<RuntimeStats>>,
+    String,
+    ws_common::RuntimeStopHandle,
+)
+where
+    H: ws_common::GameHandler,
+{
+    let (stop_handle, stop_signal) = runtime_stop_channel();
+    let (ready_tx, ready_rx) = sync_channel(1);
+    let server = tokio::spawn(run_room_runtime_until_stopped_with_ready(
         RuntimeConfig {
-            service_name: "dominoes-ai-seat-test",
-            listen_addr,
+            service_name,
+            listen_addr: "127.0.0.1:0".to_owned(),
             idle_timeout: Duration::from_secs(30),
             heartbeat_interval: Duration::from_secs(30),
         },
-        test_handler(),
+        handler,
+        stop_signal,
+        ready_tx,
     ));
-    wait_for_server(port).await;
+    let stats = tokio::task::spawn_blocking(move || {
+        ready_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("dominoes runtime readiness")
+    })
+    .await
+    .expect("read dominoes runtime readiness");
+    let url = format!("ws://{}", stats.listen_addr());
+    (server, url, stop_handle)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn ai_seats_can_reach_and_drop_below_the_three_player_start_limit() {
+    let (server, url, _stop_handle) = start_server("dominoes-ai-seat-test", test_handler()).await;
 
     let mut owner = connect_client(&url).await;
     join(&mut owner, "owner", "dominoes-ai-seat-room").await;
@@ -240,19 +252,8 @@ async fn ai_seats_can_reach_and_drop_below_the_three_player_start_limit() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn official_room_replays_a_round_and_reaches_the_next_phase() {
-    let port = free_port();
-    let listen_addr = format!("127.0.0.1:{port}");
-    let url = format!("ws://{listen_addr}");
-    let server = tokio::spawn(run_room_runtime(
-        RuntimeConfig {
-            service_name: "dominoes-round-flow-test",
-            listen_addr,
-            idle_timeout: Duration::from_secs(30),
-            heartbeat_interval: Duration::from_secs(30),
-        },
-        test_handler(),
-    ));
-    wait_for_server(port).await;
+    let (server, url, _stop_handle) =
+        start_server("dominoes-round-flow-test", test_handler()).await;
 
     let mut owner = connect_client(&url).await;
     let room = "dominoes-round-flow-room";
@@ -594,24 +595,6 @@ async fn join(client: &mut Client, name: &str, room: &str) {
 
 async fn connect_client(url: &str) -> Client {
     connect_async(url).await.expect("connect websocket").0
-}
-
-fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .expect("bind free port")
-        .local_addr()
-        .expect("local address")
-        .port()
-}
-
-async fn wait_for_server(port: u16) {
-    for _ in 0..50 {
-        if TokioTcpListener::bind(("127.0.0.1", port)).await.is_err() {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
-    panic!("dominoes websocket server did not start");
 }
 
 async fn recv_json(client: &mut Client, label: &str) -> Value {
