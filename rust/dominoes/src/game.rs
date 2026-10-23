@@ -207,7 +207,9 @@ impl DominoesGameHandler {
 
     fn human_action_allowed(state: &DominoesRoundState, position: usize) -> bool {
         let common = state.base.lock().expect("dominoes common state lock");
-        !common.is_ai_position(position)
+        !common.paused
+            && !common.stop_requested
+            && !common.is_ai_position(position)
             && !common.is_ai_takeover_position(position)
             && !common.is_away(position)
             && !common.is_disconnected(position)
