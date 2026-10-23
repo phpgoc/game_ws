@@ -60,3 +60,10 @@ fn native_ai_and_takeover_have_distinct_action_sources() {
         (Some(DominoesActionSource::AiTakeover), AI_TURN_SECONDS)
     );
 }
+
+#[test]
+fn game_over_state_stops_the_background_loop() {
+    let mut state = state();
+    state.phase = DominoesPhase::GameOver;
+    assert!(state_should_stop(&state));
+}

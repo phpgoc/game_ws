@@ -27,6 +27,9 @@ fn room_matches_common(
 }
 
 fn state_should_stop(state: &DominoesRoundState) -> bool {
+    if state.phase == DominoesPhase::GameOver {
+        return true;
+    }
     let common = state.base.lock().expect("dominoes common state lock");
     common.stop_requested || common.players.len() != state.positions.len()
 }
