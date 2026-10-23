@@ -238,14 +238,263 @@ async fn ai_seats_can_reach_and_drop_below_the_three_player_start_limit() {
     server.abort();
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn official_room_replays_a_round_and_reaches_the_next_phase() {
+    let port = free_port();
+    let listen_addr = format!("127.0.0.1:{port}");
+    let url = format!("ws://{listen_addr}");
+    let server = tokio::spawn(run_room_runtime(
+        RuntimeConfig {
+            service_name: "dominoes-round-flow-test",
+            listen_addr,
+            idle_timeout: Duration::from_secs(30),
+            heartbeat_interval: Duration::from_secs(30),
+        },
+        test_handler(),
+    ));
+    wait_for_server(port).await;
+
+    let mut owner = connect_client(&url).await;
+    let room = "dominoes-round-flow-room";
+    join(&mut owner, "owner", room).await;
+
+    send_request(&mut owner, Routes::ADD_AI as i32, json!({ "count": 2 })).await;
+    recv_until(&mut owner, "first AI join event", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::JOIN as i64)
+            && value["data"]["is_ai"] == json!(true)
+    })
+    .await;
+    recv_until(&mut owner, "second AI join event", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(WsCode::JOIN as i64)
+            && value["data"]["is_ai"] == json!(true)
+    })
+    .await;
+    recv_until(&mut owner, "add AI response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::ADD_AI as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+
+    send_request(
+        &mut owner,
+        Routes::SETTING as i32,
+        json!({
+            "current_configs": {
+                "rule": 0,
+                "no_playable_tiles": 2,
+                "target_score": 0,
+                "settlement_time": 1
+            }
+        }),
+    )
+    .await;
+    recv_until(&mut owner, "dominoes setting response", |value| {
+        value.get("route").and_then(Value::as_i64) == Some(Routes::SETTING as i64)
+            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
+    })
+    .await;
+
+    send_request(&mut owner, Routes::START as i32, json!({})).await;
+    let mut round = recv_start_bundle(&mut owner, true).await;
+    let mut rounds_seen = 1;
+    let mut plays_seen = 0;
+    let mut passes_seen = 0;
+    let mut draws_seen = 0;
+    let mut round_over_seen = false;
+    let mut game_over_seen = false;
+
+    for _ in 0..120 {
+        if round.starter_position == 0 {
+            let legal = round.hand_state["legal_plays"]
+                .as_array()
+                .expect("legal plays array");
+            if let Some(play) = legal.first() {
+                send_request(
+                    &mut owner,
+                    DominoesRoutes::PLAY_TILE as i32,
+                    json!({
+                        "tile_id": play["tile_id"],
+                        "endpoint_id": play["endpoint_id"]
+                    }),
+                )
+                .await;
+                let action = recv_until_action_response(
+                    &mut owner,
+                    DominoesRoutes::PLAY_TILE as i32,
+                    &mut plays_seen,
+                    &mut draws_seen,
+                    &mut passes_seen,
+                    &mut round_over_seen,
+                    &mut game_over_seen,
+                )
+                .await;
+                assert_eq!(action, WsResponseCode::OK as i32);
+            }
+        }
+
+        if game_over_seen {
+            break;
+        }
+        let next_turn = recv_owner_turn_or_round_end(
+            &mut owner,
+            &mut plays_seen,
+            &mut draws_seen,
+            &mut passes_seen,
+            &mut game_over_seen,
+        )
+        .await;
+        match next_turn {
+            Some(next_turn) => round = next_turn,
+            None if game_over_seen => break,
+            None => {
+                round_over_seen = true;
+                match recv_until_round_transition(&mut owner).await {
+                    RoundTransition::NextRound(next_round) => {
+                        rounds_seen += 1;
+                        round = next_round;
+                    }
+                    RoundTransition::GameOver => {
+                        game_over_seen = true;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    assert!(plays_seen > 0, "the room never accepted a play");
+    assert!(
+        round_over_seen || game_over_seen,
+        "the round never reached settlement"
+    );
+    assert!(rounds_seen >= 1);
+    server.abort();
+}
+
+enum RoundTransition {
+    NextRound(StartBundle),
+    GameOver,
+}
+
+async fn recv_until_action_response(
+    client: &mut Client,
+    route: i32,
+    plays_seen: &mut usize,
+    draws_seen: &mut usize,
+    passes_seen: &mut usize,
+    round_over_seen: &mut bool,
+    game_over_seen: &mut bool,
+) -> i32 {
+    loop {
+        let value = recv_json(client, "dominoes action response").await;
+        match value.get("code").and_then(Value::as_i64) {
+            Some(code) if code == DominoesWsCode::PLAY_TILE as i64 => *plays_seen += 1,
+            Some(code) if code == DominoesWsCode::DRAW_TILE as i64 => *draws_seen += 1,
+            Some(code) if code == DominoesWsCode::PASS as i64 => *passes_seen += 1,
+            Some(code) if code == DominoesWsCode::ROUND_OVER as i64 => *round_over_seen = true,
+            Some(code) if code == DominoesWsCode::GAME_OVER as i64 => *game_over_seen = true,
+            _ => {}
+        }
+        if value.get("route").and_then(Value::as_i64) == Some(route as i64) {
+            return value["code"].as_i64().expect("response code") as i32;
+        }
+    }
+}
+
+async fn recv_owner_turn_or_round_end(
+    client: &mut Client,
+    plays_seen: &mut usize,
+    draws_seen: &mut usize,
+    passes_seen: &mut usize,
+    game_over_seen: &mut bool,
+) -> Option<StartBundle> {
+    let mut current_position = None;
+    let mut snapshot = None;
+    let mut hand_state = None;
+    loop {
+        let value = recv_json(client, "owner turn or round end").await;
+        match value.get("code").and_then(Value::as_i64) {
+            Some(code) if code == DominoesWsCode::PLAY_TILE as i64 => *plays_seen += 1,
+            Some(code) if code == DominoesWsCode::DRAW_TILE as i64 => *draws_seen += 1,
+            Some(code) if code == DominoesWsCode::PASS as i64 => *passes_seen += 1,
+            Some(code) if code == DominoesWsCode::ROUND_OVER as i64 => return None,
+            Some(code) if code == DominoesWsCode::GAME_OVER as i64 => {
+                *game_over_seen = true;
+                return None;
+            }
+            Some(code) if code == DominoesWsCode::TABLE_SNAPSHOT as i64 => {
+                current_position = value["data"]["current_position"].as_i64();
+                snapshot = Some(value["data"].clone());
+                hand_state = None;
+            }
+            Some(code) if code == DominoesWsCode::HAND_STATE as i64 => {
+                hand_state = Some(value["data"].clone());
+            }
+            _ => {}
+        }
+        if current_position == Some(0) {
+            if let Some(hand_state) = hand_state.take() {
+                assert_hand_state_matches_snapshot(
+                    snapshot.as_ref().expect("owner snapshot"),
+                    &hand_state,
+                );
+                return Some(StartBundle {
+                    starter_position: 0,
+                    hand: Vec::new(),
+                    hand_state,
+                });
+            }
+        }
+    }
+}
+
+async fn recv_until_round_transition(client: &mut Client) -> RoundTransition {
+    let mut starter_position = None;
+    let mut snapshot = None;
+    let mut hand_state = None;
+    loop {
+        let value = recv_json(client, "round transition").await;
+        match value.get("code").and_then(Value::as_i64) {
+            Some(code) if code == DominoesWsCode::GAME_OVER as i64 => {
+                return RoundTransition::GameOver;
+            }
+            Some(code) if code == DominoesWsCode::ROUND_START as i64 => {
+                starter_position = value["data"]["starter_position"].as_i64();
+            }
+            Some(code) if code == DominoesWsCode::TABLE_SNAPSHOT as i64 => {
+                snapshot = Some(value["data"].clone());
+                hand_state = None;
+            }
+            Some(code) if code == DominoesWsCode::HAND_STATE as i64 => {
+                hand_state = Some(value["data"].clone());
+            }
+            _ => {}
+        }
+        if let (Some(starter_position), Some(hand_state)) = (starter_position, hand_state.take()) {
+            assert_hand_state_matches_snapshot(
+                snapshot.as_ref().expect("next round snapshot"),
+                &hand_state,
+            );
+            return RoundTransition::NextRound(StartBundle {
+                starter_position: starter_position as i32,
+                hand: Vec::new(),
+                hand_state,
+            });
+        }
+    }
+}
+
 struct StartBundle {
     starter_position: i32,
     hand: Vec<Value>,
+    hand_state: Value,
 }
 
 async fn recv_start_bundle(client: &mut Client, expect_response: bool) -> StartBundle {
     let mut starter_position = None;
     let mut hand = None;
+    let mut snapshot = None;
+    let mut hand_state = None;
     let mut response_received = !expect_response;
     for _ in 0..30 {
         let value = recv_json(client, "round start bundle").await;
@@ -257,21 +506,70 @@ async fn recv_start_bundle(client: &mut Client, expect_response: bool) -> StartB
         if value.get("code").and_then(Value::as_i64) == Some(DominoesWsCode::DEAL as i64) {
             hand = value["data"]["hand"].as_array().cloned();
         }
+        if value.get("code").and_then(Value::as_i64) == Some(DominoesWsCode::HAND_STATE as i64) {
+            hand_state = Some(value["data"].clone());
+        }
+        if value.get("code").and_then(Value::as_i64) == Some(DominoesWsCode::TABLE_SNAPSHOT as i64)
+        {
+            snapshot = Some(value["data"].clone());
+        }
         if value.get("route").and_then(Value::as_i64) == Some(Routes::START as i64)
             && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
         {
             response_received = true;
         }
-        if let (Some(starter_position), Some(hand), true) =
-            (starter_position, hand.clone(), response_received)
-        {
+        if let (Some(starter_position), Some(hand), Some(hand_state), true) = (
+            starter_position,
+            hand.clone(),
+            hand_state.clone(),
+            response_received,
+        ) {
+            assert_hand_state_matches_snapshot(
+                snapshot.as_ref().expect("round start snapshot"),
+                &hand_state,
+            );
             return StartBundle {
                 starter_position,
                 hand,
+                hand_state,
             };
         }
     }
     panic!("did not receive complete start bundle");
+}
+
+fn assert_hand_state_matches_snapshot(snapshot: &Value, hand_state: &Value) {
+    let hand = hand_state["hand"].as_array().expect("hand array");
+    let owner = snapshot["players"]
+        .as_array()
+        .and_then(|players| players.iter().find(|player| player["position"] == json!(0)))
+        .expect("owner player state");
+    assert_eq!(
+        hand.len() as i64,
+        owner["hand_count"].as_i64().expect("owner hand count")
+    );
+
+    let tile_ids = hand
+        .iter()
+        .filter_map(|tile| tile["id"].as_i64())
+        .collect::<std::collections::HashSet<_>>();
+    for legal in hand_state["legal_plays"]
+        .as_array()
+        .expect("legal plays array")
+    {
+        assert!(
+            tile_ids.contains(&legal["tile_id"].as_i64().expect("legal tile id")),
+            "server advertised a legal tile outside the private hand"
+        );
+    }
+    if !hand_state["legal_plays"]
+        .as_array()
+        .expect("legal plays array")
+        .is_empty()
+    {
+        assert!(!hand_state["can_draw"].as_bool().unwrap_or(false));
+        assert!(!hand_state["can_pass"].as_bool().unwrap_or(false));
+    }
 }
 
 async fn join(client: &mut Client, name: &str, room: &str) {
