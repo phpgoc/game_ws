@@ -127,6 +127,10 @@ async fn emit_round_start(
 }
 
 fn remove_registry_state(room_key: &str, state: &StateHandle, states: &StateRegistry) {
+    // GameOver 仍允许玩家重连查看最终结算；下一次 START 会主动清理这份终局状态。
+    if state.lock().expect("dominoes state lock").phase == DominoesPhase::GameOver {
+        return;
+    }
     let mut states = states.lock().expect("dominoes registry lock");
     if states
         .get(room_key)

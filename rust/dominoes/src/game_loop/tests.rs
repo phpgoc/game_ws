@@ -67,3 +67,23 @@ fn game_over_state_stops_the_background_loop() {
     state.phase = DominoesPhase::GameOver;
     assert!(state_should_stop(&state));
 }
+
+#[test]
+fn game_over_state_stays_registered_for_terminal_rejoin() {
+    let mut state = state();
+    state.phase = DominoesPhase::GameOver;
+    let state = Arc::new(Mutex::new(state));
+    let registry = Arc::new(Mutex::new(std::collections::HashMap::from([(
+        "terminal-room".to_owned(),
+        Arc::clone(&state),
+    )])));
+
+    remove_registry_state("terminal-room", &state, &registry);
+
+    assert!(
+        registry
+            .lock()
+            .expect("registry")
+            .contains_key("terminal-room")
+    );
+}
