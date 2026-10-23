@@ -51,6 +51,22 @@ fn three_and_four_players_each_receive_five_tiles() {
 }
 
 #[test]
+fn starter_draw_uses_a_fixed_six_tile_pool_before_the_formal_deal() {
+    for player_count in [3, 4] {
+        let mut state = state_with_players(player_count);
+        let starter = state.start_new_game().expect("start round");
+
+        assert!(state.positions.contains(&starter));
+        assert_eq!(state.hand_size(), 5);
+        assert_eq!(
+            state.hands.values().map(Vec::len).sum::<usize>(),
+            player_count * 5
+        );
+        assert_eq!(state.boneyard.len(), 28 - player_count * 5);
+    }
+}
+
+#[test]
 fn five_up_scores_open_ends_during_play_and_divides_round_pips() {
     let mut state = state();
     state.rule = DominoesRule::FiveUp;

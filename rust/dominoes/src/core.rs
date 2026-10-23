@@ -365,20 +365,27 @@ impl DominoesRoundState {
     }
 
     fn draw_initial_starter(&mut self) -> usize {
+        // Switch 版固定把六张牌单独作为先手暗牌池。每名玩家从池中取一张，
+        // 比较取到的点数后，六张牌全部放回牌堆并重新洗牌，再开始正式发牌。
+        // 这里没有额外的“选择暗牌”协议，因此用服务端随机抽取模拟每名玩家
+        // 从六张背面牌中取一张；抽牌池仍然固定为六张，不能按玩家人数缩小。
         let mut hidden_draw = Tile::all();
         shuffle(&mut hidden_draw, &mut self.rng_state);
-        let best_pips = hidden_draw
+        let mut starter_draws = Vec::with_capacity(self.positions.len());
+        let mut hidden_pool = hidden_draw.into_iter().take(6).collect::<Vec<_>>();
+        for position in &self.positions {
+            let index = next_random(&mut self.rng_state) as usize % hidden_pool.len();
+            starter_draws.push((*position, hidden_pool.swap_remove(index)));
+        }
+        let best_pips = starter_draws
             .iter()
-            .take(self.positions.len())
-            .map(|tile| tile.pip_sum())
+            .map(|(_, tile)| tile.pip_sum())
             .max()
             .unwrap_or_default();
-        let candidates = self
-            .positions
-            .iter()
-            .zip(hidden_draw.iter())
+        let candidates = starter_draws
+            .into_iter()
             .filter(|(_, tile)| tile.pip_sum() == best_pips)
-            .map(|(position, _)| *position)
+            .map(|(position, _)| position)
             .collect::<Vec<_>>();
         let choice = next_random(&mut self.rng_state) as usize % candidates.len().max(1);
         candidates.get(choice).copied().unwrap_or(self.positions[0])
