@@ -100,9 +100,9 @@ async fn three_players_can_start_and_place_the_opening_tile() {
     select_starter(&mut owner, 0).await;
     select_starter(&mut second, 1).await;
     select_starter(&mut third, 2).await;
-    let owner_start = recv_start_bundle(&mut owner, 0, true).await;
-    let second_start = recv_start_bundle(&mut second, 1, false).await;
-    let third_start = recv_start_bundle(&mut third, 2, false).await;
+    let owner_start = recv_start_bundle(&mut owner, 0).await;
+    let second_start = recv_start_bundle(&mut second, 1).await;
+    let third_start = recv_start_bundle(&mut third, 2).await;
     let starter = owner_start.starter_position;
     assert_eq!(second_start.starter_position, starter);
     assert_eq!(third_start.starter_position, starter);
@@ -162,7 +162,7 @@ async fn four_players_receive_distinct_private_hands_at_round_start() {
     }
     let mut dealt_tile_ids = std::collections::HashSet::new();
     for (position, client) in clients.iter_mut().enumerate() {
-        let start = recv_start_bundle(client, position as i32, position == 0).await;
+        let start = recv_start_bundle(client, position as i32).await;
         assert_eq!(start.hand.len(), 5);
         for tile in start.hand {
             assert!(
@@ -283,7 +283,7 @@ async fn ai_seats_can_reach_and_drop_below_the_three_player_start_limit() {
 
     send_request(&mut owner, Routes::START as i32, json!({})).await;
     select_starter(&mut owner, 0).await;
-    let started = recv_start_bundle(&mut owner, 0, true).await;
+    let started = recv_start_bundle(&mut owner, 0).await;
     assert_eq!(started.hand.len(), 5);
 
     server.abort();
@@ -336,7 +336,7 @@ async fn official_room_replays_a_round_and_reaches_the_next_phase() {
 
     send_request(&mut owner, Routes::START as i32, json!({})).await;
     select_starter(&mut owner, 0).await;
-    let mut round = recv_start_bundle(&mut owner, 0, true).await;
+    let mut round = recv_start_bundle(&mut owner, 0).await;
     let mut rounds_seen = 1;
     let mut plays_seen = 0;
     let mut passes_seen = 0;
@@ -537,14 +537,13 @@ struct StartBundle {
 async fn recv_start_bundle(
     client: &mut Client,
     expected_position: i32,
-    expect_response: bool,
 ) -> StartBundle {
     let mut starter_position = None;
     let mut hand = None;
     let mut snapshot = None;
     let mut hand_state = None;
-    let mut response_received = !expect_response;
-    for _ in 0..30 {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    while tokio::time::Instant::now() < deadline {
         let value = recv_json(client, "round start bundle").await;
         if value.get("code").and_then(Value::as_i64) == Some(DominoesWsCode::ROUND_START as i64) {
             starter_position = value["data"]["starter_position"]
@@ -566,16 +565,10 @@ async fn recv_start_bundle(
         {
             snapshot = Some(value["data"].clone());
         }
-        if value.get("route").and_then(Value::as_i64) == Some(Routes::START as i64)
-            && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
-        {
-            response_received = true;
-        }
-        if let (Some(starter_position), Some(hand), Some(hand_state), true) = (
+        if let (Some(starter_position), Some(hand), Some(hand_state)) = (
             starter_position,
             hand.clone(),
             hand_state.clone(),
-            response_received,
         ) {
             let dealt_tile_ids = tile_ids(&hand);
             let private_tile_ids = tile_ids(
@@ -710,6 +703,12 @@ async fn send_request(client: &mut Client, route: i32, data: Value) {
 }
 
 async fn select_starter(client: &mut Client, slot_index: i32) {
+    // 不同 WebSocket 的请求到达顺序不保证一致，必须等待本座位的选牌窗口。
+    recv_until(client, "starter selection turn", |value| {
+        value.get("code").and_then(Value::as_i64) == Some(DominoesWsCode::STARTER_SELECTION as i64)
+            && value["data"]["selector_position"] == json!(slot_index)
+    })
+    .await;
     send_request(
         client,
         DominoesRoutes::SELECT_STARTER as i32,
