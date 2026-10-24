@@ -17,6 +17,9 @@ use ws_common::{
 
 type Client = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
+#[path = "integration_flow/match_rejoin.rs"]
+mod match_rejoin;
+
 #[cfg(feature = "official")]
 #[derive(Default)]
 struct TestAiDominoesHandler(DominoesGameHandler);
@@ -534,10 +537,7 @@ struct StartBundle {
     hand_state: Value,
 }
 
-async fn recv_start_bundle(
-    client: &mut Client,
-    expected_position: i32,
-) -> StartBundle {
+async fn recv_start_bundle(client: &mut Client, expected_position: i32) -> StartBundle {
     let mut starter_position = None;
     let mut hand = None;
     let mut snapshot = None;
@@ -565,11 +565,9 @@ async fn recv_start_bundle(
         {
             snapshot = Some(value["data"].clone());
         }
-        if let (Some(starter_position), Some(hand), Some(hand_state)) = (
-            starter_position,
-            hand.clone(),
-            hand_state.clone(),
-        ) {
+        if let (Some(starter_position), Some(hand), Some(hand_state)) =
+            (starter_position, hand.clone(), hand_state.clone())
+        {
             let dealt_tile_ids = tile_ids(&hand);
             let private_tile_ids = tile_ids(
                 hand_state["hand"]
@@ -604,7 +602,11 @@ fn tile_ids(tiles: &[Value]) -> Vec<i64> {
     ids
 }
 
-fn assert_hand_state_matches_snapshot(snapshot: &Value, hand_state: &Value, expected_position: i32) {
+fn assert_hand_state_matches_snapshot(
+    snapshot: &Value,
+    hand_state: &Value,
+    expected_position: i32,
+) {
     let hand = hand_state["hand"].as_array().expect("hand array");
     let owner = snapshot["players"]
         .as_array()
@@ -642,7 +644,7 @@ fn assert_hand_state_matches_snapshot(snapshot: &Value, hand_state: &Value, expe
     }
 }
 
-async fn join(client: &mut Client, name: &str, room: &str) {
+async fn join(client: &mut Client, name: &str, room: &str) -> Value {
     send_request(
         client,
         Routes::JOIN as i32,
@@ -658,7 +660,7 @@ async fn join(client: &mut Client, name: &str, room: &str) {
         value.get("route").and_then(Value::as_i64) == Some(Routes::JOIN as i64)
             && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::JOINED as i64)
     })
-    .await;
+    .await
 }
 
 async fn connect_client(url: &str) -> Client {
