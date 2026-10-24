@@ -69,6 +69,37 @@ fn starter_draw_uses_a_fixed_six_tile_pool_before_the_formal_deal() {
 }
 
 #[test]
+fn pending_starter_selection_reveals_only_chosen_slots_and_deals_after_all_choices() {
+    let mut state = state_with_players(3);
+    state.start_new_game_pending().expect("pending start");
+    assert_eq!(state.phase, DominoesPhase::StarterSelection);
+    assert_eq!(state.starter_pool.len(), 6);
+    assert!(state.hands.is_empty());
+    assert!(
+        state
+            .starter_selection_event()
+            .expect("selection event")
+            .slots
+            .iter()
+            .all(|slot| slot.tile.is_none() && slot.selected_by.is_none())
+    );
+
+    let first = state.select_starter_slot(0, 0).expect("first choice");
+    assert_eq!(first.starter_position, None);
+    let event = state.starter_selection_event().expect("selection event");
+    assert_eq!(event.slots[0].tile, Some(state.starter_pool[0].into()));
+    assert_eq!(event.slots[0].selected_by, Some(0));
+    assert!(event.slots[1..].iter().all(|slot| slot.tile.is_none()));
+    assert!(state.select_starter_slot(0, 1).is_err());
+
+    state.select_starter_slot(1, 1).expect("second choice");
+    let last = state.select_starter_slot(2, 2).expect("third choice");
+    assert!(last.starter_position.is_some());
+    assert_eq!(state.phase, DominoesPhase::Play);
+    assert!(state.hands.values().all(|hand| hand.len() == 5));
+}
+
+#[test]
 fn five_up_scores_open_ends_during_play_and_divides_round_pips() {
     let mut state = state();
     state.rule = DominoesRule::FiveUp;

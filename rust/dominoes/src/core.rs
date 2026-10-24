@@ -10,7 +10,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use share_type_public::{
     DominoesNoPlayableTiles, DominoesOrientation, DominoesPhase, DominoesPort, DominoesRule,
     WsDominoesEndpoint, WsDominoesHandState, WsDominoesLegalPlay, WsDominoesPlacement,
-    WsDominoesPlayerState, WsDominoesTableSnapshotEvent, WsDominoesTile,
+    WsDominoesPlayerState, WsDominoesStarterSelectionEvent, WsDominoesStarterSlot,
+    WsDominoesTableSnapshotEvent, WsDominoesTile,
 };
 use ws_common::CommonGameState;
 
@@ -167,6 +168,14 @@ pub struct DrawResult {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StarterSelectionResult {
+    pub position: usize,
+    pub slot_index: usize,
+    pub tile: Tile,
+    pub starter_position: Option<usize>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CoreError {
     NotPlaying,
     NotYourTurn,
@@ -213,6 +222,9 @@ pub struct DominoesRoundState {
     pub scores: HashMap<usize, i32>,
     pub round_score_changes: HashMap<usize, i32>,
     pub current_position: usize,
+    /// 开局六张暗牌；只有被选中的槽位才会向客户端公开牌面。
+    pub starter_pool: Vec<Tile>,
+    pub starter_selections: HashMap<usize, usize>,
     pub last_play_position: Option<usize>,
     pub consecutive_passes: usize,
     pub drawn_this_turn: bool,
@@ -284,6 +296,8 @@ impl DominoesRoundState {
             scores: HashMap::new(),
             round_score_changes: HashMap::new(),
             current_position: 0,
+            starter_pool: Vec::new(),
+            starter_selections: HashMap::new(),
             last_play_position: None,
             consecutive_passes: 0,
             drawn_this_turn: false,
@@ -311,7 +325,38 @@ impl DominoesRoundState {
         self.round_winner = None;
         self.last_round_result = None;
         self.round = 1;
-        self.deal_round(None)
+        self.begin_starter_selection()?;
+        // 纯核心测试和离线调用仍可一步启动；生产 WS 使用
+        // `start_new_game_pending`，让真实玩家逐个选择暗牌。
+        let positions = self.positions.clone();
+        let mut starter = self.positions[0];
+        for position in positions {
+            let slot = self
+                .starter_pool
+                .iter()
+                .enumerate()
+                .find(|(index, _)| !self.starter_selections.values().any(|used| used == index))
+                .map(|(index, _)| index)
+                .ok_or(CoreError::WrongPhase)?;
+            starter = self
+                .select_starter_slot(position, slot)?
+                .starter_position
+                .unwrap_or(starter);
+        }
+        Ok(starter)
+    }
+
+    /// 开始正式 WS 的开局流程，等待每个座位选择一张六张暗牌。
+    pub fn start_new_game_pending(&mut self) -> Result<usize, CoreError> {
+        self.scores = self
+            .positions
+            .iter()
+            .map(|position| (*position, 0))
+            .collect();
+        self.round_winner = None;
+        self.last_round_result = None;
+        self.round = 1;
+        self.begin_starter_selection()
     }
 
     pub fn set_settlement_time_seconds(&mut self, seconds: u32) {
@@ -330,14 +375,13 @@ impl DominoesRoundState {
         if self.positions.is_empty() {
             return Err(CoreError::NoPlayers);
         }
-        let starter = match starter_hint {
-            Some(position) => position,
-            None => self.draw_initial_starter(),
-        };
+        let starter = starter_hint.unwrap_or(self.positions[0]);
         let mut deck = Tile::all();
         shuffle(&mut deck, &mut self.rng_state);
         let hand_size = self.hand_size();
         self.hands.clear();
+        self.starter_pool.clear();
+        self.starter_selections.clear();
         let mut cursor = 0;
         for position in &self.positions {
             let mut hand = deck[cursor..cursor + hand_size].to_vec();
@@ -369,31 +413,125 @@ impl DominoesRoundState {
         Ok(starter)
     }
 
-    fn draw_initial_starter(&mut self) -> usize {
-        // Switch 版固定把六张牌单独作为先手暗牌池。每名玩家从池中取一张，
-        // 比较取到的点数后，六张牌全部放回牌堆并重新洗牌，再开始正式发牌。
-        // 这里没有额外的“选择暗牌”协议，因此用服务端随机抽取模拟每名玩家
-        // 从六张背面牌中取一张；抽牌池仍然固定为六张，不能按玩家人数缩小。
+    fn begin_starter_selection(&mut self) -> Result<usize, CoreError> {
+        if self.positions.is_empty() {
+            return Err(CoreError::NoPlayers);
+        }
         let mut hidden_draw = Tile::all();
         shuffle(&mut hidden_draw, &mut self.rng_state);
-        let mut starter_draws = Vec::with_capacity(self.positions.len());
-        let mut hidden_pool = hidden_draw.into_iter().take(6).collect::<Vec<_>>();
-        for position in &self.positions {
-            let index = next_random(&mut self.rng_state) as usize % hidden_pool.len();
-            starter_draws.push((*position, hidden_pool.swap_remove(index)));
+        self.starter_pool = hidden_draw.into_iter().take(6).collect();
+        self.starter_selections.clear();
+        self.hands.clear();
+        self.boneyard.clear();
+        self.placements.clear();
+        self.endpoints.clear();
+        self.current_position = self.positions[0];
+        self.phase = DominoesPhase::StarterSelection;
+        self.last_play_position = None;
+        self.consecutive_passes = 0;
+        self.begin_turn();
+        Ok(self.current_position)
+    }
+
+    pub fn select_starter_slot(
+        &mut self,
+        position: usize,
+        slot_index: usize,
+    ) -> Result<StarterSelectionResult, CoreError> {
+        if self.phase != DominoesPhase::StarterSelection {
+            return Err(CoreError::WrongPhase);
         }
-        let best_pips = starter_draws
-            .iter()
-            .map(|(_, tile)| tile.pip_sum())
-            .max()
-            .unwrap_or_default();
-        let candidates = starter_draws
-            .into_iter()
-            .filter(|(_, tile)| tile.pip_sum() == best_pips)
-            .map(|(position, _)| position)
-            .collect::<Vec<_>>();
-        let choice = next_random(&mut self.rng_state) as usize % candidates.len().max(1);
-        candidates.get(choice).copied().unwrap_or(self.positions[0])
+        if !self.positions.contains(&position) || self.starter_selections.contains_key(&position) {
+            return Err(CoreError::NotYourTurn);
+        }
+        let tile = *self
+            .starter_pool
+            .get(slot_index)
+            .ok_or(CoreError::InvalidTile)?;
+        if self
+            .starter_selections
+            .values()
+            .any(|used| *used == slot_index)
+        {
+            return Err(CoreError::InvalidTile);
+        }
+        self.starter_selections.insert(position, slot_index);
+        let complete = self.starter_selections.len() == self.positions.len();
+        let starter_position = if complete {
+            let best_pips = self
+                .starter_selections
+                .iter()
+                .filter_map(|(position, index)| {
+                    self.starter_pool
+                        .get(*index)
+                        .map(|tile| (*position, tile.pip_sum()))
+                })
+                .map(|(_, pips)| pips)
+                .max()
+                .unwrap_or_default();
+            let starter = self
+                .positions
+                .iter()
+                .copied()
+                .filter(|position| {
+                    self.starter_selections
+                        .get(position)
+                        .and_then(|index| self.starter_pool.get(*index))
+                        .is_some_and(|tile| tile.pip_sum() == best_pips)
+                })
+                .next()
+                .unwrap_or(self.positions[0]);
+            self.deal_round(Some(starter))?;
+            Some(starter)
+        } else {
+            let index = self
+                .positions
+                .iter()
+                .position(|item| *item == position)
+                .unwrap_or(0);
+            self.current_position = (1..=self.positions.len())
+                .map(|offset| self.positions[(index + offset) % self.positions.len()])
+                .find(|candidate| !self.starter_selections.contains_key(candidate))
+                .unwrap_or(self.positions[0]);
+            self.begin_turn();
+            None
+        };
+        Ok(StarterSelectionResult {
+            position,
+            slot_index,
+            tile,
+            starter_position,
+        })
+    }
+
+    pub fn starter_selection_event(&self) -> Option<WsDominoesStarterSelectionEvent> {
+        if self.phase != DominoesPhase::StarterSelection {
+            return None;
+        }
+        Some(WsDominoesStarterSelectionEvent {
+            round: self.round,
+            selector_position: self.current_position as i32,
+            slots: self
+                .starter_pool
+                .iter()
+                .enumerate()
+                .map(|(index, tile)| WsDominoesStarterSlot {
+                    index: index as i32,
+                    tile: self
+                        .starter_selections
+                        .iter()
+                        .find(|(_, selected)| **selected == index)
+                        .map(|_| (*tile).into()),
+                    selected_by: self
+                        .starter_selections
+                        .iter()
+                        .find(|(_, selected)| **selected == index)
+                        .map(|(position, _)| *position as i32),
+                })
+                .collect(),
+            remaining_seconds: self.remaining_seconds as i32,
+            turn_revision: self.turn_revision,
+        })
     }
 
     pub fn hand_size(&self) -> usize {
@@ -622,6 +760,14 @@ impl DominoesRoundState {
 
     pub fn tick_remaining_seconds(&mut self, revision: i32) -> bool {
         if self.phase != DominoesPhase::Play || self.turn_revision != revision {
+            return false;
+        }
+        self.remaining_seconds = self.remaining_seconds.saturating_sub(1);
+        true
+    }
+
+    pub fn tick_starter_selection(&mut self, revision: i32) -> bool {
+        if self.phase != DominoesPhase::StarterSelection || self.turn_revision != revision {
             return false;
         }
         self.remaining_seconds = self.remaining_seconds.saturating_sub(1);
@@ -960,6 +1106,7 @@ impl DominoesRoundState {
             consecutive_passes: self.consecutive_passes as i32,
             remaining_seconds: self.remaining_seconds as i32,
             turn_revision: self.turn_revision,
+            starter_selection: self.starter_selection_event(),
         }
     }
 

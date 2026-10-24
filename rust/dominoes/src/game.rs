@@ -6,8 +6,8 @@ use share_type_public::{
     DominoesWsCode, GameId, Routes, WsCode, WsDominoesDealEvent, WsDominoesDrawEvent,
     WsDominoesDrawnTileEvent, WsDominoesGameOverEvent, WsDominoesHandState, WsDominoesPassEvent,
     WsDominoesPlayEvent, WsDominoesPlayRequest, WsDominoesRoundOverEvent,
-    WsDominoesRoundStartEvent, WsDominoesTableSnapshotEvent, WsDominoesTurnEvent, WsReJoinResponse,
-    WsResponseCode,
+    WsDominoesRoundStartEvent, WsDominoesStarterSelectRequest, WsDominoesStarterSelectedEvent,
+    WsDominoesTableSnapshotEvent, WsDominoesTurnEvent, WsReJoinResponse, WsResponseCode,
 };
 use tokio::sync::Mutex as AsyncMutex;
 use ws_common::{
@@ -16,7 +16,7 @@ use ws_common::{
 };
 
 use crate::action::{self, ActionEvent, ActionOutcome};
-use crate::core::{CoreError, DominoesRoundState, RoundResult};
+use crate::core::{CoreError, DominoesRoundState, RoundResult, StarterSelectionResult};
 use crate::game_loop::start_game_loop;
 use crate::game_setting::{
     KEY_NO_PLAYABLE_TILES, KEY_RULE, KEY_SETTLEMENT_TIME, KEY_TARGET_SCORE,
@@ -168,7 +168,7 @@ impl DominoesGameHandler {
                 );
             }
         };
-        if round.start_new_game().is_err() {
+        if round.start_new_game_pending().is_err() {
             return room_service.error_response(session_id, route, WsResponseCode::NOT_IN_RANGE);
         }
         round.set_settlement_time_seconds(settlement_time);
@@ -193,8 +193,14 @@ impl DominoesGameHandler {
             );
         }
 
-        let bundle = round_start_bundle(&state.lock().expect("dominoes state lock"));
-        append_round_start_bundle(room_service, &room_key, bundle, &mut dispatch);
+        let state_guard = state.lock().expect("dominoes state lock");
+        append_snapshot_and_turn(
+            room_service,
+            &room_key,
+            &state_guard.table_snapshot(),
+            &mut dispatch,
+        );
+        drop(state_guard);
         room_service.broadcast_connected(
             &room_key,
             WsCode::START as i32,
@@ -324,6 +330,70 @@ impl DominoesGameHandler {
         };
         let mut dispatch = Dispatch::default();
         append_action_outcome(room_service, &room_key, outcome, &mut dispatch);
+        room_service.push_ok_response(&mut dispatch, session_id, route);
+        dispatch
+    }
+
+    fn select_starter(
+        &self,
+        room_service: &mut RoomService,
+        session_id: SessionId,
+        data: serde_json::Value,
+    ) -> Dispatch {
+        let route = DominoesRoutes::SELECT_STARTER as i32;
+        let Some(position) = room_service.session_position(session_id) else {
+            return room_service.error_response(session_id, route, WsResponseCode::NOT_LOGIN);
+        };
+        let Ok(request) = RoomService::parse_payload::<WsDominoesStarterSelectRequest>(data) else {
+            return room_service.error_response(session_id, route, WsResponseCode::ERROR_FORMAT);
+        };
+        let Some(room_key) = room_service.room_key_of(session_id) else {
+            return room_service.error_response(session_id, route, WsResponseCode::NOT_IN_RANGE);
+        };
+        let Some(state) = self.state_for_room(room_service, &room_key) else {
+            return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
+        };
+        let result = {
+            let mut state = state.lock().expect("dominoes state lock");
+            if !Self::human_action_allowed(&state, position) {
+                return room_service.error_response(
+                    session_id,
+                    route,
+                    WsResponseCode::NO_PERMISSION,
+                );
+            }
+            match state.select_starter_slot(position, request.slot_index as usize) {
+                Ok(result) => result,
+                Err(error) => {
+                    return room_service.error_response(session_id, route, map_error(error));
+                }
+            }
+        };
+        let mut dispatch = Dispatch::default();
+        append_starter_selected(
+            room_service,
+            &room_key,
+            result,
+            DominoesActionSource::Human,
+            &mut dispatch,
+        );
+        if result.starter_position.is_some() {
+            let state = state.lock().expect("dominoes state lock");
+            append_round_start_bundle(
+                room_service,
+                &room_key,
+                round_start_bundle(&state),
+                &mut dispatch,
+            );
+        } else {
+            let state = state.lock().expect("dominoes state lock");
+            append_snapshot_and_turn(
+                room_service,
+                &room_key,
+                &state.table_snapshot(),
+                &mut dispatch,
+            );
+        }
         room_service.push_ok_response(&mut dispatch, session_id, route);
         dispatch
     }
@@ -507,6 +577,9 @@ impl GameHandler for DominoesGameHandler {
                 self.draw_tile(room_service, session_id)
             }
             route if route == DominoesRoutes::PASS as i32 => self.pass(room_service, session_id),
+            route if route == DominoesRoutes::SELECT_STARTER as i32 => {
+                self.select_starter(room_service, session_id, request.data)
+            }
             _ => {
                 room_service.error_response(session_id, request.route, WsResponseCode::NOT_IN_RANGE)
             }
@@ -582,6 +655,27 @@ pub(crate) fn append_round_start_bundle(
     }
     append_snapshot_and_turn(room_service, room_key, &bundle.snapshot, dispatch);
     append_hand_states(room_service, room_key, bundle.hands, dispatch);
+}
+
+pub(crate) fn append_starter_selected(
+    room_service: &RoomService,
+    room_key: &str,
+    result: StarterSelectionResult,
+    source: DominoesActionSource,
+    dispatch: &mut Dispatch,
+) {
+    room_service.broadcast_connected(
+        room_key,
+        DominoesWsCode::STARTER_SELECTED as i32,
+        WsDominoesStarterSelectedEvent {
+            position: result.position as i32,
+            slot_index: result.slot_index as i32,
+            tile: result.tile.into(),
+            starter_position: result.starter_position.map(|position| position as i32),
+            source,
+        },
+        dispatch,
+    );
 }
 
 pub(crate) fn append_action_outcome(
@@ -676,7 +770,16 @@ pub(crate) fn append_snapshot_and_turn(
         snapshot,
         dispatch,
     );
-    if snapshot.phase == DominoesPhase::Play {
+    if snapshot.phase == DominoesPhase::StarterSelection {
+        if let Some(selection) = snapshot.starter_selection.clone() {
+            room_service.broadcast_connected(
+                room_key,
+                DominoesWsCode::STARTER_SELECTION as i32,
+                selection,
+                dispatch,
+            );
+        }
+    } else if snapshot.phase == DominoesPhase::Play {
         room_service.broadcast_connected(
             room_key,
             DominoesWsCode::TURN as i32,

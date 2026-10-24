@@ -9,7 +9,7 @@ use crate::action;
 use crate::core::{DISCONNECTED_TURN_SECONDS, DominoesRoundState};
 use crate::game::{
     StateHandle, StateRegistry, append_action_outcome, append_round_start_bundle,
-    append_snapshot_and_turn, round_start_bundle,
+    append_snapshot_and_turn, append_starter_selected, round_start_bundle,
 };
 
 const LOOP_POLL: Duration = Duration::from_millis(100);
@@ -126,6 +126,25 @@ async fn emit_round_start(
     true
 }
 
+async fn emit_starter_selected(
+    room_key: &str,
+    expected_common: &Arc<Mutex<ws_common::CommonGameState>>,
+    result: crate::core::StarterSelectionResult,
+    source: DominoesActionSource,
+    room_service: &Arc<AsyncMutex<RoomService>>,
+    senders: &SessionSenders,
+) -> bool {
+    let room_service = room_service.lock().await;
+    if !room_matches_common(&room_service, room_key, expected_common) {
+        return false;
+    }
+    let mut dispatch = Dispatch::default();
+    append_starter_selected(&room_service, room_key, result, source, &mut dispatch);
+    drop(room_service);
+    send_dispatch(dispatch, senders).await;
+    true
+}
+
 fn remove_registry_state(room_key: &str, state: &StateHandle, states: &StateRegistry) {
     // GameOver 仍允许玩家重连查看最终结算；下一次 START 会主动清理这份终局状态。
     if state.lock().expect("dominoes state lock").phase == DominoesPhase::GameOver {
@@ -185,8 +204,10 @@ pub(crate) fn start_game_loop(
                 let mut state = state.lock().expect("dominoes state lock");
                 let paused = is_paused(&state);
                 let (source, cap) = automatic_source_and_cap(&state);
-                let cap_snapshot = (state.phase == DominoesPhase::Play
-                    && state.cap_remaining_seconds(cap))
+                let cap_snapshot = (matches!(
+                    state.phase,
+                    DominoesPhase::Play | DominoesPhase::StarterSelection
+                ) && state.cap_remaining_seconds(cap))
                 .then(|| state.table_snapshot());
                 (
                     state.phase,
@@ -216,6 +237,115 @@ pub(crate) fn start_game_loop(
             }
 
             match phase {
+                DominoesPhase::StarterSelection if remaining == 0 => {
+                    let selection = {
+                        let mut state = state.lock().expect("dominoes state lock");
+                        if state.phase != DominoesPhase::StarterSelection
+                            || state.turn_revision != revision
+                            || state.remaining_seconds != 0
+                            || is_paused(&state)
+                        {
+                            None
+                        } else {
+                            let slot = state
+                                .starter_pool
+                                .iter()
+                                .enumerate()
+                                .filter(|(index, _)| {
+                                    !state.starter_selections.values().any(|used| used == index)
+                                })
+                                .max_by_key(|(_, tile)| {
+                                    if source == Some(DominoesActionSource::Timeout) {
+                                        0
+                                    } else {
+                                        tile.pip_sum()
+                                    }
+                                })
+                                .map(|(index, _)| index);
+                            slot.and_then(|index| {
+                                let position = state.current_position;
+                                state
+                                    .select_starter_slot(position, index)
+                                    .ok()
+                                    .map(|result| {
+                                        (
+                                            result,
+                                            if result.starter_position.is_some() {
+                                                Some(round_start_bundle(&state))
+                                            } else {
+                                                None
+                                            },
+                                            state.table_snapshot(),
+                                        )
+                                    })
+                            })
+                        }
+                    };
+                    if let Some((result, bundle, snapshot)) = selection {
+                        let source = source.unwrap_or(DominoesActionSource::Timeout);
+                        if !emit_starter_selected(
+                            &room_key,
+                            &expected_common,
+                            result,
+                            source,
+                            &room_service,
+                            &senders,
+                        )
+                        .await
+                        {
+                            break;
+                        }
+                        if let Some(bundle) = bundle {
+                            if !emit_round_start(
+                                &room_key,
+                                &expected_common,
+                                bundle,
+                                &room_service,
+                                &senders,
+                            )
+                            .await
+                            {
+                                break;
+                            }
+                        } else if !emit_snapshot(
+                            &room_key,
+                            &expected_common,
+                            snapshot,
+                            &room_service,
+                            &senders,
+                        )
+                        .await
+                        {
+                            break;
+                        }
+                    }
+                }
+                DominoesPhase::StarterSelection => {
+                    tokio::time::sleep(COUNTDOWN_TICK).await;
+                    let snapshot = {
+                        let mut state = state.lock().expect("dominoes state lock");
+                        if is_paused(&state)
+                            || !state.tick_starter_selection(revision)
+                            || state_should_stop(&state)
+                        {
+                            None
+                        } else {
+                            Some(state.table_snapshot())
+                        }
+                    };
+                    if let Some(snapshot) = snapshot
+                        && !emit_snapshot(
+                            &room_key,
+                            &expected_common,
+                            snapshot,
+                            &room_service,
+                            &senders,
+                        )
+                        .await
+                    {
+                        break;
+                    }
+                }
                 DominoesPhase::Play if remaining == 0 => {
                     let outcome = {
                         let mut state = state.lock().expect("dominoes state lock");

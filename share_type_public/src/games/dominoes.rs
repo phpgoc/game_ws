@@ -27,6 +27,7 @@ pub enum DominoesPhase {
     Play = 0,
     RoundOver = 1,
     GameOver = 2,
+    StarterSelection = 3,
 }
 
 #[typeshare]
@@ -67,6 +68,7 @@ pub enum DominoesRoutes {
     PLAY_TILE = 5001,
     DRAW_TILE = 5002,
     PASS = 5003,
+    SELECT_STARTER = 5004,
 }
 
 #[typeshare]
@@ -85,6 +87,8 @@ pub enum DominoesWsCode {
     ROUND_OVER = 5009,
     GAME_OVER = 5010,
     HAND_STATE = 5011,
+    STARTER_SELECTION = 5012,
+    STARTER_SELECTED = 5013,
 }
 
 /// 双六骨牌中的一张牌。`id` 在 0..28 内稳定且一局中唯一。
@@ -139,6 +143,41 @@ pub struct WsDominoesLegalPlay {
 pub struct WsDominoesPlayRequest {
     pub tile_id: i32,
     pub endpoint_id: Option<i32>,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WsDominoesStarterSelectRequest {
+    pub slot_index: i32,
+}
+
+/// 开局六张暗牌中的一个槽位。未被选择前不会泄露牌面。
+#[typeshare]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WsDominoesStarterSlot {
+    pub index: i32,
+    pub tile: Option<WsDominoesTile>,
+    pub selected_by: Option<i32>,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WsDominoesStarterSelectionEvent {
+    pub round: i32,
+    pub selector_position: i32,
+    pub slots: Vec<WsDominoesStarterSlot>,
+    pub remaining_seconds: i32,
+    pub turn_revision: i32,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WsDominoesStarterSelectedEvent {
+    pub position: i32,
+    pub slot_index: i32,
+    pub tile: WsDominoesTile,
+    pub starter_position: Option<i32>,
+    pub source: DominoesActionSource,
 }
 
 #[typeshare]
@@ -241,6 +280,7 @@ pub struct WsDominoesTableSnapshotEvent {
     pub consecutive_passes: i32,
     pub remaining_seconds: i32,
     pub turn_revision: i32,
+    pub starter_selection: Option<WsDominoesStarterSelectionEvent>,
 }
 
 #[typeshare]

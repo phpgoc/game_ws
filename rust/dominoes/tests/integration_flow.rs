@@ -97,6 +97,9 @@ async fn three_players_can_start_and_place_the_opening_tile() {
     join(&mut third, "third", room).await;
 
     send_request(&mut owner, Routes::START as i32, json!({})).await;
+    select_starter(&mut owner, 0).await;
+    select_starter(&mut second, 1).await;
+    select_starter(&mut third, 2).await;
     let owner_start = recv_start_bundle(&mut owner, 0, true).await;
     let second_start = recv_start_bundle(&mut second, 1, false).await;
     let third_start = recv_start_bundle(&mut third, 2, false).await;
@@ -154,6 +157,9 @@ async fn four_players_receive_distinct_private_hands_at_round_start() {
     }
 
     send_request(&mut clients[0], Routes::START as i32, json!({})).await;
+    for (position, client) in clients.iter_mut().enumerate() {
+        select_starter(client, position as i32).await;
+    }
     let mut dealt_tile_ids = std::collections::HashSet::new();
     for (position, client) in clients.iter_mut().enumerate() {
         let start = recv_start_bundle(client, position as i32, position == 0).await;
@@ -276,6 +282,7 @@ async fn ai_seats_can_reach_and_drop_below_the_three_player_start_limit() {
     .await;
 
     send_request(&mut owner, Routes::START as i32, json!({})).await;
+    select_starter(&mut owner, 0).await;
     let started = recv_start_bundle(&mut owner, 0, true).await;
     assert_eq!(started.hand.len(), 5);
 
@@ -328,6 +335,7 @@ async fn official_room_replays_a_round_and_reaches_the_next_phase() {
     .await;
 
     send_request(&mut owner, Routes::START as i32, json!({})).await;
+    select_starter(&mut owner, 0).await;
     let mut round = recv_start_bundle(&mut owner, 0, true).await;
     let mut rounds_seen = 1;
     let mut plays_seen = 0;
@@ -699,4 +707,13 @@ async fn send_request(client: &mut Client, route: i32, data: Value) {
         ))
         .await
         .expect("send websocket request");
+}
+
+async fn select_starter(client: &mut Client, slot_index: i32) {
+    send_request(
+        client,
+        DominoesRoutes::SELECT_STARTER as i32,
+        json!({ "slot_index": slot_index }),
+    )
+    .await;
 }
