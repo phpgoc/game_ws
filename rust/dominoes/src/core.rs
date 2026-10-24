@@ -886,11 +886,14 @@ impl DominoesRoundState {
         };
         let best = self.scores.values().copied().max().unwrap_or_default();
         let winner_positions = if game_over {
-            self.scores
+            let mut positions = self
+                .scores
                 .iter()
                 .filter(|(_, score)| **score == best)
                 .map(|(position, _)| *position)
-                .collect()
+                .collect::<Vec<_>>();
+            positions.sort_unstable();
+            positions
         } else {
             Vec::new()
         };
