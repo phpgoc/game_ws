@@ -97,9 +97,9 @@ async fn three_players_can_start_and_place_the_opening_tile() {
     join(&mut third, "third", room).await;
 
     send_request(&mut owner, Routes::START as i32, json!({})).await;
-    let owner_start = recv_start_bundle(&mut owner, true).await;
-    let second_start = recv_start_bundle(&mut second, false).await;
-    let third_start = recv_start_bundle(&mut third, false).await;
+    let owner_start = recv_start_bundle(&mut owner, 0, true).await;
+    let second_start = recv_start_bundle(&mut second, 1, false).await;
+    let third_start = recv_start_bundle(&mut third, 2, false).await;
     let starter = owner_start.starter_position;
     assert_eq!(second_start.starter_position, starter);
     assert_eq!(third_start.starter_position, starter);
@@ -244,7 +244,7 @@ async fn ai_seats_can_reach_and_drop_below_the_three_player_start_limit() {
     .await;
 
     send_request(&mut owner, Routes::START as i32, json!({})).await;
-    let started = recv_start_bundle(&mut owner, true).await;
+    let started = recv_start_bundle(&mut owner, 0, true).await;
     assert_eq!(started.hand.len(), 5);
 
     server.abort();
@@ -296,7 +296,7 @@ async fn official_room_replays_a_round_and_reaches_the_next_phase() {
     .await;
 
     send_request(&mut owner, Routes::START as i32, json!({})).await;
-    let mut round = recv_start_bundle(&mut owner, true).await;
+    let mut round = recv_start_bundle(&mut owner, 0, true).await;
     let mut rounds_seen = 1;
     let mut plays_seen = 0;
     let mut passes_seen = 0;
@@ -439,6 +439,7 @@ async fn recv_owner_turn_or_round_end(
                 assert_hand_state_matches_snapshot(
                     snapshot.as_ref().expect("owner snapshot"),
                     &hand_state,
+                    0,
                 );
                 return Some(StartBundle {
                     starter_position: 0,
@@ -476,6 +477,7 @@ async fn recv_until_round_transition(client: &mut Client) -> RoundTransition {
             assert_hand_state_matches_snapshot(
                 snapshot.as_ref().expect("next round snapshot"),
                 &hand_state,
+                0,
             );
             return RoundTransition::NextRound(StartBundle {
                 starter_position: starter_position as i32,
@@ -492,7 +494,11 @@ struct StartBundle {
     hand_state: Value,
 }
 
-async fn recv_start_bundle(client: &mut Client, expect_response: bool) -> StartBundle {
+async fn recv_start_bundle(
+    client: &mut Client,
+    expected_position: i32,
+    expect_response: bool,
+) -> StartBundle {
     let mut starter_position = None;
     let mut hand = None;
     let mut snapshot = None;
@@ -506,6 +512,11 @@ async fn recv_start_bundle(client: &mut Client, expect_response: bool) -> StartB
                 .map(|position| position as i32);
         }
         if value.get("code").and_then(Value::as_i64) == Some(DominoesWsCode::DEAL as i64) {
+            assert_eq!(
+                value["data"]["position"],
+                json!(expected_position),
+                "private deal was sent for the wrong seat"
+            );
             hand = value["data"]["hand"].as_array().cloned();
         }
         if value.get("code").and_then(Value::as_i64) == Some(DominoesWsCode::HAND_STATE as i64) {
@@ -526,9 +537,20 @@ async fn recv_start_bundle(client: &mut Client, expect_response: bool) -> StartB
             hand_state.clone(),
             response_received,
         ) {
+            let dealt_tile_ids = tile_ids(&hand);
+            let private_tile_ids = tile_ids(
+                hand_state["hand"]
+                    .as_array()
+                    .expect("private hand state array"),
+            );
+            assert_eq!(
+                private_tile_ids, dealt_tile_ids,
+                "private hand state does not match the dealt hand for seat {expected_position}"
+            );
             assert_hand_state_matches_snapshot(
                 snapshot.as_ref().expect("round start snapshot"),
                 &hand_state,
+                expected_position,
             );
             return StartBundle {
                 starter_position,
@@ -540,12 +562,25 @@ async fn recv_start_bundle(client: &mut Client, expect_response: bool) -> StartB
     panic!("did not receive complete start bundle");
 }
 
-fn assert_hand_state_matches_snapshot(snapshot: &Value, hand_state: &Value) {
+fn tile_ids(tiles: &[Value]) -> Vec<i64> {
+    let mut ids = tiles
+        .iter()
+        .map(|tile| tile["id"].as_i64().expect("tile id"))
+        .collect::<Vec<_>>();
+    ids.sort_unstable();
+    ids
+}
+
+fn assert_hand_state_matches_snapshot(snapshot: &Value, hand_state: &Value, expected_position: i32) {
     let hand = hand_state["hand"].as_array().expect("hand array");
     let owner = snapshot["players"]
         .as_array()
-        .and_then(|players| players.iter().find(|player| player["position"] == json!(0)))
-        .expect("owner player state");
+        .and_then(|players| {
+            players
+                .iter()
+                .find(|player| player["position"] == json!(expected_position))
+        })
+        .expect("player state");
     assert_eq!(
         hand.len() as i64,
         owner["hand_count"].as_i64().expect("owner hand count")
