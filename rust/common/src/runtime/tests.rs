@@ -20,6 +20,9 @@ use super::{
     tests::TestHandler,
 };
 
+#[path = "tests/ordering.rs"]
+mod ordering;
+
 struct DefaultHookHandler;
 
 impl GameHandler for DefaultHookHandler {

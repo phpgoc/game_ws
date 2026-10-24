@@ -377,8 +377,10 @@ where
             None
         };
 
+        // 房间状态与由它生成的消息按同一顺序提交。这里只写有界发送队列，
+        // 不等待网络；后台游戏循环也须持有房间锁直到消息全部入队。
+        let mut room = room_service.lock().await;
         let dispatch = {
-            let mut room = room_service.lock().await;
             let mut handler = game_handler.lock().await;
             let creates_room_on_join = parsed_join
                 .as_ref()
@@ -442,14 +444,14 @@ where
         let mut dispatch = dispatch;
         annotate_request_id(&mut dispatch, session_id, request_route, &request_data);
         deliver(dispatch, &senders).await?;
+        drop(room);
     }
 
-    let (disconnect_dispatch, cleanup) = room_service
-        .lock()
-        .await
-        .disconnect_with_cleanup_grace(session_id);
+    let mut room = room_service.lock().await;
+    let (disconnect_dispatch, cleanup) = room.disconnect_with_cleanup_grace(session_id);
     senders.lock().await.remove(&session_id);
     deliver(disconnect_dispatch, &senders).await?;
+    drop(room);
     if let Some(cleanup) = cleanup {
         tokio::spawn(cleanup_abandoned_room_after(
             Arc::clone(&room_service),
