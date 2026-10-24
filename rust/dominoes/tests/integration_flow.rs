@@ -20,6 +20,9 @@ type Client = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpS
 #[path = "integration_flow/match_rejoin.rs"]
 mod match_rejoin;
 
+#[path = "integration_flow/lifecycle.rs"]
+mod lifecycle;
+
 #[cfg(feature = "official")]
 #[derive(Default)]
 struct TestAiDominoesHandler(DominoesGameHandler);
