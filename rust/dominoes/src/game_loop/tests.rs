@@ -156,6 +156,26 @@ fn disconnected_turn_is_capped_without_becoming_native_ai() {
 }
 
 #[test]
+fn disconnect_keeps_the_loop_but_quit_stops_it() {
+    let state = state();
+    state.base.lock().expect("common").mark_disconnected(0);
+    assert!(
+        !state_should_stop(&state),
+        "a transport disconnect keeps the roster and event loop alive"
+    );
+
+    {
+        let mut common = state.base.lock().expect("common");
+        common.remove_player(0);
+        common.request_stop();
+    }
+    assert!(
+        state_should_stop(&state),
+        "QUIT removes the seat and requests the event loop to stop"
+    );
+}
+
+#[test]
 fn native_ai_and_takeover_have_distinct_action_sources() {
     let native = state();
     native
