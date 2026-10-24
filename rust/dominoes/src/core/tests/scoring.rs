@@ -60,6 +60,26 @@ fn five_up_reaching_the_target_keeps_playing_until_the_round_can_change_the_winn
 }
 
 #[test]
+fn five_up_round_reward_uses_floor_division_for_remainder() {
+    // NicoNico sm42780597 05:12.4：结算时对手余牌为 0、3、6 点，赢家从 0 分变为 1 分。
+    // 来源：https://www.nicovideo.jp/watch/sm42780597
+    let mut state = state();
+    state.rule = DominoesRule::FiveUp;
+    state.hands = HashMap::from([
+        (0, Vec::new()),
+        (1, vec![tile(0, 3)]),
+        (2, vec![tile(0, 6)]),
+        (3, Vec::new()),
+    ]);
+
+    let result = state.finish_round(0, false);
+
+    assert_eq!(result.round_score, 1);
+    assert_eq!(result.scores[&0], 1);
+    assert!(!result.game_over);
+}
+
+#[test]
 fn spinner_counts_twice_until_its_second_connection_then_only_the_branches_score() {
     let mut state = state();
     state.rule = DominoesRule::FiveUp;
