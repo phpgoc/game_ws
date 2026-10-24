@@ -1,5 +1,8 @@
 use super::DominoesGameHandler;
 
+#[path = "tests/lobby.rs"]
+mod lobby;
+
 #[test]
 fn game_handler_module_has_external_tests() {
     use share_type_public::GameId;

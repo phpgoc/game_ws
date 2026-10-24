@@ -88,21 +88,31 @@ impl DominoesGameHandler {
         }
     }
 
-    fn prune_stale_states(&self, room_service: &RoomService) {
+    fn prune_stale_states(&self, room_service: &mut RoomService) {
         self.states
             .lock()
             .expect("dominoes registry lock")
             .retain(|room_key, state| {
-                room_service
+                let same_room = room_service
                     .room_common_state(room_key)
-                    .is_some_and(|common| state_matches_common(state, &common))
-                    && !state
-                        .lock()
-                        .expect("dominoes state lock")
-                        .base
-                        .lock()
-                        .expect("dominoes common state lock")
-                        .stop_requested
+                    .is_some_and(|common| state_matches_common(state, &common));
+                if !same_room {
+                    return false;
+                }
+                let state = state.lock().expect("dominoes state lock");
+                let changed_terminal_roster =
+                    state.phase == DominoesPhase::GameOver && !state.has_same_participants();
+                let stopping = state
+                    .base
+                    .lock()
+                    .expect("dominoes common state lock")
+                    .stop_requested;
+                drop(state);
+                if stopping || changed_terminal_roster {
+                    // 成员变更已由通用事件广播；旧座位的私牌、比分和胜者不能再归给新人。
+                    room_service.clear_room_game_state(room_key);
+                }
+                !stopping && !changed_terminal_roster
             });
     }
 
@@ -152,7 +162,8 @@ impl DominoesGameHandler {
         if !room_service.room_is_ready_to_start(&room_key) {
             return room_service.error_response(session_id, route, WsResponseCode::NOT_IN_RANGE);
         }
-        let Some(common) = room_service.room_common_state(&room_key) else {
+        // 复用其他游戏的重开流程，保留成员/托管信息，让旧循环继续持有原停止状态。
+        let Some(common) = room_service.reset_room_common_state_for_new_game(&room_key) else {
             return room_service.error_response(session_id, route, WsResponseCode::NOT_IN_RANGE);
         };
         let (rule, no_playable_tiles, target_score, settlement_time) =
@@ -460,6 +471,12 @@ impl GameHandler for DominoesGameHandler {
         request: &ClientRequest,
         dispatch: &mut Dispatch,
     ) {
+        if matches!(request.route, route if route == Routes::JOIN as i32
+            || route == Routes::ADD_AI as i32 || route == Routes::REMOVE_AI as i32
+            || route == Routes::SWAP as i32)
+        {
+            self.prune_stale_states(room_service);
+        }
         if matches!(
             request.route,
             route if route == Routes::QUIT as i32 || route == Routes::DISBAND as i32

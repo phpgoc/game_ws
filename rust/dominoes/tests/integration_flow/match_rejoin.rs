@@ -285,10 +285,74 @@ async fn four_players_finish_a_match_and_rejoin_each_major_phase() {
     })
     .await;
     assert_eq!(replayed_game["data"], result);
+
+    // 同一房间完成结算后改规则、换一位玩家、再次开局，后台必须真正继续推进。
+    write_request(
+        &mut writers[0],
+        Routes::SETTING as i32,
+        json!({
+            "current_configs": { "rule": 1, "target_score": 0 }
+        }),
+    )
+    .await;
+    let setting = owner_event(&mut events, |v| v["route"] == json!(Routes::SETTING as i32)).await;
+    assert_eq!(setting["code"], json!(WsResponseCode::OK as i32));
+    write_request(&mut writers[3], Routes::QUIT as i32, json!({})).await;
+    owner_event(&mut events, |v| v["code"] == json!(WsCode::QUIT as i32)).await;
+    let mut newcomer = connect_client(&url).await;
+    let joined = join(&mut newcomer, "newcomer", room).await;
+    assert_eq!(joined["data"]["self_position"], 3);
+    assert!(joined["data"]["rejoin_data"]["dominoes"].is_null());
+
+    write_request(&mut writers[0], Routes::START as i32, json!({})).await;
+    let next = owner_event(&mut events, |v| {
+        v["code"] == json!(DominoesWsCode::TABLE_SNAPSHOT as i32)
+            && v["data"]["phase"] == json!(DominoesPhase::StarterSelection as i32)
+    })
+    .await;
+    assert_eq!(next["data"]["rule"], 1);
+    assert_eq!(next["data"]["target_score"], 35);
+    assert_eq!(next["data"]["round"], 1);
+    assert!(
+        next["data"]["players"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|player| player["score"] == 0)
+    );
+    for position in [0, 2] {
+        write_request(&mut writers[position], Routes::AWAY as i32, json!({})).await;
+    }
+    send_request(&mut rejoined, Routes::AWAY as i32, json!({})).await;
+    send_request(&mut newcomer, Routes::AWAY as i32, json!({})).await;
+    let opening = owner_event(&mut events, |v| {
+        v["code"] == json!(DominoesWsCode::PLAY_TILE as i32)
+    })
+    .await;
+    assert_eq!(
+        opening["data"]["source"],
+        json!(share_type_public::DominoesActionSource::AiTakeover as i32)
+    );
     for reader in readers {
         reader.abort();
     }
     server.abort();
+}
+
+async fn owner_event(
+    events: &mut tokio::sync::mpsc::UnboundedReceiver<(usize, Value)>,
+    predicate: impl Fn(&Value) -> bool,
+) -> Value {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            let (position, value) = events.recv().await.expect("room events");
+            if position == 0 && predicate(&value) {
+                return value;
+            }
+        }
+    })
+    .await
+    .expect("owner event deadline")
 }
 
 async fn request_ok(client: &mut Client, route: Routes, data: Value) {

@@ -2,6 +2,7 @@
 
 use std::sync::{Arc, Mutex};
 
+use share_type_public::DominoesPhase;
 use ws_common::{CommonGameState, GameState};
 
 use crate::core::DominoesRoundState;
@@ -23,11 +24,7 @@ impl DominoesGameState {
 
 impl GameState for DominoesGameState {
     fn can_accept_players(&self) -> bool {
-        false
-    }
-
-    fn can_join_players(&self) -> bool {
-        false
+        self.inner.lock().expect("dominoes state lock").phase == DominoesPhase::GameOver
     }
 
     fn shared_common_state(&self) -> Arc<Mutex<CommonGameState>> {

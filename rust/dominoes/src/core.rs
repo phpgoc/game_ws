@@ -218,6 +218,8 @@ pub struct DominoesRoundState {
     pub no_playable_tiles: DominoesNoPlayableTiles,
     pub target_score: i32,
     pub positions: Vec<usize>,
+    /// 固定本场参赛者身份；重连可以更换 session，换人或换座后旧结算应退出房间。
+    participant_names: HashMap<usize, String>,
     pub hands: HashMap<usize, Vec<Tile>>,
     pub boneyard: Vec<Tile>,
     pub placements: Vec<Placement>,
@@ -273,13 +275,14 @@ impl DominoesRoundState {
         target_score: i32,
         seed: u64,
     ) -> Result<Self, CoreError> {
-        let mut positions = base
+        let participant_names = base
             .lock()
             .unwrap()
             .players
-            .keys()
-            .copied()
-            .collect::<Vec<_>>();
+            .iter()
+            .map(|(position, (_, name))| (*position, name.clone()))
+            .collect::<HashMap<_, _>>();
+        let mut positions = participant_names.keys().copied().collect::<Vec<_>>();
         positions.sort_unstable();
         if !(MIN_PLAYERS..=MAX_PLAYERS).contains(&positions.len()) {
             return Err(CoreError::NoPlayers);
@@ -292,6 +295,7 @@ impl DominoesRoundState {
             no_playable_tiles,
             target_score: if target_score == 61 { 61 } else { 35 },
             positions,
+            participant_names,
             hands: HashMap::new(),
             boneyard: Vec::new(),
             placements: Vec::new(),
@@ -364,6 +368,17 @@ impl DominoesRoundState {
 
     pub fn set_settlement_time_seconds(&mut self, seconds: u32) {
         self.settlement_time_seconds = seconds.clamp(1, 30);
+    }
+
+    pub(crate) fn has_same_participants(&self) -> bool {
+        let common = self.base.lock().expect("dominoes common state lock");
+        common.players.len() == self.participant_names.len()
+            && self.participant_names.iter().all(|(position, name)| {
+                common
+                    .players
+                    .get(position)
+                    .is_some_and(|(_, current)| current == name)
+            })
     }
 
     pub fn start_next_round(&mut self) -> Result<usize, CoreError> {
