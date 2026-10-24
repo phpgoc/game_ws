@@ -72,79 +72,6 @@ async fn send_dispatch(dispatch: Dispatch, senders: &SessionSenders) {
     }
 }
 
-async fn emit_snapshot(
-    room_key: &str,
-    expected_common: &Arc<Mutex<ws_common::CommonGameState>>,
-    snapshot: share_type_public::WsDominoesTableSnapshotEvent,
-    room_service: &Arc<AsyncMutex<RoomService>>,
-    senders: &SessionSenders,
-) -> bool {
-    let room_service = room_service.lock().await;
-    if !room_matches_common(&room_service, room_key, expected_common) {
-        return false;
-    }
-    let mut dispatch = Dispatch::default();
-    append_snapshot_and_turn(&room_service, room_key, &snapshot, &mut dispatch);
-    drop(room_service);
-    send_dispatch(dispatch, senders).await;
-    true
-}
-
-async fn emit_outcome(
-    room_key: &str,
-    expected_common: &Arc<Mutex<ws_common::CommonGameState>>,
-    outcome: action::ActionOutcome,
-    room_service: &Arc<AsyncMutex<RoomService>>,
-    senders: &SessionSenders,
-) -> bool {
-    let room_service = room_service.lock().await;
-    if !room_matches_common(&room_service, room_key, expected_common) {
-        return false;
-    }
-    let mut dispatch = Dispatch::default();
-    append_action_outcome(&room_service, room_key, outcome, &mut dispatch);
-    drop(room_service);
-    send_dispatch(dispatch, senders).await;
-    true
-}
-
-async fn emit_round_start(
-    room_key: &str,
-    expected_common: &Arc<Mutex<ws_common::CommonGameState>>,
-    bundle: crate::game::RoundStartBundle,
-    room_service: &Arc<AsyncMutex<RoomService>>,
-    senders: &SessionSenders,
-) -> bool {
-    let room_service = room_service.lock().await;
-    if !room_matches_common(&room_service, room_key, expected_common) {
-        return false;
-    }
-    let mut dispatch = Dispatch::default();
-    append_round_start_bundle(&room_service, room_key, bundle, &mut dispatch);
-    drop(room_service);
-    send_dispatch(dispatch, senders).await;
-    true
-}
-
-async fn emit_starter_selected(
-    room_key: &str,
-    expected_common: &Arc<Mutex<ws_common::CommonGameState>>,
-    result: crate::core::StarterSelectionResult,
-    source: DominoesActionSource,
-    room_service: &Arc<AsyncMutex<RoomService>>,
-    senders: &SessionSenders,
-) -> bool {
-    let room_service = room_service.lock().await;
-    if !room_matches_common(&room_service, room_key, expected_common) {
-        return false;
-    }
-    let mut dispatch = Dispatch::default();
-    append_starter_selected(&room_service, room_key, result, source, &mut dispatch);
-    drop(room_service);
-    send_dispatch(dispatch, senders).await;
-    true
-}
-
 fn remove_registry_state(room_key: &str, state: &StateHandle, states: &StateRegistry) {
     // GameOver 仍允许玩家重连查看最终结算；下一次 START 会主动清理这份终局状态。
     if state.lock().expect("dominoes state lock").phase == DominoesPhase::GameOver {
@@ -159,6 +86,125 @@ fn remove_registry_state(room_key: &str, state: &StateHandle, states: &StateRegi
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LoopStep {
+    Stop,
+    Again,
+    Poll,
+    Countdown(i32),
+}
+
+/// 调用方持有房间锁和牌局锁；状态变更、快照及私牌属于同一次提交。
+/// 等待倒计时在锁外进行，唤醒后只扣减仍属于同一决策窗口的时间。
+fn advance_loop(
+    state: &mut DominoesRoundState,
+    room_service: &RoomService,
+    room_key: &str,
+    tick_revision: Option<i32>,
+    dispatch: &mut Dispatch,
+) -> LoopStep {
+    if state_should_stop(state) {
+        return LoopStep::Stop;
+    }
+    if is_paused(state) {
+        return LoopStep::Poll;
+    }
+    let mut changed = if let Some(revision) = tick_revision {
+        match state.phase {
+            DominoesPhase::StarterSelection => state.tick_starter_selection(revision),
+            DominoesPhase::Play => state.tick_remaining_seconds(revision),
+            DominoesPhase::RoundOver => state.tick_round_transition(revision),
+            DominoesPhase::GameOver => false,
+        }
+    } else {
+        false
+    };
+
+    if let Ok(Some(outcome)) = action::forced_no_playable_turn(state) {
+        append_action_outcome(room_service, room_key, outcome, dispatch);
+        return LoopStep::Again;
+    }
+    let (source, cap) = automatic_source_and_cap(state);
+    if matches!(
+        state.phase,
+        DominoesPhase::Play | DominoesPhase::StarterSelection
+    ) {
+        changed |= state.cap_remaining_seconds(cap);
+    }
+    if state.remaining_seconds == 0 {
+        match state.phase {
+            DominoesPhase::StarterSelection => {
+                if let Some(slot) = state.automatic_starter_slot()
+                    && let Ok(result) = state.select_starter_slot(state.current_position, slot)
+                {
+                    append_starter_selected(
+                        room_service,
+                        room_key,
+                        result,
+                        source.unwrap_or(DominoesActionSource::Timeout),
+                        dispatch,
+                    );
+                    if result.starter_position.is_some() {
+                        append_round_start_bundle(
+                            room_service,
+                            room_key,
+                            round_start_bundle(state),
+                            dispatch,
+                        );
+                    } else {
+                        append_snapshot_and_turn(
+                            room_service,
+                            room_key,
+                            &state.table_snapshot(),
+                            dispatch,
+                        );
+                    }
+                    return LoopStep::Again;
+                }
+            }
+            DominoesPhase::Play => {
+                let source = source.unwrap_or(DominoesActionSource::Timeout);
+                match action::automatic_turn(state, source, |state, position, legal_plays| {
+                    if source == DominoesActionSource::Timeout {
+                        legal_plays[0]
+                    } else {
+                        crate::ai::choose_play(state, position, legal_plays)
+                    }
+                }) {
+                    Ok(outcome) => {
+                        append_action_outcome(room_service, room_key, outcome, dispatch);
+                        return LoopStep::Again;
+                    }
+                    Err(error) => ws_common::dlog!(
+                        ws_common::tracing::Level::WARN,
+                        "[dominoes] automatic turn failed: {}",
+                        error.message()
+                    ),
+                }
+            }
+            DominoesPhase::RoundOver => {
+                if state.start_next_round().is_ok() {
+                    append_round_start_bundle(
+                        room_service,
+                        room_key,
+                        round_start_bundle(state),
+                        dispatch,
+                    );
+                    return LoopStep::Again;
+                }
+            }
+            DominoesPhase::GameOver => return LoopStep::Stop,
+        }
+        // 错误状态不能形成占满执行器的零等待循环。
+        state.remaining_seconds = 1;
+        changed = true;
+    }
+    if changed {
+        append_snapshot_and_turn(room_service, room_key, &state.table_snapshot(), dispatch);
+    }
+    LoopStep::Countdown(state.turn_revision)
+}
+
 pub(crate) fn start_game_loop(
     room_key: String,
     state: StateHandle,
@@ -168,294 +214,32 @@ pub(crate) fn start_game_loop(
 ) {
     tokio::spawn(async move {
         let expected_common = Arc::clone(&state.lock().expect("dominoes state lock").base);
+        let mut tick_revision = None;
         loop {
-            let room_is_current = {
-                let room_service = room_service.lock().await;
-                room_matches_common(&room_service, &room_key, &expected_common)
-            };
-            if !room_is_current || state_should_stop(&state.lock().expect("dominoes state lock")) {
+            let room = room_service.lock().await;
+            if !room_matches_common(&room, &room_key, &expected_common) {
                 break;
             }
-
-            let forced_outcome = {
+            let mut dispatch = Dispatch::default();
+            let step = {
                 let mut state = state.lock().expect("dominoes state lock");
-                if is_paused(&state) {
-                    None
-                } else {
-                    action::forced_no_playable_turn(&mut state).unwrap_or_default()
-                }
+                advance_loop(&mut state, &room, &room_key, tick_revision, &mut dispatch)
             };
-            if let Some(outcome) = forced_outcome {
-                if !emit_outcome(
-                    &room_key,
-                    &expected_common,
-                    outcome,
-                    &room_service,
-                    &senders,
-                )
-                .await
-                {
-                    break;
-                }
-                continue;
+            // 与通用请求相同，消息全部写入有界队列后才允许下一次房间操作。
+            // 不持有同步牌局锁跨越 await，也不在房间锁内等待网络或倒计时。
+            if !dispatch.messages.is_empty() {
+                send_dispatch(dispatch, &senders).await;
             }
-
-            let (phase, revision, remaining, paused, cap_snapshot, source) = {
-                let mut state = state.lock().expect("dominoes state lock");
-                let paused = is_paused(&state);
-                let (source, cap) = automatic_source_and_cap(&state);
-                let cap_snapshot = (matches!(
-                    state.phase,
-                    DominoesPhase::Play | DominoesPhase::StarterSelection
-                ) && state.cap_remaining_seconds(cap))
-                .then(|| state.table_snapshot());
-                (
-                    state.phase,
-                    state.turn_revision,
-                    state.remaining_seconds,
-                    paused,
-                    cap_snapshot,
-                    source,
-                )
-            };
-
-            if let Some(snapshot) = cap_snapshot
-                && !emit_snapshot(
-                    &room_key,
-                    &expected_common,
-                    snapshot,
-                    &room_service,
-                    &senders,
-                )
-                .await
-            {
-                break;
-            }
-            if paused {
-                tokio::time::sleep(LOOP_POLL).await;
-                continue;
-            }
-
-            match phase {
-                DominoesPhase::StarterSelection if remaining == 0 => {
-                    let selection = {
-                        let mut state = state.lock().expect("dominoes state lock");
-                        if state.phase != DominoesPhase::StarterSelection
-                            || state.turn_revision != revision
-                            || state.remaining_seconds != 0
-                            || is_paused(&state)
-                        {
-                            None
-                        } else {
-                            let slot = state.automatic_starter_slot();
-                            slot.and_then(|index| {
-                                let position = state.current_position;
-                                state
-                                    .select_starter_slot(position, index)
-                                    .ok()
-                                    .map(|result| {
-                                        (
-                                            result,
-                                            if result.starter_position.is_some() {
-                                                Some(round_start_bundle(&state))
-                                            } else {
-                                                None
-                                            },
-                                            state.table_snapshot(),
-                                        )
-                                    })
-                            })
-                        }
-                    };
-                    if let Some((result, bundle, snapshot)) = selection {
-                        let source = source.unwrap_or(DominoesActionSource::Timeout);
-                        if !emit_starter_selected(
-                            &room_key,
-                            &expected_common,
-                            result,
-                            source,
-                            &room_service,
-                            &senders,
-                        )
-                        .await
-                        {
-                            break;
-                        }
-                        if let Some(bundle) = bundle {
-                            if !emit_round_start(
-                                &room_key,
-                                &expected_common,
-                                bundle,
-                                &room_service,
-                                &senders,
-                            )
-                            .await
-                            {
-                                break;
-                            }
-                        } else if !emit_snapshot(
-                            &room_key,
-                            &expected_common,
-                            snapshot,
-                            &room_service,
-                            &senders,
-                        )
-                        .await
-                        {
-                            break;
-                        }
-                    }
-                }
-                DominoesPhase::StarterSelection => {
+            drop(room);
+            tick_revision = None;
+            match step {
+                LoopStep::Stop => break,
+                LoopStep::Again => {}
+                LoopStep::Poll => tokio::time::sleep(LOOP_POLL).await,
+                LoopStep::Countdown(revision) => {
                     tokio::time::sleep(COUNTDOWN_TICK).await;
-                    let snapshot = {
-                        let mut state = state.lock().expect("dominoes state lock");
-                        if is_paused(&state)
-                            || !state.tick_starter_selection(revision)
-                            || state_should_stop(&state)
-                        {
-                            None
-                        } else {
-                            Some(state.table_snapshot())
-                        }
-                    };
-                    if let Some(snapshot) = snapshot
-                        && !emit_snapshot(
-                            &room_key,
-                            &expected_common,
-                            snapshot,
-                            &room_service,
-                            &senders,
-                        )
-                        .await
-                    {
-                        break;
-                    }
+                    tick_revision = Some(revision);
                 }
-                DominoesPhase::Play if remaining == 0 => {
-                    let outcome = {
-                        let mut state = state.lock().expect("dominoes state lock");
-                        if state.phase != DominoesPhase::Play
-                            || state.turn_revision != revision
-                            || state.remaining_seconds != 0
-                            || is_paused(&state)
-                        {
-                            None
-                        } else {
-                            let source = source.unwrap_or(DominoesActionSource::Timeout);
-                            let result = action::automatic_turn(
-                                &mut state,
-                                source,
-                                |state, position, legal_plays| {
-                                    if source == DominoesActionSource::Timeout {
-                                        legal_plays[0]
-                                    } else {
-                                        crate::ai::choose_play(state, position, legal_plays)
-                                    }
-                                },
-                            );
-                            match result {
-                                Ok(outcome) => Some(outcome),
-                                Err(_) => {
-                                    state.remaining_seconds = 1;
-                                    None
-                                }
-                            }
-                        }
-                    };
-                    if let Some(outcome) = outcome
-                        && !emit_outcome(
-                            &room_key,
-                            &expected_common,
-                            outcome,
-                            &room_service,
-                            &senders,
-                        )
-                        .await
-                    {
-                        break;
-                    }
-                }
-                DominoesPhase::Play => {
-                    tokio::time::sleep(COUNTDOWN_TICK).await;
-                    let snapshot = {
-                        let mut state = state.lock().expect("dominoes state lock");
-                        if is_paused(&state)
-                            || !state.tick_remaining_seconds(revision)
-                            || state_should_stop(&state)
-                        {
-                            None
-                        } else {
-                            Some(state.table_snapshot())
-                        }
-                    };
-                    if let Some(snapshot) = snapshot
-                        && !emit_snapshot(
-                            &room_key,
-                            &expected_common,
-                            snapshot,
-                            &room_service,
-                            &senders,
-                        )
-                        .await
-                    {
-                        break;
-                    }
-                }
-                DominoesPhase::RoundOver if remaining == 0 => {
-                    let bundle = {
-                        let mut state = state.lock().expect("dominoes state lock");
-                        if state.phase != DominoesPhase::RoundOver
-                            || state.turn_revision != revision
-                            || is_paused(&state)
-                        {
-                            None
-                        } else if state.start_next_round().is_ok() {
-                            Some(round_start_bundle(&state))
-                        } else {
-                            None
-                        }
-                    };
-                    if let Some(bundle) = bundle
-                        && !emit_round_start(
-                            &room_key,
-                            &expected_common,
-                            bundle,
-                            &room_service,
-                            &senders,
-                        )
-                        .await
-                    {
-                        break;
-                    }
-                }
-                DominoesPhase::RoundOver => {
-                    tokio::time::sleep(COUNTDOWN_TICK).await;
-                    let snapshot = {
-                        let mut state = state.lock().expect("dominoes state lock");
-                        if is_paused(&state)
-                            || !state.tick_round_transition(revision)
-                            || state_should_stop(&state)
-                        {
-                            None
-                        } else {
-                            Some(state.table_snapshot())
-                        }
-                    };
-                    if let Some(snapshot) = snapshot
-                        && !emit_snapshot(
-                            &room_key,
-                            &expected_common,
-                            snapshot,
-                            &room_service,
-                            &senders,
-                        )
-                        .await
-                    {
-                        break;
-                    }
-                }
-                DominoesPhase::GameOver => tokio::time::sleep(LOOP_POLL).await,
             }
         }
         remove_registry_state(&room_key, &state, &states);
