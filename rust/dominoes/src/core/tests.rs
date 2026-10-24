@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use share_type_public::{DominoesNoPlayableTiles, DominoesPhase, DominoesRule};
+use share_type_public::{DominoesNoPlayableTiles, DominoesPhase, DominoesPort, DominoesRule};
 use ws_common::CommonGameState;
 
 use super::{DominoesRoundState, Tile};
@@ -255,6 +255,82 @@ fn five_up_doubles_are_spinners_with_extra_open_ends() {
 }
 
 #[test]
+fn opening_doubles_have_four_real_endpoints_in_both_rule_modes() {
+    for rule in [DominoesRule::Simple, DominoesRule::FiveUp] {
+        let mut state = state();
+        state.rule = rule;
+        state.phase = DominoesPhase::Play;
+        state.current_position = 0;
+        let double_four = Tile::from_id(22).expect("4-4 tile");
+        state.hands = HashMap::from([
+            (0, vec![double_four, Tile::from_id(0).expect("0-0 tile")]),
+            (1, vec![Tile::from_id(1).expect("0-1 tile")]),
+            (2, vec![Tile::from_id(2).expect("0-2 tile")]),
+            (3, vec![Tile::from_id(3).expect("0-3 tile")]),
+        ]);
+
+        let (placement, _, _) = state
+            .play_tile(0, double_four.id, None)
+            .expect("opening double");
+
+        assert_eq!(placement.new_endpoints.len(), 4, "{rule:?}");
+        assert_eq!(state.endpoints.len(), 4, "{rule:?}");
+        let mut ports = state
+            .endpoints
+            .iter()
+            .map(|endpoint| endpoint.port as i32)
+            .collect::<Vec<_>>();
+        ports.sort_unstable();
+        assert_eq!(
+            ports,
+            [
+                DominoesPort::Left as i32,
+                DominoesPort::Right as i32,
+                DominoesPort::Top as i32,
+                DominoesPort::Bottom as i32,
+            ],
+            "{rule:?} opening spinner ports"
+        );
+    }
+}
+
+#[test]
+fn five_up_preview_score_matches_the_selected_spinner_endpoint() {
+    let mut state = state();
+    state.rule = DominoesRule::FiveUp;
+    state.phase = DominoesPhase::Play;
+    state.current_position = 0;
+    let opening = Tile::from_id(5).expect("0-5 tile");
+    let double_five = Tile::from_id(25).expect("5-5 tile");
+    state.hands = HashMap::from([
+        (0, vec![opening, Tile::from_id(0).expect("0-0 tile")]),
+        (1, vec![double_five]),
+        (2, vec![Tile::from_id(1).expect("0-1 tile")]),
+        (3, vec![Tile::from_id(2).expect("0-2 tile")]),
+    ]);
+    state.play_tile(0, opening.id, None).expect("opening five");
+    state.current_position = 1;
+
+    let five_endpoint = state
+        .endpoints
+        .iter()
+        .find(|endpoint| endpoint.pip == 5)
+        .copied()
+        .expect("five endpoint");
+    let legal = state
+        .legal_plays(1)
+        .into_iter()
+        .find(|play| play.endpoint_id == Some(five_endpoint.endpoint_id))
+        .expect("double five legal play");
+    assert_eq!(legal.score, 15);
+
+    let (_, score, _) = state
+        .play_tile(1, double_five.id, Some(five_endpoint.endpoint_id))
+        .expect("spinner endpoint");
+    assert_eq!(score, 15);
+}
+
+#[test]
 fn layout_keeps_all_twenty_eight_tiles_non_overlapping() {
     for rule in [DominoesRule::Simple, DominoesRule::FiveUp] {
         let mut state = state();
@@ -348,4 +424,27 @@ fn round_result_is_kept_for_rejoin_until_the_next_round_starts() {
     state.phase = DominoesPhase::RoundOver;
     state.start_next_round().expect("next round");
     assert!(state.last_round_result.is_none());
+}
+
+#[test]
+fn game_over_winners_are_all_players_with_the_highest_final_score() {
+    let mut state = state();
+    state.phase = DominoesPhase::Play;
+    state.current_position = 0;
+    state.scores = HashMap::from([(0, 34), (1, 34), (2, 35), (3, 10)]);
+    let winner_tile = Tile::from_id(0).expect("0-0 tile");
+    state.hands = HashMap::from([
+        (0, vec![winner_tile]),
+        (1, vec![Tile::from_id(1).expect("0-1 tile")]),
+        (2, vec![]),
+        (3, vec![]),
+    ]);
+
+    let (_, _, result) = state
+        .play_tile(0, winner_tile.id, None)
+        .expect("finish final round");
+    let result = result.expect("game result");
+    assert!(result.game_over);
+    assert_eq!(result.scores[&0], 35);
+    assert_eq!(result.winner_positions, vec![0, 2]);
 }
