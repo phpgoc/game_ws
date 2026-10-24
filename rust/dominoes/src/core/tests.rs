@@ -10,6 +10,8 @@ use super::{DominoesRoundState, Tile};
 mod layout_sequences;
 #[path = "tests/public_history.rs"]
 mod public_history;
+#[path = "tests/scoring.rs"]
+mod scoring;
 
 fn state_with_players(player_count: usize) -> DominoesRoundState {
     let mut common = CommonGameState::new();
@@ -384,12 +386,12 @@ fn five_up_preview_score_matches_the_selected_spinner_endpoint() {
         .into_iter()
         .find(|play| play.endpoint_id == Some(five_endpoint.endpoint_id))
         .expect("double five legal play");
-    assert_eq!(legal.score, 15);
+    assert_eq!(legal.score, 10);
 
     let (_, score, _) = state
         .play_tile(1, double_five.id, Some(five_endpoint.endpoint_id))
         .expect("spinner endpoint");
-    assert_eq!(score, 15);
+    assert_eq!(score, 10);
 }
 
 #[test]

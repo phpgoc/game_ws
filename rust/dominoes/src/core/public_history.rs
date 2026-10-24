@@ -4,6 +4,8 @@ use super::*;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublicPlayContext {
+    pub board: BoardEnds,
+    pub spinner_endpoint_ids: Vec<i32>,
     pub rule: DominoesRule,
     pub no_playable_tiles: DominoesNoPlayableTiles,
     pub target_score: i32,
@@ -66,6 +68,16 @@ impl DominoesRoundState {
                 .map(|endpoint| (endpoint.endpoint_id, endpoint.pip))
                 .collect(),
             context: PublicPlayContext {
+                board: self.board_ends(),
+                spinner_endpoint_ids: self
+                    .endpoints
+                    .iter()
+                    .filter(|end| {
+                        self.board_end(end.endpoint_id)
+                            .is_some_and(|end| end.spinner)
+                    })
+                    .map(|end| end.endpoint_id)
+                    .collect(),
                 rule: self.rule,
                 no_playable_tiles: self.no_playable_tiles,
                 target_score: self.target_score,

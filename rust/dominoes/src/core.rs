@@ -15,6 +15,9 @@ use share_type_public::{
 };
 use ws_common::CommonGameState;
 
+mod board_ends;
+pub use board_ends::{BoardEnd, BoardEnds};
+
 #[cfg(any(feature = "official", test))]
 mod public_history;
 #[cfg(any(feature = "official", test))]
@@ -476,13 +479,12 @@ impl DominoesRoundState {
                 .positions
                 .iter()
                 .copied()
-                .filter(|position| {
+                .find(|position| {
                     self.starter_selections
                         .get(position)
                         .and_then(|index| self.starter_pool.get(*index))
                         .is_some_and(|tile| tile.pip_sum() == best_pips)
                 })
-                .next()
                 .unwrap_or(self.positions[0]);
             self.deal_round(Some(starter))?;
             Some(starter)
@@ -973,43 +975,20 @@ impl DominoesRoundState {
         if self.rule != DominoesRule::FiveUp {
             return 0;
         }
-        let mut total = self
-            .endpoints
-            .iter()
-            .map(|endpoint| endpoint.pip)
-            .sum::<i32>();
-        match endpoint_id {
-            None if tile.is_double() => total = tile.a * 4,
-            None => total = tile.a + tile.b,
-            Some(endpoint_id) => {
-                let Some(endpoint) = self
-                    .endpoints
-                    .iter()
-                    .find(|endpoint| endpoint.endpoint_id == endpoint_id)
-                else {
-                    return 0;
-                };
-                total -= endpoint.pip;
-                total += if tile.is_double() {
-                    tile.a * 3
-                } else {
-                    tile.other_pip(endpoint.pip)
-                };
-            }
+        if endpoint_id.is_some_and(|id| self.board_end(id).is_none()) {
+            return 0;
         }
-        if total % 5 == 0 { total } else { 0 }
+        self.board_ends()
+            .after_play(
+                self.rule,
+                tile,
+                endpoint_id.and_then(|id| self.board_end(id)),
+            )
+            .five_up_score(self.rule)
     }
 
     fn five_up_score(&self) -> i32 {
-        if self.rule != DominoesRule::FiveUp {
-            return 0;
-        }
-        let total = self
-            .endpoints
-            .iter()
-            .map(|endpoint| endpoint.pip)
-            .sum::<i32>();
-        if total % 5 == 0 { total } else { 0 }
+        self.board_ends().five_up_score(self.rule)
     }
 
     fn finish_round(&mut self, winner: usize, blocked: bool) -> RoundResult {
