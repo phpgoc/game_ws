@@ -10,6 +10,8 @@ use super::{DominoesRoundState, Tile};
 mod layout_sequences;
 #[path = "tests/public_history.rs"]
 mod public_history;
+#[path = "tests/round_order.rs"]
+mod round_order;
 #[path = "tests/scoring.rs"]
 mod scoring;
 
@@ -126,19 +128,6 @@ fn starter_ties_keep_the_first_selection_order() {
 
     assert_eq!(result.starter_position, Some(0));
     assert_eq!(state.current_position, 0);
-}
-
-#[test]
-fn next_round_starts_with_the_previous_round_winner() {
-    let mut state = state_with_players(3);
-    state.start_new_game().expect("start");
-    state.phase = DominoesPhase::RoundOver;
-    state.round_winner = Some(2);
-
-    let starter = state.start_next_round().expect("next round");
-
-    assert_eq!(starter, 2);
-    assert_eq!(state.current_position, 2);
 }
 
 #[test]
