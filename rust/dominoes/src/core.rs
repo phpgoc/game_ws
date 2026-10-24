@@ -73,11 +73,7 @@ impl Tile {
     }
 
     fn other_pip(self, matched: i32) -> i32 {
-        if self.a == matched {
-            self.b
-        } else {
-            self.a
-        }
+        if self.a == matched { self.b } else { self.a }
     }
 }
 
@@ -876,8 +872,7 @@ impl DominoesRoundState {
                     endpoint.anchor_y + previous_dy * TILE_SHORT_HALF + next_dy * next_extent;
             }
         }
-        // 《世界游戏大全 51》的双牌在两种计分规则下都形成 spinner；
-        // Simple 也可能出现额外分支，因此双牌必须避开已有牌面。
+        // 双牌横切牌链；仅 Five-Up 产生侧分支。视觉避让不能改变连接拓扑。
         while self.placement_collides(center_x, center_y, orientation) {
             let (current_dx, current_dy) = direction_vector(direction);
             center_x += current_dx * LAYOUT_JUMP;
@@ -940,19 +935,19 @@ impl DominoesRoundState {
         layout: LayoutPlan,
     ) -> Vec<Endpoint> {
         let branches = match (layout.outward_direction, tile.is_double()) {
-            (None, true) => vec![
+            (None, true) if self.rule == DominoesRule::FiveUp => vec![
                 (DominoesPort::Left, tile.a),
                 (DominoesPort::Right, tile.a),
                 (DominoesPort::Top, tile.a),
                 (DominoesPort::Bottom, tile.a),
             ],
-            (None, false) => vec![(DominoesPort::Left, tile.a), (DominoesPort::Right, tile.b)],
-            (Some(direction), true) => vec![
+            (None, _) => vec![(DominoesPort::Left, tile.a), (DominoesPort::Right, tile.b)],
+            (Some(direction), true) if self.rule == DominoesRule::FiveUp => vec![
                 (direction, tile.a),
                 (turn_left(direction), tile.a),
                 (turn_right(direction), tile.a),
             ],
-            (Some(direction), false) => {
+            (Some(direction), _) => {
                 let connected_pip = connected_pip(tile, layout, direction);
                 vec![(direction, tile.other_pip(connected_pip))]
             }
@@ -1005,11 +1000,7 @@ impl DominoesRoundState {
                 };
             }
         }
-        if total % 5 == 0 {
-            total
-        } else {
-            0
-        }
+        if total % 5 == 0 { total } else { 0 }
     }
 
     fn five_up_score(&self) -> i32 {
@@ -1021,11 +1012,7 @@ impl DominoesRoundState {
             .iter()
             .map(|endpoint| endpoint.pip)
             .sum::<i32>();
-        if total % 5 == 0 {
-            total
-        } else {
-            0
-        }
+        if total % 5 == 0 { total } else { 0 }
     }
 
     fn finish_round(&mut self, winner: usize, blocked: bool) -> RoundResult {

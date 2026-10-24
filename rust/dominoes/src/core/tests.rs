@@ -75,12 +75,14 @@ fn pending_starter_selection_reveals_only_chosen_slots_and_deals_after_all_choic
     assert_eq!(state.phase, DominoesPhase::StarterSelection);
     assert_eq!(state.starter_pool.len(), 6);
     assert!(state.hands.is_empty());
-    assert!(state
-        .starter_selection_event()
-        .expect("selection event")
-        .slots
-        .iter()
-        .all(|slot| slot.tile.is_none() && slot.selected_by.is_none()));
+    assert!(
+        state
+            .starter_selection_event()
+            .expect("selection event")
+            .slots
+            .iter()
+            .all(|slot| slot.tile.is_none() && slot.selected_by.is_none())
+    );
 
     assert_eq!(
         state.select_starter_slot(1, 0),
@@ -114,7 +116,9 @@ fn automatic_starter_selection_does_not_read_hidden_pips_or_reuse_slots() {
                 let slot = state.automatic_starter_slot().expect("available slot");
                 assert_eq!(swapped.automatic_starter_slot(), Some(slot));
                 assert!(!state.starter_selections.values().any(|used| *used == slot));
-                state.select_starter_slot(position, slot).expect("automatic choice");
+                state
+                    .select_starter_slot(position, slot)
+                    .expect("automatic choice");
             }
             assert_eq!(state.phase, DominoesPhase::Play);
             assert_eq!(state.automatic_starter_slot(), None);
@@ -235,7 +239,7 @@ fn a_block_is_awarded_to_the_last_player_who_placed_a_tile() {
 }
 
 #[test]
-fn simple_doubles_create_spinner_branches() {
+fn simple_doubles_keep_only_the_two_chain_ends() {
     let mut state = state();
     state.phase = DominoesPhase::Play;
     state.current_position = 0;
@@ -271,17 +275,19 @@ fn simple_doubles_create_spinner_branches() {
         double_placement.orientation,
         share_type_public::DominoesOrientation::Vertical
     );
-    assert_eq!(state.endpoints.len(), 4);
+    assert_eq!(state.endpoints.len(), 2);
+    assert_eq!(double_placement.new_endpoints.len(), 1);
+    assert_eq!(double_placement.new_endpoints[0].port, DominoesPort::Right);
     let continued_five = state
         .endpoints
         .iter()
         .find(|endpoint| endpoint.placement_id == double_placement.placement_id)
-        .expect("double keeps spinner branches")
+        .expect("double keeps the outward chain end")
         .endpoint_id;
     state
         .play_tile(2, five_six.id, Some(continued_five))
         .expect("play 5-6 after visual crosspiece");
-    assert_eq!(state.endpoints.len(), 4);
+    assert_eq!(state.endpoints.len(), 2);
 }
 
 #[test]
@@ -309,7 +315,7 @@ fn five_up_doubles_are_spinners_with_extra_open_ends() {
 }
 
 #[test]
-fn opening_doubles_have_four_real_endpoints_in_both_rule_modes() {
+fn opening_doubles_have_two_simple_ends_and_four_five_up_branches() {
     for rule in [DominoesRule::Simple, DominoesRule::FiveUp] {
         let mut state = state();
         state.rule = rule;
@@ -327,24 +333,26 @@ fn opening_doubles_have_four_real_endpoints_in_both_rule_modes() {
             .play_tile(0, double_four.id, None)
             .expect("opening double");
 
-        assert_eq!(placement.new_endpoints.len(), 4, "{rule:?}");
-        assert_eq!(state.endpoints.len(), 4, "{rule:?}");
+        let count = if rule == DominoesRule::Simple { 2 } else { 4 };
+        assert_eq!(placement.new_endpoints.len(), count, "{rule:?}");
+        assert_eq!(state.endpoints.len(), count, "{rule:?}");
         let mut ports = state
             .endpoints
             .iter()
             .map(|endpoint| endpoint.port as i32)
             .collect::<Vec<_>>();
         ports.sort_unstable();
-        assert_eq!(
-            ports,
-            [
+        let expected = if rule == DominoesRule::Simple {
+            vec![DominoesPort::Left as i32, DominoesPort::Right as i32]
+        } else {
+            vec![
                 DominoesPort::Left as i32,
                 DominoesPort::Right as i32,
                 DominoesPort::Top as i32,
                 DominoesPort::Bottom as i32,
-            ],
-            "{rule:?} opening spinner ports"
-        );
+            ]
+        };
+        assert_eq!(ports, expected, "{rule:?} opening ports");
     }
 }
 
@@ -409,20 +417,20 @@ fn layout_keeps_all_twenty_eight_tiles_non_overlapping() {
             for other in state.placements.iter().skip(index + 1) {
                 let (other_width, other_height) = super::half_extents(other.orientation);
                 assert!(
-					!((placement.center_x - other.center_x).abs() < width + other_width
-						&& (placement.center_y - other.center_y).abs() < height + other_height),
-					"{rule:?}: placements {} {:?} {:?} at ({}, {}) and {} {:?} {:?} at ({}, {}) overlap",
-					placement.placement_id,
-					placement.tile,
-					placement.orientation,
-					placement.center_x,
-					placement.center_y,
-					other.placement_id,
-					other.tile,
-					other.orientation,
-					other.center_x,
-					other.center_y,
-					);
+                    !((placement.center_x - other.center_x).abs() < width + other_width
+                        && (placement.center_y - other.center_y).abs() < height + other_height),
+                    "{rule:?}: placements {} {:?} {:?} at ({}, {}) and {} {:?} {:?} at ({}, {}) overlap",
+                    placement.placement_id,
+                    placement.tile,
+                    placement.orientation,
+                    placement.center_x,
+                    placement.center_y,
+                    other.placement_id,
+                    other.tile,
+                    other.orientation,
+                    other.center_x,
+                    other.center_y,
+                );
             }
         }
     }

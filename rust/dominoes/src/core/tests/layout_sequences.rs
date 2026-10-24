@@ -74,6 +74,12 @@ fn play_seeded_round(state: &mut DominoesRoundState, mut choice_seed: u64) {
 }
 
 fn assert_round_conservation_and_layout(state: &DominoesRoundState) {
+    if state.rule == DominoesRule::Simple {
+        assert_eq!(
+            state.endpoints.len(),
+            if state.placements.is_empty() { 0 } else { 2 }
+        );
+    }
     let mut tile_ids = HashSet::with_capacity(TILE_COUNT);
     let mut remember = |tile: Tile| {
         assert!(tile_ids.insert(tile.id), "tile {} appears twice", tile.id);
@@ -106,7 +112,6 @@ fn assert_round_conservation_and_layout(state: &DominoesRoundState) {
             );
         }
     }
-
 }
 
 fn next_random(state: &mut u64) -> u64 {
