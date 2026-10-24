@@ -162,7 +162,7 @@ async fn three_players_can_start_and_place_the_opening_tile() {
 async fn four_players_receive_distinct_private_hands_at_round_start() {
     let (server, url, _stop_handle) =
         start_server("dominoes-four-player-start-test", test_handler()).await;
-    let mut clients = vec![
+    let mut clients = [
         connect_client(&url).await,
         connect_client(&url).await,
         connect_client(&url).await,
@@ -491,19 +491,17 @@ async fn recv_owner_turn_or_round_end(
             }
             _ => {}
         }
-        if current_position == Some(0) {
-            if let Some(hand_state) = hand_state.take() {
-                assert_hand_state_matches_snapshot(
-                    snapshot.as_ref().expect("owner snapshot"),
-                    &hand_state,
-                    0,
-                );
-                return Some(StartBundle {
-                    starter_position: 0,
-                    hand: Vec::new(),
-                    hand_state,
-                });
-            }
+        if let (Some(0), Some(hand_state)) = (current_position, hand_state.take()) {
+            assert_hand_state_matches_snapshot(
+                snapshot.as_ref().expect("owner snapshot"),
+                &hand_state,
+                0,
+            );
+            return Some(StartBundle {
+                starter_position: 0,
+                hand: Vec::new(),
+                hand_state,
+            });
         }
     }
 }

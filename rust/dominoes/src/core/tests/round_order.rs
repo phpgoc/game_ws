@@ -14,9 +14,13 @@ fn next_round_starter_rotates_after_both_empty_hand_and_blocked_rounds() {
                         common.add_player(position, position as u64 + 1, &format!("P{position}"));
                     }
                     let mut state = DominoesRoundState::new_with_seed(
-                        Arc::new(Mutex::new(common)), rule,
-                        DominoesNoPlayableTiles::PassWithoutDraw, 61, 1,
-                    ).unwrap();
+                        Arc::new(Mutex::new(common)),
+                        rule,
+                        DominoesNoPlayableTiles::PassWithoutDraw,
+                        61,
+                        1,
+                    )
+                    .unwrap();
                     state.start_new_game_pending().unwrap();
                     state.starter_pool = vec![tile(0, 1), tile(0, 2), tile(0, 3), tile(0, 4)];
                     state.starter_pool[first_index] = tile(6, 6);
@@ -28,20 +32,28 @@ fn next_round_starter_rotates_after_both_empty_hand_and_blocked_rounds() {
                     let mut round_starter = positions[first_index];
                     for offset in 0..3 {
                         assert_eq!(state.current_position, round_starter);
-                        let starter_index = positions.iter().position(|p| *p == round_starter).unwrap();
+                        let starter_index =
+                            positions.iter().position(|p| *p == round_starter).unwrap();
                         let expected_next = positions[(starter_index + 1) % positions.len()];
                         let winner = positions[(starter_index + 2) % positions.len()];
                         assert_ne!(winner, expected_next);
                         state.current_position = winner;
-                        state.hands = positions.iter().enumerate().map(|(index, &position)| {
-                            let mut hand = vec![tile(index as i32 + 1, index as i32 + 1)];
-                            if position == winner {
-                                if !blocked { hand.clear(); }
-                                hand.push(tile(0, 0));
-                            }
-                            (position, hand)
-                        }).collect();
-                        let (_, _, mut result) = state.play_tile(winner, tile(0, 0).id, None).unwrap();
+                        state.hands = positions
+                            .iter()
+                            .enumerate()
+                            .map(|(index, &position)| {
+                                let mut hand = vec![tile(index as i32 + 1, index as i32 + 1)];
+                                if position == winner {
+                                    if !blocked {
+                                        hand.clear();
+                                    }
+                                    hand.push(tile(0, 0));
+                                }
+                                (position, hand)
+                            })
+                            .collect();
+                        let (_, _, mut result) =
+                            state.play_tile(winner, tile(0, 0).id, None).unwrap();
                         if blocked {
                             assert!(result.is_none());
                             for _ in &positions {
@@ -54,7 +66,7 @@ fn next_round_starter_rotates_after_both_empty_hand_and_blocked_rounds() {
                         assert!(!result.game_over);
                         assert_eq!(state.start_next_round().unwrap(), expected_next);
                         round_starter = expected_next;
-                        assert_eq!(state.round, offset as i32 + 2);
+                        assert_eq!(state.round, offset + 2);
                         assert!(state.placements.is_empty());
                         assert!(state.hands.values().all(|hand| hand.len() == 5));
                     }

@@ -48,14 +48,14 @@ async fn four_players_finish_a_match_and_rejoin_each_major_phase() {
     );
     request_ok(&mut clients[0], Routes::RESUME, json!({})).await;
     // 使用恢复的 selector；重连的新 socket 不会再收到已发过的首个选择事件。
-    for position in 0..4 {
+    for (position, client) in clients.iter_mut().enumerate().take(4) {
         send_request(
-            &mut clients[position],
+            client,
             DominoesRoutes::SELECT_STARTER as i32,
             json!({ "slot_index": position }),
         )
         .await;
-        recv_until(&mut clients[position], "selection accepted", |v| {
+        recv_until(client, "selection accepted", |v| {
             v["route"] == json!(DominoesRoutes::SELECT_STARTER as i32)
         })
         .await;
