@@ -218,6 +218,8 @@ pub struct DominoesRoundState {
     pub no_playable_tiles: DominoesNoPlayableTiles,
     pub target_score: i32,
     pub positions: Vec<usize>,
+    /// The seat that opened this round, used to rotate the next round's starter.
+    pub round_starter: usize,
     /// 固定本场参赛者身份；重连可以更换 session，换人或换座后旧结算应退出房间。
     participant_names: HashMap<usize, String>,
     pub hands: HashMap<usize, Vec<Tile>>,
@@ -294,6 +296,7 @@ impl DominoesRoundState {
             rule,
             no_playable_tiles,
             target_score: if target_score == 61 { 61 } else { 35 },
+            round_starter: positions[0],
             positions,
             participant_names,
             hands: HashMap::new(),
@@ -386,7 +389,13 @@ impl DominoesRoundState {
             return Err(CoreError::WrongPhase);
         }
         self.round = self.round.saturating_add(1);
-        self.deal_round(self.round_winner)
+        let starter_index = self
+            .positions
+            .iter()
+            .position(|position| *position == self.round_starter)
+            .unwrap_or(0);
+        let next_starter = self.positions[(starter_index + 1) % self.positions.len()];
+        self.deal_round(Some(next_starter))
     }
 
     fn deal_round(&mut self, starter_hint: Option<usize>) -> Result<usize, CoreError> {
@@ -394,6 +403,7 @@ impl DominoesRoundState {
             return Err(CoreError::NoPlayers);
         }
         let starter = starter_hint.unwrap_or(self.positions[0]);
+        self.round_starter = starter;
         let mut deck = Tile::all();
         shuffle(&mut deck, &mut self.rng_state);
         let hand_size = self.hand_size();

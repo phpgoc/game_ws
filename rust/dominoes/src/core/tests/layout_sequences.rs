@@ -72,14 +72,22 @@ fn seeded_matches_preserve_scores_across_rounds_until_the_highest_score_wins() {
                             assert_eq!(result.winner_positions, winners);
                             break;
                         }
-                        let winner = result.winner_position;
+                        let starter_index = state
+                            .positions
+                            .iter()
+                            .position(|position| *position == state.round_starter)
+                            .expect("round starter");
+                        let expected_next = state.positions[(starter_index + 1) % count];
                         assert!(
                             round < 128,
                             "match did not terminate: {count} {rule:?} {draw_rule:?} seed {seed}"
                         );
-                        state.start_next_round().expect("start next round");
+                        assert_eq!(
+                            state.start_next_round().expect("start next round"),
+                            expected_next
+                        );
                         transitions += 1;
-                        assert_eq!(state.current_position, winner);
+                        assert_eq!(state.current_position, expected_next);
                         assert_eq!(state.scores, scores);
                         assert!(state.last_round_result.is_none());
                         assert!(state.placements.is_empty());
