@@ -254,43 +254,48 @@ fn five_up_doubles_are_spinners_with_extra_open_ends() {
 
 #[test]
 fn layout_keeps_all_twenty_eight_tiles_non_overlapping() {
-    let mut state = state();
-    state.phase = DominoesPhase::Play;
-    state.hands = state
-        .positions
-        .iter()
-        .map(|position| (*position, Tile::all()))
-        .collect();
-    for _ in 0..super::TILE_COUNT {
-        let position = state.current_position;
-        let legal = state.legal_plays(position);
-        let selected = legal.first().copied().expect("a legal stress play");
-        state
-            .play_tile(position, selected.tile_id, selected.endpoint_id)
-            .expect("stress play");
-    }
+    for rule in [DominoesRule::Simple, DominoesRule::FiveUp] {
+        let mut state = state();
+        state.rule = rule;
+        state.phase = DominoesPhase::Play;
+        state.hands = state
+            .positions
+            .iter()
+            .map(|position| (*position, Tile::all()))
+            .collect();
+        for _ in 0..super::TILE_COUNT {
+            let position = state.current_position;
+            let legal = state.legal_plays(position);
+            let selected = legal.first().copied().expect("a legal stress play");
+            state
+                .play_tile(position, selected.tile_id, selected.endpoint_id)
+                .expect("stress play");
+        }
 
-    for (index, placement) in state.placements.iter().enumerate() {
-        assert!(placement.center_x.abs() <= super::SIMPLE_LAYOUT_X_LIMIT + 2);
-        assert!(placement.center_y.abs() <= super::SIMPLE_LAYOUT_Y_LIMIT + 2);
-        let (width, height) = super::half_extents(placement.orientation);
-        for other in state.placements.iter().skip(index + 1) {
-            let (other_width, other_height) = super::half_extents(other.orientation);
-            assert!(
-                !((placement.center_x - other.center_x).abs() < width + other_width
-                    && (placement.center_y - other.center_y).abs() < height + other_height),
-                "placements {} {:?} {:?} at ({}, {}) and {} {:?} {:?} at ({}, {}) overlap",
-                placement.placement_id,
-                placement.tile,
-                placement.orientation,
-                placement.center_x,
-                placement.center_y,
-                other.placement_id,
-                other.tile,
-                other.orientation,
-                other.center_x,
-                other.center_y,
-            );
+        for (index, placement) in state.placements.iter().enumerate() {
+            if rule == DominoesRule::Simple {
+                assert!(placement.center_x.abs() <= super::SIMPLE_LAYOUT_X_LIMIT + 2);
+                assert!(placement.center_y.abs() <= super::SIMPLE_LAYOUT_Y_LIMIT + 2);
+            }
+            let (width, height) = super::half_extents(placement.orientation);
+            for other in state.placements.iter().skip(index + 1) {
+                let (other_width, other_height) = super::half_extents(other.orientation);
+                assert!(
+					!((placement.center_x - other.center_x).abs() < width + other_width
+						&& (placement.center_y - other.center_y).abs() < height + other_height),
+					"{rule:?}: placements {} {:?} {:?} at ({}, {}) and {} {:?} {:?} at ({}, {}) overlap",
+					placement.placement_id,
+					placement.tile,
+					placement.orientation,
+					placement.center_x,
+					placement.center_y,
+					other.placement_id,
+					other.tile,
+					other.orientation,
+					other.center_x,
+					other.center_y,
+					);
+            }
         }
     }
 }
