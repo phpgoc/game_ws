@@ -393,7 +393,137 @@ fn five_up_preview_score_matches_the_selected_spinner_endpoint() {
 }
 
 #[test]
+fn every_spinner_branch_accepts_a_matching_tile_and_preserves_other_ends() {
+    for opening_double in [true, false] {
+        for port in [
+            DominoesPort::Left,
+            DominoesPort::Right,
+            DominoesPort::Top,
+            DominoesPort::Bottom,
+        ] {
+            if !opening_double && port == DominoesPort::Left {
+                continue; // 后续双牌的左侧已经连接 3-5。
+            }
+            let mut state = state();
+            state.rule = DominoesRule::FiveUp;
+            state.phase = DominoesPhase::Play;
+            state.current_position = 0;
+            let attacher = if opening_double { 1 } else { 2 };
+            state.hands = if opening_double {
+                HashMap::from([
+                    (
+                        0,
+                        vec![Tile::from_id(25).unwrap(), Tile::from_id(0).unwrap()],
+                    ),
+                    (
+                        1,
+                        vec![Tile::from_id(26).unwrap(), Tile::from_id(1).unwrap()],
+                    ),
+                    (2, vec![Tile::from_id(2).unwrap()]),
+                    (3, vec![Tile::from_id(4).unwrap()]),
+                ])
+            } else {
+                HashMap::from([
+                    (
+                        0,
+                        vec![Tile::from_id(20).unwrap(), Tile::from_id(0).unwrap()],
+                    ),
+                    (
+                        1,
+                        vec![Tile::from_id(25).unwrap(), Tile::from_id(1).unwrap()],
+                    ),
+                    (
+                        2,
+                        vec![Tile::from_id(26).unwrap(), Tile::from_id(2).unwrap()],
+                    ),
+                    (3, vec![Tile::from_id(4).unwrap()]),
+                ])
+            };
+            if opening_double {
+                state.play_tile(0, 25, None).expect("opening 5-5");
+            } else {
+                state.play_tile(0, 20, None).expect("opening 3-5");
+                let end = state
+                    .endpoints
+                    .iter()
+                    .find(|end| end.pip == 5)
+                    .unwrap()
+                    .endpoint_id;
+                state.play_tile(1, 25, Some(end)).expect("attach 5-5");
+            }
+            let spinner = state.placements.last().unwrap().placement_id;
+            let endpoint = *state
+                .endpoints
+                .iter()
+                .find(|end| end.placement_id == spinner && end.port == port)
+                .unwrap();
+            let previous = state.table_snapshot().endpoints;
+            let legal = state
+                .legal_plays(attacher)
+                .into_iter()
+                .find(|play| play.tile_id == 26 && play.endpoint_id == Some(endpoint.endpoint_id))
+                .expect("5-6 is legal on this branch");
+            let (placement, score, result) = state
+                .play_tile(attacher, 26, legal.endpoint_id)
+                .expect("play 5-6 on the selected branch");
+            assert!(result.is_none());
+            assert_eq!(placement.connected_endpoint_id, Some(endpoint.endpoint_id));
+            assert_eq!(score, legal.score);
+            assert_eq!(placement.new_endpoints.len(), 1);
+            assert_eq!(placement.new_endpoints[0].pip, 6);
+            let inward_pip = match endpoint.direction {
+                DominoesPort::Left | DominoesPort::Top => {
+                    if placement.flipped {
+                        placement.tile.a
+                    } else {
+                        placement.tile.b
+                    }
+                }
+                DominoesPort::Right | DominoesPort::Bottom => {
+                    if placement.flipped {
+                        placement.tile.b
+                    } else {
+                        placement.tile.a
+                    }
+                }
+            };
+            assert_eq!(inward_pip, 5, "{opening_double} {port:?}");
+            let after = state.table_snapshot().endpoints;
+            assert_eq!(after.len(), previous.len());
+            assert!(
+                !after
+                    .iter()
+                    .any(|end| end.endpoint_id == endpoint.endpoint_id)
+            );
+            for untouched in previous
+                .iter()
+                .filter(|end| end.endpoint_id != endpoint.endpoint_id)
+            {
+                assert!(
+                    after.contains(untouched),
+                    "unselected end changed: {untouched:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn layout_keeps_all_twenty_eight_tiles_non_overlapping() {
+    // double-six 图的欧拉路径使用每张牌恰好一次，也包含全部七种双牌。
+    fn walk(pip: i32, unused: &mut Vec<Tile>, chain: &mut Vec<Tile>) {
+        while let Some(index) = unused
+            .iter()
+            .position(|tile| tile.a == pip || tile.b == pip)
+        {
+            let tile = unused.remove(index);
+            walk(if tile.a == pip { tile.b } else { tile.a }, unused, chain);
+            chain.push(tile);
+        }
+    }
+    let mut chain = Vec::new();
+    walk(0, &mut Tile::all(), &mut chain);
+    chain.reverse();
     for rule in [DominoesRule::Simple, DominoesRule::FiveUp] {
         let mut state = state();
         state.rule = rule;
@@ -403,14 +533,35 @@ fn layout_keeps_all_twenty_eight_tiles_non_overlapping() {
             .iter()
             .map(|position| (*position, Tile::all()))
             .collect();
-        for _ in 0..super::TILE_COUNT {
+        let mut endpoint = None;
+        for tile in &chain {
             let position = state.current_position;
-            let legal = state.legal_plays(position);
-            let selected = legal.first().copied().expect("a legal stress play");
-            state
+            let selected = state
+                .legal_plays(position)
+                .into_iter()
+                .find(|play| play.tile_id == tile.id && play.endpoint_id == endpoint)
+                .expect("the next distinct tile follows the chain");
+            let (placement, _, _) = state
                 .play_tile(position, selected.tile_id, selected.endpoint_id)
                 .expect("stress play");
+            endpoint = Some(placement.new_endpoints[0].endpoint_id);
+            // 这是纯布局压力场景：让任一轮到的座位能放下一张指定牌，
+            // 并从所有座位移除已摆出的牌，避免只重复测试同一张双空白。
+            for hand in state.hands.values_mut() {
+                hand.retain(|remaining| remaining.id != tile.id);
+            }
         }
+
+        assert_eq!(state.placements.len(), super::TILE_COUNT);
+        assert_eq!(
+            state
+                .placements
+                .iter()
+                .map(|placement| placement.tile.id)
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            super::TILE_COUNT
+        );
 
         for (index, placement) in state.placements.iter().enumerate() {
             let (width, height) = super::half_extents(placement.orientation);
