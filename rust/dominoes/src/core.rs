@@ -711,9 +711,9 @@ impl DominoesRoundState {
                     endpoint.anchor_y + previous_dy * TILE_SHORT_HALF + next_dy * next_extent;
             }
         }
-        while self.rule == DominoesRule::FiveUp
-            && self.placement_collides(center_x, center_y, orientation)
-        {
+        // 《世界游戏大全 51》的双牌在两种计分规则下都形成 spinner；
+        // Simple 也可能出现额外分支，因此双牌必须避开已有牌面。
+        while self.placement_collides(center_x, center_y, orientation) {
             let (current_dx, current_dy) = direction_vector(direction);
             center_x += current_dx * LAYOUT_JUMP;
             center_y += current_dy * LAYOUT_JUMP;
@@ -774,32 +774,20 @@ impl DominoesRoundState {
         tile: Tile,
         layout: LayoutPlan,
     ) -> Vec<Endpoint> {
-        let branches = match (self.rule, layout.outward_direction) {
-            (DominoesRule::Simple, None) if tile.is_double() => {
-                vec![(DominoesPort::Left, tile.a), (DominoesPort::Right, tile.a)]
-            }
-            (DominoesRule::Simple, None) => {
-                vec![(DominoesPort::Left, tile.a), (DominoesPort::Right, tile.b)]
-            }
-            (DominoesRule::Simple, Some(direction)) => {
-                let connected_pip = connected_pip(tile, layout, direction);
-                vec![(direction, tile.other_pip(connected_pip))]
-            }
-            (DominoesRule::FiveUp, None) if tile.is_double() => vec![
+        let branches = match (layout.outward_direction, tile.is_double()) {
+            (None, true) => vec![
                 (DominoesPort::Left, tile.a),
                 (DominoesPort::Right, tile.a),
                 (DominoesPort::Top, tile.a),
                 (DominoesPort::Bottom, tile.a),
             ],
-            (DominoesRule::FiveUp, None) => {
-                vec![(DominoesPort::Left, tile.a), (DominoesPort::Right, tile.b)]
-            }
-            (DominoesRule::FiveUp, Some(direction)) if tile.is_double() => vec![
+            (None, false) => vec![(DominoesPort::Left, tile.a), (DominoesPort::Right, tile.b)],
+            (Some(direction), true) => vec![
                 (direction, tile.a),
                 (turn_left(direction), tile.a),
                 (turn_right(direction), tile.a),
             ],
-            (DominoesRule::FiveUp, Some(direction)) => {
+            (Some(direction), false) => {
                 let connected_pip = connected_pip(tile, layout, direction);
                 vec![(direction, tile.other_pip(connected_pip))]
             }

@@ -181,7 +181,7 @@ fn a_block_is_awarded_to_the_last_player_who_placed_a_tile() {
 }
 
 #[test]
-fn simple_doubles_are_visual_crosspieces_but_keep_only_two_open_ends() {
+fn simple_doubles_create_spinner_branches() {
     let mut state = state();
     state.phase = DominoesPhase::Play;
     state.current_position = 0;
@@ -217,17 +217,17 @@ fn simple_doubles_are_visual_crosspieces_but_keep_only_two_open_ends() {
         double_placement.orientation,
         share_type_public::DominoesOrientation::Vertical
     );
-    assert_eq!(state.endpoints.len(), 2);
+    assert_eq!(state.endpoints.len(), 4);
     let continued_five = state
         .endpoints
         .iter()
         .find(|endpoint| endpoint.placement_id == double_placement.placement_id)
-        .expect("double keeps one outward end")
+        .expect("double keeps spinner branches")
         .endpoint_id;
     state
         .play_tile(2, five_six.id, Some(continued_five))
         .expect("play 5-6 after visual crosspiece");
-    assert_eq!(state.endpoints.len(), 2);
+    assert_eq!(state.endpoints.len(), 4);
 }
 
 #[test]
@@ -275,10 +275,6 @@ fn layout_keeps_all_twenty_eight_tiles_non_overlapping() {
         }
 
         for (index, placement) in state.placements.iter().enumerate() {
-            if rule == DominoesRule::Simple {
-                assert!(placement.center_x.abs() <= super::SIMPLE_LAYOUT_X_LIMIT + 2);
-                assert!(placement.center_y.abs() <= super::SIMPLE_LAYOUT_Y_LIMIT + 2);
-            }
             let (width, height) = super::half_extents(placement.orientation);
             for other in state.placements.iter().skip(index + 1) {
                 let (other_width, other_height) = super::half_extents(other.orientation);

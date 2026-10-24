@@ -107,9 +107,6 @@ fn assert_round_conservation_and_layout(state: &DominoesRoundState) {
         }
     }
 
-    if state.rule == DominoesRule::Simple {
-        assert!(state.endpoints.len() <= 2);
-    }
 }
 
 fn next_random(state: &mut u64) -> u64 {
