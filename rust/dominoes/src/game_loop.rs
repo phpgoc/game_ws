@@ -247,21 +247,7 @@ pub(crate) fn start_game_loop(
                         {
                             None
                         } else {
-                            let slot = state
-                                .starter_pool
-                                .iter()
-                                .enumerate()
-                                .filter(|(index, _)| {
-                                    !state.starter_selections.values().any(|used| used == index)
-                                })
-                                .max_by_key(|(_, tile)| {
-                                    if source == Some(DominoesActionSource::Timeout) {
-                                        0
-                                    } else {
-                                        tile.pip_sum()
-                                    }
-                                })
-                                .map(|(index, _)| index);
+                            let slot = state.automatic_starter_slot();
                             slot.and_then(|index| {
                                 let position = state.current_position;
                                 state

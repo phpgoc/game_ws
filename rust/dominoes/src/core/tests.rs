@@ -102,6 +102,27 @@ fn pending_starter_selection_reveals_only_chosen_slots_and_deals_after_all_choic
 }
 
 #[test]
+fn automatic_starter_selection_does_not_read_hidden_pips_or_reuse_slots() {
+    for player_count in [3, 4] {
+        for seed in 1..=32 {
+            let mut state = state_with_players(player_count);
+            state.rng_state = seed;
+            state.start_new_game_pending().expect("selection");
+            for position in 0..player_count {
+                let mut swapped = state.clone();
+                swapped.starter_pool.reverse();
+                let slot = state.automatic_starter_slot().expect("available slot");
+                assert_eq!(swapped.automatic_starter_slot(), Some(slot));
+                assert!(!state.starter_selections.values().any(|used| *used == slot));
+                state.select_starter_slot(position, slot).expect("automatic choice");
+            }
+            assert_eq!(state.phase, DominoesPhase::Play);
+            assert_eq!(state.automatic_starter_slot(), None);
+        }
+    }
+}
+
+#[test]
 fn five_up_scores_open_ends_during_play_and_divides_round_pips() {
     let mut state = state();
     state.rule = DominoesRule::FiveUp;

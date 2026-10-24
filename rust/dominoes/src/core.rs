@@ -541,6 +541,18 @@ impl DominoesRoundState {
         })
     }
 
+    /// 暗牌只能按未占用槽位随机选择，自动操作也不能读取背面的点数。
+    pub(crate) fn automatic_starter_slot(&mut self) -> Option<usize> {
+        let available = (0..self.starter_pool.len())
+            .filter(|index| !self.starter_selections.values().any(|used| used == index))
+            .collect::<Vec<_>>();
+        if self.phase != DominoesPhase::StarterSelection || available.is_empty() {
+            return None;
+        }
+        let index = next_random(&mut self.rng_state) as usize % available.len();
+        Some(available[index])
+    }
+
     pub fn hand_size(&self) -> usize {
         5
     }
