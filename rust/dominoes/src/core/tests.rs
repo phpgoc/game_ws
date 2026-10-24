@@ -534,8 +534,14 @@ fn layout_keeps_all_twenty_eight_tiles_non_overlapping() {
             .map(|position| (*position, Tile::all()))
             .collect();
         let mut endpoint = None;
+        let mut folded = false;
         for tile in &chain {
             let position = state.current_position;
+            let previous_direction = state
+                .endpoints
+                .iter()
+                .find(|end| Some(end.endpoint_id) == endpoint)
+                .map(|end| end.direction);
             let selected = state
                 .legal_plays(position)
                 .into_iter()
@@ -544,6 +550,9 @@ fn layout_keeps_all_twenty_eight_tiles_non_overlapping() {
             let (placement, _, _) = state
                 .play_tile(position, selected.tile_id, selected.endpoint_id)
                 .expect("stress play");
+            if !tile.is_double() && previous_direction.is_some() {
+                folded |= previous_direction != Some(placement.new_endpoints[0].direction);
+            }
             endpoint = Some(placement.new_endpoints[0].endpoint_id);
             // 这是纯布局压力场景：让任一轮到的座位能放下一张指定牌，
             // 并从所有座位移除已摆出的牌，避免只重复测试同一张双空白。
@@ -553,6 +562,8 @@ fn layout_keeps_all_twenty_eight_tiles_non_overlapping() {
         }
 
         assert_eq!(state.placements.len(), super::TILE_COUNT);
+        // 同一长分支必须折返；Five-Up 不能因为有 spinner 就一直向外铺成直线。
+        assert!(folded, "{rule:?}: the full chain never folds");
         assert_eq!(
             state
                 .placements

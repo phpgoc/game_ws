@@ -1,5 +1,6 @@
 //! 导出来自真实洗牌、合法出牌的多分支后期局面，供 Web 浏览器回归使用。
 //! cargo run -p dominoes --no-default-features --example browser_fixture > fixture.json
+//! 添加 -- --long-chain 导出更接近终局、已经折返的长链。
 use std::sync::{Arc, Mutex};
 
 use dominoes::core::DominoesRoundState;
@@ -8,6 +9,7 @@ use share_type_public::{DominoesNoPlayableTiles, DominoesPhase, DominoesRule};
 use ws_common::CommonGameState;
 
 fn main() {
+    let long_chain = std::env::args().any(|argument| argument == "--long-chain");
     for seed in 1..=10_000 {
         let mut common = CommonGameState::new();
         for position in 0..4 {
@@ -51,8 +53,15 @@ fn main() {
                         .iter()
                         .any(|other| other.tile_id == play.tile_id && other.score > 0)
             });
-            if state.placements.len() >= 20 && state.endpoints.len() >= 8 && multi.is_some() {
-                let tile_id = multi.unwrap().tile_id;
+            let selected = if long_chain {
+                (state.placements.len() >= 23).then_some(&legal[0])
+            } else {
+                (state.placements.len() >= 20 && state.endpoints.len() >= 8)
+                    .then_some(multi)
+                    .flatten()
+            };
+            if let Some(selected) = selected {
+                let tile_id = selected.tile_id;
                 let before =
                     json!({ "table": state.table_snapshot(), "hand": state.hand_state(position) });
                 let outcomes = legal.iter().filter(|play| play.tile_id == tile_id).map(|play| {

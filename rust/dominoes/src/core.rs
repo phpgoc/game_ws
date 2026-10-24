@@ -30,10 +30,10 @@ pub const ROUND_TRANSITION_SECONDS: u32 = 4;
 const TILE_LONG_HALF: i32 = 2;
 const TILE_SHORT_HALF: i32 = 1;
 const LAYOUT_JUMP: i32 = 6;
-// 牌桌始终按横屏布局展示。让 Simple 的两端优先沿长边铺开，再在较窄的
-// 纵向范围内蛇形折返，避免满牌链因接近方形的边界而被前端整体缩小。
-const SIMPLE_LAYOUT_X_LIMIT: i32 = 38;
-const SIMPLE_LAYOUT_Y_LIMIT: i32 = 12;
+// 两种玩法都优先沿横屏长边铺开，再蛇形折返。Five-Up 的 spinner
+// 只增加逻辑分支，不能让每条分支无限直线延伸，导致整桌牌被迫缩小。
+const LAYOUT_X_LIMIT: i32 = 38;
+const LAYOUT_Y_LIMIT: i32 = 12;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Tile {
@@ -822,14 +822,11 @@ impl DominoesRoundState {
         let (dx, dy) = direction_vector(direction);
         let mut center_x = endpoint.anchor_x + dx * extent;
         let mut center_y = endpoint.anchor_y + dy * extent;
-        if self.rule == DominoesRule::Simple
-            && !tile.is_double()
-            && self.simple_layout_needs_turn(center_x, center_y, orientation)
-        {
+        if !tile.is_double() && self.layout_needs_turn(center_x, center_y, orientation) {
             let previous_direction = direction;
             let (previous_dx, previous_dy) = direction_vector(previous_direction);
             let preferred_direction =
-                simple_fold_direction(previous_direction, endpoint.anchor_x, endpoint.anchor_y);
+                fold_direction(previous_direction, endpoint.anchor_x, endpoint.anchor_y);
             let candidates = [
                 preferred_direction,
                 turn_left(previous_direction),
@@ -844,7 +841,7 @@ impl DominoesRoundState {
                     endpoint.anchor_x + previous_dx * TILE_SHORT_HALF + next_dx * next_extent;
                 let candidate_y =
                     endpoint.anchor_y + previous_dy * TILE_SHORT_HALF + next_dy * next_extent;
-                if !self.simple_layout_needs_turn(candidate_x, candidate_y, candidate_orientation) {
+                if !self.layout_needs_turn(candidate_x, candidate_y, candidate_orientation) {
                     selected = Some((
                         candidate_direction,
                         candidate_orientation,
@@ -900,17 +897,17 @@ impl DominoesRoundState {
         }
     }
 
-    fn simple_layout_needs_turn(
+    fn layout_needs_turn(
         &self,
         center_x: i32,
         center_y: i32,
         orientation: DominoesOrientation,
     ) -> bool {
         let (half_width, half_height) = half_extents(orientation);
-        center_x - half_width < -SIMPLE_LAYOUT_X_LIMIT
-            || center_x + half_width > SIMPLE_LAYOUT_X_LIMIT
-            || center_y - half_height < -SIMPLE_LAYOUT_Y_LIMIT
-            || center_y + half_height > SIMPLE_LAYOUT_Y_LIMIT
+        center_x - half_width < -LAYOUT_X_LIMIT
+            || center_x + half_width > LAYOUT_X_LIMIT
+            || center_y - half_height < -LAYOUT_Y_LIMIT
+            || center_y + half_height > LAYOUT_Y_LIMIT
             || self.placement_collides(center_x, center_y, orientation)
     }
 
@@ -1182,7 +1179,7 @@ fn connected_pip(tile: Tile, layout: LayoutPlan, direction: DominoesPort) -> i32
     }
 }
 
-fn simple_fold_direction(direction: DominoesPort, anchor_x: i32, anchor_y: i32) -> DominoesPort {
+fn fold_direction(direction: DominoesPort, anchor_x: i32, anchor_y: i32) -> DominoesPort {
     match direction {
         DominoesPort::Right => {
             if anchor_y <= 0 {

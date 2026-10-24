@@ -110,9 +110,58 @@ fn play_seeded_round(state: &mut DominoesRoundState, mut choice_seed: u64) {
         if !legal_plays.is_empty() {
             let choice = next_random(&mut choice_seed) as usize % legal_plays.len();
             let selected = legal_plays[choice];
-            let (_, _, result) = state
+            let previous_ends = state.endpoints.clone();
+            let (placement, score, result) = state
                 .play_tile(position, selected.tile_id, selected.endpoint_id)
                 .expect("selected play is legal");
+            assert_eq!(score, selected.score, "layout changed the score preview");
+            for untouched in previous_ends
+                .iter()
+                .filter(|end| Some(end.endpoint_id) != selected.endpoint_id)
+            {
+                assert!(
+                    state.endpoints.contains(untouched),
+                    "layout changed another branch"
+                );
+            }
+            if let Some(endpoint_id) = selected.endpoint_id {
+                let previous = previous_ends
+                    .iter()
+                    .find(|end| end.endpoint_id == endpoint_id)
+                    .unwrap();
+                assert_eq!(placement.connected_endpoint_id, Some(endpoint_id));
+                let inward_pip = match (placement.connected_port.unwrap(), placement.flipped) {
+                    (
+                        share_type_public::DominoesPort::Left
+                        | share_type_public::DominoesPort::Top,
+                        false,
+                    )
+                    | (
+                        share_type_public::DominoesPort::Right
+                        | share_type_public::DominoesPort::Bottom,
+                        true,
+                    ) => placement.tile.a,
+                    _ => placement.tile.b,
+                };
+                assert_eq!(inward_pip, previous.pip, "folded tile faces the wrong way");
+                let outward_pip = if placement.tile.a == previous.pip {
+                    placement.tile.b
+                } else {
+                    placement.tile.a
+                };
+                assert!(
+                    placement
+                        .new_endpoints
+                        .iter()
+                        .all(|end| end.pip == outward_pip)
+                );
+                assert!(
+                    !state
+                        .endpoints
+                        .iter()
+                        .any(|end| end.endpoint_id == endpoint_id)
+                );
+            }
             assert_round_conservation_and_layout(state);
             if result.is_some() {
                 return;
