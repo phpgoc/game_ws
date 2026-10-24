@@ -32,6 +32,7 @@ pub struct DominoesGameHandler {
     states: StateRegistry,
     senders: Option<SessionSenders>,
     room_service: Option<Arc<AsyncMutex<RoomService>>>,
+    rng_seed: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -62,6 +63,14 @@ fn join_succeeded(dispatch: &Dispatch, session_id: SessionId) -> bool {
 }
 
 impl DominoesGameHandler {
+    /// 构造使用固定随机种子的服务端，供可复现的完整对局测试使用。
+    pub fn with_rng_seed(seed: u64) -> Self {
+        Self {
+            rng_seed: Some(seed.max(1)),
+            ..Self::default()
+        }
+    }
+
     fn state_for_room(&self, room_service: &RoomService, room_key: &str) -> Option<StateHandle> {
         let state = self
             .states
@@ -168,8 +177,17 @@ impl DominoesGameHandler {
         };
         let (rule, no_playable_tiles, target_score, settlement_time) =
             Self::configs(room_service, &room_key);
-        let mut round = match DominoesRoundState::new(common, rule, no_playable_tiles, target_score)
-        {
+        let round_result = match self.rng_seed {
+            Some(seed) => DominoesRoundState::new_with_seed(
+                common,
+                rule,
+                no_playable_tiles,
+                target_score,
+                seed,
+            ),
+            None => DominoesRoundState::new(common, rule, no_playable_tiles, target_score),
+        };
+        let mut round = match round_result {
             Ok(round) => round,
             Err(_) => {
                 return room_service.error_response(
@@ -440,6 +458,7 @@ impl Default for DominoesGameHandler {
             states: Arc::new(Mutex::new(HashMap::new())),
             senders: None,
             room_service: None,
+            rng_seed: None,
         }
     }
 }

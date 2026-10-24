@@ -6,7 +6,11 @@ type Writer = futures_util::stream::SplitSink<Client, Message>;
 // 真实 WebSocket 的四名玩家只使用各自收到的私牌和合法动作，不读取服务器状态。
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn four_players_finish_a_match_and_rejoin_each_major_phase() {
-    let (server, url, _stop) = start_server("dominoes-match-rejoin", test_handler()).await;
+    let (server, url, _stop) = start_server(
+        "dominoes-match-rejoin",
+        test_handler_with_rng_seed(0x5eed_2026),
+    )
+    .await;
     let room = "dominoes-match-rejoin";
     let mut clients = Vec::new();
     for position in 0..4 {

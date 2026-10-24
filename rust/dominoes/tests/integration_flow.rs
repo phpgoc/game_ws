@@ -90,6 +90,17 @@ fn test_handler() -> impl ws_common::GameHandler {
     }
 }
 
+fn test_handler_with_rng_seed(seed: u64) -> impl ws_common::GameHandler {
+    #[cfg(feature = "official")]
+    {
+        TestAiDominoesHandler(DominoesGameHandler::with_rng_seed(seed))
+    }
+    #[cfg(not(feature = "official"))]
+    {
+        DominoesGameHandler::with_rng_seed(seed)
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn three_players_can_start_and_place_the_opening_tile() {
     let (server, url, _stop_handle) =
