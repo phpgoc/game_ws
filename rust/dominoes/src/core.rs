@@ -73,7 +73,11 @@ impl Tile {
     }
 
     fn other_pip(self, matched: i32) -> i32 {
-        if self.a == matched { self.b } else { self.a }
+        if self.a == matched {
+            self.b
+        } else {
+            self.a
+        }
     }
 }
 
@@ -441,7 +445,10 @@ impl DominoesRoundState {
         if self.phase != DominoesPhase::StarterSelection {
             return Err(CoreError::WrongPhase);
         }
-        if !self.positions.contains(&position) || self.starter_selections.contains_key(&position) {
+        if self.current_position != position
+            || !self.positions.contains(&position)
+            || self.starter_selections.contains_key(&position)
+        {
             return Err(CoreError::NotYourTurn);
         }
         let tile = *self
@@ -986,7 +993,11 @@ impl DominoesRoundState {
                 };
             }
         }
-        if total % 5 == 0 { total } else { 0 }
+        if total % 5 == 0 {
+            total
+        } else {
+            0
+        }
     }
 
     fn five_up_score(&self) -> i32 {
@@ -998,7 +1009,11 @@ impl DominoesRoundState {
             .iter()
             .map(|endpoint| endpoint.pip)
             .sum::<i32>();
-        if total % 5 == 0 { total } else { 0 }
+        if total % 5 == 0 {
+            total
+        } else {
+            0
+        }
     }
 
     fn finish_round(&mut self, winner: usize, blocked: bool) -> RoundResult {

@@ -75,15 +75,17 @@ fn pending_starter_selection_reveals_only_chosen_slots_and_deals_after_all_choic
     assert_eq!(state.phase, DominoesPhase::StarterSelection);
     assert_eq!(state.starter_pool.len(), 6);
     assert!(state.hands.is_empty());
-    assert!(
-        state
-            .starter_selection_event()
-            .expect("selection event")
-            .slots
-            .iter()
-            .all(|slot| slot.tile.is_none() && slot.selected_by.is_none())
-    );
+    assert!(state
+        .starter_selection_event()
+        .expect("selection event")
+        .slots
+        .iter()
+        .all(|slot| slot.tile.is_none() && slot.selected_by.is_none()));
 
+    assert_eq!(
+        state.select_starter_slot(1, 0),
+        Err(super::CoreError::NotYourTurn)
+    );
     let first = state.select_starter_slot(0, 0).expect("first choice");
     assert_eq!(first.starter_position, None);
     let event = state.starter_selection_event().expect("selection event");
