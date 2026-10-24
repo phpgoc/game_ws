@@ -10,6 +10,56 @@ fn tile(a: i32, b: i32) -> Tile {
 }
 
 #[test]
+fn five_up_reaching_the_target_keeps_playing_until_the_round_can_change_the_winner() {
+    // 原作攻略 Tips 4 明确提醒：先越过目标分后仍可能在本轮结束前被反超。
+    let mut state = state();
+    state.rule = DominoesRule::FiveUp;
+    state.phase = DominoesPhase::Play;
+    state.current_position = 0;
+    state.scores = HashMap::from([(0, 30), (1, 34), (2, 0), (3, 0)]);
+    state.hands = HashMap::from([
+        (0, vec![tile(5, 5), tile(6, 6)]),
+        (1, vec![tile(0, 5), tile(0, 0)]),
+        (2, vec![tile(1, 1)]),
+        (3, vec![tile(2, 2)]),
+    ]);
+    state.boneyard = Tile::all()
+        .into_iter()
+        .filter(|tile| !state.hands.values().any(|hand| hand.contains(tile)))
+        .collect();
+
+    let (_, score, result) = state.play_tile(0, tile(5, 5).id, None).unwrap();
+    assert_eq!(score, 10);
+    assert_eq!(state.scores[&0], 40);
+    assert!(result.is_none());
+    assert_eq!(state.phase, DominoesPhase::Play);
+    assert_eq!(state.current_position, 1);
+    assert!(state.last_round_result.is_none());
+
+    let branch = state.legal_plays(1)[0];
+    let (_, score, result) = state
+        .play_tile(1, branch.tile_id, branch.endpoint_id)
+        .unwrap();
+    assert_eq!(score, 10);
+    assert_eq!(state.scores[&1], 44);
+    assert!(result.is_none());
+    assert_eq!(state.phase, DominoesPhase::Play);
+    for position in [2, 3, 0] {
+        assert_eq!(state.current_position, position);
+        assert!(state.pass(position).unwrap().is_none());
+    }
+
+    let last = state.legal_plays(1)[0];
+    let (_, _, result) = state.play_tile(1, last.tile_id, last.endpoint_id).unwrap();
+    let result = result.expect("the last tile settles the whole match");
+    assert!(result.game_over);
+    assert_eq!(state.phase, DominoesPhase::GameOver);
+    assert_eq!(result.winner_positions, vec![1]);
+    assert_eq!(result.scores[&0], 40);
+    assert!(result.scores[&1] > result.scores[&0]);
+}
+
+#[test]
 fn spinner_counts_twice_until_its_second_connection_then_only_the_branches_score() {
     let mut state = state();
     state.rule = DominoesRule::FiveUp;
