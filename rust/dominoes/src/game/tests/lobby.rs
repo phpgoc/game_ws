@@ -240,6 +240,9 @@ fn interrupted_match_can_replace_the_departed_player_and_start_with_a_new_loop_i
     assert_response(&dispatch, Routes::START, WsResponseCode::OK);
     let previous = handler.state_for_room(&rooms, ROOM).unwrap();
     let old_common = std::sync::Arc::clone(&previous.lock().unwrap().base);
+    let dispatch = request(&mut handler, &mut rooms, 1, Routes::PAUSE, json!({}));
+    assert_response(&dispatch, Routes::PAUSE, WsResponseCode::OK);
+    assert!(rooms.is_room_paused(ROOM));
     request(&mut handler, &mut rooms, 2, Routes::QUIT, json!({}));
     assert!(handler.state_for_room(&rooms, ROOM).is_none());
     join(&mut handler, &mut rooms, 4);
@@ -250,6 +253,7 @@ fn interrupted_match_can_replace_the_departed_player_and_start_with_a_new_loop_i
     assert!(!std::sync::Arc::ptr_eq(&old_common, &next.base));
     assert!(old_common.lock().unwrap().stop_requested);
     assert!(!next.base.lock().unwrap().stop_requested);
+    assert!(!next.base.lock().unwrap().paused);
 }
 
 #[test]
