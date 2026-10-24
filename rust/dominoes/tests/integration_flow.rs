@@ -138,6 +138,38 @@ async fn three_players_can_start_and_place_the_opening_tile() {
     server.abort();
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn four_players_receive_distinct_private_hands_at_round_start() {
+    let (server, url, _stop_handle) =
+        start_server("dominoes-four-player-start-test", test_handler()).await;
+    let mut clients = vec![
+        connect_client(&url).await,
+        connect_client(&url).await,
+        connect_client(&url).await,
+        connect_client(&url).await,
+    ];
+    let room = "dominoes-four-player-room";
+    for (position, client) in clients.iter_mut().enumerate() {
+        join(client, &format!("player-{position}"), room).await;
+    }
+
+    send_request(&mut clients[0], Routes::START as i32, json!({})).await;
+    let mut dealt_tile_ids = std::collections::HashSet::new();
+    for (position, client) in clients.iter_mut().enumerate() {
+        let start = recv_start_bundle(client, position as i32, position == 0).await;
+        assert_eq!(start.hand.len(), 5);
+        for tile in start.hand {
+            assert!(
+                dealt_tile_ids.insert(tile["id"].as_i64().expect("tile id")),
+                "tile was dealt to more than one private hand"
+            );
+        }
+    }
+    assert_eq!(dealt_tile_ids.len(), 20);
+
+    server.abort();
+}
+
 async fn start_server<H>(
     service_name: &'static str,
     handler: H,
