@@ -2,8 +2,9 @@ use super::*;
 
 #[test]
 fn next_round_starter_rotates_after_both_empty_hand_and_blocked_rounds() {
-    // Switch 实机 sm42780597：01:55/02:46（人→绿）、05:40/06:27（红→蓝），
-    // 以及 Simple 的 07:43/08:17（红→蓝）；先手轮换不由上轮赢家决定。
+    // Switch 实机 NicoNico sm42780597（https://www.nicovideo.jp/watch/sm42780597）：
+    // 01:55/02:46（人→绿）、05:40/06:27（红→蓝），以及 Simple 的 07:43/08:17（红→蓝）；
+    // 先手轮换不由上轮赢家决定。
     for positions in [vec![0, 2, 3], vec![0, 1, 2, 3]] {
         for rule in [DominoesRule::Simple, DominoesRule::FiveUp] {
             for blocked in [false, true] {
