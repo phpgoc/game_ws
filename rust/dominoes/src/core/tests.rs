@@ -6,6 +6,8 @@ use ws_common::CommonGameState;
 
 use super::{DominoesRoundState, Tile};
 
+#[path = "tests/layout_sequences.rs"]
+mod layout_sequences;
 #[path = "tests/public_history.rs"]
 mod public_history;
 
