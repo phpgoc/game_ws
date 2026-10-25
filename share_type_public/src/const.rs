@@ -25,6 +25,8 @@ pub enum GameId {
     DOMINOES = 11,
     /// 隐藏身份、地主埋三张牌的三人官方游戏。
     WHO_IS_LANDLORD = 12,
+    /// 娘娘升级四人官方游戏。
+    NIANGNIANG = 13,
 }
 
 impl From<GameId> for i32 {
@@ -53,6 +55,7 @@ impl TryFrom<i32> for GameId {
             10 => Ok(Self::UPGRADE),
             11 => Ok(Self::DOMINOES),
             12 => Ok(Self::WHO_IS_LANDLORD),
+            13 => Ok(Self::NIANGNIANG),
             _ => Err(()),
         }
     }

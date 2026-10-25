@@ -20,6 +20,7 @@
 - `rust/upgrade/`: 升级 Rust 服务端。
 - `rust/p2p/`: 独立的两人 WebRTC 信令服务与 STUN/TURN 临时凭证签发器，不依赖其他游戏 crate。
 - `rust/dominoes/`: 3–4 人双六西洋骨牌 WS 服务，默认端口 9007；公开构建不包含 AI。
+- `rust/niangniang/`: 四人娘娘升级 WS 服务，默认端口 9012；公开构建不包含官方统计。
 - `rust/android_server/`: Android JNI bridge，按单游戏 feature 产出 `libws_server.so`。
 - `android/`: 7 个 Rust 服务共用的 Android 前台服务壳，每个 APK 只打包一个 `libws_server.so`。
 
@@ -74,6 +75,7 @@ Windows 用户可在 Git Bash 中执行 `bash ci/prepare-public-build.sh`。
 | 9 | P2P 信令 (`p2p`) | 9005 |
 | 10 | 升级 (`upgrade`) | 9006 |
 | 11 | 西洋骨牌 (`dominoes`) | 9007 |
+| 13 | 娘娘升级 (`niangniang`) | 9012 |
 
 `GameId=8` 是随机匹配会员权益，不对应一个官方游戏 WS 端口；匹配服务使用
 9010（谁是地主匹配 9011、合作德州匹配 9012）。

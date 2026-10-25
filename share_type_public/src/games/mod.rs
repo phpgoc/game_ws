@@ -1,5 +1,6 @@
 pub mod dominoes;
 pub mod landlord;
+pub mod niangniang;
 pub mod p2p;
 pub mod shenyang_mahjong;
 pub mod texas_hold_em;

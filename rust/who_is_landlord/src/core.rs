@@ -42,6 +42,9 @@ struct PlayerSlot {
     name: String,
     connected: bool,
     away: bool,
+    automated: bool,
+    intelligent: bool,
+    prefer_ai: bool,
     hand: Vec<i32>,
     score: i32,
 }
@@ -77,6 +80,9 @@ impl Room {
                 name: names[position].clone(),
                 connected: true,
                 away: false,
+                automated: false,
+                intelligent: false,
+                prefer_ai: false,
                 hand,
                 score: 0,
             }
@@ -101,14 +107,39 @@ impl Room {
             let connected =
                 common.players.contains_key(&position) && !common.is_disconnected(position);
             let away = common.is_away(position) || !connected;
-            changed |= player.connected != connected || player.away != away;
+            let automated = cfg!(feature = "official")
+                && (common.is_ai_position(position) || common.is_ai_takeover_position(position));
+            let intelligent = cfg!(feature = "official")
+                && (common.is_ai_position(position)
+                    || (common.is_ai_takeover_position(position) && player.prefer_ai));
+            changed |= (
+                player.connected,
+                player.away,
+                player.automated,
+                player.intelligent,
+            ) != (connected, away, automated, intelligent);
             player.connected = connected;
             player.away = away;
+            player.automated = automated;
+            player.intelligent = intelligent;
         }
         changed
     }
     pub(crate) fn apply(&mut self, position: usize, action: WhoIsLandlordAction) -> bool {
-        if position >= PLAYER_COUNT || self.players[position].away {
+        if position >= PLAYER_COUNT {
+            return false;
+        }
+        if let WhoIsLandlordAction::SetAuto { intelligent } = action {
+            if !cfg!(feature = "official") {
+                return false;
+            }
+            self.players[position].prefer_ai = intelligent;
+            return true;
+        }
+        if self.players[position].away
+            || self.players[position].automated
+            || self.players[position].intelligent
+        {
             return false;
         }
         let bury = matches!(action, WhoIsLandlordAction::Bury { .. });
@@ -134,7 +165,7 @@ impl Room {
     pub(crate) fn automatic_step(&mut self) -> bool {
         if self.phase == WhoIsLandlordPhase::BURY {
             let position = self.landlord_position;
-            if !self.players[position].away {
+            if !self.players[position].away && !self.players[position].automated {
                 return false;
             }
             let cards = self.players[position]
@@ -146,11 +177,19 @@ impl Room {
                 .collect();
             return Self::bury_cards(self, position, cards);
         }
-        if self.phase != WhoIsLandlordPhase::PLAY || !self.players[self.current_position].away {
+        if self.phase != WhoIsLandlordPhase::PLAY
+            || (!self.players[self.current_position].away
+                && !self.players[self.current_position].automated)
+        {
             return false;
         }
         let position = self.current_position;
-        match brain_action(self, position) {
+        let action = if self.players[position].intelligent {
+            smart_brain_action(self, position)
+        } else {
+            brain_action(self, position)
+        };
+        match action {
             BrainAction::Play(cards) => {
                 Self::play_cards(self, position, cards);
             }
@@ -305,6 +344,7 @@ impl Room {
             bomb_count: self.bomb_count,
             round_score: BASE_SCORE.saturating_mul(1_i32 << self.bomb_count.min(20)),
             scores: self.scores.to_vec(),
+            auto_intelligent: self.players[viewer_position].prefer_ai,
         }
     }
 }
@@ -316,6 +356,22 @@ enum BrainAction {
 }
 
 type BrainCandidate = ((u8, i32, usize, Vec<i32>), Vec<i32>);
+
+/// 智能托管先尝试一次出完或直接接管当前牌权，再回退到规则正确的普通托管。
+/// 该策略只使用本座位手牌和已经公开的上一手牌，保持谁是地主的身份信息隔离。
+fn smart_brain_action(room: &Room, position: usize) -> BrainAction {
+    let hand = &room.players[position].hand;
+    if let Some(previous) = &room.last_play {
+        if hand.len() == previous.cards.len()
+            && classify(hand).is_some_and(|combo| can_beat(combo, previous.combo))
+        {
+            return BrainAction::Play(hand.clone());
+        }
+    } else if classify(hand).is_some() {
+        return BrainAction::Play(hand.clone());
+    }
+    brain_action(room, position)
+}
 
 /// 为托管座位选择当前阶段可执行的基础 AI 动作。
 fn brain_action(room: &Room, position: usize) -> BrainAction {

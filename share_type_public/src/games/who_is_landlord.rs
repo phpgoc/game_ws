@@ -31,6 +31,7 @@ pub enum WhoIsLandlordAction {
     Bury { cards: Vec<i32> },
     Play { cards: Vec<i32> },
     Pass,
+    SetAuto { intelligent: bool },
 }
 
 #[typeshare]
@@ -88,4 +89,5 @@ pub struct WhoIsLandlordStateEvent {
     pub bomb_count: i32,
     pub round_score: i32,
     pub scores: Vec<i32>,
+    pub auto_intelligent: bool,
 }

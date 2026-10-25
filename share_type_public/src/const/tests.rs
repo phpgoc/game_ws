@@ -14,11 +14,17 @@ fn dominoes_has_a_stable_protocol_id() {
 
 #[test]
 fn unknown_game_ids_are_rejected() {
-    assert_eq!(GameId::try_from(13), Err(()));
+    assert_eq!(GameId::try_from(14), Err(()));
 }
 
 #[test]
 fn who_is_landlord_has_a_stable_protocol_id() {
     assert_eq!(i32::from(GameId::WHO_IS_LANDLORD), 12);
     assert_eq!(GameId::try_from(12), Ok(GameId::WHO_IS_LANDLORD));
+}
+
+#[test]
+fn niangniang_has_a_stable_protocol_id() {
+    assert_eq!(i32::from(GameId::NIANGNIANG), 13);
+    assert_eq!(GameId::try_from(13), Ok(GameId::NIANGNIANG));
 }

@@ -45,10 +45,10 @@ fn join(
     )
 }
 #[test]
-fn room_requires_three_players_owner_start_and_does_not_offer_ai_seats() {
+fn room_requires_three_players_owner_start_and_reports_ai_capability() {
     let mut handler = WhoIsLandlordHandler::default();
     let mut service = RoomService::default();
-    assert!(!handler.supports_ai_players());
+    assert_eq!(handler.supports_ai_players(), cfg!(feature = "official"));
     assert!(response(
         &join(&mut handler, &mut service, 1, "owner"),
         Routes::JOIN as i32,

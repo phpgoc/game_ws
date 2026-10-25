@@ -97,7 +97,7 @@ impl WhoIsLandlordHandler {
             if base.players.len() != 3
                 || !(0..3).all(|p| base.players.contains_key(&p))
                 || !base.disconnected_positions.is_empty()
-                || !base.ai_positions.is_empty()
+                || (!cfg!(feature = "official") && !base.ai_positions.is_empty())
             {
                 return service.error_response(session, route, WsResponseCode::NOT_IN_RANGE);
             }
@@ -150,6 +150,10 @@ impl WhoIsLandlordHandler {
     }
 }
 impl GameHandler for WhoIsLandlordHandler {
+    fn supports_ai_players(&self) -> bool {
+        cfg!(feature = "official")
+    }
+
     fn game_id(&self) -> GameId {
         GameId::WHO_IS_LANDLORD
     }
