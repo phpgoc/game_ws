@@ -152,6 +152,125 @@ async fn disconnect_keeps_advancing_but_quit_allows_a_fresh_running_match() {
     server.abort();
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn repeated_join_retains_takeover_but_transport_reconnect_returns_manual_control() {
+    let (server, url, _stop) = start_server("dominoes-takeover-rejoin", test_handler()).await;
+    let room = "dominoes-takeover-rejoin";
+    let mut owner = connect_client(&url).await;
+    let mut second = connect_client(&url).await;
+    let mut third = connect_client(&url).await;
+    join(&mut owner, "owner", room).await;
+    join(&mut second, "second", room).await;
+    join(&mut third, "third", room).await;
+    request_ok(&mut owner, Routes::START).await;
+    request_ok(&mut owner, Routes::PAUSE).await;
+    send_request(&mut second, Routes::AWAY as i32, json!({})).await;
+    recv_until(&mut owner, "second player starts takeover", |value| {
+        value["code"] == json!(WsCode::AWAY as i32)
+            && value["data"]["position"] == 1
+            && value["data"]["is_ai_takeover"] == true
+    })
+    .await;
+    // 同连接重复 JOIN 不改变托管，且公共成员列表不包含自己。
+    let joined = join(&mut second, "second", room).await;
+    assert!(
+        joined["data"]["existing_members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|member| member["position"] != 1)
+    );
+    let restored = &joined["data"]["rejoin_data"]["dominoes"];
+    let player = restored["table"]["players"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|player| player["position"] == 1)
+        .unwrap();
+    assert_eq!(player["away"], true);
+    assert_eq!(player["is_ai_takeover"], true);
+    send_request(&mut second, Routes::BACK as i32, json!({})).await;
+    recv_until(&mut second, "manual control restored", |value| {
+        value["code"] == json!(WsCode::BACK as i32) && value["data"]["position"] == 1
+    })
+    .await;
+    let snapshot = recv_until(&mut second, "returned player snapshot", |value| {
+        value["code"] == json!(DominoesWsCode::TABLE_SNAPSHOT as i32)
+    })
+    .await;
+    let player = snapshot["data"]["players"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|player| player["position"] == 1)
+        .unwrap();
+    assert_eq!(player["away"], false);
+    assert_eq!(player["is_ai_takeover"], false);
+    assert_eq!(
+        snapshot["data"]["starter_selection"],
+        restored["table"]["starter_selection"]
+    );
+    send_request(&mut second, Routes::AWAY as i32, json!({})).await;
+    recv_until(&mut second, "takeover enabled before disconnect", |value| {
+        value["code"] == json!(WsCode::AWAY as i32) && value["data"]["position"] == 1
+    })
+    .await;
+    second
+        .close(None)
+        .await
+        .expect("disconnect while on takeover");
+    recv_until(&mut owner, "takeover player disconnects", |value| {
+        value["code"] == json!(WsCode::JOIN as i32)
+            && value["data"]["position"] == 1
+            && value["data"]["is_active"] == false
+    })
+    .await;
+    second = connect_client(&url).await;
+    let joined = join(&mut second, "second", room).await;
+    assert_eq!(joined["data"]["self_position"], 1);
+    assert_eq!(joined["data"]["paused"], true);
+    assert!(
+        joined["data"]["existing_members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|member| member["position"] != 1)
+    );
+    let restored = &joined["data"]["rejoin_data"]["dominoes"];
+    assert_eq!(
+        restored["table"]["phase"],
+        json!(DominoesPhase::StarterSelection as i32)
+    );
+    let player = restored["table"]["players"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|player| player["position"] == 1)
+        .unwrap();
+    assert_eq!(player["away"], false);
+    assert_eq!(player["is_ai_takeover"], false);
+    assert_eq!(player["is_ai"], false);
+    assert_eq!(
+        snapshot["data"]["starter_selection"],
+        restored["table"]["starter_selection"]
+    );
+    request_ok(&mut owner, Routes::RESUME).await;
+    for (client, slot) in [(&mut owner, 0), (&mut second, 1)] {
+        send_request(
+            client,
+            DominoesRoutes::SELECT_STARTER as i32,
+            json!({ "slot_index": slot }),
+        )
+        .await;
+        let response = recv_until(client, "manual starter selection accepted", |value| {
+            value["route"] == json!(DominoesRoutes::SELECT_STARTER as i32)
+        })
+        .await;
+        assert_eq!(response["code"], json!(WsResponseCode::OK as i32));
+    }
+    server.abort();
+}
+
 async fn request_ok(client: &mut Client, route: Routes) {
     send_request(client, route as i32, json!({})).await;
     expect_ok(client, route).await;
