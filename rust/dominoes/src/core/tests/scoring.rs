@@ -80,6 +80,38 @@ fn five_up_round_reward_uses_floor_division_for_remainder() {
 }
 
 #[test]
+fn five_up_round_winner_can_finish_behind_the_match_winner() {
+    // 原作 sm37156705 13:41.677：本人出完并标记 WIN，累计仍是 0，
+    // 三家累计为 58、0、68，余牌分别为 0-2、1-4、2-2。
+    // 13:42.878 本人加 2 分，随后排名第三；本轮赢家不是整场赢家。
+    // 来源：https://www.nicovideo.jp/watch/sm37156705
+    // 这里只重放结算输入，不声称重放了录像中的完整落牌顺序。
+    let mut state = state();
+    state.rule = DominoesRule::FiveUp;
+    state.phase = DominoesPhase::Play;
+    state.scores = HashMap::from([(0, 0), (1, 58), (2, 0), (3, 68)]);
+    state.hands = HashMap::from([
+        (0, Vec::new()),
+        (1, vec![tile(0, 2)]),
+        (2, vec![tile(1, 4)]),
+        (3, vec![tile(2, 2)]),
+    ]);
+
+    let result = state.finish_round(0, false);
+
+    assert_eq!(result.winner_position, 0);
+    assert_eq!(result.round_score, 2);
+    assert_eq!(
+        result.scores,
+        HashMap::from([(0, 2), (1, 58), (2, 0), (3, 68)])
+    );
+    assert_eq!(result.score_changes[&0], 2);
+    assert!(result.game_over);
+    assert_eq!(result.winner_positions, vec![3]);
+    assert_eq!(state.phase, DominoesPhase::GameOver);
+}
+
+#[test]
 fn spinner_counts_twice_until_its_second_connection_then_only_the_branches_score() {
     let mut state = state();
     state.rule = DominoesRule::FiveUp;
