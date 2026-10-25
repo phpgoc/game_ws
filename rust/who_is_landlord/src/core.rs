@@ -37,6 +37,65 @@ struct Play {
     combo: Combo,
 }
 
+#[cfg(feature = "official")]
+#[derive(Debug, Clone)]
+pub(crate) struct PublicPlay {
+    pub position: usize,
+    pub cards: Vec<i32>,
+    pub benchmark: Vec<i32>,
+}
+
+#[cfg(feature = "official")]
+#[derive(Debug, Clone)]
+pub(crate) struct AutomaticTurn {
+    #[allow(dead_code)]
+    pub revision: u64,
+    pub position: usize,
+    pub phase: WhoIsLandlordPhase,
+    pub hand: Vec<i32>,
+    pub hand_sizes: [usize; PLAYER_COUNT],
+    pub self_is_landlord: bool,
+    pub bottom_cards: Vec<i32>,
+    pub last_play_position: Option<usize>,
+    pub last_play: Vec<i32>,
+    pub play_history: Vec<PublicPlay>,
+    pub intelligent: bool,
+}
+
+#[cfg(feature = "official")]
+impl AutomaticTurn {
+    pub(crate) fn legal_play(&self, cards: &[i32]) -> bool {
+        if cards.is_empty()
+            || cards
+                .iter()
+                .any(|card| !self.hand.contains(card))
+            || cards.iter().collect::<std::collections::HashSet<_>>().len() != cards.len()
+        {
+            return false;
+        }
+        let Some(combo) = classify(cards) else {
+            return false;
+        };
+        self.last_play.is_empty()
+            || classify(&self.last_play).is_some_and(|previous| can_beat(combo, previous))
+    }
+
+    pub(crate) fn decide(&self) -> WhoIsLandlordAction {
+        if self.phase == WhoIsLandlordPhase::BURY {
+            return WhoIsLandlordAction::Bury {
+                cards: self.hand.iter().rev().take(3).copied().collect(),
+            };
+        }
+        let mut ordered = self.hand.clone();
+        ordered.sort_by_key(|card| (card_rank(*card), *card));
+        ordered
+            .into_iter()
+            .find(|card| self.legal_play(&[*card]))
+            .map(|card| WhoIsLandlordAction::Play { cards: vec![card] })
+            .unwrap_or(WhoIsLandlordAction::Pass)
+    }
+}
+
 #[derive(Debug, Clone)]
 struct PlayerSlot {
     name: String,
@@ -62,6 +121,8 @@ pub(crate) struct Room {
     consecutive_passes: usize,
     bomb_count: i32,
     pub(crate) scores: [i32; PLAYER_COUNT],
+    #[cfg(feature = "official")]
+    pub(crate) history: Vec<PublicPlay>,
 }
 
 impl Room {
@@ -99,6 +160,8 @@ impl Room {
             consecutive_passes: 0,
             bomb_count: 0,
             scores: [0; 3],
+            #[cfg(feature = "official")]
+            history: Vec::new(),
         }
     }
     pub(crate) fn sync_presence(&mut self, common: &ws_common::CommonGameState) -> bool {
@@ -263,6 +326,12 @@ impl Room {
         {
             return false;
         }
+        #[cfg(feature = "official")]
+        let benchmark = room
+            .last_play
+            .as_ref()
+            .map(|play| play.cards.clone())
+            .unwrap_or_default();
         remove_cards(&mut room.players[position].hand, &cards);
         if matches!(combo.kind, ComboKind::Bomb | ComboKind::Rocket) {
             room.bomb_count = room.bomb_count.saturating_add(1);
@@ -272,6 +341,14 @@ impl Room {
             cards,
             combo,
         });
+        #[cfg(feature = "official")]
+        if let Some(play) = room.last_play.as_ref() {
+            room.history.push(PublicPlay {
+                position,
+                cards: play.cards.clone(),
+                benchmark,
+            });
+        }
         room.consecutive_passes = 0;
         true
     }
@@ -281,7 +358,19 @@ impl Room {
         if room.last_play.is_none() || room.current_position != position {
             return false;
         }
+        #[cfg(feature = "official")]
+        let benchmark = room
+            .last_play
+            .as_ref()
+            .map(|play| play.cards.clone())
+            .unwrap_or_default();
         room.consecutive_passes = room.consecutive_passes.saturating_add(1);
+        #[cfg(feature = "official")]
+        room.history.push(PublicPlay {
+            position,
+            cards: Vec::new(),
+            benchmark,
+        });
         true
     }
 }
@@ -347,6 +436,32 @@ impl Room {
             auto_intelligent: self.players[viewer_position].prefer_ai,
         }
     }
+
+    #[cfg(feature = "official")]
+    fn automatic_turn(&self, position: usize, intelligent: bool) -> AutomaticTurn {
+        AutomaticTurn {
+            revision: self.play_history_revision(),
+            position,
+            phase: self.phase,
+            hand: self.players[position].hand.clone(),
+            hand_sizes: std::array::from_fn(|seat| self.players[seat].hand.len()),
+            self_is_landlord: position == self.landlord_position,
+            bottom_cards: self.bottom_cards.clone(),
+            last_play_position: self.last_play.as_ref().map(|play| play.position),
+            last_play: self
+                .last_play
+                .as_ref()
+                .map(|play| play.cards.clone())
+                .unwrap_or_default(),
+            play_history: self.history.clone(),
+            intelligent,
+        }
+    }
+
+    #[cfg(feature = "official")]
+    fn play_history_revision(&self) -> u64 {
+        self.history.len() as u64
+    }
 }
 
 #[derive(Debug)]
@@ -359,17 +474,19 @@ type BrainCandidate = ((u8, i32, usize, Vec<i32>), Vec<i32>);
 
 /// 智能托管先尝试一次出完或直接接管当前牌权，再回退到规则正确的普通托管。
 /// 该策略只使用本座位手牌和已经公开的上一手牌，保持谁是地主的身份信息隔离。
+#[cfg(feature = "official")]
 fn smart_brain_action(room: &Room, position: usize) -> BrainAction {
-    let hand = &room.players[position].hand;
-    if let Some(previous) = &room.last_play {
-        if hand.len() == previous.cards.len()
-            && classify(hand).is_some_and(|combo| can_beat(combo, previous.combo))
-        {
-            return BrainAction::Play(hand.clone());
+    match crate::ai::choose_action(&room.automatic_turn(position, true)) {
+        WhoIsLandlordAction::Play { cards } => BrainAction::Play(cards),
+        WhoIsLandlordAction::Pass => BrainAction::Pass,
+        WhoIsLandlordAction::Bury { .. } | WhoIsLandlordAction::SetAuto { .. } => {
+            brain_action(room, position)
         }
-    } else if classify(hand).is_some() {
-        return BrainAction::Play(hand.clone());
     }
+}
+
+#[cfg(not(feature = "official"))]
+fn smart_brain_action(room: &Room, position: usize) -> BrainAction {
     brain_action(room, position)
 }
 
