@@ -571,6 +571,15 @@ impl GameHandler for DominoesGameHandler {
                     });
                 }
             }
+            drop(state);
+            if dispatch.messages.iter().any(|message| {
+                matches!(&message.payload, OutboundPayload::Event(event)
+                    if event.code == WsCode::JOIN as i32)
+            }) {
+                // 真正重连可能恢复当前玩家的完整倒计时，其他座位也立即收到
+                // 同一 revision；同连接重复 JOIN 保持只读恢复。
+                append_snapshot_and_turn(room_service, &room_key, &table, dispatch);
+            }
             return;
         }
 
