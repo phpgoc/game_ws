@@ -229,7 +229,7 @@ fn five_up_scores_open_ends_during_play_and_divides_round_pips() {
 }
 
 #[test]
-fn keep_drawing_requires_the_boneyard_to_be_exhausted_before_pass() {
+fn keep_drawing_requires_all_drawable_tiles_before_pass_and_preserves_two_reserved_tiles() {
     let mut state = state();
     state.no_playable_tiles = DominoesNoPlayableTiles::KeepDrawing;
     state.phase = DominoesPhase::Play;
@@ -244,12 +244,13 @@ fn keep_drawing_requires_the_boneyard_to_be_exhausted_before_pass() {
         direction: share_type_public::DominoesPort::Right,
     }];
     state.hands = HashMap::from([(0, vec![Tile::from_id(0).expect("0-0 tile")])]);
-    state.boneyard = vec![Tile::from_id(1).expect("0-1 tile")];
+    state.boneyard = vec![tile(5, 6), tile(6, 6), tile(0, 1)];
     assert_eq!(state.pass(0), Err(super::CoreError::PassNotAllowed));
     let drawn = state.draw_tile(0).expect("draw unmatched tile");
     assert!(!drawn.playable);
     assert!(!drawn.passed);
-    assert!(state.boneyard.is_empty());
+    assert_eq!(drawn.tile, Some(tile(0, 1)));
+    assert_eq!(state.boneyard, [tile(5, 6), tile(6, 6)]);
     assert!(state.pass(0).expect("pass after boneyard").is_none());
 }
 
@@ -269,7 +270,7 @@ fn draw_one_automatically_passes_an_unplayable_draw() {
         direction: share_type_public::DominoesPort::Right,
     }];
     state.hands = HashMap::from([(0, vec![Tile::from_id(0).expect("0-0 tile")])]);
-    state.boneyard = vec![Tile::from_id(1).expect("0-1 tile")];
+    state.boneyard = vec![tile(5, 6), tile(6, 6), tile(0, 1)];
     let drawn = state.draw_tile(0).expect("draw-one action");
     assert!(drawn.passed);
     assert!(!drawn.playable);

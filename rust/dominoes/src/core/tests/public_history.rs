@@ -98,13 +98,14 @@ fn actual_draw_invalidates_only_drawers_evidence_and_clones_keep_independent_sta
 }
 
 #[test]
-fn empty_draw_preserves_evidence_and_new_round_or_game_clears_all_public_history() {
+fn undrawable_reserve_preserves_evidence_and_new_round_or_game_clears_all_public_history() {
     let mut state = one_rotation();
-    state.boneyard.clear();
+    state.boneyard = vec![tile(2, 5), tile(2, 6)];
     for position in 0..3 {
         let drawn = state.draw_tile(position).unwrap();
         assert_eq!(drawn.tile, None);
         assert!(drawn.passed);
+        assert_eq!(state.boneyard, [tile(2, 5), tile(2, 6)]);
         assert!(state.last_public_play(position).is_some());
         assert_eq!(state.inferred_missing_pips(position), (1 << 2) | (1 << 5));
     }

@@ -82,6 +82,143 @@ fn assert_complete_set(state: &DominoesRoundState) {
 }
 
 #[test]
+fn switch_simple_recording_passes_with_two_undrawn_tiles_then_awards_forty_seven() {
+    // https://www.nicovideo.jp/watch/sm36992111 06:12～06:24。
+    // 重建 06:12 的桌面连接图；构造顺序不是录像前半轮的原始行动顺序。
+    for reverse_reserve in [false, true] {
+        let mut state = state();
+        state.rule = DominoesRule::Simple;
+        state.no_playable_tiles = DominoesNoPlayableTiles::KeepDrawing;
+        state.phase = DominoesPhase::Play;
+        state.hands.insert(0, Tile::all());
+        state.play_tile(0, tile(6, 6).id, None).unwrap();
+        for branch in [
+            &[
+                (6, 4),
+                (4, 5),
+                (5, 1),
+                (1, 6),
+                (6, 3),
+                (3, 1),
+                (1, 4),
+                (4, 0),
+                (0, 0),
+            ][..],
+            &[(6, 2), (2, 3), (3, 4), (4, 4)][..],
+        ] {
+            let mut parent = tile(6, 6);
+            for &(inward, outward) in branch {
+                state.current_position = 0;
+                let played = tile(inward, outward);
+                attach(&mut state, played, parent, inward);
+                parent = played;
+            }
+        }
+        state.current_position = 0;
+        state.hands = HashMap::from([
+            (0, vec![tile(0, 6), tile(2, 4)]),
+            (1, vec![tile(0, 1), tile(0, 3), tile(1, 2), tile(3, 5)]),
+            (
+                2,
+                vec![tile(3, 3), tile(5, 5), tile(0, 2), tile(0, 5), tile(2, 5)],
+            ),
+            (3, vec![tile(1, 1)]),
+        ]);
+        state.boneyard = vec![tile(2, 2), tile(5, 6)];
+        if reverse_reserve {
+            state.boneyard.reverse();
+        }
+        state.scores = HashMap::from([(0, 0), (1, 0), (2, 16), (3, 0)]);
+        state.round_score_changes = HashMap::new();
+        assert_eq!(state.placements.len(), 14);
+        assert_complete_set(&state);
+
+        attach(&mut state, tile(0, 6), tile(0, 0), 0);
+        // 虽然牌库中的 5-6 能接端点 6，三家均直接过牌，没有摸走最后两张。
+        for position in [1, 2, 3] {
+            assert!(state.legal_plays(position).is_empty());
+            let hand = state.hand_state(position);
+            assert!(!hand.can_draw && hand.can_pass);
+            assert!(state.pass(position).expect("recorded CPU pass").is_none());
+            assert_eq!(state.boneyard.len(), 2);
+        }
+        attach(&mut state, tile(2, 4), tile(4, 4), 4);
+        assert_complete_set(&state);
+        let result = state.last_round_result.as_ref().expect("empty hand wins");
+        assert!(!result.blocked);
+        assert_eq!(result.winner_position, 0);
+        assert_eq!(result.round_score, 15 + 30 + 2);
+        assert_eq!(
+            result.scores,
+            HashMap::from([(0, 47), (1, 0), (2, 16), (3, 0)])
+        );
+        assert_eq!(state.placements.len(), 16);
+        assert_eq!(state.boneyard.len(), 2);
+    }
+}
+
+#[test]
+fn switch_five_up_recording_blocks_with_two_undrawn_tiles_and_keeps_the_match_leader() {
+    // https://www.nicovideo.jp/watch/sm37319079 05:03～05:11。
+    // 重建右家出最后一张 3-3 前的连接图，不推断更早的原始行动顺序。
+    let mut state = state();
+    state.rule = DominoesRule::FiveUp;
+    state.no_playable_tiles = DominoesNoPlayableTiles::KeepDrawing;
+    state.phase = DominoesPhase::Play;
+    state.hands.insert(0, Tile::all());
+    state.play_tile(0, tile(2, 2).id, None).unwrap();
+    for branch in [
+        &[
+            (2, 1),
+            (1, 4),
+            (4, 3),
+            (3, 2),
+            (2, 6),
+            (6, 5),
+            (5, 1),
+            (1, 3),
+        ][..],
+        &[(2, 4), (4, 5), (5, 0), (0, 3), (3, 5), (5, 5), (5, 2)][..],
+    ] {
+        let mut parent = tile(2, 2);
+        for &(inward, outward) in branch {
+            state.current_position = 0;
+            let played = tile(inward, outward);
+            attach(&mut state, played, parent, inward);
+            parent = played;
+        }
+    }
+    state.current_position = 3;
+    state.hands = HashMap::from([
+        (0, vec![tile(6, 6), tile(0, 6)]),
+        (1, vec![tile(0, 0), tile(0, 4), tile(1, 6)]),
+        (2, vec![tile(1, 1), tile(0, 1), tile(4, 6)]),
+        (3, vec![tile(3, 3), tile(4, 4)]),
+    ]);
+    state.boneyard = vec![tile(0, 2), tile(3, 6)];
+    state.scores = HashMap::from([(0, 35), (1, 22), (2, 27), (3, 20)]);
+    state.round_score_changes = HashMap::new();
+    assert_complete_set(&state);
+    assert_eq!(attach(&mut state, tile(3, 3), tile(1, 3), 3), 0);
+    for position in 0..4 {
+        assert!(state.legal_plays(position).is_empty());
+        let result = state.pass(position).expect("recorded pass at reserve");
+        assert_eq!(result.is_some(), position == 3);
+    }
+    assert_complete_set(&state);
+    let result = state.last_round_result.as_ref().unwrap();
+    assert!(result.blocked);
+    assert_eq!(result.winner_position, 3);
+    assert_eq!(result.round_score, (18 + 11 + 13) / 5);
+    assert_eq!(
+        result.scores,
+        HashMap::from([(0, 35), (1, 22), (2, 27), (3, 28)])
+    );
+    assert_eq!(result.winner_positions, vec![0]);
+    assert_eq!(state.boneyard.len(), 2);
+}
+
+#[test]
 fn switch_recording_replays_draws_scores_and_a_change_of_match_leader() {
     // https://www.nicovideo.jp/watch/sm37356452 03:51～04:06。
     // 03:58 左家摸牌，03:59 出 4-4；04:00 中家出 4-5 得 25；

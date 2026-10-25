@@ -46,6 +46,8 @@ fn blocked_state(rule: DominoesNoPlayableTiles) -> DominoesRoundState {
 fn keep_drawing_is_forced_until_the_current_player_can_play() {
     let mut state = blocked_state(DominoesNoPlayableTiles::KeepDrawing);
     state.boneyard = vec![
+        Tile::from_id(25).expect("5-5 reserve"),
+        Tile::from_id(27).expect("6-6 reserve"),
         Tile::from_id(6).expect("0-6"),
         Tile::from_id(1).expect("0-1"),
     ];
@@ -79,7 +81,11 @@ fn keep_drawing_is_forced_until_the_current_player_can_play() {
 #[test]
 fn draw_one_is_forced_once_and_then_passes_when_still_blocked() {
     let mut state = blocked_state(DominoesNoPlayableTiles::DrawOne);
-    state.boneyard = vec![Tile::from_id(1).expect("0-1")];
+    state.boneyard = vec![
+        Tile::from_id(25).expect("5-5 reserve"),
+        Tile::from_id(27).expect("6-6 reserve"),
+        Tile::from_id(1).expect("0-1"),
+    ];
 
     let outcome = forced_no_playable_turn(&mut state)
         .expect("forced action")
@@ -129,4 +135,50 @@ fn an_empty_boneyard_passes_without_emitting_a_fake_draw() {
             ..
         }]
     ));
+}
+
+#[test]
+fn forced_actions_draw_only_above_the_two_tile_reserve() {
+    for rule in [DominoesRule::Simple, DominoesRule::FiveUp] {
+        for no_playable in [
+            DominoesNoPlayableTiles::PassWithoutDraw,
+            DominoesNoPlayableTiles::DrawOne,
+            DominoesNoPlayableTiles::KeepDrawing,
+        ] {
+            for with_drawable in [false, true] {
+                let mut state = blocked_state(no_playable);
+                state.rule = rule;
+                // 两张保留牌都能接 6，不能因其可出而越过保留边界。
+                let reserve = vec![Tile::from_id(26).unwrap(), Tile::from_id(27).unwrap()];
+                state.boneyard = reserve.clone();
+                if with_drawable {
+                    state.boneyard.push(Tile::from_id(1).unwrap());
+                }
+                let should_draw =
+                    with_drawable && no_playable != DominoesNoPlayableTiles::PassWithoutDraw;
+                let hand_count = state.hands[&0].len();
+                let outcome = forced_no_playable_turn(&mut state).unwrap().unwrap();
+                assert_eq!(state.current_position, 1);
+                assert_eq!(state.hands[&0].len(), hand_count + usize::from(should_draw));
+                assert!(state.boneyard.starts_with(&reserve));
+                assert_eq!(outcome.snapshot.boneyard_count, state.boneyard.len() as i32);
+                match outcome.events.as_slice() {
+                    [
+                        ActionEvent::Draw {
+                            boneyard_count,
+                            tile,
+                            ..
+                        },
+                        ActionEvent::Pass { .. },
+                    ] => {
+                        assert!(should_draw);
+                        assert_eq!(*boneyard_count, 2);
+                        assert_eq!(*tile, Some(Tile::from_id(1).unwrap()));
+                    }
+                    [ActionEvent::Pass { .. }] => assert!(!should_draw),
+                    events => panic!("unexpected reserve actions: {events:?}"),
+                }
+            }
+        }
+    }
 }

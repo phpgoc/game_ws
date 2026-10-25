@@ -26,6 +26,8 @@ pub use public_history::{PublicPlayContext, PublicPlayEvidence};
 pub const MIN_PLAYERS: usize = 3;
 pub const MAX_PLAYERS: usize = 4;
 pub const TILE_COUNT: usize = 28;
+/// 原作两种玩法都保留最后两张暗牌，不再摸取；仍计入完整牌集和公开余库张数。
+pub const BONEYARD_RESERVE_COUNT: usize = 2;
 pub const DEFAULT_TURN_SECONDS: u32 = 30;
 pub const DISCONNECTED_TURN_SECONDS: u32 = 5;
 pub const ROUND_TRANSITION_SECONDS: u32 = 4;
@@ -676,6 +678,10 @@ impl DominoesRoundState {
         Ok((placement, score, round_result))
     }
 
+    pub fn drawable_boneyard_count(&self) -> usize {
+        self.boneyard.len().saturating_sub(BONEYARD_RESERVE_COUNT)
+    }
+
     pub fn draw_tile(&mut self, position: usize) -> Result<DrawResult, CoreError> {
         self.ensure_turn(position)?;
         if !self.legal_plays(position).is_empty() {
@@ -684,7 +690,7 @@ impl DominoesRoundState {
         if self.no_playable_tiles == DominoesNoPlayableTiles::PassWithoutDraw {
             return Err(CoreError::DrawNotAllowed);
         }
-        let Some(tile) = self.boneyard.pop() else {
+        if self.drawable_boneyard_count() == 0 {
             let round_result = self.record_pass(position)?;
             return Ok(DrawResult {
                 tile: None,
@@ -692,7 +698,11 @@ impl DominoesRoundState {
                 passed: true,
                 round_result,
             });
-        };
+        }
+        let tile = self
+            .boneyard
+            .pop()
+            .expect("drawable boneyard checked above");
         #[cfg(any(feature = "official", test))]
         {
             // 实际摸牌可能补回旧缺门，剩手也不能再加回最近落牌来重建旧手牌。
@@ -734,8 +744,10 @@ impl DominoesRoundState {
         }
         let allowed = match self.no_playable_tiles {
             DominoesNoPlayableTiles::PassWithoutDraw => true,
-            DominoesNoPlayableTiles::DrawOne => self.drawn_this_turn || self.boneyard.is_empty(),
-            DominoesNoPlayableTiles::KeepDrawing => self.boneyard.is_empty(),
+            DominoesNoPlayableTiles::DrawOne => {
+                self.drawn_this_turn || self.drawable_boneyard_count() == 0
+            }
+            DominoesNoPlayableTiles::KeepDrawing => self.drawable_boneyard_count() == 0,
         };
         if !allowed {
             return Err(CoreError::PassNotAllowed);
@@ -1129,16 +1141,16 @@ impl DominoesRoundState {
             && is_current_turn
             && legal_plays.is_empty()
             && self.no_playable_tiles != DominoesNoPlayableTiles::PassWithoutDraw
-            && !self.boneyard.is_empty();
+            && self.drawable_boneyard_count() > 0;
         let can_pass = self.phase == DominoesPhase::Play
             && is_current_turn
             && legal_plays.is_empty()
             && match self.no_playable_tiles {
                 DominoesNoPlayableTiles::PassWithoutDraw => true,
                 DominoesNoPlayableTiles::DrawOne => {
-                    self.drawn_this_turn || self.boneyard.is_empty()
+                    self.drawn_this_turn || self.drawable_boneyard_count() == 0
                 }
-                DominoesNoPlayableTiles::KeepDrawing => self.boneyard.is_empty(),
+                DominoesNoPlayableTiles::KeepDrawing => self.drawable_boneyard_count() == 0,
             };
         WsDominoesHandState {
             hand: self
