@@ -5,7 +5,9 @@ use std::sync::{Arc, Mutex};
 
 use dominoes::core::DominoesRoundState;
 use serde_json::{Value, json};
-use share_type_public::{DominoesNoPlayableTiles, DominoesPhase, DominoesRule};
+use share_type_public::{
+    DominoesNoPlayableTiles, DominoesOrientation, DominoesPhase, DominoesPort, DominoesRule,
+};
 use ws_common::CommonGameState;
 
 fn main() {
@@ -61,7 +63,26 @@ fn main() {
                         .count()
                         >= 2
                 });
-                (state.placements.len() >= 23).then_some(branch).flatten()
+                // 四人均未出完、余库至少两张时，桌面最多 22 张；
+                // 验收长链按真实转弯判断，不能继续使用旧的 23 张阈值。
+                let folded = state.placements.iter().any(|placement| {
+                    if placement.tile.is_double() {
+                        return false;
+                    }
+                    let previous = state
+                        .placements
+                        .iter()
+                        .flat_map(|p| &p.new_endpoints)
+                        .find(|end| Some(end.endpoint_id) == placement.connected_endpoint_id);
+                    previous.is_some_and(|end| {
+                        let horizontal =
+                            matches!(end.direction, DominoesPort::Left | DominoesPort::Right);
+                        horizontal != (placement.orientation == DominoesOrientation::Horizontal)
+                    })
+                });
+                (state.placements.len() >= 20 && folded)
+                    .then_some(branch)
+                    .flatten()
             } else {
                 (state.placements.len() >= 20 && state.endpoints.len() >= 3)
                     .then_some(multi)
