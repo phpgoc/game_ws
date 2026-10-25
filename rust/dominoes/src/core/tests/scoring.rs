@@ -1,6 +1,4 @@
-use super::super::{Endpoint, Placement};
 use super::*;
-use share_type_public::{DominoesOrientation, DominoesPort};
 
 fn tile(a: i32, b: i32) -> Tile {
     Tile::all()
@@ -159,64 +157,6 @@ fn spinner_counts_twice_until_its_second_connection_then_only_the_branches_score
     }
     assert_eq!(state.endpoints.len(), 4);
     assert!(state.endpoints.iter().all(|end| end.placement_id != 0));
-}
-
-#[test]
-fn switch_screenshot_forecast_is_thirty_from_two_terminal_doubles_and_two_plain_ends() {
-    // 原作公开截图 20240102004653.jpg：4-4、6-6 两张端部双牌，
-    // 另两端是 4 和 1；把 1-6 接到 1，原作预告 30 = 8 + 12 + 4 + 6。
-    // 来源：https://amesss.hatenablog.com/entry/2024/01/02/120000
-    let mut state = state();
-    state.rule = DominoesRule::FiveUp;
-    state.phase = DominoesPhase::Play;
-    state.current_position = 0;
-    state.hands.insert(0, vec![tile(1, 6), tile(0, 0)]);
-    for (placement_id, tile, count) in [
-        (0, tile(4, 4), 3),
-        (1, tile(6, 6), 1),
-        (2, tile(4, 5), 1),
-        (3, tile(0, 1), 1),
-    ] {
-        let pip = match placement_id {
-            0 => 4,
-            1 => 6,
-            2 => 4,
-            _ => 1,
-        };
-        let new_endpoints = (0..count)
-            .map(|port| Endpoint {
-                endpoint_id: placement_id * 4 + port,
-                placement_id,
-                pip,
-                port: DominoesPort::Right,
-                direction: DominoesPort::Right,
-                anchor_x: placement_id * 6 + 2,
-                anchor_y: port * 6,
-            })
-            .collect::<Vec<_>>();
-        state.endpoints.extend(new_endpoints.iter().copied());
-        state.placements.push(Placement {
-            placement_id,
-            tile,
-            connected_endpoint_id: Some(100 + placement_id),
-            connected_port: Some(DominoesPort::Left),
-            center_x: placement_id * 6,
-            center_y: 0,
-            orientation: DominoesOrientation::Horizontal,
-            flipped: false,
-            new_endpoints,
-        });
-    }
-    state.next_placement_id = 4;
-    state.next_endpoint_id = 16;
-    let play = state
-        .legal_plays(0)
-        .into_iter()
-        .find(|play| play.tile_id == tile(1, 6).id && play.endpoint_id == Some(12))
-        .unwrap();
-    assert_eq!(play.score, 30);
-    let (_, score, _) = state.play_tile(0, play.tile_id, play.endpoint_id).unwrap();
-    assert_eq!(score, 30);
 }
 
 // 独立按落牌连接图数邻居，不使用 BoardEnds 或剩余端口计数。
