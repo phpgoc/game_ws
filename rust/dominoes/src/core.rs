@@ -948,15 +948,17 @@ impl DominoesRoundState {
         tile: Tile,
         layout: LayoutPlan,
     ) -> Vec<Endpoint> {
+        let creates_spinner = self.rule == DominoesRule::FiveUp
+            && !self.placements.iter().any(|placed| placed.tile.is_double());
         let branches = match (layout.outward_direction, tile.is_double()) {
-            (None, true) if self.rule == DominoesRule::FiveUp => vec![
+            (None, true) if creates_spinner => vec![
                 (DominoesPort::Left, tile.a),
                 (DominoesPort::Right, tile.a),
                 (DominoesPort::Top, tile.a),
                 (DominoesPort::Bottom, tile.a),
             ],
             (None, _) => vec![(DominoesPort::Left, tile.a), (DominoesPort::Right, tile.b)],
-            (Some(direction), true) if self.rule == DominoesRule::FiveUp => vec![
+            (Some(direction), true) if creates_spinner => vec![
                 (direction, tile.a),
                 (turn_left(direction), tile.a),
                 (turn_right(direction), tile.a),

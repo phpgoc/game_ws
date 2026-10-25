@@ -16,6 +16,8 @@ mod round_order;
 mod scoring;
 #[path = "tests/starter_order.rs"]
 mod starter_order;
+#[path = "tests/switch_replay.rs"]
+mod switch_replay;
 
 fn state_with_players(player_count: usize) -> DominoesRoundState {
     let mut common = CommonGameState::new();

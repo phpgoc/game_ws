@@ -5,6 +5,7 @@ use super::*;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BoardEnd {
     pub pip: i32,
+    /// 双牌上的端口，包括唯一分叉双牌和后续只延长牌链的双牌。
     pub spinner: bool,
 }
 
@@ -14,9 +15,15 @@ pub struct BoardEnd {
 pub struct BoardEnds {
     ordinary: [u8; 7],
     spinners: [u8; 7],
+    // 端口全部用完后也保留，后续双牌不能重新产生分叉。
+    branching_double: Option<i32>,
 }
 
 impl BoardEnds {
+    pub fn has_branching_double(self) -> bool {
+        self.branching_double.is_some()
+    }
+
     pub fn pips(self) -> Vec<i32> {
         (0..7)
             .flat_map(|pip| {
@@ -61,7 +68,12 @@ impl BoardEnds {
             self = Self::default();
         }
         if rule == DominoesRule::FiveUp && tile.is_double() {
-            self.spinners[tile.a as usize] = if attached.is_none() { 4 } else { 3 };
+            self.spinners[tile.a as usize] = if self.has_branching_double() {
+                1
+            } else {
+                self.branching_double = Some(tile.a);
+                if attached.is_none() { 4 } else { 3 }
+            };
         } else if let Some(end) = attached {
             self.ordinary[tile.other_pip(end.pip) as usize] += 1;
         } else {
@@ -77,8 +89,13 @@ impl BoardEnds {
         }
         let total = (0..7)
             .map(|pip| {
+                let double_is_terminal = if self.branching_double == Some(pip as i32) {
+                    self.spinners[pip] >= 3
+                } else {
+                    self.spinners[pip] > 0
+                };
                 pip as i32
-                    * (i32::from(self.ordinary[pip]) + if self.spinners[pip] >= 3 { 2 } else { 0 })
+                    * (i32::from(self.ordinary[pip]) + if double_is_terminal { 2 } else { 0 })
             })
             .sum::<i32>();
         if total % 5 == 0 { total } else { 0 }
@@ -110,7 +127,17 @@ impl DominoesRoundState {
     }
 
     pub fn board_ends(&self) -> BoardEnds {
-        let mut board = BoardEnds::default();
+        let mut board = BoardEnds {
+            branching_double: (self.rule == DominoesRule::FiveUp)
+                .then(|| {
+                    self.placements
+                        .iter()
+                        .find(|placed| placed.tile.is_double())
+                        .map(|placed| placed.tile.a)
+                })
+                .flatten(),
+            ..BoardEnds::default()
+        };
         for endpoint in &self.endpoints {
             let end = self
                 .board_end(endpoint.endpoint_id)

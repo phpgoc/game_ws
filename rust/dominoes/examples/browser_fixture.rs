@@ -54,9 +54,16 @@ fn main() {
                         .any(|other| other.tile_id == play.tile_id && other.score > 0)
             });
             let selected = if long_chain {
-                (state.placements.len() >= 23).then_some(&legal[0])
+                let branch = legal.iter().find(|play| {
+                    legal
+                        .iter()
+                        .filter(|other| other.tile_id == play.tile_id)
+                        .count()
+                        >= 2
+                });
+                (state.placements.len() >= 23).then_some(branch).flatten()
             } else {
-                (state.placements.len() >= 20 && state.endpoints.len() >= 8)
+                (state.placements.len() >= 20 && state.endpoints.len() >= 3)
                     .then_some(multi)
                     .flatten()
             };

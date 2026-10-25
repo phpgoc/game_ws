@@ -173,7 +173,7 @@ fn switch_screenshot_forecast_is_thirty_from_two_terminal_doubles_and_two_plain_
     state.hands.insert(0, vec![tile(1, 6), tile(0, 0)]);
     for (placement_id, tile, count) in [
         (0, tile(4, 4), 3),
-        (1, tile(6, 6), 3),
+        (1, tile(6, 6), 1),
         (2, tile(4, 5), 1),
         (3, tile(0, 1), 1),
     ] {
