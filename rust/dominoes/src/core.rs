@@ -584,16 +584,26 @@ impl DominoesRoundState {
                 score: self.preview_five_up_score(*tile, None),
             }));
         } else {
+            // 无合法牌时不重建桌面；多个候选共用一次公开计分端模型。
+            let mut board = None;
             for tile in hand {
                 for endpoint in self
                     .endpoints
                     .iter()
                     .filter(|endpoint| tile.matches(endpoint.pip))
                 {
+                    let score = if self.rule == DominoesRule::FiveUp {
+                        board
+                            .get_or_insert_with(|| self.board_ends())
+                            .after_play(self.rule, *tile, self.board_end(endpoint.endpoint_id))
+                            .five_up_score(self.rule)
+                    } else {
+                        0
+                    };
                     plays.push(WsDominoesLegalPlay {
                         tile_id: tile.id,
                         endpoint_id: Some(endpoint.endpoint_id),
-                        score: self.preview_five_up_score(*tile, Some(endpoint.endpoint_id)),
+                        score,
                     });
                 }
             }

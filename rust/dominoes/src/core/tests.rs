@@ -8,6 +8,8 @@ use super::{DominoesRoundState, Tile};
 
 #[path = "tests/layout_sequences.rs"]
 mod layout_sequences;
+#[path = "tests/legal_plays.rs"]
+mod legal_plays;
 #[path = "tests/public_history.rs"]
 mod public_history;
 #[path = "tests/round_order.rs"]
