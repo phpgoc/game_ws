@@ -64,18 +64,68 @@ fn three_and_four_players_each_receive_five_tiles() {
 }
 
 #[test]
-fn starter_draw_uses_a_fixed_six_tile_pool_before_the_formal_deal() {
-    for player_count in [3, 4] {
-        let mut state = state_with_players(player_count);
-        let starter = state.start_new_game().expect("start round");
+fn starter_candidates_return_to_the_complete_deck_and_can_change_players() {
+    // Switch 实机 sm42780597：01:51.76 CPU 选中 0-4，02:01.767
+    // 正式发牌后 0-4 出现在玩家手中，选牌不是保留在选择者手里的起手牌。
+    // 录像只直接确认牌会回流，不证明原作内部采用哪一种洗牌算法。
+    for rule in [DominoesRule::Simple, DominoesRule::FiveUp] {
+        for player_count in [3, 4] {
+            let mut state = state_with_players(player_count);
+            state.rule = rule;
+            state.rng_state = 1;
+            state.start_new_game_pending().expect("pending start");
+            let candidates = state.starter_pool.clone();
+            assert_eq!(candidates.len(), 6);
+            let mut candidate_ids = candidates.iter().map(|tile| tile.id).collect::<Vec<_>>();
+            candidate_ids.sort_unstable();
+            candidate_ids.dedup();
+            assert_eq!(candidate_ids.len(), 6);
 
-        assert!(state.positions.contains(&starter));
-        assert_eq!(state.hand_size(), 5);
-        assert_eq!(
-            state.hands.values().map(Vec::len).sum::<usize>(),
-            player_count * 5
-        );
-        assert_eq!(state.boneyard.len(), 28 - player_count * 5);
+            for position in 0..player_count {
+                let result = state
+                    .select_starter_slot(position, position)
+                    .expect("select a distinct slot");
+                if position + 1 < player_count {
+                    assert_eq!(result.starter_position, None);
+                    assert!(state.hands.is_empty());
+                    assert!(state.boneyard.is_empty());
+                } else {
+                    assert!(
+                        state
+                            .positions
+                            .contains(&result.starter_position.expect("starter"))
+                    );
+                }
+            }
+
+            assert_eq!(state.phase, DominoesPhase::Play);
+            assert_eq!(state.hands.len(), player_count);
+            assert!(state.hands.values().all(|hand| hand.len() == 5));
+            assert_eq!(state.boneyard.len(), 28 - player_count * 5);
+            let mut dealt_ids = state
+                .hands
+                .values()
+                .flatten()
+                .chain(&state.boneyard)
+                .map(|tile| tile.id)
+                .collect::<Vec<_>>();
+            dealt_ids.sort_unstable();
+            assert_eq!(dealt_ids, (0..28).collect::<Vec<_>>());
+            for candidate in &candidates {
+                assert_eq!(
+                    dealt_ids.iter().filter(|id| **id == candidate.id).count(),
+                    1
+                );
+            }
+            assert!(candidates.iter().take(player_count).enumerate().any(
+                |(selector, candidate)| {
+                    state
+                        .hands
+                        .iter()
+                        .any(|(position, hand)| *position != selector && hand.contains(candidate))
+                }
+            ));
+        }
     }
 }
 
