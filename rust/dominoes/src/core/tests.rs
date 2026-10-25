@@ -14,6 +14,8 @@ mod public_history;
 mod round_order;
 #[path = "tests/scoring.rs"]
 mod scoring;
+#[path = "tests/starter_order.rs"]
+mod starter_order;
 
 fn state_with_players(player_count: usize) -> DominoesRoundState {
     let mut common = CommonGameState::new();
@@ -162,22 +164,6 @@ fn pending_starter_selection_reveals_only_chosen_slots_and_deals_after_all_choic
     assert!(last.starter_position.is_some());
     assert_eq!(state.phase, DominoesPhase::Play);
     assert!(state.hands.values().all(|hand| hand.len() == 5));
-}
-
-#[test]
-fn starter_ties_keep_the_first_selection_order() {
-    let mut state = state_with_players(3);
-    state.start_new_game_pending().expect("pending start");
-    state.starter_pool = vec![tile(0, 4), tile(1, 3), tile(2, 2)];
-
-    state.select_starter_slot(0, 0).expect("first choice");
-    state.select_starter_slot(1, 1).expect("second choice");
-    let result = state
-        .select_starter_slot(2, 2)
-        .expect("last choice with tied pips");
-
-    assert_eq!(result.starter_position, Some(0));
-    assert_eq!(state.current_position, 0);
 }
 
 #[test]

@@ -489,27 +489,17 @@ impl DominoesRoundState {
         self.starter_selections.insert(position, slot_index);
         let complete = self.starter_selections.len() == self.positions.len();
         let starter_position = if complete {
-            let best_pips = self
+            // Switch 实机：4-6 胜过 5-5（sm42098821 03:24），
+            // 后选的 2-6 胜过先选的 4-4（sm37089085 13:27）。
+            // 总点数相同时比较较大一端，不按选牌席位决定。
+            let starter = self
                 .starter_selections
                 .iter()
                 .filter_map(|(position, index)| {
-                    self.starter_pool
-                        .get(*index)
-                        .map(|tile| (*position, tile.pip_sum()))
+                    self.starter_pool.get(*index).map(|tile| (*position, tile))
                 })
-                .map(|(_, pips)| pips)
-                .max()
-                .unwrap_or_default();
-            let starter = self
-                .positions
-                .iter()
-                .copied()
-                .find(|position| {
-                    self.starter_selections
-                        .get(position)
-                        .and_then(|index| self.starter_pool.get(*index))
-                        .is_some_and(|tile| tile.pip_sum() == best_pips)
-                })
+                .max_by_key(|(_, tile)| (tile.pip_sum(), tile.a.max(tile.b)))
+                .map(|(position, _)| position)
                 .unwrap_or(self.positions[0]);
             self.deal_round(Some(starter))?;
             Some(starter)
