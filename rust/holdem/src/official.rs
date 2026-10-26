@@ -59,6 +59,10 @@ pub fn create_match(room_service: &mut RoomService, room_key: &str, game_id: Gam
                 None
             }
         }
+    }, |game_match_id| async move {
+        if let Err(error) = data::service::game_match::finish(game_match_id).await {
+            ws_common::dlog!(ws_common::tracing::Level::ERROR, "official match cleanup failed: {}", error);
+        }
     });
 }
 
@@ -249,10 +253,15 @@ mod tests {
             },
             &[(0, 1000), (1, 1000)].into_iter().collect(),
             1,
-        ).unwrap().await.unwrap();
+        )
+        .unwrap()
+        .await
+        .unwrap();
 
-        let first_stats = data::repository::game_user_stats::get_by_user_game(first.id, GameId::TEXAS_HOLD_EM)
-            .await.expect("read first user stats");
+        let first_stats =
+            data::repository::game_user_stats::get_by_user_game(first.id, GameId::TEXAS_HOLD_EM)
+                .await
+                .expect("read first user stats");
         let second_stats =
             data::repository::game_user_stats::get_by_user_game(second.id, GameId::TEXAS_HOLD_EM)
                 .await

@@ -256,6 +256,9 @@ fn build_auto_dispatch(
             trump_suit,
             state.lock().unwrap().round_index + 1,
         );
+        if settlement.match_finished {
+            room_service.finish_room_official_match(room_key);
+        }
         room_service.broadcast(
             room_key,
             WsCode::GAME_OVER as i32,

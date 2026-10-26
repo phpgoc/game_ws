@@ -94,6 +94,10 @@ pub fn create_match(room_service: &mut RoomService, room_key: &str) {
                 None
             }
         }
+    }, |game_match_id| async move {
+        if let Err(error) = data::service::game_match::finish(game_match_id).await {
+            ws_common::dlog!(ws_common::tracing::Level::ERROR, "official match cleanup failed: {}", error);
+        }
     });
 }
 

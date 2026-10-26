@@ -46,6 +46,14 @@ struct RoomEntry {
     pending_cleanup_generation: Option<u64>,
 }
 
+impl Drop for RoomEntry {
+    fn drop(&mut self) {
+        if let Some(official_match) = &self.official_match {
+            official_match.finish();
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RoomCleanupToken {
     room_key: String,
@@ -189,6 +197,7 @@ impl RoomService {
 
     /// 清除 game state（游戏结束时调用）。
     pub fn clear_room_game_state(&mut self, room_key: &str) {
+        self.finish_room_official_match(room_key);
         if let Some(entry) = self.rooms.get_mut(room_key) {
             let common = entry.state.shared_common_state();
             entry.state = Box::new(crate::game_state::SharedGameState::from_common(common));
@@ -206,6 +215,9 @@ impl RoomService {
         if let Some(entry) = self.rooms.get_mut(room_key) {
             let current = entry.state.shared_common_state();
             if Arc::ptr_eq(&current, common) {
+                if let Some(official_match) = &entry.official_match {
+                    official_match.finish();
+                }
                 entry.state = Box::new(crate::game_state::SharedGameState::from_common(current));
                 entry.official_match = None;
             }
@@ -1603,6 +1615,9 @@ impl RoomService {
             // away/reconnect path in `mark_disconnected`.
             entry.state.set_turn_countdown(0);
             entry.state.request_stop();
+            if let Some(official_match) = &entry.official_match {
+                official_match.finish();
+            }
             if !has_other_connected_human {
                 self.rooms.remove(&room_key);
             }
@@ -1805,10 +1820,21 @@ impl RoomService {
         self.rooms.get(room_key)?.official_match.clone()
     }
 
+    pub fn finish_room_official_match(&self, room_key: &str) {
+        if let Some(official_match) = self.room_official_match(room_key) {
+            official_match.finish();
+        }
+    }
+
     /// 在房间锁外查询缓存和创建数据库记录；每场只派发一次，包括创建尚未完成时。
-    pub fn spawn_room_official_match<F, Fut>(&mut self, room_key: &str, create: F)
-    where
+    pub fn spawn_room_official_match<F, Fut, End>(
+        &mut self,
+        room_key: &str,
+        create: F,
+        finish: impl FnOnce(i32) -> End + Send + 'static,
+    ) where
         F: FnOnce(Vec<OfficialPlayerSession>, String) -> Fut,
+        End: std::future::Future<Output = ()> + Send + 'static,
         Fut: std::future::Future<Output = Option<(i32, HashMap<usize, i32>)>> + Send + 'static,
     {
         if self.room_official_match(room_key).is_some() {
@@ -1821,7 +1847,8 @@ impl RoomService {
         let Ok(runtime) = tokio::runtime::Handle::try_current() else {
             return;
         };
-        let handle = OfficialMatchHandle::spawn(&runtime, create(sessions, room_key.to_owned()));
+        let handle =
+            OfficialMatchHandle::spawn(&runtime, create(sessions, room_key.to_owned()), finish);
         if let Some(entry) = self.rooms.get_mut(room_key) {
             entry.official_match = Some(handle);
         }

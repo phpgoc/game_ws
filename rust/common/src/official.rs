@@ -24,28 +24,44 @@ impl OfficialMatchInfo {
 #[derive(Debug, Clone)]
 pub struct OfficialMatchHandle {
     result: watch::Receiver<Option<Arc<OfficialMatchInfo>>>,
+    finished: watch::Sender<bool>,
 }
 
 impl OfficialMatchHandle {
-    pub(crate) fn spawn(
+    pub(crate) fn spawn<End: Future<Output = ()> + Send + 'static>(
         runtime: &tokio::runtime::Handle,
         create: impl Future<Output = Option<(i32, HashMap<usize, i32>)>> + Send + 'static,
+        finish: impl FnOnce(i32) -> End + Send + 'static,
     ) -> Self {
         let (complete, result) = watch::channel(None);
+        let (finished, mut ending) = watch::channel(false);
         runtime.spawn(async move {
             if let Some((id, user_ids_by_position)) = create.await {
                 complete.send_replace(Some(Arc::new(OfficialMatchInfo {
                     id,
                     user_ids_by_position,
                 })));
+                drop(complete);
+                while !*ending.borrow_and_update() {
+                    if ending.changed().await.is_err() {
+                        break;
+                    }
+                }
+                finish(id).await;
             }
         });
-        Self { result }
+        Self { result, finished }
     }
 
     pub(crate) fn ready(info: OfficialMatchInfo) -> Self {
         let (_, result) = watch::channel(Some(Arc::new(info)));
-        Self { result }
+        let (finished, _) = watch::channel(false);
+        Self { result, finished }
+    }
+
+    /// 结束信号属于这场比赛；重复清理、延迟创建和同名新房间都不会改写目标。
+    pub fn finish(&self) {
+        self.finished.send_replace(true);
     }
 
     pub fn get(&self) -> Option<Arc<OfficialMatchInfo>> {

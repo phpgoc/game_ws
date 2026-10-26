@@ -898,6 +898,7 @@ fn append_round_result(
         dispatch,
     );
     if result.game_over {
+        room_service.finish_room_official_match(room_key);
         room_service.broadcast_connected(
             room_key,
             DominoesWsCode::GAME_OVER as i32,
