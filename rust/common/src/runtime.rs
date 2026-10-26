@@ -372,7 +372,9 @@ where
         };
         let join_authorization = if valid_join {
             let join = parsed_join.as_ref().expect("membership join parsed");
-            Some(game_handler.lock().await.authorize_join(join).await)
+            // 授权 future 不借用 handler；数据库/缓存查询期间释放全服处理器锁。
+            let authorization = game_handler.lock().await.authorize_join(join);
+            Some(authorization.await)
         } else {
             None
         };
