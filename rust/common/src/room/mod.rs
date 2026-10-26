@@ -521,9 +521,8 @@ impl RoomService {
                 );
             }
             entry.state.mark_away(position);
-            // 主动点击托管代表玩家明确请求 AI 接管；这与官方会员资格无关。
-            // 会员资格只用于断线或超时后的自动接管策略，不能阻止非官方房间托管。
-            if !entry.state.is_ai_position(position) {
+            // 官方 AI 接管属于会员权益；非会员仍可标记为离开，但不能占用官方 AI。
+            if entry.state.is_member_position(position) && !entry.state.is_ai_position(position) {
                 entry.state.mark_ai_takeover_position(position);
             }
         }

@@ -831,7 +831,7 @@ fn common_room_operations_reject_invalid_state_without_mutating_the_room() {
 }
 
 #[test]
-fn manual_away_always_enables_ai_takeover_for_nonmember_players() {
+fn manual_away_does_not_enable_official_ai_takeover_for_nonmember_players() {
     let mut service = RoomService::with_ai_players_enabled(true);
     join_member(
         &mut service,
@@ -851,7 +851,7 @@ fn manual_away_always_enables_ai_takeover_for_nonmember_players() {
     let dispatch = common_request(&mut service, 2, Routes::AWAY, serde_json::Value::Null);
 
     assert!(has_event(&dispatch, WsCode::AWAY));
-    assert!(service.room_position_is_ai_takeover("manual-away-room", 1));
+    assert!(!service.room_position_is_ai_takeover("manual-away-room", 1));
     assert!(dispatch.messages.iter().any(|message| {
         matches!(
             &message.payload,
@@ -859,7 +859,7 @@ fn manual_away_always_enables_ai_takeover_for_nonmember_players() {
                 if event.code == WsCode::AWAY as i32
                     && event.data.get("position").and_then(Value::as_i64) == Some(1)
                     && event.data.get("is_ai_takeover").and_then(Value::as_bool)
-                        == Some(true)
+                        == Some(false)
         )
     }));
 }
