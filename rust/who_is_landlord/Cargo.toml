@@ -7,6 +7,7 @@ license = "MIT"
 [features]
 default = []
 official = [
+    "dep:landlord_ai",
     "dep:data",
     "data/cache-redis",
     "dep:runtime_common",
@@ -14,6 +15,7 @@ official = [
 ]
 
 [dependencies]
+landlord_ai = { package = "landlord", path = "../landlord", optional = true, features = ["official"] }
 anyhow = "1"
 rand = "0.9"
 data = { path = "../../../data", optional = true }
