@@ -166,8 +166,12 @@ pub fn settle_round(
     let has_winner = !settlement.unique_winner_positions().is_empty();
     let (from_position, is_reverse_win) =
         official_discard_context_for_settlement(state, settlement, has_winner);
-    let discarder_user_id =
-        from_position.and_then(|position| room_service.room_official_user_id(room_key, position));
+    // None 只表示自摸/流局；AI 点炮使用 0 保留“荣和”来源。
+    let discarder_user_id = from_position.map(|position| {
+        room_service
+            .room_official_user_id(room_key, position)
+            .unwrap_or(0)
+    });
 
     tokio::spawn(async move {
         if let Err(err) = data::service::game_round::shenyang_mahjong_settlement(
