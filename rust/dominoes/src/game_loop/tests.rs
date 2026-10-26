@@ -204,7 +204,44 @@ fn native_ai_and_takeover_have_distinct_action_sources() {
 fn game_over_state_stops_the_background_loop() {
     let mut state = state();
     state.phase = DominoesPhase::GameOver;
+    state.remaining_seconds = 0;
+    state.scores.insert(0, 61);
+    state.scores.insert(1, 61);
+    let before = serde_json::to_value(state.table_snapshot()).unwrap();
     assert!(state_should_stop(&state));
+    for _ in 0..3 {
+        let revision = state.turn_revision;
+        assert_eq!(step(&mut state, Some(revision)), LoopStep::Stop);
+    }
+    assert_eq!(
+        state.start_next_round(),
+        Err(crate::core::CoreError::WrongPhase)
+    );
+    assert_eq!(
+        serde_json::to_value(state.table_snapshot()).unwrap(),
+        before
+    );
+}
+
+#[test]
+fn round_over_countdown_starts_the_next_round_without_resetting_match_scores() {
+    let mut state = state();
+    state.phase = DominoesPhase::RoundOver;
+    state.remaining_seconds = 1;
+    state.scores.insert(0, 20);
+    state.scores.insert(1, 10);
+    let scores = state.scores.clone();
+    let round = state.round;
+    let revision = state.turn_revision;
+
+    assert_eq!(step(&mut state, Some(revision)), LoopStep::Again);
+
+    assert_eq!(state.phase, DominoesPhase::Play);
+    assert_eq!(state.round, round + 1);
+    assert_eq!(state.scores, scores);
+    assert_eq!(state.remaining_seconds, 30);
+    assert!(state.placements.is_empty());
+    assert!(state.hands.values().all(|hand| hand.len() == 5));
 }
 
 #[test]

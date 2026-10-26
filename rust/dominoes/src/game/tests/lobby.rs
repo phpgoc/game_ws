@@ -172,6 +172,32 @@ fn reconnecting_with_a_new_session_preserves_the_completed_match() {
 }
 
 #[test]
+fn only_the_owner_can_start_a_new_match_after_the_final_result() {
+    let (mut handler, mut rooms) = finished_room();
+    let previous = handler.state_for_room(&rooms, ROOM).unwrap();
+    let result = previous.lock().unwrap().last_round_result.clone().unwrap();
+
+    let dispatch = request(&mut handler, &mut rooms, 2, Routes::START, json!({}));
+    assert_response(&dispatch, Routes::START, WsResponseCode::NO_PERMISSION);
+    let retained = handler.state_for_room(&rooms, ROOM).unwrap();
+    assert!(std::sync::Arc::ptr_eq(&previous, &retained));
+    assert_eq!(
+        retained.lock().unwrap().last_round_result.as_ref(),
+        Some(&result)
+    );
+
+    let dispatch = request(&mut handler, &mut rooms, 1, Routes::START, json!({}));
+    assert_response(&dispatch, Routes::START, WsResponseCode::OK);
+    let next = handler.state_for_room(&rooms, ROOM).unwrap();
+    assert!(!std::sync::Arc::ptr_eq(&previous, &next));
+    let next = next.lock().unwrap();
+    assert_eq!(next.phase, DominoesPhase::StarterSelection);
+    assert_eq!(next.round, 1);
+    assert!(next.scores.values().all(|score| *score == 0));
+    assert!(next.last_round_result.is_none());
+}
+
+#[test]
 fn terminal_room_allows_ai_changes_and_drops_previous_seat_results() {
     let (mut handler, mut rooms) = finished_room();
     let dispatch = request(
@@ -272,6 +298,17 @@ fn active_matches_keep_roster_and_settings_locked() {
             .lock()
             .unwrap()
             .phase = phase;
+        let dispatch = request(&mut handler, &mut rooms, 1, Routes::START, json!({}));
+        assert_response(&dispatch, Routes::START, WsResponseCode::NO_PERMISSION);
+        assert_eq!(
+            handler
+                .state_for_room(&rooms, ROOM)
+                .unwrap()
+                .lock()
+                .unwrap()
+                .phase,
+            phase,
+        );
         let dispatch = request(
             &mut handler,
             &mut rooms,
