@@ -349,6 +349,7 @@ impl TractorGameHandler {
                 settlement.score,
                 settlement.target_rank,
                 trump_suit,
+                state.lock().unwrap().round_index + 1,
             );
             room_service.broadcast(
                 &room_key,

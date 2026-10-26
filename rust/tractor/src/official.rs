@@ -117,6 +117,7 @@ pub fn settle_round(
     score: i32,
     target_rank: TractorRank,
     trump_suit: Option<TractorSuit>,
+    round: i32,
 ) {
     let Some(game_match_id) = room_service.room_official_match_id(room_key) else {
         return;
@@ -136,6 +137,7 @@ pub fn settle_round(
     tokio::spawn(async move {
         if let Err(err) = data::service::game_round::tractor_settlement(
             data::input::GameRoundTractorSettleInput {
+                round,
                 game_match_id,
                 winner_user_id_1,
                 winner_user_id_2,
@@ -163,5 +165,6 @@ pub fn settle_round(
     _score: i32,
     _target_rank: TractorRank,
     _trump_suit: Option<TractorSuit>,
+    _round: i32,
 ) {
 }

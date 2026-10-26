@@ -116,6 +116,7 @@ pub async fn settle_round(
     landlord_position: Option<usize>,
     landlord_win: bool,
     score: u32,
+    round: i32,
 ) {
     let (game_match_id, landlord_user_id) = {
         let room = room_service.lock().await;
@@ -140,6 +141,7 @@ pub async fn settle_round(
 
     if let Err(err) =
         data::service::game_round::landlord_settlement(data::input::GameRoundLandlordSettleInput {
+            round,
             game_match_id,
             landlord_user_id,
             landlord_win,
@@ -163,5 +165,6 @@ pub async fn settle_round(
     _landlord_position: Option<usize>,
     _landlord_win: bool,
     _score: u32,
+    _round: i32,
 ) {
 }

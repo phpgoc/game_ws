@@ -450,7 +450,8 @@ impl HoldemGameHandler {
             let mut settlement = settle_hand(state);
             self.record_finished_hand(room_key, state);
             let starting_chips = state.lock().unwrap().starting_chips.clone();
-            crate::official::settle_round(room_service, room_key, &settlement, &starting_chips);
+            let round = state.lock().unwrap().settlement_round;
+            crate::official::settle_round(room_service, room_key, &settlement, &starting_chips, round);
             let settlement_time = room_service
                 .room_configs(room_key)
                 .unwrap_or_default()

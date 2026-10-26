@@ -388,7 +388,7 @@ async fn handle_play_phase(
         }
 
         // Broadcast game over
-        let (is_landlord_win, landlord_position, settlement, player_scores) = {
+        let (is_landlord_win, landlord_position, settlement, player_scores, round) = {
             let mut s = state.lock().unwrap();
             let is_win = s
                 .landlord_position
@@ -401,7 +401,7 @@ async fn handle_play_phase(
                 .iter()
                 .map(|(position, score)| (*position as i32, *score))
                 .collect();
-            (is_win, landlord_position, settlement, player_scores)
+            (is_win, landlord_position, settlement, player_scores, s.settlement_round)
         };
         dispatch.extend(dispatch_all(
             room_key,
@@ -425,6 +425,7 @@ async fn handle_play_phase(
             landlord_position,
             is_landlord_win,
             settlement.round_score,
+            round,
         )
         .await;
         send_dispatch(dispatch, senders).await;

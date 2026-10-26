@@ -20,6 +20,7 @@ pub struct HoldemGameState {
     pub base: Arc<Mutex<CommonGameState>>,
     pub variant: PokerVariant,
     pub phase: TexasHoldEmPhase,
+    pub settlement_round: i32,
     /// Seconds to keep the settlement view visible before the next hand.
     pub settlement_countdown: u32,
     pub deck: Vec<i32>,
@@ -155,6 +156,7 @@ impl HoldemGameState {
             return Err("Holdem requires 2-8 players");
         }
         self.hand_players = names;
+        self.settlement_round = self.settlement_round.saturating_add(1);
         self.phase = TexasHoldEmPhase::PreFlop;
         self.deck = (1..=52)
             .filter(|card| crate::hand_evaluator::card_rank(*card) >= self.variant.min_card)
@@ -250,6 +252,7 @@ impl HoldemGameState {
             base,
             variant,
             phase: TexasHoldEmPhase::Start,
+            settlement_round: 0,
             settlement_countdown: 0,
             deck: Vec::new(),
             public_cards: Vec::new(),

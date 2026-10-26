@@ -153,6 +153,7 @@ pub fn settle_round(
     };
 
     let players = state.players_snapshot();
+    let round = state.settlement_round();
     let positions = players.keys().copied().collect::<Vec<_>>();
     let score_changes = settlement_score_changes_for_state(state, &positions, settlement, configs);
     let context = ShenyangMahjongWinContext::from_configs(configs);
@@ -176,6 +177,7 @@ pub fn settle_round(
     tokio::spawn(async move {
         if let Err(err) = data::service::game_round::shenyang_mahjong_settlement(
             data::input::GameRoundShenyangMahjongSettleInput {
+                round,
                 game_match_id,
                 is_draw: !has_winner,
                 discarder_user_id,

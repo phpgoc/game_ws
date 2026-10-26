@@ -326,6 +326,11 @@ impl ShenyangMahjongLoopState {
         self.set_action_received(false);
     }
 
+    #[cfg(feature = "official")]
+    pub(crate) fn settlement_round(&self) -> i32 {
+        self.wall_round_index.min(i32::MAX as u64) as i32
+    }
+
     pub fn draw_for_next_turn(&mut self, position: usize) -> Option<i32> {
         let tile = self.draw_for_position(position)?;
         if position != self.dealer_position && self.first_normal_draw_positions.insert(position) {

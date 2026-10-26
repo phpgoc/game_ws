@@ -42,6 +42,7 @@ pub struct LandlordLoopState {
     /// 房间公共状态负责连接、离线和托管；本结构只保存牌局事实。
     pub base: Arc<Mutex<CommonGameState>>,
     pub phase: LandlordPhase,
+    pub settlement_round: i32,
     /// The position that starts the call-landlord phase each deal.
     /// Rotates by 1 on redeal so a different player calls first.
     pub call_position: usize,
@@ -165,6 +166,7 @@ impl LandlordLoopState {
 
     /// 与生产相同的发牌入口，允许离线对照固定种子复现。
     pub(crate) fn generate_card_with_seed(&mut self, seed: u64) {
+        self.settlement_round = self.settlement_round.saturating_add(1);
         let deck = Self::shuffle_with_seed(seed);
         let mut sorted: Vec<usize> = self.players_snapshot().keys().copied().collect();
         sorted.sort();
@@ -218,6 +220,7 @@ impl LandlordLoopState {
         Self {
             base,
             phase: LandlordPhase::Start,
+            settlement_round: 0,
             call_position,
             current_position: call_position,
             hands: HashMap::new(),

@@ -94,6 +94,7 @@ pub fn settle_round(
     room_key: &str,
     settlement: &WsTexasHoldEmSettlementEvent,
     starting_chips: &HashMap<usize, i32>,
+    round: i32,
 ) {
     let Some(game_match_id) = room_service.room_official_match_id(room_key) else {
         return;
@@ -116,6 +117,7 @@ pub fn settle_round(
     }
 
     let input = data::input::GameRoundHoldemSettleInput {
+        round,
         game_match_id,
         player_scores,
     };
@@ -136,6 +138,7 @@ pub fn settle_round(
     _room_key: &str,
     _settlement: &WsTexasHoldEmSettlementEvent,
     _starting_chips: &HashMap<usize, i32>,
+    _round: i32,
 ) {
 }
 
@@ -256,6 +259,7 @@ mod tests {
                 next_hand_countdown: 0,
             },
             &[(0, 1000), (1, 1000)].into_iter().collect(),
+            1,
         );
 
         let mut first_stats = None;
