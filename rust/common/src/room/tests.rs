@@ -2018,6 +2018,32 @@ fn official_games_can_swap_two_non_owner_players() {
             );
         }
 
+        for payload in [
+            serde_json::json!({ "a": 0, "b": 1 }),
+            serde_json::json!({ "a": 1, "b": 0 }),
+        ] {
+            let rejected = service
+                .handle_common_request(
+                    1,
+                    &WsRequest {
+                        route: Routes::SWAP as i32,
+                        data: payload,
+                    },
+                    game_id,
+                    settings,
+                )
+                .expect("swap common");
+            assert!(rejected.messages.iter().any(|item| matches!(
+                &item.payload,
+                OutboundPayload::Response(RequestResponse::WithoutData(response))
+                    if response.route == Routes::SWAP as i32
+                        && response.code as i32 == WsResponseCode::NO_PERMISSION as i32
+            )));
+            assert_eq!(service.session_position(1), Some(0));
+            assert_eq!(service.session_position(2), Some(1));
+            assert_eq!(service.session_position(3), Some(2));
+        }
+
         let swap = service
             .handle_common_request(
                 1,

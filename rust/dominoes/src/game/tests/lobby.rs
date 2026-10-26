@@ -238,12 +238,13 @@ fn terminal_swap_and_quit_clear_results_but_an_invalid_swap_keeps_them() {
         &mut rooms,
         1,
         Routes::SWAP,
-        json!({ "a": 0, "b": 1 }),
+        json!({ "a": 1, "b": 2 }),
     );
     assert_response(&dispatch, Routes::SWAP, WsResponseCode::OK);
     assert!(handler.state_for_room(&rooms, ROOM).is_none());
-    assert_eq!(rooms.session_position(1), Some(1));
-    assert_eq!(rooms.session_position(2), Some(0));
+    assert_eq!(rooms.session_position(1), Some(0));
+    assert_eq!(rooms.session_position(2), Some(2));
+    assert_eq!(rooms.session_position(3), Some(1));
 
     let (mut handler, mut rooms) = finished_room();
     let dispatch = request(&mut handler, &mut rooms, 2, Routes::QUIT, json!({}));

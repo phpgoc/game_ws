@@ -1319,6 +1319,13 @@ impl RoomService {
         };
         let pos_a = payload.a;
         let pos_b = payload.b;
+        if pos_a == 0 || pos_b == 0 {
+            return self.error_response(
+                session_id,
+                Routes::SWAP as i32,
+                WsResponseCode::NO_PERMISSION,
+            );
+        }
         if pos_a == pos_b {
             return self.error_response(
                 session_id,

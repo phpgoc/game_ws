@@ -294,7 +294,7 @@ fn has_event(dispatch: &Dispatch, code: share_type_public::WsCode) -> bool {
 }
 
 #[test]
-fn room_settings_chat_ai_and_owner_swap_keep_the_common_contract() {
+fn room_settings_keep_owner_out_of_player_swaps() {
     let mut service = RoomService::with_ai_players_enabled(true);
     join_member(&mut service, 1, "owner", "contract-room", "owner-session");
     join_member(&mut service, 2, "guest", "contract-room", "guest-session");
@@ -363,13 +363,19 @@ fn room_settings_chat_ai_and_owner_swap_keep_the_common_contract() {
     ));
     assert!(has_event(&remove_ai, WsCode::QUIT));
 
-    let swap = common_request(&mut service, 1, Routes::SWAP, json!({"a": 0, "b": 1}));
-    assert!(has_response(&swap, Routes::SWAP, WsResponseCode::OK));
-    assert!(has_event(&swap, WsCode::SWAP));
-    assert_eq!(service.session_position(1), Some(1));
-    assert_eq!(service.session_position(2), Some(0));
+    for payload in [json!({"a": 0, "b": 1}), json!({"a": 1, "b": 0})] {
+        let swap = common_request(&mut service, 1, Routes::SWAP, payload);
+        assert!(has_response(
+            &swap,
+            Routes::SWAP,
+            WsResponseCode::NO_PERMISSION,
+        ));
+        assert!(!has_event(&swap, WsCode::SWAP));
+    }
+    assert_eq!(service.session_position(1), Some(0));
+    assert_eq!(service.session_position(2), Some(1));
 
-    let disband = common_request(&mut service, 2, Routes::DISBAND, serde_json::Value::Null);
+    let disband = common_request(&mut service, 1, Routes::DISBAND, serde_json::Value::Null);
     assert!(has_response(&disband, Routes::DISBAND, WsResponseCode::OK));
     assert!(!service.room_exists("contract-room"));
     assert_eq!(service.room_key_of(1), None);
