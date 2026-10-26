@@ -98,6 +98,12 @@ impl NiangniangHandler {
                 return service.error_response(session, route, WsResponseCode::NOT_IN_RANGE);
             }
         }
+        if cfg!(feature = "official")
+            && service.room_position_has_membership_record(&key, 0)
+            && !service.room_position_has_active_membership(&key, 0)
+        {
+            return service.error_response(session, route, WsResponseCode::NO_PERMISSION);
+        }
         // 连续局沿用同一场比赛、双方级数与下一局贡牌。
         if let Some(round) = self.states.lock().unwrap().get(&key) {
             let mut round = round.lock().unwrap();

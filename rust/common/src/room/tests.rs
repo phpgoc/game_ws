@@ -843,6 +843,41 @@ fn last_human_disconnect_grace_retains_room_until_cleanup() {
 }
 
 #[test]
+fn disconnected_owner_cleanup_removes_room_even_when_other_humans_remain() {
+    let mut service = room_service_with_ai();
+    let _ = join_room(
+        &mut service,
+        1,
+        "owner",
+        "owner-timeout-room",
+        GameId::LANDLORD,
+    );
+    let _ = join_room(
+        &mut service,
+        2,
+        "guest",
+        "owner-timeout-room",
+        GameId::LANDLORD,
+    );
+    let common = service
+        .room_common_state("owner-timeout-room")
+        .expect("room common state");
+
+    let (_, cleanup) = service.disconnect_with_cleanup_grace(1);
+
+    assert!(service.room_exists("owner-timeout-room"));
+    assert!(
+        service
+            .connected_session_ids("owner-timeout-room")
+            .contains(&2)
+    );
+    assert!(service.cleanup_abandoned_room(cleanup.expect("cleanup token")));
+    assert!(!service.room_exists("owner-timeout-room"));
+    assert_eq!(service.room_key_of(2), None);
+    assert!(common.lock().unwrap().stop_requested());
+}
+
+#[test]
 fn reconnect_and_later_disconnect_invalidate_the_old_cleanup() {
     let mut service = room_service_with_ai();
     let _ = join_room(
@@ -1103,7 +1138,7 @@ fn ai_players_do_not_keep_room_alive_after_last_human_quits() {
         let common = old_common.lock().unwrap();
         assert!(common.stop_requested());
         assert_eq!(common.turn_countdown, 0);
-        assert_eq!(common.players.len(), 3);
+        assert_eq!(common.players.len(), 4);
         assert_eq!(common.ai_positions.len(), 3);
     }
 
@@ -1203,7 +1238,7 @@ fn last_disconnect_releases_name_and_old_cleanup_cannot_clear_recreated_room() {
 }
 
 #[test]
-fn quit_permanently_removes_player_and_always_requests_loop_stop() {
+fn quit_by_owner_disbands_room_and_requests_loop_stop() {
     let mut service = room_service_with_ai();
     let _ = join_room(&mut service, 1, "quitter", "quit-room", GameId::LANDLORD);
     let _ = join_room(&mut service, 2, "remaining", "quit-room", GameId::LANDLORD);
@@ -1221,14 +1256,59 @@ fn quit_permanently_removes_player_and_always_requests_loop_stop() {
     );
 
     assert!(has_response(&quit, Routes::QUIT, WsResponseCode::OK));
-    assert!(service.room_exists("quit-room"));
+    assert!(!service.room_exists("quit-room"));
     assert_eq!(service.room_key_of(1), None);
+    assert_eq!(service.room_key_of(2), None);
     assert_eq!(service.session_position(1), None);
     let common = common.lock().unwrap();
     assert!(common.stop_requested());
     assert_eq!(common.turn_countdown, 0);
-    assert_eq!(common.players.len(), 1);
-    assert!(!common.players.values().any(|(_, name)| name == "quitter"));
+    assert_eq!(common.players.len(), 2);
+}
+
+#[test]
+fn different_name_cannot_replace_disconnected_owner_position() {
+    let mut service = room_service_with_ai();
+    let _ = join_room(
+        &mut service,
+        1,
+        "owner",
+        "owner-reconnect-room",
+        GameId::LANDLORD,
+    );
+    let _ = join_room(
+        &mut service,
+        2,
+        "guest",
+        "owner-reconnect-room",
+        GameId::LANDLORD,
+    );
+
+    let _ = service.disconnect(1);
+    let replacement = join_room(
+        &mut service,
+        3,
+        "replacement",
+        "owner-reconnect-room",
+        GameId::LANDLORD,
+    );
+
+    assert!(has_response(
+        &replacement,
+        Routes::JOIN,
+        WsResponseCode::JOINED
+    ));
+    assert_eq!(service.session_position(3), Some(2));
+    assert_eq!(
+        service.room_key_of(2).as_deref(),
+        Some("owner-reconnect-room")
+    );
+    let common = service
+        .room_common_state("owner-reconnect-room")
+        .expect("room common state");
+    let common = common.lock().unwrap();
+    assert!(common.is_disconnected(0));
+    assert_eq!(common.player_name(0), "owner");
 }
 
 #[test]

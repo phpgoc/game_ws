@@ -102,6 +102,12 @@ impl WhoIsLandlordHandler {
                 return service.error_response(session, route, WsResponseCode::NOT_IN_RANGE);
             }
         }
+        if cfg!(feature = "official")
+            && service.room_position_has_membership_record(&key, 0)
+            && !service.room_position_has_active_membership(&key, 0)
+        {
+            return service.error_response(session, route, WsResponseCode::NO_PERMISSION);
+        }
         service.clear_room_game_state(&key);
         // A fresh common handle prevents delayed work from a previous round touching this one.
         let common = service

@@ -260,6 +260,25 @@ fn terminal_swap_and_quit_clear_results_but_an_invalid_swap_keeps_them() {
     assert!(!next.lock().unwrap().base.lock().unwrap().stop_requested);
 }
 
+#[cfg(feature = "official")]
+#[test]
+fn official_start_requires_active_membership_in_owner_seat() {
+    let mut handler = DominoesGameHandler::default();
+    let mut rooms = RoomService::with_ai_players_enabled(true);
+    for session in 1..=3 {
+        join(&mut handler, &mut rooms, session);
+    }
+
+    assert!(rooms.set_session_active_membership(1, false));
+    let denied = request(&mut handler, &mut rooms, 1, Routes::START, json!({}));
+    assert_response(&denied, Routes::START, WsResponseCode::NO_PERMISSION);
+    assert!(handler.state_for_room(&rooms, ROOM).is_none());
+
+    assert!(rooms.set_session_active_membership(1, true));
+    let started = request(&mut handler, &mut rooms, 1, Routes::START, json!({}));
+    assert_response(&started, Routes::START, WsResponseCode::OK);
+}
+
 #[test]
 fn interrupted_match_can_replace_the_departed_player_and_start_with_a_new_loop_identity() {
     let (mut handler, mut rooms) = finished_room();

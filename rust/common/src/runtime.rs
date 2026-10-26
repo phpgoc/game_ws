@@ -232,11 +232,20 @@ async fn deliver(dispatch: Dispatch, senders: &SessionSenders) -> anyhow::Result
 
 async fn cleanup_abandoned_room_after(
     room_service: Arc<Mutex<RoomService>>,
+    senders: SessionSenders,
     cleanup: RoomCleanupToken,
     grace: Duration,
 ) {
     tokio::time::sleep(grace).await;
-    room_service.lock().await.cleanup_abandoned_room(cleanup);
+    let dispatch = room_service
+        .lock()
+        .await
+        .cleanup_abandoned_room_with_dispatch(cleanup);
+    if let Some(dispatch) = dispatch
+        && let Err(error) = deliver(dispatch, &senders).await
+    {
+        warn!(?error, "failed to deliver disconnected-room cleanup event");
+    }
 }
 
 async fn handle_connection<H>(
@@ -457,6 +466,7 @@ where
     if let Some(cleanup) = cleanup {
         tokio::spawn(cleanup_abandoned_room_after(
             Arc::clone(&room_service),
+            Arc::clone(&senders),
             cleanup,
             LAST_HUMAN_DISCONNECT_GRACE,
         ));

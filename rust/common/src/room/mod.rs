@@ -5,7 +5,10 @@
 
 mod model;
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use crate::official::{OfficialMatchHandle, OfficialMatchInfo, OfficialPlayerSession};
 use serde::de::DeserializeOwned;
@@ -44,6 +47,7 @@ struct RoomEntry {
     state: Box<dyn crate::game_state::GameState>,
     official_match: Option<OfficialMatchHandle>,
     pending_cleanup_generation: Option<u64>,
+    membership_checked_positions: HashSet<usize>,
 }
 
 impl Drop for RoomEntry {
@@ -58,6 +62,7 @@ impl Drop for RoomEntry {
 pub(crate) struct RoomCleanupToken {
     room_key: String,
     generation: u64,
+    force: bool,
 }
 
 #[derive(Debug, Default)]
@@ -274,6 +279,7 @@ impl RoomService {
             return;
         };
         if let Some(entry) = self.rooms.get_mut(&room_key) {
+            entry.state.set_turn_countdown(0);
             entry.state.request_stop();
         }
         let Some(entry) = self.rooms.remove(&room_key) else {
@@ -307,7 +313,10 @@ impl RoomService {
     pub fn disconnect(&mut self, session_id: SessionId) -> Dispatch {
         let (dispatch, cleanup) = self.disconnect_with_cleanup_grace(session_id);
         if let Some(cleanup) = cleanup {
-            self.cleanup_abandoned_room(cleanup);
+            let defer = cleanup.force && !self.connected_session_ids(&cleanup.room_key).is_empty();
+            if !defer {
+                self.cleanup_abandoned_room(cleanup);
+            }
         }
         dispatch
     }
@@ -328,7 +337,13 @@ impl RoomService {
     }
 
     fn begin_abandoned_room_cleanup(&mut self, room_key: &str) -> Option<RoomCleanupToken> {
-        if !self.connected_session_ids(room_key).is_empty() || !self.rooms.contains_key(room_key) {
+        let owner_disconnected = self
+            .rooms
+            .get(room_key)
+            .is_some_and(|entry| entry.state.is_disconnected(0));
+        if (!owner_disconnected && !self.connected_session_ids(room_key).is_empty())
+            || !self.rooms.contains_key(room_key)
+        {
             return None;
         }
         self.next_cleanup_generation = self.next_cleanup_generation.wrapping_add(1).max(1);
@@ -340,30 +355,64 @@ impl RoomService {
         Some(RoomCleanupToken {
             room_key: room_key.to_owned(),
             generation,
+            force: owner_disconnected,
         })
     }
 
     /// 仅当令牌仍属于当前空房间时停止游戏并移除房间。
     pub(crate) fn cleanup_abandoned_room(&mut self, cleanup: RoomCleanupToken) -> bool {
+        self.cleanup_abandoned_room_with_dispatch(cleanup).is_some()
+    }
+
+    /// 清理断线房间，并在房主断线超时解散时通知仍在线的玩家。
+    pub(crate) fn cleanup_abandoned_room_with_dispatch(
+        &mut self,
+        cleanup: RoomCleanupToken,
+    ) -> Option<Dispatch> {
         let token_matches = self
             .rooms
             .get(&cleanup.room_key)
             .is_some_and(|entry| entry.pending_cleanup_generation == Some(cleanup.generation));
         if !token_matches {
-            return false;
+            return None;
         }
-        if !self.connected_session_ids(&cleanup.room_key).is_empty() {
+        if !cleanup.force && !self.connected_session_ids(&cleanup.room_key).is_empty() {
             if let Some(entry) = self.rooms.get_mut(&cleanup.room_key) {
                 entry.pending_cleanup_generation = None;
             }
-            return false;
+            return None;
         }
+        let connected = self.connected_session_ids(&cleanup.room_key);
         let Some(mut entry) = self.rooms.remove(&cleanup.room_key) else {
-            return false;
+            return None;
         };
         entry.state.set_turn_countdown(0);
         entry.state.request_stop();
-        true
+        let owner_name = entry
+            .state
+            .players()
+            .get(&0)
+            .map(|(_, name)| name.clone())
+            .unwrap_or_default();
+        let event = CommonEvent {
+            code: WsCode::DISBAND as i32,
+            data: serde_json::to_value(WsNameEvent { name: owner_name }).unwrap_or(Value::Null),
+        };
+        let mut dispatch = Dispatch::default();
+        for (session_id, _) in entry.state.players().values() {
+            if let Some(session) = self.sessions.get_mut(session_id) {
+                session.room_key = None;
+                session.position = None;
+                session.official_session_id = None;
+            }
+            if cleanup.force && connected.contains(session_id) {
+                dispatch.messages.push(Delivery {
+                    recipient: *session_id,
+                    payload: OutboundPayload::Event(event.clone()),
+                });
+            }
+        }
+        Some(dispatch)
     }
 
     /// 构造只发给指定会话的一条通用错误响应。
@@ -860,6 +909,7 @@ impl RoomService {
                     state: Box::new(crate::game_state::SharedGameState::new()),
                     official_match: None,
                     pending_cleanup_generation: None,
+                    membership_checked_positions: HashSet::new(),
                 },
             );
         } else if self
@@ -903,6 +953,10 @@ impl RoomService {
                 entry.state.add_player(position, session_id, &name);
                 entry.state.set_avatar(position, &avatar_url);
                 entry.state.clear_disconnected_position(position);
+                entry.membership_checked_positions.remove(&position);
+                if position == 0 {
+                    entry.pending_cleanup_generation = None;
+                }
             }
             {
                 let session = self.sessions.entry(session_id).or_default();
@@ -1022,6 +1076,7 @@ impl RoomService {
                 // clears its avatar and away state without touching the
                 // game-specific, position-keyed hand state.
                 entry.state.remove_player(position);
+                entry.membership_checked_positions.remove(&position);
             }
             entry.state.add_player(position, session_id, &name);
             entry.state.set_avatar(position, &avatar_url);
@@ -1184,7 +1239,11 @@ impl RoomService {
         if !self.require_room_membership(session_id, Routes::QUIT as i32, &mut dispatch) {
             return dispatch;
         }
-        self.quit_room(session_id, &mut dispatch);
+        if self.session_position(session_id) == Some(0) {
+            self.disband_room(session_id, &mut dispatch);
+        } else {
+            self.quit_room(session_id, &mut dispatch);
+        }
         self.push_ok_response(&mut dispatch, session_id, Routes::QUIT as i32);
         dispatch
     }
@@ -1319,18 +1378,18 @@ impl RoomService {
         };
         let pos_a = payload.a;
         let pos_b = payload.b;
-        if pos_a == 0 || pos_b == 0 {
-            return self.error_response(
-                session_id,
-                Routes::SWAP as i32,
-                WsResponseCode::NO_PERMISSION,
-            );
-        }
         if pos_a == pos_b {
             return self.error_response(
                 session_id,
                 Routes::SWAP as i32,
                 WsResponseCode::ERROR_FORMAT,
+            );
+        }
+        if pos_a == 0 || pos_b == 0 {
+            return self.error_response(
+                session_id,
+                Routes::SWAP as i32,
+                WsResponseCode::NO_PERMISSION,
             );
         }
         let Some(room_key) = self.room_key_of(session_id) else {
@@ -1785,6 +1844,7 @@ impl RoomService {
             return false;
         }
         entry.state.set_member_position(position, enabled);
+        entry.membership_checked_positions.insert(position);
         true
     }
 
@@ -1793,6 +1853,13 @@ impl RoomService {
         self.rooms
             .get(room_key)
             .is_some_and(|entry| entry.state.is_member_position(position))
+    }
+
+    /// 判断指定座位是否已经经过官方 JOIN 授权流程记录会员状态。
+    pub fn room_position_has_membership_record(&self, room_key: &str, position: usize) -> bool {
+        self.rooms
+            .get(room_key)
+            .is_some_and(|entry| entry.membership_checked_positions.contains(&position))
     }
 
     /// 判断房间中指定座位是否处于 AI 临时接管状态。
@@ -1944,7 +2011,7 @@ impl RoomService {
         // one before assigning a genuinely new seat. A running game may lock
         // new seats and reserve its hand positions, but an explicit
         // disconnected roster entry is still replaceable.
-        (0..max_players)
+        (1..max_players)
             .find(|position| entry.state.is_disconnected(*position))
             .or_else(|| {
                 if !can_join_new_position {

@@ -155,7 +155,6 @@ impl DominoesGameHandler {
         let Some(room_key) = room_service.room_key_of(session_id) else {
             return room_service.error_response(session_id, route, WsResponseCode::NOT_IN_RANGE);
         };
-
         if let Some(state) = self.state_for_room(room_service, &room_key) {
             let phase = state.lock().expect("dominoes state lock").phase;
             if phase != DominoesPhase::GameOver {
@@ -170,6 +169,12 @@ impl DominoesGameHandler {
         }
         if !room_service.room_is_ready_to_start(&room_key) {
             return room_service.error_response(session_id, route, WsResponseCode::NOT_IN_RANGE);
+        }
+        if cfg!(feature = "official")
+            && room_service.room_position_has_membership_record(&room_key, 0)
+            && !room_service.room_position_has_active_membership(&room_key, 0)
+        {
+            return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
         }
         // 复用其他游戏的重开流程，保留成员/托管信息，让旧循环继续持有原停止状态。
         let Some(common) = room_service.reset_room_common_state_for_new_game(&room_key) else {

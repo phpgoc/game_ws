@@ -455,6 +455,16 @@ impl TractorGameHandler {
                 WsResponseCode::NOT_IN_RANGE,
             );
         }
+        if cfg!(feature = "official")
+            && room_service.room_position_has_membership_record(&room_key, 0)
+            && !room_service.room_position_has_active_membership(&room_key, 0)
+        {
+            return room_service.error_response(
+                session_id,
+                Routes::START as i32,
+                WsResponseCode::NO_PERMISSION,
+            );
+        }
         let Some(room_common) = room_service.room_common_state(&room_key) else {
             return room_service.error_response(
                 session_id,

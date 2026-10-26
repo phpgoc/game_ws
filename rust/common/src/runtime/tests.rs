@@ -196,6 +196,7 @@ async fn delayed_cleanup_helper_removes_an_abandoned_room_after_its_deadline() {
 
     cleanup_abandoned_room_after(
         Arc::clone(&service),
+        Arc::new(Mutex::new(HashMap::new())),
         cleanup.expect("cleanup token"),
         std::time::Duration::ZERO,
     )
