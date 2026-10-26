@@ -28,30 +28,12 @@ pub async fn authorize_join(session_id: String) -> ws_common::JoinAuthorization 
 }
 
 #[cfg(feature = "official")]
-fn block_on_official<F>(future: F) -> Option<F::Output>
-where
-    F: std::future::Future,
-{
-    let handle = tokio::runtime::Handle::try_current().ok()?;
-    Some(tokio::task::block_in_place(|| handle.block_on(future)))
-}
-
-#[cfg(feature = "official")]
 pub fn create_match(room_service: &mut RoomService, room_key: &str) {
     use std::collections::HashMap;
 
     use share_type_public::GameId;
 
-    if room_service.room_official_match_id(room_key).is_some() {
-        return;
-    }
-    let password = room_key.to_owned();
-    let sessions = room_service.room_official_player_sessions(room_key);
-    if sessions.is_empty() {
-        return;
-    }
-
-    let Some(result) = block_on_official(async move {
+    room_service.spawn_room_official_match(room_key, move |sessions, password| async move {
         let mut user_ids = Vec::with_capacity(sessions.len());
         let mut user_ids_by_position = HashMap::new();
         for player in sessions {
@@ -94,12 +76,7 @@ pub fn create_match(room_service: &mut RoomService, room_key: &str) {
                 None
             }
         }
-    }) else {
-        return;
-    };
-    if let Some((match_id, user_ids_by_position)) = result {
-        room_service.set_room_official_match(room_key, match_id, user_ids_by_position);
-    }
+    });
 }
 
 #[cfg(not(feature = "official"))]
@@ -111,24 +88,23 @@ pub fn settle_round(
     key: &str,
     state: &share_type_public::games::who_is_landlord::WhoIsLandlordStateEvent,
 ) {
-    let Some(game_match_id) = service.room_official_match_id(key) else {
+    let Some(official_match) = service.room_official_match(key) else {
         return;
     };
     let Some(landlord_position) = state.landlord_position else {
         return;
     };
-    let scores = state
-        .scores
-        .iter()
-        .enumerate()
-        .filter_map(|(position, score)| {
-            Some((
-                service.room_official_user_id(key, position)?,
-                i64::from(*score),
-            ))
-        })
-        .collect::<Vec<_>>();
+    let scores = state.scores.clone();
     tokio::spawn(async move {
+        let Some(info) = official_match.wait().await else {
+            return;
+        };
+        let game_match_id = info.id;
+        let scores = scores
+            .iter()
+            .enumerate()
+            .filter_map(|(position, score)| Some((info.user_id(position)?, i64::from(*score))))
+            .collect::<Vec<_>>();
         if let Err(error) =
             data::service::who_is_landlord::settle(game_match_id, landlord_position, scores).await
         {

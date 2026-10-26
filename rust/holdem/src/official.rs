@@ -6,15 +6,6 @@ use ws_common::RoomService;
 use share_type_public::WsTexasHoldEmSettlementEvent;
 
 #[cfg(feature = "official")]
-fn block_on_official<F>(future: F) -> Option<F::Output>
-where
-    F: std::future::Future,
-{
-    let handle = tokio::runtime::Handle::try_current().ok()?;
-    Some(tokio::task::block_in_place(|| handle.block_on(future)))
-}
-
-#[cfg(feature = "official")]
 pub fn create_match(room_service: &mut RoomService, room_key: &str, game_id: GameId) {
     use std::collections::HashMap;
 
@@ -25,16 +16,7 @@ pub fn create_match(room_service: &mut RoomService, room_key: &str, game_id: Gam
         return;
     }
 
-    if room_service.room_official_match_id(room_key).is_some() {
-        return;
-    }
-    let password = room_key.to_owned();
-    let sessions = room_service.room_official_player_sessions(room_key);
-    if sessions.is_empty() {
-        return;
-    }
-
-    let Some(result) = block_on_official(async move {
+    room_service.spawn_room_official_match(room_key, move |sessions, password| async move {
         let mut user_ids = Vec::with_capacity(sessions.len());
         let mut user_ids_by_position = HashMap::new();
         for player in sessions {
@@ -77,12 +59,7 @@ pub fn create_match(room_service: &mut RoomService, room_key: &str, game_id: Gam
                 None
             }
         }
-    }) else {
-        return;
-    };
-    if let Some((match_id, user_ids_by_position)) = result {
-        room_service.set_room_official_match(room_key, match_id, user_ids_by_position);
-    }
+    });
 }
 
 #[cfg(not(feature = "official"))]
@@ -95,33 +72,39 @@ pub fn settle_round(
     settlement: &WsTexasHoldEmSettlementEvent,
     starting_chips: &HashMap<usize, i32>,
     round: i32,
-) {
-    let Some(game_match_id) = room_service.room_official_match_id(room_key) else {
-        return;
+) -> Option<tokio::task::JoinHandle<()>> {
+    let Some(official_match) = room_service.room_official_match(room_key) else {
+        return None;
     };
-    let player_scores = settlement
-        .players
-        .iter()
-        .filter_map(|player| {
-            let position = usize::try_from(player.position).ok()?;
-            let user_id = room_service.room_official_user_id(room_key, position)?;
-            let starting = starting_chips.get(&position).copied().unwrap_or_default();
-            Some(data::input::GameRoundHoldemPlayerScoreInput {
-                user_id,
-                score: i64::from(player.chips.saturating_sub(starting)),
+    let settlement = settlement.clone();
+    let starting_chips = starting_chips.clone();
+    Some(tokio::spawn(async move {
+        let Some(info) = official_match.wait().await else {
+            return;
+        };
+        let game_match_id = info.id;
+        let player_scores = settlement
+            .players
+            .iter()
+            .filter_map(|player| {
+                let position = usize::try_from(player.position).ok()?;
+                let user_id = info.user_id(position)?;
+                let starting = starting_chips.get(&position).copied().unwrap_or_default();
+                Some(data::input::GameRoundHoldemPlayerScoreInput {
+                    user_id,
+                    score: i64::from(player.chips.saturating_sub(starting)),
+                })
             })
-        })
-        .collect::<Vec<_>>();
-    if player_scores.is_empty() {
-        return;
-    }
+            .collect::<Vec<_>>();
+        if player_scores.is_empty() {
+            return;
+        }
 
-    let input = data::input::GameRoundHoldemSettleInput {
-        round,
-        game_match_id,
-        player_scores,
-    };
-    tokio::spawn(async move {
+        let input = data::input::GameRoundHoldemSettleInput {
+            round,
+            game_match_id,
+            player_scores,
+        };
         if let Err(err) = data::service::game_round::holdem_settlement(input).await {
             ws_common::dlog!(
                 ws_common::tracing::Level::WARN,
@@ -129,7 +112,7 @@ pub fn settle_round(
                 err
             );
         }
-    });
+    }))
 }
 
 #[cfg(not(feature = "official"))]
@@ -139,7 +122,8 @@ pub fn settle_round(
     _settlement: &WsTexasHoldEmSettlementEvent,
     _starting_chips: &HashMap<usize, i32>,
     _round: i32,
-) {
+) -> Option<tokio::task::JoinHandle<()>> {
+    None
 }
 
 #[cfg(all(test, feature = "official"))]
@@ -180,7 +164,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn standard_table_creates_match_and_persists_net_chip_results() {
+    async fn standard_table_creates_match_without_publishing_official_stats() {
         let temp_dir = std::env::temp_dir().join(format!(
             "lan-game-official-holdem-{}-{}",
             std::process::id(),
@@ -243,6 +227,11 @@ mod tests {
         assert_eq!(room.room_official_match_id("official-holdem-room"), None);
 
         create_match(&mut room, "official-holdem-room", GameId::TEXAS_HOLD_EM);
+        room.room_official_match("official-holdem-room")
+            .unwrap()
+            .wait()
+            .await
+            .unwrap();
         assert!(
             room.room_official_match_id("official-holdem-room")
                 .is_some()
@@ -260,42 +249,29 @@ mod tests {
             },
             &[(0, 1000), (1, 1000)].into_iter().collect(),
             1,
-        );
+        ).unwrap().await.unwrap();
 
-        let mut first_stats = None;
-        for _ in 0..100 {
-            let stats = data::repository::game_user_stats::get_by_user_game(
-                first.id,
-                GameId::TEXAS_HOLD_EM,
-            )
-            .await
-            .expect("read first user stats");
-            if stats.round_count == 1 {
-                first_stats = Some(stats);
-                break;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-        }
-        let first_stats = first_stats.expect("settlement task persisted the round");
+        let first_stats = data::repository::game_user_stats::get_by_user_game(first.id, GameId::TEXAS_HOLD_EM)
+            .await.expect("read first user stats");
         let second_stats =
             data::repository::game_user_stats::get_by_user_game(second.id, GameId::TEXAS_HOLD_EM)
                 .await
                 .expect("read second user stats");
 
-        assert_eq!(first_stats.match_count, 1);
-        assert_eq!(first_stats.round_count, 1);
-        assert_eq!(first_stats.win_count, 1);
+        assert_eq!(first_stats.match_count, 0);
+        assert_eq!(first_stats.round_count, 0);
+        assert_eq!(first_stats.win_count, 0);
         assert_eq!(first_stats.lose_count, 0);
         assert_eq!(first_stats.draw_count, 0);
-        assert_eq!(first_stats.win_score, 250);
+        assert_eq!(first_stats.win_score, 0);
         assert_eq!(first_stats.lose_score, 0);
-        assert_eq!(second_stats.match_count, 1);
-        assert_eq!(second_stats.round_count, 1);
+        assert_eq!(second_stats.match_count, 0);
+        assert_eq!(second_stats.round_count, 0);
         assert_eq!(second_stats.win_count, 0);
-        assert_eq!(second_stats.lose_count, 1);
+        assert_eq!(second_stats.lose_count, 0);
         assert_eq!(second_stats.draw_count, 0);
         assert_eq!(second_stats.win_score, 0);
-        assert_eq!(second_stats.lose_score, 250);
+        assert_eq!(second_stats.lose_score, 0);
 
         data::shutdown().await;
         std::fs::remove_dir_all(temp_dir).expect("remove temp data directory");

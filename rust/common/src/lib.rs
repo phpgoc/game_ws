@@ -34,7 +34,7 @@ mod transport;
 pub use client::{WsClientEvent, WsClientHandle, WsClientSendError, connect_ws_client};
 pub use game_setting::GameSettings;
 pub use game_state::{CommonGameState, GameState, SharedGameState};
-pub use official::OfficialPlayerSession;
+pub use official::{OfficialMatchHandle, OfficialMatchInfo, OfficialPlayerSession};
 pub use room::{
     ClientRequest, Delivery, Dispatch, OutboundPayload, RequestResponse, RoomService, SessionId,
     SettingsBuilderResult,

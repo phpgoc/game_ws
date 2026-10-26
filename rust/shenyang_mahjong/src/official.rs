@@ -45,30 +45,12 @@ use crate::game_state::ShenyangMahjongLoopState;
 use crate::rules::ShenyangMahjongWinContext;
 
 #[cfg(feature = "official")]
-fn block_on_official<F>(future: F) -> Option<F::Output>
-where
-    F: std::future::Future,
-{
-    let handle = tokio::runtime::Handle::try_current().ok()?;
-    Some(tokio::task::block_in_place(|| handle.block_on(future)))
-}
-
-#[cfg(feature = "official")]
 pub fn create_match(room_service: &mut RoomService, room_key: &str) {
     use std::collections::HashMap;
 
     use share_type_public::GameId;
 
-    if room_service.room_official_match_id(room_key).is_some() {
-        return;
-    }
-    let password = room_key.to_owned();
-    let sessions = room_service.room_official_player_sessions(room_key);
-    if sessions.is_empty() {
-        return;
-    }
-
-    let Some(result) = block_on_official(async move {
+    room_service.spawn_room_official_match(room_key, move |sessions, password| async move {
         let mut user_ids = Vec::with_capacity(sessions.len());
         let mut user_ids_by_position = HashMap::new();
         for player in sessions {
@@ -112,12 +94,7 @@ pub fn create_match(room_service: &mut RoomService, room_key: &str) {
                 None
             }
         }
-    }) else {
-        return;
-    };
-    if let Some((match_id, user_ids_by_position)) = result {
-        room_service.set_room_official_match(room_key, match_id, user_ids_by_position);
-    }
+    });
 }
 
 #[cfg(not(feature = "official"))]
@@ -148,7 +125,7 @@ pub fn settle_round(
     let Some(settlement) = state.settlement.as_ref() else {
         return;
     };
-    let Some(game_match_id) = room_service.room_official_match_id(room_key) else {
+    let Some(official_match) = room_service.room_official_match(room_key) else {
         return;
     };
 
@@ -157,24 +134,30 @@ pub fn settle_round(
     let positions = players.keys().copied().collect::<Vec<_>>();
     let score_changes = settlement_score_changes_for_state(state, &positions, settlement, configs);
     let context = ShenyangMahjongWinContext::from_configs(configs);
-    let winner_scores =
+    let winner_scores_by_position =
         winner_scores_for_settlement(state, settlement, &score_changes, context, |position| {
-            room_service.room_official_user_id(room_key, position)
+            Some(position as i32)
         });
-    let player_scores = player_scores_for_official_users(&score_changes, |position| {
-        room_service.room_official_user_id(room_key, position)
-    });
     let has_winner = !settlement.unique_winner_positions().is_empty();
     let (from_position, is_reverse_win) =
         official_discard_context_for_settlement(state, settlement, has_winner);
-    // None 只表示自摸/流局；AI 点炮使用 0 保留“荣和”来源。
-    let discarder_user_id = from_position.map(|position| {
-        room_service
-            .room_official_user_id(room_key, position)
-            .unwrap_or(0)
-    });
 
     tokio::spawn(async move {
+        let Some(info) = official_match.wait().await else {
+            return;
+        };
+        let game_match_id = info.id;
+        let winner_scores = winner_scores_by_position
+            .into_iter()
+            .filter_map(|mut score| {
+                score.winner_user_id = info.user_id(score.winner_user_id as usize)?;
+                Some(score)
+            })
+            .collect();
+        let player_scores =
+            player_scores_for_official_users(&score_changes, |position| info.user_id(position));
+        // None 只表示自摸/流局；AI 点炮使用 0 保留“荣和”来源。
+        let discarder_user_id = from_position.map(|position| info.user_id(position).unwrap_or(0));
         if let Err(err) = data::service::game_round::shenyang_mahjong_settlement(
             data::input::GameRoundShenyangMahjongSettleInput {
                 round,

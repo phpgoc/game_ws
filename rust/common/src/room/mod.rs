@@ -7,7 +7,7 @@ mod model;
 
 use std::{collections::HashMap, sync::Arc};
 
-use crate::official::OfficialPlayerSession;
+use crate::official::{OfficialMatchHandle, OfficialMatchInfo, OfficialPlayerSession};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use share_type_public::{
@@ -42,8 +42,7 @@ struct RoomEntry {
     min_players: usize,
     max_players: usize,
     state: Box<dyn crate::game_state::GameState>,
-    official_match_id: Option<i32>,
-    official_user_ids_by_position: HashMap<usize, i32>,
+    official_match: Option<OfficialMatchHandle>,
     pending_cleanup_generation: Option<u64>,
 }
 
@@ -82,11 +81,7 @@ impl std::fmt::Debug for RoomEntry {
             .field("param_descriptions", &self.param_descriptions.len())
             .field("min_players", &self.min_players)
             .field("max_players", &self.max_players)
-            .field("official_match_id", &self.official_match_id)
-            .field(
-                "official_user_ids_by_position",
-                &self.official_user_ids_by_position,
-            )
+            .field("official_match", &self.official_match)
             .field("state", &format_args!("<GameState>"))
             .finish()
     }
@@ -197,8 +192,7 @@ impl RoomService {
         if let Some(entry) = self.rooms.get_mut(room_key) {
             let common = entry.state.shared_common_state();
             entry.state = Box::new(crate::game_state::SharedGameState::from_common(common));
-            entry.official_match_id = None;
-            entry.official_user_ids_by_position.clear();
+            entry.official_match = None;
         }
     }
 
@@ -213,8 +207,7 @@ impl RoomService {
             let current = entry.state.shared_common_state();
             if Arc::ptr_eq(&current, common) {
                 entry.state = Box::new(crate::game_state::SharedGameState::from_common(current));
-                entry.official_match_id = None;
-                entry.official_user_ids_by_position.clear();
+                entry.official_match = None;
             }
         }
     }
@@ -854,8 +847,7 @@ impl RoomService {
                     min_players: settings.min_players,
                     max_players: settings.max_players,
                     state: Box::new(crate::game_state::SharedGameState::new()),
-                    official_match_id: None,
-                    official_user_ids_by_position: HashMap::new(),
+                    official_match: None,
                     pending_cleanup_generation: None,
                 },
             );
@@ -1804,9 +1796,35 @@ impl RoomService {
 
     /// 返回房间关联的官方随机匹配记录 ID。
     pub fn room_official_match_id(&self, room_key: &str) -> Option<i32> {
-        self.rooms
-            .get(room_key)
-            .and_then(|entry| entry.official_match_id)
+        self.room_official_match(room_key)?
+            .get()
+            .map(|info| info.id)
+    }
+
+    pub fn room_official_match(&self, room_key: &str) -> Option<OfficialMatchHandle> {
+        self.rooms.get(room_key)?.official_match.clone()
+    }
+
+    /// 在房间锁外查询缓存和创建数据库记录；每场只派发一次，包括创建尚未完成时。
+    pub fn spawn_room_official_match<F, Fut>(&mut self, room_key: &str, create: F)
+    where
+        F: FnOnce(Vec<OfficialPlayerSession>, String) -> Fut,
+        Fut: std::future::Future<Output = Option<(i32, HashMap<usize, i32>)>> + Send + 'static,
+    {
+        if self.room_official_match(room_key).is_some() {
+            return;
+        }
+        let sessions = self.room_official_player_sessions(room_key);
+        if sessions.is_empty() {
+            return;
+        }
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let handle = OfficialMatchHandle::spawn(&runtime, create(sessions, room_key.to_owned()));
+        if let Some(entry) = self.rooms.get_mut(room_key) {
+            entry.official_match = Some(handle);
+        }
     }
 
     /// 判断房间是否支持官方模式的座位交换。
@@ -1868,9 +1886,7 @@ impl RoomService {
 
     /// 返回房间中指定座位绑定的官方用户 ID。
     pub fn room_official_user_id(&self, room_key: &str, position: usize) -> Option<i32> {
-        self.rooms
-            .get(room_key)
-            .and_then(|entry| entry.official_user_ids_by_position.get(&position).copied())
+        self.room_official_match(room_key)?.get()?.user_id(position)
     }
 
     fn select_position(
@@ -1950,8 +1966,10 @@ impl RoomService {
         user_ids_by_position: HashMap<usize, i32>,
     ) {
         if let Some(entry) = self.rooms.get_mut(room_key) {
-            entry.official_match_id = Some(match_id);
-            entry.official_user_ids_by_position = user_ids_by_position;
+            entry.official_match = Some(OfficialMatchHandle::ready(OfficialMatchInfo {
+                id: match_id,
+                user_ids_by_position,
+            }));
         }
     }
 

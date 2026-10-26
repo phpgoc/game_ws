@@ -31,30 +31,12 @@ pub async fn authorize_join(session_id: String) -> ws_common::JoinAuthorization 
 }
 
 #[cfg(feature = "official")]
-fn block_on_official<F>(future: F) -> Option<F::Output>
-where
-    F: std::future::Future,
-{
-    let handle = tokio::runtime::Handle::try_current().ok()?;
-    Some(tokio::task::block_in_place(|| handle.block_on(future)))
-}
-
-#[cfg(feature = "official")]
 pub fn create_match(room_service: &mut RoomService, room_key: &str) {
     use std::collections::HashMap;
 
     use share_type_public::GameId;
 
-    if room_service.room_official_match_id(room_key).is_some() {
-        return;
-    }
-    let password = room_key.to_owned();
-    let sessions = room_service.room_official_player_sessions(room_key);
-    if sessions.is_empty() {
-        return;
-    }
-
-    let Some(result) = block_on_official(async move {
+    room_service.spawn_room_official_match(room_key, move |sessions, password| async move {
         let mut user_ids = Vec::with_capacity(sessions.len());
         let mut user_ids_by_position = HashMap::new();
         for player in sessions {
@@ -97,12 +79,7 @@ pub fn create_match(room_service: &mut RoomService, room_key: &str) {
                 None
             }
         }
-    }) else {
-        return;
-    };
-    if let Some((match_id, user_ids_by_position)) = result {
-        room_service.set_room_official_match(room_key, match_id, user_ids_by_position);
-    }
+    });
 }
 
 #[cfg(not(feature = "official"))]
@@ -138,20 +115,24 @@ pub fn settle_round(
     rule: DominoesRule,
     result: &RoundResult,
 ) {
-    let Some(game_match_id) = room_service.room_official_match_id(room_key) else {
+    let Some(official_match) = room_service.room_official_match(room_key) else {
         return;
     };
-    let winner_user_id = room_service.room_official_user_id(room_key, result.winner_position);
-    let player_scores = player_scores_for_official_users(result, |position| {
-        room_service.room_official_user_id(room_key, position)
-    });
-    if player_scores.is_empty() {
-        return;
-    }
-    let blocked = result.blocked;
-    let round_score = i64::from(result.round_score.max(0));
-
+    let result = result.clone();
     tokio::spawn(async move {
+        let Some(info) = official_match.wait().await else {
+            return;
+        };
+        let game_match_id = info.id;
+        let winner_user_id = info.user_id(result.winner_position);
+        let player_scores =
+            player_scores_for_official_users(&result, |position| info.user_id(position));
+        if player_scores.is_empty() {
+            return;
+        }
+        let blocked = result.blocked;
+        let round_score = i64::from(result.round_score.max(0));
+
         if let Err(error) = data::service::game_round::dominoes_settlement(
             data::input::GameRoundDominoesSettleInput {
                 game_match_id,

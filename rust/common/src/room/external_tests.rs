@@ -40,6 +40,47 @@ fn settings() -> SettingsBuilderResult {
     (GameSettings::new(1, 4), HashMap::new())
 }
 
+#[tokio::test]
+async fn pending_official_creation_releases_room_and_keeps_its_own_match() {
+    let mut service = RoomService::default();
+    join_member(&mut service, 1, "owner", "pending-match", "owner-session");
+    let (complete, ready) = tokio::sync::oneshot::channel();
+    service.spawn_room_official_match("pending-match", |sessions, key| async move {
+        assert_eq!(key, "pending-match");
+        assert_eq!(sessions[0].session_id, "owner-session");
+        ready.await.unwrap();
+        Some((101, HashMap::from([(0, 42)])))
+    });
+    service.spawn_room_official_match("pending-match", |_, _| async {
+        panic!("a pending match must not be created twice");
+    });
+    let old = service.room_official_match("pending-match").unwrap();
+    assert!(old.get().is_none());
+    let settlement = tokio::spawn(async move { old.wait().await.unwrap() });
+    join_member(&mut service, 2, "other", "another-room", "other-session");
+    assert!(service.room_exists("another-room"));
+
+    service.clear_room_game_state("pending-match");
+    service.set_room_official_match("pending-match", 202, HashMap::from([(0, 84)]));
+    complete.send(()).unwrap();
+    let settled = tokio::time::timeout(std::time::Duration::from_secs(1), settlement)
+        .await.unwrap().unwrap();
+    assert_eq!(settled.id, 101);
+    assert_eq!(settled.user_id(0), Some(42));
+    assert_eq!(service.room_official_match_id("pending-match"), Some(202));
+    assert_eq!(service.room_official_user_id("pending-match", 0), Some(84));
+}
+
+#[tokio::test]
+async fn failed_official_creation_wakes_pending_settlements() {
+    let mut service = RoomService::default();
+    join_member(&mut service, 1, "owner", "failed-match", "owner-session");
+    service.spawn_room_official_match("failed-match", |_, _| async { None });
+    let handle = service.room_official_match("failed-match").unwrap();
+    assert!(tokio::time::timeout(std::time::Duration::from_secs(1), handle.wait())
+        .await.unwrap().is_none());
+}
+
 fn settings_with_options() -> SettingsBuilderResult {
     (
         GameSettings {

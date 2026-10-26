@@ -31,30 +31,12 @@ pub async fn authorize_join(session_id: String) -> ws_common::JoinAuthorization 
 }
 
 #[cfg(feature = "official")]
-fn block_on_official<F>(future: F) -> Option<F::Output>
-where
-    F: std::future::Future,
-{
-    let handle = tokio::runtime::Handle::try_current().ok()?;
-    Some(tokio::task::block_in_place(|| handle.block_on(future)))
-}
-
-#[cfg(feature = "official")]
 pub fn create_match(room_service: &mut RoomService, room_key: &str) {
     use std::collections::HashMap;
 
     use share_type_public::GameId;
 
-    if room_service.room_official_match_id(room_key).is_some() {
-        return;
-    }
-    let password = room_key.to_owned();
-    let sessions = room_service.room_official_player_sessions(room_key);
-    if sessions.is_empty() {
-        return;
-    }
-
-    let Some(result) = block_on_official(async move {
+    room_service.spawn_room_official_match(room_key, move |sessions, password| async move {
         let mut user_ids = Vec::with_capacity(sessions.len());
         let mut user_ids_by_position = HashMap::new();
         for player in sessions {
@@ -98,12 +80,7 @@ pub fn create_match(room_service: &mut RoomService, room_key: &str) {
                 None
             }
         }
-    }) else {
-        return;
-    };
-    if let Some((match_id, user_ids_by_position)) = result {
-        room_service.set_room_official_match(room_key, match_id, user_ids_by_position);
-    }
+    });
 }
 
 #[cfg(not(feature = "official"))]
@@ -119,22 +96,23 @@ pub fn settle_round(
     trump_suit: Option<TractorSuit>,
     round: i32,
 ) {
-    let Some(game_match_id) = room_service.room_official_match_id(room_key) else {
+    let Some(official_match) = room_service.room_official_match(room_key) else {
         return;
     };
     if winner_positions.len() < 2 {
         return;
     }
-    // AI 胜方没有用户账号；0 只标识 AI，不会写入真人统计。
-    let winner_user_id_1 = room_service
-        .room_official_user_id(room_key, winner_positions[0] as usize)
-        .unwrap_or(0);
-    let winner_user_id_2 = room_service
-        .room_official_user_id(room_key, winner_positions[1] as usize)
-        .unwrap_or(0);
+    let winners = [winner_positions[0] as usize, winner_positions[1] as usize];
     let score = score.max(1);
 
     tokio::spawn(async move {
+        let Some(info) = official_match.wait().await else {
+            return;
+        };
+        let game_match_id = info.id;
+        // AI 胜方没有用户账号；0 只标识 AI，不会写入真人统计。
+        let winner_user_id_1 = info.user_id(winners[0]).unwrap_or(0);
+        let winner_user_id_2 = info.user_id(winners[1]).unwrap_or(0);
         if let Err(err) = data::service::game_round::tractor_settlement(
             data::input::GameRoundTractorSettleInput {
                 round,
