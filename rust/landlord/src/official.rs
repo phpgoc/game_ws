@@ -131,9 +131,10 @@ pub async fn settle_round(
         let Some(landlord_position) = landlord_position else {
             return;
         };
-        let Some(landlord_user_id) = room.room_official_user_id(room_key, landlord_position) else {
-            return;
-        };
+        // AI 地主没有用户账号，但真人农民仍须记胜负和实际分数。
+        let landlord_user_id = room
+            .room_official_user_id(room_key, landlord_position)
+            .unwrap_or(0);
         (game_match_id, landlord_user_id)
     };
 
