@@ -124,16 +124,13 @@ pub fn settle_round(
     if winner_positions.len() < 2 {
         return;
     }
-    let Some(winner_user_id_1) =
-        room_service.room_official_user_id(room_key, winner_positions[0] as usize)
-    else {
-        return;
-    };
-    let Some(winner_user_id_2) =
-        room_service.room_official_user_id(room_key, winner_positions[1] as usize)
-    else {
-        return;
-    };
+    // AI 胜方没有用户账号；0 只标识 AI，不会写入真人统计。
+    let winner_user_id_1 = room_service
+        .room_official_user_id(room_key, winner_positions[0] as usize)
+        .unwrap_or(0);
+    let winner_user_id_2 = room_service
+        .room_official_user_id(room_key, winner_positions[1] as usize)
+        .unwrap_or(0);
     let score = score.max(1);
 
     tokio::spawn(async move {
