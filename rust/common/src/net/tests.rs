@@ -1,7 +1,4 @@
-use std::{
-    net::{Ipv4Addr, TcpListener},
-    str::FromStr,
-};
+use std::net::{Ipv4Addr, TcpListener};
 
 use super::{resolve_host, resolve_port};
 
@@ -29,11 +26,10 @@ fn resolve_host_uses_a_private_interface_when_one_is_available() {
 
 #[test]
 fn resolve_port_accepts_explicit_and_automatically_selected_ports() {
-    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
-    let port = listener.local_addr().unwrap().port();
-    assert!(port > 9000);
+    let port = resolve_port(Ipv4Addr::LOCALHOST, None).unwrap();
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, port)).unwrap();
 
-    let error = resolve_port(Ipv4Addr::from_str("127.0.0.1").unwrap(), Some(port)).unwrap_err();
+    let error = resolve_port(Ipv4Addr::LOCALHOST, Some(port)).unwrap_err();
     assert_eq!(
         error.to_string(),
         format!("port is not bindable: 127.0.0.1:{port}")

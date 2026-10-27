@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, net::Ipv4Addr, sync::Arc};
 
 use serde_json::Value;
 use share_type_public::{GameId, WsJoinRequest, WsResponseCode, WsWithoutDataResponse};
@@ -24,6 +24,15 @@ use super::{
 mod ordering;
 
 struct DefaultHookHandler;
+
+async fn reserve_high_port() -> (TcpListener, u16) {
+    let port = crate::net::resolve_port(Ipv4Addr::LOCALHOST, None)
+        .expect("find a bindable test port above 9000");
+    let listener = TcpListener::bind(("127.0.0.1", port))
+        .await
+        .expect("reserve a high local test port");
+    (listener, port)
+}
 
 impl GameHandler for DefaultHookHandler {
     fn build_game_state(&self) -> Box<dyn crate::GameState> {
@@ -262,10 +271,7 @@ async fn runtime_startup_helpers_validate_addresses_and_stop_cleanly() {
 
 #[tokio::test]
 async fn runtime_startup_helpers_report_listener_conflicts() {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("reserve a local test port");
-    let port = listener.local_addr().expect("read local address").port();
+    let (listener, port) = reserve_high_port().await;
 
     let helper_error = run_game_server(
         "test",
@@ -296,13 +302,7 @@ async fn runtime_startup_helpers_report_listener_conflicts() {
 
 #[tokio::test]
 async fn game_server_helper_starts_on_a_bindable_port() {
-    let reserved = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("reserve a local test port");
-    let port = reserved
-        .local_addr()
-        .expect("read reserved local address")
-        .port();
+    let (reserved, port) = reserve_high_port().await;
     drop(reserved);
 
     let server = tokio::spawn(run_game_server(
