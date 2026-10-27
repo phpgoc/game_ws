@@ -1,0 +1,22 @@
+[package]
+name = "ws_server"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[[bin]]
+name = "ws_server"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+dominoes = { path = "../dominoes" }
+holdem = { path = "../holdem" }
+landlord = { path = "../landlord" }
+niangniang = { path = "../niangniang" }
+shenyang_mahjong = { path = "../shenyang_mahjong" }
+tractor = { path = "../tractor" }
+upgrade = { path = "../upgrade" }
+who_is_landlord = { path = "../who_is_landlord" }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+ws_common = { path = "../common" }

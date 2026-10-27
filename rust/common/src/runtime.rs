@@ -750,6 +750,27 @@ where
     .await
 }
 
+/// 解析通用命令行地址参数，并启动注册了多个游戏的 WebSocket 服务。
+pub async fn run_game_registry_server_with_cli(
+    service_name: &'static str,
+    idle_timeout: Duration,
+    registry: GameRegistry,
+) -> anyhow::Result<()> {
+    let cli = parse_bind_cli();
+    let host = resolve_host(cli.host)?;
+    let port = resolve_port(host, cli.port)?;
+    run_multi_game_runtime(
+        RuntimeConfig {
+            service_name,
+            listen_addr: format!("{host}:{port}"),
+            idle_timeout,
+            heartbeat_interval: Duration::from_secs(20),
+        },
+        registry,
+    )
+    .await
+}
+
 /// 以给定配置启动房间运行时，并一直运行到进程终止。
 pub async fn run_room_runtime<H>(config: RuntimeConfig, handler: H) -> anyhow::Result<()>
 where
