@@ -341,10 +341,14 @@ async fn handle_connection(
         }
     });
 
+    let mut transport_error = None;
     loop {
         let frame = match tokio::time::timeout(idle_timeout, source.next()).await {
             Ok(Some(Ok(frame))) => frame,
-            Ok(Some(Err(error))) => return Err(error.into()),
+            Ok(Some(Err(error))) => {
+                transport_error = Some(error);
+                break;
+            }
             Ok(None) => break,
             Err(_) => {
                 #[cfg(feature = "official")]
@@ -410,7 +414,10 @@ async fn handle_connection(
     writer.abort();
     #[cfg(feature = "official")]
     tracing::debug!(session_id, peer = %_peer, "p2p websocket disconnected");
-    Ok(())
+    match transport_error {
+        Some(error) => Err(error.into()),
+        None => Ok(()),
+    }
 }
 
 async fn handle_request(

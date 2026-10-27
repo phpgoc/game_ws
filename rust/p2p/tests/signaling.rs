@@ -225,3 +225,59 @@ async fn websocket_rejects_malformed_signal_fields() {
     client.close(None).await.expect("close client");
     server.abort();
 }
+
+#[tokio::test]
+async fn abrupt_disconnect_notifies_peer_and_releases_the_seat() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("local address");
+    let ice = IceServiceConfig::new(
+        vec!["stun:stun.example.test:3478".into()],
+        vec!["turn:turn.example.test:3478?transport=udp".into()],
+        "integration-secret".into(),
+        600,
+    )
+    .expect("ICE config");
+    let server = tokio::spawn(run_p2p_listener(
+        listener,
+        ice,
+        Duration::from_secs(5),
+        Duration::from_secs(1),
+    ));
+    let url = format!("ws://{address}");
+    let (mut first, _) = connect_async(&url).await.expect("first connection");
+    let (mut second, _) = connect_async(&url).await.expect("second connection");
+    for (client, name) in [(&mut first, "first"), (&mut second, "second")] {
+        send_json(
+            client,
+            json!({
+                "route": 5001,
+                "data": { "game": "quoridor", "room": "abrupt", "name": name }
+            }),
+        )
+        .await;
+        let joined = read_until(client, |value| value["route"] == 5001).await;
+        assert_eq!(joined["code"], 201);
+    }
+    read_until(&mut first, |value| value["code"] == 5002).await;
+
+    // 不发送 WebSocket Close 帧，模拟进程崩溃或网络连接突然中断。
+    drop(second);
+    let left = read_until(&mut first, |value| value["code"] == 5004).await;
+    assert_eq!(left["data"]["peer_position"], 1);
+
+    let (mut replacement, _) = connect_async(&url).await.expect("replacement connection");
+    send_json(
+        &mut replacement,
+        json!({
+            "route": 5001,
+            "data": { "game": "quoridor", "room": "abrupt", "name": "replacement" }
+        }),
+    )
+    .await;
+    let joined = read_until(&mut replacement, |value| value["route"] == 5001).await;
+    assert_eq!(joined["code"], 201);
+    assert_eq!(joined["data"]["self_position"], 1);
+    first.close(None).await.expect("close first");
+    replacement.close(None).await.expect("close replacement");
+    server.abort();
+}
