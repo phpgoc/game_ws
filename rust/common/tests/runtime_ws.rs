@@ -338,6 +338,59 @@ async fn multi_game_runtime_binds_joined_game_and_isolates_rooms() {
     );
     assert_eq!(stats.room_count().await, 2);
 
+    let (mut retry, _) = connect_async(format!("ws://{}", stats.listen_addr()))
+        .await
+        .expect("connect retry client");
+    retry
+        .send(Message::Text(
+            serde_json::json!({
+                "route": Routes::JOIN as i32,
+                "data": {"password": "shared-room", "game_id": GameId::LANDLORD as i32}
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send malformed join");
+    let malformed = timeout(Duration::from_secs(1), async {
+        loop {
+            if let Some(Ok(Message::Text(text))) = retry.next().await {
+                break text;
+            }
+        }
+    })
+    .await
+    .expect("malformed join response");
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&malformed).unwrap()["code"],
+        WsResponseCode::ERROR_FORMAT as i32
+    );
+
+    retry
+        .send(Message::Text(
+            serde_json::json!({
+                "route": Routes::JOIN as i32,
+                "data": {"name": "carol", "password": "shared-room", "game_id": GameId::SHENYANG_MAHJONG as i32}
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("retry join with another game");
+    let retried = timeout(Duration::from_secs(1), async {
+        loop {
+            if let Some(Ok(Message::Text(text))) = retry.next().await {
+                break text;
+            }
+        }
+    })
+    .await
+    .expect("retry join response");
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&retried).unwrap()["code"],
+        WsResponseCode::JOINED as i32
+    );
+
     landlord
         .send(Message::Text(
             serde_json::json!({
@@ -365,6 +418,7 @@ async fn multi_game_runtime_binds_joined_game_and_isolates_rooms() {
 
     landlord.close(None).await.expect("close landlord client");
     mahjong.close(None).await.expect("close mahjong client");
+    retry.close(None).await.expect("close retry client");
     wait_for_client_count(&stats, 0).await;
     stop.stop();
     server

@@ -461,10 +461,15 @@ async fn handle_connection(
                     .ok()
             })
             .flatten();
+        let requested_game_id = request
+            .data
+            .get("game_id")
+            .and_then(serde_json::Value::as_i64)
+            .and_then(|value| i32::try_from(value).ok())
+            .and_then(|value| share_type_public::GameId::try_from(value).ok());
         let selected_slot = if request.route == share_type_public::Routes::JOIN as i32 {
-            parsed_join
-                .as_ref()
-                .and_then(|join| registry.slot_for_game_id(join.game_id))
+            requested_game_id
+                .and_then(|game_id| registry.slot_for_game_id(game_id))
                 .or_else(|| bound_slot.clone())
         } else {
             bound_slot.clone().or_else(|| {
@@ -479,10 +484,12 @@ async fn handle_connection(
             let fallback = registry
                 .first_slot()
                 .expect("game registry must contain at least one handler");
-            let code = if request.route == share_type_public::Routes::JOIN as i32
-                && parsed_join.is_some()
-            {
-                share_type_public::WsResponseCode::WRONG_GAME
+            let code = if request.route == share_type_public::Routes::JOIN as i32 {
+                if requested_game_id.is_some() {
+                    share_type_public::WsResponseCode::WRONG_GAME
+                } else {
+                    share_type_public::WsResponseCode::ERROR_FORMAT
+                }
             } else {
                 share_type_public::WsResponseCode::NOT_LOGIN
             };
