@@ -77,9 +77,6 @@ Windows 用户可在 Git Bash 中执行 `bash ci/prepare-public-build.sh`。
 | 11 | 西洋骨牌 (`dominoes`) | 9007 |
 | 13 | 娘娘升级 (`niangniang`) | 9012 |
 
-`GameId=8` 是随机匹配会员权益，不对应一个官方游戏 WS 端口；匹配服务使用
-9010（谁是地主匹配 9011、合作德州匹配 9012）。
-
 在公版仓库根目录运行：
 
 ```sh

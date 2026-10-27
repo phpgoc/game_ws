@@ -1882,7 +1882,7 @@ impl RoomService {
             .collect()
     }
 
-    /// 返回房间关联的官方随机匹配记录 ID。
+    /// 返回房间关联的官方比赛记录 ID。
     pub fn room_official_match_id(&self, room_key: &str) -> Option<i32> {
         self.room_official_match(room_key)?
             .get()
@@ -2058,7 +2058,7 @@ impl RoomService {
         }
     }
 
-    /// 记录官方随机匹配的对局 ID 及各座位对应的用户 ID。
+    /// 记录官方比赛的对局 ID 及各座位对应的用户 ID。
     pub fn set_room_official_match(
         &mut self,
         room_key: &str,
