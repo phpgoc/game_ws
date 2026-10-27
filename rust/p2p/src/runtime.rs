@@ -29,6 +29,8 @@ use tokio_tungstenite::{accept_async, tungstenite::Message};
 use crate::config::IceServiceConfig;
 
 const MAX_CANDIDATE_BYTES: usize = 16 * 1024;
+const MAX_SDP_MID_BYTES: usize = 128;
+const MAX_USERNAME_FRAGMENT_BYTES: usize = 256;
 const MAX_GAME_BYTES: usize = 64;
 const MAX_NAME_BYTES: usize = 48;
 const MAX_ROOM_BYTES: usize = 128;
@@ -877,10 +879,16 @@ fn signal_is_valid(signal: &WsP2pSignalRequest) -> bool {
         return false;
     }
     match signal.kind {
-        P2pSignalKind::OFFER | P2pSignalKind::ANSWER => signal
-            .sdp
-            .as_deref()
-            .is_some_and(|sdp| !sdp.is_empty() && sdp.len() <= MAX_SDP_BYTES),
+        P2pSignalKind::OFFER | P2pSignalKind::ANSWER => {
+            signal
+                .sdp
+                .as_deref()
+                .is_some_and(|sdp| !sdp.is_empty() && sdp.len() <= MAX_SDP_BYTES)
+                && signal.candidate.is_none()
+                && signal.sdp_mid.is_none()
+                && signal.sdp_m_line_index.is_none()
+                && signal.username_fragment.is_none()
+        }
         P2pSignalKind::ICE_CANDIDATE => {
             signal.sdp.is_none()
                 && signal
@@ -888,8 +896,15 @@ fn signal_is_valid(signal: &WsP2pSignalRequest) -> bool {
                     .as_deref()
                     .is_none_or(|candidate| candidate.len() <= MAX_CANDIDATE_BYTES)
                 && signal
+                    .sdp_mid
+                    .as_deref()
+                    .is_none_or(|sdp_mid| !sdp_mid.is_empty() && sdp_mid.len() <= MAX_SDP_MID_BYTES)
+                && signal
                     .sdp_m_line_index
                     .is_none_or(|index| (0..=65_535).contains(&index))
+                && signal.username_fragment.as_deref().is_none_or(|fragment| {
+                    !fragment.is_empty() && fragment.len() <= MAX_USERNAME_FRAGMENT_BYTES
+                })
         }
     }
 }

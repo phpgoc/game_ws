@@ -158,3 +158,70 @@ async fn websocket_clients_join_signal_and_leave() {
     first.close(None).await.expect("close first");
     server.abort();
 }
+
+#[tokio::test]
+async fn websocket_rejects_malformed_signal_fields() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("local address");
+    let ice = IceServiceConfig::new(
+        vec!["stun:stun.example.test:3478".into()],
+        vec!["turn:turn.example.test:3478?transport=udp".into()],
+        "integration-secret".into(),
+        600,
+    )
+    .expect("ICE config");
+    let server = tokio::spawn(run_p2p_listener(
+        listener,
+        ice,
+        Duration::from_secs(5),
+        Duration::from_secs(1),
+    ));
+
+    let url = format!("ws://{address}");
+    let (mut client, _) = connect_async(&url).await.expect("client connection");
+    send_json(
+        &mut client,
+        json!({
+            "route": 5001,
+            "data": { "game": "quoridor", "room": "malformed", "name": "client" }
+        }),
+    )
+    .await;
+    read_until(&mut client, |value| value["route"] == 5001).await;
+    read_until(&mut client, |value| value["code"] == 5001).await;
+
+    send_json(
+        &mut client,
+        json!({
+            "route": 5002,
+            "data": {
+                "target_position": 1,
+                "kind": 0,
+                "sdp": "v=0\r\n",
+                "candidate": "candidate:unexpected"
+            }
+        }),
+    )
+    .await;
+    let response = read_until(&mut client, |value| value["route"] == 5002).await;
+    assert_eq!(response["code"], 400);
+
+    send_json(
+        &mut client,
+        json!({
+            "route": 5002,
+            "data": {
+                "target_position": 1,
+                "kind": 2,
+                "candidate": "candidate:valid",
+                "sdp_mid": "x".repeat(129)
+            }
+        }),
+    )
+    .await;
+    let response = read_until(&mut client, |value| value["route"] == 5002).await;
+    assert_eq!(response["code"], 400);
+
+    client.close(None).await.expect("close client");
+    server.abort();
+}
