@@ -15,8 +15,6 @@ pub enum GameId {
     OPEN_HOLD_EM = 5,
     SHORT_DECK_HOLD_EM = 6,
     OMAHA_HOLD_EM = 7,
-    /// 付费随机匹配区域的会员权益，不对应某个自建 WS 游戏。
-    RANDOM_MATCH = 8,
     /// 官方 P2P TURN 中继的会员权益，不对应某个自建 WS 游戏。
     P2P = 9,
     /// 多副牌“升级”游戏，与强调拖拉机牌型的 `TRACTOR` 独立。
@@ -50,7 +48,6 @@ impl TryFrom<i32> for GameId {
             5 => Ok(Self::OPEN_HOLD_EM),
             6 => Ok(Self::SHORT_DECK_HOLD_EM),
             7 => Ok(Self::OMAHA_HOLD_EM),
-            8 => Ok(Self::RANDOM_MATCH),
             9 => Ok(Self::P2P),
             10 => Ok(Self::UPGRADE),
             11 => Ok(Self::DOMINOES),

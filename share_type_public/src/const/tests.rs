@@ -14,6 +14,7 @@ fn dominoes_has_a_stable_protocol_id() {
 
 #[test]
 fn unknown_game_ids_are_rejected() {
+    assert_eq!(GameId::try_from(8), Err(()));
     assert_eq!(GameId::try_from(14), Err(()));
 }
 
