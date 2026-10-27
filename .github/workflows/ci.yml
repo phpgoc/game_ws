@@ -101,6 +101,9 @@ jobs:
           - name: common
             manifest: rust/common/Cargo.toml
             features: ""
+          - name: ws-server
+            manifest: rust/server/Cargo.toml
+            features: ""
           - name: landlord
             manifest: rust/landlord/Cargo.toml
             features: ""
@@ -201,7 +204,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        game: [landlord, shenyang_mahjong, holdem, tractor, upgrade, dominoes, p2p]
+        game: [ws_server, p2p]
     steps:
       - name: 检出开源仓库
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -235,8 +238,13 @@ jobs:
         env:
           GAME: ${{ matrix.game }}
         run: |
+          if [[ "$GAME" == "ws_server" ]]; then
+            manifest=rust/server/Cargo.toml
+          else
+            manifest=rust/p2p/Cargo.toml
+          fi
           cargo build --release --target x86_64-unknown-linux-musl \
-            --manifest-path "rust/$GAME/Cargo.toml" --bin "$GAME" --no-default-features
+            --manifest-path "$manifest" --bin "$GAME" --no-default-features
           binary="target/x86_64-unknown-linux-musl/release/$GAME"
           test -s "$binary"
           file_output="$(file "$binary")"

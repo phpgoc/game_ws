@@ -28,19 +28,14 @@ RUN ./ci/prepare-public-build.sh \
         --release \
         --target x86_64-pc-windows-gnu \
         --manifest-path Cargo.toml \
-        -p landlord \
-        -p shenyang_mahjong \
-        -p holdem \
-        -p tractor \
-        -p dominoes \
-        -p upgrade \
+        -p ws_server \
         -p p2p \
         --no-default-features \
     && mkdir -p /artifact \
-    && for game in landlord shenyang_mahjong holdem tractor dominoes upgrade p2p; do \
+    && for service in ws_server p2p; do \
         install -m 0755 \
-            "target/x86_64-pc-windows-gnu/release/${game}.exe" \
-            "/artifact/${game}.exe"; \
+            "target/x86_64-pc-windows-gnu/release/${service}.exe" \
+            "/artifact/${service}.exe"; \
     done
 
 FROM scratch AS artifact

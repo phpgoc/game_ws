@@ -20,29 +20,23 @@
 - `rust/upgrade/`: 升级 Rust 服务端。
 - `rust/p2p/`: 独立的两人 WebRTC 信令服务与 STUN/TURN 临时凭证签发器，不依赖其他游戏 crate。
 - `rust/server/`: 非官方多游戏统一 WebSocket 服务，按 JOIN 中的 `GameId` 路由到对应游戏；不包含 P2P。
-- `rust/dominoes/`: 3–4 人双六西洋骨牌 WS 服务，默认端口 9007；公开构建不包含 AI。
-- `rust/niangniang/`: 四人娘娘升级 WS 服务，默认端口 9012；公开构建不包含官方统计。
+- `rust/dominoes/`: 3–4 人双六西洋骨牌游戏 crate，由统一 `ws_server` 注册。
+- `rust/niangniang/`: 四人娘娘升级游戏 crate，由统一 `ws_server` 注册。
 - `rust/android_server/`: Android JNI bridge，按单游戏 feature 产出 `libws_server.so`。
-- `android/`: 7 个 Rust 服务共用的 Android 前台服务壳，每个 APK 只打包一个 `libws_server.so`。
+- `android/`: Rust 服务共用的 Android 前台服务壳，每个 APK 只打包一个单游戏 `libws_server.so`。
 
 ## 支持平台与发布规则
 
 各游戏 crate 仍可单独编译测试；部署时推荐使用统一入口和独立 P2P 服务：
 
-- `landlord`
-- `shenyang_mahjong`
-- `holdem`
-- `tractor`
-- `dominoes`
-- `upgrade`
-- `p2p`
 - `ws_server`（斗地主、沈阳麻将、德州、拖拉机、升级、西洋骨牌、谁是地主、娘娘升级）
+- `p2p`（独立的 P2P 信令与 TURN 服务）
 
 平台规则如下：
 
 | 目标平台 | 编译方式 | 公开 release |
 | --- | --- | --- |
-| Linux x86_64 musl | `build_script/build_all.sh` | 是，发布 7 个静态可执行文件 |
+| Linux x86_64 musl | `build_script/build_all.sh` | 是，发布 `ws_server` 和 `p2p` 两个静态可执行文件 |
 | Windows x86_64 | 使用 `Dockerfile.windows` 交叉编译 GNU 版，或按本文 PowerShell 命令编译 MSVC 版 | 否 |
 | Android APK | 使用 Gradle 或 `Dockerfile.android` 自行编译 | 否 |
 | ARM64 Linux musl | 使用交叉工具链或 `Dockerfile.arm64` 自行编译 | 否 |
@@ -52,7 +46,7 @@
 会通过 Docker Desktop 的 amd64 模拟运行，因此首次构建会比 Intel/AMD 主机慢。
 
 `build_script/build_all.sh` 和 `build_script/build_in_docker.sh` 只负责正式发布的
-7 个 Linux x86_64 musl server，不再构建 APK、Windows 或 ARM Linux 产物。
+两个 Linux x86_64 musl server，不构建 APK、Windows 或 ARM Linux 产物。
 
 独立检出开源仓库后，手动运行 Cargo 或 Gradle 命令前先准备不包含私有实现的依赖边界：
 
@@ -121,8 +115,8 @@ cargo test --manifest-path rust/p2p/Cargo.toml
 公开仓库的 `Public WS CI` 在 push、pull request、手动触发和每周定时任务中免费运行：
 
 - 对公开 Rust crate 和 Android bridge crate 执行 `rustfmt`、全部 target 测试和 `clippy -D warnings`；
-- 对 7 个服务分别构建 Linux x86_64 musl 静态 release；
-- 对 7 个服务分别构建同时包含 arm64-v8a 与 x86_64 的 Android APK，覆盖 JNI、NDK、Gradle 和 Kotlin 包装；
+- 对 `ws_server` 和 `p2p` 构建 Linux x86_64 musl 静态 release；
+- 对 Android 支持的各单游戏包装构建同时包含 arm64-v8a 与 x86_64 的 APK，覆盖 JNI、NDK、Gradle 和 Kotlin 包装；
 - 不启用依赖私有 `data` 的 `official` feature，不读取 secrets，不上传 artifact；Cargo 和 Gradle 依赖缓存按全部 `Cargo.toml` 的内容生成键。
 
 独立检出开源仓库时，Cargo 和 rustfmt 仍需解析可选的私有 `data`、`runtime_common` 路径及仅供官方版使用的外部 AI 模块。
@@ -154,7 +148,7 @@ rustup toolchain install stable
 rustup target add x86_64-unknown-linux-musl
 ```
 
-在 `ws` 根目录构建全部 7 个发布文件：
+在 `ws` 根目录构建两个发布文件：
 
 ```sh
 ./build_script/build_all.sh
@@ -163,16 +157,11 @@ rustup target add x86_64-unknown-linux-musl
 产物位置：
 
 ```text
-build_script/output/landlord
-build_script/output/shenyang_mahjong
-build_script/output/holdem
-build_script/output/tractor
-build_script/output/dominoes
-build_script/output/upgrade
+build_script/output/ws_server
 build_script/output/p2p
 ```
 
-不想在主机安装 Rust 和 musl 工具链时，可用 Docker 构建相同的 7 个文件：
+不想在主机安装 Rust 和 musl 工具链时，可用 Docker 构建相同的两个文件：
 
 ```sh
 ./build_script/build_in_docker.sh
@@ -250,7 +239,7 @@ docker build \
 
 ### ARM64 Linux（用户自行编译）
 
-推荐直接使用独立 Dockerfile 交叉编译 7 个 ARM64 musl Linux server：
+推荐直接使用独立 Dockerfile 交叉编译两个 ARM64 musl Linux server：
 
 ```sh
 mkdir -p build_script/output/arm64
@@ -261,9 +250,8 @@ docker build \
   .
 ```
 
-输出目录包含 `landlord`、`shenyang_mahjong`、`holdem`、`tractor`、`dominoes`、`upgrade`、`p2p`。
-这些是 `aarch64-unknown-linux-musl` 静态可执行文件，适用于 64 位 ARM Linux。每个服务
-只需分发一个文件，不依赖目标机器的 glibc 或其他外部 `.so`。
+输出目录包含 `ws_server` 和 `p2p`。这些是 `aarch64-unknown-linux-musl` 静态可执行文件，
+适用于 64 位 ARM Linux。每个服务只需分发一个文件，不依赖目标机器的 glibc 或其他外部 `.so`。
 
 不用 Docker 时，需要先自行安装提供 `aarch64-linux-musl-gcc` 的 musl 交叉工具链，
 然后安装 Rust target：
@@ -275,12 +263,7 @@ export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-musl-gcc
 cargo build --release \
   --target aarch64-unknown-linux-musl \
   --manifest-path Cargo.toml \
-  -p landlord \
-  -p shenyang_mahjong \
-  -p holdem \
-  -p tractor \
-  -p dominoes \
-  -p upgrade \
+  -p ws_server \
   -p p2p \
   --no-default-features
 ```
@@ -295,7 +278,7 @@ Windows 不是推荐运行环境。WS 服务端即使能运行，也要额外考
 
 #### Docker 交叉编译 GNU 版
 
-Linux Docker 可以使用 MinGW-w64 为 64 位 Windows 交叉编译 7 个 `.exe`。Dockerfile
+Linux Docker 可以使用 MinGW-w64 为 64 位 Windows 交叉编译两个 `.exe`。Dockerfile
 使用 Rust 的 `x86_64-pc-windows-gnu` target；它不是 MSVC ABI，但产物可直接在 64 位
 Windows 上运行：
 
@@ -308,8 +291,7 @@ docker build \
   .
 ```
 
-输出目录包含 `landlord.exe`、`shenyang_mahjong.exe`、`holdem.exe`、`tractor.exe`、
-`dominoes.exe`、`upgrade.exe` 和 `p2p.exe`。
+输出目录包含 `ws_server.exe` 和 `p2p.exe`。
 
 #### Windows 原生编译 MSVC 版
 
@@ -324,12 +306,7 @@ try {
   cargo build --release `
     --target x86_64-pc-windows-msvc `
     --manifest-path Cargo.toml `
-    -p landlord `
-    -p shenyang_mahjong `
-    -p holdem `
-    -p tractor `
-    -p dominoes `
-    -p upgrade `
+    -p ws_server `
     -p p2p `
     --no-default-features
 } finally {
@@ -340,19 +317,14 @@ try {
 产物位置：
 
 ```powershell
-target\x86_64-pc-windows-msvc\release\landlord.exe
-target\x86_64-pc-windows-msvc\release\shenyang_mahjong.exe
-target\x86_64-pc-windows-msvc\release\holdem.exe
-target\x86_64-pc-windows-msvc\release\tractor.exe
-target\x86_64-pc-windows-msvc\release\dominoes.exe
-target\x86_64-pc-windows-msvc\release\upgrade.exe
+target\x86_64-pc-windows-msvc\release\ws_server.exe
 target\x86_64-pc-windows-msvc\release\p2p.exe
 ```
 
-例如运行拖拉机 server：
+例如运行统一非官方 server：
 
 ```powershell
-.\target\x86_64-pc-windows-msvc\release\tractor.exe --host 0.0.0.0 --port 9004
+.\target\x86_64-pc-windows-msvc\release\ws_server.exe --host 0.0.0.0 --port 9003
 ```
 
 首次运行要允许 Windows 防火墙放行对应 TCP 端口。`p2p` 还需要放行 UDP 3478 和
@@ -364,8 +336,8 @@ UDP 49160-49200；公网部署还要配置路由器端口映射。
 
 ```text
 推荐 release 产物：Linux x86_64 musl 静态单文件。
-release 包范围：landlord、shenyang_mahjong、holdem、tractor、dominoes、upgrade、p2p。
-build_all.sh 和 build_in_docker.sh 只生成上述 7 个 Linux x86_64 文件。
+release 包范围：`ws_server`、`p2p`。
+build_all.sh 和 build_in_docker.sh 只生成上述两个 Linux x86_64 文件。
 Android APK、ARM64 Linux musl 与 Windows GNU 可以使用独立 Dockerfile，但只能由用户按文档自行构建，不进入 release。
 Windows 不作为推荐运行环境；Docker 交叉编译使用 x86_64-pc-windows-gnu，本机编译使用 x86_64-pc-windows-msvc + crt-static，并提醒防火墙、杀毒软件、端口开放和执行策略需要额外处理。
 ```
@@ -376,7 +348,7 @@ Windows 不作为推荐运行环境；Docker 交叉编译使用 x86_64-pc-window
 
 ```nginx
 upstream game_ws {
-    server localhost:9001;
+    server localhost:9003;
 }
 
 server {

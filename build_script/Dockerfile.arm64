@@ -8,19 +8,14 @@ RUN ./ci/prepare-public-build.sh \
         --release \
         --target aarch64-unknown-linux-musl \
         --manifest-path Cargo.toml \
-        -p landlord \
-        -p shenyang_mahjong \
-        -p holdem \
-        -p tractor \
-        -p dominoes \
-        -p upgrade \
+        -p ws_server \
         -p p2p \
         --no-default-features \
     && mkdir -p /artifact \
-    && for game in landlord shenyang_mahjong holdem tractor dominoes upgrade p2p; do \
+    && for service in ws_server p2p; do \
         install -m 0755 \
-            "target/aarch64-unknown-linux-musl/release/${game}" \
-            "/artifact/${game}"; \
+            "target/aarch64-unknown-linux-musl/release/${service}" \
+            "/artifact/${service}"; \
     done
 
 FROM scratch AS artifact

@@ -6,8 +6,8 @@ WS_DIR="$(dirname "${SCRIPT_DIR}")"
 OUTPUT_DIR="${OUTPUT_DIR:-${SCRIPT_DIR}/output}"
 BUILD_DIR="${BUILD_DIR:-${SCRIPT_DIR}/target}"
 LINUX_TARGET="x86_64-unknown-linux-musl"
-GAMES=(landlord shenyang_mahjong holdem tractor upgrade dominoes p2p)
-GAME_COUNT="${#GAMES[@]}"
+SERVICES=(ws_server p2p)
+SERVICE_COUNT="${#SERVICES[@]}"
 
 "${WS_DIR}/ci/prepare-public-build.sh"
 
@@ -27,24 +27,29 @@ fi
 mkdir -p "${OUTPUT_DIR}" "${BUILD_DIR}"
 find "${OUTPUT_DIR}" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
 
-echo "=== Building ${GAME_COUNT} Linux x86_64 musl release executables ==="
-for game in "${GAMES[@]}"; do
-    echo "--- ${game}"
+echo "=== Building ${SERVICE_COUNT} Linux x86_64 musl release executables ==="
+for service in "${SERVICES[@]}"; do
+    case "${service}" in
+        ws_server) manifest="${WS_DIR}/rust/server/Cargo.toml" ;;
+        p2p) manifest="${WS_DIR}/rust/p2p/Cargo.toml" ;;
+        *) echo "Unknown service: ${service}" >&2; exit 2 ;;
+    esac
+    echo "--- ${service}"
     CARGO_TARGET_DIR="${BUILD_DIR}/linux" cargo build \
         --release \
         --target "${LINUX_TARGET}" \
-        --manifest-path "${WS_DIR}/Cargo.toml" \
-        -p "${game}" \
-        --bin "${game}" \
+        --manifest-path "${manifest}" \
+        -p "${service}" \
+        --bin "${service}" \
         --no-default-features
     install -m 0755 \
-        "${BUILD_DIR}/linux/${LINUX_TARGET}/release/${game}" \
-        "${OUTPUT_DIR}/${game}"
+        "${BUILD_DIR}/linux/${LINUX_TARGET}/release/${service}" \
+        "${OUTPUT_DIR}/${service}"
 done
 
 expected=()
-for game in "${GAMES[@]}"; do
-    expected+=("${OUTPUT_DIR}/${game}")
+for service in "${SERVICES[@]}"; do
+    expected+=("${OUTPUT_DIR}/${service}")
 done
 for artifact in "${expected[@]}"; do
     [[ -s "${artifact}" ]] || {
@@ -54,11 +59,11 @@ for artifact in "${expected[@]}"; do
 done
 
 artifact_count="$(find "${OUTPUT_DIR}" -maxdepth 1 -type f | wc -l | tr -d ' ')"
-if [[ "${artifact_count}" != "${GAME_COUNT}" ]]; then
-    echo "Expected exactly ${GAME_COUNT} artifacts, found ${artifact_count}" >&2
+if [[ "${artifact_count}" != "${SERVICE_COUNT}" ]]; then
+    echo "Expected exactly ${SERVICE_COUNT} artifacts, found ${artifact_count}" >&2
     exit 1
 fi
 
 echo
-echo "=== Built ${GAME_COUNT} Linux x86_64 musl artifacts in ${OUTPUT_DIR} ==="
+echo "=== Built ${SERVICE_COUNT} Linux x86_64 musl artifacts in ${OUTPUT_DIR} ==="
 ls -lh "${OUTPUT_DIR}"

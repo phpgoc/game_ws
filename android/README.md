@@ -159,5 +159,5 @@ Docker 会缓存 JDK、SDK、NDK 和 Rust 工具链。编译全部 7 个 APK 时
 ## 发布规则
 
 Android APK 仅供用户自行构建，不进入官方 release。`build_script/build_all.sh` 和
-`build_script/build_in_docker.sh` 只生成 7 个 Linux x86_64 musl server；
+`build_script/build_in_docker.sh` 只生成统一的 `ws_server` 与独立 `p2p` 两个 Linux x86_64 musl server；
 `Dockerfile.android` 只在用户执行本文命令时构建所选 APK。
