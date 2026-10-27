@@ -19,6 +19,7 @@
 - `rust/upgrade_common/`: 拖拉机与升级共享的牌、等级和分数进阶原语。
 - `rust/upgrade/`: 升级 Rust 服务端。
 - `rust/p2p/`: 独立的两人 WebRTC 信令服务与 STUN/TURN 临时凭证签发器，不依赖其他游戏 crate。
+- `rust/server/`: 非官方多游戏统一 WebSocket 服务，按 JOIN 中的 `GameId` 路由到对应游戏；不包含 P2P。
 - `rust/dominoes/`: 3–4 人双六西洋骨牌 WS 服务，默认端口 9007；公开构建不包含 AI。
 - `rust/niangniang/`: 四人娘娘升级 WS 服务，默认端口 9012；公开构建不包含官方统计。
 - `rust/android_server/`: Android JNI bridge，按单游戏 feature 产出 `libws_server.so`。
@@ -26,7 +27,7 @@
 
 ## 支持平台与发布规则
 
-当前 7 个 server 都支持从源码编译：
+各游戏 crate 仍可单独编译测试；部署时推荐使用统一入口和独立 P2P 服务：
 
 - `landlord`
 - `shenyang_mahjong`
@@ -35,6 +36,7 @@
 - `dominoes`
 - `upgrade`
 - `p2p`
+- `ws_server`（斗地主、沈阳麻将、德州、拖拉机、升级、西洋骨牌、谁是地主、娘娘升级）
 
 平台规则如下：
 
@@ -66,29 +68,25 @@ Windows 用户可在 Git Bash 中执行 `bash ci/prepare-public-build.sh`。
 本地端口与协议 `GameId` 的对应关系固定如下。端口只用于本机/局域网部署，
 客户端 JOIN 仍必须发送表中的 `GameId`；不要因为端口连续就推算游戏编号。
 
-| GameId | 游戏/服务 | 本地 WS 端口 |
+| GameId | 游戏/服务 | 统一服务 |
 | ---: | --- | ---: |
-| 1 | 斗地主 (`landlord`) | 9001 |
-| 2 | 沈阳麻将 (`shenyang_mahjong`) | 9002 |
-| 3、5、6、7 | 德州扑克合集 (`holdem`) | 9003 |
-| 4 | 拖拉机 (`tractor`) | 9004 |
-| 9 | P2P 信令 (`p2p`) | 9005 |
-| 10 | 升级 (`upgrade`) | 9006 |
-| 11 | 西洋骨牌 (`dominoes`) | 9007 |
-| 13 | 娘娘升级 (`niangniang`) | 9012 |
+| 1 | 斗地主 | `ws_server` |
+| 2 | 沈阳麻将 | `ws_server` |
+| 3、5、6、7 | 德州扑克合集 | `ws_server` |
+| 4 | 拖拉机 | `ws_server` |
+| 9 | P2P 信令 | 独立 `p2p` |
+| 10 | 升级 | `ws_server` |
+| 11 | 西洋骨牌 | `ws_server` |
+| 12 | 谁是地主 | `ws_server` |
+| 13 | 娘娘升级 | `ws_server` |
 
 在公版仓库根目录运行：
 
 ```sh
-cargo run --manifest-path rust/landlord/Cargo.toml -- --host 0.0.0.0 --port 9001
-cargo run --manifest-path rust/shenyang_mahjong/Cargo.toml -- --host 0.0.0.0 --port 9002
-cargo run --manifest-path rust/holdem/Cargo.toml -- --host 0.0.0.0 --port 9003
-cargo run --manifest-path rust/tractor/Cargo.toml -- --host 0.0.0.0 --port 9004
+cargo run -p ws_server -- --host 0.0.0.0 --port 9003
 P2P_TURN_SECRET='replace-with-a-long-random-secret' \
 P2P_TURN_PUBLIC_IP='203.0.113.10' \
 cargo run --manifest-path rust/p2p/Cargo.toml -- --host 0.0.0.0 --port 9005
-cargo run --manifest-path rust/upgrade/Cargo.toml -- --host 0.0.0.0 --port 9006
-cargo run --manifest-path rust/dominoes/Cargo.toml -- --host 0.0.0.0 --port 9007
 ```
 
 `p2p` 会在同一 Rust 进程内监听 UDP 3478 提供 STUN/TURN，并使用 UDP
