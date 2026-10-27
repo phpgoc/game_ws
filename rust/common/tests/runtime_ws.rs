@@ -17,9 +17,10 @@ use tokio::{
 };
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use ws_common::{
-    ClientRequest, Delivery, Dispatch, GameHandler, GameSettings, JoinAuthorization,
+    ClientRequest, Delivery, Dispatch, GameHandler, GameRegistry, GameSettings, JoinAuthorization,
     JoinAuthorizationFuture, OutboundPayload, RoomService, RuntimeConfig, SessionId,
-    SharedGameState, run_room_runtime_until_stopped_with_ready, runtime_stop_channel,
+    SharedGameState, run_multi_game_runtime_until_stopped_with_ready,
+    run_room_runtime_until_stopped_with_ready, runtime_stop_channel,
 };
 
 struct RuntimeHandler;
@@ -119,6 +120,33 @@ impl GameHandler for DeniedRuntimeHandler {
 
 struct GameRouteRuntimeHandler;
 
+struct RegistryRuntimeHandler {
+    game_id: GameId,
+}
+
+impl GameHandler for RegistryRuntimeHandler {
+    fn build_game_state(&self) -> Box<dyn ws_common::GameState> {
+        Box::new(SharedGameState::new())
+    }
+
+    fn build_room_settings(&self) -> ws_common::SettingsBuilderResult {
+        (GameSettings::new(1, 4), HashMap::new())
+    }
+
+    fn game_id(&self) -> GameId {
+        self.game_id
+    }
+
+    fn handle_game_request(
+        &mut self,
+        room_service: &mut RoomService,
+        session_id: SessionId,
+        request: ClientRequest,
+    ) -> Dispatch {
+        room_service.error_response(session_id, request.route, WsResponseCode::OK)
+    }
+}
+
 impl GameHandler for GameRouteRuntimeHandler {
     fn build_game_state(&self) -> Box<dyn ws_common::GameState> {
         Box::new(SharedGameState::new())
@@ -216,6 +244,133 @@ async fn wait_for_client_count(stats: &ws_common::RuntimeStats, expected: usize)
         sleep(Duration::from_millis(10)).await;
     }
     assert_eq!(stats.client_count().await, expected);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn multi_game_runtime_binds_joined_game_and_isolates_rooms() {
+    let mut registry = GameRegistry::new();
+    registry
+        .register(RegistryRuntimeHandler {
+            game_id: GameId::LANDLORD,
+        })
+        .expect("register landlord handler");
+    registry
+        .register(RegistryRuntimeHandler {
+            game_id: GameId::SHENYANG_MAHJONG,
+        })
+        .expect("register mahjong handler");
+
+    let (stop, signal) = runtime_stop_channel();
+    let (ready_tx, ready_rx) = sync_channel(1);
+    let server = tokio::spawn(run_multi_game_runtime_until_stopped_with_ready(
+        RuntimeConfig {
+            service_name: "runtime-multi-game-test",
+            listen_addr: "127.0.0.1:0".to_owned(),
+            idle_timeout: Duration::from_secs(2),
+            heartbeat_interval: Duration::from_secs(60),
+        },
+        registry,
+        signal,
+        ready_tx,
+    ));
+    let stats = tokio::task::spawn_blocking(move || {
+        ready_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("runtime reports listen address")
+    })
+    .await
+    .expect("read runtime stats");
+
+    let (mut landlord, _) = connect_async(format!("ws://{}", stats.listen_addr()))
+        .await
+        .expect("connect landlord client");
+    landlord
+        .send(Message::Text(
+            serde_json::json!({
+                "route": Routes::JOIN as i32,
+                "data": {"name": "alice", "password": "shared-room", "game_id": GameId::LANDLORD as i32}
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send landlord join");
+    let landlord_join = timeout(Duration::from_secs(1), async {
+        loop {
+            if let Some(Ok(Message::Text(text))) = landlord.next().await {
+                break text;
+            }
+        }
+    })
+    .await
+    .expect("landlord join response");
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&landlord_join).unwrap()["code"],
+        WsResponseCode::JOINED as i32
+    );
+
+    let (mut mahjong, _) = connect_async(format!("ws://{}", stats.listen_addr()))
+        .await
+        .expect("connect mahjong client");
+    mahjong
+        .send(Message::Text(
+            serde_json::json!({
+                "route": Routes::JOIN as i32,
+                "data": {"name": "bob", "password": "shared-room", "game_id": GameId::SHENYANG_MAHJONG as i32}
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send mahjong join");
+    let mahjong_join = timeout(Duration::from_secs(1), async {
+        loop {
+            if let Some(Ok(Message::Text(text))) = mahjong.next().await {
+                break text;
+            }
+        }
+    })
+    .await
+    .expect("mahjong join response");
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&mahjong_join).unwrap()["code"],
+        WsResponseCode::JOINED as i32
+    );
+    assert_eq!(stats.room_count().await, 2);
+
+    landlord
+        .send(Message::Text(
+            serde_json::json!({
+                "route": Routes::JOIN as i32,
+                "data": {"name": "alice", "password": "shared-room", "game_id": GameId::SHENYANG_MAHJONG as i32}
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send game switch join");
+    let switched = timeout(Duration::from_secs(1), async {
+        loop {
+            if let Some(Ok(Message::Text(text))) = landlord.next().await {
+                break text;
+            }
+        }
+    })
+    .await
+    .expect("game switch response");
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&switched).unwrap()["code"],
+        WsResponseCode::WRONG_GAME as i32
+    );
+
+    landlord.close(None).await.expect("close landlord client");
+    mahjong.close(None).await.expect("close mahjong client");
+    wait_for_client_count(&stats, 0).await;
+    stop.stop();
+    server
+        .await
+        .expect("runtime task joins")
+        .expect("runtime stops");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

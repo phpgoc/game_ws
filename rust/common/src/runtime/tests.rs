@@ -208,7 +208,7 @@ async fn delayed_cleanup_helper_removes_an_abandoned_room_after_its_deadline() {
 #[tokio::test]
 async fn runtime_stats_expose_empty_room_and_takeover_state() {
     let stats = RuntimeStats {
-        room_service: Arc::new(Mutex::new(RoomService::default())),
+        room_services: vec![Arc::new(Mutex::new(RoomService::default()))],
         senders: Arc::new(Mutex::new(HashMap::new())),
         listen_addr: "127.0.0.1:12345".parse().expect("parse test address"),
     };

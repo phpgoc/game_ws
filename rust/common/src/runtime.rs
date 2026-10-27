@@ -43,12 +43,11 @@ const INBOUND_MESSAGES_PER_SECOND: f64 = 30.0;
 const INBOUND_MESSAGE_BURST: f64 = 60.0;
 const LAST_HUMAN_DISCONNECT_GRACE: Duration = Duration::from_secs(30);
 
-struct ConnectionContext<H> {
+struct ConnectionContext {
     idle_timeout: Duration,
     heartbeat_interval: Duration,
     senders: SessionSenders,
-    room_service: Arc<Mutex<RoomService>>,
-    game_handler: Arc<Mutex<H>>,
+    registry: Arc<GameRegistry>,
     stop_signal: StopSignal,
     connection_permit: OwnedSemaphorePermit,
 }
@@ -141,6 +140,96 @@ pub trait GameHandler: Send + 'static {
     }
 }
 
+struct GameSlot {
+    handler: Arc<Mutex<Box<dyn GameHandler>>>,
+    room_service: Arc<Mutex<RoomService>>,
+}
+
+/// 按 JOIN 中的 GameId 将连接分发到各自游戏运行时的注册表。
+#[derive(Default)]
+pub struct GameRegistry {
+    slots_by_game_id: HashMap<i32, Arc<GameSlot>>,
+    slots: Vec<Arc<GameSlot>>,
+    allow_unbound_single_game_requests: bool,
+}
+
+impl GameRegistry {
+    /// 创建空注册表。
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 注册游戏处理器，并为其接受的所有 GameId 创建独立房间服务。
+    pub fn register<H>(&mut self, handler: H) -> anyhow::Result<()>
+    where
+        H: GameHandler,
+    {
+        const GAME_IDS: [share_type_public::GameId; 13] = [
+            share_type_public::GameId::ALL,
+            share_type_public::GameId::LANDLORD,
+            share_type_public::GameId::SHENYANG_MAHJONG,
+            share_type_public::GameId::TEXAS_HOLD_EM,
+            share_type_public::GameId::TRACTOR,
+            share_type_public::GameId::OPEN_HOLD_EM,
+            share_type_public::GameId::SHORT_DECK_HOLD_EM,
+            share_type_public::GameId::OMAHA_HOLD_EM,
+            share_type_public::GameId::P2P,
+            share_type_public::GameId::UPGRADE,
+            share_type_public::GameId::DOMINOES,
+            share_type_public::GameId::WHO_IS_LANDLORD,
+            share_type_public::GameId::NIANGNIANG,
+        ];
+
+        let accepted_ids = GAME_IDS
+            .into_iter()
+            .filter(|game_id| handler.accepts_game_id(*game_id))
+            .collect::<Vec<_>>();
+        anyhow::ensure!(
+            !accepted_ids.is_empty(),
+            "game handler accepts no registered GameId"
+        );
+        for game_id in &accepted_ids {
+            anyhow::ensure!(
+                !self.slots_by_game_id.contains_key(&i32::from(*game_id)),
+                "GameId {game_id:?} is already registered"
+            );
+        }
+
+        let room_service = Arc::new(Mutex::new(RoomService::with_ai_players_enabled(
+            handler.supports_ai_players(),
+        )));
+        let handler: Arc<Mutex<Box<dyn GameHandler>>> = Arc::new(Mutex::new(Box::new(handler)));
+        let slot = Arc::new(GameSlot {
+            handler: Arc::clone(&handler),
+            room_service: Arc::clone(&room_service),
+        });
+        for game_id in accepted_ids {
+            self.slots_by_game_id
+                .insert(i32::from(game_id), Arc::clone(&slot));
+        }
+        self.slots.push(Arc::clone(&slot));
+
+        Ok(())
+    }
+
+    async fn set_context(&self, senders: SessionSenders) {
+        for slot in &self.slots {
+            slot.handler
+                .lock()
+                .await
+                .set_context(Arc::clone(&senders), Arc::clone(&slot.room_service));
+        }
+    }
+
+    fn slot_for_game_id(&self, game_id: share_type_public::GameId) -> Option<Arc<GameSlot>> {
+        self.slots_by_game_id.get(&i32::from(game_id)).cloned()
+    }
+
+    fn first_slot(&self) -> Option<Arc<GameSlot>> {
+        self.slots.first().cloned()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct RuntimeConfig {
     pub service_name: &'static str,
@@ -151,7 +240,7 @@ pub struct RuntimeConfig {
 
 #[derive(Clone)]
 pub struct RuntimeStats {
-    room_service: Arc<Mutex<RoomService>>,
+    room_services: Vec<Arc<Mutex<RoomService>>>,
     senders: SessionSenders,
     listen_addr: SocketAddr,
 }
@@ -248,21 +337,17 @@ async fn cleanup_abandoned_room_after(
     }
 }
 
-async fn handle_connection<H>(
+async fn handle_connection(
     stream: TcpStream,
     peer: SocketAddr,
     session_id: SessionId,
-    context: ConnectionContext<H>,
-) -> anyhow::Result<()>
-where
-    H: GameHandler,
-{
+    context: ConnectionContext,
+) -> anyhow::Result<()> {
     let ConnectionContext {
         idle_timeout,
         heartbeat_interval,
         senders,
-        room_service,
-        game_handler,
+        registry,
         mut stop_signal,
         connection_permit: _connection_permit,
     } = context;
@@ -279,7 +364,6 @@ where
         .lock()
         .await
         .insert(session_id, session_sender.clone());
-    room_service.lock().await.connect(session_id);
 
     let writer = tokio::spawn(async move {
         while let Some(frame) = rx.recv().await {
@@ -298,6 +382,16 @@ where
         }
     });
     let mut rate_limiter = MessageRateLimiter::new();
+    let mut bound_slot = if registry.allow_unbound_single_game_requests {
+        let slot = registry
+            .first_slot()
+            .expect("game registry must contain at least one handler");
+        slot.room_service.lock().await.connect(session_id);
+        Some(slot)
+    } else {
+        None
+    };
+    let mut bound_game_id: Option<share_type_public::GameId> = None;
 
     loop {
         let frame = tokio::select! {
@@ -358,10 +452,6 @@ where
             }
         };
 
-        game_handler
-            .lock()
-            .await
-            .normalize_common_request(&mut request);
         let request_route = request.route;
         let request_data = request.data.clone();
 
@@ -371,8 +461,63 @@ where
                     .ok()
             })
             .flatten();
+        let selected_slot = if request.route == share_type_public::Routes::JOIN as i32 {
+            parsed_join
+                .as_ref()
+                .and_then(|join| registry.slot_for_game_id(join.game_id))
+                .or_else(|| bound_slot.clone())
+        } else {
+            bound_slot.clone().or_else(|| {
+                registry
+                    .allow_unbound_single_game_requests
+                    .then(|| registry.first_slot())
+                    .flatten()
+            })
+        };
+
+        let Some(slot) = selected_slot else {
+            let fallback = registry
+                .first_slot()
+                .expect("game registry must contain at least one handler");
+            let code = if request.route == share_type_public::Routes::JOIN as i32
+                && parsed_join.is_some()
+            {
+                share_type_public::WsResponseCode::WRONG_GAME
+            } else {
+                share_type_public::WsResponseCode::NOT_LOGIN
+            };
+            let dispatch =
+                fallback
+                    .room_service
+                    .lock()
+                    .await
+                    .error_response(session_id, request.route, code);
+            let mut dispatch = dispatch;
+            annotate_request_id(&mut dispatch, session_id, request_route, &request_data);
+            deliver(dispatch, &senders).await?;
+            continue;
+        };
+
+        if let Some(join) = parsed_join.as_ref()
+            && let Some(previous_game_id) = bound_game_id
+            && previous_game_id != join.game_id
+        {
+            let mut dispatch = slot.room_service.lock().await.error_response(
+                session_id,
+                request.route,
+                share_type_public::WsResponseCode::WRONG_GAME,
+            );
+            annotate_request_id(&mut dispatch, session_id, request_route, &request_data);
+            deliver(dispatch, &senders).await?;
+            continue;
+        }
+
+        slot.handler
+            .lock()
+            .await
+            .normalize_common_request(&mut request);
         let valid_join = if let Some(join) = parsed_join.as_ref() {
-            let handler = game_handler.lock().await;
+            let handler = slot.handler.lock().await;
             !join.name.is_empty()
                 && !join.password.is_empty()
                 && handler.accepts_game_id(join.game_id)
@@ -382,17 +527,25 @@ where
         let join_authorization = if valid_join {
             let join = parsed_join.as_ref().expect("membership join parsed");
             // 授权 future 不借用 handler；数据库/缓存查询期间释放全服处理器锁。
-            let authorization = game_handler.lock().await.authorize_join(join);
+            let authorization = slot.handler.lock().await.authorize_join(join);
             Some(authorization.await)
         } else {
             None
         };
 
+        let provisional_slot =
+            if request.route == share_type_public::Routes::JOIN as i32 && bound_slot.is_none() {
+                slot.room_service.lock().await.connect(session_id);
+                Some(Arc::clone(&slot))
+            } else {
+                None
+            };
+
         // 房间状态与由它生成的消息按同一顺序提交。这里只写有界发送队列，
         // 不等待网络；后台游戏循环也须持有房间锁直到消息全部入队。
-        let mut room = room_service.lock().await;
+        let mut room = slot.room_service.lock().await;
         let dispatch = {
-            let mut handler = game_handler.lock().await;
+            let mut handler = slot.handler.lock().await;
             let creates_room_on_join = parsed_join
                 .as_ref()
                 .is_some_and(|join| !room.room_exists(&join.password));
@@ -452,24 +605,51 @@ where
             }
         };
 
+        let joined_room = request_route == share_type_public::Routes::JOIN as i32
+            && room.room_key_of(session_id).is_some();
         let mut dispatch = dispatch;
         annotate_request_id(&mut dispatch, session_id, request_route, &request_data);
         deliver(dispatch, &senders).await?;
         drop(room);
+
+        if joined_room && bound_slot.is_none() {
+            bound_slot = Some(Arc::clone(&slot));
+            bound_game_id = parsed_join.as_ref().map(|join| join.game_id);
+        } else if provisional_slot.is_some() && !joined_room {
+            let provisional = provisional_slot.expect("checked above");
+            let (cleanup_dispatch, cleanup) = provisional
+                .room_service
+                .lock()
+                .await
+                .disconnect_with_cleanup_grace(session_id);
+            deliver(cleanup_dispatch, &senders).await?;
+            if let Some(cleanup) = cleanup {
+                tokio::spawn(cleanup_abandoned_room_after(
+                    Arc::clone(&provisional.room_service),
+                    Arc::clone(&senders),
+                    cleanup,
+                    LAST_HUMAN_DISCONNECT_GRACE,
+                ));
+            }
+        }
     }
 
-    let mut room = room_service.lock().await;
-    let (disconnect_dispatch, cleanup) = room.disconnect_with_cleanup_grace(session_id);
-    senders.lock().await.remove(&session_id);
-    deliver(disconnect_dispatch, &senders).await?;
-    drop(room);
-    if let Some(cleanup) = cleanup {
-        tokio::spawn(cleanup_abandoned_room_after(
-            Arc::clone(&room_service),
-            Arc::clone(&senders),
-            cleanup,
-            LAST_HUMAN_DISCONNECT_GRACE,
-        ));
+    if let Some(slot) = bound_slot {
+        let mut room = slot.room_service.lock().await;
+        let (disconnect_dispatch, cleanup) = room.disconnect_with_cleanup_grace(session_id);
+        senders.lock().await.remove(&session_id);
+        deliver(disconnect_dispatch, &senders).await?;
+        drop(room);
+        if let Some(cleanup) = cleanup {
+            tokio::spawn(cleanup_abandoned_room_after(
+                Arc::clone(&slot.room_service),
+                Arc::clone(&senders),
+                cleanup,
+                LAST_HUMAN_DISCONNECT_GRACE,
+            ));
+        }
+    } else {
+        senders.lock().await.remove(&session_id);
     }
     heartbeat.abort();
     writer.abort();
@@ -590,48 +770,74 @@ pub async fn run_room_runtime_until_stopped<H>(
 where
     H: GameHandler,
 {
-    run_room_runtime_until_stopped_inner(config, handler, stop_signal, None).await
+    let mut registry = GameRegistry::new();
+    registry.register(handler)?;
+    registry.allow_unbound_single_game_requests = true;
+    run_game_registry_runtime_until_stopped_inner(config, registry, stop_signal, None).await
 }
 
-async fn run_room_runtime_until_stopped_inner<H>(
+/// 运行注册表中的多个游戏，共用 WebSocket 监听端口。
+pub async fn run_multi_game_runtime(
     config: RuntimeConfig,
-    handler: H,
+    registry: GameRegistry,
+) -> anyhow::Result<()> {
+    let (_stop_handle, stop_signal) = runtime_stop_channel();
+    run_multi_game_runtime_until_stopped(config, registry, stop_signal)
+        .await
+        .map(|_| ())
+}
+
+/// 运行多游戏房间服务，并在停止后返回聚合统计。
+pub async fn run_multi_game_runtime_until_stopped(
+    config: RuntimeConfig,
+    registry: GameRegistry,
+    stop_signal: StopSignal,
+) -> anyhow::Result<RuntimeStats> {
+    run_game_registry_runtime_until_stopped_inner(config, registry, stop_signal, None).await
+}
+
+/// 多游戏运行时在监听就绪后报告统计句柄，供集成测试使用。
+pub async fn run_multi_game_runtime_until_stopped_with_ready(
+    config: RuntimeConfig,
+    registry: GameRegistry,
+    stop_signal: StopSignal,
+    ready: SyncSender<RuntimeStats>,
+) -> anyhow::Result<RuntimeStats> {
+    run_game_registry_runtime_until_stopped_inner(config, registry, stop_signal, Some(ready)).await
+}
+
+async fn run_game_registry_runtime_until_stopped_inner(
+    config: RuntimeConfig,
+    registry: GameRegistry,
     mut stop_signal: StopSignal,
     ready: Option<SyncSender<RuntimeStats>>,
-) -> anyhow::Result<RuntimeStats>
-where
-    H: GameHandler,
-{
+) -> anyhow::Result<RuntimeStats> {
+    anyhow::ensure!(!registry.slots.is_empty(), "game registry is empty");
     let listener = TcpListener::bind(&config.listen_addr)
         .await
         .with_context(|| format!("bind {} failed", config.listen_addr))?;
     let listen_addr = listener
         .local_addr()
         .context("read websocket listen address")?;
-    let ai_players_enabled = handler.supports_ai_players();
     debug!(
         service = config.service_name,
         listen = %format!(" ws://{listen_addr}"),
-        ai_players_enabled,
+        registered_games = registry.slots_by_game_id.len(),
         "ws server started"
     );
 
     let senders: SessionSenders = Arc::new(Mutex::new(HashMap::new()));
-    let room_service = Arc::new(Mutex::new(RoomService::with_ai_players_enabled(
-        ai_players_enabled,
-    )));
+    registry.set_context(Arc::clone(&senders)).await;
     let stats = RuntimeStats {
-        room_service: Arc::clone(&room_service),
+        room_services: registry
+            .slots
+            .iter()
+            .map(|slot| Arc::clone(&slot.room_service))
+            .collect(),
         senders: Arc::clone(&senders),
         listen_addr,
     };
-    let game_handler = Arc::new(Mutex::new(handler));
-
-    // Set context for game-specific initialization
-    {
-        let mut h = game_handler.lock().await;
-        h.set_context(Arc::clone(&senders), Arc::clone(&room_service));
-    }
+    let registry = Arc::new(registry);
 
     if let Some(ready) = ready {
         let _ = ready.send(stats.clone());
@@ -660,8 +866,7 @@ where
             idle_timeout: config.idle_timeout,
             heartbeat_interval: config.heartbeat_interval,
             senders: Arc::clone(&senders),
-            room_service: Arc::clone(&room_service),
-            game_handler: Arc::clone(&game_handler),
+            registry: Arc::clone(&registry),
             stop_signal: stop_signal.clone(),
             connection_permit,
         };
@@ -695,7 +900,10 @@ pub async fn run_room_runtime_until_stopped_with_ready<H>(
 where
     H: GameHandler,
 {
-    run_room_runtime_until_stopped_inner(config, handler, stop_signal, Some(ready)).await
+    let mut registry = GameRegistry::new();
+    registry.register(handler)?;
+    registry.allow_unbound_single_game_requests = true;
+    run_game_registry_runtime_until_stopped_inner(config, registry, stop_signal, Some(ready)).await
 }
 
 /// 创建一对运行时停止控制器和等待信号。
@@ -717,15 +925,25 @@ impl RuntimeStats {
 
     /// 异步统计当前房间数量。
     pub async fn room_count(&self) -> usize {
-        self.room_service.lock().await.room_count()
+        let mut total = 0;
+        for room_service in &self.room_services {
+            total += room_service.lock().await.room_count();
+        }
+        total
     }
 
     /// 判断某房间指定座位是否正由 AI 临时接管。
     pub async fn room_position_is_ai_takeover(&self, room_key: &str, position: usize) -> bool {
-        self.room_service
-            .lock()
-            .await
-            .room_position_is_ai_takeover(room_key, position)
+        for room_service in &self.room_services {
+            if room_service
+                .lock()
+                .await
+                .room_position_is_ai_takeover(room_key, position)
+            {
+                return true;
+            }
+        }
+        false
     }
 }
 
