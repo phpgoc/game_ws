@@ -339,6 +339,72 @@ async fn runtime_keeps_a_room_for_rejoin_after_the_last_client_disconnects() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn runtime_rejects_join_without_game_id_without_creating_a_room() {
+    let (stop, signal) = runtime_stop_channel();
+    let (ready_tx, ready_rx) = sync_channel(1);
+    let server = tokio::spawn(run_room_runtime_until_stopped_with_ready(
+        RuntimeConfig {
+            service_name: "runtime-missing-game-id-test",
+            listen_addr: "127.0.0.1:0".to_owned(),
+            idle_timeout: Duration::from_secs(2),
+            heartbeat_interval: Duration::from_secs(60),
+        },
+        RuntimeHandler,
+        signal,
+        ready_tx,
+    ));
+    let stats = tokio::task::spawn_blocking(move || {
+        ready_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("runtime reports listen address")
+    })
+    .await
+    .expect("read runtime stats");
+    let (mut client, _) = connect_async(format!("ws://{}", stats.listen_addr()))
+        .await
+        .expect("connect websocket client");
+    client
+        .send(Message::Text(
+            serde_json::json!({
+                "route": Routes::JOIN as i32,
+                "data": {"name": "owner", "password": "missing-game-id"}
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send join without game_id");
+
+    let response = timeout(Duration::from_secs(1), async {
+        loop {
+            match client
+                .next()
+                .await
+                .expect("websocket frame")
+                .expect("frame valid")
+            {
+                Message::Text(text) => break text,
+                Message::Pong(_) | Message::Ping(_) => continue,
+                frame => panic!("unexpected join response frame: {frame:?}"),
+            }
+        }
+    })
+    .await
+    .expect("join error response arrives");
+    let response: serde_json::Value = serde_json::from_str(&response).expect("response json");
+    assert_eq!(response["route"], Routes::JOIN as i32);
+    assert_eq!(response["code"], WsResponseCode::ERROR_FORMAT as i32);
+    assert_eq!(stats.room_count().await, 0);
+
+    client.close(None).await.expect("close client");
+    stop.stop();
+    server
+        .await
+        .expect("runtime task joins")
+        .expect("runtime stops");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn runtime_applies_join_authorization_before_creating_a_room() {
     let (stop, signal) = runtime_stop_channel();
     let (ready_tx, ready_rx) = sync_channel(1);

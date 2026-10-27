@@ -37,7 +37,6 @@ pub struct WsJoinRequest {
     pub request_id: Option<String>,
     pub name: String,
     pub password: String,
-    #[serde(default)]
     pub game_id: GameId,
     /// 官方服登录 session id。非官方服、Android 本地服可以不传。
     #[serde(default)]
