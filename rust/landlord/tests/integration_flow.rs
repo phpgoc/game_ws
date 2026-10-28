@@ -330,8 +330,10 @@ async fn landlord_ai_seats_call_and_play_without_becoming_away() {
         if code == Some(WsCode::PLAY as i64) && value["data"]["name"] != json!("owner") {
             assert!(saw_ai_turn);
             assert!(value["data"]["cards"].is_array());
+            // 包含首次模型加载及运行时调度；仍须明显短于 30 秒真人倒计时。
+            // 模型延迟分位数由显式多房间性能基准验证。
             assert!(
-                started_waiting.elapsed() < Duration::from_secs(2),
+                started_waiting.elapsed() < Duration::from_secs(8),
                 "AI action waited too long: {:?}",
                 started_waiting.elapsed()
             );
