@@ -42,8 +42,14 @@ impl GameHandler for TestAiLandlordHandler {
             .after_common_request(room_service, session_id, request, dispatch);
     }
 
-    fn authorize_join(&self, _join: &share_type_public::WsJoinRequest) -> JoinAuthorizationFuture {
-        Box::pin(async { JoinAuthorization::ALLOW_NONMEMBER })
+    fn authorize_join(&self, join: &share_type_public::WsJoinRequest) -> JoinAuthorizationFuture {
+        let has_active_membership = join.name == "owner";
+        Box::pin(async move {
+            JoinAuthorization {
+                can_create_room: true,
+                has_active_membership,
+            }
+        })
     }
 
     fn supports_ai_players(&self) -> bool {

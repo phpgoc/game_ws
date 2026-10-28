@@ -22,8 +22,27 @@ use ws_common::{
 type Client = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 #[cfg(feature = "official")]
-#[derive(Default)]
-struct TestAiShenyangMahjongHandler(ShenyangMahjongGameHandler);
+struct TestAiShenyangMahjongHandler {
+    game: ShenyangMahjongGameHandler,
+    members: &'static [&'static str],
+}
+
+#[cfg(feature = "official")]
+impl Default for TestAiShenyangMahjongHandler {
+    fn default() -> Self {
+        Self::with_members(&["owner"])
+    }
+}
+
+#[cfg(feature = "official")]
+impl TestAiShenyangMahjongHandler {
+    fn with_members(members: &'static [&'static str]) -> Self {
+        Self {
+            game: ShenyangMahjongGameHandler::default(),
+            members,
+        }
+    }
+}
 
 #[cfg(feature = "official")]
 impl GameHandler for TestAiShenyangMahjongHandler {
@@ -34,24 +53,30 @@ impl GameHandler for TestAiShenyangMahjongHandler {
         request: &ClientRequest,
         dispatch: &mut Dispatch,
     ) {
-        self.0
+        self.game
             .after_common_request(room_service, session_id, request, dispatch);
     }
 
-    fn authorize_join(&self, _join: &share_type_public::WsJoinRequest) -> JoinAuthorizationFuture {
-        Box::pin(async { JoinAuthorization::ALLOW_NONMEMBER })
+    fn authorize_join(&self, join: &share_type_public::WsJoinRequest) -> JoinAuthorizationFuture {
+        let has_active_membership = self.members.contains(&join.name.as_str());
+        Box::pin(async move {
+            JoinAuthorization {
+                can_create_room: true,
+                has_active_membership,
+            }
+        })
     }
 
     fn supports_ai_players(&self) -> bool {
-        self.0.supports_ai_players()
+        self.game.supports_ai_players()
     }
 
     fn build_game_state(&self) -> Box<dyn GameState> {
-        self.0.build_game_state()
+        self.game.build_game_state()
     }
 
     fn build_room_settings(&self) -> SettingsBuilderResult {
-        let (mut settings, mut descriptions) = self.0.build_room_settings();
+        let (mut settings, mut descriptions) = self.game.build_room_settings();
         for (key, default, min, max) in [
             ("play_time", 20, 5, 50),
             ("claim_time", 5, 3, 15),
@@ -67,7 +92,7 @@ impl GameHandler for TestAiShenyangMahjongHandler {
     }
 
     fn game_id(&self) -> GameId {
-        self.0.game_id()
+        self.game.game_id()
     }
 
     fn handle_game_request(
@@ -76,7 +101,7 @@ impl GameHandler for TestAiShenyangMahjongHandler {
         session_id: SessionId,
         request: ClientRequest,
     ) -> Dispatch {
-        self.0
+        self.game
             .handle_game_request(room_service, session_id, request)
     }
 
@@ -85,7 +110,7 @@ impl GameHandler for TestAiShenyangMahjongHandler {
         senders: SessionSenders,
         room_service: std::sync::Arc<tokio::sync::Mutex<RoomService>>,
     ) {
-        self.0.set_context(senders, room_service);
+        self.game.set_context(senders, room_service);
     }
 }
 
@@ -684,18 +709,18 @@ async fn shenyang_mahjong_last_human_quit_clears_ai_room() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[cfg(feature = "official")]
-async fn shenyang_mahjong_nonofficial_away_owner_uses_timeout_fallback() {
+async fn shenyang_mahjong_nonmember_away_guest_uses_timeout_fallback() {
     let (url, server) = start_test_server_with_handler(
         "shenyang-mahjong-away-test",
         TestAiShenyangMahjongHandler::default(),
     )
     .await;
 
+    let mut guest = connect_client(&url).await;
     let mut owner = connect_client(&url).await;
-    let mut watcher = connect_client(&url).await;
     let room = "shenyang-mahjong-away-room";
     join(&mut owner, "owner", room).await;
-    join(&mut watcher, "watcher", room).await;
+    join(&mut guest, "guest", room).await;
 
     send_request(&mut owner, Routes::ADD_AI as i32, json!({ "count": 2 })).await;
     for _ in 0..2 {
@@ -739,43 +764,44 @@ async fn shenyang_mahjong_nonofficial_away_owner_uses_timeout_fallback() {
             && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
     })
     .await;
-    recv_until(&mut owner, "mahjong deal", |value| {
+    recv_until(&mut guest, "mahjong deal", |value| {
         value.get("code").and_then(Value::as_i64) == Some(WsCode::DEAL as i64)
     })
     .await;
 
-    send_request(&mut owner, Routes::AWAY as i32, json!({})).await;
+    send_request(&mut guest, Routes::AWAY as i32, json!({})).await;
     let away_started = Instant::now();
-    let away_event = recv_until(&mut owner, "owner away event", |value| {
+    let away_event = recv_until(&mut guest, "guest away event", |value| {
         value.get("code").and_then(Value::as_i64) == Some(WsCode::AWAY as i64)
     })
     .await;
-    assert_eq!(away_event["data"]["position"], json!(0));
+    assert_eq!(away_event["data"]["position"], json!(1));
+    assert_eq!(away_event["data"]["is_ai_takeover"], json!(false));
 
-    close_client(&mut watcher).await;
+    close_client(&mut owner).await;
     tokio::time::sleep(Duration::from_millis(100)).await;
-    let mut watcher = connect_client(&url).await;
-    join(&mut watcher, "watcher", room).await;
-    let away_snapshot = recv_until(&mut watcher, "away table snapshot", |value| {
+    let mut owner = connect_client(&url).await;
+    join(&mut owner, "owner", room).await;
+    let away_snapshot = recv_until(&mut owner, "away table snapshot", |value| {
         value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
     })
     .await;
-    let owner_snapshot = away_snapshot["data"]["players"]
+    let guest_snapshot = away_snapshot["data"]["players"]
         .as_array()
         .expect("snapshot players")
         .iter()
-        .find(|player| player["position"] == json!(0))
-        .expect("owner snapshot");
-    assert_eq!(owner_snapshot["away"], json!(true));
-    assert_eq!(owner_snapshot["is_ai"], json!(false));
+        .find(|player| player["position"] == json!(1))
+        .expect("guest snapshot");
+    assert_eq!(guest_snapshot["away"], json!(true));
+    assert_eq!(guest_snapshot["is_ai"], json!(false));
 
-    let owner_timeout_play = recv_until(&mut owner, "away owner timeout play", |value| {
+    let guest_timeout_play = recv_until(&mut guest, "away guest timeout play", |value| {
         value.get("code").and_then(Value::as_i64) == Some(WsCode::PLAY as i64)
             && value
                 .get("data")
                 .and_then(|data| data.get("position"))
                 .and_then(Value::as_i64)
-                == Some(0)
+                == Some(1)
             && value
                 .get("data")
                 .and_then(|data| data.get("action"))
@@ -783,7 +809,7 @@ async fn shenyang_mahjong_nonofficial_away_owner_uses_timeout_fallback() {
                 == Some(2)
     })
     .await;
-    assert_eq!(owner_timeout_play["data"]["name"], json!("owner"));
+    assert_eq!(guest_timeout_play["data"]["name"], json!("guest"));
     assert!(away_started.elapsed() >= Duration::from_millis(750));
 
     server.abort();
@@ -791,18 +817,18 @@ async fn shenyang_mahjong_nonofficial_away_owner_uses_timeout_fallback() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[cfg(feature = "official")]
-async fn shenyang_mahjong_nonofficial_disconnected_owner_uses_timeout_fallback() {
+async fn shenyang_mahjong_nonmember_disconnected_guest_uses_timeout_fallback() {
     let (url, server) = start_test_server_with_handler(
         "shenyang-mahjong-disconnected-test",
         TestAiShenyangMahjongHandler::default(),
     )
     .await;
 
+    let mut guest = connect_client(&url).await;
     let mut owner = connect_client(&url).await;
-    let mut watcher = connect_client(&url).await;
     let room = "shenyang-mahjong-disconnected-room";
     join(&mut owner, "owner", room).await;
-    join(&mut watcher, "watcher", room).await;
+    join(&mut guest, "guest", room).await;
 
     send_request(&mut owner, Routes::ADD_AI as i32, json!({ "count": 2 })).await;
     for _ in 0..2 {
@@ -846,20 +872,20 @@ async fn shenyang_mahjong_nonofficial_disconnected_owner_uses_timeout_fallback()
             && value.get("code").and_then(Value::as_i64) == Some(WsResponseCode::OK as i64)
     })
     .await;
-    recv_until(&mut owner, "mahjong deal", |value| {
+    recv_until(&mut guest, "mahjong deal", |value| {
         value.get("code").and_then(Value::as_i64) == Some(WsCode::DEAL as i64)
     })
     .await;
 
     let disconnected_started = Instant::now();
-    close_client(&mut owner).await;
-    let inactive_owner = recv_until(&mut watcher, "owner inactive event", |value| {
+    close_client(&mut guest).await;
+    let inactive_guest = recv_until(&mut owner, "guest inactive event", |value| {
         value.get("code").and_then(Value::as_i64) == Some(WsCode::JOIN as i64)
             && value
                 .get("data")
                 .and_then(|data| data.get("position"))
                 .and_then(Value::as_i64)
-                == Some(0)
+                == Some(1)
             && value
                 .get("data")
                 .and_then(|data| data.get("is_active"))
@@ -867,16 +893,17 @@ async fn shenyang_mahjong_nonofficial_disconnected_owner_uses_timeout_fallback()
                 == Some(false)
     })
     .await;
-    assert_eq!(inactive_owner["data"]["name"], json!("owner"));
+    assert_eq!(inactive_guest["data"]["name"], json!("guest"));
+    assert_eq!(inactive_guest["data"]["is_ai_takeover"], json!(false));
 
-    let disconnected_owner_timeout_play =
-        recv_until(&mut watcher, "disconnected owner timeout play", |value| {
+    let disconnected_guest_timeout_play =
+        recv_until(&mut owner, "disconnected guest timeout play", |value| {
             value.get("code").and_then(Value::as_i64) == Some(WsCode::PLAY as i64)
                 && value
                     .get("data")
                     .and_then(|data| data.get("position"))
                     .and_then(Value::as_i64)
-                    == Some(0)
+                    == Some(1)
                 && value
                     .get("data")
                     .and_then(|data| data.get("action"))
@@ -885,8 +912,8 @@ async fn shenyang_mahjong_nonofficial_disconnected_owner_uses_timeout_fallback()
         })
         .await;
     assert_eq!(
-        disconnected_owner_timeout_play["data"]["name"],
-        json!("owner")
+        disconnected_guest_timeout_play["data"]["name"],
+        json!("guest")
     );
     assert!(disconnected_started.elapsed() >= Duration::from_millis(750));
 
@@ -1007,24 +1034,35 @@ async fn shenyang_mahjong_owner_can_start_with_ai_and_receive_ai_play() {
 
     close_client(&mut owner).await;
     tokio::time::sleep(Duration::from_millis(100)).await;
+    let mut replacement = connect_client(&url).await;
+    send_request(
+        &mut replacement,
+        Routes::JOIN as i32,
+        json!({
+            "name": "replacement",
+            "password": room,
+            "game_id": GameId::SHENYANG_MAHJONG as i32,
+        }),
+    )
+    .await;
+    let denied = recv_until(&mut replacement, "owner seat is reserved", |value| {
+        value["route"] == json!(Routes::JOIN as i32)
+    })
+    .await;
+    assert_eq!(denied["code"], json!(WsResponseCode::NO_PERMISSION as i32));
+    close_client(&mut replacement).await;
+
     let mut owner = connect_client(&url).await;
-    let replacement_response = join(&mut owner, "replacement", room).await;
-    assert_eq!(replacement_response["data"]["self_position"], json!(0));
-    assert!(
-        replacement_response["data"]["existing_members"]
-            .as_array()
-            .expect("replacement existing members")
-            .iter()
-            .all(|member| member["name"] != json!("owner"))
-    );
-    let replacement_snapshot = recv_until(&mut owner, "replacement table snapshot", |value| {
+    let rejoined = join(&mut owner, "owner", room).await;
+    assert_eq!(rejoined["data"]["self_position"], json!(0));
+    let resumed_snapshot = recv_until(&mut owner, "owner resumes table", |value| {
         value.get("code").and_then(Value::as_i64) == Some(WsCode::TABLE_SNAPSHOT as i64)
     })
     .await;
-    assert_eq!(my_tiles(&replacement_snapshot), owner_tiles);
-    assert_eq!(replacement_snapshot["data"]["current_position"], json!(0));
+    assert_eq!(my_tiles(&resumed_snapshot), owner_tiles);
+    assert_eq!(resumed_snapshot["data"]["current_position"], json!(0));
 
-    let last_drawn_tile = replacement_snapshot["data"]["last_drawn_tile"]
+    let last_drawn_tile = resumed_snapshot["data"]["last_drawn_tile"]
         .as_i64()
         .expect("last drawn tile") as i32;
     assert!(owner_tiles.contains(&last_drawn_tile));

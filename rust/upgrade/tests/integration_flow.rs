@@ -39,7 +39,12 @@ impl GameHandler for TestUpgradeHandler {
     }
 
     fn authorize_join(&self, _join: &share_type_public::WsJoinRequest) -> JoinAuthorizationFuture {
-        Box::pin(async { JoinAuthorization::ALLOW_NONMEMBER })
+        Box::pin(async {
+            JoinAuthorization {
+                can_create_room: true,
+                has_active_membership: cfg!(feature = "official"),
+            }
+        })
     }
 
     fn build_game_state(&self) -> Box<dyn GameState> {
@@ -866,7 +871,7 @@ async fn upgrade_server_accepts_only_its_own_game_id() {
     let runtime = start_test_runtime(
         "upgrade-integration-test",
         Duration::from_secs(30),
-        UpgradeGameHandler::default(),
+        TestUpgradeHandler::default(),
     )
     .await;
     let url = runtime.url.clone();
@@ -1180,7 +1185,7 @@ async fn four_players_can_deal_bury_and_play_first_round() {
     let runtime = start_test_runtime(
         "upgrade-round-integration-test",
         Duration::from_secs(30),
-        UpgradeGameHandler::default(),
+        TestUpgradeHandler::default(),
     )
     .await;
     let url = runtime.url.clone();
@@ -2063,6 +2068,13 @@ async fn upgrade_ws_rejoin_preserves_running_bury_state() {
         .collect::<Vec<_>>();
     assert_eq!(bottom_cards.len(), 10);
 
+    // 暂停后重连，避免官方会员掉线后的自动操作抢先改变待恢复手牌。
+    send_request(&mut *clients[0], Routes::PAUSE as i32, Value::Null).await;
+    assert_eq!(
+        wait_for_response(&mut *clients[0], Routes::PAUSE as i32).await["code"],
+        json!(WsResponseCode::OK as i32)
+    );
+
     // Reconnect while the single combined select/bury window is still open.
     // The replacement must recover the same seat and the exact authoritative
     // hand rather than starting a new room or receiving a fresh position.
@@ -2076,6 +2088,7 @@ async fn upgrade_ws_rejoin_preserves_running_bury_state() {
     let dealer_name = format!("rejoin-player-{dealer_position}");
     let joined = join_as(&mut rejoined, GameId::UPGRADE, room, &dealer_name).await;
     assert_eq!(joined["data"]["self_position"], json!(dealer_position));
+    assert_eq!(joined["data"]["paused"], json!(true));
     let hand_update = wait_for_event(&mut rejoined, UpgradeWsCode::HAND_UPDATED as i32).await;
     let restored_hand = hand_update["data"]["cards"]
         .as_array()
@@ -2094,9 +2107,22 @@ async fn upgrade_ws_rejoin_preserves_running_bury_state() {
     assert!(
         snapshot["data"]["turn_countdown"]
             .as_i64()
-            .is_some_and(|countdown| (1..=8).contains(&countdown)),
-        "rejoin must preserve the elapsed bury countdown: {snapshot}"
+            .is_some_and(|countdown| (1..=9).contains(&countdown)),
+        "rejoin must preserve the paused bury countdown: {snapshot}"
     );
+
+    {
+        let owner = if dealer_position == 0 {
+            &mut rejoined
+        } else {
+            &mut *clients[0]
+        };
+        send_request(owner, Routes::RESUME as i32, Value::Null).await;
+        assert_eq!(
+            wait_for_response(owner, Routes::RESUME as i32).await["code"],
+            json!(WsResponseCode::OK as i32)
+        );
+    }
 
     send_request(
         &mut rejoined,
@@ -2140,6 +2166,19 @@ async fn upgrade_ws_rejoin_preserves_running_bury_state() {
         json!(WsResponseCode::OK as i32)
     );
 
+    {
+        let owner = if dealer_position == 0 {
+            &mut rejoined
+        } else {
+            &mut *clients[0]
+        };
+        send_request(owner, Routes::PAUSE as i32, Value::Null).await;
+        assert_eq!(
+            wait_for_response(owner, Routes::PAUSE as i32).await["code"],
+            json!(WsResponseCode::OK as i32)
+        );
+    }
+
     clients[next_position]
         .close(None)
         .await
@@ -2150,6 +2189,7 @@ async fn upgrade_ws_rejoin_preserves_running_bury_state() {
     let next_name = format!("rejoin-player-{next_position}");
     let joined = join_as(&mut play_rejoined, GameId::UPGRADE, room, &next_name).await;
     assert_eq!(joined["data"]["self_position"], json!(next_position));
+    assert_eq!(joined["data"]["paused"], json!(true));
     let restored_hand_event =
         wait_for_event(&mut play_rejoined, UpgradeWsCode::HAND_UPDATED as i32).await;
     let mut restored_hand = restored_hand_event["data"]["cards"]
@@ -2170,9 +2210,24 @@ async fn upgrade_ws_rejoin_preserves_running_bury_state() {
     assert!(
         rejoined_snapshot["data"]["turn_countdown"]
             .as_i64()
-            .is_some_and(|countdown| (1..=2).contains(&countdown)),
-        "rejoin must preserve the elapsed play countdown: {rejoined_snapshot}"
+            .is_some_and(|countdown| (1..=3).contains(&countdown)),
+        "rejoin must preserve the paused play countdown: {rejoined_snapshot}"
     );
+
+    {
+        let owner = if next_position == 0 {
+            &mut play_rejoined
+        } else if dealer_position == 0 {
+            &mut rejoined
+        } else {
+            &mut *clients[0]
+        };
+        send_request(owner, Routes::RESUME as i32, Value::Null).await;
+        assert_eq!(
+            wait_for_response(owner, Routes::RESUME as i32).await["code"],
+            json!(WsResponseCode::OK as i32)
+        );
+    }
 
     let rules = combo::UpgradeComboRules {
         target_rank: upgrade_rank(

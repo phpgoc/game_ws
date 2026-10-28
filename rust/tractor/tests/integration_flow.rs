@@ -62,7 +62,12 @@ impl GameHandler for TestTractorHandler {
     }
 
     fn authorize_join(&self, _join: &share_type_public::WsJoinRequest) -> JoinAuthorizationFuture {
-        Box::pin(async { JoinAuthorization::ALLOW_NONMEMBER })
+        Box::pin(async {
+            JoinAuthorization {
+                can_create_room: true,
+                has_active_membership: cfg!(feature = "official"),
+            }
+        })
     }
 
     fn supports_ai_players(&self) -> bool {
