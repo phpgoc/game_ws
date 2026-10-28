@@ -178,6 +178,12 @@ impl UpgradeGameHandler {
         let Some(room_key) = room_service.room_key_of(session_id) else {
             return room_service.error_response(session_id, route, WsResponseCode::NOT_LOGIN);
         };
+        if cfg!(feature = "official")
+            && room_service.room_position_has_membership_record(&room_key, 0)
+            && !room_service.room_position_has_active_membership(&room_key, 0)
+        {
+            return room_service.error_response(session_id, route, WsResponseCode::NO_PERMISSION);
+        }
         if !room_service.room_is_ready_to_start(&room_key) {
             return room_service.error_response(session_id, route, WsResponseCode::NOT_IN_RANGE);
         }
@@ -516,6 +522,14 @@ impl Default for UpgradeGameHandler {
 }
 
 impl GameHandler for UpgradeGameHandler {
+    #[cfg(feature = "official")]
+    fn authorize_join(
+        &self,
+        join: &share_type_public::WsJoinRequest,
+    ) -> ws_common::JoinAuthorizationFuture {
+        Box::pin(crate::official::authorize_join(join.session_id.clone()))
+    }
+
     fn supports_ai_players(&self) -> bool {
         true
     }

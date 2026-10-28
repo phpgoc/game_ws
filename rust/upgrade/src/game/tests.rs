@@ -69,6 +69,27 @@ fn room_join_accepts_upgrade_and_rejects_tractor() {
     );
 }
 
+#[cfg(feature = "official")]
+#[test]
+fn official_nonmember_owner_cannot_start_a_full_room() {
+    let handler = UpgradeGameHandler::default();
+    let mut room = RoomService::with_ai_players_enabled(false);
+    for session_id in 1..=4 {
+        let mut request = join_request(GameId::UPGRADE);
+        request.data["name"] = json!(format!("player-{session_id}"));
+        room.handle_common_request(session_id, &request, handler.game_id(), || {
+            handler.build_room_settings()
+        });
+        assert!(room.set_session_active_membership(session_id, false));
+    }
+    let denied = handler.handle_start(&mut room, 1);
+    assert_eq!(
+        response_code(&denied),
+        Some(WsResponseCode::NO_PERMISSION as i32)
+    );
+    assert!(handler.state("upgrade-room").is_none());
+}
+
 #[test]
 fn owner_can_start_the_next_round_after_settlement() {
     let handler = UpgradeGameHandler::default();

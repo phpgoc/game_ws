@@ -14,6 +14,9 @@ pub mod combo;
 pub mod game;
 pub mod game_loop;
 pub mod game_setting;
+#[cfg(feature = "official")]
+#[path = "../../../../ai/upgrade/src/official.rs"]
+mod official;
 mod rules;
 pub mod server;
 pub mod state;
