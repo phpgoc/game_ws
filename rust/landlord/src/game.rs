@@ -434,6 +434,35 @@ impl GameHandler for LandlordGameHandler {
         request: &ClientRequest,
         dispatch: &mut Dispatch,
     ) {
+        if request.route == Routes::AWAY as i32 {
+            let Some(room_key) = room_service.room_key_of(session_id) else {
+                return;
+            };
+            let Some(position) = room_service.session_position(session_id) else {
+                return;
+            };
+            let Some(loop_state) = self.current_loop_state(room_service, &room_key) else {
+                return;
+            };
+            let away_time = room_service
+                .room_configs(&room_key)
+                .and_then(|configs| configs.get("away_time").copied())
+                .unwrap_or(5)
+                .max(0) as u32;
+            let state = loop_state.lock().unwrap();
+            if state.current_position == position
+                && state.is_away(position)
+                && !state.action_received()
+                && matches!(
+                    state.phase,
+                    LandlordPhase::CallLandlord | LandlordPhase::Play
+                )
+                && state.turn_countdown() > away_time
+            {
+                state.set_turn_countdown(away_time);
+            }
+            return;
+        }
         if request.route != Routes::JOIN as i32 || !join_succeeded(dispatch, session_id) {
             if matches!(request.route, r if r == Routes::QUIT as i32 || r == Routes::DISBAND as i32)
             {

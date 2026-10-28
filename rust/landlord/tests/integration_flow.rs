@@ -592,8 +592,7 @@ async fn landlord_manual_away_automatically_calls_and_plays_over_ws() {
         .as_u64()
         .expect("manual away landlord") as usize;
 
-    // The current landlord is now explicitly put into AI control; no PLAY
-    // request is sent from that client.  A PLAY event proves the server acted.
+    // 非官方离开使用基础自动操作；不再从客户端发 PLAY，验证离开倒计时后服务端继续出牌。
     send_request(clients[landlord_position], Routes::AWAY as i32, json!({})).await;
     recv_until(clients[0], "manual away play event", |value| {
         value.get("code").and_then(Value::as_i64) == Some(WsCode::AWAY as i64)
@@ -824,7 +823,8 @@ fn position_from_joined(response: &Value) -> usize {
 
 async fn recv_json(client: &mut Client, label: &str) -> Value {
     loop {
-        let frame = tokio::time::timeout(Duration::from_secs(5), client.next())
+        // 离开操作使用 5 秒倒计时，另留一个循环 tick 和调度余量。
+        let frame = tokio::time::timeout(Duration::from_secs(8), client.next())
             .await
             .unwrap_or_else(|_| panic!("websocket message timeout while waiting for {label}"))
             .expect("websocket frame")
