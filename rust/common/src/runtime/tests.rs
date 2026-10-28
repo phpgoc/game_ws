@@ -1,4 +1,4 @@
-use std::{collections::HashMap, net::Ipv4Addr, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use serde_json::Value;
 use share_type_public::{GameId, WsJoinRequest, WsResponseCode, WsWithoutDataResponse};
@@ -26,12 +26,15 @@ mod ordering;
 struct DefaultHookHandler;
 
 async fn reserve_high_port() -> (TcpListener, u16) {
-    let port = crate::net::resolve_port(Ipv4Addr::LOCALHOST, None)
-        .expect("find a bindable test port above 9000");
-    let listener = TcpListener::bind(("127.0.0.1", port))
-        .await
-        .expect("reserve a high local test port");
-    (listener, port)
+    loop {
+        let listener = TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("reserve a local test port");
+        let port = listener.local_addr().unwrap().port();
+        if port > 9000 {
+            return (listener, port);
+        }
+    }
 }
 
 impl GameHandler for DefaultHookHandler {
