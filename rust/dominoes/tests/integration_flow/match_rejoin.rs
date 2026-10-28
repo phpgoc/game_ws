@@ -8,7 +8,7 @@ type Writer = futures_util::stream::SplitSink<Client, Message>;
 async fn four_players_finish_a_match_and_rejoin_each_major_phase() {
     let (server, url, _stop) = start_server(
         "dominoes-match-rejoin",
-        test_handler_with_rng_seed(0x5eed_2026),
+        test_handler_with_members(Some(0x5eed_2026), &["P0", "P1", "P2", "P3"]),
     )
     .await;
     let room = "dominoes-match-rejoin";

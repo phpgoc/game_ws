@@ -6,7 +6,6 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use share_type_public::{DominoesRoutes, DominoesWsCode, GameId, Routes, WsCode, WsResponseCode};
 use tokio_tungstenite::{WebSocketStream, connect_async, tungstenite::Message};
-#[cfg(feature = "official")]
 use ws_common::{
     ClientRequest, Dispatch, GameHandler, GameState, JoinAuthorization, JoinAuthorizationFuture,
     RoomService, SessionId, SessionSenders, SettingsBuilderResult,
@@ -23,11 +22,12 @@ mod match_rejoin;
 #[path = "integration_flow/lifecycle.rs"]
 mod lifecycle;
 
-#[cfg(feature = "official")]
 #[derive(Default)]
-struct TestAiDominoesHandler(DominoesGameHandler);
+struct TestAiDominoesHandler {
+    game: DominoesGameHandler,
+    members: &'static [&'static str],
+}
 
-#[cfg(feature = "official")]
 impl GameHandler for TestAiDominoesHandler {
     fn after_common_request(
         &mut self,
@@ -36,28 +36,34 @@ impl GameHandler for TestAiDominoesHandler {
         request: &ClientRequest,
         dispatch: &mut Dispatch,
     ) {
-        self.0
+        self.game
             .after_common_request(room_service, session_id, request, dispatch);
     }
 
-    fn authorize_join(&self, _join: &share_type_public::WsJoinRequest) -> JoinAuthorizationFuture {
-        Box::pin(async { JoinAuthorization::ALLOW_NONMEMBER })
+    fn authorize_join(&self, join: &share_type_public::WsJoinRequest) -> JoinAuthorizationFuture {
+        let has_active_membership = self.members.contains(&join.name.as_str());
+        Box::pin(async move {
+            JoinAuthorization {
+                can_create_room: true,
+                has_active_membership,
+            }
+        })
     }
 
     fn supports_ai_players(&self) -> bool {
-        self.0.supports_ai_players()
+        self.game.supports_ai_players()
     }
 
     fn build_game_state(&self) -> Box<dyn GameState> {
-        self.0.build_game_state()
+        self.game.build_game_state()
     }
 
     fn build_room_settings(&self) -> SettingsBuilderResult {
-        self.0.build_room_settings()
+        self.game.build_room_settings()
     }
 
     fn game_id(&self) -> GameId {
-        self.0.game_id()
+        self.game.game_id()
     }
 
     fn handle_game_request(
@@ -66,7 +72,7 @@ impl GameHandler for TestAiDominoesHandler {
         session_id: SessionId,
         request: ClientRequest,
     ) -> Dispatch {
-        self.0
+        self.game
             .handle_game_request(room_service, session_id, request)
     }
 
@@ -75,29 +81,30 @@ impl GameHandler for TestAiDominoesHandler {
         senders: SessionSenders,
         room_service: std::sync::Arc<tokio::sync::Mutex<RoomService>>,
     ) {
-        self.0.set_context(senders, room_service);
+        self.game.set_context(senders, room_service);
     }
 }
 
 fn test_handler() -> impl ws_common::GameHandler {
-    #[cfg(feature = "official")]
-    {
-        TestAiDominoesHandler::default()
-    }
-    #[cfg(not(feature = "official"))]
-    {
-        DominoesGameHandler::default()
-    }
+    test_handler_with_members(None, &["owner", "player-0"])
 }
 
 fn test_handler_with_rng_seed(seed: u64) -> impl ws_common::GameHandler {
-    #[cfg(feature = "official")]
-    {
-        TestAiDominoesHandler(DominoesGameHandler::with_rng_seed(seed))
+    TestAiDominoesHandler {
+        game: DominoesGameHandler::with_rng_seed(seed),
+        members: &["P0"],
     }
-    #[cfg(not(feature = "official"))]
-    {
-        DominoesGameHandler::with_rng_seed(seed)
+}
+
+fn test_handler_with_members(
+    seed: Option<u64>,
+    members: &'static [&'static str],
+) -> impl ws_common::GameHandler {
+    TestAiDominoesHandler {
+        game: seed
+            .map(DominoesGameHandler::with_rng_seed)
+            .unwrap_or_default(),
+        members,
     }
 }
 

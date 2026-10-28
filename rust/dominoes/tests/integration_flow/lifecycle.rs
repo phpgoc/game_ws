@@ -3,7 +3,11 @@ use share_type_public::{DominoesActionSource, DominoesPhase};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn disconnect_keeps_advancing_but_quit_allows_a_fresh_running_match() {
-    let (server, url, _stop) = start_server("dominoes-lifecycle", test_handler()).await;
+    let (server, url, _stop) = start_server(
+        "dominoes-lifecycle",
+        test_handler_with_members(None, &["owner"]),
+    )
+    .await;
     let room = "dominoes-lifecycle";
     let mut owner = connect_client(&url).await;
     let mut second = connect_client(&url).await;
@@ -154,7 +158,11 @@ async fn disconnect_keeps_advancing_but_quit_allows_a_fresh_running_match() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn repeated_join_retains_takeover_but_transport_reconnect_returns_manual_control() {
-    let (server, url, _stop) = start_server("dominoes-takeover-rejoin", test_handler()).await;
+    let (server, url, _stop) = start_server(
+        "dominoes-takeover-rejoin",
+        test_handler_with_members(None, &["owner", "second"]),
+    )
+    .await;
     let room = "dominoes-takeover-rejoin";
     let mut owner = connect_client(&url).await;
     let mut second = connect_client(&url).await;
