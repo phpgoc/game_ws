@@ -587,6 +587,7 @@ fn room_queries_broadcasts_and_official_metadata_stay_in_sync() {
         vec![crate::OfficialPlayerSession {
             position: 0,
             session_id: "official-owner-session".to_owned(),
+            user_id: None,
         }]
     );
 
@@ -615,6 +616,7 @@ fn room_lifecycle_keeps_disconnected_rosters_and_sanitizes_official_state() {
         vec![crate::OfficialPlayerSession {
             position: 0,
             session_id: "owner-session".to_owned(),
+            user_id: None,
         }]
     );
 

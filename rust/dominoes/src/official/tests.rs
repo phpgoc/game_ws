@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use super::official_match_users;
 use super::player_scores_for_official_users;
 use crate::core::RoundResult;
 
@@ -42,4 +43,35 @@ fn native_ai_winner_does_not_mark_any_human_as_winner() {
     });
 
     assert!(scores.iter().all(|score| !score.is_winner));
+}
+
+#[test]
+fn official_match_users_uses_join_authorized_ids_without_revalidating_sessions() {
+    let players = vec![
+        ws_common::OfficialPlayerSession {
+            position: 0,
+            session_id: "expired-or-replaced-session".to_owned(),
+            user_id: Some(101),
+        },
+        ws_common::OfficialPlayerSession {
+            position: 1,
+            session_id: "another-session".to_owned(),
+            user_id: Some(202),
+        },
+    ];
+
+    let (user_ids, user_ids_by_position) = official_match_users(&players).unwrap();
+    assert_eq!(user_ids, vec![101, 202]);
+    assert_eq!(user_ids_by_position, HashMap::from([(0, 101), (1, 202)]));
+}
+
+#[test]
+fn official_match_users_rejects_missing_authorized_identity() {
+    let players = vec![ws_common::OfficialPlayerSession {
+        position: 0,
+        session_id: "owner-session".to_owned(),
+        user_id: None,
+    }];
+
+    assert!(official_match_users(&players).is_none());
 }

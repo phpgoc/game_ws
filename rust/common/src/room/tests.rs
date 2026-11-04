@@ -81,6 +81,7 @@ fn join_official_room(
                     "name": name,
                     "password": room_key,
                     "game_id": game_id as i32,
+                    "session_id": format!("test-session-{session_id}"),
                 }),
             },
             |requested| requested == game_id,
@@ -1378,6 +1379,21 @@ fn official_user_identity_restores_a_disconnected_seat_even_after_name_change() 
             .official_user_ids_by_position
             .get(&1),
         Some(&202)
+    );
+    assert_eq!(
+        service.room_official_player_sessions("identity-room"),
+        vec![
+            crate::OfficialPlayerSession {
+                position: 0,
+                session_id: "test-session-1".to_owned(),
+                user_id: Some(101),
+            },
+            crate::OfficialPlayerSession {
+                position: 1,
+                session_id: "test-session-2".to_owned(),
+                user_id: Some(202),
+            },
+        ]
     );
 
     let _ = service.disconnect(2);

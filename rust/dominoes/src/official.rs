@@ -68,58 +68,66 @@ pub async fn authorize_start(identity: ws_common::OfficialStartIdentity) -> bool
 
 #[cfg(feature = "official")]
 pub fn create_match(room_service: &mut RoomService, room_key: &str) {
-    use std::collections::HashMap;
-
     use share_type_public::GameId;
 
-    room_service.spawn_room_official_match(room_key, move |sessions, password| async move {
-        let mut user_ids = Vec::with_capacity(sessions.len());
-        let mut user_ids_by_position = HashMap::new();
-        for player in sessions {
-            match data::service::cache::get_session(&player.session_id).await {
-                Ok(user) => {
-                    user_ids.push(user.id);
-                    user_ids_by_position.insert(player.position, user.id);
-                }
-                Err(error) => {
-                    ws_common::dlog!(
-                        ws_common::tracing::Level::WARN,
-                        "[dominoes][official] skip match stats: invalid session at position {}: {}",
-                        player.position,
-                        error
-                    );
-                    return None;
-                }
-            }
-        }
-
-        let own_user_id = user_ids_by_position
-            .get(&0)
-            .copied()
-            .or(user_ids.first().copied())?;
-        match data::service::game_match::create(data::input::GameMatchCreateInput {
-            own_user_id,
-            game_id: GameId::DOMINOES,
-            password,
-            user_ids,
-        })
-        .await
-        {
-            Ok(created) => Some((created.game_match.id, user_ids_by_position)),
-            Err(error) => {
+    room_service.spawn_room_official_match(
+        room_key,
+        move |sessions, password| async move {
+            let Some((user_ids, user_ids_by_position)) = official_match_users(&sessions) else {
                 ws_common::dlog!(
                     ws_common::tracing::Level::ERROR,
-                    "[dominoes][official] create match stats failed: {}",
+                    "[dominoes][official] skip match stats: missing authorized player identity"
+                );
+                return None;
+            };
+
+            let own_user_id = user_ids_by_position
+                .get(&0)
+                .copied()
+                .or(user_ids.first().copied())?;
+            match data::service::game_match::create(data::input::GameMatchCreateInput {
+                own_user_id,
+                game_id: GameId::DOMINOES,
+                password,
+                user_ids,
+            })
+            .await
+            {
+                Ok(created) => Some((created.game_match.id, user_ids_by_position)),
+                Err(error) => {
+                    ws_common::dlog!(
+                        ws_common::tracing::Level::ERROR,
+                        "[dominoes][official] create match stats failed: {}",
+                        error
+                    );
+                    None
+                }
+            }
+        },
+        |game_match_id| async move {
+            if let Err(error) = data::service::game_match::finish(game_match_id).await {
+                ws_common::dlog!(
+                    ws_common::tracing::Level::ERROR,
+                    "official match cleanup failed: {}",
                     error
                 );
-                None
             }
-        }
-    }, |game_match_id| async move {
-        if let Err(error) = data::service::game_match::finish(game_match_id).await {
-            ws_common::dlog!(ws_common::tracing::Level::ERROR, "official match cleanup failed: {}", error);
-        }
-    });
+        },
+    );
+}
+
+#[cfg(feature = "official")]
+fn official_match_users(
+    players: &[ws_common::OfficialPlayerSession],
+) -> Option<(Vec<i32>, std::collections::HashMap<usize, i32>)> {
+    let mut user_ids = Vec::with_capacity(players.len());
+    let mut user_ids_by_position = std::collections::HashMap::with_capacity(players.len());
+    for player in players {
+        let user_id = player.user_id?;
+        user_ids.push(user_id);
+        user_ids_by_position.insert(player.position, user_id);
+    }
+    (!user_ids.is_empty()).then_some((user_ids, user_ids_by_position))
 }
 
 #[cfg(not(feature = "official"))]

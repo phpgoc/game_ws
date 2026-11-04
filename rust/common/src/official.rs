@@ -5,6 +5,7 @@ use tokio::sync::watch;
 pub struct OfficialPlayerSession {
     pub position: usize,
     pub session_id: String,
+    pub user_id: Option<i32>,
 }
 
 #[derive(Debug)]

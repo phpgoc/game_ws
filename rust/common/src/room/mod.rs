@@ -2147,6 +2147,7 @@ impl RoomService {
                 Some(OfficialPlayerSession {
                     position,
                     session_id,
+                    user_id: entry.official_user_ids_by_position.get(&position).copied(),
                 })
             })
             .collect::<Vec<_>>();
