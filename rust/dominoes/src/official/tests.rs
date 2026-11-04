@@ -46,32 +46,18 @@ fn native_ai_winner_does_not_mark_any_human_as_winner() {
 }
 
 #[test]
-fn official_match_users_uses_join_authorized_ids_without_revalidating_sessions() {
-    let players = vec![
-        ws_common::OfficialPlayerSession {
-            position: 0,
-            session_id: "expired-or-replaced-session".to_owned(),
-            user_id: Some(101),
-        },
-        ws_common::OfficialPlayerSession {
-            position: 1,
-            session_id: "another-session".to_owned(),
-            user_id: Some(202),
-        },
-    ];
+fn official_match_users_include_disconnected_authorized_seats_in_position_order() {
+    let user_ids_by_position = HashMap::from([(2, 303), (0, 101), (1, 202)]);
 
-    let (user_ids, user_ids_by_position) = official_match_users(&players).unwrap();
-    assert_eq!(user_ids, vec![101, 202]);
-    assert_eq!(user_ids_by_position, HashMap::from([(0, 101), (1, 202)]));
+    assert_eq!(
+        official_match_users(&user_ids_by_position),
+        Some(vec![101, 202, 303])
+    );
 }
 
 #[test]
 fn official_match_users_rejects_missing_authorized_identity() {
-    let players = vec![ws_common::OfficialPlayerSession {
-        position: 0,
-        session_id: "owner-session".to_owned(),
-        user_id: None,
-    }];
+    let user_ids_by_position = HashMap::from([(0, 101), (1, 0)]);
 
-    assert!(official_match_users(&players).is_none());
+    assert!(official_match_users(&user_ids_by_position).is_none());
 }

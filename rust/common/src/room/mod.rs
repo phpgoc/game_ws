@@ -2174,6 +2174,14 @@ impl RoomService {
         players
     }
 
+    /// 返回房间中已验证的真人身份映射，包括断线后仍保留的座位。
+    pub fn room_official_user_ids_by_position(&self, room_key: &str) -> HashMap<usize, i32> {
+        self.rooms
+            .get(room_key)
+            .map(|entry| entry.official_user_ids_by_position.clone())
+            .unwrap_or_default()
+    }
+
     /// 返回房间中指定座位绑定的官方用户 ID。
     pub fn room_official_user_id(&self, room_key: &str, position: usize) -> Option<i32> {
         self.room_official_match(room_key)?.get()?.user_id(position)

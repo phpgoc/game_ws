@@ -70,10 +70,11 @@ pub async fn authorize_start(identity: ws_common::OfficialStartIdentity) -> bool
 pub fn create_match(room_service: &mut RoomService, room_key: &str) {
     use share_type_public::GameId;
 
+    let user_ids_by_position = room_service.room_official_user_ids_by_position(room_key);
     room_service.spawn_room_official_match(
         room_key,
-        move |sessions, password| async move {
-            let Some((user_ids, user_ids_by_position)) = official_match_users(&sessions) else {
+        move |_sessions, password| async move {
+            let Some(user_ids) = official_match_users(&user_ids_by_position) else {
                 ws_common::dlog!(
                     ws_common::tracing::Level::ERROR,
                     "[dominoes][official] skip match stats: missing authorized player identity"
@@ -118,16 +119,15 @@ pub fn create_match(room_service: &mut RoomService, room_key: &str) {
 
 #[cfg(feature = "official")]
 fn official_match_users(
-    players: &[ws_common::OfficialPlayerSession],
-) -> Option<(Vec<i32>, std::collections::HashMap<usize, i32>)> {
-    let mut user_ids = Vec::with_capacity(players.len());
-    let mut user_ids_by_position = std::collections::HashMap::with_capacity(players.len());
-    for player in players {
-        let user_id = player.user_id?;
-        user_ids.push(user_id);
-        user_ids_by_position.insert(player.position, user_id);
+    user_ids_by_position: &std::collections::HashMap<usize, i32>,
+) -> Option<Vec<i32>> {
+    if user_ids_by_position.is_empty() || user_ids_by_position.values().any(|user_id| *user_id <= 0)
+    {
+        return None;
     }
-    (!user_ids.is_empty()).then_some((user_ids, user_ids_by_position))
+    let mut user_ids = user_ids_by_position.iter().collect::<Vec<_>>();
+    user_ids.sort_unstable_by_key(|(position, _)| **position);
+    Some(user_ids.into_iter().map(|(_, user_id)| *user_id).collect())
 }
 
 #[cfg(not(feature = "official"))]

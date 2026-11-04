@@ -1426,6 +1426,10 @@ fn official_user_identity_restores_a_disconnected_seat_even_after_name_change() 
             },
         ]
     );
+    assert_eq!(
+        service.room_official_user_ids_by_position("identity-room"),
+        HashMap::from([(0, 101), (1, 202)])
+    );
 
     let _ = service.disconnect(2);
     assert_eq!(
@@ -1435,6 +1439,10 @@ fn official_user_identity_restores_a_disconnected_seat_even_after_name_change() 
         Some(&202)
     );
     assert!(service.rooms["identity-room"].state.is_disconnected(1));
+    assert_eq!(
+        service.room_official_user_ids_by_position("identity-room"),
+        HashMap::from([(0, 101), (1, 202)])
+    );
     let restored = join_official_room(
         &mut service,
         3,
