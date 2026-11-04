@@ -57,6 +57,9 @@ pub struct WsJoinResponse {
     /// 当前 WS Server 是否支持服务端 AI 玩家。
     #[serde(default)]
     pub supports_ai_players: bool,
+    /// 官方服通过 JOIN 授权核验的当前用户会员状态；非官方服省略。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_membership: Option<bool>,
     /// 房间游戏循环当前是否暂停。
     #[serde(default)]
     pub paused: bool,

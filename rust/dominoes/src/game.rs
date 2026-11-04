@@ -532,12 +532,30 @@ impl GameHandler for DominoesGameHandler {
             let Some(room_key) = room_service.room_key_of(session_id) else {
                 return;
             };
-            let Some(state) = self.state_for_room(room_service, &room_key) else {
-                return;
-            };
             let position = room_service
                 .session_position(session_id)
                 .unwrap_or_default();
+            #[cfg(feature = "official")]
+            for message in &mut dispatch.messages {
+                if message.recipient != session_id {
+                    continue;
+                }
+                let OutboundPayload::Response(RequestResponse::WithData(response)) =
+                    &mut message.payload
+                else {
+                    continue;
+                };
+                if response.route == Routes::JOIN as i32
+                    && response.code as i32 == WsResponseCode::JOINED as i32
+                {
+                    response.data["active_membership"] = serde_json::Value::Bool(
+                        room_service.room_position_has_active_membership(&room_key, position),
+                    );
+                }
+            }
+            let Some(state) = self.state_for_room(room_service, &room_key) else {
+                return;
+            };
             let (table, hand) = {
                 let state = state.lock().expect("dominoes state lock");
                 (state.table_snapshot(), state.hand_state(position))

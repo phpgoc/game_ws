@@ -22,6 +22,10 @@ mod match_rejoin;
 #[path = "integration_flow/lifecycle.rs"]
 mod lifecycle;
 
+#[cfg(feature = "official")]
+#[path = "integration_flow/membership.rs"]
+mod membership;
+
 #[derive(Default)]
 struct TestAiDominoesHandler {
     game: DominoesGameHandler,
