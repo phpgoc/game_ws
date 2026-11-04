@@ -724,7 +724,7 @@ fn disconnected_name_can_rejoin_same_position() {
 }
 
 #[test]
-fn different_name_replaces_disconnected_position_when_new_seats_are_locked() {
+fn different_name_cannot_replace_disconnected_position_when_game_is_running() {
     let mut service = room_service_with_ai();
     let _ = join_room(&mut service, 1, "owner", "locked-room", GameId::LANDLORD);
     let _ = common_request(
@@ -763,23 +763,20 @@ fn different_name_replaces_disconnected_position_when_new_seats_are_locked() {
     assert!(has_response(
         &replacement,
         Routes::JOIN,
-        WsResponseCode::JOINED
+        WsResponseCode::NO_PERMISSION
     ));
-    assert_eq!(service.session_position(3), Some(1));
-    let mut members = service.room_members("locked-room");
-    members.sort_by_key(|(_, _, position, _)| *position);
-    assert_eq!(
-        members,
-        vec![
-            (1, "owner".to_string(), 0, String::new()),
-            (3, "replacement".to_string(), 1, String::new()),
-        ]
+    assert_eq!(service.session_position(3), None);
+    let members = service.room_members("locked-room");
+    assert!(
+        members
+            .iter()
+            .any(|(_, name, position, _)| { *position == 1 && name == "old-player" })
     );
     {
         let common = common.lock().unwrap();
-        assert!(!common.is_disconnected(1));
-        assert!(!common.is_away(1));
-        assert_eq!(common.player_avatar(1), "");
+        assert!(common.is_disconnected(1));
+        assert!(common.is_away(1));
+        assert_eq!(common.player_avatar(1), "old-avatar");
     }
 
     let old_player = join_room(
@@ -792,8 +789,9 @@ fn different_name_replaces_disconnected_position_when_new_seats_are_locked() {
     assert!(has_response(
         &old_player,
         Routes::JOIN,
-        WsResponseCode::NO_PERMISSION
+        WsResponseCode::JOINED
     ));
+    assert_eq!(service.session_position(4), Some(1));
 }
 
 #[test]

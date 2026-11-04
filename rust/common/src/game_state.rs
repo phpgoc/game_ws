@@ -63,12 +63,12 @@ pub trait GameState: Send {
         self.can_accept_players()
     }
 
-    /// Vacant positions that are reserved by the current game and must not be
-    /// assigned to a newly joining player. A game can keep an explicitly quit
-    /// player's seat reserved until the current hand is over. A roster entry
-    /// marked disconnected remains replaceable by design.
-    fn position_reserved_for_join(&self, _position: usize) -> bool {
-        false
+    /// Whether a vacant position is reserved by the current game and must not
+    /// be assigned to a newly joining player. Disconnected seats remain
+    /// available in the lobby, but are retained once a game is running so the
+    /// original player can reconnect with the existing game state.
+    fn position_reserved_for_join(&self, position: usize) -> bool {
+        self.is_disconnected(position) && !self.can_accept_players()
     }
 
     fn clear_away(&mut self) {

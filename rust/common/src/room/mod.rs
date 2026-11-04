@@ -2140,12 +2140,13 @@ impl RoomService {
         {
             return Some(pos);
         }
-        // Disconnected humans never consume room capacity. Prefer replacing
-        // one before assigning a genuinely new seat. A running game may lock
-        // new seats and reserve its hand positions, but an explicit
-        // disconnected roster entry is still replaceable.
+        // A disconnected lobby seat may be reused. Once a game is running,
+        // position_reserved_for_join keeps the seat for its original player.
         (1..max_players)
-            .find(|position| entry.state.is_disconnected(*position))
+            .find(|position| {
+                entry.state.is_disconnected(*position)
+                    && !entry.state.position_reserved_for_join(*position)
+            })
             .or_else(|| {
                 if !can_join_new_position {
                     return None;
