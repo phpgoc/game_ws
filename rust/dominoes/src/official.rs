@@ -37,6 +37,36 @@ pub async fn authorize_join(session_id: String) -> ws_common::JoinAuthorization 
 }
 
 #[cfg(feature = "official")]
+pub async fn authorize_start(identity: ws_common::OfficialStartIdentity) -> bool {
+    use share_type_public::GameId;
+
+    match data::service::cache::get_session(&identity.session_id).await {
+        Ok(user) if user.id == identity.user_id => {
+            match data::service::game_pay::has_active_membership(user.id, GameId::DOMINOES).await {
+                Ok(active) => active,
+                Err(error) => {
+                    ws_common::dlog!(
+                        ws_common::tracing::Level::WARN,
+                        "[dominoes][official] start membership refresh failed: {}",
+                        error
+                    );
+                    false
+                }
+            }
+        }
+        Ok(_) => false,
+        Err(error) => {
+            ws_common::dlog!(
+                ws_common::tracing::Level::WARN,
+                "[dominoes][official] start session validation failed: {}",
+                error
+            );
+            false
+        }
+    }
+}
+
+#[cfg(feature = "official")]
 pub fn create_match(room_service: &mut RoomService, room_key: &str) {
     use std::collections::HashMap;
 

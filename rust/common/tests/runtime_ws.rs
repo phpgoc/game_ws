@@ -18,9 +18,10 @@ use tokio::{
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use ws_common::{
     ClientRequest, Delivery, Dispatch, GameHandler, GameRegistry, GameSettings, JoinAuthorization,
-    JoinAuthorizationFuture, OutboundPayload, RoomService, RuntimeConfig, SessionId,
-    SharedGameState, run_multi_game_runtime_until_stopped_with_ready,
-    run_room_runtime_until_stopped_with_ready, runtime_stop_channel,
+    JoinAuthorizationFuture, OfficialStartIdentity, OutboundPayload, RoomService, RuntimeConfig,
+    SessionId, SharedGameState, StartAuthorizationFuture,
+    run_multi_game_runtime_until_stopped_with_ready, run_room_runtime_until_stopped_with_ready,
+    runtime_stop_channel,
 };
 
 struct RuntimeHandler;
@@ -224,6 +225,56 @@ impl GameHandler for GameRouteRuntimeHandler {
 struct MembershipRuntimeHandler {
     context_was_set: Arc<AtomicBool>,
     membership_seen_by_hook: Arc<AtomicBool>,
+}
+
+struct StartMembershipRuntimeHandler {
+    current_membership: Arc<AtomicBool>,
+}
+
+impl GameHandler for StartMembershipRuntimeHandler {
+    fn authorize_join(&self, _join: &share_type_public::WsJoinRequest) -> JoinAuthorizationFuture {
+        Box::pin(async {
+            JoinAuthorization {
+                can_create_room: true,
+                can_join_existing_room: true,
+                has_active_membership: true,
+                user_id: Some(7),
+            }
+        })
+    }
+
+    fn requires_start_membership_refresh(&self) -> bool {
+        true
+    }
+
+    fn refresh_start_membership(
+        &self,
+        identity: OfficialStartIdentity,
+    ) -> StartAuthorizationFuture {
+        let current_membership = Arc::clone(&self.current_membership);
+        Box::pin(async move { identity.user_id == 7 && current_membership.load(Ordering::SeqCst) })
+    }
+
+    fn build_game_state(&self) -> Box<dyn ws_common::GameState> {
+        Box::new(SharedGameState::new())
+    }
+
+    fn build_room_settings(&self) -> ws_common::SettingsBuilderResult {
+        (GameSettings::new(1, 4), HashMap::new())
+    }
+
+    fn game_id(&self) -> GameId {
+        GameId::DOMINOES
+    }
+
+    fn handle_game_request(
+        &mut self,
+        room_service: &mut RoomService,
+        session_id: SessionId,
+        request: ClientRequest,
+    ) -> Dispatch {
+        room_service.error_response(session_id, request.route, WsResponseCode::OK)
+    }
 }
 
 impl GameHandler for MembershipRuntimeHandler {
@@ -948,6 +999,128 @@ async fn runtime_propagates_join_membership_before_running_common_hooks() {
     let response: serde_json::Value = serde_json::from_str(&response).expect("response json");
     assert_eq!(response["code"], WsResponseCode::JOINED as i32);
     assert!(membership_seen_by_hook.load(Ordering::SeqCst));
+
+    client.close(None).await.expect("close client");
+    wait_for_client_count(&stats, 0).await;
+    stop.stop();
+    server
+        .await
+        .expect("runtime task joins")
+        .expect("runtime stops");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn runtime_refreshes_official_membership_before_start() {
+    let current_membership = Arc::new(AtomicBool::new(true));
+    let (stop, signal) = runtime_stop_channel();
+    let (ready_tx, ready_rx) = sync_channel(1);
+    let server = tokio::spawn(run_room_runtime_until_stopped_with_ready(
+        RuntimeConfig {
+            service_name: "runtime-start-membership-test",
+            listen_addr: "127.0.0.1:0".to_owned(),
+            idle_timeout: Duration::from_secs(2),
+            heartbeat_interval: Duration::from_secs(60),
+        },
+        StartMembershipRuntimeHandler {
+            current_membership: Arc::clone(&current_membership),
+        },
+        signal,
+        ready_tx,
+    ));
+    let stats = tokio::task::spawn_blocking(move || {
+        ready_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("runtime reports listen address")
+    })
+    .await
+    .expect("read runtime stats");
+    let (mut client, _) = connect_async(format!("ws://{}", stats.listen_addr()))
+        .await
+        .expect("connect websocket client");
+
+    client
+        .send(Message::Text(
+            serde_json::json!({
+                "route": Routes::JOIN as i32,
+                "data": {
+                    "name": "owner",
+                    "password": "start-membership-room",
+                    "game_id": GameId::DOMINOES as i32,
+                    "session_id": "owner-session"
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send owner join");
+    let join_response = timeout(Duration::from_secs(1), async {
+        loop {
+            match client.next().await.expect("frame").expect("valid frame") {
+                Message::Text(text) => break text,
+                Message::Ping(_) | Message::Pong(_) => continue,
+                frame => panic!("unexpected join frame: {frame:?}"),
+            }
+        }
+    })
+    .await
+    .expect("join response arrives");
+    let join_response: serde_json::Value =
+        serde_json::from_str(&join_response).expect("join response json");
+    assert_eq!(join_response["code"], WsResponseCode::JOINED as i32);
+
+    current_membership.store(false, Ordering::SeqCst);
+    client
+        .send(Message::Text(
+            serde_json::json!({"route": Routes::START as i32, "data": {}})
+                .to_string()
+                .into(),
+        ))
+        .await
+        .expect("send start after membership expires");
+    let expired_response = timeout(Duration::from_secs(1), async {
+        loop {
+            match client.next().await.expect("frame").expect("valid frame") {
+                Message::Text(text) => break text,
+                Message::Ping(_) | Message::Pong(_) => continue,
+                frame => panic!("unexpected expired start frame: {frame:?}"),
+            }
+        }
+    })
+    .await
+    .expect("expired membership response arrives");
+    let expired_response: serde_json::Value =
+        serde_json::from_str(&expired_response).expect("expired response json");
+    assert_eq!(expired_response["route"], Routes::START as i32);
+    assert_eq!(
+        expired_response["code"],
+        WsResponseCode::NO_PERMISSION as i32
+    );
+
+    current_membership.store(true, Ordering::SeqCst);
+    client
+        .send(Message::Text(
+            serde_json::json!({"route": Routes::START as i32, "data": {}})
+                .to_string()
+                .into(),
+        ))
+        .await
+        .expect("send start after membership purchase");
+    let renewed_response = timeout(Duration::from_secs(1), async {
+        loop {
+            match client.next().await.expect("frame").expect("valid frame") {
+                Message::Text(text) => break text,
+                Message::Ping(_) | Message::Pong(_) => continue,
+                frame => panic!("unexpected renewed start frame: {frame:?}"),
+            }
+        }
+    })
+    .await
+    .expect("renewed membership response arrives");
+    let renewed_response: serde_json::Value =
+        serde_json::from_str(&renewed_response).expect("renewed response json");
+    assert_eq!(renewed_response["route"], Routes::START as i32);
+    assert_eq!(renewed_response["code"], WsResponseCode::OK as i32);
 
     client.close(None).await.expect("close client");
     wait_for_client_count(&stats, 0).await;

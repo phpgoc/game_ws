@@ -26,6 +26,13 @@ pub use model::{
     SettingsBuilderResult,
 };
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OfficialStartIdentity {
+    pub room_key: String,
+    pub session_id: String,
+    pub user_id: i32,
+}
+
 const AI_SESSION_ID_BASE: SessionId = 9_000_000_000_000_000_000;
 const MAX_ROOMS: usize = 1_000;
 const MAX_ROOM_KEY_BYTES: usize = 128;
@@ -1993,6 +2000,36 @@ impl RoomService {
         self.rooms
             .get(room_key)
             .is_some_and(|entry| entry.membership_checked_positions.contains(&position))
+    }
+
+    /// 返回已验证并绑定到当前房主座位的官方身份，供开局授权刷新使用。
+    pub fn official_start_identity(&self, session_id: SessionId) -> Option<OfficialStartIdentity> {
+        let session = self.sessions.get(&session_id)?;
+        let room_key = session.room_key.as_ref()?;
+        if session.position != Some(0) {
+            return None;
+        }
+        let session_token = session.official_session_id.as_ref()?;
+        let user_id = session.official_user_id?;
+        let entry = self.rooms.get(room_key)?;
+        (entry.official_user_ids_by_position.get(&0) == Some(&user_id)).then(|| {
+            OfficialStartIdentity {
+                room_key: room_key.clone(),
+                session_id: session_token.clone(),
+                user_id,
+            }
+        })
+    }
+
+    /// 确认异步开局授权期间，发起者仍是同一房间的同一官方房主。
+    pub fn is_same_official_start_identity(
+        &self,
+        session_id: SessionId,
+        room_key: &str,
+        user_id: i32,
+    ) -> bool {
+        self.official_start_identity(session_id)
+            .is_some_and(|identity| identity.room_key == room_key && identity.user_id == user_id)
     }
 
     /// 判断房间中指定座位是否处于 AI 临时接管状态。

@@ -488,6 +488,25 @@ impl GameHandler for DominoesGameHandler {
         }
     }
 
+    fn requires_start_membership_refresh(&self) -> bool {
+        cfg!(feature = "official")
+    }
+
+    fn refresh_start_membership(
+        &self,
+        identity: ws_common::OfficialStartIdentity,
+    ) -> ws_common::StartAuthorizationFuture {
+        #[cfg(feature = "official")]
+        {
+            Box::pin(crate::official::authorize_start(identity))
+        }
+        #[cfg(not(feature = "official"))]
+        {
+            let _ = identity;
+            Box::pin(async { false })
+        }
+    }
+
     fn after_common_request(
         &mut self,
         room_service: &mut RoomService,

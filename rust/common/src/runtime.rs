@@ -28,8 +28,8 @@ use tokio_tungstenite::{
 use tracing::{debug, error, warn};
 
 use crate::{
-    ClientRequest, Dispatch, OutboundPayload, RequestResponse, RoomService, SessionId,
-    SettingsBuilderResult,
+    ClientRequest, Dispatch, OfficialStartIdentity, OutboundPayload, RequestResponse, RoomService,
+    SessionId, SettingsBuilderResult,
     cli::parse_bind_cli,
     from_message,
     net::{resolve_host, resolve_port},
@@ -99,6 +99,8 @@ impl JoinAuthorization {
 pub type JoinAuthorizationFuture =
     Pin<Box<dyn Future<Output = JoinAuthorization> + Send + 'static>>;
 
+pub type StartAuthorizationFuture = Pin<Box<dyn Future<Output = bool> + Send + 'static>>;
+
 pub trait GameHandler: Send + 'static {
     fn accepts_game_id(&self, game_id: share_type_public::GameId) -> bool {
         game_id == self.game_id()
@@ -121,6 +123,17 @@ pub trait GameHandler: Send + 'static {
 
     fn authorize_join(&self, _join: &share_type_public::WsJoinRequest) -> JoinAuthorizationFuture {
         Box::pin(async { JoinAuthorization::ALLOW_NONMEMBER })
+    }
+
+    fn requires_start_membership_refresh(&self) -> bool {
+        false
+    }
+
+    fn refresh_start_membership(
+        &self,
+        _identity: OfficialStartIdentity,
+    ) -> StartAuthorizationFuture {
+        Box::pin(async { false })
     }
 
     fn supports_ai_players(&self) -> bool {
@@ -543,6 +556,31 @@ async fn handle_connection(
         } else {
             None
         };
+        let refresh_start_membership = if request.route == share_type_public::Routes::START as i32
+            && slot
+                .handler
+                .lock()
+                .await
+                .requires_start_membership_refresh()
+        {
+            let identity = slot
+                .room_service
+                .lock()
+                .await
+                .official_start_identity(session_id);
+            Some(if let Some(identity) = identity {
+                let authorization = slot
+                    .handler
+                    .lock()
+                    .await
+                    .refresh_start_membership(identity.clone());
+                Some((identity, authorization.await))
+            } else {
+                None
+            })
+        } else {
+            None
+        };
 
         let provisional_slot =
             if request.route == share_type_public::Routes::JOIN as i32 && bound_slot.is_none() {
@@ -606,6 +644,32 @@ async fn handle_connection(
                 }
                 handler.after_common_request(&mut room, session_id, &request, &mut dispatch);
                 dispatch
+            } else if let Some(refresh_result) = refresh_start_membership.as_ref() {
+                match refresh_result {
+                    Some((identity, has_active_membership))
+                        if room.is_same_official_start_identity(
+                            session_id,
+                            &identity.room_key,
+                            identity.user_id,
+                        ) =>
+                    {
+                        room.set_session_active_membership(session_id, *has_active_membership);
+                        if *has_active_membership {
+                            handler.handle_game_request(&mut room, session_id, request)
+                        } else {
+                            room.error_response(
+                                session_id,
+                                request.route,
+                                share_type_public::WsResponseCode::NO_PERMISSION,
+                            )
+                        }
+                    }
+                    _ => room.error_response(
+                        session_id,
+                        request.route,
+                        share_type_public::WsResponseCode::NO_PERMISSION,
+                    ),
+                }
             } else if room
                 .room_key_of(session_id)
                 .is_some_and(|room_key| room.is_room_paused(&room_key))
