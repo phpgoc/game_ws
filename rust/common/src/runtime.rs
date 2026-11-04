@@ -653,15 +653,23 @@ async fn handle_connection(
                             identity.user_id,
                         ) =>
                     {
-                        room.set_session_active_membership(session_id, *has_active_membership);
-                        if *has_active_membership {
-                            handler.handle_game_request(&mut room, session_id, request)
-                        } else {
+                        if room.is_room_paused(&identity.room_key) {
                             room.error_response(
                                 session_id,
                                 request.route,
                                 share_type_public::WsResponseCode::NO_PERMISSION,
                             )
+                        } else {
+                            room.set_session_active_membership(session_id, *has_active_membership);
+                            if *has_active_membership {
+                                handler.handle_game_request(&mut room, session_id, request)
+                            } else {
+                                room.error_response(
+                                    session_id,
+                                    request.route,
+                                    share_type_public::WsResponseCode::NO_PERMISSION,
+                                )
+                            }
                         }
                     }
                     _ => room.error_response(

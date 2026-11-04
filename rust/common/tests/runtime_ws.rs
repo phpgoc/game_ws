@@ -1069,6 +1069,81 @@ async fn runtime_refreshes_official_membership_before_start() {
         serde_json::from_str(&join_response).expect("join response json");
     assert_eq!(join_response["code"], WsResponseCode::JOINED as i32);
 
+    client
+        .send(Message::Text(
+            serde_json::json!({"route": Routes::PAUSE as i32, "data": {}})
+                .to_string()
+                .into(),
+        ))
+        .await
+        .expect("pause room before start");
+    let pause_response = timeout(Duration::from_secs(1), async {
+        loop {
+            match client.next().await.expect("frame").expect("valid frame") {
+                Message::Text(text) => break text,
+                Message::Ping(_) | Message::Pong(_) => continue,
+                frame => panic!("unexpected pause frame: {frame:?}"),
+            }
+        }
+    })
+    .await
+    .expect("pause response arrives");
+    let pause_response: serde_json::Value =
+        serde_json::from_str(&pause_response).expect("pause response json");
+    assert_eq!(pause_response["route"], Routes::PAUSE as i32);
+    assert_eq!(pause_response["code"], WsResponseCode::OK as i32);
+
+    client
+        .send(Message::Text(
+            serde_json::json!({"route": Routes::START as i32, "data": {}})
+                .to_string()
+                .into(),
+        ))
+        .await
+        .expect("send start while paused");
+    let paused_start_response = timeout(Duration::from_secs(1), async {
+        loop {
+            match client.next().await.expect("frame").expect("valid frame") {
+                Message::Text(text) => break text,
+                Message::Ping(_) | Message::Pong(_) => continue,
+                frame => panic!("unexpected paused start frame: {frame:?}"),
+            }
+        }
+    })
+    .await
+    .expect("paused start response arrives");
+    let paused_start_response: serde_json::Value =
+        serde_json::from_str(&paused_start_response).expect("paused start response json");
+    assert_eq!(paused_start_response["route"], Routes::START as i32);
+    assert_eq!(
+        paused_start_response["code"],
+        WsResponseCode::NO_PERMISSION as i32
+    );
+
+    client
+        .send(Message::Text(
+            serde_json::json!({"route": Routes::RESUME as i32, "data": {}})
+                .to_string()
+                .into(),
+        ))
+        .await
+        .expect("resume room after paused start check");
+    let resume_response = timeout(Duration::from_secs(1), async {
+        loop {
+            match client.next().await.expect("frame").expect("valid frame") {
+                Message::Text(text) => break text,
+                Message::Ping(_) | Message::Pong(_) => continue,
+                frame => panic!("unexpected resume frame: {frame:?}"),
+            }
+        }
+    })
+    .await
+    .expect("resume response arrives");
+    let resume_response: serde_json::Value =
+        serde_json::from_str(&resume_response).expect("resume response json");
+    assert_eq!(resume_response["route"], Routes::RESUME as i32);
+    assert_eq!(resume_response["code"], WsResponseCode::OK as i32);
+
     current_membership.store(false, Ordering::SeqCst);
     client
         .send(Message::Text(
