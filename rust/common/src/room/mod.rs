@@ -1955,12 +1955,28 @@ impl RoomService {
         self.rooms.get(room_key).map(|entry| entry.game_id)
     }
 
-    /// 房间人数是否达到下限（可以开始了）。
+    /// 当前在线真人和原生 AI 人数是否达到开局下限。
+    ///
+    /// 断线真人的座位仍保留给原玩家重连，但不能在没有连接时满足
+    /// 最低人数，否则房主可以在实际在线人数不足时开局。
     pub fn room_is_ready_to_start(&self, room_key: &str) -> bool {
         let Some(entry) = self.rooms.get(room_key) else {
             return false;
         };
-        let count = entry.state.players().len();
+        let connected_positions: HashSet<usize> = self
+            .sessions
+            .values()
+            .filter(|session| session.room_key.as_deref() == Some(room_key))
+            .filter_map(|session| session.position)
+            .collect();
+        let count = entry
+            .state
+            .players()
+            .keys()
+            .filter(|position| {
+                entry.state.is_ai_position(**position) || connected_positions.contains(*position)
+            })
+            .count();
         count >= entry.min_players
     }
 

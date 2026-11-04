@@ -725,6 +725,37 @@ fn disconnected_name_can_rejoin_same_position() {
 }
 
 #[test]
+fn disconnected_human_does_not_satisfy_start_minimum_until_reconnected() {
+    let mut service = room_service_with_ai();
+    let _ = join_room(&mut service, 1, "owner", "ready-room", GameId::DOMINOES);
+    let _ = join_room(&mut service, 2, "second", "ready-room", GameId::DOMINOES);
+    let _ = join_room(&mut service, 3, "third", "ready-room", GameId::DOMINOES);
+    assert!(service.room_is_ready_to_start("ready-room"));
+
+    service.disconnect(3);
+    assert!(!service.room_is_ready_to_start("ready-room"));
+
+    let rejoin = join_room(&mut service, 4, "third", "ready-room", GameId::DOMINOES);
+    assert!(has_response(&rejoin, Routes::JOIN, WsResponseCode::JOINED));
+    assert!(service.room_is_ready_to_start("ready-room"));
+
+    // 在线托管玩家仍计入；原生 AI 没有连接，也必须计入。
+    let _ = common_request(&mut service, 4, GameId::DOMINOES, Routes::AWAY, Value::Null);
+    assert!(service.room_is_ready_to_start("ready-room"));
+    let _ = common_request(&mut service, 4, GameId::DOMINOES, Routes::QUIT, Value::Null);
+    assert!(!service.room_is_ready_to_start("ready-room"));
+    let ai = common_request(
+        &mut service,
+        1,
+        GameId::DOMINOES,
+        Routes::ADD_AI,
+        serde_json::json!({}),
+    );
+    assert!(has_response(&ai, Routes::ADD_AI, WsResponseCode::OK));
+    assert!(service.room_is_ready_to_start("ready-room"));
+}
+
+#[test]
 fn different_name_cannot_replace_disconnected_position_when_game_is_running() {
     let mut service = room_service_with_ai();
     let _ = join_room(&mut service, 1, "owner", "locked-room", GameId::LANDLORD);

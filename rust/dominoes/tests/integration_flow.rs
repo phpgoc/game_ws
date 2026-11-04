@@ -176,6 +176,45 @@ async fn three_players_can_start_and_place_the_opening_tile() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn disconnected_player_does_not_satisfy_start_minimum_until_reconnected() {
+    let (server, url, _stop_handle) =
+        start_server("dominoes-disconnected-start-limit", test_handler()).await;
+    let room = "dominoes-disconnected-start-room";
+    let mut owner = connect_client(&url).await;
+    let mut second = connect_client(&url).await;
+    let mut third = connect_client(&url).await;
+    join(&mut owner, "owner", room).await;
+    join(&mut second, "second", room).await;
+    join(&mut third, "third", room).await;
+
+    third.close(None).await.expect("disconnect third player");
+    recv_until(&mut owner, "third player disconnected", |value| {
+        value["code"] == json!(WsCode::JOIN as i32)
+            && value["data"]["position"] == json!(2)
+            && value["data"]["is_active"] == json!(false)
+    })
+    .await;
+
+    send_request(&mut owner, Routes::START as i32, json!({})).await;
+    let rejected = recv_until(&mut owner, "start with disconnected player", |value| {
+        value["route"] == json!(Routes::START as i32)
+    })
+    .await;
+    assert_eq!(rejected["code"], json!(WsResponseCode::NOT_IN_RANGE as i32));
+
+    let mut reconnected = connect_client(&url).await;
+    join(&mut reconnected, "third", room).await;
+    send_request(&mut owner, Routes::START as i32, json!({})).await;
+    let started = recv_until(&mut owner, "start after player reconnected", |value| {
+        value["route"] == json!(Routes::START as i32)
+    })
+    .await;
+    assert_eq!(started["code"], json!(WsResponseCode::OK as i32));
+
+    server.abort();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn four_players_receive_distinct_private_hands_at_round_start() {
     let (server, url, _stop_handle) =
         start_server("dominoes-four-player-start-test", test_handler()).await;
