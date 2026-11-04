@@ -61,12 +61,17 @@ impl GameHandler for TestTractorHandler {
             .after_common_request(room_service, session_id, request, dispatch);
     }
 
-    fn authorize_join(&self, _join: &share_type_public::WsJoinRequest) -> JoinAuthorizationFuture {
-        Box::pin(async {
+    fn authorize_join(&self, join: &share_type_public::WsJoinRequest) -> JoinAuthorizationFuture {
+        let user_id = join
+            .name
+            .bytes()
+            .fold(0i32, |id, byte| id.wrapping_add(i32::from(byte)));
+        Box::pin(async move {
             JoinAuthorization {
                 can_create_room: true,
                 can_join_existing_room: true,
                 has_active_membership: cfg!(feature = "official"),
+                user_id: Some(user_id),
             }
         })
     }

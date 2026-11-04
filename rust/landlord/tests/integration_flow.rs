@@ -44,11 +44,16 @@ impl GameHandler for TestAiLandlordHandler {
 
     fn authorize_join(&self, join: &share_type_public::WsJoinRequest) -> JoinAuthorizationFuture {
         let has_active_membership = join.name == "owner";
+        let user_id = join
+            .name
+            .bytes()
+            .fold(0i32, |id, byte| id.wrapping_add(i32::from(byte)));
         Box::pin(async move {
             JoinAuthorization {
                 can_create_room: true,
                 can_join_existing_room: true,
                 has_active_membership,
+                user_id: Some(user_id),
             }
         })
     }

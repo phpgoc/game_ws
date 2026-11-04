@@ -888,6 +888,7 @@ fn stale_session_records_and_missing_rooms_are_safe_to_handle() {
             room_key: None,
             position: None,
             official_session_id: None,
+            official_user_id: None,
         },
     );
     assert_eq!(service.allocate_ai_session_id(), AI_SESSION_ID_BASE + 2);
@@ -907,6 +908,7 @@ fn stale_session_records_and_missing_rooms_are_safe_to_handle() {
                 room_key: Some("missing".to_owned()),
                 position: Some(0),
                 official_session_id: Some("stale-session".to_owned()),
+                official_user_id: None,
             },
         );
         let response = common_request(&mut service, 1, route, data);
@@ -920,6 +922,7 @@ fn stale_session_records_and_missing_rooms_are_safe_to_handle() {
             room_key: Some("missing".to_owned()),
             position: Some(0),
             official_session_id: None,
+            official_user_id: None,
         },
     );
     let message = common_request(
@@ -937,6 +940,7 @@ fn stale_session_records_and_missing_rooms_are_safe_to_handle() {
             room_key: Some("missing".to_owned()),
             position: Some(0),
             official_session_id: None,
+            official_user_id: None,
         },
     );
     let disband = common_request(&mut service, 1, Routes::DISBAND, serde_json::Value::Null);
@@ -1002,6 +1006,7 @@ fn rejoin_and_stale_position_paths_keep_rosters_consistent() {
             room_key: Some("rejoin-room".to_owned()),
             position: None,
             official_session_id: None,
+            official_user_id: None,
         },
     );
     let missing_position = common_request(
@@ -1111,6 +1116,7 @@ fn common_route_guards_reject_nonowners_missing_seats_and_invalid_swaps() {
                 room_key: Some("guard-room".to_owned()),
                 position: None,
                 official_session_id: None,
+                official_user_id: None,
             },
         );
         let response = common_request(&mut service, 9, route, data);
@@ -1130,6 +1136,7 @@ fn room_helpers_handle_missing_and_ai_only_session_metadata() {
             room_key: Some("missing-room".to_owned()),
             position: Some(0),
             official_session_id: None,
+            official_user_id: None,
         },
     );
     assert!(!service.set_session_active_membership(11, true));

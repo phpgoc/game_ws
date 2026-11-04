@@ -95,6 +95,7 @@ impl GameHandler for DeniedRuntimeHandler {
                 can_create_room: false,
                 can_join_existing_room: false,
                 has_active_membership: false,
+                user_id: None,
             }
         })
     }
@@ -124,20 +125,23 @@ impl GameHandler for DeniedRuntimeHandler {
 impl GameHandler for ExistingRoomAuthorizationHandler {
     fn authorize_join(&self, join: &share_type_public::WsJoinRequest) -> JoinAuthorizationFuture {
         let authorization = match join.session_id.as_str() {
-            "valid-owner" => JoinAuthorization {
+            "valid-owner" | "owner-renewed" => JoinAuthorization {
                 can_create_room: true,
                 can_join_existing_room: true,
                 has_active_membership: true,
+                user_id: Some(1),
             },
-            "valid-nonmember" => JoinAuthorization {
+            "valid-nonmember" | "guest-renewed" => JoinAuthorization {
                 can_create_room: false,
                 can_join_existing_room: true,
                 has_active_membership: false,
+                user_id: Some(2),
             },
             _ => JoinAuthorization {
                 can_create_room: false,
                 can_join_existing_room: false,
                 has_active_membership: false,
+                user_id: None,
             },
         };
         Box::pin(async move { authorization })
@@ -229,6 +233,7 @@ impl GameHandler for MembershipRuntimeHandler {
                 can_create_room: true,
                 can_join_existing_room: true,
                 has_active_membership: true,
+                user_id: Some(1),
             }
         })
     }

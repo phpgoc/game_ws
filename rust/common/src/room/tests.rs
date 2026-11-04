@@ -64,6 +64,32 @@ fn join_room(
     )
 }
 
+fn join_official_room(
+    service: &mut RoomService,
+    session_id: u64,
+    user_id: i32,
+    name: &str,
+    room_key: &str,
+    game_id: GameId,
+) -> Dispatch {
+    service
+        .handle_common_request_with_game_identity(
+            session_id,
+            &WsRequest {
+                route: Routes::JOIN as i32,
+                data: serde_json::json!({
+                    "name": name,
+                    "password": room_key,
+                    "game_id": game_id as i32,
+                }),
+            },
+            |requested| requested == game_id,
+            Some(user_id),
+            settings,
+        )
+        .expect("official common route")
+}
+
 fn has_response(dispatch: &Dispatch, route: Routes, code: WsResponseCode) -> bool {
     dispatch
         .messages
@@ -1309,6 +1335,118 @@ fn different_name_cannot_replace_disconnected_owner_position() {
     let common = common.lock().unwrap();
     assert!(common.is_disconnected(0));
     assert_eq!(common.player_name(0), "owner");
+}
+
+#[test]
+fn official_user_identity_restores_a_disconnected_seat_even_after_name_change() {
+    let mut service = room_service_with_ai();
+    let _ = join_official_room(
+        &mut service,
+        1,
+        101,
+        "owner",
+        "identity-room",
+        GameId::DOMINOES,
+    );
+    assert_eq!(
+        service
+            .sessions
+            .get(&1)
+            .and_then(|session| session.official_user_id),
+        Some(101)
+    );
+    let guest_join = join_official_room(
+        &mut service,
+        2,
+        202,
+        "guest",
+        "identity-room",
+        GameId::DOMINOES,
+    );
+    assert!(
+        has_response(&guest_join, Routes::JOIN, WsResponseCode::JOINED),
+        "unexpected guest join: {:?}",
+        guest_join.messages
+    );
+    assert_eq!(
+        service
+            .sessions
+            .get(&2)
+            .and_then(|session| session.official_user_id),
+        Some(202)
+    );
+    assert_eq!(
+        service.rooms["identity-room"]
+            .official_user_ids_by_position
+            .get(&1),
+        Some(&202)
+    );
+
+    let _ = service.disconnect(2);
+    assert_eq!(
+        service.rooms["identity-room"]
+            .official_user_ids_by_position
+            .get(&1),
+        Some(&202)
+    );
+    assert!(service.rooms["identity-room"].state.is_disconnected(1));
+    let restored = join_official_room(
+        &mut service,
+        3,
+        202,
+        "guest-renamed",
+        "identity-room",
+        GameId::DOMINOES,
+    );
+
+    assert!(
+        has_response(&restored, Routes::JOIN, WsResponseCode::JOINED),
+        "unexpected rejoin response: {:?}",
+        restored.messages
+    );
+    assert_eq!(service.session_position(3), Some(1));
+    let common = service
+        .room_common_state("identity-room")
+        .expect("room common state");
+    assert_eq!(common.lock().unwrap().player_name(1), "guest-renamed");
+}
+
+#[test]
+fn official_user_identity_blocks_a_different_account_from_reusing_a_disconnected_seat() {
+    let mut service = room_service_with_ai();
+    let _ = join_official_room(
+        &mut service,
+        1,
+        101,
+        "owner",
+        "identity-room",
+        GameId::DOMINOES,
+    );
+    let _ = join_official_room(
+        &mut service,
+        2,
+        202,
+        "guest",
+        "identity-room",
+        GameId::DOMINOES,
+    );
+
+    let _ = service.disconnect(2);
+    let rejected = join_official_room(
+        &mut service,
+        3,
+        303,
+        "guest",
+        "identity-room",
+        GameId::DOMINOES,
+    );
+
+    assert!(has_response(
+        &rejected,
+        Routes::JOIN,
+        WsResponseCode::NO_PERMISSION
+    ));
+    assert_eq!(service.session_position(3), None);
 }
 
 #[test]

@@ -48,6 +48,7 @@ struct RoomEntry {
     official_match: Option<OfficialMatchHandle>,
     pending_cleanup_generation: Option<u64>,
     membership_checked_positions: HashSet<usize>,
+    official_user_ids_by_position: HashMap<usize, i32>,
 }
 
 impl Drop for RoomEntry {
@@ -80,6 +81,7 @@ struct SessionState {
     room_key: Option<String>,
     position: Option<usize>,
     official_session_id: Option<String>,
+    official_user_id: Option<i32>,
 }
 
 fn config_value(configs: &HashMap<String, i32>, key: &str, default: i32) -> i32 {
@@ -298,6 +300,7 @@ impl RoomService {
                 session.room_key = None;
                 session.position = None;
                 session.official_session_id = None;
+                session.official_user_id = None;
             }
             if *sid == session_id {
                 continue;
@@ -404,6 +407,7 @@ impl RoomService {
                 session.room_key = None;
                 session.position = None;
                 session.official_session_id = None;
+                session.official_user_id = None;
             }
             if cleanup.force && connected.contains(session_id) {
                 dispatch.messages.push(Delivery {
@@ -741,12 +745,35 @@ impl RoomService {
         F: Fn() -> SettingsBuilderResult,
         A: Fn(GameId) -> bool,
     {
+        self.handle_common_request_with_game_identity(
+            session_id,
+            request,
+            accepts_game_id,
+            None,
+            room_settings_builder,
+        )
+    }
+
+    /// 处理带已验证官方用户身份的通用房间请求。
+    pub fn handle_common_request_with_game_identity<F, A>(
+        &mut self,
+        session_id: SessionId,
+        request: &ClientRequest,
+        accepts_game_id: A,
+        official_user_id: Option<i32>,
+        room_settings_builder: F,
+    ) -> Option<Dispatch>
+    where
+        F: Fn() -> SettingsBuilderResult,
+        A: Fn(GameId) -> bool,
+    {
         self.sessions.entry(session_id).or_default();
         match request.route {
             r if r == Routes::JOIN as i32 => Some(self.handle_join_request(
                 session_id,
                 request.data.clone(),
                 accepts_game_id,
+                official_user_id,
                 room_settings_builder,
             )),
             r if r == Routes::QUIT as i32 => Some(self.handle_quit_request(session_id)),
@@ -796,6 +823,7 @@ impl RoomService {
         session_id: SessionId,
         data: Value,
         accepts_game_id: impl Fn(GameId) -> bool,
+        official_user_id: Option<i32>,
         room_settings_builder: F,
     ) -> Dispatch
     where
@@ -834,6 +862,12 @@ impl RoomService {
                 Routes::JOIN as i32,
                 WsResponseCode::ERROR_FORMAT,
             );
+        }
+        if let Some(user_id) = official_user_id {
+            self.sessions
+                .entry(session_id)
+                .or_default()
+                .official_user_id = Some(user_id);
         }
         if let Some(current_room) = self.room_key_of(session_id) {
             let current_name = self.session_name(session_id);
@@ -910,6 +944,7 @@ impl RoomService {
                     official_match: None,
                     pending_cleanup_generation: None,
                     membership_checked_positions: HashSet::new(),
+                    official_user_ids_by_position: HashMap::new(),
                 },
             );
         } else if self
@@ -927,7 +962,10 @@ impl RoomService {
 
         let mut dispatch = Dispatch::default();
 
-        if let Some((position, existing_session_id)) = self.player_by_name(&password, &name) {
+        let existing_player = official_user_id
+            .and_then(|user_id| self.player_by_official_user_id(&password, user_id))
+            .or_else(|| self.player_by_name(&password, &name));
+        if let Some((position, existing_session_id)) = existing_player {
             if self
                 .rooms
                 .get(&password)
@@ -947,11 +985,48 @@ impl RoomService {
                     WsResponseCode::NO_PERMISSION,
                 );
             }
+            let has_name_conflict = self.rooms.get(&password).is_some_and(|entry| {
+                entry
+                    .state
+                    .players()
+                    .iter()
+                    .any(|(other_position, (_, other_name))| {
+                        *other_position != position && other_name == &name
+                    })
+            });
+            if has_name_conflict {
+                return self.error_response(
+                    session_id,
+                    Routes::JOIN as i32,
+                    WsResponseCode::NO_PERMISSION,
+                );
+            }
+            let previous_user_id = self
+                .rooms
+                .get(&password)
+                .and_then(|entry| entry.official_user_ids_by_position.get(&position))
+                .copied();
+            let current_user_id = self
+                .sessions
+                .get(&session_id)
+                .and_then(|session| session.official_user_id);
+            if previous_user_id.is_some() && previous_user_id != current_user_id {
+                return self.error_response(
+                    session_id,
+                    Routes::JOIN as i32,
+                    WsResponseCode::NO_PERMISSION,
+                );
+            }
 
             {
                 let entry = self.rooms.get_mut(&password).unwrap();
                 entry.state.add_player(position, session_id, &name);
                 entry.state.set_avatar(position, &avatar_url);
+                if let Some(user_id) = current_user_id {
+                    entry
+                        .official_user_ids_by_position
+                        .insert(position, user_id);
+                }
                 entry.state.clear_disconnected_position(position);
                 entry.membership_checked_positions.remove(&position);
                 if position == 0 {
@@ -964,6 +1039,7 @@ impl RoomService {
                 session.room_key = Some(password.clone());
                 session.position = Some(position);
                 session.official_session_id = official_session_id.clone();
+                session.official_user_id = current_user_id;
             }
 
             self.broadcast_except(
@@ -1065,6 +1141,22 @@ impl RoomService {
                 WsResponseCode::NO_PERMISSION,
             );
         };
+        let existing_user_id = self
+            .rooms
+            .get(&password)
+            .and_then(|entry| entry.official_user_ids_by_position.get(&position))
+            .copied();
+        let current_user_id = self
+            .sessions
+            .get(&session_id)
+            .and_then(|session| session.official_user_id);
+        if existing_user_id.is_some() && existing_user_id != current_user_id {
+            return self.error_response(
+                session_id,
+                Routes::JOIN as i32,
+                WsResponseCode::NO_PERMISSION,
+            );
+        }
 
         // — 加入 —
         let name_for_event = name.clone();
@@ -1080,6 +1172,13 @@ impl RoomService {
             }
             entry.state.add_player(position, session_id, &name);
             entry.state.set_avatar(position, &avatar_url);
+            if let Some(user_id) = current_user_id {
+                entry
+                    .official_user_ids_by_position
+                    .insert(position, user_id);
+            } else {
+                entry.official_user_ids_by_position.remove(&position);
+            }
         }
 
         {
@@ -1088,6 +1187,7 @@ impl RoomService {
             session.room_key = Some(password.clone());
             session.position = Some(position);
             session.official_session_id = official_session_id;
+            session.official_user_id = current_user_id;
         }
 
         // — 广播 JOIN 事件给其他人 —
@@ -1450,6 +1550,14 @@ impl RoomService {
         // Update state
         if let Some(entry) = self.rooms.get_mut(&room_key) {
             entry.state.swap_player(pos_a, pos_b);
+            let user_a = entry.official_user_ids_by_position.remove(&pos_a);
+            let user_b = entry.official_user_ids_by_position.remove(&pos_b);
+            if let Some(user_id) = user_b {
+                entry.official_user_ids_by_position.insert(pos_a, user_id);
+            }
+            if let Some(user_id) = user_a {
+                entry.official_user_ids_by_position.insert(pos_b, user_id);
+            }
         }
         // Update session positions
         if let Some(s) = self.sessions.get_mut(&sid_a) {
@@ -1504,6 +1612,7 @@ impl RoomService {
             return;
         };
         session.official_session_id = None;
+        session.official_user_id = None;
         let mut name = session.name.clone().unwrap_or_default();
         let mut position = session.position.take();
         let recipients = self.connected_session_ids(&room_key);
@@ -1608,6 +1717,28 @@ impl RoomService {
             })
     }
 
+    fn player_by_official_user_id(
+        &self,
+        room_key: &str,
+        user_id: i32,
+    ) -> Option<(usize, SessionId)> {
+        let entry = self.rooms.get(room_key)?;
+        entry
+            .official_user_ids_by_position
+            .iter()
+            .find_map(|(position, stored_user_id)| {
+                if *stored_user_id == user_id {
+                    entry
+                        .state
+                        .players()
+                        .get(position)
+                        .map(|(session_id, _)| (*position, *session_id))
+                } else {
+                    None
+                }
+            })
+    }
+
     /// 向指定会话压入一个不带数据的成功响应。
     pub fn push_ok_response(&self, dispatch: &mut Dispatch, session_id: SessionId, route: i32) {
         dispatch
@@ -1653,6 +1784,7 @@ impl RoomService {
             return;
         };
         session.official_session_id = None;
+        session.official_user_id = None;
         let mut leave_name = session.name.clone().unwrap_or_default();
         // `quit_room` temporarily removes this session, so only other live
         // human sessions remain in the room service lookup.
@@ -1673,6 +1805,7 @@ impl RoomService {
             }
             if let Some(pos) = position {
                 entry.state.remove_player(pos);
+                entry.official_user_ids_by_position.remove(&pos);
             }
             recipients.extend(entry.state.players().values().map(|(sid, _)| *sid));
             // `/quit` is a permanent departure and always terminates the

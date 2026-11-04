@@ -84,6 +84,7 @@ pub struct JoinAuthorization {
     pub can_create_room: bool,
     pub can_join_existing_room: bool,
     pub has_active_membership: bool,
+    pub user_id: Option<i32>,
 }
 
 impl JoinAuthorization {
@@ -91,6 +92,7 @@ impl JoinAuthorization {
         can_create_room: true,
         can_join_existing_room: true,
         has_active_membership: false,
+        user_id: None,
     };
 }
 
@@ -568,10 +570,13 @@ async fn handle_connection(
                     share_type_public::WsResponseCode::NO_PERMISSION,
                 ))
             } else {
-                room.handle_common_request_with_game_acceptance(
+                room.handle_common_request_with_game_identity(
                     session_id,
                     &request,
                     |game_id| handler.accepts_game_id(game_id),
+                    join_authorization
+                        .as_ref()
+                        .and_then(|authorization| authorization.user_id),
                     || handler.build_room_settings(),
                 )
             };
