@@ -86,14 +86,61 @@ impl GameHandler for FloodRuntimeHandler {
 
 struct DeniedRuntimeHandler;
 
+struct ExistingRoomAuthorizationHandler;
+
 impl GameHandler for DeniedRuntimeHandler {
     fn authorize_join(&self, _join: &share_type_public::WsJoinRequest) -> JoinAuthorizationFuture {
         Box::pin(async {
             JoinAuthorization {
                 can_create_room: false,
+                can_join_existing_room: false,
                 has_active_membership: false,
             }
         })
+    }
+
+    fn build_game_state(&self) -> Box<dyn ws_common::GameState> {
+        Box::new(SharedGameState::new())
+    }
+
+    fn build_room_settings(&self) -> ws_common::SettingsBuilderResult {
+        (GameSettings::new(1, 4), HashMap::new())
+    }
+
+    fn game_id(&self) -> GameId {
+        GameId::LANDLORD
+    }
+
+    fn handle_game_request(
+        &mut self,
+        _room_service: &mut RoomService,
+        _session_id: SessionId,
+        _request: ClientRequest,
+    ) -> Dispatch {
+        Dispatch::default()
+    }
+}
+
+impl GameHandler for ExistingRoomAuthorizationHandler {
+    fn authorize_join(&self, join: &share_type_public::WsJoinRequest) -> JoinAuthorizationFuture {
+        let authorization = match join.session_id.as_str() {
+            "valid-owner" => JoinAuthorization {
+                can_create_room: true,
+                can_join_existing_room: true,
+                has_active_membership: true,
+            },
+            "valid-nonmember" => JoinAuthorization {
+                can_create_room: false,
+                can_join_existing_room: true,
+                has_active_membership: false,
+            },
+            _ => JoinAuthorization {
+                can_create_room: false,
+                can_join_existing_room: false,
+                has_active_membership: false,
+            },
+        };
+        Box::pin(async move { authorization })
     }
 
     fn build_game_state(&self) -> Box<dyn ws_common::GameState> {
@@ -180,6 +227,7 @@ impl GameHandler for MembershipRuntimeHandler {
         Box::pin(async {
             JoinAuthorization {
                 can_create_room: true,
+                can_join_existing_room: true,
                 has_active_membership: true,
             }
         })
@@ -670,6 +718,94 @@ async fn runtime_applies_join_authorization_before_creating_a_room() {
     assert_eq!(stats.room_count().await, 0);
 
     client.close(None).await.expect("close client");
+    wait_for_client_count(&stats, 0).await;
+    stop.stop();
+    server
+        .await
+        .expect("runtime task joins")
+        .expect("runtime stops");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn runtime_allows_authenticated_nonmembers_but_rejects_unauthenticated_room_joins() {
+    let (stop, signal) = runtime_stop_channel();
+    let (ready_tx, ready_rx) = sync_channel(1);
+    let server = tokio::spawn(run_room_runtime_until_stopped_with_ready(
+        RuntimeConfig {
+            service_name: "runtime-existing-room-authorization-test",
+            listen_addr: "127.0.0.1:0".to_owned(),
+            idle_timeout: Duration::from_secs(2),
+            heartbeat_interval: Duration::from_secs(60),
+        },
+        ExistingRoomAuthorizationHandler,
+        signal,
+        ready_tx,
+    ));
+    let stats = tokio::task::spawn_blocking(move || {
+        ready_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("runtime reports listen address")
+    })
+    .await
+    .expect("read runtime stats");
+
+    let (mut owner, _) = connect_async(format!("ws://{}", stats.listen_addr()))
+        .await
+        .expect("connect owner");
+    let (mut guest, _) = connect_async(format!("ws://{}", stats.listen_addr()))
+        .await
+        .expect("connect nonmember guest");
+    let (mut unauthenticated, _) = connect_async(format!("ws://{}", stats.listen_addr()))
+        .await
+        .expect("connect unauthenticated guest");
+
+    for (client, name, session_id) in [
+        (&mut owner, "owner", "valid-owner"),
+        (&mut guest, "guest", "valid-nonmember"),
+        (&mut unauthenticated, "intruder", "invalid-session"),
+    ] {
+        client
+            .send(Message::Text(
+                serde_json::json!({
+                    "route": Routes::JOIN as i32,
+                    "data": {
+                        "name": name,
+                        "password": "authorized-room",
+                        "game_id": GameId::LANDLORD as i32,
+                        "session_id": session_id,
+                    }
+                })
+                .to_string()
+                .into(),
+            ))
+            .await
+            .expect("send join");
+        let response = timeout(Duration::from_secs(1), async {
+            loop {
+                match client.next().await.expect("frame").expect("valid frame") {
+                    Message::Text(text) => break text,
+                    Message::Ping(_) | Message::Pong(_) => continue,
+                    frame => panic!("unexpected join response: {frame:?}"),
+                }
+            }
+        })
+        .await
+        .expect("join response arrives");
+        let response: serde_json::Value = serde_json::from_str(&response).expect("response json");
+        if session_id == "invalid-session" {
+            assert_eq!(response["code"], WsResponseCode::NO_PERMISSION as i32);
+        } else {
+            assert_eq!(response["code"], WsResponseCode::JOINED as i32);
+        }
+    }
+    assert_eq!(stats.room_count().await, 1);
+
+    owner.close(None).await.expect("close owner");
+    guest.close(None).await.expect("close guest");
+    unauthenticated
+        .close(None)
+        .await
+        .expect("close unauthenticated guest");
     wait_for_client_count(&stats, 0).await;
     stop.stop();
     server

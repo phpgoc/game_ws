@@ -45,6 +45,7 @@ impl GameHandler for TestAiDominoesHandler {
         Box::pin(async move {
             JoinAuthorization {
                 can_create_room: true,
+                can_join_existing_room: true,
                 has_active_membership,
             }
         })

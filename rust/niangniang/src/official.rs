@@ -5,12 +5,14 @@ pub async fn authorize_join(session_id: String) -> ws_common::JoinAuthorization 
     if session_id.is_empty() {
         return ws_common::JoinAuthorization {
             can_create_room: false,
+            can_join_existing_room: false,
             has_active_membership: false,
         };
     }
     match data::service::game_room::authorize(&session_id, GameId::NIANGNIANG).await {
         Ok(authorization) => ws_common::JoinAuthorization {
             can_create_room: authorization.can_create_room,
+            can_join_existing_room: true,
             has_active_membership: authorization.has_active_membership,
         },
         Err(error) => {
@@ -21,6 +23,7 @@ pub async fn authorize_join(session_id: String) -> ws_common::JoinAuthorization 
             );
             ws_common::JoinAuthorization {
                 can_create_room: false,
+                can_join_existing_room: false,
                 has_active_membership: false,
             }
         }

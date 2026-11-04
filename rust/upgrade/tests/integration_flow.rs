@@ -42,6 +42,7 @@ impl GameHandler for TestUpgradeHandler {
         Box::pin(async {
             JoinAuthorization {
                 can_create_room: true,
+                can_join_existing_room: true,
                 has_active_membership: cfg!(feature = "official"),
             }
         })

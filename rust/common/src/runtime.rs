@@ -82,12 +82,14 @@ impl MessageRateLimiter {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct JoinAuthorization {
     pub can_create_room: bool,
+    pub can_join_existing_room: bool,
     pub has_active_membership: bool,
 }
 
 impl JoinAuthorization {
     pub const ALLOW_NONMEMBER: Self = Self {
         can_create_room: true,
+        can_join_existing_room: true,
         has_active_membership: false,
     };
 }
@@ -556,9 +558,10 @@ async fn handle_connection(
             let creates_room_on_join = parsed_join
                 .as_ref()
                 .is_some_and(|join| !room.room_exists(&join.password));
-            let common_dispatch = if creates_room_on_join
-                && join_authorization.is_some_and(|authorization| !authorization.can_create_room)
-            {
+            let common_dispatch = if join_authorization.is_some_and(|authorization| {
+                !authorization.can_join_existing_room
+                    || (creates_room_on_join && !authorization.can_create_room)
+            }) {
                 Some(room.error_response(
                     session_id,
                     share_type_public::Routes::JOIN as i32,
