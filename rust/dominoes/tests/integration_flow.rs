@@ -1,4 +1,5 @@
-use std::sync::mpsc::sync_channel;
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex, mpsc::sync_channel};
 use std::time::Duration;
 
 use dominoes::game::DominoesGameHandler;
@@ -29,7 +30,12 @@ mod membership;
 #[derive(Default)]
 struct TestAiDominoesHandler {
     game: DominoesGameHandler,
-    members: &'static [&'static str],
+    active_membership: Arc<Mutex<HashSet<i32>>>,
+}
+
+fn test_user_id(name: &str) -> i32 {
+    name.bytes()
+        .fold(0i32, |id, byte| id.wrapping_add(i32::from(byte)))
 }
 
 impl GameHandler for TestAiDominoesHandler {
@@ -45,18 +51,37 @@ impl GameHandler for TestAiDominoesHandler {
     }
 
     fn authorize_join(&self, join: &share_type_public::WsJoinRequest) -> JoinAuthorizationFuture {
-        let has_active_membership = self.members.contains(&join.name.as_str());
-        let user_id = join
-            .name
-            .bytes()
-            .fold(0i32, |id, byte| id.wrapping_add(i32::from(byte)));
+        let active_membership = Arc::clone(&self.active_membership);
+        let user_id = test_user_id(&join.name);
         Box::pin(async move {
+            let has_active_membership = active_membership
+                .lock()
+                .expect("test membership lock")
+                .contains(&user_id);
             JoinAuthorization {
                 can_create_room: true,
                 can_join_existing_room: true,
                 has_active_membership,
                 user_id: Some(user_id),
             }
+        })
+    }
+
+    fn requires_start_membership_refresh(&self) -> bool {
+        cfg!(feature = "official")
+    }
+
+    fn refresh_start_membership(
+        &self,
+        identity: ws_common::OfficialStartIdentity,
+    ) -> ws_common::StartAuthorizationFuture {
+        let active_membership = Arc::clone(&self.active_membership);
+        Box::pin(async move {
+            !identity.session_id.is_empty()
+                && active_membership
+                    .lock()
+                    .expect("test membership lock")
+                    .contains(&identity.user_id)
         })
     }
 
@@ -100,22 +125,30 @@ fn test_handler() -> impl ws_common::GameHandler {
 }
 
 fn test_handler_with_rng_seed(seed: u64) -> impl ws_common::GameHandler {
-    TestAiDominoesHandler {
-        game: DominoesGameHandler::with_rng_seed(seed),
-        members: &["P0"],
-    }
+    test_handler_with_members(Some(seed), &["P0"])
 }
 
 fn test_handler_with_members(
     seed: Option<u64>,
     members: &'static [&'static str],
 ) -> impl ws_common::GameHandler {
-    TestAiDominoesHandler {
+    test_handler_with_membership_state(seed, members).0
+}
+
+fn test_handler_with_membership_state(
+    seed: Option<u64>,
+    members: &[&str],
+) -> (TestAiDominoesHandler, Arc<Mutex<HashSet<i32>>>) {
+    let active_membership = Arc::new(Mutex::new(
+        members.iter().map(|name| test_user_id(name)).collect(),
+    ));
+    let handler = TestAiDominoesHandler {
         game: seed
             .map(DominoesGameHandler::with_rng_seed)
             .unwrap_or_default(),
-        members,
-    }
+        active_membership: Arc::clone(&active_membership),
+    };
+    (handler, active_membership)
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -720,7 +753,8 @@ async fn join(client: &mut Client, name: &str, room: &str) -> Value {
             "name": name,
             "password": room,
             "game_id": GameId::DOMINOES as i32,
-            "avatar_url": ""
+            "avatar_url": "",
+            "session_id": format!("test-session-{name}")
         }),
     )
     .await;

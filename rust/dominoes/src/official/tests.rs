@@ -56,6 +56,24 @@ fn official_match_users_include_disconnected_authorized_seats_in_position_order(
 }
 
 #[test]
+fn disconnected_seat_identity_is_kept_for_match_roster_and_round_scores() {
+    let user_ids_by_position = HashMap::from([(3, 404), (1, 202), (0, 101), (2, 303)]);
+    let match_users = official_match_users(&user_ids_by_position).unwrap();
+    let mut round_result = result(0);
+    round_result.score_changes.insert(3, 7);
+
+    let scores = player_scores_for_official_users(&round_result, |position| {
+        user_ids_by_position.get(&position).copied()
+    });
+
+    assert_eq!(match_users, vec![101, 202, 303, 404]);
+    assert_eq!(scores.len(), 4);
+    assert_eq!(scores[3].user_id, 404);
+    assert_eq!(scores[3].score, 7);
+    assert!(!scores[3].is_winner);
+}
+
+#[test]
 fn official_match_users_rejects_missing_authorized_identity() {
     let user_ids_by_position = HashMap::from([(0, 101), (1, 0)]);
 
